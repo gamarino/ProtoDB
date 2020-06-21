@@ -15,16 +15,34 @@ class StorageTransaction(object):
     def __init__(self, ts):
         self.ts = ts
 
-    def newObject(self, objectData):
+    def get_object(self, object_id):
+        """
+        Get an object from the storage
+        Implement any strategy to cache previous read values
+
+        :param object_id: an ObjectID
+        :return: the read object
+        """
+
+    def get_root_object(self):
+        """
+        Get the rooot object from the storage
+        If no root yet, return None
+
+        :param object_id: an ObjectID
+        :return: the read object
+        """
+
+    def new_object(self, object_data):
         """
         Store a new object on transaction.
         The returned object ID is globally valid even when this transaction is not ended correctly
 
-        :param objectData:
+        :param object_data:
         :return: the object ID of the newly created object
         """
 
-    def startRootUpdate(self):
+    def start_root_update(self):
         """
         Start the operation of root updating
         Flush any data not yet written, obtain any lock needed to ensure no one else is doing the same update
@@ -35,12 +53,12 @@ class StorageTransaction(object):
         :return: currentRootID
         """
 
-    def updateRoot(self, newRootID):
+    def update_root(self, new_root_id):
         """
         Update storage root
         Ensure that the root is updated on return or fail if it was unsuccesfull (raise)
 
-        :param objectData:
+        :param new_root_id:
         :return: the object ID of the newly created object
         """
 
@@ -51,20 +69,12 @@ class StorageTransaction(object):
         :return: None
         """
 
-class TransactionalStorage(object):
 
-    def newTransaction(self):
+class TransactionalStorage(object):
+    def new_transaction(self):
         """
         Create a new transaction on this storage
         :return: a StorageTransaction on this storage
         """
         raise Exceptions.NotImplemented('Transaction storage new transaction NOT implemented')
 
-    def getObject(self, objectID):
-        """
-        Get an object from the storage
-        Implement any strategy to cache previous read values
-
-        :param objectID: an ObjectID
-        :return: the read object
-        """

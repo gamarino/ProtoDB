@@ -1,8 +1,3 @@
-
-
-
-
-
 from . import Exceptions
 from . import Common
 from . import TransactionalStorage
@@ -11,6 +6,9 @@ from aiofile import AIOFile
 import os
 import json
 import random
+import uuid
+import fcntl
+from datetime import datetime
 
 ATTEMPTS_ON_KNOWN = 3
 ATTEMPTS_ON_NEW = 1
@@ -21,55 +19,12 @@ class SFObjectID(TransactionalStorage.ObjectID):
     A shared file identification of any object stored in the database
 
     """
-    partitionName = None
+    partition_name = None
     position = None
 
-    def __init__(self, partitionName, position):
-        self.partitionName = partitionName
+    def __init__(self, partition_name, position):
+        self.partition_name = partition_name
         self.position = position
-
-
-class SFTransaction(TransactionalStorage.StorageTransaction):
-    """
-    A shared file based transaction
-    """
-    partitionName = None
-    partitionFile = None
-
-    def __init__(self, ts, partitionName):
-        TransactionalStorage.StorageTransaction.__init__(self, ts)
-        self.partitionName = partitionName
-        partitionFullName = os.path.join(self.ts.baseName, partitionName)
-        self.partitionFile = AIOFile(partitionFullName, 'a')
-        self.ts.inUsePartions.add(partitionName)
-
-    def newObject(self, objectData):
-        """
-        Store a new object on transaction.
-        The returned object ID is globally valid even when this transaction is not ended correctly
-
-        :param objectData:
-        :return: the object ID of the newly created object
-        """
-        if not self.partitionFile:
-            raise Exceptions.ValidationException('Transaction no longer in use')
-
-        position = self.partitionFile.fileno.tell()
-
-        self.partitionFile.write(f"/nID %{position}d/n%{json.dumps(objectData)}s")
-
-        return position
-
-    def close(self):
-        """
-        Terminate transaction use. No new object could be created after this call
-
-        :return: None
-        """
-        if self.partitionFile:
-            self.partitionFile.close()
-        self.partitionFile = None
-        self.ts.inUsePartions.remove(self.partitionName)
 
 
 class SFStorage(TransactionalStorage.TransactionalStorage):
@@ -95,94 +50,202 @@ class SFStorage(TransactionalStorage.TransactionalStorage):
     All IO operations will be performed using asynch operation, to maximize the usage of the CPU
     """
 
-    baseDirectory = None
-    currentRoot = None
-    knownPartitions = {}
-    inUsePartions = set()
+    base_directory = None
+    current_root = None
+    known_partitions = {}
+    in_use_partions = set()
 
-    def openExisting(self):
-        pass
-
-    def create(self):
-        pass
-
-    def refreshKnownPartitions(self):
-        pass
-
-    def getCurrrentRoot(self):
-        pass
-
-    def __init__(self, baseDirectory, createIfNotExists=False):
-        self.baseDirectory = baseDirectory
+    def __init__(self, base_directory, create_if_not_exists=False):
+        super().__init__()
+        self.base_directory = base_directory
 
         try:
-            self.openExisting()
+            self.open_existing()
         except Exception as e:
-            if createIfNotExists:
+            if create_if_not_exists:
                 self.create()
             else:
                 raise e
 
-        self.refreshKnownPartitions()
-        self.currentRoot = self.getCurrentRoot()
+        self.refresh_known_partitions()
+        self.current_root = self.get_currrent_root()
 
-    def newTransaction(self):
+    def open_existing(self):
+        self.get_currrent_root()
+
+    def create(self):
+        pass
+
+    def refresh_known_partitions(self):
+        pass
+
+    def get_currrent_root(self):
+        root_full_name = os.path.join(self.base_directory, 'root.json')
+        with open(root_full_name, 'r') as root_file:
+            root_control = json.load(root_file)
+            if root_control:
+                self.current_root = root_control.current_root
+            else:
+                self.current_root = None
+        return self.current_root
+
+    def new_transaction(self):
         """
         Create a new transaction on this storage
         :return: a StorageTransaction on this storage
         """
-        knownNames = self.knownPartitions.keys()
-        newTransaction = None
+        known_names = list(self.known_partitions.keys())
+        new_transaction = None
 
-        if len(knownNames):
-            attemptCount = 0
-            while not newTransaction and attemptCount < ATTEMPTS_ON_KNOWN:
-                partitionIndex = 0
-                partitionName = None
-                while not partitionIndex:
-                    partitionIndex = random.randint(0, len(knownNames))
-                    partitionName = knownNames[partitionIndex]
-                    if partitionName not in self.inUsePartions:
-                        break
+        self.get_currrent_root()
+
+        if len(known_names):
+            attempt_count = 0
+            while not new_transaction and attempt_count < ATTEMPTS_ON_KNOWN:
+                partition_index = random.randint(0, len(known_names))
+                partition_name = known_names[partition_index]
                 try:
-                    newTransaction = SFTransaction(self, partitionName)
-                except Exception as e:
-                    attemptCount += 1
+                    new_transaction = SFTransaction(self, partition_name)
+                except IOError:
+                    attempt_count += 1
                     continue
 
-        if not newTransaction:
-            self.refreshKnownPartitions()
-
-            if len(knownNames):
-                attemptCount = 0
-                while not newTransaction and attemptCount < ATTEMPTS_ON_NEW:
-                    partitionIndex = 0
-                    partitionName = None
-                    while not partitionIndex:
-                        partitionIndex = random.randint(0, len(knownNames))
-                        partitionName = knownNames[partitionIndex]
-                        if partitionName not in self.inUsePartions:
-                            break
+        if not new_transaction:
+            if len(known_names):
+                attempt_count = 0
+                while not new_transaction and attempt_count < ATTEMPTS_ON_NEW:
+                    partition_name = str(uuid.uuid4())
                     try:
-                        newTransaction = SFTransaction(self, partitionName)
-                    except Exception as e:
-                        attemptCount += 1
+                        new_transaction = SFTransaction(self, partition_name)
+                    except IOError as e:
+                        attempt_count += 1
+                        if attempt_count >= ATTEMPTS_ON_NEW:
+                            raise e
                         continue
 
-        if not newTransaction:
-            while not newTransaction:
-                partitionName = f"DATA_{random.randint(0, 1000000000)}"
-                try:
-                    newTransaction = SFTransaction(self, partitionName)
-                except Exception as e:
-                    pass
+        return new_transaction
 
-        return newTransaction
-
-    def getObject(self, objectID):
+    def get_object(self, object_id):
         """
         Get an object from the storage
 
-        :param objectID: an ObjectID
+        :param object_id: an ObjectID
         :return: the read object
         """
+    def get_partition(self, partition_name: str):
+        if partition_name not in self.known_partitions:
+            partition_full_name = os.path.join(self.base_directory, partition_name)
+            self.known_partitions[partition_name] = open(partition_full_name, 'r')
+        return self.known_partitions[partition_name]
+
+class SFTransaction(TransactionalStorage.StorageTransaction):
+    """
+    A shared file based transaction
+    """
+    partition_name = None
+    partition_file = None
+    root_file = None
+    current_root = None
+    ts = None
+
+    def __init__(self, ts: SFStorage, partition_name: str):
+        super().__init__(ts)
+        self.ts = ts
+        self.partitionName = partition_name
+        partition_full_name = os.path.join(self.ts.base_directory, partition_name)
+        self.partition_file = AIOFile(partition_full_name, 'a')
+        ts.get_currrent_root()
+        self.current_root = ts.current_root
+        fcntl.flock(self.partition_file, fcntl.LOCK_SH)
+
+    def get_object(self, object_id: str):
+        """
+        Get an object from the storage
+        Implement any strategy to cache previous read values
+
+        :param object_id: an ObjectID
+        :return: the read object
+        """
+
+        partition_name, partition_offset = object_id.split(':')
+        partition_file = self.ts.get_partition(partition_name)
+        partition_file.seek(partition_offset)
+        return json.loads(partition_file)
+
+    def get_root_object(self):
+        """
+        Get the rooot object from the storage
+        If no root yet, return None
+
+        :return: the read object
+        """
+        return self.get_object(self.current_root)
+
+    def new_object(self, object_data):
+        """
+        Store a new object on transaction.
+        The returned object ID is globally valid even when this transaction is not ended correctly
+
+        :param object_data:
+        :return: the object ID of the newly created object
+        """
+        if not self.partition_file:
+            raise Exceptions.ValidationException('Transaction not active')
+
+        position = self.partition_file.fileno().tell()
+
+        self.partition_file.write(f"/nID %{position}d/n%{json.dumps(object_data)}s")
+
+        return f'{self.partition_name}:{position}'
+
+    def start_root_update(self):
+        """
+        Start the operation of root updating
+        Flush any data not yet written, obtain any lock needed to ensure no one else is doing the same update
+        Wait til you are the only process updating the root if necesary.
+        OPTIMISTIC locking is also accepted, that means that the check will be made on update
+        Update currentRoot to the most updated value
+
+        :return: currentRootID
+        """
+        if self.partition_file:
+            # flush any pending write
+            pass
+
+        root_full_name = os.path.join(self.ts.base_directory, 'root.json')
+
+        self.root_file = open(root_full_name, 'w')
+        fcntl.flock(self.root_file, fcntl.LOCK_SH)
+        self.ts.get_currrent_root()
+
+    def update_root(self, new_root_id: str):
+        """
+        Update storage root
+        Ensure that the root is updated on return or fail if it was unsuccesfull (raise)
+
+        :param new_root_id:
+        :return: the object ID of the newly created object
+        """
+
+        new_root = object()
+        new_root.time = datetime.now()
+        new_root.previous_root = str(self.ts.current_root) if self.ts.current_root else ''
+        new_root.current_root = new_root_id
+
+        self.root_file.write(json.dumps(new_root))
+        self.root_file.close()
+
+        self.current_root = new_root_id
+        return new_root_id
+
+    def close(self):
+        """
+        Terminate transaction use. No new object could be created after this call
+
+        :return: None
+        """
+        if self.partition_file:
+            # TODO Something to free? close is enough?
+            self.partition_file.close()
+        self.partition_file = None
+        self.ts.in_use_partions.remove(self.partition_name)
