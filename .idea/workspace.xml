@@ -2,14 +2,7 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="564d6b96-f887-47d3-90f8-f0d9700bbb7f" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/ProtoBase.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/ProtoBase.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/codeStyles/Project.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/codeStyles/Project.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/SharedFileStorage.py" beforeDir="false" afterPath="$PROJECT_DIR$/SharedFileStorage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/TransactionalStorage.py" beforeDir="false" afterPath="$PROJECT_DIR$/TransactionalStorage.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -61,7 +54,7 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1555628518185</updated>
-      <workItem from="1592692243598" duration="6926000" />
+      <workItem from="1592692243598" duration="7009000" />
     </task>
     <task id="LOCAL-00001" summary="[INIT]">
       <created>1555689262080</created>
@@ -70,7 +63,14 @@
       <option name="project" value="LOCAL" />
       <updated>1555689262080</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="[WIP]">
+      <created>1592699294202</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1592699294202</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -78,12 +78,21 @@
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="[INIT]" />
-    <option name="LAST_COMMIT_MESSAGE" value="[INIT]" />
+    <MESSAGE value="[WIP]" />
+    <option name="LAST_COMMIT_MESSAGE" value="[WIP]" />
   </component>
   <component name="WindowStateProjectService">
+    <state x="2419" y="34" width="912" height="1045" key="CommitChangelistDialog2" timestamp="1592699293907">
+      <screen x="1920" y="0" width="1920" height="1080" />
+    </state>
+    <state x="2419" y="34" width="912" height="1045" key="CommitChangelistDialog2/1920.0.1920.1080/0.27.1920.1053@1920.0.1920.1080" timestamp="1592699293907" />
     <state x="2369" y="188" width="1022" height="737" key="SettingsEditor" timestamp="1592692316514">
       <screen x="1920" y="0" width="1920" height="1080" />
     </state>
     <state x="2369" y="188" width="1022" height="737" key="SettingsEditor/1920.0.1920.1080/0.27.1920.1053@1920.0.1920.1080" timestamp="1592692316514" />
+    <state x="2475" y="285" width="800" height="543" key="Vcs.Push.Dialog.v2" timestamp="1592699333417">
+      <screen x="1920" y="0" width="1920" height="1080" />
+    </state>
+    <state x="2475" y="285" width="800" height="543" key="Vcs.Push.Dialog.v2/1920.0.1920.1080/0.27.1920.1053@1920.0.1920.1080" timestamp="1592699333417" />
   </component>
 </project>

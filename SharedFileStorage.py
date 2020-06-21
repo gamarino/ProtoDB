@@ -1,8 +1,5 @@
 from . import Exceptions
-from . import Common
 from . import TransactionalStorage
-import asyncio
-from aiofile import AIOFile
 import os
 import json
 import random
@@ -138,6 +135,7 @@ class SFStorage(TransactionalStorage.TransactionalStorage):
             self.known_partitions[partition_name] = open(partition_full_name, 'r')
         return self.known_partitions[partition_name]
 
+
 class SFTransaction(TransactionalStorage.StorageTransaction):
     """
     A shared file based transaction
@@ -153,7 +151,7 @@ class SFTransaction(TransactionalStorage.StorageTransaction):
         self.ts = ts
         self.partitionName = partition_name
         partition_full_name = os.path.join(self.ts.base_directory, partition_name)
-        self.partition_file = AIOFile(partition_full_name, 'a')
+        self.partition_file = open(partition_full_name, 'a')
         ts.get_currrent_root()
         self.current_root = ts.current_root
         fcntl.flock(self.partition_file, fcntl.LOCK_SH)
@@ -192,7 +190,7 @@ class SFTransaction(TransactionalStorage.StorageTransaction):
         if not self.partition_file:
             raise Exceptions.ValidationException('Transaction not active')
 
-        position = self.partition_file.fileno().tell()
+        position = self.partition_file.tell()
 
         self.partition_file.write(f"/nID %{position}d/n%{json.dumps(object_data)}s")
 
