@@ -1,8 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
   <component name="ChangeListManager">
     <list default="true" id="564d6b96-f887-47d3-90f8-f0d9700bbb7f" name="Default Changelist" comment="">
-      <change beforePath="$PROJECT_DIR$/SharedFileStorage.py" beforeDir="false" afterPath="$PROJECT_DIR$/SharedFileStorage.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/proto_base/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/proto_base/common.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/proto_base/memory_storage.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/proto_base/object.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/ProtoBase.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/ProtoBase.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Common.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Exceptions.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/SharedFileStorage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_base/shared_file_storage.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TransactionalStorage.py" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -19,31 +32,67 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;gamarino&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/gamarino/ProtoBase.git&quot;,
+    &quot;accountId&quot;: &quot;1354360d-bedc-4660-a2e4-030db6594fc2&quot;
+  }
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 4
+}</component>
   <component name="ProjectFrameBounds" extendedState="6">
     <option name="x" value="1920" />
     <option name="width" value="1920" />
     <option name="height" value="1080" />
   </component>
   <component name="ProjectId" id="1dbSL7LGgSnZenNqwzilhihwNmc" />
-  <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
+  <component name="ProjectLevelVcsManager" settingsEditedManually="true">
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">
-    <property name="ASKED_SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
-    <property name="MANAGE_IGNORE_FILES_PROPERTY" value="true" />
-    <property name="SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
-    <property name="WebServerToolWindowFactoryState" value="true" />
-    <property name="last_opened_file_path" value="$PROJECT_DIR$" />
-    <property name="node.js.detected.package.eslint" value="true" />
-    <property name="node.js.detected.package.tslint" value="true" />
-    <property name="node.js.path.for.package.eslint" value="project" />
-    <property name="node.js.path.for.package.tslint" value="project" />
-    <property name="node.js.selected.package.eslint" value="(autodetect)" />
-    <property name="node.js.selected.package.tslint" value="(autodetect)" />
-    <property name="settings.editor.selected.configurable" value="com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable" />
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "RunOnceActivity.OpenProjectViewOnStart": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "com.google.cloudcode.ide_session_index": "20241215_0000",
+    "git-widget-placeholder": "master",
+    "last_opened_file_path": "/home/gamarino/odoo/ProtoBase/proto_base",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/proto_base" />
+    </key>
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/proto_base" />
+    </key>
   </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-5c90d61e3bab-JavaScript-PY-242.24807.21" />
+        <option value="bundled-python-sdk-00717045f1d3-399fe30bd8c1-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-242.24807.21" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="SvnConfiguration">
     <configuration />
   </component>
@@ -55,6 +104,10 @@
       <option name="presentableId" value="Default" />
       <updated>1555628518185</updated>
       <workItem from="1592692243598" duration="7009000" />
+      <workItem from="1703886120336" duration="32839000" />
+      <workItem from="1704480097493" duration="15000" />
+      <workItem from="1731891670415" duration="6019000" />
+      <workItem from="1734268035408" duration="8780000" />
     </task>
     <task id="LOCAL-00001" summary="[INIT]">
       <created>1555689262080</created>
@@ -74,25 +127,11 @@
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
-    <option name="version" value="2" />
+    <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="[INIT]" />
     <MESSAGE value="[WIP]" />
     <option name="LAST_COMMIT_MESSAGE" value="[WIP]" />
-  </component>
-  <component name="WindowStateProjectService">
-    <state x="2419" y="34" width="912" height="1045" key="CommitChangelistDialog2" timestamp="1592699293907">
-      <screen x="1920" y="0" width="1920" height="1080" />
-    </state>
-    <state x="2419" y="34" width="912" height="1045" key="CommitChangelistDialog2/1920.0.1920.1080/0.27.1920.1053@1920.0.1920.1080" timestamp="1592699293907" />
-    <state x="2369" y="188" width="1022" height="737" key="SettingsEditor" timestamp="1592692316514">
-      <screen x="1920" y="0" width="1920" height="1080" />
-    </state>
-    <state x="2369" y="188" width="1022" height="737" key="SettingsEditor/1920.0.1920.1080/0.27.1920.1053@1920.0.1920.1080" timestamp="1592692316514" />
-    <state x="2475" y="285" width="800" height="543" key="Vcs.Push.Dialog.v2" timestamp="1592699333417">
-      <screen x="1920" y="0" width="1920" height="1080" />
-    </state>
-    <state x="2475" y="285" width="800" height="543" key="Vcs.Push.Dialog.v2/1920.0.1920.1080/0.27.1920.1053@1920.0.1920.1080" timestamp="1592699333417" />
   </component>
 </project>
