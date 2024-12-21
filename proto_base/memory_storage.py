@@ -1,5 +1,5 @@
 from . import common
-from .common import Future, Atom, AtomPointer, StorageWriteTransaction, StorageReadTransaction
+from .common import Future, Atom, AtomPointer, StorageWriteTransaction, StorageReadTransaction, RootObject
 import uuid
 
 
@@ -83,7 +83,7 @@ class MemoryStorage(common.SharedStorage):
         result.set_result(MemoryWriteTransaction(self))
         return result
 
-    def read_current_root(self) -> Future[AtomPointer]:
+    def read_current_root(self) -> RootObject:
         """
         Read the current root object
         :return:
@@ -93,12 +93,9 @@ class MemoryStorage(common.SharedStorage):
 
         raise common.ProtoValidationException(message='You are trying to read an empty DB!')
 
-    def set_current_root(self, root_pointer: AtomPointer) -> Future[AtomPointer]:
+    def set_current_root(self, new_root: RootObject):
         """
         Set the current root object
         :return:
         """
-        self.current_root = root_pointer
-        result = Future()
-        result.set_result(None)
-        return result
+        self.current_root = new_root

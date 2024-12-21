@@ -14,6 +14,7 @@ USER_ERROR = 20_000
 CORRUPTION_ERROR = 30_000
 NOT_SUPPORTED_ERROR = 40_000
 NOT_AUTHORIZED_ERROR = 50_000
+UNEXPECTED_ERROR = 60_000
 
 
 class ProtoBaseException(Exception):
@@ -25,6 +26,15 @@ class ProtoBaseException(Exception):
         self.code = code
         self.exception_type = exception_type
         self.message = message
+
+
+class ProtoUnexpectedException(ProtoBaseException):
+    def __init__(self, code: int=UNEXPECTED_ERROR, exception_type: str=None, message: str=None):
+        super().__init__(
+            code if code else UNEXPECTED_ERROR,
+            exception_type if exception_type else 'UnexpectedException',
+            message
+        )
 
 
 class ProtoValidationException(ProtoBaseException):
@@ -77,11 +87,32 @@ class AtomPointer(object):
         self.offset = offset
 
 
-class Atom(ABC):
-    atom_pointer: AtomPointer
+atom_class_registry = dict()
 
-    def __init__(self, atom_pointer: AtomPointer = None):
+class AtomMetaclass:
+    def __init__(self):
+        class_name = self.__class__
+        if class_name != 'Atom':
+            if class_name in atom_class_registry:
+                raise ProtoValidationException(
+                    message=f'Class repeated in atom class registry ({class_name}). Please check it')
+            atom_class_registry[class_name] = self
+
+
+class Atom(ABC, metaclass=AtomMetaclass):
+    atom_pointer: AtomPointer
+    transaction: object
+
+    def __init__(self, transaction: object=None, atom_pointer: AtomPointer = None, **kwargs):
+        self.transaction = transaction
         self.atom_pointer = atom_pointer
+        for name, value in kwargs:
+            setattr(self, name, value)
+
+
+class RootObject(Atom):
+    object_root: Atom
+    literal_root: Atom
 
 
 class StorageReadTransaction(ABC):
@@ -146,14 +177,14 @@ class SharedStorage(ABC):
         """
 
     @abstractmethod
-    def read_current_root(self) -> Future[AtomPointer]:
+    def read_current_root(self) -> RootObject:
         """
         Read the current root object
         :return:
         """
 
     @abstractmethod
-    def set_current_root(self, root_pointer: AtomPointer) -> Future[AtomPointer]:
+    def set_current_root(self, root_pointer: RootObject):
         """
         Set the current root object
         :return:
