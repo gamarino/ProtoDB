@@ -8,7 +8,7 @@ class MemoryStorage(common.SharedStorage):
 
     """
     atoms: dict = {}
-    current_root: AtomPointer = None
+    current_root: RootObject = None
     transaction_id: uuid.UUID = None
 
     def __init__(self):
@@ -31,7 +31,6 @@ class MemoryStorage(common.SharedStorage):
         :return:
         """
         self.current_root = new_root
-
 
     def push_atom(self, atom: Atom) -> Future[AtomPointer]:
         """
@@ -60,4 +59,4 @@ class MemoryStorage(common.SharedStorage):
             result.set_result(atom)
             return result
 
-        raise common.ProtoCorruptionException(message=f'Atom {atom} does not exist')
+        raise common.ProtoCorruptionException(message=f'Atom at {atom_pointer} does not exist')
