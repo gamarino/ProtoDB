@@ -2,11 +2,12 @@ import concurrent.futures
 import io
 import json
 import os
+from abc import ABC
 from threading import Lock
 
 from . import common
 
-from .common import ProtoUnexpectedException
+from .common import ProtoUnexpectedException, ProtoValidationException
 from .common import Future, BlockProvider, Atom, AtomPointer, RootObject, atom_class_registry
 import uuid
 
@@ -30,24 +31,33 @@ class WALState:
         self.wal_offset = wal_offset
         self.wal_base = wal_base
 
+class WALWriteOperation:
+    transaction_id: uuid.UUID
+    offset: int
+    segments: list[bytearray]
+
+    def __init__(self, transaction_id: uuid.UUID, offset: int, segments: list[bytearray]):
+        self.transaction_id = transaction_id
+        self.offset = offset
+        self.segments = segments
 
 def _get_valid_char_data(stream: io.FileIO) -> str:
-    bytes = stream.read(1)
-    byte = bytes[0]
+    first_byte = stream.read(1)
+    byte = first_byte[0]
     if byte >> 7 == 0:
-        return bytes.decode('utf-8')
+        return first_byte.decode('utf-8')
     elif byte >> 5 == 0b110:
         # It is a two byte char
-        return (bytes + stream.read(1)).decode('utf-8')
+        return (first_byte + stream.read(1)).decode('utf-8')
     elif byte >> 4 == 0b1110:
         # It is a three byte char
-        return (bytes + stream.read(2)).decode('utf-8')
+        return (first_byte + stream.read(2)).decode('utf-8')
     else:
         # It should be a four byte char
-        return (bytes + stream.read(3)).decode('utf-8')
+        return (first_byte + stream.read(3)).decode('utf-8')
 
 
-class StandaloneFileStorage(common.SharedStorage):
+class StandaloneFileStorage(common.SharedStorage, ABC):
     """
 
     """
@@ -60,8 +70,12 @@ class StandaloneFileStorage(common.SharedStorage):
     current_wal_base: int = 0
     current_wal_offset: int = 0
     current_wal_buffer: list[bytearray] = []
+    pending_writes: list[WALWriteOperation] = []
+    in_memory_segments: dict[tuple[uuid.UUID, int], bytearray] = dict()
 
     executor_pool: concurrent.futures.ThreadPoolExecutor
+
+    state: str
 
     def __init__(self,
                  block_provider: BlockProvider = None,
@@ -71,6 +85,7 @@ class StandaloneFileStorage(common.SharedStorage):
         self.block_provider = block_provider
         self._lock = Lock()
         self._get_new_wal()
+        self.state = 'Running'
 
         if not max_workers:
             max_workers = (os.cpu_count() or 1) * 5
@@ -89,7 +104,7 @@ class StandaloneFileStorage(common.SharedStorage):
         self.current_wal_offset = state.wal_offset
         self.current_wal_base = state.wal_base
 
-    def push_bytes(self, data: bytearray) -> tuple(uuid.UUID, int):
+    def push_bytes(self, data: bytearray) -> tuple[uuid.UUID, int]:
         """
         Añade datos al Write-Ahead Log (WAL).
 
@@ -97,12 +112,18 @@ class StandaloneFileStorage(common.SharedStorage):
         :return: Offset inicial donde se guardaron los datos en el WAL
         :raises: ProtoUnexpectedException en caso de errores inesperados
         """
+        if self.state != 'Running':
+            raise ProtoValidationException(
+                message="The storage is not longer operating!")
         if not isinstance(data, bytearray):
-            raise ValueError("El parámetro `data` debe ser de tipo bytearray.")
+            raise ProtoValidationException(
+                message="El parámetro `data` debe ser de tipo bytearray.")
         if len(data) == 0:
-            raise ValueError("El parámetro `data` no puede estar vacío.")
+            raise ProtoValidationException(
+                message="El parámetro `data` no puede estar vacío.")
         if len(data) > self.blob_max_size:
-            raise ValueError(f"El parámetro `data` no puede ser mas grande que {self.blob_max_size} bytes!")
+            raise ProtoValidationException(
+                message=f"El parámetro `data` no puede ser mas grande que {self.blob_max_size} bytes!")
 
         current_state = self._save_state()
 
@@ -119,7 +140,7 @@ class StandaloneFileStorage(common.SharedStorage):
                 exception_type=e.__class__.__name__
             )
 
-    def _push_bytes(self, data: bytearray) -> tuple(uuid.UUID, int):
+    def _push_bytes(self, data: bytearray) -> tuple[uuid.UUID, int]:
         if len(data) > self.blob_max_size - self.current_wal_offset:
             self._flush_wal()
             self._get_new_wal()
@@ -131,17 +152,21 @@ class StandaloneFileStorage(common.SharedStorage):
 
         written_bytes = 0
         while written_bytes < len(data):
-            remaining_space = BUFFER_SIZE - self.current_wal_offset
+            remaining_space = self.buffer_size - self.current_wal_offset
 
             if len(data) - written_bytes > remaining_space:
+                fragment_offset = self.current_wal_offset
                 fragment = data[written_bytes: written_bytes + remaining_space]
                 self.current_wal_buffer.append(fragment)
+                self.in_memory_segments[(base_uuid, self.current_wal_base + fragment_offset)] = fragment
                 self.current_wal_offset += remaining_space
                 written_bytes += remaining_space
+                self.current_wal_base += self.current_wal_offset
                 self._flush_wal()
             else:
                 fragment = data[written_bytes:]
                 self.current_wal_buffer.append(fragment)
+                self.in_memory_segments[(base_uuid, self.current_wal_base)] = fragment
                 self.current_wal_offset += len(fragment)
                 written_bytes += len(fragment)
 
@@ -161,6 +186,9 @@ class StandaloneFileStorage(common.SharedStorage):
         try:
             with self._lock:
                 self._flush_wal()
+
+            self._flush_pending_writes()
+
         except Exception as e:
             _logger.exception(e)
 
@@ -170,30 +198,51 @@ class StandaloneFileStorage(common.SharedStorage):
                                            exception_type=e.__class__.__name__)
 
     def _flush_wal(self):
-        if not self.current_wal_buffer:
-            return
-
-        segments_to_write = []
-        written_base = self.current_wal_base
-
         # Bloquear solo la parte crítica
         with self._lock:
-            segments_to_write = self.current_wal_buffer[:]
+            if not self.current_wal_buffer:
+                return
+
+            self.pending_writes.append(
+                WALWriteOperation(
+                    transaction_id=self.current_wal_id,
+                    offset=self.current_wal_base,
+                    segments=self.current_wal_buffer
+                )
+            )
             self.current_wal_base += sum(len(segment) for segment in self.current_wal_buffer)
             self.current_wal_offset = 0
             self.current_wal_buffer.clear()
 
-        # No bloquea la escritura en disco
-        with self.block_provider as write_streamer:
-            write_streamer.seek(written_base)
-            for segment in segments_to_write:
-                write_streamer.write(segment)
+    def _flush_pending_writes(self):
+        while True:
+            with self._lock:
+                if not self.pending_writes:
+                    break
+
+                first_operation = self.pending_writes.pop(0)
+                pending_writes = [first_operation]
+                while self.pending_writes and self.pending_writes[0].transaction_id == first_operation.transaction_id:
+                    pending_writes.append(self.pending_writes.pop(0))
+
+            # Here pending_writes has all operations of the same WAL
+
+            with self.block_provider.write_streamer(first_operation.transaction_id) as write_streamer:
+                for pending_write in pending_writes:
+                    write_streamer.seek(pending_write.offset)
+                    for segment in pending_write.segments:
+                        write_streamer.write(segment)
+
+            if first_operation.transaction_id != self.current_wal_id:
+                self.block_provider.close_wal(first_operation.transaction_id)
 
     def read_current_root(self) -> RootObject:
         """
         Read the current root object
         :return:
         """
+        if self.state != 'Running':
+            raise common.ProtoValidationException("The storage is not longer operating!")
         return self.block_provider.read_current_root()
 
     def set_current_root(self, new_root: RootObject):
@@ -201,6 +250,8 @@ class StandaloneFileStorage(common.SharedStorage):
         Set the current root object
         :return:
         """
+        if self.state != 'Running':
+            raise common.ProtoValidationException("The storage is not longer operating!")
         self.block_provider.update_root_object(new_root)
 
     def _push_atom_worker(self, raw_data: bytearray) -> AtomPointer:
@@ -218,6 +269,9 @@ class StandaloneFileStorage(common.SharedStorage):
         :param atom:
         :return:
         """
+
+        if self.state != 'Running':
+            raise common.ProtoValidationException("The storage is not longer operating!")
 
         data = io.BytesIO()
         storage_structure = {'AtomClass': atom.__name__}
@@ -287,4 +341,27 @@ class StandaloneFileStorage(common.SharedStorage):
         :param atom_pointer: Pointer to storage
         :return: the materialized atom
         """
+        if self.state != 'Running':
+            raise common.ProtoValidationException(message="The storage is not longer operating!")
+
         return self.executor_pool.submit(self._get_atom_worker, atom_pointer)
+
+    def close(self):
+        """
+        Close the operation. Flush any pending data. Make all changes durable
+        No further operations are allowed
+        :return:
+        """
+        with self._lock:
+            if self.state != 'Running':
+                raise ProtoValidationException(message="The storage is not longer operating!")
+
+            self.state = 'Closing'
+
+            self.flush_wal()
+            self._flush_pending_writes()
+
+            self.executor_pool.shutdown()
+            self.block_provider.close()
+            self.state = 'Closed'
+

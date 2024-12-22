@@ -1,5 +1,5 @@
 from . import common
-from .common import Future, Atom, AtomPointer, StorageWriteTransaction, StorageReadTransaction, RootObject
+from .common import Future, Atom, AtomPointer, RootObject
 import uuid
 
 
@@ -60,3 +60,11 @@ class MemoryStorage(common.SharedStorage):
             return result
 
         raise common.ProtoCorruptionException(message=f'Atom at {atom_pointer} does not exist')
+
+    def close(self):
+        """
+        Close the operation. Flush any pending data. Make all changes durable
+        No further operations are allowed
+        :return:
+        """
+        pass

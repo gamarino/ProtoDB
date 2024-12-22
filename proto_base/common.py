@@ -118,7 +118,7 @@ class RootObject(Atom):
 class BlockProvider(ABC):
 
     @abstractmethod
-    def get_new_wal(self) -> tuple(uuid.UUID, int):
+    def get_new_wal(self) -> tuple[uuid.UUID, int]:
         """
         Get a WAL to use.
         It could be an old one, or a new one.
@@ -145,7 +145,7 @@ class BlockProvider(ABC):
         """
 
     @abstractmethod
-    def write_streamer(self) -> io.FileIO:
+    def write_streamer(self, wal_id: uuid.UUID) -> io.FileIO:
         """
 
         :return:
@@ -166,10 +166,20 @@ class BlockProvider(ABC):
         :param new_root:
         :return:
         """
+
     @abstractmethod
-    def commit(self):
+    def close_wal(self, transaction_id: uuid.UUID):
+        """
+        Close a previous WAL. Flush any pending data. Make all changes durable
+        No further operations are allowed
+        :return:
         """
 
+    @abstractmethod
+    def close(self):
+        """
+        Close the operation of the block provider. Flush any pending data to WAL. Make all changes durable
+        No further operations are allowed
         :return:
         """
 
@@ -185,21 +195,6 @@ class SharedStorage(ABC):
     SharedStorage object should support multithreaded and multiprocessed uses, and can be safe in a multiserver
     environment, depending on the implementation
     """
-
-    @abstractmethod
-    def new_read_transaction(self) -> Future[StorageReadTransaction]:
-        """
-        Start a new write transaction
-        :return:
-        """
-
-
-    @abstractmethod
-    def new_write_transaction(self) -> Future[StorageWriteTransaction]:
-        """
-        Start a new write transaction
-        :return:
-        """
 
     @abstractmethod
     def read_current_root(self) -> RootObject:
@@ -224,87 +219,37 @@ class SharedStorage(ABC):
         """
 
     @abstractmethod
-    def get_atom(self, atom_pointer: AtomPointer) -> Future:
-        """
-
-        :param atom:
-        :return:
-        """
-
-
-class AtomTransaction(ABC):
-    @abstractmethod
     def get_atom(self, atom_pointer: AtomPointer) -> Future[Atom]:
-        raise NotImplemented()
-
-
-class AtomWriteTransaction(AtomTransaction):
-    @abstractmethod
-    def push_atom(self, atom: Atom) -> Future[StorageTransaction]:
         """
-        Adds a new atom to the storage.
-        Atom's atom_pointer is update to reflect the assigned position
-        :param atom:
+
+        :param atom_pointer:
         :return:
         """
 
-    @abstractmethod
-    def commit(self):
-        """
-        Close the transaction and make it persistent
-        :return:
-        """
-
-    def abort(self):
-        """
-        Discard any changes made. Data base is not modified.
-        :return:
-        """
-
-class AtomStorage(ABC):
-    shared_storage: SharedStorage
-
-    def __init__(self, shared_storage: SharedStorage):
-        self.shared_storage = shared_storage
-
-    @abstractmethod
-    def new_read_transaction(self) -> Future[AtomTransaction]:
-        """
-        Start a new read transaction
-        :return: the transaction to use
-        """
-
-    @abstractmethod
-    def new_write_transaction(self) -> Future[AtomTransaction]:
-        """
-        Start a new write transaction
-        :return: the transaction to use
-        """
 
 class ObjectId:
     id : int
 
 
-class Object:
+class DBObject(Atom):
     object_id: ObjectId
 
-    def __init__(self, object_id: ObjectId=None):
+    def __init__(self, object_id: ObjectId=None, transaction_id: uuid.UUID=None, offset:int = 0):
+        super().__init__(transaction_id=transaction_id, offset=offset)
         self.object_id = object_id
 
 
 class ObjectTransaction(ABC):
     @abstractmethod
-    def get_object(self, object_id: ObjectId) -> Future[Object]:
+    def get_object(self, object_id: ObjectId) -> Future[DBObject]:
         """
         Get an object into memory
         :param object_id:
         :return:
         """
 
-
-class ObjectWriteTransaction(ObjectTransaction):
     @abstractmethod
-    def get_checked_object(self, object_id: ObjectId) -> Future[Object]:
+    def get_checked_object(self, object_id: ObjectId) -> Future[DBObject]:
         """
         Get an object into memory. At commit time, it will be checked if this
         object was not modified by another transaction, even if you don't modify it.
@@ -329,22 +274,11 @@ class ObjectWriteTransaction(ObjectTransaction):
         :return:
         """
 
-
-class ObjectDatabase(ABC):
-    def __init__(self, atom_storage: AtomStorage):
-        self.atom_storage = atom_storage
-
+class Database:
     @abstractmethod
-    def new_read_transaction(self) -> Future[ObjectTransaction]:
+    def new_transaction(self) -> Future[ObjectTransaction]:
         """
         Start a new read transaction
-        :return:
-        """
-
-    @abstractmethod
-    def new_write_transaction(self) -> Future[ObjectWriteTransaction]:
-        """
-        Start a new write transaction
         :return:
         """
 
@@ -358,20 +292,18 @@ class ObjectDatabase(ABC):
         """
 
 
-class Database:
-    """
-    Opens up a database using an URI
-    URI:
-        <storage_type>://<database_name>
+class ObjectSpace(ABC):
+    def __init__(self, storage: SharedStorage):
+        self.storage = storage
 
-        where:
-            <storage_type> could be memory, file, s3
-
-    """
-    def __init__(self, uri: str):
-        # TODO
-        pass
-
+    @abstractmethod
+    def open_databse(self, databes_name: str) -> Future[Database]:
+        """
+        Gets a new database, derived from the current state of the origin database.
+        The derived database could be modified in an idependant history.
+        Transactions in the derived database will not impact in the origin database
+        :return:
+        """
 
 
 
