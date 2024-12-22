@@ -7,7 +7,7 @@ from _ast import Tuple
 from concurrent.futures import Future
 import uuid
 from abc import ABC, abstractmethod
-from xml.dom import NOT_SUPPORTED_ERR
+import io
 
 VALIDATION_ERROR = 10_000
 USER_ERROR = 20_000
@@ -115,32 +115,57 @@ class RootObject(Atom):
     literal_root: Atom
 
 
-class StorageReadTransaction(ABC):
+class BlockProvider(ABC):
+
     @abstractmethod
-    def get_atom(self, atom: Atom) -> Future[Atom]:
+    def get_new_wal(self) -> tuple(uuid.UUID, int):
         """
+        Get a WAL to use.
+        It could be an old one, or a new one.
 
-        :param atom:
-        :return:
-        """
-
-
-class StorageWriteTransaction(StorageReadTransaction):
-    @abstractmethod
-    def get_own_id(self) -> uuid.UUID:
-        """
-        Return a globaly unique identifier for the transaction
-        :return:
+        :return: a tuple with the id of the WAL and the next offset to use
         """
 
     @abstractmethod
-    def push_atom(self, atom: Atom) -> Future[int]:
+    def get_reader(self, wal_id: uuid.UUID, position: int) -> io.FileIO:
         """
+        Get a streamer initialized at position in WAL file
+        wal_id
 
-        :param atom:
+        :param wal_id:
+        :param position:
         :return:
         """
 
+    @abstractmethod
+    def get_writer_wal(self) -> uuid.UUID:
+        """
+
+        :return:
+        """
+
+    @abstractmethod
+    def write_streamer(self) -> io.FileIO:
+        """
+
+        :return:
+        """
+
+    def get_current_root_object(self) -> RootObject:
+        """
+        Read current root object from storage
+        :return: the current root object
+        """
+
+    def update_root_object(self, new_root: RootObject):
+        """
+        Updates or create the root object in storage
+        On newly created databases, this is the first
+        operation to perform
+
+        :param new_root:
+        :return:
+        """
     @abstractmethod
     def commit(self):
         """
@@ -189,6 +214,23 @@ class SharedStorage(ABC):
         Set the current root object
         :return:
         """
+
+    @abstractmethod
+    def push_atom(self, atom: Atom) -> Future[AtomPointer]:
+        """
+
+        :param atom:
+        :return:
+        """
+
+    @abstractmethod
+    def get_atom(self, atom_pointer: AtomPointer) -> Future:
+        """
+
+        :param atom:
+        :return:
+        """
+
 
 class AtomTransaction(ABC):
     @abstractmethod

@@ -1,12 +1,13 @@
+import concurrent.futures
 import io
-from os import write
+import json
+import os
 from threading import Lock
 
 from . import common
-from . import file_common
 
 from .common import ProtoUnexpectedException
-from .common import Future, Atom, AtomPointer, RootObject, StorageWriteTransaction, StorageReadTransaction
+from .common import Future, BlockProvider, Atom, AtomPointer, RootObject, atom_class_registry
 import uuid
 
 import logging
@@ -18,64 +19,7 @@ GB = KB * MB
 PB = KB * GB
 
 BUFFER_SIZE = 1 * MB
-
-
-class StandaloneFileTransaction(common.StorageReadTransaction):
-    """
-
-    """
-    storage: common.SharedStorage
-
-    def __init__(self, storage: common.SharedStorage):
-        self.storage = storage
-
-    def get_atom(self, atom: Atom) -> Future[Atom]:
-        if atom.atom_pointer.transaction_id in self.storage.stored_transactions:
-            transaction = self.storage.stored_transactions[atom.atom_pointer.transaction_id]
-            if atom.atom_pointer.offset in transaction:
-                return transaction[atom.atom_pointer.offset]
-
-        raise common.ProtoCorruptionException(message=f'Atom {atom} does not exist')
-
-
-class StandaloneFileWriteTransaction(common.StorageWriteTransaction, StandaloneFileTransaction):
-    """
-
-    """
-    transaction_id: uuid.UUID
-
-    def __init__(self, storage: common.SharedStorage):
-        super().__init__()
-        self.storage = storage
-        while self.transaction_id and self.transaction_id in self.storage.stored_transactions:
-            self.transaction_id = uuid.uuid4()
-        self.atoms = {}
-        self.state = 'open'
-
-    def get_own_id(self) -> uuid.UUID:
-        """
-        Return a globaly unique identifier for the transaction
-        :return:
-        """
-        return self.transaction_id
-
-    def push_atom(self, atom: Atom) -> Future[int]:
-        """
-
-        :param atom:
-        :return:
-        """
-        atom.atom_pointer.transaction_id = self.transaction_id
-        offset = uuid.uuid4()
-        atom.atom_pointer.offset = offset
-        self.atoms[offset] = atom
-        result = Future()
-        result.set_result(offset)
-        return result
-
-    def commit(self):
-        self.storage.stored_transactions[self.transaction_id] = self.atoms
-        self.state = 'committed'
+BLOB_MAX_SIZE = 2 * GB
 
 
 class WALState:
@@ -86,22 +30,54 @@ class WALState:
         self.wal_offset = wal_offset
         self.wal_base = wal_base
 
+
+def _get_valid_char_data(stream: io.FileIO) -> str:
+    bytes = stream.read(1)
+    byte = bytes[0]
+    if byte >> 7 == 0:
+        return bytes.decode('utf-8')
+    elif byte >> 5 == 0b110:
+        # It is a two byte char
+        return (bytes + stream.read(1)).decode('utf-8')
+    elif byte >> 4 == 0b1110:
+        # It is a three byte char
+        return (bytes + stream.read(2)).decode('utf-8')
+    else:
+        # It should be a four byte char
+        return (bytes + stream.read(3)).decode('utf-8')
+
+
 class StandaloneFileStorage(common.SharedStorage):
     """
 
     """
-    block_provider: file_common.BlockProvider
+    block_provider: BlockProvider
+    buffer_size: int
+    blob_max_size: int
+
     _lock: Lock
+    current_wal_id: uuid.UUID
     current_wal_base: int = 0
     current_wal_offset: int = 0
     current_wal_buffer: list[bytearray] = []
 
-    current_root: RootObject
-    class_register: dict[str, type[Atom]]
+    executor_pool: concurrent.futures.ThreadPoolExecutor
 
-    def __init__(self, block_provider: file_common.BlockProvider):
+    def __init__(self,
+                 block_provider: BlockProvider = None,
+                 buffer_size: int = BUFFER_SIZE,
+                 blob_max_size: int = BLOB_MAX_SIZE,
+                 max_workers: int = 0):
         self.block_provider = block_provider
         self._lock = Lock()
+        self._get_new_wal()
+
+        if not max_workers:
+            max_workers = (os.cpu_count() or 1) * 5
+        self.executor_pool = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+
+    def _get_new_wal(self):
+        self.current_wal_id, self.current_wal_offset = self.block_provider.get_new_wal()
 
     def _save_state(self) -> WALState:
         """Guarda el estado actual del WAL."""
@@ -113,7 +89,7 @@ class StandaloneFileStorage(common.SharedStorage):
         self.current_wal_offset = state.wal_offset
         self.current_wal_base = state.wal_base
 
-    def push_bytes(self, data: bytearray) -> int:
+    def push_bytes(self, data: bytearray) -> tuple(uuid.UUID, int):
         """
         Añade datos al Write-Ahead Log (WAL).
 
@@ -125,6 +101,8 @@ class StandaloneFileStorage(common.SharedStorage):
             raise ValueError("El parámetro `data` debe ser de tipo bytearray.")
         if len(data) == 0:
             raise ValueError("El parámetro `data` no puede estar vacío.")
+        if len(data) > self.blob_max_size:
+            raise ValueError(f"El parámetro `data` no puede ser mas grande que {self.blob_max_size} bytes!")
 
         current_state = self._save_state()
 
@@ -141,7 +119,14 @@ class StandaloneFileStorage(common.SharedStorage):
                 exception_type=e.__class__.__name__
             )
 
-    def _push_bytes(self, data: bytearray) -> int:
+    def _push_bytes(self, data: bytearray) -> tuple(uuid.UUID, int):
+        if len(data) > self.blob_max_size - self.current_wal_offset:
+            self._flush_wal()
+            self._get_new_wal()
+
+        # Here we are sure that data will fit in the current WAL
+
+        base_uuid = self.current_wal_id
         base_offset = self.current_wal_base + self.current_wal_offset
 
         written_bytes = 0
@@ -160,7 +145,7 @@ class StandaloneFileStorage(common.SharedStorage):
                 self.current_wal_offset += len(fragment)
                 written_bytes += len(fragment)
 
-        return base_offset
+        return base_uuid, base_offset
 
     def flush_wal(self):
         """
@@ -204,40 +189,102 @@ class StandaloneFileStorage(common.SharedStorage):
             for segment in segments_to_write:
                 write_streamer.write(segment)
 
-    def new_write_transaction(self) -> Future[StorageWriteTransaction]:
-        """
-        Inicia una nueva transacción de escritura
-        :return: Objeto Future que contiene la transacción de escritura.
-        """
-        with self._lock:
-            result = Future()
-            result.set_result(StandaloneFileWriteTransaction(self))
-            return result
-
-    def new_read_transaction(self) -> Future[StorageReadTransaction]:
-        """
-        Inicia una nueva transacción de lectura
-        :return: Objeto Future que contiene la transacción de lectura.
-        """
-        with self._lock:
-            result = Future()
-            result.set_result(StandaloneFileTransaction(self))
-            return result
-
     def read_current_root(self) -> RootObject:
         """
         Read the current root object
         :return:
         """
-        if self.current_root:
-            return self.current_root
-
-        raise common.ProtoValidationException(message='You are trying to read an empty DB!')
+        return self.block_provider.read_current_root()
 
     def set_current_root(self, new_root: RootObject):
         """
         Set the current root object
         :return:
         """
-        self.current_root = new_root
+        self.block_provider.update_root_object(new_root)
 
+    def _push_atom_worker(self, raw_data: bytearray) -> AtomPointer:
+        """
+
+        :param atom:
+        :return:
+        """
+        wal_id, wal_offset = self.push_bytes(raw_data)
+        return AtomPointer(wal_id, wal_offset)
+
+    def push_atom(self, atom: Atom) -> Future[AtomPointer]:
+        """
+
+        :param atom:
+        :return:
+        """
+
+        data = io.BytesIO()
+        storage_structure = {'AtomClass': atom.__name__}
+        for attribute, value in atom.__dict__.items():
+            if not attribute.startswith('_'):
+                if isinstance(value, Atom):
+                    # it is reference to other atom
+                    storage_structure[attribute] = value.atom_pointer
+                else:
+                    storage_structure[attribute] = value
+
+        storage_as_str = json.dumps(storage_structure, ensure_ascii=False)
+        data.write(storage_as_str.encode('utf-8'))
+
+        return self.executor_pool.submit(self._push_atom_worker, bytearray(data.getvalue()))
+
+    def _get_atom_worker(self, atom_pointer: AtomPointer) -> Atom:
+        """
+        Perform the posibily slow read operation
+        :param atom_pointer:
+        :return:
+        """
+        data_stream = self.block_provider.get_reader(atom_pointer.transaction_id, atom_pointer.offset)
+
+        chars = []
+        escape_next = False
+        inside_string = False
+        brace_level = 0
+        bracket_level = 0
+
+        while True:
+            char = _get_valid_char_data(data_stream)
+            chars.append(char)
+            if escape_next:
+                escape_next = False
+                continue
+
+            if char == '"':
+                inside_string = not inside_string
+                continue
+
+            if inside_string:
+                continue
+
+            if char == '{':
+                brace_level += 1
+            elif char == '[':
+                bracket_level += 1
+            elif char in ('}', ']'):
+                if char == '}':
+                    brace_level -= 1
+                elif char == ']':
+                    bracket_level -= 1
+
+                if brace_level == 0 and bracket_level == 0:
+                    try:
+                        json_data = json.loads(''.join(chars))
+                        class_to_create = atom_class_registry[json_data['AtomClass']]
+                        return class_to_create(**json_data)
+                    except Exception as e:
+                        _logger.exception(e)
+                        raise ProtoUnexpectedException(message='Unexpected exception')
+
+    def get_atom(self, atom_pointer: AtomPointer) -> Future[Atom]:
+        """
+        Read an atom from underlining storage
+        :param atom_pointer: Pointer to storage
+        :return: the materialized atom
+        """
+        return self.executor_pool.submit(self._get_atom_worker, atom_pointer)
