@@ -4,18 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="564d6b96-f887-47d3-90f8-f0d9700bbb7f" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/proto_base/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/proto_base/common.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/proto_base/memory_storage.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/proto_base/object.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/ProtoBase.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/ProtoBase.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+    <list default="true" id="564d6b96-f887-47d3-90f8-f0d9700bbb7f" name="Default Changelist" comment="[WIP]">
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Common.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Exceptions.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/SharedFileStorage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_base/shared_file_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/TransactionalStorage.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_base/standalone_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_base/standalone_file_storage.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -64,7 +56,8 @@
   "keyToString": {
     "RunOnceActivity.OpenProjectViewOnStart": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
-    "com.google.cloudcode.ide_session_index": "20241215_0000",
+    "RunOnceActivity.git.unshallow": "true",
+    "com.google.cloudcode.ide_session_index": "20241222_0001",
     "git-widget-placeholder": "master",
     "last_opened_file_path": "/home/gamarino/odoo/ProtoBase/proto_base",
     "node.js.detected.package.eslint": "true",
@@ -87,8 +80,8 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-js-predefined-d6986cc7102b-5c90d61e3bab-JavaScript-PY-242.24807.21" />
-        <option value="bundled-python-sdk-00717045f1d3-399fe30bd8c1-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-242.24807.21" />
+        <option value="bundled-js-predefined-d6986cc7102b-deb605915726-JavaScript-PY-243.22562.180" />
+        <option value="bundled-python-sdk-85c76a3b01b3-9a18a617cbe4-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-243.22562.180" />
       </set>
     </attachedChunks>
   </component>
@@ -107,7 +100,11 @@
       <workItem from="1703886120336" duration="32839000" />
       <workItem from="1704480097493" duration="15000" />
       <workItem from="1731891670415" duration="6019000" />
-      <workItem from="1734268035408" duration="8780000" />
+      <workItem from="1734268035408" duration="9491000" />
+      <workItem from="1734438695900" duration="83000" />
+      <workItem from="1734699513175" duration="10038000" />
+      <workItem from="1734788085116" duration="24317000" />
+      <workItem from="1734900656299" duration="11839000" />
     </task>
     <task id="LOCAL-00001" summary="[INIT]">
       <created>1555689262080</created>
@@ -123,7 +120,47 @@
       <option name="project" value="LOCAL" />
       <updated>1592699294202</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="[WIP]">
+      <option name="closed" value="true" />
+      <created>1734276838020</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1734276838020</updated>
+    </task>
+    <task id="LOCAL-00004" summary="[WIP]">
+      <option name="closed" value="true" />
+      <created>1734276880566</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1734276880566</updated>
+    </task>
+    <task id="LOCAL-00005" summary="[WIP]">
+      <option name="closed" value="true" />
+      <created>1734819854775</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1734819854775</updated>
+    </task>
+    <task id="LOCAL-00006" summary="[WIP]">
+      <option name="closed" value="true" />
+      <created>1734874345841</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1734874345841</updated>
+    </task>
+    <task id="LOCAL-00007" summary="[WIP]">
+      <option name="closed" value="true" />
+      <created>1734906726746</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1734906726746</updated>
+    </task>
+    <option name="localTasksCounter" value="8" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
