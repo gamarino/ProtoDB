@@ -8,6 +8,7 @@ from concurrent.futures import Future
 import uuid
 from abc import ABC, abstractmethod
 import io
+import configparser
 
 VALIDATION_ERROR = 10_000
 USER_ERROR = 20_000
@@ -122,6 +123,12 @@ class RootObject(Atom):
 
 
 class BlockProvider(ABC):
+    @abstractmethod
+    def get_config_data(self) -> configparser.ConfigParser:
+        """
+        Get config data
+        :return:
+        """
 
     @abstractmethod
     def get_new_wal(self) -> tuple[uuid.UUID, int]:
