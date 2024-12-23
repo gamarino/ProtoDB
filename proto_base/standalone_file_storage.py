@@ -5,18 +5,13 @@ import os
 from abc import ABC
 from threading import Lock
 from . import common
+from .common import KB, MB, GB, PB
 from .common import ProtoUnexpectedException, ProtoValidationException
 from .common import Future, BlockProvider, Atom, AtomPointer, atom_class_registry
 import uuid
 import logging
 
 _logger = logging.getLogger(__name__)
-
-# Constants for storage size units
-KB = 1024
-MB = KB * KB
-GB = KB * MB
-PB = KB * GB
 
 # Default buffer and storage sizes
 BUFFER_SIZE = 1 * MB
@@ -214,22 +209,20 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
         base_uuid = self.current_wal_id
         base_offset = self.current_wal_base + self.current_wal_offset
 
+        self.in_memory_segments[(base_uuid, base_offset)] = data
+
         # Break the data into chunks if needed
         written_bytes = 0
         while written_bytes < len(data):
             available_space = self.buffer_size - self.current_wal_offset
             if len(data) - written_bytes > available_space:
                 fragment = data[written_bytes: written_bytes + available_space]
-                if written_bytes == 0:
-                    self.in_memory_segments[(base_uuid, base_offset)] = fragment
                 self.current_wal_buffer.append(fragment)
                 self.current_wal_offset += len(fragment)
                 written_bytes += available_space
                 self._flush_wal()  # Flush buffer if it becomes full
             else:
                 fragment = data[written_bytes:]
-                if written_bytes == 0:
-                    self.in_memory_segments[(base_uuid, base_offset)] = fragment
                 self.current_wal_buffer.append(fragment)
                 self.current_wal_offset += len(fragment)
                 written_bytes += len(fragment)

@@ -45,6 +45,13 @@ class MemoryStorage(common.SharedStorage):
         with self.lock:  # Ensure thread-safety when modifying `current_root`.
             self.current_root = new_root
 
+    def flush_wal(self):
+        """
+        No data to be flushed for memory storage
+        :return:
+        """
+        pass
+
     def push_atom(self, atom: Atom) -> Future[AtomPointer]:
         """
         Save an atom in the in-memory storage. Each atom gets a unique offset and is tied
@@ -102,5 +109,3 @@ class MemoryStorage(common.SharedStorage):
         the storage as closed. Further operations should not be allowed.
         For the in-memory storage, this method does not perform any operations.
         """
-        with self.lock:  # Ensure thread-safety during any final operations.
-            pass  # No specific close logic required for in-memory storage.

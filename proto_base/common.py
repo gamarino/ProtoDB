@@ -16,6 +16,12 @@ NOT_SUPPORTED_ERROR = 40_000
 NOT_AUTHORIZED_ERROR = 50_000
 UNEXPECTED_ERROR = 60_000
 
+# Constants for storage size units
+KB = 1024
+MB = KB * KB
+GB = KB * MB
+PB = KB * GB
+
 
 class ProtoBaseException(Exception):
     """
@@ -171,7 +177,6 @@ class BlockProvider(ABC):
     def close_wal(self, transaction_id: uuid.UUID):
         """
         Close a previous WAL. Flush any pending data. Make all changes durable
-        No further operations are allowed
         :return:
         """
 
@@ -207,6 +212,17 @@ class SharedStorage(ABC):
     def set_current_root(self, root_pointer: RootObject):
         """
         Set the current root object
+        :return:
+        """
+
+    @abstractmethod
+    def flush_wal(self):
+        """
+        Function to be called periodically (eg 2 minutes) to ensure no pending writes to WAL
+        Additionally it is assumed that previously set_current_root, so new objects created
+        before that all are included in flushed data
+        This will not add any delay to operations performed after the root update, that could
+        or could not be part of the flushed data.
         :return:
         """
 
