@@ -5,11 +5,13 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="564d6b96-f887-47d3-90f8-f0d9700bbb7f" name="Default Changelist" comment="[WIP]">
-      <change afterPath="$PROJECT_DIR$/proto_base/tests/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/proto_base/dictionaries.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/proto_base/lists.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/proto_base/sets.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/proto_base/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_base/__init__.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/proto_base/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_base/common.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_base/shared_file_storage.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_base/standalone_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_base/standalone_file_storage.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -67,7 +69,7 @@
     "node.js.selected.package.eslint": "(autodetect)",
     "node.js.selected.package.tslint": "(autodetect)",
     "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable",
+    "settings.editor.selected.configurable": "ml.llm.LLMConfigurable",
     "vue.rearranger.settings.migration": "true"
   },
   "keyToStringList": {
@@ -112,7 +114,7 @@
       <workItem from="1734699513175" duration="10038000" />
       <workItem from="1734788085116" duration="24317000" />
       <workItem from="1734900656299" duration="12760000" />
-      <workItem from="1734972917446" duration="17986000" />
+      <workItem from="1734972917446" duration="28735000" />
     </task>
     <task id="LOCAL-00001" summary="[INIT]">
       <created>1555689262080</created>
@@ -192,7 +194,15 @@
       <option name="project" value="LOCAL" />
       <updated>1734991449283</updated>
     </task>
-    <option name="localTasksCounter" value="11" />
+    <task id="LOCAL-00011" summary="[WIP]">
+      <option name="closed" value="true" />
+      <created>1735004496494</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1735004496494</updated>
+    </task>
+    <option name="localTasksCounter" value="12" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">

@@ -3,7 +3,6 @@ Common objects
 
 
 """
-from _ast import Tuple
 from concurrent.futures import Future
 import uuid
 from abc import ABC, abstractmethod
@@ -106,15 +105,107 @@ class AtomMetaclass:
             atom_class_registry[class_name] = self
 
 
-class Atom(ABC, metaclass=AtomMetaclass):
-    atom_pointer: AtomPointer
-    transaction: object
+class AbstractAtom(ABC):
+    """
+    ABC to solve forward type definitions
+    """
 
-    def __init__(self, transaction: object=None, atom_pointer: AtomPointer = None, **kwargs):
-        self.transaction = transaction
+
+class AbstractSharedStorage(ABC):
+    """
+    ABC to solve forward type definitions
+    """
+
+    @abstractmethod
+    def push_atom(self, atom: AbstractAtom) -> Future[AtomPointer]:
+        """
+
+        :param atom:
+        :return:
+        """
+
+    @abstractmethod
+    def get_atom(self, atom_pointer: AtomPointer) -> Future[AbstractAtom]:
+        """
+
+        :param atom_pointer:
+        :return:
+        """
+
+
+class AbstractObjectSpace(ABC):
+    """
+    ABC to solve forward type definitions
+    """
+    storage_provider: AbstractSharedStorage
+
+    def __init__(self, storage_provider: AbstractSharedStorage):
+        self.storage_provider = storage_provider
+
+
+class AbstractDatabase(ABC):
+    """
+    ABC to solve forward type definitions
+    """
+    object_space: AbstractObjectSpace
+
+    def __init__(self, object_space: AbstractObjectSpace):
+        self.object_space = object_space
+
+
+class AbstractTransaction(ABC):
+    """
+    ABC to solve forward type definition
+    """
+    database: AbstractDatabase
+
+    def __init__(self, database: AbstractDatabase):
+        self.database = database
+
+
+class Atom(AbstractAtom, metaclass=AtomMetaclass):
+    atom_pointer: AtomPointer
+    _transaction: AbstractTransaction
+    _loaded: bool
+    _saving: bool = False
+
+    def __init__(self, transaction: AbstractTransaction=None, atom_pointer: AtomPointer = None, **kwargs):
+        self._transaction = transaction
         self.atom_pointer = atom_pointer
+        self._loaded = False
         for name, value in kwargs:
             setattr(self, name, value)
+
+    def _load(self):
+        if not self._loaded:
+            if self._transaction and self.atom_pointer.transaction_id:
+                self._transaction.database.object_space.storage_provider.get_atom(self.atom_pointer).result()
+            if not self._transaction:
+                raise ProtoValidationException(
+                    message=f'An DBObject can only be instanciated within a given transaction!'
+                )
+            self._loaded = True
+
+    def _save(self):
+        if not self.atom_pointer and not self._saving:
+            # It's a new object
+            if self._transaction:
+                # Push the object tree downhill, avoiding recursion loops
+                self._saving = True
+                for name, value in self.__dict__.items():
+                    if isinstance(value, Atom) and not value._saving:
+                        if not value._transaction:
+                            value._transaction = self._transaction
+                        value._save()
+
+                # At this point all attributes has been flushed to storage if they are newly created
+                # All attributes has valid AtomPointer values (either old or new)
+                pointer = self._transaction.database.object_space.storage_provider.push_atom(self).result()
+                self.atom_pointer = AtomPointer(pointer.transaction_id, pointer.offset)
+            else:
+                raise ProtoValidationException(
+                    message=f'An DBObject can only be saved within a given transaction!'
+                )
 
 
 class RootObject(Atom):
@@ -196,7 +287,7 @@ class BlockProvider(ABC):
         """
 
 
-class SharedStorage(ABC):
+class SharedStorage(AbstractSharedStorage):
     """
     A SharedStorage defines the minimun set of functionality required to implement a storage interface
     A SharedStorage object represents the current use instance of a permanent storage.
@@ -233,56 +324,67 @@ class SharedStorage(ABC):
         :return:
         """
 
-    @abstractmethod
-    def push_atom(self, atom: Atom) -> Future[AtomPointer]:
-        """
-
-        :param atom:
-        :return:
-        """
-
-    @abstractmethod
-    def get_atom(self, atom_pointer: AtomPointer) -> Future[Atom]:
-        """
-
-        :param atom_pointer:
-        :return:
-        """
-
 
 class ObjectId:
     id : int
 
 
+class AbstractDBObject(Atom):
+    """
+    ABC to solve forward definition
+    """
+    _attributes: dict[str, Atom]
+
+    def __init__(self, transaction_id: uuid.UUID = None, offset: int = 0, attributes: dict[str, Atom] = None):
+        super().__init__(transaction_id=transaction_id, offset=offset)
+        self._attributes = attributes
+
+
 class ParentLink(Atom):
-    parent_link: Atom | None
-    cls: Atom | None
+    parent_link: AbstractDBObject | None
+    cls: AbstractDBObject | None
 
 
 class DBObject(Atom):
     object_id: ObjectId
-    _attributes: dict
     parent_link: ParentLink | None
 
     def __init__(self,
-                 object_id: ObjectId=None,
                  transaction_id: uuid.UUID=None,
                  offset:int = 0,
+                 object_id: ObjectId=None,
                  parent_link: ParentLink=None,
+                 attributes: dict[str, Atom]=None,
                  **kwargs):
-        super().__init__(transaction_id=transaction_id, offset=offset)
+        if attributes:
+            self._attributes = attributes
+        super().__init__(transaction_id=transaction_id, offset=offset, attributes=attributes)
         self._object_id = object_id or kwargs.pop('object_id')
         self._parent_link = parent_link or kwargs.pop('parent_link')
+        self._loaded = False
 
         self._attributes = {}
-        if kwargs:
-            for attribute_name, attribute_value in kwargs:
+        if '_attributes' in kwargs:
+            for attribute_name, attribute_value in kwargs['_attributes'].items():
                 if attribute_name.startswith('_'):
-                    raise ProtoValidationException(
+                    raise ProtoCorruptionException(
                         message=f'DBObject attribute names could not start with "_" ({attribute_name}')
-                self._attributes[attribute_name] = attribute_value
+
+                if isinstance(attribute_value, dict) and 'AtomClass' in attribute_value:
+                    if not attribute_value['AtomClass'] in atom_class_registry:
+                        raise ProtoCorruptionException(
+                            message=f"AtomClass {attribute_value['AtomClass']} unknown!")
+
+                    self._attributes[attribute_name] = atom_class_registry[attribute_value['AtomClass']](
+                        transaction_id=attribute_value['transaction_id'],
+                        offset=attribute_value['offset'],
+                    )
+                else:
+                    self._attributes[attribute_name] = attribute_value
 
     def __getattr__(self, name: str):
+        self._load()
+
         if name.startswith('_'):
             return getattr(super(), name)
 
@@ -302,6 +404,8 @@ class DBObject(Atom):
 
 
     def _hasattr(self, name: str):
+        self._load()
+
         if name.startswith('_'):
             return hasattr(self, name)
 
@@ -317,6 +421,8 @@ class DBObject(Atom):
         return False
 
     def _setattr(self, name: str, value):
+        self._load()
+
         if name.startswith('_'):
             super().__setattr__(name, value)
             return self
@@ -331,71 +437,46 @@ class DBObject(Atom):
             )
 
     def _add_parent(self, new_parent: Atom):
-        self._parent_link = ParentLink(parent_link=self._parent_link, cls=new_parent)
+        self._load()
+
+        new_parent_link = ParentLink(parent_link=self._parent_link, cls=new_parent)
+        return DBObject(attributes=self._attributes, parent_link=new_parent_link)
 
 
-class ObjectTransaction(ABC):
+class DBCollections(Atom):
+    indexes: dict[str, Atom] | None
+    count: int = 0
+
     @abstractmethod
-    def getRootObject(self, name: str) -> DBObject | None:
+    def as_iterable(self) -> list[Atom]:
         """
-        Get a root object from the root catalog
 
-        :param name:
         :return:
         """
 
-    def setRootObject(self, name: str, value: Atom) -> DBObject | None:
-        """
-        Set a root object into the root catalog. It is the only way to persist changes
 
-        :param name:
+class ObjectSpace(AbstractObjectSpace):
+    def __init__(self, storage: SharedStorage):
+        super().__init__(storage)
+
+    def open_database(self, databes_name: str) -> Future[AbstractDatabase]:
+        """
+        Opens a database
         :return:
         """
 
-    @abstractmethod
-    def get_object(self, object_id: ObjectId) -> Future[DBObject]:
-        """
-        Get an object into memory
-        :param object_id:
-        :return:
-        """
 
-    @abstractmethod
-    def get_checked_object(self, object_id: ObjectId) -> Future[DBObject]:
-        """
-        Get an object into memory. At commit time, it will be checked if this
-        object was not modified by another transaction, even if you don't modify it.
-        :param object_id:
-        :return:
-        """
+class Database(AbstractDatabase):
+    def __init__(self, object_space: ObjectSpace):
+        super().__init__(object_space)
 
-    @abstractmethod
-    def commit(self) -> Future:
-        """
-        Close the transaction and make it persistent. All changes recorded
-        Before commit all checked and modified objects will be tested if modified
-        by another transaction. Transaction will proceed only if no change in
-        used objects is verified.'
-        :return:
-        """
-
-    @abstractmethod
-    def abort(self) -> Future:
-        """
-        Discard any changes made. Database is not modified.
-        :return:
-        """
-
-class Database:
-    @abstractmethod
-    def new_transaction(self) -> Future[ObjectTransaction]:
+    def new_transaction(self) -> Future[AbstractTransaction]:
         """
         Start a new read transaction
         :return:
         """
 
-    @abstractmethod
-    def new_branch_databse(self) -> Future:
+    def new_branch_databse(self) -> Future[AbstractDatabase]:
         """
         Gets a new database, derived from the current state of the origin database.
         The derived database could be modified in an idependant history.
@@ -404,18 +485,42 @@ class Database:
         """
 
 
-class ObjectSpace(ABC):
-    def __init__(self, storage: SharedStorage):
-        self.storage = storage
+class ObjectTransaction(AbstractTransaction):
+    def __init__(self, database: Database):
+        super().__init__(database)
 
-    @abstractmethod
-    def open_database(self, databes_name: str) -> Future[Database]:
+    def get_root_object(self, name: str) -> DBObject | None:
         """
-        Opens a database
+        Get a root object from the root catalog
+
+        :param name:
         :return:
         """
 
+    def set_root_object(self, name: str, value: Atom) -> DBObject | None:
+        """
+        Set a root object into the root catalog. It is the only way to persist changes
 
+        :param name:
+        :param value:
+        :return:
+        """
 
+    def commit(self, return_object: Atom = None) -> Future:
+        """
+        Close the transaction and make it persistent. All changes recorded
+        Before commit all checked and modified objects will be tested if modified
+        by another transaction. Transaction will proceed only if no change in
+        used objects is verified.
+        If a return object is specified, the full tree of related objects is persisted
+        All created objects, not reachable from this return_object or any updated root
+        will NOT BE PERSISTED, and they will be not usable after commit!
+        :return:
+        """
 
+    def abort(self) -> Future:
+        """
+        Discard any changes made. Database is not modified. All created objects are no longer usable
+        :return:
+        """
 

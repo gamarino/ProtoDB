@@ -299,9 +299,20 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
             class_name = atom.__class__.__name__
             attributes = {'AtomClass': class_name}
             for attribute_name, value in atom.__dict__:
-                if not attribute_name[0] == '_' and not callable(value):
+                if attribute_name == '_attributes':
+                    attributes['_attributes'] = value
+                elif not attribute_name[0] == '_' and not callable(value):
                     # Only public attributes will be persisted
-                    attributes[attribute_name] = value
+
+                    # If it's an Atom, just the transaction_id and offset will be persisted
+                    if isinstance(value, Atom):
+                        attributes[attribute_name] = {
+                            'AtomClass': value.__name__,
+                            'transaction_id': value.atom_pointer.transaction_id,
+                            'offset': value.atom_pointer.offset,
+                        }
+                    else:
+                        attributes[attribute_name] = value
             data = bytearray(json.dumps(attributes).encode('UTF-8'))
 
             transaction_id, offset = self.push_bytes(data)
