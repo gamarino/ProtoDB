@@ -8,6 +8,10 @@ import uuid
 from abc import ABC, abstractmethod
 import io
 import configparser
+from .dictionaries import HashDictionary, Dictionary
+from .sets import Set
+from .lists import List
+
 
 VALIDATION_ERROR = 10_000
 USER_ERROR = 20_000
@@ -524,3 +528,33 @@ class ObjectTransaction(AbstractTransaction):
         :return:
         """
 
+    def _get_string_hash(self, string: str) -> int:
+        """
+
+        :param string:
+        :return: a hash based in db persisted strings
+        """
+
+    def new_hash_dictionary(self) -> HashDictionary :
+        """
+
+        :return:
+        """
+
+    def new_dictionary(self) -> Dictionary:
+        """
+
+        :return:
+        """
+
+    def new_list(self) -> List:
+        """
+
+        :return:
+        """
+
+    def new_set(self) -> Set:
+        """
+
+        :return:
+        """

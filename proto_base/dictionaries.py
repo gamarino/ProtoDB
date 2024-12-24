@@ -71,7 +71,7 @@ class Dictionary(DBCollections):
         :param key:
         :return:
         """
-        hash = self._transaction.get_string_hash(key)
+        hash = self._transaction._get_string_hash(key)
         return self.content.get_at(hash)
 
     def set_at(self, key: str, value: Atom) -> DBCollections:
@@ -82,7 +82,7 @@ class Dictionary(DBCollections):
         :param value: Atom
         :return: a new HashDirectory with the value set at key
         """
-        hash = self._transaction.get_string_hash(key)
+        hash = self._transaction._get_string_hash(key)
         return Dictionary(
             content=self.content.set_at(hash, value),
         )
@@ -94,7 +94,7 @@ class Dictionary(DBCollections):
         :param key: int
         :return: a new HashDirectory with the key removed
         """
-        hash = self._transaction.get_string_hash(key)
+        hash = self._transaction._get_string_hash(key)
         return Dictionary(
             content=self.content.remove_key(hash),
         )
