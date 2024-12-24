@@ -254,15 +254,104 @@ class ObjectId:
     id : int
 
 
+class ParentLink(Atom):
+    parent_link: Atom | None
+    cls: Atom | None
+
+
 class DBObject(Atom):
     object_id: ObjectId
+    _attributes: dict
+    parent_link: ParentLink | None
 
-    def __init__(self, object_id: ObjectId=None, transaction_id: uuid.UUID=None, offset:int = 0):
+    def __init__(self,
+                 object_id: ObjectId=None,
+                 transaction_id: uuid.UUID=None,
+                 offset:int = 0,
+                 parent_link: ParentLink=None,
+                 **kwargs):
         super().__init__(transaction_id=transaction_id, offset=offset)
-        self.object_id = object_id
+        self._object_id = object_id or kwargs.pop('object_id')
+        self._parent_link = parent_link or kwargs.pop('parent_link')
+
+        self._attributes = {}
+        if kwargs:
+            for attribute_name, attribute_value in kwargs:
+                if attribute_name.startswith('_'):
+                    raise ProtoValidationException(
+                        message=f'DBObject attribute names could not start with "_" ({attribute_name}')
+                self._attributes[attribute_name] = attribute_value
+
+    def __getattr__(self, name: str):
+        if name.startswith('_'):
+            return getattr(super(), name)
+
+        if name in self._attributes:
+            return self._attributes[name]
+
+        pl = self._parent_link
+        while pl:
+            if name in pl.cls._attributes:
+                return pl.cls._attributes[name]
+            pl = pl.parent_link
+
+        if hasattr(self, name):
+            return getattr(super(), name)
+
+        return None
+
+
+    def _hasattr(self, name: str):
+        if name.startswith('_'):
+            return hasattr(self, name)
+
+        if name in self._attributes:
+            return True
+
+        pl = self.parent_link
+        while pl:
+            if name in pl.cls._attributes:
+                return True
+            pl = pl.parent_link
+
+        return False
+
+    def _setattr(self, name: str, value):
+        if name.startswith('_'):
+            super().__setattr__(name, value)
+            return self
+        else:
+            attr =  self.attributes
+            attr[name] = value
+            return DBObject(
+                object_id=self.object_id,
+                transaction_id=self.transaction_id,
+                parent_link=attr,
+                offset=self.offset,
+            )
+
+    def _add_parent(self, new_parent: Atom):
+        self._parent_link = ParentLink(parent_link=self._parent_link, cls=new_parent)
 
 
 class ObjectTransaction(ABC):
+    @abstractmethod
+    def getRootObject(self, name: str) -> DBObject | None:
+        """
+        Get a root object from the root catalog
+
+        :param name:
+        :return:
+        """
+
+    def setRootObject(self, name: str, value: Atom) -> DBObject | None:
+        """
+        Set a root object into the root catalog. It is the only way to persist changes
+
+        :param name:
+        :return:
+        """
+
     @abstractmethod
     def get_object(self, object_id: ObjectId) -> Future[DBObject]:
         """
@@ -320,11 +409,9 @@ class ObjectSpace(ABC):
         self.storage = storage
 
     @abstractmethod
-    def open_databse(self, databes_name: str) -> Future[Database]:
+    def open_database(self, databes_name: str) -> Future[Database]:
         """
-        Gets a new database, derived from the current state of the origin database.
-        The derived database could be modified in an idependant history.
-        Transactions in the derived database will not impact in the origin database
+        Opens a database
         :return:
         """
 
