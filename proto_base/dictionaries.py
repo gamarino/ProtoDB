@@ -1,3 +1,6 @@
+from __future__ import annotations
+from typing import cast
+
 from . import common
 
 from .common import ProtoUnexpectedException, ProtoValidationException, ProtoNotSupportedException
@@ -24,7 +27,7 @@ class HashDictionary(DBCollections):
         :return:
         """
 
-    def set_at(self, key: int, value: Atom) -> DBCollections:
+    def set_at(self, key: int, value: Atom) -> HashDictionary:
         """
         Returns a new HashDirectory with the value set at key
 
@@ -33,7 +36,7 @@ class HashDictionary(DBCollections):
         :return: a new HashDirectory with the value set at key
         """
 
-    def remove_key(self, key: int) -> DBCollections:
+    def remove_key(self, key: int) -> HashDictionary:
         """
         Returns a new HashDirectory with the key removed if exists
 
@@ -74,7 +77,7 @@ class Dictionary(DBCollections):
         hash = self._transaction._get_string_hash(key)
         return self.content.get_at(hash)
 
-    def set_at(self, key: str, value: Atom) -> DBCollections:
+    def set_at(self, key: str, value: Atom) -> Dictionary:
         """
         Returns a new HashDirectory with the value set at key
 
@@ -87,7 +90,7 @@ class Dictionary(DBCollections):
             content=self.content.set_at(hash, value),
         )
 
-    def remove_key(self, key: str) -> DBCollections:
+    def remove_key(self, key: str) -> Dictionary:
         """
         Returns a new HashDirectory with the key removed if exists
 
@@ -106,6 +109,6 @@ class Dictionary(DBCollections):
         :param key:
         :return: True if key is in the dictionary, False otherwise
         """
-        hash = self._transaction.get_string_hash(key)
+        hash = self._transaction._get_string_hash(key)
         return self.content.has(hash)
 

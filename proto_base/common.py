@@ -3,6 +3,9 @@ Common objects
 
 
 """
+from __future__ import annotations
+from typing import cast
+
 from concurrent.futures import Future
 import uuid
 from abc import ABC, abstractmethod
@@ -11,7 +14,7 @@ import configparser
 from .dictionaries import HashDictionary, Dictionary
 from .sets import Set
 from .lists import List
-
+from threading import Lock
 
 VALIDATION_ERROR = 10_000
 USER_ERROR = 20_000
@@ -182,12 +185,15 @@ class Atom(AbstractAtom, metaclass=AtomMetaclass):
 
     def _load(self):
         if not self._loaded:
-            if self._transaction and self.atom_pointer.transaction_id:
-                self._transaction.database.object_space.storage_provider.get_atom(self.atom_pointer).result()
             if not self._transaction:
                 raise ProtoValidationException(
                     message=f'An DBObject can only be instanciated within a given transaction!'
                 )
+
+            if self._transaction and \
+               self.atom_pointer.transaction_id and \
+               self.atom_pointer.offset:
+                self._transaction.database.object_space.storage_provider.get_atom(self.atom_pointer).result()
             self._loaded = True
 
     def _save(self):
@@ -197,7 +203,7 @@ class Atom(AbstractAtom, metaclass=AtomMetaclass):
                 # Push the object tree downhill, avoiding recursion loops
                 self._saving = True
                 for name, value in self.__dict__.items():
-                    if isinstance(value, Atom) and not value._saving:
+                    if isinstance(value, Atom):
                         if not value._transaction:
                             value._transaction = self._transaction
                         value._save()
@@ -211,10 +217,14 @@ class Atom(AbstractAtom, metaclass=AtomMetaclass):
                     message=f'An DBObject can only be saved within a given transaction!'
                 )
 
+    def hash(self) -> int:
+        return self.atom_pointer.transaction_id.int ^ \
+               self.atom_pointer.offset
+
 
 class RootObject(Atom):
-    object_root: Atom
-    literal_root: Atom
+    object_root: Dictionary
+    literal_root: Dictionary
 
 
 class BlockProvider(ABC):
@@ -451,6 +461,10 @@ class DBCollections(Atom):
     indexes: dict[str, Atom] | None
     count: int = 0
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.indexes = {}
+
     @abstractmethod
     def as_iterable(self) -> list[Atom]:
         """
@@ -459,28 +473,141 @@ class DBCollections(Atom):
         """
 
 
+class Literal(Atom):
+    string:str
+
+    def __init__(self, literal: str):
+        super().__init__()
+        self.string = literal
+
+
 class ObjectSpace(AbstractObjectSpace):
+    storage: SharedStorage
+    _lock: Lock
+
     def __init__(self, storage: SharedStorage):
         super().__init__(storage)
+        self.storage = storage
+        self._lock = Lock()
 
-    def open_database(self, databes_name: str) -> Future[AbstractDatabase]:
+    def open_database(self, database_name: str) -> Database:
         """
         Opens a database
         :return:
         """
+        with self._lock:
+            root = self.storage.read_current_root()
+            if root:
+                db_catalog: Dictionary = cast(Dictionary, root.object_root)
+                if db_catalog.has(database_name):
+                    return Database(self, database_name)
+
+            raise ProtoValidationException(
+                message=f'Database {database_name} does not exist!'
+            )
+
+    def new_database(self, database_name: str) -> Database:
+        """
+        Opens a database
+        :return:
+        """
+        with self._lock:
+            root = self.storage.read_current_root()
+            if not root:
+                root = RootObject()
+                root.object_root = Dictionary()
+                root.literal_root = Dictionary()
+
+            db_catalog: Dictionary = cast(Dictionary, root.object_root)
+            if not db_catalog.has(database_name):
+                new_db = Database(self, database_name)
+                new_db_root = Dictionary()
+                new_db_catalog = db_catalog.set_at(database_name, new_db_root)
+                new_db_catalog._save()
+                root.object_root = new_db_catalog
+                self.storage.set_current_root(root)
+                return new_db
+
+            raise ProtoValidationException(
+                message=f'Database {database_name} already exists!'
+            )
+
+    def rename_database(self, old_name: str, new_name: str):
+        """
+        Rename an existing database. If database is already opened, if will not
+        commit any more!
+        :return:
+        """
+        with self._lock:
+            root = self.storage.read_current_root()
+            if root:
+                db_catalog: Dictionary = cast(Dictionary, root.object_root)
+                if db_catalog.has(old_name):
+                    database_root: Dictionary = cast(Dictionary, db_catalog.get_at(old_name))
+                    new_db_catalog: Dictionary = db_catalog.remove_key(old_name)
+                    new_db_catalog = new_db_catalog.set_at(new_name, database_root)
+                    new_db_catalog._save()
+                    root.object_root = new_db_catalog
+                    self.storage.set_current_root(root)
+
+            raise ProtoValidationException(
+                message=f'Database {old_name} does not exist!'
+            )
+
+    def get_literals(self, literals: list[str]) -> dict[str, Atom]:
+        with self._lock:
+            root = self.storage.read_current_root()
+            literal_catalog: Dictionary = cast(Dictionary, root.literal_root)
+            result = {}
+            for literal in literals:
+                if literal_catalog.has(literal):
+                    result[literal] = literal_catalog.get_at(literal)
+                else:
+                    new_literal = Literal(literal)
+                    result[literal] = new_literal
+                    literal_catalog.set_at(literal, new_literal)
+
+            root.literal_root = literal_catalog
+            self.storage.set_current_root(root)
+
+            return result
+
+    def commit_database(self, database_name:str, new_root: Atom):
+        with self._lock:
+            root = self.storage.read_current_root()
+            db_catalog: Dictionary = cast(Dictionary, root.object_root)
+            if db_catalog.has(database_name):
+                new_db_catalog = db_catalog.set_at(database_name, new_root)
+                new_db_catalog._save()
+                root.object_root = new_db_catalog
+                self.storage.set_current_root(root)
+            else:
+                raise ProtoValidationException(
+                    message=f'Database {database_name} does not exist!'
+                )
 
 
 class Database(AbstractDatabase):
-    def __init__(self, object_space: ObjectSpace):
-        super().__init__(object_space)
+    database_name: str
+    object_space: ObjectSpace
 
-    def new_transaction(self) -> Future[AbstractTransaction]:
+    def __init__(self, object_space: ObjectSpace, database_name: str):
+        super().__init__(object_space)
+        self.object_space = object_space
+        self.database_name = database_name
+
+    def new_transaction(self) -> ObjectTransaction:
         """
         Start a new read transaction
         :return:
         """
+        root = self.object_space.storage.read_current_root()
+        db_catalog: Dictionary = cast(Dictionary, root.object_root)
+        if db_catalog.has(self.database_name):
+            current_root: Dictionary = cast(Dictionary, db_catalog.get_at(self.database_name))
+            return ObjectTransaction(self, current_root)
 
-    def new_branch_databse(self) -> Future[AbstractDatabase]:
+    def new_branch_database(self) -> Database:
         """
         Gets a new database, derived from the current state of the origin database.
         The derived database could be modified in an idependant history.
@@ -488,10 +615,24 @@ class Database(AbstractDatabase):
         :return:
         """
 
+        root = self.object_space.storage.read_current_root()
+        db_catalog: Dictionary = cast(Dictionary, root.object_root)
+        new_db_name = uuid.uuid4().hex
+        new_db = Database(self.object_space, new_db_name)
+
+        self.object_space.commit_database(self.database_name, Dictionary())
+        return new_db
+
 
 class ObjectTransaction(AbstractTransaction):
-    def __init__(self, database: Database):
+    transaction_root: Dictionary
+    new_roots: dict[str, Atom]
+    read_objects:dict[int, Atom]
+    read_lock_objects: dict[int, Atom]
+
+    def __init__(self, database: Database, transaction_root: Dictionary):
         super().__init__(database)
+        self.transaction_root = transaction_root
 
     def get_root_object(self, name: str) -> DBObject | None:
         """
@@ -510,7 +651,7 @@ class ObjectTransaction(AbstractTransaction):
         :return:
         """
 
-    def commit(self, return_object: Atom = None) -> Future:
+    def commit(self, return_object: Atom = None):
         """
         Close the transaction and make it persistent. All changes recorded
         Before commit all checked and modified objects will be tested if modified
@@ -522,7 +663,7 @@ class ObjectTransaction(AbstractTransaction):
         :return:
         """
 
-    def abort(self) -> Future:
+    def abort(self):
         """
         Discard any changes made. Database is not modified. All created objects are no longer usable
         :return:
