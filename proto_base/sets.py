@@ -5,7 +5,7 @@ from .exceptions import ProtoUnexpectedException, ProtoValidationException, Prot
 from .common import Atom
 
 
-class Set(Atom):
+class HashSet(Atom):
     """
 
     """
