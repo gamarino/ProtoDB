@@ -11,11 +11,8 @@ import uuid
 from abc import ABC, abstractmethod
 import io
 import configparser
-from .exceptions import ProtoUnexpectedException, ProtoValidationException, ProtoCorruptionException, \
-                        ProtoCorruptionException, \
-                        ProtoNotSupportedException, ProtoNotAuthorizedException, ProtoUserException
+from .exceptions import ProtoValidationException, ProtoCorruptionException
 
-from threading import Lock
 
 # Constants for storage size units
 KB = 1024
@@ -84,6 +81,15 @@ class AbstractDatabase(ABC):
     def __init__(self, object_space: AbstractObjectSpace):
         self.object_space = object_space
 
+    @abstractmethod
+    def get_literal(self, literal: str):
+        """
+
+        :param literal:
+        :return:
+        """
+
+
 
 class AbstractTransaction(ABC):
     """
@@ -93,6 +99,22 @@ class AbstractTransaction(ABC):
 
     def __init__(self, database: AbstractDatabase):
         self.database = database
+
+    @abstractmethod
+    def get_literal(self, string: str):
+        """
+
+        :param string:
+        :return:
+        """
+    @abstractmethod
+    def set_literal(self, string: str, value: Atom):
+        """
+
+        :param string:
+        :param value:
+        :return:
+        """
 
 
 class Atom(metaclass=AtomMetaclass):
@@ -407,7 +429,7 @@ class MutableObject(DBObject):
                  **kwargs: dict[str, Atom]):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
         if kwargs and 'hash_key' in kwargs:
-            self.hash_key = kwargs['hash_key']
+            self.hash_key = cast(int, kwargs['hash_key'])
         else:
             self.hash_key = uuid.uuid4().int
 

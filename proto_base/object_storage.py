@@ -1,19 +1,12 @@
 from __future__ import annotations
 from typing import cast
 
-from concurrent.futures import Future
 import uuid
-from abc import ABC, abstractmethod
-import io
-import configparser
-from .exceptions import ProtoUnexpectedException, ProtoValidationException, ProtoCorruptionException, \
-                        ProtoCorruptionException, \
-                        ProtoNotSupportedException, ProtoNotAuthorizedException, ProtoUserException
-from .common import Atom, AtomPointer, \
+from .exceptions import ProtoValidationException
+from .common import Atom, \
                     AbstractObjectSpace, AbstractDatabase, AbstractTransaction, \
                     SharedStorage, RootObject, Literal, \
                     DBObject
-from .common import KB, MB, GB, PB
 
 from .dictionaries import HashDictionary, Dictionary
 from .lists import List
@@ -104,7 +97,7 @@ class ObjectSpace(AbstractObjectSpace):
                 if literal_catalog.has(literal):
                     result[literal] = literal_catalog.get_at(literal)
                 else:
-                    new_literal = Literal(literal)
+                    new_literal = Literal(literal=literal)
                     result[literal] = new_literal
                     literal_catalog.set_at(literal, new_literal)
 
@@ -166,8 +159,9 @@ class Database(AbstractDatabase):
 
     def get_literal(self, string: str):
         root = self.object_space.storage.read_current_root()
-        if root.literal_root.has(string):
-            return root.literal_root.get_at(string)
+        literal_root: Dictionary = cast(Dictionary, root.literal_root)
+        if literal_root.has(string):
+            return literal_root.get_at(string)
         else:
             return None
 
@@ -211,7 +205,7 @@ class ObjectTransaction(AbstractTransaction):
                 self.new_literals = self.new_literals.set_at(string, new_literal)
                 return new_literal
 
-    def get_root_object(self, name: str) -> DBObject | None:
+    def get_root_object(self, name: str) -> Atom | None:
         """
         Get a root object from the root catalog
 
@@ -220,7 +214,7 @@ class ObjectTransaction(AbstractTransaction):
         """
         return self.transaction_root.get_at(name)
 
-    def set_root_object(self, name: str, value: Atom) -> DBObject | None:
+    def set_root_object(self, name: str, value: Atom):
         """
         Set a root object into the root catalog. It is the only way to persist changes
 
@@ -257,7 +251,7 @@ class ObjectTransaction(AbstractTransaction):
         :param string:
         :return: a hash based in db persisted strings
         """
-        return self.database.get_literal(string)
+        return self.database.get_literal(literal=string)
 
     def get_mutable(self, key:int):
         return self.mutable_objects.get_at(key)
