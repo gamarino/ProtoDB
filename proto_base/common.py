@@ -11,17 +11,11 @@ import uuid
 from abc import ABC, abstractmethod
 import io
 import configparser
-from .dictionaries import HashDictionary, Dictionary
-from .sets import Set
-from .lists import List
-from threading import Lock
+from .exceptions import ProtoUnexpectedException, ProtoValidationException, ProtoCorruptionException, \
+                        ProtoCorruptionException, \
+                        ProtoNotSupportedException, ProtoNotAuthorizedException, ProtoUserException
 
-VALIDATION_ERROR = 10_000
-USER_ERROR = 20_000
-CORRUPTION_ERROR = 30_000
-NOT_SUPPORTED_ERROR = 40_000
-NOT_AUTHORIZED_ERROR = 50_000
-UNEXPECTED_ERROR = 60_000
+from threading import Lock
 
 # Constants for storage size units
 KB = 1024
@@ -29,69 +23,6 @@ MB = KB * KB
 GB = KB * MB
 PB = KB * GB
 
-
-class ProtoBaseException(Exception):
-    """
-    Base exception for ProtoBase exceptions
-    """
-
-    def __init__(self, code: int=1, exception_type: str=None, message: str=None):
-        self.code = code
-        self.exception_type = exception_type
-        self.message = message
-
-
-class ProtoUnexpectedException(ProtoBaseException):
-    def __init__(self, code: int=UNEXPECTED_ERROR, exception_type: str=None, message: str=None):
-        super().__init__(
-            code if code else UNEXPECTED_ERROR,
-            exception_type if exception_type else 'UnexpectedException',
-            message
-        )
-
-
-class ProtoValidationException(ProtoBaseException):
-    def __init__(self, code: int=VALIDATION_ERROR, exception_type: str=None, message: str=None):
-        super().__init__(
-            code if code else VALIDATION_ERROR,
-            exception_type if exception_type else 'ValidationException',
-            message
-        )
-
-class ProtoUserException(ProtoBaseException):
-    def __init__(self, code: int=USER_ERROR, exception_type: str=None, message: str=None):
-        super().__init__(
-            code if code else USER_ERROR,
-            exception_type if exception_type else 'ValidationException',
-            message
-        )
-
-
-class ProtoCorruptionException(ProtoBaseException):
-    def __init__(self, code: int=CORRUPTION_ERROR, exception_type: str=None, message: str=None):
-        super().__init__(
-            code if code else CORRUPTION_ERROR,
-            exception_type if exception_type else 'CorruptionException',
-            message
-        )
-
-
-class ProtoNotSupportedException(ProtoBaseException):
-    def __init__(self, code: int=NOT_SUPPORTED_ERROR, exception_type: str=None, message: str=None):
-        super().__init__(
-            code if code else NOT_SUPPORTED_ERROR,
-            exception_type if exception_type else 'NotSupportedException',
-            message
-        )
-
-
-class ProtoNotAuthorizedException(ProtoBaseException):
-    def __init__(self, code: int=NOT_AUTHORIZED_ERROR, exception_type: str=None, message: str=None):
-        super().__init__(
-            code if code else 6,
-            exception_type if exception_type else 'AuthorizationException',
-            message
-        )
 
 
 class AtomPointer(object):
@@ -103,19 +34,13 @@ class AtomPointer(object):
 atom_class_registry = dict()
 
 class AtomMetaclass:
-    def __init__(self):
-        class_name = self.__class__
+    def __init__(cls, name, bases, class_dict):
+        class_name = name
         if class_name != 'Atom':
             if class_name in atom_class_registry:
                 raise ProtoValidationException(
                     message=f'Class repeated in atom class registry ({class_name}). Please check it')
-            atom_class_registry[class_name] = self
-
-
-class AbstractAtom(ABC):
-    """
-    ABC to solve forward type definitions
-    """
+            atom_class_registry[class_name] = cls
 
 
 class AbstractSharedStorage(ABC):
@@ -170,7 +95,7 @@ class AbstractTransaction(ABC):
         self.database = database
 
 
-class Atom(AbstractAtom, metaclass=AtomMetaclass):
+class Atom(metaclass=AtomMetaclass):
     atom_pointer: AtomPointer
     _transaction: AbstractTransaction
     _loaded: bool
@@ -365,7 +290,7 @@ class ParentLink(Atom):
     cls: AbstractDBObject | None
 
 
-class DBObject(Atom):
+class DBObject(Atom, AbstractDBObject):
     object_id: ObjectId
     parent_link: ParentLink | None
 
@@ -422,6 +347,13 @@ class DBObject(Atom):
 
         return None
 
+    def __setattr__(self, key, value):
+        if hasattr(self, key):
+            super().__setattr__(key, value)
+        else:
+            raise ProtoValidationException(
+                message=f'ProtoBase DBObjects are inmutable! Your are trying to set attribute {key}'
+            )
 
     def _hasattr(self, name: str):
         self._load()
@@ -487,6 +419,18 @@ class MutableObject(DBObject):
 
         current_object = self.transaction.get_mutable(self.hash_key)
         return current_object.__getattr__(name)
+
+    def __setattr__(self, key, value):
+        if hasattr(self, key):
+            super().__setattr__(key, value)
+        else:
+            if not self._transaction:
+                raise ProtoValidationException(
+                    message=f'Proto MutableObjects can only be modified within the context of a transaction!'
+                )
+            current_object = cast(DBObject, self._transaction.get_mutable(self.hash_key))
+            new_object = current_object._setattr(key, value)
+            self._transaction.set_mutable(self.hash_key, new_object)
 
     def _hasattr(self, name: str):
         if not self.transaction:

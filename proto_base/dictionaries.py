@@ -3,7 +3,7 @@ from typing import cast
 
 from . import common
 
-from .common import ProtoUnexpectedException, ProtoValidationException, ProtoNotSupportedException
+from .exceptions import ProtoUnexpectedException, ProtoValidationException, ProtoNotSupportedException
 from .common import Atom, DBObject, DBCollections
 
 import uuid
