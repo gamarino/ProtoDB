@@ -199,14 +199,20 @@ class Atom(AbstractAtom, metaclass=AtomMetaclass):
     def _save(self):
         if not self.atom_pointer and not self._saving:
             # It's a new object
+
             if self._transaction:
                 # Push the object tree downhill, avoiding recursion loops
+                # converting attributes strs to Literals
                 self._saving = True
                 for name, value in self.__dict__.items():
                     if isinstance(value, Atom):
                         if not value._transaction:
                             value._transaction = self._transaction
                         value._save()
+                    elif isinstance(value, str):
+                        new_literal = self._transaction.get_literal(value)
+                        setattr(self, name, new_literal)
+                        new_literal._save()
 
                 # At this point all attributes has been flushed to storage if they are newly created
                 # All attributes has valid AtomPointer values (either old or new)
@@ -457,6 +463,72 @@ class DBObject(Atom):
         return DBObject(attributes=self._attributes, parent_link=new_parent_link)
 
 
+class MutableObject(DBObject):
+    """
+
+    """
+    hash_key: int = 0
+
+    def __init__(self,
+                 transaction: AbstractTransaction=None,
+                 atom_pointer: AtomPointer = None,
+                 **kwargs: dict[str, Atom]):
+        super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
+        if kwargs and 'hash_key' in kwargs:
+            self.hash_key = kwargs['hash_key']
+        else:
+            self.hash_key = uuid.uuid4().int
+
+    def __getattr__(self, name: str):
+        if not self.transaction:
+            raise ProtoValidationException(
+                message=f"You can't access a mutable object out of the scope of a transaction!"
+            )
+
+        current_object = self.transaction.get_mutable(self.hash_key)
+        return current_object.__getattr__(name)
+
+    def _hasattr(self, name: str):
+        if not self.transaction:
+            raise ProtoValidationException(
+                message=f"You can't access a mutable object out of the scope of a transaction!"
+            )
+
+        current_object = self.transaction.get_mutable(self.hash_key)
+        return current_object.hasattr(name)
+
+    def _setattr(self, name: str, value):
+        if not self.transaction:
+            raise ProtoValidationException(
+                message=f"You can't access a mutable object out of the scope of a transaction!"
+            )
+
+        current_object = self.transaction.get_mutable(self.hash_key)
+        new_object = current_object._setattr(name, value)
+        self.transaction.set_mutable(self.hash_key, new_object)
+        return self
+
+    def _add_parent(self, new_parent: Atom):
+        if not self.transaction:
+            raise ProtoValidationException(
+                message=f"You can't access a mutable object out of the scope of a transaction!"
+            )
+
+        current_object = self.transaction.get_mutable(self.hash_key)
+        new_object = current_object._add_parent(new_parent)
+        self._transaction.set_mutable(self.hash_key, new_object)
+        return self
+
+    def _load(self):
+        pass
+
+    def _save(self):
+        pass
+
+    def hash(self) -> int:
+        return self.hash_key
+
+
 class DBCollections(Atom):
     indexes: dict[str, Atom] | None
     count: int = 0
@@ -476,10 +548,28 @@ class DBCollections(Atom):
 class Literal(Atom):
     string:str
 
-    def __init__(self, literal: str):
-        super().__init__()
-        self.string = literal
+    def __init__(self,
+                 transaction_id: uuid.UUID=None,
+                 offset:int = 0,
+                 literal: str = None,
+                 **kwargs):
+        super().__init__(transaction_id=transaction_id, offset=offset)
+        self.string = literal or kwargs.pop('literal')
 
+    def __eq__(self, other:str | Literal) -> bool:
+        if isinstance(other, Literal):
+            return self.string == other.string
+        else:
+            return self.string == other
+
+    def __str__(self) -> str:
+        return self.string
+
+    def __add__(self, other:str | Literal) -> Literal :
+        if isinstance(other, Literal):
+            return Literal(literal=self.string + other.string)
+        else:
+            return Literal(literal=self.string + other)
 
 class ObjectSpace(AbstractObjectSpace):
     storage: SharedStorage
@@ -623,16 +713,52 @@ class Database(AbstractDatabase):
         self.object_space.commit_database(self.database_name, Dictionary())
         return new_db
 
+    def get_literal(self, string: str):
+        root = self.object_space.storage.read_current_root()
+        if root.literal_root.has(string):
+            return root.literal_root.get_at(string)
+        else:
+            return None
+
 
 class ObjectTransaction(AbstractTransaction):
-    transaction_root: Dictionary
-    new_roots: dict[str, Atom]
-    read_objects:dict[int, Atom]
-    read_lock_objects: dict[int, Atom]
+    initial_transaction_root: Dictionary = None
+    transaction_root: Dictionary = None
+    new_roots: dict[str, Atom] = None
+    read_objects:dict[int, Atom] = None
+    read_lock_objects: dict[int, Atom] = None
+    mutable_objects: HashDictionary = None
+    initial_mutable_root: HashDictionary = None
+    new_literals: Dictionary = None
 
     def __init__(self, database: Database, transaction_root: Dictionary):
         super().__init__(database)
-        self.transaction_root = transaction_root
+        if self.transaction_root:
+            self.transaction_root = transaction_root
+        else:
+            self.transaction_root = Dictionary()
+        self.initial_transaction_root = transaction_root
+        self.new_roots = {}
+        self.read_objects = {}
+        self.read_lock_objects = {}
+        if transaction_root.has('_mutable_root'):
+            self.mutable_objects = cast(HashDictionary, self.transaction_root.get_at('_mutable_root'))
+            self.initial_mutable_root = self.mutable_objects
+        else:
+            self.mutable_objects = HashDictionary()
+        self.new_literals = Dictionary(transaction=self)
+
+    def get_literal(self, string: str):
+        if self.new_literals.has(string):
+            return self.new_literals.get_at(string)
+        else:
+            existing_literal = self.database.get_literal(string)
+            if existing_literal:
+                return existing_literal
+            else:
+                new_literal = Literal(transaction=self, string=string)
+                self.new_literals = self.new_literals.set_at(string, new_literal)
+                return new_literal
 
     def get_root_object(self, name: str) -> DBObject | None:
         """
@@ -641,6 +767,7 @@ class ObjectTransaction(AbstractTransaction):
         :param name:
         :return:
         """
+        return self.transaction_root.get_at(name)
 
     def set_root_object(self, name: str, value: Atom) -> DBObject | None:
         """
@@ -650,6 +777,10 @@ class ObjectTransaction(AbstractTransaction):
         :param value:
         :return:
         """
+        self.transaction_root = self.transaction_root.set_at(name, value)
+
+    def set_lock_object(self, object: DBObject):
+        self.read_lock_objects[object.hash()] = object
 
     def commit(self, return_object: Atom = None):
         """
@@ -675,27 +806,39 @@ class ObjectTransaction(AbstractTransaction):
         :param string:
         :return: a hash based in db persisted strings
         """
+        return self.database.get_literal(string)
+
+    def get_mutable(self, key:int):
+        return self.mutable_objects.get_at(key)
+
+    def set_mutable(self, key:int, value:Atom):
+        return self.mutable_objects.set_at(key, value)
 
     def new_hash_dictionary(self) -> HashDictionary :
         """
-
+        Return a new HashDictionary conected to this transaction
         :return:
         """
+        return HashDictionary(transaction=self)
 
     def new_dictionary(self) -> Dictionary:
         """
+        Return a new Dictionary conected to this transaction
 
         :return:
         """
+        return Dictionary(transaction=self)
 
     def new_list(self) -> List:
         """
-
+        Return a new List connected to this transaction
         :return:
         """
+        return List(transaction=self)
 
     def new_set(self) -> Set:
         """
-
+        Return a new Set connected to this transaction
         :return:
         """
+        return Set(transaction=self)
