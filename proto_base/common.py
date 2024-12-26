@@ -11,6 +11,8 @@ import uuid
 from abc import ABC, abstractmethod
 import io
 import configparser
+import datetime
+import base64
 from .exceptions import ProtoValidationException, ProtoCorruptionException
 
 
@@ -127,7 +129,7 @@ class Atom(metaclass=AtomMetaclass):
         self._transaction = transaction
         self.atom_pointer = atom_pointer
         self._loaded = False
-        for name, value in kwargs:
+        for name, value in self._json_to_dict(kwargs).items():
             setattr(self, name, value)
 
     def _load(self):
@@ -140,8 +142,112 @@ class Atom(metaclass=AtomMetaclass):
             if self._transaction and \
                self.atom_pointer.transaction_id and \
                self.atom_pointer.offset:
-                self._transaction.database.object_space.storage_provider.get_atom(self.atom_pointer).result()
+                loaded_atom: dict  = cast(dict,
+                    self._transaction.database.object_space.storage_provider.get_atom(self.atom_pointer).result())
+                loaded_atom = self._json_to_dict(loaded_atom)
+                for attribute_name, attribute_value in loaded_atom.__dict__.items():
+                    setattr(self, attribute_name, attribute_value)
             self._loaded = True
+
+    def __getattr__(self, name: str):
+        if name.startswith('_') or name == 'atom_pointer':
+            return super().__getattribute__(name)
+        self._load()
+        return getattr(self, name)
+
+    def __setattr__(self, key, value):
+        if key.startswith('_'):
+            super().__setattr__(key, value)
+        raise ProtoValidationException(
+            message=f'Atoms are inmutable objects! Your are trying to set attribute {key}'
+        )
+
+    def _push_to_storage(self, json_value: dict) -> AtomPointer:
+        return self._transaction.database.object_space.storage_provider.push_atom(self).result()
+
+    def _json_to_dict(self, json_data: dict) -> dict:
+        data = {}
+
+        for name, value in json_data.items():
+            if isinstance(value, dict):
+                if 'className' == 'datetime.datetime':
+                    value = datetime.datetime.fromisoformat(value['iso'])
+                elif 'className' == 'datetime.date':
+                    value = datetime.date.fromisoformat(value['iso'])
+                elif 'className' == 'datetime.timedelta':
+                    value = datetime.timedelta(microseconds=value['microseconds'])
+                elif 'className' == 'int':
+                    value = int(value['value'])
+                elif 'className' == 'float':
+                    value = float(value['value'])
+                elif 'className' == 'bool':
+                    value = bool(value['value'])
+                elif 'className' == 'None':
+                    value = None
+            data[name] = value
+
+        return data
+
+    def _dict_to_json(self, data: dict) -> dict:
+        json_value = {}
+
+        for name, value in data.items():
+            if isinstance(value, Atom):
+                if not value._transaction:
+                    value._transaction = self._transaction
+                value._save()
+                json_value[name] = {
+                    'className': 'AtomPointer',
+                    'transaction_id': value.atom_pointer.transaction_id,
+                    'offset': value.atom_pointer.offset,
+                }
+            elif isinstance(value, str):
+                new_literal = self._transaction.get_literal(value)
+                setattr(self, name, new_literal)
+                new_literal._save()
+            elif isinstance(value, datetime.datetime):
+                json_value[name] = {
+                    'className': 'datetime.datetime',
+                    'iso': value.isoformat(),
+                }
+            elif isinstance(value, datetime.date):
+                json_value[name] = {
+                    'className': 'datetime.date',
+                    'iso': value.isoformat,
+                }
+            elif isinstance(value, datetime.timedelta):
+                json_value[name] = {
+                    'className': 'datetime.timedelta',
+                    'microseconds': value.microseconds,
+                }
+            elif isinstance(value, int):
+                json_value[name] = {
+                    'className': 'int',
+                    'value': value,
+                }
+            elif isinstance(value, float):
+                json_value[name] = {
+                    'className': 'float',
+                    'value': value,
+                }
+            elif isinstance(value, bool):
+                json_value[name] = {
+                    'className': 'bool',
+                    'value': value,
+                }
+            elif isinstance(value, bytes):
+                bytes_atom = BytesAtom(content=value)
+                bytes_atom._save()
+                json_value[name] = {
+                    'className': 'BytesAtom',
+                    'transaction_id': bytes_atom.atom_pointer.transaction_id,
+                    'offset': bytes_atom.atom_pointer.offset,
+                }
+            elif value == None:
+                json_value[name] = {
+                    'className': 'None',
+                }
+        return json_value
 
     def _save(self):
         if not self.atom_pointer and not self._saving:
@@ -151,19 +257,25 @@ class Atom(metaclass=AtomMetaclass):
                 # Push the object tree downhill, avoiding recursion loops
                 # converting attributes strs to Literals
                 self._saving = True
+
                 for name, value in self.__dict__.items():
                     if isinstance(value, Atom):
                         if not value._transaction:
                             value._transaction = self._transaction
                         value._save()
-                    elif isinstance(value, str):
-                        new_literal = self._transaction.get_literal(value)
-                        setattr(self, name, new_literal)
-                        new_literal._save()
+
+                json_value = {'AtomClass': self.__class__.__name__}
+
+                for name, value in self.__dict__.items():
+                    if name.startswith('_'):
+                        continue
+                    json_value[name] = value
+
+                json_value = self._dict_to_json(json_value)
 
                 # At this point all attributes has been flushed to storage if they are newly created
                 # All attributes has valid AtomPointer values (either old or new)
-                pointer = self._transaction.database.object_space.storage_provider.push_atom(self).result()
+                pointer = self._push_to_storage(json_value)
                 self.atom_pointer = AtomPointer(pointer.transaction_id, pointer.offset)
             else:
                 raise ProtoValidationException(
@@ -313,20 +425,18 @@ class ParentLink(Atom):
 
 
 class DBObject(Atom, AbstractDBObject):
-    object_id: ObjectId
     parent_link: ParentLink | None
 
     def __init__(self,
                  transaction_id: uuid.UUID=None,
                  offset:int = 0,
-                 object_id: ObjectId=None,
                  parent_link: ParentLink=None,
-                 attributes: dict[str, Atom]=None,
+                 attributes: dict[str, Atom | int | float | None | datetime.datetime | datetime.date |
+                                       datetime.timedelta | bool | bytes | str]={},
                  **kwargs):
         if attributes:
             self._attributes = attributes
         super().__init__(transaction_id=transaction_id, offset=offset, attributes=attributes)
-        self._object_id = object_id or kwargs.pop('object_id')
         self._parent_link = parent_link or kwargs.pop('parent_link')
         self._loaded = False
 
@@ -348,6 +458,19 @@ class DBObject(Atom, AbstractDBObject):
                     )
                 else:
                     self._attributes[attribute_name] = attribute_value
+
+    def _push_to_storage(self, json_value: dict):
+        json_value['_attributes'] = {}
+        for attribute_name, attribute_value in self._attributes.items():
+            json_value['_attributes'][attribute_name] = attribute_value
+
+        return super()._push_to_storage(json_value)
+
+    def _json_to_dict(self, json_value:dict) -> dict:
+        data = super()._json_to_dict(json_value)
+        if '_attributes' in data:
+            data['_attributes'] = super()._json_to_dict(data['_attributes'])
+        return data
 
     def __getattr__(self, name: str):
         self._load()
@@ -538,3 +661,51 @@ class Literal(Atom):
             return Literal(literal=self.string + other)
 
 
+class BytesAtom(Atom):
+    filename: str
+    mimetype: str
+    content: str
+
+    def __init__(self,
+                 transaction_id: uuid.UUID = None,
+                 offset: int = 0,
+                 filename: str = None,
+                 mimetype: str = None,
+                 content: str | bytes = None,
+                 **kwargs):
+        super().__init__(transaction_id=transaction_id, offset=offset)
+
+        self.filename = filename
+        self.mimetype = mimetype
+
+        if isinstance(content, bytes):
+            self.content = base64.encode(content)
+        elif isinstance(content, str):
+            self.content = content or kwargs.pop('content')
+        else:
+            raise ProtoValidationException(
+                message=f'It is not possible to create a BytesAtom with {type(content)}!'
+            )
+
+    def __str__(self) -> str:
+        return self.content
+
+    def __eq__(self, other: BytesAtom) -> bool:
+        if isinstance(other, BytesAtom):
+            return self.transaction_id == other.transaction_id and \
+                   self.offset == other.offset
+        else:
+            return False
+
+    def __add__(self, other: bytes | BytesAtom) -> BytesAtom:
+        if isinstance(other, BytesAtom):
+            return BytesAtom(
+                content=base64.encode(base64.b64decode(self.content) + base64.b64decode(other.content)),
+            )
+        elif isinstance(other, bytes):
+            return BytesAtom(
+                content=base64.encode(base64.b64decode(self.content) + other),
+            )
+        raise ProtoValidationException(
+            message=f'It is not possible to extend BytesAtom with {type(other)}!'
+        )
