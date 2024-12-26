@@ -48,7 +48,7 @@ class AbstractSharedStorage(ABC):
     """
 
     @abstractmethod
-    def push_atom(self, atom: Atom) -> Future[AtomPointer]:
+    def push_atom(self, atom: dict) -> Future[AtomPointer]:
         """
 
         :param atom:
@@ -142,10 +142,10 @@ class Atom(metaclass=AtomMetaclass):
             if self._transaction and \
                self.atom_pointer.transaction_id and \
                self.atom_pointer.offset:
-                loaded_atom: dict  = cast(dict,
-                    self._transaction.database.object_space.storage_provider.get_atom(self.atom_pointer).result())
-                loaded_atom = self._json_to_dict(loaded_atom)
-                for attribute_name, attribute_value in loaded_atom.__dict__.items():
+                loaded_atom: Atom = self._transaction.database.object_space.storage_provider.get_atom(
+                    self.atom_pointer).result()
+                loaded_dict = self._json_to_dict(loaded_atom.__dict__)
+                for attribute_name, attribute_value in loaded_dict.items():
                     setattr(self, attribute_name, attribute_value)
             self._loaded = True
 
@@ -163,7 +163,7 @@ class Atom(metaclass=AtomMetaclass):
         )
 
     def _push_to_storage(self, json_value: dict) -> AtomPointer:
-        return self._transaction.database.object_space.storage_provider.push_atom(self).result()
+        return self._transaction.database.object_space.storage_provider.push_atom(json_value).result()
 
     def _json_to_dict(self, json_data: dict) -> dict:
         data = {}
@@ -404,10 +404,6 @@ class SharedStorage(AbstractSharedStorage):
         """
 
 
-class ObjectId:
-    id : int
-
-
 class AbstractDBObject(Atom):
     """
     ABC to solve forward definition
@@ -432,7 +428,7 @@ class DBObject(Atom, AbstractDBObject):
                  offset:int = 0,
                  parent_link: ParentLink=None,
                  attributes: dict[str, Atom | int | float | None | datetime.datetime | datetime.date |
-                                       datetime.timedelta | bool | bytes | str]={},
+                                       datetime.timedelta | bool | bytes | str]=None,
                  **kwargs):
         if attributes:
             self._attributes = attributes
@@ -633,6 +629,31 @@ class DBCollections(Atom):
         :return:
         """
 
+    @abstractmethod
+    def as_query_plan(self) -> QueryPlan:
+        """
+        Get a query plan based on this collection
+        :return:
+        """
+
+
+class QueryPlan(Atom):
+    based_on: QueryPlan
+
+    @abstractmethod
+    def execute(self) -> DBCollections:
+        """
+
+        :return:
+        """
+
+    @abstractmethod
+    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
+        """
+
+        :return:
+        """
+
 
 class Literal(Atom):
     string:str
@@ -679,7 +700,7 @@ class BytesAtom(Atom):
         self.mimetype = mimetype
 
         if isinstance(content, bytes):
-            self.content = base64.encode(content)
+            self.content = base64.b64encode(content).decode('UTF-8')
         elif isinstance(content, str):
             self.content = content or kwargs.pop('content')
         else:
@@ -700,11 +721,12 @@ class BytesAtom(Atom):
     def __add__(self, other: bytes | BytesAtom) -> BytesAtom:
         if isinstance(other, BytesAtom):
             return BytesAtom(
-                content=base64.encode(base64.b64decode(self.content) + base64.b64decode(other.content)),
+                content=base64.b64encode(
+                    base64.b64decode(self.content) + base64.b64decode(other.content)).decode('UTF-8'),
             )
         elif isinstance(other, bytes):
             return BytesAtom(
-                content=base64.encode(base64.b64decode(self.content) + other),
+                content=base64.b64encode(base64.b64decode(self.content) + other).decode('UTF-8'),
             )
         raise ProtoValidationException(
             message=f'It is not possible to extend BytesAtom with {type(other)}!'
