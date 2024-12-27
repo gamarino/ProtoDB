@@ -21,7 +21,8 @@ class Set(Atom):
         self.content = content
 
     def as_iterable(self) -> list[Atom]:
-        return [item[1] for item in self.content.as_iterable()]
+        for hash_value, item in self.content.as_iterable():
+            yield item
 
     def as_query_plan(self) -> QueryPlan:
         return self.content.as_query_plan()

@@ -648,7 +648,7 @@ class QueryPlan(Atom):
     based_on: QueryPlan
 
     @abstractmethod
-    def execute(self) -> DBCollections:
+    def execute(self) -> list:
         """
 
         :return:

@@ -87,7 +87,7 @@ class HashDictionary(DBCollections):
             if node.key is not None:
                 result.append((node.key, node.value))
             result += scan(node.next) if node.next else []
-            return result
+            yield result
 
         return scan(self)
 
@@ -334,9 +334,8 @@ class Dictionary(DBCollections):
         self.content = content
 
     def as_iterable(self) -> list[tuple[str, Atom]]:
-        return [(cast(DictionaryItem, item).key.literal,
-                cast(DictionaryItem, item).value)
-                for item in self.content.as_iterable()]
+        for hash_value, item in self.content.as_iterable():
+            yield cast(DictionaryItem, item).key.literal, cast(DictionaryItem, item).value
 
     def as_query_plan(self) -> QueryPlan:
         return self.content.as_query_plan()
