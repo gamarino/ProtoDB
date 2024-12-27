@@ -10,7 +10,6 @@ from .common import Atom, \
 
 from .dictionaries import HashDictionary, Dictionary
 from .lists import List
-from .sets import HashSet
 
 from threading import Lock
 
