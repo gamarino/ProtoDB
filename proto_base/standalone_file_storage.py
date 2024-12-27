@@ -6,7 +6,7 @@ from abc import ABC
 from threading import Lock
 from . import common
 from .common import MB, GB
-from .common import ProtoUnexpectedException, ProtoValidationException
+from .exceptions import ProtoUnexpectedException, ProtoValidationException
 from .common import Future, BlockProvider, Atom, AtomPointer, atom_class_registry
 import uuid
 import logging
