@@ -5,6 +5,13 @@ from .exceptions import ProtoUnexpectedException, ProtoValidationException, Prot
 from .common import Atom, QueryPlan
 
 
+class ListPlan(QueryPlan):
+    """
+    Create a QueryPlan from a python list
+    """
+    # TODO
+
+
 class FromPlan(QueryPlan):
     """
 

@@ -10,8 +10,8 @@ from .exceptions import ProtoBaseException, ProtoUserException, ProtoCorruptionE
 from .common import DBObject, DBCollections, QueryPlan
 from .object_storage import ObjectSpace, Database, ObjectTransaction
 
-from .sets import HashSet
+from .sets import Set
 from .lists import List
 from .dictionaries import HashDictionary, Dictionary
 from .queries import FromPlan, WherePlan, GroupByPlan, SelectPlan, HavingPlan, \
-                     OrderByPlan, LimitPlan, OffsetPlan
+                     OrderByPlan, LimitPlan, OffsetPlan, ListPlan

@@ -1,5 +1,7 @@
 from __future__ import annotations
-from .common import Atom, DBCollections, QueryPlan
+from typing import cast
+
+from .common import Atom, DBCollections, QueryPlan, Literal
 
 import uuid
 
@@ -53,19 +55,25 @@ class HashDictionary(DBCollections):
         self.previous = previous
 
         # Calculate the total count of nodes in the current subtree.
-        count = 1
-        if self.previous:
-            count += self.previous.count
-        if self.next:
-            count += self.next.count
-        self.count = count
+        if key is not None:
+            count = 1
+            if self.previous:
+                count += self.previous.count
+            if self.next:
+                count += self.next.count
+            self.count = count
+        else:
+            self.count = 0
 
         # Calculate the height of the current subtree.
-        height = 1
-        previous_height = previous.height if previous else 0
-        next_height = next.height if next else 0
-        height += max(previous_height, next_height)
-        self.height = height
+        if key is not None:
+            height = 1
+            previous_height = previous.height if previous else 0
+            next_height = next.height if next else 0
+            height += max(previous_height, next_height)
+            self.height = height
+        else:
+            self.height = 0
 
     def as_iterable(self) -> list[tuple[int, Atom]]:
         """
@@ -296,6 +304,20 @@ class HashDictionary(DBCollections):
 
         return new_node._rebalance()
 
+class DictionaryItem(Atom):
+    key: Literal
+    value: Atom
+
+    def __init__(self,
+                 key: str = None,
+                 value: Atom = None,
+                 transaction_id: uuid.UUID = None,
+                 offset:int = 0,
+                 **kwargs):
+        super().__init__(transaction_id=transaction_id, offset=offset)
+        self.key = Literal(literal=key)
+        self.value = value
+
 
 class Dictionary(DBCollections):
     """
@@ -304,31 +326,31 @@ class Dictionary(DBCollections):
     content: HashDictionary
 
     def __init__(self,
+                 content: HashDictionary = None,
                  transaction_id: uuid.UUID = None,
                  offset:int = 0,
-                 content: HashDictionary = None,
                  **kwargs):
         super().__init__(transaction_id=transaction_id, offset=offset)
         self.content = content
 
-    def as_iterable(self) -> list[Atom]:
-        # TODO
-        return []
+    def as_iterable(self) -> list[tuple[str, Atom]]:
+        return [(cast(DictionaryItem, item).key.literal,
+                cast(DictionaryItem, item).value)
+                for item in self.content.as_iterable()]
 
     def as_query_plan(self) -> QueryPlan:
-        # TODO
-        pass
+        return self.content.as_query_plan()
 
-    def get_at(self, key: Atom) -> Atom:
+    def get_at(self, key: str) -> Atom:
         """
 
         :param key:
         :return:
         """
-        hash = key.hash()
-        return self.content.get_at(hash)
+        item_hash = self._transaction.get_literal(key).hash()
+        return self.content.get_at(item_hash)
 
-    def set_at(self, key: Atom, value: Atom) -> Dictionary:
+    def set_at(self, key: str, value: Atom) -> Dictionary:
         """
         Returns a new HashDirectory with the value set at key
 
@@ -336,30 +358,31 @@ class Dictionary(DBCollections):
         :param value: Atom
         :return: a new HashDirectory with the value set at key
         """
-        hash = key.hash()
+        item = DictionaryItem(key=key, value=value)
+        item_hash = self._transaction.get_literal(key)
         return Dictionary(
-            content=self.content.set_at(hash, value),
+            content=self.content.set_at(item_hash, item),
         )
 
-    def remove_key(self, key: str | Atom) -> Dictionary:
+    def remove_key(self, key: str) -> Dictionary:
         """
         Returns a new HashDirectory with the key removed if exists
 
         :param key: int
         :return: a new HashDirectory with the key removed
         """
-        hash = key.hash()
+        item_hash = self._transaction.get_literal(key)
         return Dictionary(
-            content=self.content.remove_key(hash),
+            content=self.content.remove_key(item_hash),
         )
 
-    def has(self, key: str | Atom) -> bool:
+    def has(self, key: str) -> bool:
         """
         Test for key
 
         :param key:
         :return: True if key is in the dictionary, False otherwise
         """
-        hash = key.hash()
-        return self.content.has(hash)
+        item_hash = self._transaction.get_literal(key)
+        return self.content.has(item_hash)
 
