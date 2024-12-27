@@ -7,7 +7,7 @@ from threading import Lock
 from . import common
 from .common import MB, GB
 from .exceptions import ProtoUnexpectedException, ProtoValidationException
-from .common import Future, BlockProvider, Atom, AtomPointer, atom_class_registry
+from .common import Future, BlockProvider, Atom, AtomPointer, atom_class_registry, RootObject
 import uuid
 import logging
 
@@ -97,6 +97,27 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
         self.in_memory_segments = {}
 
         self._get_new_wal()
+
+    def read_current_root(self) -> RootObject:
+        """
+        Read the current root object
+        :return:
+        """
+        return self.block_provider.get_current_root_object()
+
+    def read_lock_current_root(self) -> RootObject:
+        """
+        Read the current root object
+        :return:
+        """
+        return self.block_provider.get_current_root_object()
+
+    def set_current_root(self, root_pointer: RootObject):
+        """
+        Set the current root object
+        :return:
+        """
+        self.block_provider.update_root_object(root_pointer)
 
     def _get_new_wal(self):
         """

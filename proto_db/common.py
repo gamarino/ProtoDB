@@ -386,6 +386,13 @@ class SharedStorage(AbstractSharedStorage):
         """
 
     @abstractmethod
+    def read_lock_current_root(self) -> RootObject:
+        """
+        Read the current root object
+        :return:
+        """
+
+    @abstractmethod
     def set_current_root(self, root_pointer: RootObject):
         """
         Set the current root object
