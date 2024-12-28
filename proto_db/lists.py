@@ -301,7 +301,7 @@ class List(Atom):
                 )
             else:
                 new_node = List(
-                    value=value,
+                    value=self.value,
                     previous=List(
                         value=value,
                         previous=None,
@@ -378,7 +378,7 @@ class List(Atom):
                 )
             else:
                 new_node = List(
-                    value=value,
+                    value=self.value,
                     previous=List(
                         value=value,
                         previous=None,
