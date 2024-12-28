@@ -4,8 +4,8 @@ from typing import cast
 import uuid
 from .exceptions import ProtoValidationException
 from .common import Atom, \
-                    AbstractObjectSpace, AbstractDatabase, AbstractTransaction, \
-                    SharedStorage, RootObject, Literal
+    AbstractObjectSpace, AbstractDatabase, AbstractTransaction, \
+    SharedStorage, RootObject, Literal, atom_class_registry, AtomPointer
 
 from .dictionaries import HashDictionary, Dictionary
 from .lists import List
@@ -183,6 +183,8 @@ class ObjectTransaction(AbstractTransaction):
     """
     current_root: Dictionary = None
 
+    read_objects: HashDictionary = HashDictionary()
+
     """
     Any modified or created roots within this transaction
     """
@@ -238,6 +240,19 @@ class ObjectTransaction(AbstractTransaction):
             self.mutable_objects = HashDictionary()
         self.new_literals = Dictionary(transaction=self)
         self.lock = Lock()
+
+    def read_object(self, class_name: str, atom_pointer: AtomPointer) -> Atom:
+        with self.lock:
+            atom_hash = atom_pointer.hash()
+            if not self.read_objects.has(atom_hash):
+                atom = self.read_objects.set_at(
+                    atom_hash,
+                    atom_class_registry[class_name](transaction=self, atom_pointer=atom_pointer)
+                )
+            else:
+                atom = self.read_objects.get_at(atom_hash)
+
+            return atom
 
     def get_literal(self, string: str):
         with self.lock:

@@ -24,6 +24,8 @@ class AtomPointer(object):
         self.transaction_id = transaction_id
         self.offset = offset
 
+    def hash(self):
+        return self.transaction_id.int ^ self.offset
 
 atom_class_registry = dict()
 
@@ -168,6 +170,23 @@ class AbstractTransaction(ABC):
         self.database = database
 
     @abstractmethod
+    def read_object(self, class_name: str, atom_pointer: AtomPointer) -> Atom:
+        """
+        Get an unloaded Atom based on atom_pointer, of a given Atom class.
+        Just with the right class and atom_pointer, no data retrieved from
+        the database.
+        If the same Atom was already read in this transaction, get the same
+        object as before, in order to ensure all references within this
+        transaction receive exactly the same object. With this strategy
+        any comparison could use object memory addresses to check for identity
+
+        :param class_name:
+        :param atom_pointer:
+        :return:
+        """
+
+
+    @abstractmethod
     def get_literal(self, string: str) -> Literal:
         """
 
@@ -290,21 +309,29 @@ class Atom(metaclass=CombinedMeta):
         data = {}
 
         for name, value in json_data.items():
-            if isinstance(value, dict):
-                if 'className' == 'datetime.datetime':
+            if isinstance(value, dict) and 'className' in value:
+                class_name = value['className']
+                if class_name == 'datetime.datetime':
                     value = datetime.datetime.fromisoformat(value['iso'])
-                elif 'className' == 'datetime.date':
+                elif class_name == 'datetime.date':
                     value = datetime.date.fromisoformat(value['iso'])
-                elif 'className' == 'datetime.timedelta':
+                elif class_name == 'datetime.timedelta':
                     value = datetime.timedelta(microseconds=value['microseconds'])
-                elif 'className' == 'int':
+                elif class_name == 'int':
                     value = int(value['value'])
-                elif 'className' == 'float':
+                elif class_name == 'float':
                     value = float(value['value'])
-                elif 'className' == 'bool':
+                elif class_name == 'bool':
                     value = bool(value['value'])
-                elif 'className' == 'None':
+                elif class_name == 'None':
                     value = None
+                elif class_name in atom_class_registry:
+                    atom_pointer = AtomPointer(value['transaction_id'], value['offset'])
+                    value = self._transaction.read_object(class_name, atom_pointer)
+                else:
+                    raise ProtoValidationException(
+                        message=f'It is not possible to load Atom of class {class_name}!'
+                    )
             data[name] = value
 
         return data
@@ -405,8 +432,7 @@ class Atom(metaclass=CombinedMeta):
                 )
 
     def hash(self) -> int:
-        return self.atom_pointer.transaction_id.int ^ \
-            self.atom_pointer.offset
+        return self.atom_pointer.hash()
 
 
 class RootObject(Atom):
