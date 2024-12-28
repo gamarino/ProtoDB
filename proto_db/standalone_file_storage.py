@@ -371,8 +371,13 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
         if not isinstance(data, bytes):
             raise ProtoValidationException(message="Invalid data to push. Only bytes!")
 
+        if len(data) > self.blob_max_size:
+            raise ProtoValidationException(
+                message=f"Data exceeds maximum blob size ({len(data)} bytes). "
+                        f"Only up to {self.blob_max_size} bytes are accepted!")
+
         def task_push_bytes():
-            transaction_id, offset = self.push_bytes(data)
+            transaction_id, offset = self.push_bytes_to_wal(bytearray(data))
             return AtomPointer(transaction_id, offset)
 
         return self.executor_pool.submit(task_push_bytes)
