@@ -49,17 +49,62 @@ class AbstractSharedStorage(ABC):
     @abstractmethod
     def push_atom(self, atom: dict) -> Future[AtomPointer]:
         """
+        Pushes an atom to the underlying system.
 
-        :param atom:
-        :return:
+        This method is an abstract method that must be implemented by subclasses.
+        The method takes an atom dictionary as input and returns a future representing
+        an `AtomPointer`. The implementation details are deferred to the derived classes.
+
+        :param atom: A dictionary representing the atom data to be pushed.
+        :return: A future object that resolves to an `AtomPointer`.
         """
 
     @abstractmethod
     def get_atom(self, atom_pointer: AtomPointer) -> Future[Atom]:
         """
+        Fetches an atom using the given AtomPointer and returns a Future that resolves
+        to the atom. This method provides an interface for retrieving atoms, which can
+        be implemented asynchronously or synchronously depending on the underlying
+        implementation.
 
-        :param atom_pointer:
-        :return:
+        This is an abstract method and must be implemented by subclasses, enforcing
+        a contract that ensures a consistent pattern for atom retrieval.
+
+        :param atom_pointer: A pointer object that identifies the atom to be retrieved.
+        :type atom_pointer: AtomPointer
+        :return: A Future object that resolves to the retrieved Atom instance.
+        :rtype: Future[Atom]
+        """
+
+    @abstractmethod
+    def get_bytes(self, atom_pointer: AtomPointer) -> Future[bytes]:
+        """
+        Retrieves the byte data associated with the given atom pointer.
+
+        This method is used to asynchronously fetch and return the byte data
+        corresponding to the `AtomPointer` provided. It must be implemented
+        by any subclass as it is declared abstract.
+
+        :param atom_pointer: Pointer to the atom whose byte data is to be
+                             retrieved.
+        :type atom_pointer: AtomPointer
+        :return: A future holding the byte data corresponding to
+                 the atom pointer.
+        :rtype: Future[bytes]
+        """
+
+    @abstractmethod
+    def push_bytes(self, data: bytes) -> Future[AtomPointer]:
+        """
+        Pushes a sequence of bytes to the underlying data structure or processing unit.
+
+        This method is abstract and must be implemented by subclasses. The concrete
+        implementation should handle the provided byte sequence according to its
+        specific requirements and behavior.
+
+        :param data: A sequence of bytes to be processed or stored.
+        :type data: bytes
+        :return: None
         """
 
 
@@ -798,3 +843,31 @@ class BytesAtom(Atom):
             raise ProtoValidationException(
                 message=f"It's not possible to extend BytesAtom with {type(other)}!"
             )
+
+    def _load(self):
+        if not self._loaded:
+            if self._transaction:
+                if self.atom_pointer.transaction_id and \
+                   self.atom_pointer.offset:
+                    loaded_content = self._transaction.database.object_space.storage_provider.get_bytes(
+                        self.atom_pointer).result()
+                    self.content = loaded_content
+            self._loaded = True
+
+    def _save(self):
+        if not self.atom_pointer and not self._saving:
+            # It's a new object
+
+            if self._transaction:
+                # Push the object tree downhill, avoiding recursion loops
+                # converting attributes strs to Literals
+                self._saving = True
+
+                # At this point all attributes has been flushed to storage if they are newly created
+                # All attributes has valid AtomPointer values (either old or new)
+                pointer = self._push_bytes(self.content)
+                self.atom_pointer = AtomPointer(pointer.transaction_id, pointer.offset)
+            else:
+                raise ProtoValidationException(
+                    message=f'An DBObject can only be saved within a given transaction!'
+                )

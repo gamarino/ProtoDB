@@ -1,5 +1,6 @@
 from . import common
-from .common import Future, Atom, AtomPointer, RootObject
+from .common import Future, Atom, AtomPointer, RootObject, BytesAtom
+from .exceptions import ProtoCorruptionException
 import uuid
 from threading import Lock  # Import threading lock to ensure thread safety
 
@@ -102,6 +103,66 @@ class MemoryStorage(common.SharedStorage):
             raise common.ProtoCorruptionException(
                 message=f'Atom at {atom_pointer} does not exist'
             )
+
+    def get_bytes(self, atom_pointer: AtomPointer) -> Future[bytes]:
+        """
+        Retrieves the byte data associated with the given atom pointer.
+
+        This method is used to asynchronously fetch and return the byte data
+        corresponding to the `AtomPointer` provided. It must be implemented
+        by any subclass as it is declared abstract.
+
+        :param atom_pointer: Pointer to the atom whose byte data is to be
+                             retrieved.
+        :type atom_pointer: AtomPointer
+        :return: A future holding the byte data corresponding to
+                 the atom pointer.
+        :rtype: Future[bytes]
+        """
+        with self.lock:  # Ensure thread-safety for operations on `atoms`.
+            # Check if the atom exists in the dictionary.
+            if atom_pointer.offset in self.atoms:
+                data:bytes = self.atoms[atom_pointer.offset]
+
+                # Create and return a Future with the retrieved atom.
+                result = Future()
+                result.set_result(data)
+                return result
+
+            # Raise an error if the atom does not exist.
+            raise common.ProtoCorruptionException(
+                message=f'Atom at {atom_pointer} does not exist'
+            )
+
+    def push_bytes(self, data: bytes) -> Future[AtomPointer]:
+        """
+        Pushes a sequence of bytes to the underlying data structure or processing unit.
+
+        This method is abstract and must be implemented by subclasses. The concrete
+        implementation should handle the provided byte sequence according to its
+        specific requirements and behavior.
+
+        :param data: A sequence of bytes to be processed or stored.
+        :type data: bytes
+        :return: None
+        """
+        atom = BytesAtom(content=data)
+
+        with self.lock:  # Ensure thread-safety for operations on `atoms`.
+            atom.atom_pointer.transaction_id = self.transaction_id  # Associate atom with the current transaction ID.
+
+            atom.atom_pointer.offset = uuid.uuid4()
+            # Check if the offset already exists in the atoms dictionary.
+            while atom.atom_pointer.offset in self.atoms:
+                atom.atom_pointer.offset = uuid.uuid4()
+
+            # Add the atom to the storage.
+            self.atoms[atom.atom_pointer.offset] = atom
+
+            # Create and return a Future with the atom's pointer.
+            result = Future()
+            result.set_result(atom.atom_pointer)
+            return result
 
     def close(self):
         """

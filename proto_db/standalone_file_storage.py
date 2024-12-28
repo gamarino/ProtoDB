@@ -164,8 +164,6 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
         Processes WALWriteOperation entries in the pending_writes list.
         Writes the data to the underlying BlockProvider.
         """
-        operations: list[WALWriteOperation] = []
-
         while True:
             with self._lock:
                 if self.pending_writes:
@@ -209,7 +207,7 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
                 exception_type=e.__class__.__name__
             )
 
-    def push_bytes(self, data: bytearray) -> tuple[uuid.UUID, int]:
+    def push_bytes_to_wal(self, data: bytearray) -> tuple[uuid.UUID, int]:
         """
         Adds data to the Write-Ahead Log (WAL).
         """
@@ -336,7 +334,45 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
                         attributes[attribute_name] = value
             data = bytearray(json.dumps(attributes).encode('UTF-8'))
 
-            transaction_id, offset = self.push_bytes(data)
+            transaction_id, offset = self.push_bytes_to_wal(data)
             return AtomPointer(transaction_id, offset)
 
         return self.executor_pool.submit(task_push_atom)
+
+    def get_bytes(self, pointer: AtomPointer) -> Future[bytes]:
+        """
+        Retrieves an Atom from the underlying storage asynchronously.
+        """
+        if not isinstance(pointer, AtomPointer):
+            raise ProtoValidationException(message="Pointer must be an instance of AtomPointer.")
+
+        def task_read_bytes():
+            with self._lock:
+                if (pointer.transaction_id, pointer.offset) in self.in_memory_segments:
+                    # It is already in memory
+                    streamer = io.BytesIO(self.in_memory_segments[(pointer.transaction_id, pointer.offset)])
+                else:
+                    # It should be find in block provider
+                    streamer = self.block_provider.get_reader(pointer.transaction_id, pointer.offset)
+
+            # Read the atom from the storage getting just the needed amount of data. No extra reads
+            data = bytes()
+            with streamer as wal_stream:
+                data += wal_stream.read(1)
+
+            return data
+
+        return self.executor_pool.submit(task_read_bytes)
+
+    def push_bytes(self, data: bytes) -> Future[AtomPointer]:
+        """
+        Serializes and pushes an Atom into the WAL asynchronously.
+        """
+        if not isinstance(data, bytes):
+            raise ProtoValidationException(message="Invalid data to push. Only bytes!")
+
+        def task_push_bytes():
+            transaction_id, offset = self.push_bytes(data)
+            return AtomPointer(transaction_id, offset)
+
+        return self.executor_pool.submit(task_push_bytes)
