@@ -484,6 +484,7 @@ class Dictionary(DBCollections):
                  **kwargs):
         super().__init__(transaction_id=transaction_id, offset=offset)
         self.content = content if content else HashDictionary()
+        self.count = self.content.count
 
     def as_iterable(self) -> list[tuple[str, Atom]]:
         for hash_value, item in self.content.as_iterable():

@@ -29,7 +29,8 @@ class Set(Atom):
         :param kwargs: Any additional data passed for extended configurations.
         """
         super().__init__(transaction_id=transaction_id, offset=offset)
-        self.content = content  # Store the underlying hash-based dictionary.
+        self.content = content if content else HashDictionary()  # Store the underlying hash-based dictionary.
+        self.count = self.content.count
 
     def as_iterable(self) -> list[Atom]:
         """
@@ -88,7 +89,7 @@ class Set(Atom):
             content=self.content.set_at(item_hash, key),  # Add key-hash to the dictionary.
         )
 
-    def remove_key(self, key: object) -> Set:
+    def remove_at(self, key: object) -> Set:
         """
         Removes the specified `key` from the `Set`, creating and returning a new `Set`
         that excludes the specified key. Returns the same set if the key does not exist.
@@ -104,5 +105,5 @@ class Set(Atom):
 
         # Create and return a new `Set` with the updated `HashDictionary`.
         return Set(
-            content=self.content.remove_key(item_hash),  # Remove key-hash from the dictionary.
+            content=self.content.remove_at(item_hash),  # Remove key-hash from the dictionary.
         )
