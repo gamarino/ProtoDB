@@ -10,6 +10,7 @@ from .common import Atom, \
 
 from .dictionaries import HashDictionary, Dictionary
 from .lists import List
+from .sets import Set
 
 from threading import Lock
 
@@ -280,9 +281,9 @@ class ObjectTransaction(AbstractTransaction):
         """
         return List(transaction=self)
 
-    def new_hash_set(self) -> HashSet:
+    def new_hash_set(self) -> Set:
         """
         Return a new Set connected to this transaction
         :return:
         """
-        return HashSet(transaction=self)
+        return Set(transaction=self)

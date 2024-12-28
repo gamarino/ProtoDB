@@ -1,7 +1,5 @@
 """
-Common objects
-
-
+Basic definitions
 """
 from __future__ import annotations
 from typing import cast
@@ -12,14 +10,13 @@ from abc import ABC, abstractmethod, ABCMeta
 import io
 import configparser
 import datetime
-import base64
-from .exceptions import ProtoValidationException, ProtoCorruptionException
+from .exceptions import ProtoValidationException
 
 # Constants for storage size units
-KB = 1024
-MB = KB * KB
-GB = KB * MB
-PB = KB * GB
+KB: int  = 1024
+MB: int  = KB * KB
+GB: int  = KB * MB
+PB: int  = KB * GB
 
 
 class AtomPointer(object):
@@ -104,7 +101,7 @@ class AbstractTransaction(ABC):
         self.database = database
 
     @abstractmethod
-    def get_literal(self, string: str):
+    def get_literal(self, string: str) -> Literal:
         """
 
         :param string:
@@ -120,6 +117,38 @@ class AbstractTransaction(ABC):
         :return:
         """
 
+    @abstractmethod
+    def get_mutable(self, key:int) -> Atom:
+        """
+        Retrieve a mutable object based on the provided key.
+
+        This method retrieves a mutable object associated with the given key. The key
+        is an integer identifier for the object. Implementations of this abstract
+        method should provide the mutable object corresponding to the key.
+
+        :param key: Identifier for the object to retrieve.
+        :type key: int
+        :return: The mutable object associated with the provided key.
+        """
+
+    @abstractmethod
+    def set_mutable(self, key:int, value:Atom):
+        """
+        Sets the mutable value for the specified key.
+
+        This abstract method is intended to be implemented by a subclass, allowing
+        the setting of a mutable value represented by an Atom to the given key.
+        The provided implementation should define the behavior for storing or
+        associating the value with the key dynamically. Ensure that the input key
+        and value comply with the required types.
+
+        :param key: The integer key for which the value will be set.
+        :type key: int
+        :param value: The Atom instance to be associated with the specified key.
+        :type value: Atom
+        :return: None
+        :rtype: None
+        """
 
 # Metaclase combinada: Combina AtomMetaclass y ABCMeta
 class CombinedMeta(ABCMeta, AtomMetaclass):
@@ -127,6 +156,29 @@ class CombinedMeta(ABCMeta, AtomMetaclass):
 
 
 class Atom(metaclass=CombinedMeta):
+    """
+    Represents a self-contained unit of data (Atom) that interacts with a database
+    through an associated transaction mechanism. Atoms can be saved, loaded, and
+    interact with storage providers to persist data in a structured format.
+
+    This class implements a mechanism to serialize and deserialize its attributes
+    to and from JSON for storage, and uses the notion of a 'pointer' (AtomPointer)
+    to uniquely identify its position in the storage.
+
+    :ivar atom_pointer: Points to the storage location of the atom. Contains
+        information like transaction ID and offset.
+    :type atom_pointer: AtomPointer
+    :ivar _transaction: References the transaction context for operations
+        involving this atom. If absent, certain operations like saving
+        are not permitted.
+    :type _transaction: AbstractTransaction
+    :ivar _loaded: Whether the atom's attributes have been loaded from storage.
+        False by default.
+    :type _loaded: bool
+    :ivar _saving: Indicates whether the atom is in the process of being
+        saved to prevent recursion loops. Defaults to False.
+    :type _saving: bool
+    """
     atom_pointer: AtomPointer
     _transaction: AbstractTransaction
     _loaded: bool
@@ -192,7 +244,7 @@ class Atom(metaclass=CombinedMeta):
                     value._transaction = self._transaction
                 value._save()
                 json_value[name] = {
-                    'className': 'AtomPointer',
+                    'className': value.__name__,
                     'transaction_id': value.atom_pointer.transaction_id,
                     'offset': value.atom_pointer.offset,
                 }
@@ -283,11 +335,35 @@ class Atom(metaclass=CombinedMeta):
 
 
 class RootObject(Atom):
+    """
+    Represents the root object in a data structure.
+
+    This class serves as the root element for a hierarchical or structured data
+    representation. It provides access to basic components and operations
+    to manage and utilize the data structure effectively. `RootObject` inherits
+    from `Atom`, enabling integration with its core functionalities and properties.
+
+    :ivar object_root: The primary root object representing structured data.
+    :type object_root: Atom
+    :ivar literal_root: An auxiliary root object used for managing literals
+        within the data structure.
+    :type literal_root: Atom
+    """
     object_root: Atom
     literal_root: Atom
 
 
 class BlockProvider(ABC):
+    """
+    An abstract base class that defines the interface for a block-based storage provider.
+
+    This class serves as a blueprint for managing Write-Ahead Logs (WALs) and root objects in a
+    block-related storage system. It provides abstract methods for obtaining and writing data to WALs,
+    retrieving the root object, and managing data durability by closing WALs and the provider. Concrete
+    implementations of this class must provide functionality for these operations as outlined in the
+    specifications of the abstract methods.
+
+    """
     @abstractmethod
     def get_config_data(self) -> configparser.ConfigParser:
         """
@@ -318,15 +394,30 @@ class BlockProvider(ABC):
     @abstractmethod
     def get_writer_wal(self) -> uuid.UUID:
         """
+        Provides an abstract method that should be implemented by subclasses to retrieve the
+        unique identifier (UUID) of the writer's Write-Ahead Log (WAL). This UUID is used to
+        identify the WAL instance associated with the writer for consistency and tracking purposes.
 
-        :return:
+        :raises NotImplementedError: This method must be implemented in a subclass.
+        :return: The UUID of the writer's WAL.
+        :rtype: uuid.UUID
         """
 
     @abstractmethod
     def write_streamer(self, wal_id: uuid.UUID) -> io.FileIO:
         """
+        This abstract method must be implemented to handle the writing of a streaming
+        process for a given WAL (Write-Ahead Log) identifier. It is responsible for
+        generating and returning a writable file-like object, intended for downstream
+        operations that require data persistence or streaming output based on the
+        specified WAL ID.
 
-        :return:
+        :param wal_id: The unique identifier (UUID) of the Write-Ahead Log (WAL) to be
+                       streamed.
+        :type wal_id: uuid.UUID
+        :return: A writable file-like object for handling the streaming operations
+                 associated with the given WAL ID.
+        :rtype: io.FileIO
         """
 
     def get_current_root_object(self) -> RootObject:
@@ -406,91 +497,38 @@ class SharedStorage(AbstractSharedStorage):
         """
 
 
-class AbstractDBObject(Atom):
+class DBObject(Atom):
     """
-    ABC to solve forward definition
+    Represents a database object that provides dynamic attribute loading and immutability.
+
+    DBObject is designed to interact with protobase-based database systems. It features
+    dynamic attribute loading, where unknown attributes are resolved during runtime, and
+    enforces immutability by restricting direct attribute modifications. Instead, any modifications
+    result in the creation of a new instance with updated attributes.
+
+    If you try not access a not existing attribute, DBObjects will thow no error, instead a None
+    value will be returned.
+
+    :ivar _loaded: Indicates whether the object's attributes have been fully loaded.
+    :type _loaded: bool
     """
-    _attributes: dict[str, Atom]
-
-    def __init__(self, transaction_id: uuid.UUID = None, offset: int = 0, attributes: dict[str, Atom] = None):
-        super().__init__(transaction_id=transaction_id, offset=offset)
-        self._attributes = attributes
-
-
-class ParentLink(Atom):
-    parent_link: AbstractDBObject | None
-    cls: AbstractDBObject | None
-
-
-class DBObject(AbstractDBObject):
-    parent_link: ParentLink | None
 
     def __init__(self,
-                 transaction_id: uuid.UUID = None,
+                 transaction: AbstractTransaction = None,
+                 atom_pointer: AtomPointer = None,
                  offset: int = 0,
-                 parent_link: ParentLink = None,
-                 attributes: dict[str, Atom | int | float | None | datetime.datetime | datetime.date |
-                                       datetime.timedelta | bool | bytes | str] = None,
                  **kwargs):
-        if attributes:
-            self._attributes = attributes
-        super().__init__(transaction_id=transaction_id, offset=offset, attributes=attributes)
-        self._parent_link = parent_link or kwargs.pop('parent_link')
+        super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
         self._loaded = False
-
-        self._attributes = {}
-        if '_attributes' in kwargs:
-            for attribute_name, attribute_value in kwargs['_attributes'].items():
-                if attribute_name.startswith('_'):
-                    raise ProtoCorruptionException(
-                        message=f'DBObject attribute names could not start with "_" ({attribute_name}')
-
-                if isinstance(attribute_value, dict) and 'AtomClass' in attribute_value:
-                    if not attribute_value['AtomClass'] in atom_class_registry:
-                        raise ProtoCorruptionException(
-                            message=f"AtomClass {attribute_value['AtomClass']} unknown!")
-
-                    self._attributes[attribute_name] = atom_class_registry[attribute_value['AtomClass']](
-                        transaction_id=attribute_value['transaction_id'],
-                        offset=attribute_value['offset'],
-                    )
-                else:
-                    self._attributes[attribute_name] = attribute_value
-
-    def _push_to_storage(self, json_value: dict):
-        json_value['_attributes'] = {}
-        for attribute_name, attribute_value in self._attributes.items():
-            json_value['_attributes'][attribute_name] = attribute_value
-
-        return super()._push_to_storage(json_value)
-
-    def _json_to_dict(self, json_value: dict) -> dict:
-        data = super()._json_to_dict(json_value)
-        if '_attributes' in data:
-            data['_attributes'] = super()._json_to_dict(data['_attributes'])
-        return data
 
     def __getattr__(self, name: str):
         self._load()
-
-        if name.startswith('_'):
-            return getattr(super(), name)
-
-        if name in self._attributes:
-            return self._attributes[name]
-
-        pl = self._parent_link
-        while pl:
-            if name in pl.cls._attributes:
-                return pl.cls._attributes[name]
-            pl = pl.parent_link
-
         if hasattr(self, name):
             return getattr(super(), name)
-
         return None
 
     def __setattr__(self, key, value):
+        self._load()
         if hasattr(self, key):
             super().__setattr__(key, value)
         else:
@@ -498,64 +536,47 @@ class DBObject(AbstractDBObject):
                 message=f'ProtoBase DBObjects are inmutable! Your are trying to set attribute {key}'
             )
 
-    def _hasattr(self, name: str):
-        self._load()
-
-        if name.startswith('_'):
-            return hasattr(self, name)
-
-        if name in self._attributes:
-            return True
-
-        pl = self.parent_link
-        while pl:
-            if name in pl.cls._attributes:
-                return True
-            pl = pl.parent_link
-
-        return False
-
-    def _setattr(self, name: str, value):
-        self._load()
-
-        if name.startswith('_'):
-            super().__setattr__(name, value)
-            return self
-        else:
-            attr = self.attributes
-            attr[name] = value
-            return DBObject(
-                object_id=self.object_id,
-                transaction_id=self.transaction_id,
-                parent_link=attr,
-                offset=self.offset,
-            )
-
-    def _add_parent(self, new_parent: Atom):
-        self._load()
-
-        new_parent_link = ParentLink(parent_link=self._parent_link, cls=new_parent)
-        return DBObject(attributes=self._attributes, parent_link=new_parent_link)
+    def _setattr(self, name:str, value: object) ->DBObject:
+        new_object = DBObject()
+        for name, value in self.__dict__:
+            setattr(new_object, name, value)
+        setattr(new_object, name, value)
+        return new_object
 
 
 class MutableObject(DBObject):
     """
+    Represents a mutable object that inherits from DBObject and is used within the context
+    of a transaction. The purpose of this class is to provide a means for interacting with
+    mutable states in a database-like system, ensuring that operations are performed within
+    a valid transaction scope. The class supports attribute access, modification, and
+    validation while maintaining a unique hash key for identity.
 
+    This class enforces the rule that the mutable object must always work within the scope
+    of a transaction, throwing exceptions otherwise. It includes mechanisms to retrieve
+    and modify attributes dynamically and methods for serialization and deserialization
+    (_load and _save). It also assigns either a user-defined hash key or a newly generated
+    unique identifier.
+
+    :ivar hash_key: Unique key identifying the mutable object. This key can either be
+        provided during initialization or generated if not supplied.
+    :type hash_key: int
     """
     hash_key: int = 0
 
     def __init__(self,
+                 hash_key: int = 0,
                  transaction: AbstractTransaction = None,
                  atom_pointer: AtomPointer = None,
-                 **kwargs: dict[str, Atom]):
+                 **kwargs):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        if kwargs and 'hash_key' in kwargs:
-            self.hash_key = cast(int, kwargs['hash_key'])
+        if hash_key:
+            self.hash_key = hash_key
         else:
             self.hash_key = uuid.uuid4().int
 
     def __getattr__(self, name: str):
-        if not self.transaction:
+        if not self._transaction:
             raise ProtoValidationException(
                 message=f"You can't access a mutable object out of the scope of a transaction!"
             )
@@ -564,47 +585,23 @@ class MutableObject(DBObject):
         return current_object.__getattr__(name)
 
     def __setattr__(self, key, value):
-        if hasattr(self, key):
-            super().__setattr__(key, value)
-        else:
-            if not self._transaction:
-                raise ProtoValidationException(
-                    message=f'Proto MutableObjects can only be modified within the context of a transaction!'
-                )
-            current_object = cast(DBObject, self._transaction.get_mutable(self.hash_key))
-            new_object = current_object._setattr(key, value)
-            self._transaction.set_mutable(self.hash_key, new_object)
-
-    def _hasattr(self, name: str):
-        if not self.transaction:
+        if not self._transaction:
             raise ProtoValidationException(
                 message=f"You can't access a mutable object out of the scope of a transaction!"
             )
 
-        current_object = self.transaction.get_mutable(self.hash_key)
-        return current_object.hasattr(name)
-
-    def _setattr(self, name: str, value):
-        if not self.transaction:
-            raise ProtoValidationException(
-                message=f"You can't access a mutable object out of the scope of a transaction!"
-            )
-
-        current_object = self.transaction.get_mutable(self.hash_key)
-        new_object = current_object._setattr(name, value)
-        self.transaction.set_mutable(self.hash_key, new_object)
-        return self
-
-    def _add_parent(self, new_parent: Atom):
-        if not self.transaction:
-            raise ProtoValidationException(
-                message=f"You can't access a mutable object out of the scope of a transaction!"
-            )
-
-        current_object = self.transaction.get_mutable(self.hash_key)
-        new_object = current_object._add_parent(new_parent)
+        current_object = cast(DBObject, self._transaction.get_mutable(self.hash_key))
+        new_object = current_object._setattr(key, value)
         self._transaction.set_mutable(self.hash_key, new_object)
-        return self
+
+    def __hasattr__(self, name: str):
+        if not self._transaction:
+            raise ProtoValidationException(
+                message=f"You can't access a mutable object out of the scope of a transaction!"
+            )
+
+        current_object = self.transaction.get_mutable(self.hash_key)
+        return hasattr(current_object, name)
 
     def _load(self):
         pass
@@ -613,19 +610,36 @@ class MutableObject(DBObject):
         pass
 
     def hash(self) -> int:
-        return self.hash_key
+        return self.hash()
 
 
 class DBCollections(Atom):
+    """
+    DBCollections provides an abstraction layer for database collections.
+
+    This class serves as a base class for specific database collections, containing common
+    functionality such as managing indexes and abstract methods for data representation and
+    query planning.
+
+    :ivar indexes: A dictionary mapping index names (str) to Atom objects, representing
+        the indexes associated with this collection.
+    :type indexes: dict[str, Atom] | None
+    :ivar count: The total number of items in the collection.
+    :type count: int
+    """
     indexes: dict[str, Atom] | None
     count: int = 0
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.indexes = {}
+    def __init__(self,
+                 indexes: dict[str, Atom] | None = None,
+                 transaction: AbstractTransaction = None,
+                 atom_pointer: AtomPointer = None,
+                 **kwargs):
+        super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
+        self.indexes = indexes if indexes else {}
 
     @abstractmethod
-    def as_iterable(self) -> list[Atom]:
+    def as_iterable(self) -> list[object]:
         """
 
         :return:
@@ -640,7 +654,27 @@ class DBCollections(Atom):
 
 
 class QueryPlan(Atom):
+    """
+    Maintains the structure and logic for a query execution plan.
+
+    This class serves as a blueprint for creating and managing query execution
+    plans. It is designed to abstract the process of execution and optimization
+    of queries in systems, enabling extension for specific use cases or query types.
+    Being an abstract class, it defines the required methods that subclasses must
+    implement for their respective functionality.
+
+    :ivar based_on: The base query plan that this instance derives from or is built upon.
+    :type based_on: QueryPlan
+    """
     based_on: QueryPlan
+
+    def __init__(self,
+                 based_on: QueryPlan = None,
+                 transaction: AbstractTransaction = None,
+                 atom_pointer: AtomPointer = None,
+                 **kwargs):
+        super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
+        self.based_on = based_on
 
     @abstractmethod
     def execute(self) -> list:
@@ -658,14 +692,27 @@ class QueryPlan(Atom):
 
 
 class Literal(Atom):
+    """
+    Represents a Literal, which is an extension of the Atom type.
+
+    This class is designed to store and manage a literal value. It provides
+    methods for equality comparison, string representation, and concatenation.
+    The class is initialized with a literal string, and provides additional
+    support for managing this string through overloaded operators. The primary
+    use of this class is for handling and encapsulating a literal string value
+    that can be utilized in various string operations and comparisons.
+
+    :ivar string: The underlying literal string value.
+    :type string: str
+    """
     string: str
 
     def __init__(self,
-                 transaction_id: uuid.UUID = None,
-                 offset: int = 0,
                  literal: str = None,
+                 transaction: AbstractTransaction = None,
+                 atom_pointer: AtomPointer = None,
                  **kwargs):
-        super().__init__(transaction_id=transaction_id, offset=offset)
+        super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
         self.string = literal or kwargs.pop('literal')
 
     def __eq__(self, other: str | Literal) -> bool:
@@ -685,51 +732,69 @@ class Literal(Atom):
 
 
 class BytesAtom(Atom):
+    """
+    Represents a specialized type of Atom that holds content in a bytes-like or string format, along with
+    associated metadata like filename and MIME type.
+
+    This class encapsulates data in a manner that allows for content manipulation and provides
+    support for operability such as addition of byte-based content. The content is stored in a base64
+    encoded format for consistency.
+
+    :ivar filename: Specifies the name of the file associated with the atom.
+    :type filename: str
+    :ivar mimetype: The MIME type associated with the file content (e.g., "text/plain").
+    :type mimetype: str
+    :ivar content: Encoded string representation of the content held by this instance.
+    :type content: str
+    """
     filename: str
     mimetype: str
-    content: str
+    content: bytes
 
     def __init__(self,
-                 transaction_id: uuid.UUID = None,
-                 offset: int = 0,
                  filename: str = None,
                  mimetype: str = None,
-                 content: str | bytes = None,
+                 content: bytes = None,
+                 transaction: AbstractTransaction = None,
+                 atom_pointer: AtomPointer = None,
                  **kwargs):
-        super().__init__(transaction_id=transaction_id, offset=offset)
-
+        super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
         self.filename = filename
         self.mimetype = mimetype
 
-        if isinstance(content, bytes):
-            self.content = base64.b64encode(content).decode('UTF-8')
-        elif isinstance(content, str):
-            self.content = content or kwargs.pop('content')
-        else:
+        if not isinstance(content, bytes):
             raise ProtoValidationException(
-                message=f'It is not possible to create a BytesAtom with {type(content)}!'
+                message=f"It's not possible to create a BytesAtom with {type(content)}!"
             )
+        self.content = content
 
     def __str__(self) -> str:
-        return self.content
+        return f'BytesAtom with {len(self.content) if self.content else 0 } byte(s)'
 
     def __eq__(self, other: BytesAtom) -> bool:
         if isinstance(other, BytesAtom):
-            return self.transaction_id == other.transaction_id and \
-                self.offset == other.offset
-        else:
-            return False
+            if self.atom_pointer and other.atom_pointer:
+                return self.atom_pointer == other.atom_pointer
+            elif self.atom_pointer and isinstance(other, bytes):
+                self._load()
+                if self.content == other:
+                    return True
+        return False
 
     def __add__(self, other: bytes | BytesAtom) -> BytesAtom:
-        if isinstance(other, BytesAtom):
-            return BytesAtom(
-                content=base64.b64encode(
-                    base64.b64decode(self.content) + base64.b64decode(other.content)).decode('UTF-8'),
-            )
-        elif isinstance(other, bytes):
-            return BytesAtom(
-                content=base64.b64encode(base64.b64decode(self.content) + other).decode('UTF-8'),
-            )
         raise ProtoValidationException(
-            message=f'It is not possible to extend BytesAtom with {type(other)}!'
+            message=f'It is not possible to extend BytesAtom using "+"!'
         )
+
+    def _add(self, other: bytes | BytesAtom) -> BytesAtom:
+        if isinstance(other, BytesAtom):
+            self._load()
+            other._load()
+            return BytesAtom(content=self.content + other.content)
+        elif isinstance(other, bytes):
+            self._load()
+            return BytesAtom(content=self.content + other)
+        else:
+            raise ProtoValidationException(
+                message=f"It's not possible to extend BytesAtom with {type(other)}!"
+            )
