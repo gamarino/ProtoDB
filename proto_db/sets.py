@@ -12,6 +12,8 @@ class Set(Atom):
     The internal data structure is backed by a `HashDictionary` which ensures that
     duplicates are avoided and allows for efficient operations such as lookup, insertion,
     and element removal.
+    Sets can handle any object, but only using Atoms the Set will be durable. Mixing any other
+    objects with Atoms is not supported (no warning will be emitted)
     """
     content: HashDictionary  # The underlying container storing the set elements.
 

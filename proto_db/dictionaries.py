@@ -474,6 +474,9 @@ class DictionaryItem(Atom):
 class Dictionary(DBCollections):
     """
     A mapping between strings and values
+    Dictionaries can handle any object as keys and atoms, but only using Atoms the
+    Dictionary will be durable. Mixing any other objects with Atoms is not supported (no warning will be emitted)
+
     """
     content: HashDictionary
 
