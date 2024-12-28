@@ -20,7 +20,8 @@ class ListQueryPlan(QueryPlan):
 
         :return:
         """
-        # TODO
+        for item in self.base.as_iterable():
+            yield item
 
     def optimize(self, full_plan: QueryPlan) -> QueryPlan:
         """
@@ -28,19 +29,18 @@ class ListQueryPlan(QueryPlan):
         :param full_plan:
         :return:
         """
-        # TODO
         return self
 
 
 class List(Atom):
     empty: bool # Indicator to represent empty lists
-    value: Atom | None  # The value associated with this position; None is a valid value.
+    value: object | None  # The value associated with this position; None is a valid value.
     height: int  # The height of the current subtree rooted at this node.
     next: List  # Reference to the next node in the structure (right child in a tree context).
     previous: List  # Reference to the previous node in the structure (left child in a tree context).
 
     def __init__(self,
-                 value: Atom = None,
+                 value: object = None,
                  empty: bool = False,
                  transaction_id: uuid.UUID = None,
                  offset: int = 0,
@@ -52,6 +52,7 @@ class List(Atom):
         self.value = value
         self.next = next
         self.previous = previous
+        self.empty = empty
 
         # Calculate the total count of nodes in the current subtree.
         if not empty:
@@ -74,7 +75,7 @@ class List(Atom):
         else:
             self.height = 0
 
-    def as_iterable(self) -> list[tuple[int, Atom]]:
+    def as_iterable(self) -> list[tuple[int, object]]:
         """
         Get an iterable list of the list items
 
@@ -83,11 +84,12 @@ class List(Atom):
 
         # Get an iterable of the List items
         def scan(node: List) -> list:
-            result = scan(node.previous) if node.previous else []
-            if node.key is not None:
-                result.append((node.key, node.value))
-            result += scan(node.next) if node.next else []
-            return result
+            if node.previous:
+                yield from scan(node.previous)  # Subárbol izquierdo (recursión/yield)
+            if not node.empty:
+                yield node.value  # Nodo actual
+            if node.next:
+                yield from scan(node.next)  # Subárbol derecho (recursión/yield)
 
         return scan(self)
 
@@ -122,6 +124,7 @@ class List(Atom):
                 return node.value
             if offset > node_offset:
                 node = node.next  # Traverse to the right subtree.
+                offset -= node_offset + 1
             else:
                 node = node.previous  # Traverse to the left subtree.
 
@@ -271,7 +274,6 @@ class List(Atom):
                 next=None
             )
 
-        new_node: List | None = None  # Placeholder for the updated subtree.
         cmp = offset - node_offset
         if cmp > 0:
             # Insert into the right subtree.
@@ -287,8 +289,6 @@ class List(Atom):
                     previous=self.previous,
                     next=List(
                         value=value,
-                        previous=None,
-                        next=None
                     )
                 )
         elif cmp < 0:
@@ -304,8 +304,6 @@ class List(Atom):
                     value=self.value,
                     previous=List(
                         value=value,
-                        previous=None,
-                        next=None
                     ),
                     next=self.next
                 )
@@ -348,7 +346,6 @@ class List(Atom):
                 next=None
             )
 
-        new_node: List | None = None  # Placeholder for the updated subtree.
         cmp = offset - node_offset
         if cmp > 0:
             # Insert into the right subtree.
@@ -419,11 +416,7 @@ class List(Atom):
 
         # Case: Remove from an empty List.
         if self.empty:
-            return List(
-                empty=True,
-                previous=None,
-                next=None
-            )
+            return self
 
         cmp = offset - node_offset
         if cmp > 0:
@@ -435,7 +428,7 @@ class List(Atom):
                     next=self.next.remove_at(cmp)
                 )
             else:
-                new_node = self
+                new_node = List()
         elif cmp < 0:
             # Remove from the left subtree.
             if self.previous:
@@ -445,7 +438,7 @@ class List(Atom):
                     next=self.next
                 )
             else:
-                new_node = self
+                new_node = List()
         else:
             # Remove this node
             if self.previous:
@@ -453,14 +446,15 @@ class List(Atom):
                 new_previous = self.previous.remove_last()
                 new_node = List(
                     value=last_value,
-                    previous=new_previous,
+                    previous=new_previous if not new_previous.empty else None,
+                    next=self.next
                 )
             elif self.next:
                 first_value = self.next.get_at(0)
                 new_next = self.next.remove_first()
                 new_node = List(
                     value=first_value,
-                    next=new_next
+                    next=new_next if not new_next.empty else None
                 )
             else:
                 return List(
@@ -557,11 +551,7 @@ class List(Atom):
 
         if self.next:
             # Extend the right subtree.
-            new_node = List(
-                value=self.value,
-                previous=self.previous,
-                next=self.next.extend(items)
-            )
+            new_node = self.next.extend(items)
         else:
             # Extend this node
             new_node = List(
@@ -573,7 +563,7 @@ class List(Atom):
 
         return new_node._rebalance()
 
-    def append_first(self, item: Atom):
+    def append_first(self, item: object):
         """
         Inserts the given item at the first position of a collection by delegating to the `insert_at`
         method. This method serves as a utility to prepend an atom to the existing collection.
@@ -584,7 +574,7 @@ class List(Atom):
         """
         return self.insert_at(0, item)
 
-    def append_last(self, item: Atom):
+    def append_last(self, item: object):
         """
         Appends the specified item to the end of the collection by inserting it at the
         last position.
@@ -593,7 +583,23 @@ class List(Atom):
         :type item: Atom
         :return: The result of the insertion operation.
         """
-        return self.insert_at(-1, item)
+        node = self
+        while node:
+            if node.next:
+                node = node.next
+            else:
+                break
+
+        node = List(
+            value=node.value,
+            empty=False,
+            previous=None,
+            next=List(
+                value=item
+            )
+        )
+
+        return node._rebalance()
 
     def slice(self, from_offset: int, to_offset: int):
         """

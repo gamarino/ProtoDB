@@ -25,7 +25,8 @@ class HashDictionaryQueryPlan(QueryPlan):
 
         :return:
         """
-        # TODO
+        for item in self.base.as_iterable():
+            yield from item
 
     def optimize(self, full_plan: QueryPlan) -> QueryPlan:
         """
@@ -47,7 +48,7 @@ class HashDictionary(DBCollections):
                  transaction_id: uuid.UUID = None,
                  offset: int = 0,
                  key: int | None = None,
-                 value: Atom = None,
+                 value: object = None,
                  next: HashDictionary = None,
                  previous: HashDictionary = None):
         super().__init__(transaction_id=transaction_id, offset=offset)
@@ -104,7 +105,7 @@ class HashDictionary(DBCollections):
         """
         return HashDictionaryQueryPlan(base=self)
 
-    def get_at(self, key: int) -> Atom | None:
+    def get_at(self, key: int) -> object | None:
         """
         Searches for the value associated with the given key in the HashDictionary.
 
@@ -276,7 +277,7 @@ class HashDictionary(DBCollections):
         # If balance is satisfactory, return this node
         return node
 
-    def set_at(self, key: int, value: Atom) -> HashDictionary:
+    def set_at(self, key: int, value: object) -> HashDictionary:
         """
         Adds or updates a key-value pair in the HashDictionary.
 
@@ -457,11 +458,11 @@ class HashDictionary(DBCollections):
 
 class DictionaryItem(Atom):
     key: Literal
-    value: Atom
+    value: object
 
     def __init__(self,
                  key: str = None,
-                 value: Atom = None,
+                 value: object = None,
                  transaction_id: uuid.UUID = None,
                  offset:int = 0,
                  **kwargs):
@@ -491,19 +492,19 @@ class Dictionary(DBCollections):
     def as_query_plan(self) -> QueryPlan:
         return self.content.as_query_plan()
 
-    def get_at(self, key: str) -> Atom | None:
+    def get_at(self, key: str) -> object | None:
         """
 
         :param key:
         :return:
         """
         item_hash = self._transaction.get_literal(key) if self._transaction else hash(key)
-        item = self.content.get_at(item_hash)
+        item = cast(DictionaryItem, self.content.get_at(item_hash))
         if item is None:
             return None
         return item.value
 
-    def set_at(self, key: str, value: Atom) -> Dictionary:
+    def set_at(self, key: str, value: object) -> Dictionary:
         """
         Returns a new HashDirectory with the value set at key
 
