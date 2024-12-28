@@ -63,14 +63,15 @@ class TestHashDictionary(unittest.TestCase):
         self.assertEqual(rebalanced.key, 15, "Root should change after left rotation.")
 
     # --- Test remove_key ---
-    def test_remove_key(self):
-        content = self.empty_dictionary.set_at(10, self.atom_a)
+    def test_remove_at(self):
+        content = self.empty_dictionary
+        content = content.set_at(10, self.atom_a)
         content = content.set_at(20, self.atom_b)
         content = content.set_at(15, self.atom_c)
 
-        dictionary = Dictionary(content=content)
-        updated_dict = dictionary.remove_key("20")
-        self.assertIsNone(updated_dict.content.get_at(20), "Should remove the key 20 from the content.")
+        content = content.remove_at(20)
+        self.assertEqual(content.count, 2, "Should has a count of 2 at this point")
+        self.assertIsNone(content.get_at(20), "Should remove the key 20 from the content.")
 
     # --- Test as_iterable ---
     def test_as_iterable(self):
@@ -78,7 +79,7 @@ class TestHashDictionary(unittest.TestCase):
         content = content.set_at(20, self.atom_b)
         content = content.set_at(15, self.atom_c)
 
-        result = content.as_iterable()
+        result = [r for r in content.as_iterable()]
         self.assertEqual(len(result), 3, "Should include all inserted keys in the iterable.")
         self.assertIn((10, self.atom_a), result, "Should include the correct key-value pair.")
 
@@ -91,15 +92,21 @@ class TestHashDictionary(unittest.TestCase):
     # --- Test Dictionary methods ---
     def test_dictionary_methods(self):
         # Crear un diccionario vacío
-        dictionary = Dictionary(content=self.empty_dictionary)
+        dictionary = Dictionary()
 
+        print("Arrance Test malo")
         # Agregar valores
-        dictionary = dictionary.set_at("key1", self.atom_a)
-        dictionary = dictionary.set_at("key2", self.atom_b)
-        self.assertEqual(
+        dictionary1 = dictionary.set_at("key1", self.atom_a)
+        dictionary = dictionary1.set_at("key2", self.atom_b)
+        self.assertIs(
             dictionary.get_at("key1"),
             self.atom_a,
             "Should return the correct value for key 'key1'."
+        )
+        self.assertIs(
+            dictionary.get_at("key2"),
+            self.atom_b,
+            "Should return the correct value for key 'key2'."
         )
 
         # Comprobar si tiene claves
@@ -107,5 +114,5 @@ class TestHashDictionary(unittest.TestCase):
         self.assertFalse(dictionary.has("keyX"), "Should confirm 'keyX' is not present.")
 
         # Eliminar una clave
-        dictionary = dictionary.remove_key("key1")
+        dictionary = dictionary.remove_at("key1")
         self.assertFalse(dictionary.has("key1"), "Should confirm 'key1' is removed.")

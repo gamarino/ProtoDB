@@ -8,20 +8,18 @@ from typing import cast
 
 from concurrent.futures import Future
 import uuid
-from abc import ABC, abstractmethod
+from abc import ABC, abstractmethod, ABCMeta
 import io
 import configparser
 import datetime
 import base64
 from .exceptions import ProtoValidationException, ProtoCorruptionException
 
-
 # Constants for storage size units
 KB = 1024
 MB = KB * KB
 GB = KB * MB
 PB = KB * GB
-
 
 
 class AtomPointer(object):
@@ -32,7 +30,8 @@ class AtomPointer(object):
 
 atom_class_registry = dict()
 
-class AtomMetaclass:
+
+class AtomMetaclass(type):
     def __init__(cls, name, bases, class_dict):
         class_name = name
         if class_name != 'Atom':
@@ -40,6 +39,9 @@ class AtomMetaclass:
                 raise ProtoValidationException(
                     message=f'Class repeated in atom class registry ({class_name}). Please check it')
             atom_class_registry[class_name] = cls
+
+        # Llamar al __init__ de la metaclase base
+        super().__init__(name, bases, class_dict)
 
 
 class AbstractSharedStorage(ABC):
@@ -92,7 +94,6 @@ class AbstractDatabase(ABC):
         """
 
 
-
 class AbstractTransaction(ABC):
     """
     ABC to solve forward type definition
@@ -109,6 +110,7 @@ class AbstractTransaction(ABC):
         :param string:
         :return:
         """
+
     @abstractmethod
     def set_literal(self, string: str, value: Atom):
         """
@@ -119,13 +121,18 @@ class AbstractTransaction(ABC):
         """
 
 
-class Atom(metaclass=AtomMetaclass):
+# Metaclase combinada: Combina AtomMetaclass y ABCMeta
+class CombinedMeta(ABCMeta, AtomMetaclass):
+    pass
+
+
+class Atom(metaclass=CombinedMeta):
     atom_pointer: AtomPointer
     _transaction: AbstractTransaction
     _loaded: bool
     _saving: bool = False
 
-    def __init__(self, transaction: AbstractTransaction=None, atom_pointer: AtomPointer = None, **kwargs):
+    def __init__(self, transaction: AbstractTransaction = None, atom_pointer: AtomPointer = None, **kwargs):
         self._transaction = transaction
         self.atom_pointer = atom_pointer
         self._loaded = False
@@ -134,33 +141,21 @@ class Atom(metaclass=AtomMetaclass):
 
     def _load(self):
         if not self._loaded:
-            if not self._transaction:
-                raise ProtoValidationException(
-                    message=f'An DBObject can only be instanciated within a given transaction!'
-                )
-
-            if self._transaction and \
-               self.atom_pointer.transaction_id and \
-               self.atom_pointer.offset:
-                loaded_atom: Atom = self._transaction.database.object_space.storage_provider.get_atom(
-                    self.atom_pointer).result()
-                loaded_dict = self._json_to_dict(loaded_atom.__dict__)
-                for attribute_name, attribute_value in loaded_dict.items():
-                    setattr(self, attribute_name, attribute_value)
+            if self._transaction:
+                if self.atom_pointer.transaction_id and \
+                   self.atom_pointer.offset:
+                    loaded_atom: Atom = self._transaction.database.object_space.storage_provider.get_atom(
+                        self.atom_pointer).result()
+                    loaded_dict = self._json_to_dict(loaded_atom.__dict__)
+                    for attribute_name, attribute_value in loaded_dict.items():
+                        setattr(self, attribute_name, attribute_value)
             self._loaded = True
 
     def __getattr__(self, name: str):
         if name.startswith('_') or name == 'atom_pointer':
             return super().__getattribute__(name)
         self._load()
-        return getattr(self, name)
-
-    def __setattr__(self, key, value):
-        if key.startswith('_'):
-            super().__setattr__(key, value)
-        raise ProtoValidationException(
-            message=f'Atoms are inmutable objects! Your are trying to set attribute {key}'
-        )
+        return super().__getattribute__(name)
 
     def _push_to_storage(self, json_value: dict) -> AtomPointer:
         return self._transaction.database.object_space.storage_provider.push_atom(json_value).result()
@@ -284,7 +279,7 @@ class Atom(metaclass=AtomMetaclass):
 
     def hash(self) -> int:
         return self.atom_pointer.transaction_id.int ^ \
-               self.atom_pointer.offset
+            self.atom_pointer.offset
 
 
 class RootObject(Atom):
@@ -427,15 +422,15 @@ class ParentLink(Atom):
     cls: AbstractDBObject | None
 
 
-class DBObject(Atom, AbstractDBObject):
+class DBObject(AbstractDBObject):
     parent_link: ParentLink | None
 
     def __init__(self,
-                 transaction_id: uuid.UUID=None,
-                 offset:int = 0,
-                 parent_link: ParentLink=None,
+                 transaction_id: uuid.UUID = None,
+                 offset: int = 0,
+                 parent_link: ParentLink = None,
                  attributes: dict[str, Atom | int | float | None | datetime.datetime | datetime.date |
-                                       datetime.timedelta | bool | bytes | str]=None,
+                                       datetime.timedelta | bool | bytes | str] = None,
                  **kwargs):
         if attributes:
             self._attributes = attributes
@@ -469,7 +464,7 @@ class DBObject(Atom, AbstractDBObject):
 
         return super()._push_to_storage(json_value)
 
-    def _json_to_dict(self, json_value:dict) -> dict:
+    def _json_to_dict(self, json_value: dict) -> dict:
         data = super()._json_to_dict(json_value)
         if '_attributes' in data:
             data['_attributes'] = super()._json_to_dict(data['_attributes'])
@@ -527,7 +522,7 @@ class DBObject(Atom, AbstractDBObject):
             super().__setattr__(name, value)
             return self
         else:
-            attr =  self.attributes
+            attr = self.attributes
             attr[name] = value
             return DBObject(
                 object_id=self.object_id,
@@ -550,7 +545,7 @@ class MutableObject(DBObject):
     hash_key: int = 0
 
     def __init__(self,
-                 transaction: AbstractTransaction=None,
+                 transaction: AbstractTransaction = None,
                  atom_pointer: AtomPointer = None,
                  **kwargs: dict[str, Atom]):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
@@ -663,17 +658,17 @@ class QueryPlan(Atom):
 
 
 class Literal(Atom):
-    string:str
+    string: str
 
     def __init__(self,
-                 transaction_id: uuid.UUID=None,
-                 offset:int = 0,
+                 transaction_id: uuid.UUID = None,
+                 offset: int = 0,
                  literal: str = None,
                  **kwargs):
         super().__init__(transaction_id=transaction_id, offset=offset)
         self.string = literal or kwargs.pop('literal')
 
-    def __eq__(self, other:str | Literal) -> bool:
+    def __eq__(self, other: str | Literal) -> bool:
         if isinstance(other, Literal):
             return self.string == other.string
         else:
@@ -682,7 +677,7 @@ class Literal(Atom):
     def __str__(self) -> str:
         return self.string
 
-    def __add__(self, other:str | Literal) -> Literal :
+    def __add__(self, other: str | Literal) -> Literal:
         if isinstance(other, Literal):
             return Literal(literal=self.string + other.string)
         else:
@@ -721,7 +716,7 @@ class BytesAtom(Atom):
     def __eq__(self, other: BytesAtom) -> bool:
         if isinstance(other, BytesAtom):
             return self.transaction_id == other.transaction_id and \
-                   self.offset == other.offset
+                self.offset == other.offset
         else:
             return False
 

@@ -1,6 +1,7 @@
 from . import common
 
-from .common import Future, KB, MB, GB, RootObject, ProtoUnexpectedException
+from .common import Future, KB, MB, GB, RootObject
+from .exceptions import ProtoUnexpectedException
 import io
 import psutil
 import uuid
