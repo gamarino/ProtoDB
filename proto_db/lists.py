@@ -2,17 +2,19 @@ from __future__ import annotations
 
 import uuid
 
-from .common import Atom, QueryPlan, DBCollections
+from .common import Atom, QueryPlan, DBCollections, AbstractTransaction, AtomPointer
 
 
 class ListQueryPlan(QueryPlan):
     base: List
 
-    def __init__(self,
-                 base: List = None,
-                 transaction_id: uuid.UUID = None,
-                 offset: int = 0):
-        super().__init__(transaction_id=transaction_id, offset=offset)
+    def __init__(
+            self,
+            base: List = None,
+            transaction: AbstractTransaction = None,
+            atom_pointer: AtomPointer = None,
+            **kwargs):
+        super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
         self.base = base
 
     def execute(self) -> DBCollections:
@@ -39,14 +41,16 @@ class List(Atom):
     next: List  # Reference to the next node in the structure (right child in a tree context).
     previous: List  # Reference to the previous node in the structure (left child in a tree context).
 
-    def __init__(self,
-                 value: object = None,
-                 empty: bool = False,
-                 transaction_id: uuid.UUID = None,
-                 offset: int = 0,
-                 next: List = None,
-                 previous: List = None):
-        super().__init__(transaction_id=transaction_id, offset=offset)
+    def __init__(
+            self,
+            value: object = None,
+            empty: bool = False,
+            next: List = None,
+            previous: List = None,
+            transaction: AbstractTransaction = None,
+            atom_pointer: AtomPointer = None,
+            **kwargs):
+        super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
 
         # Initialize the current node's key, value, and child references.
         self.value = value

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import uuid
-
-from .common import Atom, QueryPlan
+from .common import Atom, QueryPlan, AbstractTransaction, AtomPointer
 from .dictionaries import HashDictionary
 
 
@@ -17,20 +15,21 @@ class Set(Atom):
     """
     content: HashDictionary  # The underlying container storing the set elements.
 
-    def __init__(self,
-                 content: HashDictionary = None,
-                 transaction_id: uuid.UUID = None,
-                 offset: int = 0,
-                 **kwargs):
-        """
-        Initializes a `Set` instance.
+    """
+    Initializes a `Set` instance.
 
-        :param content: The `HashDictionary` instance that represents the underlying storage of the set.
-        :param transaction_id: (Optional) A unique transaction identifier for audit or rollback use.
-        :param offset: An optional offset for identifying the set's relative position in an operation.
-        :param kwargs: Any additional data passed for extended configurations.
-        """
-        super().__init__(transaction_id=transaction_id, offset=offset)
+    :param content: The `HashDictionary` instance that represents the underlying storage of the set.
+    :param transaction_id: (Optional) A unique transaction identifier for audit or rollback use.
+    :param offset: An optional offset for identifying the set's relative position in an operation.
+    :param kwargs: Any additional data passed for extended configurations.
+    """
+    def __init__(
+            self,
+            content: HashDictionary = None,
+            transaction: AbstractTransaction = None,
+            atom_pointer: AtomPointer = None,
+            **kwargs):
+        super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
         self.content = content if content else HashDictionary()  # Store the underlying hash-based dictionary.
         self.count = self.content.count
 

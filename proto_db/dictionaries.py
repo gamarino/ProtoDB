@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import cast
 
 from .exceptions import ProtoCorruptionException
-from .common import Atom, DBCollections, QueryPlan, Literal
+from .common import Atom, DBCollections, QueryPlan, Literal, AbstractTransaction, AtomPointer
 
 import uuid
 import logging
@@ -44,14 +44,17 @@ class HashDictionary(DBCollections):
     next: HashDictionary  # Reference to the next node in the structure (right child in a tree context).
     previous: HashDictionary  # Reference to the previous node in the structure (left child in a tree context).
 
-    def __init__(self,
-                 transaction_id: uuid.UUID = None,
-                 offset: int = 0,
-                 key: int | None = None,
-                 value: object = None,
-                 next: HashDictionary = None,
-                 previous: HashDictionary = None):
-        super().__init__(transaction_id=transaction_id, offset=offset)
+    def __init__(
+            self,
+            key: int | None = None,
+            value: object = None,
+            next: HashDictionary = None,
+            previous: HashDictionary = None,
+
+            transaction: AbstractTransaction = None,
+            atom_pointer: AtomPointer = None,
+            **kwargs):
+        super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
 
         # Initialize the current node's key, value, and child references.
         self.key = key
@@ -460,13 +463,14 @@ class DictionaryItem(Atom):
     key: Literal
     value: object
 
-    def __init__(self,
-                 key: str = None,
-                 value: object = None,
-                 transaction_id: uuid.UUID = None,
-                 offset:int = 0,
-                 **kwargs):
-        super().__init__(transaction_id=transaction_id, offset=offset)
+    def __init__(
+            self,
+            key: str = None,
+            value: object = None,
+            transaction: AbstractTransaction = None,
+            atom_pointer: AtomPointer = None,
+            **kwargs):
+        super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
         self.key = Literal(literal=key)
         self.value = value
 
@@ -480,12 +484,13 @@ class Dictionary(DBCollections):
     """
     content: HashDictionary
 
-    def __init__(self,
-                 content: HashDictionary = None,
-                 transaction_id: uuid.UUID = None,
-                 offset:int = 0,
-                 **kwargs):
-        super().__init__(transaction_id=transaction_id, offset=offset)
+    def __init__(
+            self,
+            content: HashDictionary = None,
+            transaction: AbstractTransaction = None,
+            atom_pointer: AtomPointer = None,
+            **kwargs):
+        super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
         self.content = content if content else HashDictionary()
         self.count = self.content.count
 

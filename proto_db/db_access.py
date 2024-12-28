@@ -5,8 +5,7 @@ import uuid
 from .exceptions import ProtoValidationException
 from .common import Atom, \
                     AbstractObjectSpace, AbstractDatabase, AbstractTransaction, \
-                    SharedStorage, RootObject, Literal, \
-                    DBObject
+                    SharedStorage, RootObject, Literal
 
 from .dictionaries import HashDictionary, Dictionary
 from .lists import List
@@ -68,8 +67,8 @@ class ObjectSpace(AbstractObjectSpace):
 
     def rename_database(self, old_name: str, new_name: str):
         """
-        Rename an existing database. If database is already opened, if will not
-        commit any more!
+        Rename an existing database. If database is already opened, it will not
+        commit anymore!
         :return:
         """
         with self._lock:
@@ -130,6 +129,15 @@ class Database(AbstractDatabase):
         self.object_space = object_space
         self.database_name = database_name
 
+    def get_current_root(self):
+        return self.object_space.storage.read_current_root()
+
+    def get_lock_current_root(self):
+        return self.object_space.storage.read_lock_current_root()
+
+    def set_current_root(self, new_root: Atom):
+        self.object_space.commit_database(self.database_name, new_root)
+
     def new_transaction(self) -> ObjectTransaction:
         """
         Start a new read transaction
@@ -149,8 +157,6 @@ class Database(AbstractDatabase):
         :return:
         """
 
-        root = self.object_space.storage.read_current_root()
-        db_catalog: Dictionary = cast(Dictionary, root.object_root)
         new_db_name = uuid.uuid4().hex
         new_db = Database(self.object_space, new_db_name)
 
@@ -167,14 +173,54 @@ class Database(AbstractDatabase):
 
 
 class ObjectTransaction(AbstractTransaction):
-    initial_transaction_root: Dictionary = None
+    """
+    Root object at the time transaction was started
+    """
     transaction_root: Dictionary = None
-    new_roots: dict[str, Atom] = None
-    read_objects:dict[int, Atom] = None
-    read_lock_objects: dict[int, Atom] = None
+
+    """
+    Current root at commit time
+    """
+    current_root: Dictionary = None
+
+    """
+    Any modified or created roots within this transaction
+    """
+    new_roots: Dictionary = None
+
+    """
+    Mutable indexes to be checked for changes at commit time.
+    If at commit time, value read from current root for this mutable is not the same, that means
+    another transaction(s) has committed changes during this transaction execution. So commit should
+    be aborted
+    """
+    read_lock_objects: HashDictionary = None
+
+    """
+    Mutable indexes modified or added in this transaction
+    """
     mutable_objects: HashDictionary = None
-    initial_mutable_root: HashDictionary = None
+
+    """
+    Snapshot of mutable objects at transaction start time
+    """
+    initial_mutable_objects: HashDictionary = None
+
+    """
+    Literals created in this transaction
+    """
     new_literals: Dictionary = None
+
+    """
+    Transaction state: Running, Committed or Aborted
+    """
+    state: str = 'Running'
+
+    """
+    Lock to ensure smooth operation in multithreading environments
+    """
+
+    lock: Lock
 
     def __init__(self, database: Database, transaction_root: Dictionary):
         super().__init__(database)
@@ -183,27 +229,28 @@ class ObjectTransaction(AbstractTransaction):
         else:
             self.transaction_root = Dictionary()
         self.initial_transaction_root = transaction_root
-        self.new_roots = {}
-        self.read_objects = {}
-        self.read_lock_objects = {}
+        self.new_roots = Dictionary()
+        self.read_lock_objects = HashDictionary()
         if transaction_root.has('_mutable_root'):
             self.mutable_objects = cast(HashDictionary, self.transaction_root.get_at('_mutable_root'))
-            self.initial_mutable_root = self.mutable_objects
+            self.initial_mutable_objects = self.mutable_objects
         else:
             self.mutable_objects = HashDictionary()
         self.new_literals = Dictionary(transaction=self)
+        self.lock = Lock()
 
     def get_literal(self, string: str):
-        if self.new_literals.has(string):
-            return self.new_literals.get_at(string)
-        else:
-            existing_literal = self.database.get_literal(string)
-            if existing_literal:
-                return existing_literal
+        with self.lock:
+            if self.new_literals.has(string):
+                return self.new_literals.get_at(string)
             else:
-                new_literal = Literal(transaction=self, string=string)
-                self.new_literals = self.new_literals.set_at(string, new_literal)
-                return new_literal
+                existing_literal = self.database.get_literal(string)
+                if existing_literal:
+                    return existing_literal
+                else:
+                    new_literal = Literal(transaction=self, string=string)
+                    self.new_literals = self.new_literals.set_at(string, new_literal)
+                    return new_literal
 
     def get_root_object(self, name: str) -> Atom | None:
         """
@@ -212,7 +259,8 @@ class ObjectTransaction(AbstractTransaction):
         :param name:
         :return:
         """
-        return self.transaction_root.get_at(name)
+        with self.lock:
+            return self.transaction_root.get_at(name)
 
     def set_root_object(self, name: str, value: Atom):
         """
@@ -222,12 +270,35 @@ class ObjectTransaction(AbstractTransaction):
         :param value:
         :return:
         """
-        self.transaction_root = self.transaction_root.set_at(name, value)
+        with self.lock:
+            self.transaction_root = self.transaction_root.set_at(name, value)
 
-    def set_lock_object(self, object: DBObject):
-        self.read_lock_objects[object.hash()] = object
+    def set_locked_object(self, mutable_index: int, current_atom: Atom):
+        with self.lock:
+            if not self.read_lock_objects.has(mutable_index):
+                self.read_lock_objects.set_at(mutable_index, current_atom)
 
-    def commit(self, return_object: Atom = None):
+    def _check_read_locked_objects(self):
+        # TODO
+        pass
+
+    def _check_created_literals(self):
+        # TODO
+        pass
+
+    def _update_created_literals(self):
+        # TODO
+        pass
+
+    def _update_mutable_indexes(self):
+        # TODO
+        pass
+
+    def _update_database_roots(self):
+        # TODO
+        pass
+
+    def commit(self):
         """
         Close the transaction and make it persistent. All changes recorded
         Before commit all checked and modified objects will be tested if modified
@@ -238,12 +309,38 @@ class ObjectTransaction(AbstractTransaction):
         will NOT BE PERSISTED, and they will be not usable after commit!
         :return:
         """
+        with self.lock:
+            if self.state != 'Running':
+                raise ProtoValidationException(
+                    message=f'Transaction is not running ({self.state}). It could not be committed!'
+                )
+
+            if self.new_roots.count != 0 or self.mutable_objects.count != 0 or self.new_literals.count != 0:
+                # Check created literals before locking the DB
+                self._check_created_literals()
+
+                self.current_root = self.database.get_lock_current_root()
+                self._check_read_locked_objects()
+                self._update_created_literals()
+                self._update_mutable_indexes()
+                self._update_database_roots()
+                self.database.set_current_root(self.current_root)
+
+            # At this point everything changed was commited
+            self.state = 'Committed'
 
     def abort(self):
         """
         Discard any changes made. Database is not modified. All created objects are no longer usable
         :return:
         """
+        with self.lock:
+            if self.state != 'Running':
+                raise ProtoValidationException(
+                    message=f'Transaction is not running ({self.state}). It could not be aborted!'
+                )
+
+            self.state = 'Aborted'
 
     def _get_string_hash(self, string: str) -> int:
         """
@@ -251,13 +348,24 @@ class ObjectTransaction(AbstractTransaction):
         :param string:
         :return: a hash based in db persisted strings
         """
-        return self.database.get_literal(literal=string)
+        with self.lock:
+            return self.database.get_literal(literal=string)
 
     def get_mutable(self, key:int):
-        return self.mutable_objects.get_at(key)
+        with self.lock:
+            if self.mutable_objects.has(key):
+                return self.mutable_objects.get_at(key)
+
+            if self.initial_mutable_objects.has(key):
+                return self.initial_mutable_objects.get_at(key)
+
+            raise ProtoValidationException(
+                message=f'Mutable with index {key} not found!'
+            )
 
     def set_mutable(self, key:int, value:Atom):
-        return self.mutable_objects.set_at(key, value)
+        with self.lock:
+            self.mutable_objects.set_at(key, value)
 
     def new_hash_dictionary(self) -> HashDictionary :
         """

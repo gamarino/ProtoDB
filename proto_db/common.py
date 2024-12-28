@@ -135,6 +135,28 @@ class AbstractDatabase(ABC):
         :return:
         """
 
+    @abstractmethod
+    def get_current_root(self):
+        """
+
+        :return:
+        """
+
+    @abstractmethod
+    def get_lock_current_root(self):
+        """
+
+        :return:
+        """
+
+    @abstractmethod
+    def set_current_root(self, new_root: Atom):
+        """
+
+        :param new_root:
+        :return:
+        """
+
 
 class AbstractTransaction(ABC):
     """
@@ -150,15 +172,6 @@ class AbstractTransaction(ABC):
         """
 
         :param string:
-        :return:
-        """
-
-    @abstractmethod
-    def set_literal(self, string: str, value: Atom):
-        """
-
-        :param string:
-        :param value:
         :return:
         """
 
@@ -192,6 +205,22 @@ class AbstractTransaction(ABC):
         :param value: The Atom instance to be associated with the specified key.
         :type value: Atom
         :return: None
+        """
+
+    @abstractmethod
+    def set_locked_object(self, mutable_index: int, current_atom: Atom):
+        """
+        Sets the locked object in the system. This method is abstract and should
+        be implemented by subclasses to provide specific behavior for locking
+        functionality. By invoking this method, the system expects the specified
+        atom to become associated with the given mutable index.
+
+        :param mutable_index: The index in the mutable collection to lock.
+        :type mutable_index: int
+        :param current_atom: The Atom object to associate with the locked
+            mutable index.
+        :type current_atom: Atom
+        :return: None.
         :rtype: None
         """
 
@@ -335,7 +364,7 @@ class Atom(metaclass=CombinedMeta):
                     'transaction_id': bytes_atom.atom_pointer.transaction_id,
                     'offset': bytes_atom.atom_pointer.offset,
                 }
-            elif value == None:
+            elif value is None:
                 json_value[name] = {
                     'className': 'None',
                 }
@@ -351,10 +380,11 @@ class Atom(metaclass=CombinedMeta):
                 self._saving = True
 
                 for name, value in self.__dict__.items():
-                    if isinstance(value, Atom):
+                    if not callable(value):
                         if not value._transaction:
                             value._transaction = self._transaction
-                        value._save()
+                        if isinstance(value, Atom):
+                            value._save()
 
                 json_value = {'AtomClass': self.__class__.__name__}
 
@@ -561,7 +591,6 @@ class DBObject(Atom):
     def __init__(self,
                  transaction: AbstractTransaction = None,
                  atom_pointer: AtomPointer = None,
-                 offset: int = 0,
                  **kwargs):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
         self._loaded = False
@@ -638,6 +667,11 @@ class MutableObject(DBObject):
         current_object = cast(DBObject, self._transaction.get_mutable(self.hash_key))
         new_object = current_object._setattr(key, value)
         self._transaction.set_mutable(self.hash_key, new_object)
+        if self.atom_pointer and self.atom_pointer.transaction_id:
+            # Object is stored in DB and it is going to be modified.
+            # It should be added to the set of objects to be checked if were modified
+            # by other transaction simoultaneously with this transaction
+            self._transaction.set_locked_object(self.hash_key, current_object)
 
     def __hasattr__(self, name: str):
         if not self._transaction:
