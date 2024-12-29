@@ -83,6 +83,14 @@ class HashDictionary(DBCollections):
         else:
             self.height = 0
 
+    def _save(self):
+        if not self._saved:
+            if self.previous:
+                self.previous._save()
+            if self.next:
+                self.next._save()
+            super()._save()
+
     def as_iterable(self):
         """
             Get an iterable generator of the HashDictionary items.
@@ -493,6 +501,11 @@ class Dictionary(DBCollections):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
         self.content = content if content else HashDictionary()
         self.count = self.content.count
+
+    def _save(self):
+        if not self._saved:
+            self.content._save()
+            super()._save()
 
     def as_iterable(self) -> list[tuple[str, Atom]]:
         for hash_value, item in self.content.as_iterable():

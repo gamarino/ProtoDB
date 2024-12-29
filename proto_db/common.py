@@ -158,6 +158,12 @@ class AbstractDatabase(ABC):
         :param new_root:
         :return:
         """
+    @abstractmethod
+    def unlock_current_root(self):
+        """
+
+        :return:
+        """
 
 
 class AbstractTransaction(ABC):
@@ -268,14 +274,14 @@ class Atom(metaclass=CombinedMeta):
     :ivar _loaded: Whether the atom's attributes have been loaded from storage.
         False by default.
     :type _loaded: bool
-    :ivar _saving: Indicates whether the atom is in the process of being
+    :ivar _saved: Indicates whether the atom is in the process of being
         saved to prevent recursion loops. Defaults to False.
     :type _saving: bool
     """
     atom_pointer: AtomPointer
     _transaction: AbstractTransaction
     _loaded: bool
-    _saving: bool = False
+    _saved: bool = False
 
     def __init__(self, transaction: AbstractTransaction = None, atom_pointer: AtomPointer = None, **kwargs):
         self._transaction = transaction
@@ -295,6 +301,15 @@ class Atom(metaclass=CombinedMeta):
                     for attribute_name, attribute_value in loaded_dict.items():
                         setattr(self, attribute_name, attribute_value)
             self._loaded = True
+
+    def __eq__(self, other):
+        if isinstance(other, Atom):
+            if self.atom_pointer == other.atom_pointer:
+                return True
+            else:
+                return self.atom_pointer.transaction_id == other.atom_pointer.transaction_id and \
+                       self.atom_pointer.offset == other.atom_pointer.offset
+        return False
 
     def __getattr__(self, name: str):
         if name.startswith('_') or name == 'atom_pointer':
@@ -398,13 +413,13 @@ class Atom(metaclass=CombinedMeta):
         return json_value
 
     def _save(self):
-        if not self.atom_pointer and not self._saving:
+        if not self.atom_pointer and not self._saved:
             # It's a new object
 
             if self._transaction:
                 # Push the object tree downhill, avoiding recursion loops
                 # converting attributes strs to Literals
-                self._saving = True
+                self._saved = True
 
                 for name, value in self.__dict__.items():
                     if not callable(value):
@@ -521,12 +536,14 @@ class BlockProvider(ABC):
         :rtype: io.FileIO
         """
 
+    @abstractmethod
     def get_current_root_object(self) -> RootObject:
         """
         Read current root object from storage
         :return: the current root object
         """
 
+    @abstractmethod
     def update_root_object(self, new_root: RootObject):
         """
         Updates or create the root object in storage
@@ -584,6 +601,15 @@ class SharedStorage(AbstractSharedStorage):
         """
         Set the current root object
         :return:
+        """
+
+    @abstractmethod
+    def unlock_current_root(self):
+        """
+        Unlock the current root by performing necessary operations based
+        on the implementation. This method typically interacts with the state or
+        systems associated with this object to achieve the unlocking process.
+
         """
 
     @abstractmethod
@@ -915,7 +941,7 @@ class BytesAtom(Atom):
             self._loaded = True
 
     def _save(self):
-        if not self.atom_pointer and not self._saving:
+        if not self.atom_pointer and not self._saved:
             # It's a new object
 
             if self._transaction:

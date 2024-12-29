@@ -33,6 +33,11 @@ class Set(Atom):
         self.content = content if content else HashDictionary()  # Store the underlying hash-based dictionary.
         self.count = self.content.count
 
+    def _save(self):
+        if not self._saved:
+            super()._save()
+            self.content._save()
+
     def as_iterable(self) -> list[Atom]:
         """
         Converts the `Set` to an iterable structure, essentially a collection of its unique

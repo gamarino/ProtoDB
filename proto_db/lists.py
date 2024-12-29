@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import uuid
-
 from .common import Atom, QueryPlan, DBCollections, AbstractTransaction, AtomPointer
 
 
@@ -78,6 +76,14 @@ class List(Atom):
             self.height = height
         else:
             self.height = 0
+
+    def _save(self):
+        if not self._saved:
+            if self.previous:
+                self.previous._save()
+            if self.next:
+                self.next._save()
+            super()._save()
 
     def as_iterable(self) -> list[tuple[int, object]]:
         """
@@ -321,7 +327,7 @@ class List(Atom):
 
         return new_node._rebalance()
 
-    def insert_at(self, offset: int, value: Atom) -> List:
+    def insert_at(self, offset: int, value: object) -> List:
         """
         Insert value at the specified position. All followers will shift its position by one.
 
@@ -484,7 +490,6 @@ class List(Atom):
         if self.empty:
             return self
 
-        new_node: List | None = None  # Placeholder for the updated subtree.
         if node_offset > 0:
             # Remove from the left subtree.
             if self.previous:

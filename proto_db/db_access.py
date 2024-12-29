@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import cast
 
 import uuid
-from .exceptions import ProtoValidationException
+from .exceptions import ProtoValidationException, ProtoLockingException
 from .common import Atom, \
     AbstractObjectSpace, AbstractDatabase, AbstractTransaction, \
     SharedStorage, RootObject, Literal, atom_class_registry, AtomPointer
@@ -138,6 +138,9 @@ class Database(AbstractDatabase):
     def set_current_root(self, new_root: Atom):
         self.object_space.commit_database(self.database_name, new_root)
 
+    def unlock_current_root(self):
+        return self.object_space.storage.unlock_current_root()
+
     def new_transaction(self) -> ObjectTransaction:
         """
         Start a new read transaction
@@ -199,9 +202,14 @@ class ObjectTransaction(AbstractTransaction):
     read_lock_objects: HashDictionary = None
 
     """
-    Mutable indexes modified or added in this transaction
+    Mutable indexes modified in this transaction
     """
-    mutable_objects: HashDictionary = None
+    modified_mutable_objects: HashDictionary = None
+
+    """
+    New mutable indexes modified in this transaction
+    """
+    new_mutable_objects: HashDictionary = None
 
     """
     Snapshot of mutable objects at transaction start time
@@ -234,10 +242,11 @@ class ObjectTransaction(AbstractTransaction):
         self.new_roots = Dictionary()
         self.read_lock_objects = HashDictionary()
         if transaction_root.has('_mutable_root'):
-            self.mutable_objects = cast(HashDictionary, self.transaction_root.get_at('_mutable_root'))
-            self.initial_mutable_objects = self.mutable_objects
+            self.initial_mutable_objects = cast(HashDictionary, self.transaction_root.get_at('_mutable_root'))
         else:
             self.mutable_objects = HashDictionary()
+        self.new_mutable_objects = HashDictionary()
+        self.modified_mutable_objects = HashDictionary()
         self.new_literals = Dictionary(transaction=self)
         self.lock = Lock()
 
@@ -293,25 +302,61 @@ class ObjectTransaction(AbstractTransaction):
             if not self.read_lock_objects.has(mutable_index):
                 self.read_lock_objects.set_at(mutable_index, current_atom)
 
-    def _check_read_locked_objects(self):
-        # TODO
-        pass
+    def _save_modified_mutables(self):
+        if self.modified_mutable_objects.count > 0:
+            for key, value in self.modified_mutable_objects.as_iterable():
+                if isinstance(value, Atom):
+                    value._save()
 
-    def _check_created_literals(self):
-        # TODO
-        pass
+    def _save_modified_roots(self):
+        if self.transaction_root.count > 0:
+            for key, value in self.transaction_root.as_iterable():
+                if isinstance(value, Atom):
+                    value._save()
+
+    def _check_read_locked_objects(self, current_root: Dictionary):
+        if self.read_lock_objects.count > 0:
+            current_mutable_root: HashDictionary = cast(HashDictionary, current_root.get_at('_mutable_root'))
+            for key, value in self.read_lock_objects.as_iterable():
+                if current_mutable_root.get_at(key) != value:
+                    raise ProtoLockingException(
+                        message=f'Another transaction has modified an object modified in this transaction!'
+                    )
 
     def _update_created_literals(self):
-        # TODO
-        pass
+        if self.new_literals.count > 0:
+            current_db_root = self.database.get_current_root()
+            db_literals: Dictionary = cast(Dictionary, current_db_root.literal_root)
 
-    def _update_mutable_indexes(self):
-        # TODO
-        pass
+            some_new_literals = False
+            try:
+                for key, value in self.new_literals.as_iterable():
+                    if not db_literals.has(key):
+                        some_new_literals = True
+                        value._save()
+                        db_literals.set_at(key, value)
+            finally:
+                if some_new_literals:
+                    current_db_root.literal_root = db_literals
+                    self.database.set_current_root(current_db_root)
 
-    def _update_database_roots(self):
-        # TODO
-        pass
+    def _update_mutable_indexes(self, current_root: Dictionary) -> Dictionary:
+        # It is assumed all updated mutables were previously saved
+        current_db_root = current_root
+        current_mutable_root: HashDictionary = cast(HashDictionary, current_db_root.get_at('_mutable_root'))
+        if self.modified_mutable_objects.count > 0:
+            for key, value in self.modified_mutable_objects.as_iterable():
+                current_mutable_root.set_at(key, value)
+            current_db_root = current_db_root.set_at('_mutable_root', current_mutable_root)
+        return current_db_root
+
+    def _update_database_roots(self, current_root: Dictionary) -> Dictionary:
+        # It is assumed all updated roots were previously saved
+        current_db_root = current_root
+        if self.new_roots.count > 0:
+            for key, value in self.new_roots.as_iterable():
+                current_db_root.set_at(key, value)
+        return current_db_root
 
     def commit(self):
         """
@@ -330,16 +375,20 @@ class ObjectTransaction(AbstractTransaction):
                     message=f'Transaction is not running ({self.state}). It could not be committed!'
                 )
 
-            if self.new_roots.count != 0 or self.mutable_objects.count != 0 or self.new_literals.count != 0:
-                # Check created literals before locking the DB
-                self._check_created_literals()
+            if self.new_roots.count != 0 or self.modified_mutable_objects.count != 0 or self.new_literals.count != 0:
+                # Save transaction created objects before locking database root
+                self._save_modified_mutables()
+                self._save_modified_roots()
 
-                self.current_root = self.database.get_lock_current_root()
-                self._check_read_locked_objects()
-                self._update_created_literals()
-                self._update_mutable_indexes()
-                self._update_database_roots()
-                self.database.set_current_root(self.current_root)
+                # The folling block will be synchronized among all transactions
+                # for this database
+                with self.database.get_lock_current_root() as current_root:
+                    self._update_created_literals()
+                    self._check_read_locked_objects(current_root)
+                    current_root = self._update_mutable_indexes(current_root)
+                    current_root = self._update_database_roots(current_root)
+                    current_root._save()
+                    self.database.set_current_root(current_root)
 
             # At this point everything changed was commited
             self.state = 'Committed'
@@ -368,8 +417,8 @@ class ObjectTransaction(AbstractTransaction):
 
     def get_mutable(self, key:int):
         with self.lock:
-            if self.mutable_objects.has(key):
-                return self.mutable_objects.get_at(key)
+            if self.new_mutable_objects.has(key):
+                return self.new_mutable_objects.get_at(key)
 
             if self.initial_mutable_objects.has(key):
                 return self.initial_mutable_objects.get_at(key)
@@ -380,7 +429,10 @@ class ObjectTransaction(AbstractTransaction):
 
     def set_mutable(self, key:int, value:Atom):
         with self.lock:
-            self.mutable_objects.set_at(key, value)
+            if self.initial_mutable_objects.has(key):
+                self.modified_mutable_objects.set_at(key, value)
+            else:
+                self.new_mutable_objects.set_at(key, value)
 
     def new_hash_dictionary(self) -> HashDictionary :
         """
@@ -410,3 +462,20 @@ class ObjectTransaction(AbstractTransaction):
         :return:
         """
         return Set(transaction=self)
+
+class RootContextManager:
+    def __init__(self, transaction: ObjectTransaction):
+        self.transaction = transaction
+
+    def __enter__(self):
+        self.current_root = self.transaction.database.get_lock_current_root()
+        return self.current_root
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if not exc_type:
+            self.transaction.database.set_current_root(self.current_root)
+        else:
+            self.transaction.database.unlock_current_root()
+        # let the exception follows the try chain
+        return False
+

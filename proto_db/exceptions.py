@@ -4,7 +4,7 @@ CORRUPTION_ERROR = 30_000
 NOT_SUPPORTED_ERROR = 40_000
 NOT_AUTHORIZED_ERROR = 50_000
 UNEXPECTED_ERROR = 60_000
-
+LOCKING_ERROR = 70_000
 
 class ProtoBaseException(Exception):
     """
@@ -68,4 +68,13 @@ class ProtoNotAuthorizedException(ProtoBaseException):
             exception_type if exception_type else 'AuthorizationException',
             message
         )
+
+class ProtoLockingException(ProtoBaseException):
+    def __init__(self, code: int=LOCKING_ERROR, exception_type: str=None, message: str=None):
+        super().__init__(
+            code if code else 6,
+            exception_type if exception_type else 'LockingException',
+            message
+        )
+
 

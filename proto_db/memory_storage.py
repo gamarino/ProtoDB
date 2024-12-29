@@ -38,6 +38,9 @@ class MemoryStorage(common.SharedStorage):
             # Raise an error if the root is not set.
             raise common.ProtoValidationException(message='You are trying to read an empty DB!')
 
+    def read_lock_current_root(self) -> RootObject:
+        return self.read_current_root()
+
     def set_current_root(self, new_root: RootObject):
         """
         Set a new root object for the storage, replacing any existing root.
@@ -45,6 +48,9 @@ class MemoryStorage(common.SharedStorage):
         """
         with self.lock:  # Ensure thread-safety when modifying `current_root`.
             self.current_root = new_root
+
+    def unlock_current_root(self):
+        pass
 
     def flush_wal(self):
         """

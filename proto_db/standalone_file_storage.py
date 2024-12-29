@@ -108,9 +108,11 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
     def read_lock_current_root(self) -> RootObject:
         """
         Read the current root object
+        In this provider, there is no difference with
+        a simple root reading
         :return:
         """
-        return self.block_provider.get_current_root_object()
+        return self.read_current_root()
 
     def set_current_root(self, root_pointer: RootObject):
         """
@@ -118,6 +120,14 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
         :return:
         """
         self.block_provider.update_root_object(root_pointer)
+
+    def unlock_current_root(self):
+        """
+        Abort root update process
+        Nothing to do for this provider
+        :return:
+        """
+        pass
 
     def _get_new_wal(self):
         """
