@@ -30,7 +30,7 @@ class Set(Atom):
             atom_pointer: AtomPointer = None,
             **kwargs):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        self.content = content if content else HashDictionary()  # Store the underlying hash-based dictionary.
+        self.content = content if content else HashDictionary(transaction=transaction)  # Store the underlying hash-based dictionary.
         self.count = self.content.count
 
     def _save(self):
@@ -93,6 +93,7 @@ class Set(Atom):
         # Create and return a new `Set` with the updated `HashDictionary`.
         return Set(
             content=self.content.set_at(item_hash, key),  # Add key-hash to the dictionary.
+            transaction = self.transaction
         )
 
     def remove_at(self, key: object) -> Set:
@@ -112,4 +113,5 @@ class Set(Atom):
         # Create and return a new `Set` with the updated `HashDictionary`.
         return Set(
             content=self.content.remove_at(item_hash),  # Remove key-hash from the dictionary.
+            transaction=self.transaction
         )

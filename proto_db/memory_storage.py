@@ -32,11 +32,7 @@ class MemoryStorage(common.SharedStorage):
             ProtoValidationException: If no root object has been set yet.
         """
         with self.lock:  # Ensure thread-safety when accessing `current_root`.
-            if self.current_root:
-                return self.current_root
-
-            # Raise an error if the root is not set.
-            raise common.ProtoValidationException(message='You are trying to read an empty DB!')
+            return self.current_root
 
     def read_lock_current_root(self) -> RootObject:
         return self.read_current_root()
@@ -69,9 +65,11 @@ class MemoryStorage(common.SharedStorage):
             ProtoCorruptionException: If an atom with the same offset already exists.
         """
         with self.lock:  # Ensure thread-safety for operations on `atoms`.
-            atom.atom_pointer.transaction_id = self.transaction_id  # Associate atom with the current transaction ID.
-            offset = uuid.uuid4()  # Generate a unique offset for the atom.
-            atom.atom_pointer.offset = offset
+            offset = uuid.uuid4()
+            atom_pointer = AtomPointer(
+                transaction_id=self.transaction_id,
+                offset=offset
+            )
 
             # Check if the offset already exists in the atoms dictionary.
             if offset in self.atoms:
@@ -82,9 +80,12 @@ class MemoryStorage(common.SharedStorage):
             # Add the atom to the storage.
             self.atoms[offset] = atom
 
+            if isinstance(atom, Atom):
+                atom.atom_pointer = atom_pointer
+
             # Create and return a Future with the atom's pointer.
             result = Future()
-            result.set_result(atom.atom_pointer)
+            result.set_result(atom_pointer)
             return result
 
     def get_atom(self, atom_pointer: AtomPointer) -> Future[Atom]:

@@ -1,7 +1,8 @@
 import unittest
 import uuid
 from threading import Thread
-from ..common import Atom, AtomPointer, RootObject, ProtoValidationException, ProtoCorruptionException
+from ..common import Atom, AtomPointer, RootObject
+from ..exceptions import ProtoValidationException, ProtoCorruptionException
 from ..memory_storage import MemoryStorage
 
 

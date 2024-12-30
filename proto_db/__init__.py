@@ -9,6 +9,9 @@ from .exceptions import ProtoBaseException, ProtoUserException, ProtoCorruptionE
 
 from .common import DBObject, DBCollections, QueryPlan
 from .db_access import ObjectSpace, Database, ObjectTransaction
+from .memory_storage import MemoryStorage
+from .standalone_file_storage import StandaloneFileStorage
+from .file_block_provider import FileBlockProvider
 
 from .sets import Set
 from .lists import List

@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod, ABCMeta
 import io
 import configparser
 import datetime
-from .exceptions import ProtoValidationException
+from .exceptions import ProtoValidationException, ProtoLockingException, ProtoCorruptionException
 
 # Constants for storage size units
 KB: int  = 1024
@@ -267,10 +267,10 @@ class Atom(metaclass=CombinedMeta):
     :ivar atom_pointer: Points to the storage location of the atom. Contains
         information like transaction ID and offset.
     :type atom_pointer: AtomPointer
-    :ivar _transaction: References the transaction context for operations
+    :ivar transaction: References the transaction context for operations
         involving this atom. If absent, certain operations like saving
         are not permitted.
-    :type _transaction: AbstractTransaction
+    :type transaction: AbstractTransaction
     :ivar _loaded: Whether the atom's attributes have been loaded from storage.
         False by default.
     :type _loaded: bool
@@ -279,12 +279,12 @@ class Atom(metaclass=CombinedMeta):
     :type _saving: bool
     """
     atom_pointer: AtomPointer
-    _transaction: AbstractTransaction
+    transaction: AbstractTransaction
     _loaded: bool
     _saved: bool = False
 
     def __init__(self, transaction: AbstractTransaction = None, atom_pointer: AtomPointer = None, **kwargs):
-        self._transaction = transaction
+        self.transaction = transaction
         self.atom_pointer = atom_pointer
         self._loaded = False
         for name, value in self._json_to_dict(kwargs).items():
@@ -292,10 +292,11 @@ class Atom(metaclass=CombinedMeta):
 
     def _load(self):
         if not self._loaded:
-            if self._transaction:
-                if self.atom_pointer.transaction_id and \
+            if self.transaction:
+                if self.atom_pointer and \
+                   self.atom_pointer.transaction_id and \
                    self.atom_pointer.offset:
-                    loaded_atom: Atom = self._transaction.database.object_space.storage_provider.get_atom(
+                    loaded_atom: Atom = self.transaction.database.object_space.storage_provider.get_atom(
                         self.atom_pointer).result()
                     loaded_dict = self._json_to_dict(loaded_atom.__dict__)
                     for attribute_name, attribute_value in loaded_dict.items():
@@ -304,7 +305,7 @@ class Atom(metaclass=CombinedMeta):
 
     def __eq__(self, other):
         if isinstance(other, Atom):
-            if self.atom_pointer == other.atom_pointer:
+            if self.atom_poiner and self.atom_pointer == other.atom_pointer:
                 return True
             else:
                 return self.atom_pointer.transaction_id == other.atom_pointer.transaction_id and \
@@ -312,13 +313,13 @@ class Atom(metaclass=CombinedMeta):
         return False
 
     def __getattr__(self, name: str):
-        if name.startswith('_') or name == 'atom_pointer':
+        if name.startswith('_') or name in ['atom_pointer', 'transaction']:
             return super().__getattribute__(name)
         self._load()
         return super().__getattribute__(name)
 
     def _push_to_storage(self, json_value: dict) -> AtomPointer:
-        return self._transaction.database.object_space.storage_provider.push_atom(json_value).result()
+        return self.transaction.database.object_space.storage_provider.push_atom(json_value).result()
 
     def _json_to_dict(self, json_data: dict) -> dict:
         data = {}
@@ -342,7 +343,7 @@ class Atom(metaclass=CombinedMeta):
                     value = None
                 elif class_name in atom_class_registry:
                     atom_pointer = AtomPointer(value['transaction_id'], value['offset'])
-                    value = self._transaction.read_object(class_name, atom_pointer)
+                    value = self.transaction.read_object(class_name, atom_pointer)
                 else:
                     raise ProtoValidationException(
                         message=f'It is not possible to load Atom of class {class_name}!'
@@ -356,16 +357,16 @@ class Atom(metaclass=CombinedMeta):
 
         for name, value in data.items():
             if isinstance(value, Atom):
-                if not value._transaction:
-                    value._transaction = self._transaction
+                if not value.transaction:
+                    value.transaction = self.transaction
                 value._save()
                 json_value[name] = {
-                    'className': value.__name__,
+                    'className': type(value).__name__,
                     'transaction_id': value.atom_pointer.transaction_id,
                     'offset': value.atom_pointer.offset,
                 }
             elif isinstance(value, str):
-                new_literal = self._transaction.get_literal(value)
+                new_literal = self.transaction.get_literal(value)
                 setattr(self, name, new_literal)
                 new_literal._save()
             elif isinstance(value, datetime.datetime):
@@ -416,16 +417,16 @@ class Atom(metaclass=CombinedMeta):
         if not self.atom_pointer and not self._saved:
             # It's a new object
 
-            if self._transaction:
+            if self.transaction:
                 # Push the object tree downhill, avoiding recursion loops
                 # converting attributes strs to Literals
                 self._saved = True
 
                 for name, value in self.__dict__.items():
                     if not callable(value):
-                        if not value._transaction:
-                            value._transaction = self._transaction
                         if isinstance(value, Atom):
+                            if not value.transaction:
+                                value.transaction = self.transaction
                             value._save()
 
                 json_value = {'AtomClass': self.__class__.__name__}
@@ -467,6 +468,17 @@ class RootObject(Atom):
     """
     object_root: Atom
     literal_root: Atom
+
+    def __init__(self,
+                 object_root: Atom = None,
+                 literal_root: Atom = None,
+                 transaction: AbstractTransaction = None,
+                 atom_pointer: AtomPointer = None,
+                 **kwargs
+                 ):
+        super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
+        self.object_root = object_root
+        self.literal_root = literal_root
 
 
 class BlockProvider(ABC):
@@ -702,7 +714,7 @@ class MutableObject(DBObject):
             self.hash_key = uuid.uuid4().int
 
     def __getattr__(self, name: str):
-        if not self._transaction:
+        if not self.transaction:
             raise ProtoValidationException(
                 message=f"You can't access a mutable object out of the scope of a transaction!"
             )
@@ -711,22 +723,22 @@ class MutableObject(DBObject):
         return current_object.__getattr__(name)
 
     def __setattr__(self, key, value):
-        if not self._transaction:
+        if not self.transaction:
             raise ProtoValidationException(
                 message=f"You can't access a mutable object out of the scope of a transaction!"
             )
 
-        current_object = cast(DBObject, self._transaction.get_mutable(self.hash_key))
+        current_object = cast(DBObject, self.transaction.get_mutable(self.hash_key))
         new_object = current_object._setattr(key, value)
-        self._transaction.set_mutable(self.hash_key, new_object)
+        self.transaction.set_mutable(self.hash_key, new_object)
         if self.atom_pointer and self.atom_pointer.transaction_id:
             # Object is stored in DB and it is going to be modified.
             # It should be added to the set of objects to be checked if were modified
             # by other transaction simoultaneously with this transaction
-            self._transaction.set_locked_object(self.hash_key, current_object)
+            self.transaction.set_locked_object(self.hash_key, current_object)
 
     def __hasattr__(self, name: str):
-        if not self._transaction:
+        if not self.transaction:
             raise ProtoValidationException(
                 message=f"You can't access a mutable object out of the scope of a transaction!"
             )
@@ -844,7 +856,7 @@ class Literal(Atom):
                  atom_pointer: AtomPointer = None,
                  **kwargs):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        self.string = literal or kwargs.pop('literal')
+        self.string = literal or ''
 
     def __eq__(self, other: str | Literal) -> bool:
         if isinstance(other, Literal):
@@ -932,10 +944,10 @@ class BytesAtom(Atom):
 
     def _load(self):
         if not self._loaded:
-            if self._transaction:
+            if self.transaction:
                 if self.atom_pointer.transaction_id and \
                    self.atom_pointer.offset:
-                    loaded_content = self._transaction.database.object_space.storage_provider.get_bytes(
+                    loaded_content = self.transaction.database.object_space.storage_provider.get_bytes(
                         self.atom_pointer).result()
                     self.content = loaded_content
             self._loaded = True
@@ -944,7 +956,7 @@ class BytesAtom(Atom):
         if not self.atom_pointer and not self._saved:
             # It's a new object
 
-            if self._transaction:
+            if self.transaction:
                 # Push the object tree downhill, avoiding recursion loops
                 # converting attributes strs to Literals
                 self._saving = True

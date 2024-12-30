@@ -6,6 +6,7 @@ from .common import Atom, DBCollections, QueryPlan, Literal, AbstractTransaction
 
 import uuid
 import logging
+import struct
 
 _logger = logging.getLogger(__name__)
 
@@ -196,7 +197,8 @@ class HashDictionary(DBCollections):
             key=self.key,
             value=self.value,
             previous=self.previous.next,
-            next=self.next
+            next=self.next,
+            transaction = self.transaction
         )
 
         # Promote the left child as the new root.
@@ -204,7 +206,8 @@ class HashDictionary(DBCollections):
             key=self.previous.key,
             value=self.previous.value,
             previous=self.previous.previous,
-            next=new_right
+            next=new_right,
+            transaction = self.transaction
         )
 
     def _left_rotation(self) -> HashDictionary:
@@ -222,7 +225,8 @@ class HashDictionary(DBCollections):
             key=self.key,
             value=self.value,
             previous=self.previous,
-            next=self.next.previous
+            next=self.next.previous,
+            transaction = self.transaction
         )
 
         # Promote the right child as the new root.
@@ -230,7 +234,8 @@ class HashDictionary(DBCollections):
             key=self.next.key,
             value=self.next.value,
             previous=new_left,
-            next=self.next.next
+            next=self.next.next,
+            transaction = self.transaction
         )
 
     def _rebalance(self) -> HashDictionary:
@@ -250,7 +255,8 @@ class HashDictionary(DBCollections):
                 key=node.key,
                 value=node.value,
                 previous=node.previous._rebalance(),
-                next=node.next
+                next=node.next,
+                transaction = self.transaction
             )
 
         while node.next and not -1 <= node.next._balance() <= 1:
@@ -259,6 +265,7 @@ class HashDictionary(DBCollections):
                 value=node.value,
                 previous=node.previous,
                 next=node.next._rebalance(),
+                transaction = self.transaction
             )
 
         # Calculate balance factor for the current node
@@ -271,7 +278,8 @@ class HashDictionary(DBCollections):
                     key=node.key,
                     value=node.value,
                     previous=node.previous._left_rotation(),
-                    next=node.next
+                    next=node.next,
+                    transaction = self.transaction
                 )
             return node._right_rotation()
 
@@ -282,6 +290,7 @@ class HashDictionary(DBCollections):
                     value=node.value,
                     previous=node.previous,
                     next=node.next._right_rotation(),
+                    transaction = self.transaction
                 )
             return node._left_rotation()
 
@@ -305,7 +314,8 @@ class HashDictionary(DBCollections):
                 key=key,
                 value=value,
                 previous=None,
-                next=None
+                next=None,
+                transaction = self.transaction
             )
 
         cmp = key - self.key
@@ -316,7 +326,8 @@ class HashDictionary(DBCollections):
                     key=self.key,
                     value=self.value,
                     previous=self.previous,
-                    next=self.next.set_at(key, value)
+                    next=self.next.set_at(key, value),
+                    transaction = self.transaction
                 )
             else:
                 new_node = HashDictionary(
@@ -327,8 +338,10 @@ class HashDictionary(DBCollections):
                         key=key,
                         value=value,
                         previous=None,
-                        next=None
-                    )
+                        next=None,
+                        transaction = self.transaction
+                    ),
+                    transaction = self.transaction
                 )
         elif cmp < 0:
             # Insert into the left subtree.
@@ -337,7 +350,8 @@ class HashDictionary(DBCollections):
                     key=self.key,
                     value=self.value,
                     previous=self.previous.set_at(key, value),
-                    next=self.next
+                    next=self.next,
+                    transaction = self.transaction
                 )
             else:
                 new_node = HashDictionary(
@@ -347,9 +361,11 @@ class HashDictionary(DBCollections):
                         key=key,
                         value=value,
                         previous=None,
-                        next=None
+                        next=None,
+                        transaction=self.transaction
                     ),
-                    next=self.next
+                    next=self.next,
+                    transaction = self.transaction
                 )
         else:
             # Replace the value of the current node.
@@ -357,7 +373,8 @@ class HashDictionary(DBCollections):
                 key=self.key,
                 value=value,
                 previous=self.previous,
-                next=self.next
+                next=self.next,
+                transaction = self.transaction
             )
 
         return new_node._rebalance()
@@ -377,7 +394,8 @@ class HashDictionary(DBCollections):
                     key=self.key,
                     value=self.value,
                     previous=self.previous,
-                    next=new_next if new_next.key is not None else None
+                    next=new_next if new_next.key is not None else None,
+                    transaction = self.transaction
                 )
             else:
                 return HashDictionary()
@@ -389,7 +407,8 @@ class HashDictionary(DBCollections):
                     key=self.key,
                     value=self.value,
                     previous=new_previous if new_previous.key is not None else None,
-                    next=self.next
+                    next=self.next,
+                    transaction = self.transaction
                 )
             else:
                 return HashDictionary()
@@ -402,7 +421,8 @@ class HashDictionary(DBCollections):
                     key=next_first.key,
                     value=next_first.value,
                     previous=self.previous,
-                    next=new_next if new_next.key is not None else None
+                    next=new_next if new_next.key is not None else None,
+                    transaction = self.transaction
                 )
             elif self.previous:
                 previous_last = self.previous._get_last()
@@ -411,7 +431,8 @@ class HashDictionary(DBCollections):
                     key=previous_last.key,
                     value=previous_last.value,
                     previous=new_previous if new_previous.key is not None else None,
-                    next=self.next
+                    next=self.next,
+                    transaction = self.transaction
                 )
             else:
                 # It was the only node, return an empty HashDictionary.
@@ -483,6 +504,18 @@ class DictionaryItem(Atom):
         self.value = value
 
 
+def _str_hash(string: str):
+    buffer = bytearray(8)
+    for i in range(0, len(buffer)):
+        buffer[i] = 0
+
+    string_bytes = bytearray(string.encode('utf-8'))
+    for i in range(0, len(string_bytes)):
+        string_bytes[i % 8] ^= string_bytes[i]
+
+    return struct.unpack('Q', buffer)[0]
+
+
 class Dictionary(DBCollections):
     """
     A mapping between strings and values
@@ -499,7 +532,7 @@ class Dictionary(DBCollections):
             atom_pointer: AtomPointer = None,
             **kwargs):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        self.content = content if content else HashDictionary()
+        self.content = content if content else HashDictionary(transaction=transaction)
         self.count = self.content.count
 
     def _save(self):
@@ -509,7 +542,7 @@ class Dictionary(DBCollections):
 
     def as_iterable(self) -> list[tuple[str, Atom]]:
         for hash_value, item in self.content.as_iterable():
-            yield cast(DictionaryItem, item).key.literal, cast(DictionaryItem, item).value
+            yield cast(DictionaryItem, item).key.string, cast(DictionaryItem, item).value
 
     def as_query_plan(self) -> QueryPlan:
         return self.content.as_query_plan()
@@ -520,7 +553,7 @@ class Dictionary(DBCollections):
         :param key:
         :return:
         """
-        item_hash = self._transaction.get_literal(key) if self._transaction else hash(key)
+        item_hash = _str_hash(key)
         item = cast(DictionaryItem, self.content.get_at(item_hash))
         if item is None:
             return None
@@ -534,10 +567,11 @@ class Dictionary(DBCollections):
         :param value: Atom
         :return: a new HashDirectory with the value set at key
         """
-        item = DictionaryItem(key=key, value=value)
-        item_hash = self._transaction.get_literal(key) if self._transaction else hash(key)
+        item = DictionaryItem(key=key, value=value, transaction=self.transaction)
+        item_hash = _str_hash(key)
         return Dictionary(
             content=self.content.set_at(item_hash, item),
+            transaction=self.transaction
         )
 
     def remove_at(self, key: str) -> Dictionary:
@@ -547,9 +581,10 @@ class Dictionary(DBCollections):
         :param key: int
         :return: a new HashDirectory with the key removed
         """
-        item_hash = self._transaction.get_literal(key) if self._transaction else hash(key)
+        item_hash = _str_hash(key)
         return Dictionary(
             content=self.content.remove_at(item_hash),
+            transaction=self.transaction
         )
 
     def has(self, key: str) -> bool:
@@ -559,6 +594,6 @@ class Dictionary(DBCollections):
         :param key:
         :return: True if key is in the dictionary, False otherwise
         """
-        item_hash = self._transaction.get_literal(key) if self._transaction else hash(key)
+        item_hash = _str_hash(key)
         return self.content.has(item_hash)
 

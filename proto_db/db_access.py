@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import datetime
 from typing import cast
 
 import uuid
@@ -54,11 +56,10 @@ class ObjectSpace(AbstractObjectSpace):
             db_catalog: Dictionary = cast(Dictionary, root.object_root)
             if not db_catalog.has(database_name):
                 new_db = Database(self, database_name)
-                new_db_root = Dictionary()
-                new_db_catalog = db_catalog.set_at(database_name, new_db_root)
-                new_db_catalog._save()
-                root.object_root = new_db_catalog
-                self.storage.set_current_root(root)
+                setup_tr = new_db.new_transaction()
+                setup_tr.set_root_object('_creation_timestamp',
+                                         Literal(string=str(datetime.datetime.now())))
+                setup_tr.commit()
                 return new_db
 
             raise ProtoValidationException(
@@ -146,11 +147,19 @@ class Database(AbstractDatabase):
         Start a new read transaction
         :return:
         """
-        root = self.object_space.storage.read_current_root()
+        root = self.get_current_root()
+        if not root:
+            root = RootObject()
         db_catalog: Dictionary = cast(Dictionary, root.object_root)
-        if db_catalog.has(self.database_name):
-            current_root: Dictionary = cast(Dictionary, db_catalog.get_at(self.database_name))
-            return ObjectTransaction(self, current_root)
+        if not db_catalog or not db_catalog.has(self.database_name):
+            creation_tr = ObjectTransaction(self, None)
+            creation_tr.set_root_object('_creation_timestamp', Literal(str(datetime.datetime.now())))
+            creation_tr.commit()
+            root = self.get_current_root()
+            db_catalog = cast(Dictionary, root.object_root)
+
+        current_root: Dictionary = cast(Dictionary, db_catalog.get_at(self.database_name))
+        return ObjectTransaction(self, current_root)
 
     def new_branch_database(self) -> Database:
         """
@@ -168,6 +177,8 @@ class Database(AbstractDatabase):
 
     def get_literal(self, string: str):
         root = self.object_space.storage.read_current_root()
+        if not root:
+            return None
         literal_root: Dictionary = cast(Dictionary, root.literal_root)
         if literal_root.has(string):
             return literal_root.get_at(string)
@@ -234,21 +245,23 @@ class ObjectTransaction(AbstractTransaction):
 
     def __init__(self, database: Database, transaction_root: Dictionary):
         super().__init__(database)
+        self.lock = Lock()
+        self.new_literals = Dictionary(transaction=self)
+
         if self.transaction_root:
             self.transaction_root = transaction_root
         else:
-            self.transaction_root = Dictionary()
+            self.transaction_root = Dictionary(transaction=self)
         self.initial_transaction_root = transaction_root
         self.new_roots = Dictionary()
         self.read_lock_objects = HashDictionary()
-        if transaction_root.has('_mutable_root'):
+        self.new_mutable_objects = HashDictionary()
+        self.modified_mutable_objects = HashDictionary()
+
+        if self.transaction_root.has('_mutable_root'):
             self.initial_mutable_objects = cast(HashDictionary, self.transaction_root.get_at('_mutable_root'))
         else:
             self.mutable_objects = HashDictionary()
-        self.new_mutable_objects = HashDictionary()
-        self.modified_mutable_objects = HashDictionary()
-        self.new_literals = Dictionary(transaction=self)
-        self.lock = Lock()
 
     def read_object(self, class_name: str, atom_pointer: AtomPointer) -> Atom:
         with self.lock:
@@ -264,17 +277,16 @@ class ObjectTransaction(AbstractTransaction):
             return atom
 
     def get_literal(self, string: str):
-        with self.lock:
-            if self.new_literals.has(string):
-                return self.new_literals.get_at(string)
+        if self.new_literals.has(string):
+            return self.new_literals.get_at(string)
+        else:
+            existing_literal = self.database.get_literal(string)
+            if existing_literal:
+                return existing_literal
             else:
-                existing_literal = self.database.get_literal(string)
-                if existing_literal:
-                    return existing_literal
-                else:
-                    new_literal = Literal(transaction=self, string=string)
-                    self.new_literals = self.new_literals.set_at(string, new_literal)
-                    return new_literal
+                new_literal = Literal(transaction=self, string=string)
+                self.new_literals = self.new_literals.set_at(string, new_literal)
+                return new_literal
 
     def get_root_object(self, name: str) -> Atom | None:
         """
@@ -295,7 +307,7 @@ class ObjectTransaction(AbstractTransaction):
         :return:
         """
         with self.lock:
-            self.transaction_root = self.transaction_root.set_at(name, value)
+            self.new_roots = self.transaction_root.set_at(name, value)
 
     def set_locked_object(self, mutable_index: int, current_atom: Atom):
         with self.lock:
@@ -343,6 +355,8 @@ class ObjectTransaction(AbstractTransaction):
     def _update_mutable_indexes(self, current_root: Dictionary) -> Dictionary:
         # It is assumed all updated mutables were previously saved
         current_db_root = current_root
+        if not current_db_root:
+            current_db_root = Dictionary(transaction=self)
         current_mutable_root: HashDictionary = cast(HashDictionary, current_db_root.get_at('_mutable_root'))
         if self.modified_mutable_objects.count > 0:
             for key, value in self.modified_mutable_objects.as_iterable():
@@ -382,7 +396,7 @@ class ObjectTransaction(AbstractTransaction):
 
                 # The folling block will be synchronized among all transactions
                 # for this database
-                with self.database.get_lock_current_root() as current_root:
+                with RootContextManager(object_transaction=self) as current_root:
                     self._update_created_literals()
                     self._check_read_locked_objects(current_root)
                     current_root = self._update_mutable_indexes(current_root)
@@ -464,18 +478,22 @@ class ObjectTransaction(AbstractTransaction):
         return Set(transaction=self)
 
 class RootContextManager:
-    def __init__(self, transaction: ObjectTransaction):
-        self.transaction = transaction
+    def __init__(self, object_transaction: ObjectTransaction):
+        self.object_transaction = object_transaction
 
     def __enter__(self):
-        self.current_root = self.transaction.database.get_lock_current_root()
+        self.current_root = self.object_transaction.database.get_lock_current_root()
+        if not self.current_root:
+            self.current_root = Dictionary(transaction=self.object_transaction)
+        else:
+            self.current_root.transaction = self.object_transaction
         return self.current_root
 
     def __exit__(self, exc_type, exc_value, traceback):
         if not exc_type:
-            self.transaction.database.set_current_root(self.current_root)
+            self.object_transaction.database.set_current_root(self.current_root)
         else:
-            self.transaction.database.unlock_current_root()
+            self.object_transaction.database.unlock_current_root()
         # let the exception follows the try chain
         return False
 

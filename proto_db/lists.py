@@ -172,14 +172,16 @@ class List(Atom):
         new_right = List(
             value=self.value,
             previous=self.previous.next,
-            next=self.next
+            next=self.next,
+            transaction = self.transaction
         )
 
         # Promote the left child as the new root.
         return List(
             value=self.previous.value,
             previous=self.previous.previous,
-            next=new_right
+            next=new_right,
+            transaction = self.transaction
         )
 
     def _left_rotation(self) -> List:
@@ -196,14 +198,16 @@ class List(Atom):
         new_left = List(
             value=self.value,
             previous=self.previous,
-            next=self.next.previous
+            next=self.next.previous,
+            transaction = self.transaction
         )
 
         # Promote the right child as the new root.
         return List(
             value=self.next.value,
             previous=new_left,
-            next=self.next.next
+            next=self.next.next,
+            transaction = self.transaction
         )
 
     def _rebalance(self) -> List:
@@ -229,7 +233,8 @@ class List(Atom):
                 new_node = List(
                     value=new_node.value,
                     previous=new_node.previous._left_rotation(),
-                    next=new_node.next
+                    next=new_node.next,
+                    transaction = self.transaction
                 )
                 if not new_node.previous:
                     return new_node
@@ -239,7 +244,8 @@ class List(Atom):
                 new_node = List(
                     value=new_node.value,
                     previous=new_node.previous,
-                    next=new_node.next._right_rotation()
+                    next=new_node.next._right_rotation(),
+                    transaction = self.transaction
                 )
                 if not new_node.next:
                     return new_node
@@ -281,7 +287,8 @@ class List(Atom):
             return List(
                 value=value,
                 previous=None,
-                next=None
+                next=None,
+                transaction = self.transaction
             )
 
         cmp = offset - node_offset
@@ -291,7 +298,8 @@ class List(Atom):
                 new_node = List(
                     value=self.value,
                     previous=self.previous,
-                    next=self.next.set_at(cmp, value)
+                    next=self.next.set_at(cmp, value),
+                    transaction = self.transaction
                 )
             else:
                 new_node = List(
@@ -299,7 +307,8 @@ class List(Atom):
                     previous=self.previous,
                     next=List(
                         value=value,
-                    )
+                    ),
+                    transaction = self.transaction
                 )
         elif cmp < 0:
             # Insert into the left subtree.
@@ -307,22 +316,26 @@ class List(Atom):
                 new_node = List(
                     value=self.value,
                     previous=self.previous.set_at(cmp, value),
-                    next=self.next
+                    next=self.next,
+                    transaction = self.transaction
                 )
             else:
                 new_node = List(
                     value=self.value,
                     previous=List(
                         value=value,
+                        transaction = self.transaction
                     ),
-                    next=self.next
+                    next=self.next,
+                    transaction = self.transaction
                 )
         else:
             # Replace the value of the current node.
             new_node = List(
                 value=value,
                 previous=self.previous,
-                next=self.next
+                next=self.next,
+                transaction = self.transaction
             )
 
         return new_node._rebalance()
@@ -353,7 +366,8 @@ class List(Atom):
             return List(
                 value=value,
                 previous=None,
-                next=None
+                next=None,
+                transaction = self.transaction
             )
 
         cmp = offset - node_offset
@@ -363,7 +377,8 @@ class List(Atom):
                 new_node = List(
                     value=self.value,
                     previous=self.previous,
-                    next=self.next.insert_at(cmp, value)
+                    next=self.next.insert_at(cmp, value),
+                    transaction = self.transaction
                 )
             else:
                 new_node = List(
@@ -372,8 +387,10 @@ class List(Atom):
                     next=List(
                         value=value,
                         previous=None,
-                        next=None
-                    )
+                        next=None,
+                        transaction = self.transaction
+                    ),
+                    transaction = self.transaction
                 )
         elif cmp < 0:
             # Insert into the left subtree.
@@ -381,7 +398,8 @@ class List(Atom):
                 new_node = List(
                     value=self.value,
                     previous=self.previous.insert_at(cmp, value),
-                    next=self.next
+                    next=self.next,
+                    transaction = self.transaction
                 )
             else:
                 new_node = List(
@@ -389,9 +407,11 @@ class List(Atom):
                     previous=List(
                         value=value,
                         previous=None,
-                        next=None
+                        next=None,
+                        transaction = self.transaction
                     ),
-                    next=self.next
+                    next=self.next,
+                    transaction = self.transaction
                 )
         else:
             # Insert the new value of the current node.
@@ -401,8 +421,10 @@ class List(Atom):
                 next=List(
                     value=self.value,
                     previous=None,
-                    next=self.next
-                )
+                    next=self.next,
+                    transaction = self.transaction
+                ),
+                transaction = self.transaction
             )
 
         return new_node._rebalance()
@@ -435,7 +457,8 @@ class List(Atom):
                 new_node = List(
                     value=self.value,
                     previous=self.previous,
-                    next=self.next.remove_at(cmp)
+                    next=self.next.remove_at(cmp),
+                    transaction = self.transaction
                 )
             else:
                 new_node = List()
@@ -445,7 +468,8 @@ class List(Atom):
                 new_node = List(
                     value=self.value,
                     previous=self.previous.remove_at(cmp),
-                    next=self.next
+                    next=self.next,
+                    transaction = self.transaction
                 )
             else:
                 new_node = List()
@@ -457,18 +481,21 @@ class List(Atom):
                 new_node = List(
                     value=last_value,
                     previous=new_previous if not new_previous.empty else None,
-                    next=self.next
+                    next=self.next,
+                    transaction = self.transaction
                 )
             elif self.next:
                 first_value = self.next.get_at(0)
                 new_next = self.next.remove_first()
                 new_node = List(
                     value=first_value,
-                    next=new_next if not new_next.empty else None
+                    next=new_next if not new_next.empty else None,
+                    transaction = self.transaction
                 )
             else:
                 return List(
-                    empty=True
+                    empty=True,
+                    transaction = self.transaction
                 )
 
         return new_node._rebalance()
@@ -497,7 +524,8 @@ class List(Atom):
                 new_node = List(
                     value=self.value,
                     previous=previous_removed if not previous_removed.empty else None,
-                    next=self.next
+                    next=self.next,
+                    transaction = self.transaction
                 )
             else:
                 new_node = self
@@ -507,7 +535,8 @@ class List(Atom):
                 value=None,
                 empty=True,
                 previous=None,
-                next=None
+                next=None,
+                transaction = self.transaction
             )
 
         return new_node._rebalance()
@@ -530,7 +559,8 @@ class List(Atom):
             new_node = List(
                 value=self.value,
                 previous=self.previous,
-                next=next_removed if not next_removed.empty else None
+                next=next_removed if not next_removed.empty else None,
+                transaction = self.transaction
             )
         else:
             # Remove this node.
@@ -538,7 +568,8 @@ class List(Atom):
                 value=None,
                 empty=True,
                 previous=None,
-                next=None
+                next=None,
+                transaction = self.transaction
             )
 
         return new_node._rebalance()
@@ -567,7 +598,8 @@ class List(Atom):
                 value=None,
                 empty=True,
                 previous=None,
-                next=items
+                next=items,
+                transaction = self.transaction
             )
 
         return new_node._rebalance()
@@ -604,8 +636,10 @@ class List(Atom):
             empty=False,
             previous=None,
             next=List(
-                value=item
-            )
+                value=item,
+                transaction = self.transaction
+            ),
+            transaction = self.transaction
         )
 
         return node._rebalance()
@@ -647,7 +681,8 @@ class List(Atom):
                 value=None,
                 empty=True,
                 previous=None,
-                next=None
+                next=None,
+                transaction = self.transaction
             )
 
         # Here, it will be a non-empty list
