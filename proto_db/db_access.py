@@ -3,7 +3,6 @@ from __future__ import annotations
 import datetime
 from typing import cast
 
-import uuid
 from .exceptions import ProtoValidationException, ProtoLockingException
 from .common import Atom, \
     AbstractObjectSpace, AbstractDatabase, AbstractTransaction, \
@@ -53,18 +52,18 @@ class ObjectSpace(AbstractObjectSpace):
                 root.object_root = Dictionary()
                 root.literal_root = Dictionary()
 
-            db_catalog: Dictionary = cast(Dictionary, root.object_root)
-            if not db_catalog.has(database_name):
-                new_db = Database(self, database_name)
-                setup_tr = new_db.new_transaction()
-                setup_tr.set_root_object('_creation_timestamp',
-                                         Literal(string=str(datetime.datetime.now())))
-                setup_tr.commit()
-                return new_db
+        db_catalog: Dictionary = cast(Dictionary, root.object_root)
+        if not db_catalog.has(database_name):
+            new_db = Database(self, database_name)
+            setup_tr = new_db.new_transaction()
+            setup_tr.set_root_object('_creation_timestamp',
+                                     Literal(string=str(datetime.datetime.now())))
+            setup_tr.commit()
+            return new_db
 
-            raise ProtoValidationException(
-                message=f'Database {database_name} already exists!'
-            )
+        raise ProtoValidationException(
+            message=f'Database {database_name} already exists!'
+        )
 
     def rename_database(self, old_name: str, new_name: str):
         """
@@ -106,38 +105,26 @@ class ObjectSpace(AbstractObjectSpace):
 
             return result
 
-    def commit_database(self, database_name:str, new_root: Atom):
-        with self._lock:
-            root = self.storage.read_current_root()
-            db_catalog: Dictionary = cast(Dictionary, root.object_root)
-            if db_catalog.has(database_name):
-                new_db_catalog = db_catalog.set_at(database_name, new_root)
-                new_db_catalog._save()
-                root.object_root = new_db_catalog
-                self.storage.set_current_root(root)
-            else:
-                raise ProtoValidationException(
-                    message=f'Database {database_name} does not exist!'
-                )
-
 
 class Database(AbstractDatabase):
     database_name: str
     object_space: ObjectSpace
+    current_root: RootObject
 
     def __init__(self, object_space: ObjectSpace, database_name: str):
         super().__init__(object_space)
         self.object_space = object_space
         self.database_name = database_name
 
-    def get_current_root(self):
+    def get_current_root(self) -> RootObject:
         return self.object_space.storage.read_current_root()
 
-    def get_lock_current_root(self):
-        return self.object_space.storage.read_lock_current_root()
+    def get_lock_current_root(self) -> RootObject:
+        self.current_root = self.object_space.storage.read_lock_current_root()
+        return self.current_root
 
-    def set_current_root(self, new_root: Atom):
-        self.object_space.commit_database(self.database_name, new_root)
+    def set_current_root(self, new_root: RootObject):
+        self.object_space.storage.set_current_root(new_root)
 
     def unlock_current_root(self):
         return self.object_space.storage.unlock_current_root()
@@ -161,18 +148,26 @@ class Database(AbstractDatabase):
         current_root: Dictionary = cast(Dictionary, db_catalog.get_at(self.database_name))
         return ObjectTransaction(self, current_root)
 
-    def new_branch_database(self) -> Database:
+    def new_branch_database(self, new_db_name: str) -> Database:
         """
         Gets a new database, derived from the current state of the origin database.
         The derived database could be modified in an idependant history.
         Transactions in the derived database will not impact in the origin database
         :return:
         """
+        root = self.object_space.storage.read_current_root()
 
-        new_db_name = uuid.uuid4().hex
-        new_db = Database(self.object_space, new_db_name)
+        new_db = self.object_space.new_database(new_db_name)
 
-        self.object_space.commit_database(self.database_name, Dictionary())
+        creation_tr = ObjectTransaction(
+            new_db,
+            root.object_root.get_at(self.database_name)
+        )
+        creation_tr.set_root_object(
+            '_creation_timestamp',
+            Literal(str(datetime.datetime.now())))
+        creation_tr.commit()
+
         return new_db
 
     def get_literal(self, string: str):
@@ -243,7 +238,7 @@ class ObjectTransaction(AbstractTransaction):
 
     lock: Lock
 
-    def __init__(self, database: Database, transaction_root: Dictionary):
+    def __init__(self, database: Database, transaction_root: Dictionary = None):
         super().__init__(database)
         self.lock = Lock()
         self.new_literals = Dictionary(transaction=self)
@@ -335,7 +330,7 @@ class ObjectTransaction(AbstractTransaction):
                         message=f'Another transaction has modified an object modified in this transaction!'
                     )
 
-    def _update_created_literals(self):
+    def _update_created_literals(self, current_literal_root: Dictionary) -> Dictionary:
         if self.new_literals.count > 0:
             current_db_root = self.database.get_current_root()
             db_literals: Dictionary = cast(Dictionary, current_db_root.literal_root)
@@ -346,21 +341,19 @@ class ObjectTransaction(AbstractTransaction):
                     if not db_literals.has(key):
                         some_new_literals = True
                         value._save()
-                        db_literals.set_at(key, value)
+                        current_literal_root = db_literals.set_at(key, value)
             finally:
                 if some_new_literals:
                     current_db_root.literal_root = db_literals
-                    self.database.set_current_root(current_db_root)
 
-    def _update_mutable_indexes(self, current_root: Dictionary) -> Dictionary:
+        return current_literal_root
+
+    def _update_mutable_indexes(self, current_db_root: Dictionary) -> Dictionary:
         # It is assumed all updated mutables were previously saved
-        current_db_root = current_root
-        if not current_db_root:
-            current_db_root = Dictionary(transaction=self)
         current_mutable_root: HashDictionary = cast(HashDictionary, current_db_root.get_at('_mutable_root'))
         if self.modified_mutable_objects.count > 0:
             for key, value in self.modified_mutable_objects.as_iterable():
-                current_mutable_root.set_at(key, value)
+                current_db_root = current_mutable_root.set_at(key, value)
             current_db_root = current_db_root.set_at('_mutable_root', current_mutable_root)
         return current_db_root
 
@@ -369,7 +362,7 @@ class ObjectTransaction(AbstractTransaction):
         current_db_root = current_root
         if self.new_roots.count > 0:
             for key, value in self.new_roots.as_iterable():
-                current_db_root.set_at(key, value)
+                current_db_root = current_db_root.set_at(key, value)
         return current_db_root
 
     def commit(self):
@@ -397,10 +390,31 @@ class ObjectTransaction(AbstractTransaction):
                 # The folling block will be synchronized among all transactions
                 # for this database
                 with RootContextManager(object_transaction=self) as current_root:
-                    self._update_created_literals()
-                    self._check_read_locked_objects(current_root)
-                    current_root = self._update_mutable_indexes(current_root)
-                    current_root = self._update_database_roots(current_root)
+                    current_root = RootObject(
+                        object_root=current_root.object_root,
+                        literal_root=self._update_created_literals(
+                            cast(Dictionary,
+                                 current_root.literal_root or Dictionary(transaction=self))
+                        )
+                    )
+                    db_root = current_root.object_root.get_at(
+                        self.database.database_name
+                    )
+                    if not db_root:
+                        db_root = Dictionary(transaction=self)
+
+                    self._check_read_locked_objects(db_root)
+                    db_root = self._update_mutable_indexes(db_root)
+                    db_root = self._update_database_roots(db_root)
+                    db_root._save()
+                    current_root = RootObject(
+                        object_root=current_root.object_root.set_at(
+                            self.database.database_name,
+                            db_root
+                        ),
+                        literal_root=current_root.literal_root,
+                        transaction=self
+                    )
                     current_root._save()
                     self.database.set_current_root(current_root)
 
@@ -484,7 +498,10 @@ class RootContextManager:
     def __enter__(self):
         self.current_root = self.object_transaction.database.get_lock_current_root()
         if not self.current_root:
-            self.current_root = Dictionary(transaction=self.object_transaction)
+            self.current_root = RootObject(
+                object_root=Dictionary(transaction=self.object_transaction),
+                literal_root=Dictionary(transaction=self.object_transaction)
+            )
         else:
             self.current_root.transaction = self.object_transaction
         return self.current_root

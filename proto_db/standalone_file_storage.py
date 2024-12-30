@@ -317,32 +317,12 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
 
         return self.executor_pool.submit(task_read_atom)
 
-    def push_atom(self, atom: Atom) -> Future[AtomPointer]:
+    def push_atom(self, atom: dict) -> Future[AtomPointer]:
         """
         Serializes and pushes an Atom into the WAL asynchronously.
         """
-        if not isinstance(atom, Atom):
-            raise ProtoValidationException(message="Invalid Atom provided.")
-
         def task_push_atom():
-            class_name = atom.__class__.__name__
-            attributes = {'AtomClass': class_name}
-            for attribute_name, value in atom.__dict__:
-                if attribute_name == '_attributes':
-                    attributes['_attributes'] = value
-                elif not attribute_name[0] == '_' and not callable(value):
-                    # Only public attributes will be persisted
-
-                    # If it's an Atom, just the transaction_id and offset will be persisted
-                    if isinstance(value, Atom):
-                        attributes[attribute_name] = {
-                            'AtomClass': value.__name__,
-                            'transaction_id': value.atom_pointer.transaction_id,
-                            'offset': value.atom_pointer.offset,
-                        }
-                    else:
-                        attributes[attribute_name] = value
-            data = bytearray(json.dumps(attributes).encode('UTF-8'))
+            data = bytearray(json.dumps(atom).encode('UTF-8'))
 
             transaction_id, offset = self.push_bytes_to_wal(data)
             return AtomPointer(transaction_id, offset)
@@ -366,9 +346,16 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
                     streamer = self.block_provider.get_reader(pointer.transaction_id, pointer.offset)
 
             # Read the atom from the storage getting just the needed amount of data. No extra reads
-            data = bytes()
             with streamer as wal_stream:
-                data += wal_stream.read(1)
+                data = wal_stream.read(8)
+                # TODO Read data count from the first 8 bytes in data
+                data_count = 0
+
+                data = bytes()
+                count = 0
+                while count < data_count:
+                    data += wal_stream.read(1)
+                    count += 1
 
             return data
 
@@ -387,7 +374,10 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
                         f"Only up to {self.blob_max_size} bytes are accepted!")
 
         def task_push_bytes():
-            transaction_id, offset = self.push_bytes_to_wal(bytearray(data))
+            # TODO Write count of bytes an then the data
+            len_data = bytes(8)
+
+            transaction_id, offset = self.push_bytes_to_wal(bytearray(len_data + data))
             return AtomPointer(transaction_id, offset)
 
         return self.executor_pool.submit(task_push_bytes)

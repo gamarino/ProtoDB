@@ -10,7 +10,8 @@ from abc import ABC, abstractmethod, ABCMeta
 import io
 import configparser
 import datetime
-from .exceptions import ProtoValidationException, ProtoLockingException, ProtoCorruptionException
+from .exceptions import ProtoValidationException
+
 
 # Constants for storage size units
 KB: int  = 1024
@@ -125,6 +126,7 @@ class AbstractDatabase(ABC):
     ABC to solve forward type definitions
     """
     object_space: AbstractObjectSpace
+    database_name: str
 
     def __init__(self, object_space: AbstractObjectSpace):
         self.object_space = object_space
@@ -138,21 +140,21 @@ class AbstractDatabase(ABC):
         """
 
     @abstractmethod
-    def get_current_root(self):
+    def get_current_root(self) -> RootObject:
         """
 
         :return:
         """
 
     @abstractmethod
-    def get_lock_current_root(self):
+    def get_lock_current_root(self) -> RootObject:
         """
 
         :return:
         """
 
     @abstractmethod
-    def set_current_root(self, new_root: Atom):
+    def set_current_root(self, new_root: RootObject):
         """
 
         :param new_root:
@@ -366,9 +368,7 @@ class Atom(metaclass=CombinedMeta):
                     'offset': value.atom_pointer.offset,
                 }
             elif isinstance(value, str):
-                new_literal = self.transaction.get_literal(value)
-                setattr(self, name, new_literal)
-                new_literal._save()
+                json_value[name] = value
             elif isinstance(value, datetime.datetime):
                 json_value[name] = {
                     'className': 'datetime.datetime',
@@ -385,20 +385,11 @@ class Atom(metaclass=CombinedMeta):
                     'microseconds': value.microseconds,
                 }
             elif isinstance(value, int):
-                json_value[name] = {
-                    'className': 'int',
-                    'value': value,
-                }
+                json_value[name] = value
             elif isinstance(value, float):
-                json_value[name] = {
-                    'className': 'float',
-                    'value': value,
-                }
+                json_value[name] = value
             elif isinstance(value, bool):
-                json_value[name] = {
-                    'className': 'bool',
-                    'value': value,
-                }
+                json_value[name] = value
             elif isinstance(value, bytes):
                 bytes_atom = BytesAtom(content=value)
                 bytes_atom._save()
@@ -429,14 +420,22 @@ class Atom(metaclass=CombinedMeta):
                                 value.transaction = self.transaction
                             value._save()
 
-                json_value = {'AtomClass': self.__class__.__name__}
+                if type(self) == Literal:
+                    json_value = {
+                        'className': type(self).__name__,
+                        'string': self.string
+                    }
+                else:
+                    json_value = {'className': type(self).__name__}
 
-                for name, value in self.__dict__.items():
-                    if name.startswith('_'):
-                        continue
-                    json_value[name] = value
+                    for name, value in self.__dict__.items():
+                        if name.startswith('_'):
+                            continue
+                        if name in ['transaction', 'atom_pointer']:
+                            continue
+                        json_value[name] = value
 
-                json_value = self._dict_to_json(json_value)
+                    json_value = self._dict_to_json(json_value)
 
                 # At this point all attributes has been flushed to storage if they are newly created
                 # All attributes has valid AtomPointer values (either old or new)
@@ -479,161 +478,6 @@ class RootObject(Atom):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
         self.object_root = object_root
         self.literal_root = literal_root
-
-
-class BlockProvider(ABC):
-    """
-    An abstract base class that defines the interface for a block-based storage provider.
-
-    This class serves as a blueprint for managing Write-Ahead Logs (WALs) and root objects in a
-    block-related storage system. It provides abstract methods for obtaining and writing data to WALs,
-    retrieving the root object, and managing data durability by closing WALs and the provider. Concrete
-    implementations of this class must provide functionality for these operations as outlined in the
-    specifications of the abstract methods.
-
-    """
-    @abstractmethod
-    def get_config_data(self) -> configparser.ConfigParser:
-        """
-        Get config data
-        :return:
-        """
-
-    @abstractmethod
-    def get_new_wal(self) -> tuple[uuid.UUID, int]:
-        """
-        Get a WAL to use.
-        It could be an old one, or a new one.
-
-        :return: a tuple with the id of the WAL and the next offset to use
-        """
-
-    @abstractmethod
-    def get_reader(self, wal_id: uuid.UUID, position: int) -> io.FileIO:
-        """
-        Get a streamer initialized at position in WAL file
-        wal_id
-
-        :param wal_id:
-        :param position:
-        :return:
-        """
-
-    @abstractmethod
-    def get_writer_wal(self) -> uuid.UUID:
-        """
-        Provides an abstract method that should be implemented by subclasses to retrieve the
-        unique identifier (UUID) of the writer's Write-Ahead Log (WAL). This UUID is used to
-        identify the WAL instance associated with the writer for consistency and tracking purposes.
-
-        :raises NotImplementedError: This method must be implemented in a subclass.
-        :return: The UUID of the writer's WAL.
-        :rtype: uuid.UUID
-        """
-
-    @abstractmethod
-    def write_streamer(self, wal_id: uuid.UUID) -> io.FileIO:
-        """
-        This abstract method must be implemented to handle the writing of a streaming
-        process for a given WAL (Write-Ahead Log) identifier. It is responsible for
-        generating and returning a writable file-like object, intended for downstream
-        operations that require data persistence or streaming output based on the
-        specified WAL ID.
-
-        :param wal_id: The unique identifier (UUID) of the Write-Ahead Log (WAL) to be
-                       streamed.
-        :type wal_id: uuid.UUID
-        :return: A writable file-like object for handling the streaming operations
-                 associated with the given WAL ID.
-        :rtype: io.FileIO
-        """
-
-    @abstractmethod
-    def get_current_root_object(self) -> RootObject:
-        """
-        Read current root object from storage
-        :return: the current root object
-        """
-
-    @abstractmethod
-    def update_root_object(self, new_root: RootObject):
-        """
-        Updates or create the root object in storage
-        On newly created databases, this is the first
-        operation to perform
-
-        :param new_root:
-        :return:
-        """
-
-    @abstractmethod
-    def close_wal(self, transaction_id: uuid.UUID):
-        """
-        Close a previous WAL. Flush any pending data. Make all changes durable
-        :return:
-        """
-
-    @abstractmethod
-    def close(self):
-        """
-        Close the operation of the block provider. Flush any pending data to WAL. Make all changes durable
-        No further operations are allowed
-        :return:
-        """
-
-
-class SharedStorage(AbstractSharedStorage):
-    """
-    A SharedStorage defines the minimun set of functionality required to implement a storage interface
-    A SharedStorage object represents the current use instance of a permanent storage.
-    A permanent storage is a set of transactions that represent the full story of the database. If you want
-    to use that database, you will use an AtomStorage object to open, update or expand the database
-    All methods should return concurret.futures.Future objects, and thus, depending on the actual implementation
-    provides a level of paralellism to the system
-    SharedStorage object should support multithreaded and multiprocessed uses, and can be safe in a multiserver
-    environment, depending on the implementation
-    """
-
-    @abstractmethod
-    def read_current_root(self) -> RootObject:
-        """
-        Read the current root object
-        :return:
-        """
-
-    @abstractmethod
-    def read_lock_current_root(self) -> RootObject:
-        """
-        Read the current root object
-        :return:
-        """
-
-    @abstractmethod
-    def set_current_root(self, root_pointer: RootObject):
-        """
-        Set the current root object
-        :return:
-        """
-
-    @abstractmethod
-    def unlock_current_root(self):
-        """
-        Unlock the current root by performing necessary operations based
-        on the implementation. This method typically interacts with the state or
-        systems associated with this object to achieve the unlocking process.
-
-        """
-
-    @abstractmethod
-    def flush_wal(self):
-        """
-        Function to be called periodically (eg 2 minutes) to ensure no pending writes to WAL
-        Additionally it is assumed that previously set_current_root, so new objects created
-        before that all are included in flushed data
-        This will not add any delay to operations performed after the root update, that could
-        or could not be part of the flushed data.
-        :return:
-        """
 
 
 class DBObject(Atom):
@@ -969,3 +813,159 @@ class BytesAtom(Atom):
                 raise ProtoValidationException(
                     message=f'An DBObject can only be saved within a given transaction!'
                 )
+
+class BlockProvider(ABC):
+    """
+    An abstract base class that defines the interface for a block-based storage provider.
+
+    This class serves as a blueprint for managing Write-Ahead Logs (WALs) and root objects in a
+    block-related storage system. It provides abstract methods for obtaining and writing data to WALs,
+    retrieving the root object, and managing data durability by closing WALs and the provider. Concrete
+    implementations of this class must provide functionality for these operations as outlined in the
+    specifications of the abstract methods.
+
+    """
+    @abstractmethod
+    def get_config_data(self) -> configparser.ConfigParser:
+        """
+        Get config data
+        :return:
+        """
+
+    @abstractmethod
+    def get_new_wal(self) -> tuple[uuid.UUID, int]:
+        """
+        Get a WAL to use.
+        It could be an old one, or a new one.
+
+        :return: a tuple with the id of the WAL and the next offset to use
+        """
+
+    @abstractmethod
+    def get_reader(self, wal_id: uuid.UUID, position: int) -> io.FileIO:
+        """
+        Get a streamer initialized at position in WAL file
+        wal_id
+
+        :param wal_id:
+        :param position:
+        :return:
+        """
+
+    @abstractmethod
+    def get_writer_wal(self) -> uuid.UUID:
+        """
+        Provides an abstract method that should be implemented by subclasses to retrieve the
+        unique identifier (UUID) of the writer's Write-Ahead Log (WAL). This UUID is used to
+        identify the WAL instance associated with the writer for consistency and tracking purposes.
+
+        :raises NotImplementedError: This method must be implemented in a subclass.
+        :return: The UUID of the writer's WAL.
+        :rtype: uuid.UUID
+        """
+
+    @abstractmethod
+    def write_streamer(self, wal_id: uuid.UUID) -> io.FileIO:
+        """
+        This abstract method must be implemented to handle the writing of a streaming
+        process for a given WAL (Write-Ahead Log) identifier. It is responsible for
+        generating and returning a writable file-like object, intended for downstream
+        operations that require data persistence or streaming output based on the
+        specified WAL ID.
+
+        :param wal_id: The unique identifier (UUID) of the Write-Ahead Log (WAL) to be
+                       streamed.
+        :type wal_id: uuid.UUID
+        :return: A writable file-like object for handling the streaming operations
+                 associated with the given WAL ID.
+        :rtype: io.FileIO
+        """
+
+    @abstractmethod
+    def get_current_root_object(self) -> RootObject:
+        """
+        Read current root object from storage
+        :return: the current root object
+        """
+
+    @abstractmethod
+    def update_root_object(self, new_root: RootObject):
+        """
+        Updates or create the root object in storage
+        On newly created databases, this is the first
+        operation to perform
+
+        :param new_root:
+        :return:
+        """
+
+    @abstractmethod
+    def close_wal(self, transaction_id: uuid.UUID):
+        """
+        Close a previous WAL. Flush any pending data. Make all changes durable
+        :return:
+        """
+
+    @abstractmethod
+    def close(self):
+        """
+        Close the operation of the block provider. Flush any pending data to WAL. Make all changes durable
+        No further operations are allowed
+        :return:
+        """
+
+
+class SharedStorage(AbstractSharedStorage):
+    """
+    A SharedStorage defines the minimun set of functionality required to implement a storage interface
+    A SharedStorage object represents the current use instance of a permanent storage.
+    A permanent storage is a set of transactions that represent the full story of the database. If you want
+    to use that database, you will use an AtomStorage object to open, update or expand the database
+    All methods should return concurret.futures.Future objects, and thus, depending on the actual implementation
+    provides a level of paralellism to the system
+    SharedStorage object should support multithreaded and multiprocessed uses, and can be safe in a multiserver
+    environment, depending on the implementation
+    """
+
+    @abstractmethod
+    def read_current_root(self) -> RootObject:
+        """
+        Read the current root object
+        :return:
+        """
+
+    @abstractmethod
+    def read_lock_current_root(self) -> RootObject:
+        """
+        Read the current root object
+        :return:
+        """
+
+    @abstractmethod
+    def set_current_root(self, root_pointer: RootObject):
+        """
+        Set the current root object
+        :return:
+        """
+
+    @abstractmethod
+    def unlock_current_root(self):
+        """
+        Unlock the current root by performing necessary operations based
+        on the implementation. This method typically interacts with the state or
+        systems associated with this object to achieve the unlocking process.
+
+        """
+
+    @abstractmethod
+    def flush_wal(self):
+        """
+        Function to be called periodically (eg 2 minutes) to ensure no pending writes to WAL
+        Additionally it is assumed that previously set_current_root, so new objects created
+        before that all are included in flushed data
+        This will not add any delay to operations performed after the root update, that could
+        or could not be part of the flushed data.
+        :return:
+        """
+
+

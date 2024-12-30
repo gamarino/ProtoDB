@@ -55,7 +55,7 @@ class MemoryStorage(common.SharedStorage):
         """
         pass
 
-    def push_atom(self, atom: Atom) -> Future[AtomPointer]:
+    def push_atom(self, atom: dict) -> Future[AtomPointer]:
         """
         Save an atom in the in-memory storage. Each atom gets a unique offset and is tied
         to the current transaction ID.
@@ -79,9 +79,6 @@ class MemoryStorage(common.SharedStorage):
 
             # Add the atom to the storage.
             self.atoms[offset] = atom
-
-            if isinstance(atom, Atom):
-                atom.atom_pointer = atom_pointer
 
             # Create and return a Future with the atom's pointer.
             result = Future()
