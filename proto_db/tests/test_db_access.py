@@ -3,6 +3,7 @@ import uuid
 
 from ..db_access import ObjectSpace, Database, ObjectTransaction
 from ..memory_storage import MemoryStorage
+from ..lists import List
 
 class TestDBAccess(unittest.TestCase):
 
@@ -24,5 +25,21 @@ class TestDBAccess(unittest.TestCase):
                          "Value from previous transaction not preserved!")
         tr2.commit()
 
+    def test_002_object_creation(self):
+        tr = self.database.new_transaction()
 
+        test_list = tr.new_list()
+        for i in range(0, 10_000):
+            test_list = test_list.set_at(i, i)
+        tr.set_root_object('test_002', test_list)
+        tr.commit()
+
+        tr = self.database.new_transaction()
+
+        check_list = tr.get_root_object('test_002')
+        self.assertTrue(isinstance(check_list, List), 'A list was not recovered')
+        self.assertTrue(check_list.count == 10_000, f'The recovered list has the wrong size ({check_list.count})')
+        for i in range(0, 10_000):
+            self.assertTrue(check_list.get_at(i) == i, f'Element {i} check failed')
+        tr.commit()
 

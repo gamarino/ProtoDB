@@ -80,9 +80,16 @@ class List(Atom):
     def _save(self):
         if not self._saved:
             if self.previous:
+                self.previous.transaction = self.transaction
                 self.previous._save()
             if self.next:
+                self.next.transaction = self.transaction
                 self.next._save()
+
+            if self.value and isinstance(self.value, Atom):
+                self.value.transaction = self.transaction
+                self.value._save()
+
             super()._save()
 
     def as_iterable(self) -> list[tuple[int, object]]:
@@ -216,48 +223,60 @@ class List(Atom):
 
     def _rebalance(self) -> List:
         """
-        Rebalances the current subtree if necessary.
+        Fully rebalance the entire subtree rooted at this node.
 
-        If the balance factor is outside the range [-1, 1], performs rotations to adjust the structure.
-        :return: The root of the rebalanced subtree.
+        This method performs a recursive rebalance on the entire subtree, ensuring AVL properties
+        are maintained at all levels of the tree, not just local adjustments.
+
+        :return: The root of the balanced subtree.
         """
-        balance = self._balance()  # Check the balance factor of the current node.
-        new_node = self
+        # Rebalance child subtrees first (post-order traversal)
+        node = self
 
-        if -1 <= balance <= 1:
-            # If the node is balanced, return it as-is.
-            return new_node
+        while node.previous and not -1 <= node.previous._balance() <= 1:
+            node = List(
+                value=node.value,
+                previous=node.previous._rebalance(),
+                next=node.next,
+                transaction = self.transaction
+            )
 
-        # Perform a right rotation if the left subtree is too heavy.
-        if balance < -1 and new_node.previous and new_node.previous._balance() < 0:
-            new_node = new_node._right_rotation()
-        else:
-            # Handle other balancing scenarios by performing appropriate rotations.
-            while balance > 0 and new_node.previous and new_node.previous._balance() > 0:
-                new_node = List(
-                    value=new_node.value,
-                    previous=new_node.previous._left_rotation(),
-                    next=new_node.next,
+        while node.next and not -1 <= node.next._balance() <= 1:
+            node = List(
+                value=node.value,
+                previous=node.previous,
+                next=node.next._rebalance(),
+                transaction = self.transaction
+            )
+
+        # Calculate balance factor for the current node
+        balance = node._balance()
+
+        # Perform rotations where necessary
+        if balance < -1:  # Left-heavy
+            if node.previous and node.previous._balance() > 0:  # Right-Left Case
+                node = List(
+                    value=node.value,
+                    previous=node.previous._left_rotation(),
+                    next=node.next,
                     transaction = self.transaction
                 )
-                if not new_node.previous:
-                    return new_node
-                new_node = new_node._right_rotation()
+            return node._right_rotation()
 
-            while balance < 0 and new_node.next and new_node.next._balance() < 0:
-                new_node = List(
-                    value=new_node.value,
-                    previous=new_node.previous,
-                    next=new_node.next._right_rotation(),
+        if balance > 1:  # Right-heavy
+            if self.next and self.next._balance() < 0:  # Left-Right Case
+                node = List(
+                    value=node.value,
+                    previous=node.previous,
+                    next=node.next._right_rotation(),
                     transaction = self.transaction
                 )
-                if not new_node.next:
-                    return new_node
-                new_node = new_node._left_rotation()
+            return node._left_rotation()
 
-        return new_node  # Return the new root of the rebalanced subtree.
+        # If balance is satisfactory, return this node
+        return node
 
-    def set_at(self, offset: int, value: Atom) -> List | None:
+    def set_at(self, offset: int, value: object) -> List | None:
         """
         Updates or inserts a value in a self-balancing linked list structure at the given offset.
 
@@ -312,6 +331,7 @@ class List(Atom):
                     previous=self.previous,
                     next=List(
                         value=value,
+                        transaction=self.transaction
                     ),
                     transaction = self.transaction
                 )

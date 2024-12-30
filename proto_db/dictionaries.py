@@ -87,10 +87,13 @@ class HashDictionary(DBCollections):
     def _save(self):
         if not self._saved:
             if self.previous:
+                self.previous.transaction = self.transaction
                 self.previous._save()
             if self.next:
+                self.next.transaction = self.transaction
                 self.next._save()
             if isinstance(self.value, Atom):
+                self.value.transaction = self.transaction
                 self.value._save()
             super()._save()
 

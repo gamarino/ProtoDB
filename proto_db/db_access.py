@@ -339,7 +339,7 @@ class ObjectTransaction(AbstractTransaction):
                 self.new_literals = self.new_literals.set_at(string, new_literal)
                 return new_literal
 
-    def get_root_object(self, name: str) -> Atom | None:
+    def get_root_object(self, name: str) -> object | None:
         """
         Get a root object from the database root catalog
 
@@ -349,7 +349,7 @@ class ObjectTransaction(AbstractTransaction):
         with self.lock:
             return self.transaction_root.get_at(name)
 
-    def set_root_object(self, name: str, value: Atom):
+    def set_root_object(self, name: str, value: object):
         """
         Set a root object into the database root catalog. It is the only way to persist changes
 
@@ -357,6 +357,9 @@ class ObjectTransaction(AbstractTransaction):
         :param value:
         :return:
         """
+        if isinstance(value, Atom):
+            value._save()
+
         with self.lock:
             if self.transaction_root:
                 self.new_roots = self.transaction_root.set_at(name, value)
