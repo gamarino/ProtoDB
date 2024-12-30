@@ -46,6 +46,8 @@ class Set(Atom):
         :return: A generator containing all the elements (`Atom`) in the set.
         """
         # Iterate over the stored hash dictionary's iterable and yield its items (the stored Atoms).
+        self._load()
+
         for hash_value, item in self.content.as_iterable():
             yield item
 
@@ -56,6 +58,8 @@ class Set(Atom):
 
         :return: A `QueryPlan` representation of the current Set.
         """
+        self._load()
+
         return self.content.as_query_plan()
 
     def has(self, key: object) -> bool:
@@ -72,6 +76,8 @@ class Set(Atom):
             item_hash = hash(key)  # Fallback to the built-in Python hash.
 
         # Check if the computed hash exists in the `HashDictionary`.
+        self._load()
+
         return self.content.has(item_hash)
 
     def add(self, key: object) -> Set:
@@ -91,6 +97,8 @@ class Set(Atom):
             item_hash = hash(key)  # Use the default Python hash for non-Atom objects.
 
         # Create and return a new `Set` with the updated `HashDictionary`.
+        self._load()
+
         return Set(
             content=self.content.set_at(item_hash, key),  # Add key-hash to the dictionary.
             transaction = self.transaction
@@ -104,6 +112,8 @@ class Set(Atom):
         :param key: The object to remove from the set. This can be an instance of `Atom`.
         :return: A new `Set` object with the key removed, or unchanged if the key is absent.
         """
+        self._load()
+
         # Calculate the hash of the key for removal; handle `Atom` objects.
         if isinstance(key, Atom):
             item_hash = key.hash()  # Use the `hash` method for `Atom`.

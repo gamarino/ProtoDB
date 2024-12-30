@@ -105,7 +105,7 @@ class List(Atom):
 
     def as_query_plan(self) -> QueryPlan:
         """
-        Get a QueryPlan out of the HashDictionary
+        Get a QueryPlan out of the List
         :return:
         """
         return ListQueryPlan(base=self)
@@ -117,6 +117,8 @@ class List(Atom):
         :param offset: The integer offset to look up for in the structure.
         :return: The value (Atom) associated with the key, or None if not found.
         """
+        self._load()
+
         if self.empty:
             return None
 
@@ -128,6 +130,8 @@ class List(Atom):
 
         node = self
         while node is not None:
+            node._load()
+
             node_offset = node.previous.count if node.previous else 0
 
             if offset == node_offset:
@@ -270,6 +274,7 @@ class List(Atom):
         :return: A new instance of the `List` reflecting the updated state of the
             self-balancing linked list, or None if no changes occurred.
         """
+        self._load()
 
         if offset < 0:
             offset = self.count + offset
@@ -348,8 +353,10 @@ class List(Atom):
 
         :param offset: The position to insert the new value
         :param value: The value (Atom) associated with the key.
-        :return: A new HashDictionary reflecting the updated state.
+        :return: A new List reflecting the updated state.
         """
+        self._load()
+
         if offset < 0:
             offset = self.count + offset
 
@@ -435,6 +442,8 @@ class List(Atom):
         :param offset:
         :return:
         """
+        self._load()
+
         if offset < 0:
             offset = self.count + offset
 
@@ -510,6 +519,7 @@ class List(Atom):
             original list instance if the list was empty.
         :rtype: List
         """
+        self._load()
 
         node_offset = self.previous.count if self.previous else 0
 
@@ -549,6 +559,8 @@ class List(Atom):
 
         :return:
         """
+        self._load()
+
         # Case: Removing from an empty List.
         if self.empty:
             return self
@@ -585,6 +597,8 @@ class List(Atom):
         :return: A new rebalanced list with the items appended.
         :rtype: List
         """
+        self._load()
+
         # Case: extending an empty List.
         if self.empty:
             return items
@@ -624,8 +638,12 @@ class List(Atom):
         :type item: Atom
         :return: The result of the insertion operation.
         """
+        self._load()
+
         node = self
         while node:
+            node._load()
+
             if node.next:
                 node = node.next
             else:
@@ -657,6 +675,8 @@ class List(Atom):
         :return: A portion of the sequence between the specified offsets.
         :rtype: Sequence
         """
+        self._load()
+
         if from_offset < 0:
             from_offset = self.count + from_offset
 

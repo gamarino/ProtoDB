@@ -130,16 +130,24 @@ class Database(AbstractDatabase):
             space_history._load()
         else:
             space_history = List(transaction=read_tr)
-            initial_root = RootObject(transaction=read_tr)
+            initial_root = RootObject(
+                object_root=Dictionary(transaction=read_tr),
+                literal_root=Dictionary(transaction=read_tr),
+                transaction=read_tr
+            )
             space_history = space_history.set_at(0, initial_root)
 
         space_root = cast(RootObject, space_history.get_at(0))
-        db_catalog = cast(Dictionary, space_root.object_root)
+        db_catalog = space_root.object_root
         if db_catalog:
             db_root = cast(Dictionary, db_catalog.get_at(self.database_name))
-            db_root._load()
+            if db_root:
+                db_root._load()
+            else:
+                db_root = Dictionary(transaction=read_tr)
         else:
             db_root = Dictionary()
+
         read_tr.commit()
         return db_root
 
@@ -171,8 +179,10 @@ class Database(AbstractDatabase):
             object_root=initial_root.object_root.set_at(self.database_name, new_db_root),
             literal_root=initial_root.literal_root
         )
+        space_history = space_history.set_at(0, new_space_root)
         space_history._save()
-        update_tr.commit()
+        self.object_space.storage_provider.set_current_root(space_history.atom_pointer)
+        update_tr.abort()
 
         self.object_space.storage.set_current_root(space_history.atom_pointer)
 
@@ -304,9 +314,10 @@ class ObjectTransaction(AbstractTransaction):
         with self.lock:
             atom_hash = atom_pointer.hash()
             if not self.read_objects.has(atom_hash):
-                atom = self.read_objects.set_at(
+                atom = atom_class_registry[class_name](transaction=self, atom_pointer=atom_pointer)
+                self.read_objects = self.read_objects.set_at(
                     atom_hash,
-                    atom_class_registry[class_name](transaction=self, atom_pointer=atom_pointer)
+                    atom
                 )
             else:
                 atom = self.read_objects.get_at(atom_hash)
@@ -456,6 +467,7 @@ class ObjectTransaction(AbstractTransaction):
 
                     db_root = self._update_mutable_indexes(db_root)
                     db_root = self._update_database_roots(db_root)
+                    db_root.transaction = self
                     db_root._save()
                     self.database.set_current_root(db_root)
 

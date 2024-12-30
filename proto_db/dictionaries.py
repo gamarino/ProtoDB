@@ -90,6 +90,8 @@ class HashDictionary(DBCollections):
                 self.previous._save()
             if self.next:
                 self.next._save()
+            if isinstance(self.value, Atom):
+                self.value._save()
             super()._save()
 
     def as_iterable(self):
@@ -100,6 +102,7 @@ class HashDictionary(DBCollections):
             """
 
         def scan(node: HashDictionary):
+            node._load()
             if node.previous:
                 yield from scan(node.previous)  # Subárbol izquierdo (recursión/yield)
             if node.key is not None:
@@ -129,6 +132,8 @@ class HashDictionary(DBCollections):
 
         node = self
         while node is not None:
+            node._load()
+
             if node.key == key:
                 return node.value
             if key > node.key:
@@ -155,6 +160,8 @@ class HashDictionary(DBCollections):
 
         node = self
         while node is not None:
+            node._load()
+
             if node.key == key:
                 return True
             if key > node.key:
@@ -308,6 +315,8 @@ class HashDictionary(DBCollections):
         :param value: The value (Atom) associated with the key.
         :return: A new HashDictionary reflecting the updated state.
         """
+        self._load()
+
         # Case: Inserting into an empty HashDictionary.
         if self.key is None:
             return HashDictionary(
@@ -381,6 +390,8 @@ class HashDictionary(DBCollections):
 
 
     def remove_at(self, key: int) -> HashDictionary:
+        self._load()
+
         # Case: Removing from an empty HashDictionary.
         if self.key is None:
             return self
@@ -453,11 +464,15 @@ class HashDictionary(DBCollections):
                  value is found.
         :rtype: Atom or None
         """
+        self._load()
+
         if self.key is None:
             return self
 
         node = self
         while node:
+            self._load()
+
             if not node.previous:
                 return node
             node = node.previous  # Traverse to the left subtree.
@@ -474,11 +489,15 @@ class HashDictionary(DBCollections):
         :return: The value of the last node if present, otherwise None.
         :rtype: Atom | None
         """
+        self._load()
+
         if self.key is None:
             return self
 
         node = self
         while node:
+            node._load()
+
             if not node.next:
                 return node
             node = node.next  # Traverse to the right subtree.
@@ -545,6 +564,7 @@ class Dictionary(DBCollections):
             yield cast(DictionaryItem, item).key.string, cast(DictionaryItem, item).value
 
     def as_query_plan(self) -> QueryPlan:
+        self._load()
         return self.content.as_query_plan()
 
     def get_at(self, key: str) -> object | None:
@@ -553,6 +573,8 @@ class Dictionary(DBCollections):
         :param key:
         :return:
         """
+        self._load()
+
         item_hash = _str_hash(key)
         item = cast(DictionaryItem, self.content.get_at(item_hash))
         if item is None:
@@ -567,6 +589,8 @@ class Dictionary(DBCollections):
         :param value: Atom
         :return: a new HashDirectory with the value set at key
         """
+        self._load()
+
         item = DictionaryItem(key=key, value=value, transaction=self.transaction)
         item_hash = _str_hash(key)
         return Dictionary(
@@ -581,6 +605,8 @@ class Dictionary(DBCollections):
         :param key: int
         :return: a new HashDirectory with the key removed
         """
+        self._load()
+
         item_hash = _str_hash(key)
         return Dictionary(
             content=self.content.remove_at(item_hash),
@@ -594,6 +620,8 @@ class Dictionary(DBCollections):
         :param key:
         :return: True if key is in the dictionary, False otherwise
         """
+        self._load()
+
         item_hash = _str_hash(key)
         return self.content.has(item_hash)
 
