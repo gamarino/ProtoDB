@@ -139,44 +139,11 @@ class AbstractDatabase(ABC):
         :return:
         """
 
-    @abstractmethod
-    def get_current_root(self) -> RootObject:
-        """
-
-        :return:
-        """
-
-    @abstractmethod
-    def get_lock_current_root(self) -> RootObject:
-        """
-
-        :return:
-        """
-
-    @abstractmethod
-    def set_current_root(self, new_root: RootObject):
-        """
-
-        :param new_root:
-        :return:
-        """
-    @abstractmethod
-    def unlock_current_root(self):
-        """
-
-        :return:
-        """
-
 
 class AbstractTransaction(ABC):
     """
     ABC to solve forward type definition
     """
-    database: AbstractDatabase
-
-    def __init__(self, database: AbstractDatabase):
-        self.database = database
-
     @abstractmethod
     def read_object(self, class_name: str, atom_pointer: AtomPointer) -> Atom:
         """
@@ -300,7 +267,7 @@ class Atom(metaclass=CombinedMeta):
                    self.atom_pointer.offset:
                     loaded_atom: Atom = self.transaction.database.object_space.storage_provider.get_atom(
                         self.atom_pointer).result()
-                    loaded_dict = self._json_to_dict(loaded_atom.__dict__)
+                    loaded_dict = self._json_to_dict(loaded_atom)
                     for attribute_name, attribute_value in loaded_dict.items():
                         setattr(self, attribute_name, attribute_value)
             self._loaded = True
@@ -356,6 +323,7 @@ class Atom(metaclass=CombinedMeta):
 
     def _dict_to_json(self, data: dict) -> dict:
         json_value = {}
+        from . import db_access
 
         for name, value in data.items():
             if isinstance(value, Atom):
@@ -391,7 +359,7 @@ class Atom(metaclass=CombinedMeta):
             elif isinstance(value, bool):
                 json_value[name] = value
             elif isinstance(value, bytes):
-                bytes_atom = BytesAtom(content=value)
+                bytes_atom = db_access.BytesAtom(content=value)
                 bytes_atom._save()
                 json_value[name] = {
                     'className': 'BytesAtom',
@@ -467,6 +435,7 @@ class RootObject(Atom):
     """
     object_root: Atom
     literal_root: Atom
+    created_at: datetime.datetime
 
     def __init__(self,
                  object_root: Atom = None,
@@ -478,6 +447,7 @@ class RootObject(Atom):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
         self.object_root = object_root
         self.literal_root = literal_root
+        self.created_at = datetime.datetime.now()
 
 
 class DBObject(Atom):
@@ -718,102 +688,6 @@ class Literal(Atom):
             return Literal(literal=self.string + other)
 
 
-class BytesAtom(Atom):
-    """
-    Represents a specialized type of Atom that holds content in a bytes-like or string format, along with
-    associated metadata like filename and MIME type.
-
-    This class encapsulates data in a manner that allows for content manipulation and provides
-    support for operability such as addition of byte-based content. The content is stored in a base64
-    encoded format for consistency.
-
-    :ivar filename: Specifies the name of the file associated with the atom.
-    :type filename: str
-    :ivar mimetype: The MIME type associated with the file content (e.g., "text/plain").
-    :type mimetype: str
-    :ivar content: Encoded string representation of the content held by this instance.
-    :type content: str
-    """
-    filename: str
-    mimetype: str
-    content: bytes
-
-    def __init__(self,
-                 filename: str = None,
-                 mimetype: str = None,
-                 content: bytes = None,
-                 transaction: AbstractTransaction = None,
-                 atom_pointer: AtomPointer = None,
-                 **kwargs):
-        super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        self.filename = filename
-        self.mimetype = mimetype
-
-        if not isinstance(content, bytes):
-            raise ProtoValidationException(
-                message=f"It's not possible to create a BytesAtom with {type(content)}!"
-            )
-        self.content = content
-
-    def __str__(self) -> str:
-        return f'BytesAtom with {len(self.content) if self.content else 0 } byte(s)'
-
-    def __eq__(self, other: BytesAtom) -> bool:
-        if isinstance(other, BytesAtom):
-            if self.atom_pointer and other.atom_pointer:
-                return self.atom_pointer == other.atom_pointer
-            elif self.atom_pointer and isinstance(other, bytes):
-                self._load()
-                if self.content == other:
-                    return True
-        return False
-
-    def __add__(self, other: bytes | BytesAtom) -> BytesAtom:
-        raise ProtoValidationException(
-            message=f'It is not possible to extend BytesAtom using "+"!'
-        )
-
-    def _add(self, other: bytes | BytesAtom) -> BytesAtom:
-        if isinstance(other, BytesAtom):
-            self._load()
-            other._load()
-            return BytesAtom(content=self.content + other.content)
-        elif isinstance(other, bytes):
-            self._load()
-            return BytesAtom(content=self.content + other)
-        else:
-            raise ProtoValidationException(
-                message=f"It's not possible to extend BytesAtom with {type(other)}!"
-            )
-
-    def _load(self):
-        if not self._loaded:
-            if self.transaction:
-                if self.atom_pointer.transaction_id and \
-                   self.atom_pointer.offset:
-                    loaded_content = self.transaction.database.object_space.storage_provider.get_bytes(
-                        self.atom_pointer).result()
-                    self.content = loaded_content
-            self._loaded = True
-
-    def _save(self):
-        if not self.atom_pointer and not self._saved:
-            # It's a new object
-
-            if self.transaction:
-                # Push the object tree downhill, avoiding recursion loops
-                # converting attributes strs to Literals
-                self._saving = True
-
-                # At this point all attributes has been flushed to storage if they are newly created
-                # All attributes has valid AtomPointer values (either old or new)
-                pointer = self._push_bytes(self.content)
-                self.atom_pointer = AtomPointer(pointer.transaction_id, pointer.offset)
-            else:
-                raise ProtoValidationException(
-                    message=f'An DBObject can only be saved within a given transaction!'
-                )
-
 class BlockProvider(ABC):
     """
     An abstract base class that defines the interface for a block-based storage provider.
@@ -928,21 +802,21 @@ class SharedStorage(AbstractSharedStorage):
     """
 
     @abstractmethod
-    def read_current_root(self) -> RootObject:
+    def read_current_root(self) -> AtomPointer:
         """
         Read the current root object
         :return:
         """
 
     @abstractmethod
-    def read_lock_current_root(self) -> RootObject:
+    def read_lock_current_root(self) -> AtomPointer:
         """
         Read the current root object
         :return:
         """
 
     @abstractmethod
-    def set_current_root(self, root_pointer: RootObject):
+    def set_current_root(self, new_root_pointer: AtomPointer):
         """
         Set the current root object
         :return:

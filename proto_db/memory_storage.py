@@ -1,5 +1,6 @@
 from . import common
-from .common import Future, Atom, AtomPointer, RootObject, BytesAtom
+from .common import Future, Atom, AtomPointer
+from .db_access import BytesAtom
 from .exceptions import ProtoCorruptionException
 import uuid
 from threading import Lock  # Import threading lock to ensure thread safety
@@ -21,10 +22,10 @@ class MemoryStorage(common.SharedStorage):
         """
         self.transaction_id = uuid.uuid4()  # A unique transaction ID for this storage session.
         self.atoms = dict()  # Dictionary to store atoms in memory.
-        self.current_root = None  # A container for the current root object.
+        self.current_root_history_pointer = None  # A container for the current root object.
         self.lock = Lock()  # Thread lock to ensure safe concurrent access.
 
-    def read_current_root(self) -> RootObject:
+    def read_current_root(self) -> AtomPointer:
         """
         Retrieve the current root object of the storage.
         :return: The `RootObject`, if it exists.
@@ -32,18 +33,18 @@ class MemoryStorage(common.SharedStorage):
             ProtoValidationException: If no root object has been set yet.
         """
         with self.lock:  # Ensure thread-safety when accessing `current_root`.
-            return self.current_root
+            return self.current_root_history_pointer
 
-    def read_lock_current_root(self) -> RootObject:
+    def read_lock_current_root(self) -> AtomPointer:
         return self.read_current_root()
 
-    def set_current_root(self, new_root: RootObject):
+    def set_current_root(self, new_root_history_pointer: AtomPointer):
         """
-        Set a new root object for the storage, replacing any existing root.
-        :param new_root: The new `RootObject` to be set.
+        Set a new root history object for the storage, replacing any existing one.
+        :param new_root_history_pointer: The pointer to the new `RootObject` to be set.
         """
         with self.lock:  # Ensure thread-safety when modifying `current_root`.
-            self.current_root = new_root
+            self.current_root_history_pointer = new_root_history_pointer
 
     def unlock_current_root(self):
         pass
@@ -65,7 +66,7 @@ class MemoryStorage(common.SharedStorage):
             ProtoCorruptionException: If an atom with the same offset already exists.
         """
         with self.lock:  # Ensure thread-safety for operations on `atoms`.
-            offset = uuid.uuid4()
+            offset = uuid.uuid4().int
             atom_pointer = AtomPointer(
                 transaction_id=self.transaction_id,
                 offset=offset
@@ -73,7 +74,7 @@ class MemoryStorage(common.SharedStorage):
 
             # Check if the offset already exists in the atoms dictionary.
             if offset in self.atoms:
-                raise common.ProtoCorruptionException(
+                raise ProtoCorruptionException(
                     message=f'You are trying to push an already existing atom: {atom}'
                 )
 
@@ -104,7 +105,7 @@ class MemoryStorage(common.SharedStorage):
                 return result
 
             # Raise an error if the atom does not exist.
-            raise common.ProtoCorruptionException(
+            raise ProtoCorruptionException(
                 message=f'Atom at {atom_pointer} does not exist'
             )
 
@@ -134,7 +135,7 @@ class MemoryStorage(common.SharedStorage):
                 return result
 
             # Raise an error if the atom does not exist.
-            raise common.ProtoCorruptionException(
+            raise ProtoCorruptionException(
                 message=f'Atom at {atom_pointer} does not exist'
             )
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime
 from typing import cast
 
 from .exceptions import ProtoValidationException, ProtoLockingException
@@ -8,10 +7,10 @@ from .common import Atom, \
     AbstractObjectSpace, AbstractDatabase, AbstractTransaction, \
     SharedStorage, RootObject, Literal, atom_class_registry, AtomPointer
 
-from .dictionaries import HashDictionary, Dictionary
+from .dictionaries import HashDictionary, Dictionary, _str_hash
 from .lists import List
 from .sets import Set
-
+import datetime
 from threading import Lock
 
 
@@ -24,17 +23,34 @@ class ObjectSpace(AbstractObjectSpace):
         self.storage = storage
         self._lock = Lock()
 
+    def _read_db_catalog(self) -> dict[str:Dictionary]:
+        catalog_db = Database(self, '_db_catalog')
+        read_tr = catalog_db.new_transaction()
+        root = self.storage.read_current_root()
+        space_history: List = List(
+            transaction=read_tr,
+            atom_pointer=root
+        )
+        space_history._load()
+        current_root = cast(RootObject, space_history.get_at(0))
+        if not current_root:
+            current_root = RootObject(
+                object_root=Dictionary(),
+                literal_root=Dictionary()
+            )
+        databases = {key:value for key, value in current_root.object_root.as_iterable()}
+        read_tr.commit()
+        return databases
+
     def open_database(self, database_name: str) -> Database:
         """
         Opens a database
         :return:
         """
         with self._lock:
-            root = self.storage.read_current_root()
-            if root:
-                db_catalog: Dictionary = cast(Dictionary, root.object_root)
-                if db_catalog.has(database_name):
-                    return Database(self, database_name)
+            databases = self._read_db_catalog()
+            if database_name in databases:
+                return Database(self, database_name)
 
             raise ProtoValidationException(
                 message=f'Database {database_name} does not exist!'
@@ -46,20 +62,9 @@ class ObjectSpace(AbstractObjectSpace):
         :return:
         """
         with self._lock:
-            root = self.storage.read_current_root()
-            if not root:
-                root = RootObject()
-                root.object_root = Dictionary()
-                root.literal_root = Dictionary()
-
-        db_catalog: Dictionary = cast(Dictionary, root.object_root)
-        if not db_catalog.has(database_name):
-            new_db = Database(self, database_name)
-            setup_tr = new_db.new_transaction()
-            setup_tr.set_root_object('_creation_timestamp',
-                                     Literal(string=str(datetime.datetime.now())))
-            setup_tr.commit()
-            return new_db
+            databases = self._read_db_catalog()
+            if database_name not in databases:
+                return Database(self, database_name)
 
         raise ProtoValidationException(
             message=f'Database {database_name} already exists!'
@@ -72,20 +77,22 @@ class ObjectSpace(AbstractObjectSpace):
         :return:
         """
         with self._lock:
-            root = self.storage.read_current_root()
-            if root:
-                db_catalog: Dictionary = cast(Dictionary, root.object_root)
-                if db_catalog.has(old_name):
-                    database_root: Dictionary = cast(Dictionary, db_catalog.get_at(old_name))
-                    new_db_catalog: Dictionary = db_catalog.remove_key(old_name)
-                    new_db_catalog = new_db_catalog.set_at(new_name, database_root)
-                    new_db_catalog._save()
-                    root.object_root = new_db_catalog
-                    self.storage.set_current_root(root)
+            databases = self._read_db_catalog()
+            if old_name in databases and new_name not in databases:
+                return Database(self, new_name)
 
             raise ProtoValidationException(
-                message=f'Database {old_name} does not exist!'
+                message=f'Database {old_name} does not exist or {new_name} already exists!'
             )
+
+    def remove_database(self, name: str):
+        """
+        Remove database from db catalog.
+        If database is already opened, it will not commit anymore! Be carefull
+        :return:
+        """
+        # TODO
+        pass
 
     def get_literals(self, literals: list[str]) -> dict[str, Atom]:
         with self._lock:
@@ -116,15 +123,58 @@ class Database(AbstractDatabase):
         self.object_space = object_space
         self.database_name = database_name
 
-    def get_current_root(self) -> RootObject:
-        return self.object_space.storage.read_current_root()
+    def _read_db_root(self, root_pointer: AtomPointer) -> Dictionary:
+        read_tr = ObjectTransaction(self)
+        if root_pointer:
+            space_history = List(transaction=read_tr, atom_pointer=root_pointer)
+            space_history._load()
+        else:
+            space_history = List(transaction=read_tr)
+            initial_root = RootObject(transaction=read_tr)
+            space_history = space_history.set_at(0, initial_root)
 
-    def get_lock_current_root(self) -> RootObject:
-        self.current_root = self.object_space.storage.read_lock_current_root()
-        return self.current_root
+        space_root = cast(RootObject, space_history.get_at(0))
+        db_catalog = cast(Dictionary, space_root.object_root)
+        if db_catalog:
+            db_root = cast(Dictionary, db_catalog.get_at(self.database_name))
+            db_root._load()
+        else:
+            db_root = Dictionary()
+        read_tr.commit()
+        return db_root
 
-    def set_current_root(self, new_root: RootObject):
-        self.object_space.storage.set_current_root(new_root)
+    def get_current_root(self) -> Dictionary:
+        root_pointer = self.object_space.storage.read_current_root()
+        return self._read_db_root(root_pointer)
+
+    def get_lock_current_root(self) -> Dictionary:
+        root_pointer = self.object_space.storage.read_lock_current_root()
+        return self._read_db_root(root_pointer)
+
+    def set_current_root(self, new_db_root: Dictionary):
+        update_tr = ObjectTransaction(self)
+        root_pointer = self.object_space.storage.read_current_root()
+        if root_pointer:
+            space_history = List(transaction=update_tr, atom_pointer=root_pointer)
+            space_history._load()
+            initial_root = space_history.get_at(0)
+        else:
+            space_history = List(transaction=update_tr)
+            initial_root = RootObject(
+                object_root=Dictionary(transaction=update_tr),
+                literal_root=Dictionary(transaction=update_tr),
+                transaction=update_tr
+            )
+            space_history = space_history.set_at(0, initial_root)
+
+        new_space_root = RootObject(
+            object_root=initial_root.object_root.set_at(self.database_name, new_db_root),
+            literal_root=initial_root.literal_root
+        )
+        space_history._save()
+        update_tr.commit()
+
+        self.object_space.storage.set_current_root(space_history.atom_pointer)
 
     def unlock_current_root(self):
         return self.object_space.storage.unlock_current_root()
@@ -134,18 +184,8 @@ class Database(AbstractDatabase):
         Start a new read transaction
         :return:
         """
-        root = self.get_current_root()
-        if not root:
-            root = RootObject()
-        db_catalog: Dictionary = cast(Dictionary, root.object_root)
-        if not db_catalog or not db_catalog.has(self.database_name):
-            creation_tr = ObjectTransaction(self, None)
-            creation_tr.set_root_object('_creation_timestamp', Literal(str(datetime.datetime.now())))
-            creation_tr.commit()
-            root = self.get_current_root()
-            db_catalog = cast(Dictionary, root.object_root)
 
-        current_root: Dictionary = cast(Dictionary, db_catalog.get_at(self.database_name))
+        current_root = self.get_current_root()
         return ObjectTransaction(self, current_root)
 
     def new_branch_database(self, new_db_name: str) -> Database:
@@ -155,14 +195,10 @@ class Database(AbstractDatabase):
         Transactions in the derived database will not impact in the origin database
         :return:
         """
-        root = self.object_space.storage.read_current_root()
 
         new_db = self.object_space.new_database(new_db_name)
 
-        creation_tr = ObjectTransaction(
-            new_db,
-            root.object_root.get_at(self.database_name)
-        )
+        creation_tr = ObjectTransaction(new_db)
         creation_tr.set_root_object(
             '_creation_timestamp',
             Literal(str(datetime.datetime.now())))
@@ -170,8 +206,16 @@ class Database(AbstractDatabase):
 
         return new_db
 
-    def get_literal(self, string: str):
-        root = self.object_space.storage.read_current_root()
+    def get_state_at(self, when: datetime.datetime, snapshot_name:str) -> Database:
+        # TODO
+        # First, locate root at the given time, through a binary search on space history
+        #        (using RootObject created_at field). Space history is a reverse time ordered list
+        # Second, creates a new database with the database root at the time (even an
+        #         empty databases if the database didn't exist at the time)
+        pass
+
+    def get_literal(self, string: str) -> Literal | None:
+        root = self.get_current_root()
         if not root:
             return None
         literal_root: Dictionary = cast(Dictionary, root.literal_root)
@@ -237,26 +281,24 @@ class ObjectTransaction(AbstractTransaction):
     """
 
     lock: Lock
+    database: Database
 
     def __init__(self, database: Database, transaction_root: Dictionary = None):
-        super().__init__(database)
+        super().__init__()
         self.lock = Lock()
         self.new_literals = Dictionary(transaction=self)
+        self.database = database
 
-        if self.transaction_root:
-            self.transaction_root = transaction_root
-        else:
-            self.transaction_root = Dictionary(transaction=self)
+        self.transaction_root = transaction_root
         self.initial_transaction_root = transaction_root
         self.new_roots = Dictionary()
         self.read_lock_objects = HashDictionary()
         self.new_mutable_objects = HashDictionary()
         self.modified_mutable_objects = HashDictionary()
 
-        if self.transaction_root.has('_mutable_root'):
+        if transaction_root and self.transaction_root.has('_mutable_root'):
             self.initial_mutable_objects = cast(HashDictionary, self.transaction_root.get_at('_mutable_root'))
-        else:
-            self.mutable_objects = HashDictionary()
+        self.mutable_objects = HashDictionary()
 
     def read_object(self, class_name: str, atom_pointer: AtomPointer) -> Atom:
         with self.lock:
@@ -285,7 +327,7 @@ class ObjectTransaction(AbstractTransaction):
 
     def get_root_object(self, name: str) -> Atom | None:
         """
-        Get a root object from the root catalog
+        Get a root object from the database root catalog
 
         :param name:
         :return:
@@ -295,14 +337,19 @@ class ObjectTransaction(AbstractTransaction):
 
     def set_root_object(self, name: str, value: Atom):
         """
-        Set a root object into the root catalog. It is the only way to persist changes
+        Set a root object into the database root catalog. It is the only way to persist changes
 
         :param name:
         :param value:
         :return:
         """
         with self.lock:
-            self.new_roots = self.transaction_root.set_at(name, value)
+            if self.transaction_root:
+                self.new_roots = self.transaction_root.set_at(name, value)
+            else:
+                self.new_roots = Dictionary(transaction=self)
+                self.transaction_root = self.new_roots
+                self.new_roots = self.new_roots.set_at(name, value)
 
     def set_locked_object(self, mutable_index: int, current_atom: Atom):
         with self.lock:
@@ -332,19 +379,10 @@ class ObjectTransaction(AbstractTransaction):
 
     def _update_created_literals(self, current_literal_root: Dictionary) -> Dictionary:
         if self.new_literals.count > 0:
-            current_db_root = self.database.get_current_root()
-            db_literals: Dictionary = cast(Dictionary, current_db_root.literal_root)
-
-            some_new_literals = False
-            try:
-                for key, value in self.new_literals.as_iterable():
-                    if not db_literals.has(key):
-                        some_new_literals = True
-                        value._save()
-                        current_literal_root = db_literals.set_at(key, value)
-            finally:
-                if some_new_literals:
-                    current_db_root.literal_root = db_literals
+            for key, value in self.new_literals.as_iterable():
+                if not current_literal_root.has(key):
+                    value._save()
+                    current_literal_root = current_literal_root.set_at(key, value)
 
         return current_literal_root
 
@@ -389,37 +427,40 @@ class ObjectTransaction(AbstractTransaction):
 
                 # The folling block will be synchronized among all transactions
                 # for this database
-                with RootContextManager(object_transaction=self) as current_root:
-                    current_root = RootObject(
-                        object_root=current_root.object_root,
-                        literal_root=self._update_created_literals(
-                            cast(Dictionary,
-                                 current_root.literal_root or Dictionary(transaction=self))
+                with RootContextManager(object_transaction=self) as space_root:
+                    if not space_root:
+                        space_root = RootObject(
+                            object_root=Dictionary(),
+                            literal_root=Dictionary(),
+                            transaction=self
                         )
-                    )
-                    db_root = current_root.object_root.get_at(
-                        self.database.database_name
-                    )
+
+                    if self.new_literals.count > 0:
+                        space_tr = ObjectTransaction(self.database, space_root)
+
+                        space_root.transaction = space_tr
+                        space_root._load()
+                        space_root = RootObject(
+                            object_root=space_root.object_root,
+                            literal_root=self._update_created_literals(space_root.literal_root),
+                            transaction=space_tr
+                        )
+                        space_root._save()
+                        space_tr.commit()
+
+                    db_root = cast(Dictionary, space_root.object_root.get_at(self.database.database_name))
                     if not db_root:
                         db_root = Dictionary(transaction=self)
 
                     self._check_read_locked_objects(db_root)
+
                     db_root = self._update_mutable_indexes(db_root)
                     db_root = self._update_database_roots(db_root)
                     db_root._save()
-                    current_root = RootObject(
-                        object_root=current_root.object_root.set_at(
-                            self.database.database_name,
-                            db_root
-                        ),
-                        literal_root=current_root.literal_root,
-                        transaction=self
-                    )
-                    current_root._save()
-                    self.database.set_current_root(current_root)
+                    self.database.set_current_root(db_root)
 
-            # At this point everything changed was commited
-            self.state = 'Committed'
+            # At this point everything changed has been commited
+            self.state = 'Commited'
 
     def abort(self):
         """
@@ -440,8 +481,7 @@ class ObjectTransaction(AbstractTransaction):
         :param string:
         :return: a hash based in db persisted strings
         """
-        with self.lock:
-            return self.database.get_literal(literal=string)
+        return _str_hash(string)
 
     def get_mutable(self, key:int):
         with self.lock:
@@ -496,21 +536,125 @@ class RootContextManager:
         self.object_transaction = object_transaction
 
     def __enter__(self):
-        self.current_root = self.object_transaction.database.get_lock_current_root()
-        if not self.current_root:
-            self.current_root = RootObject(
-                object_root=Dictionary(transaction=self.object_transaction),
-                literal_root=Dictionary(transaction=self.object_transaction)
+        root_pointer = self.object_transaction.database.object_space.storage_provider.read_current_root()
+        root_history = RootObject(transaction=self.object_transaction, atom_pointer=root_pointer)
+        if not root_pointer:
+            root_history = List(transaction=self.object_transaction)
+            root_history = root_history.set_at(
+                0,
+                RootObject(
+                    object_root=Dictionary(transaction=self.object_transaction),
+                    literal_root=Dictionary(transaction=self.object_transaction),
+                    transaction=self.object_transaction
+                )
             )
         else:
-            self.current_root.transaction = self.object_transaction
+            root_history._load()
+        self.current_root = cast(RootObject, root_history.get_at(0))
         return self.current_root
 
     def __exit__(self, exc_type, exc_value, traceback):
-        if not exc_type:
-            self.object_transaction.database.set_current_root(self.current_root)
-        else:
+        if exc_type:
             self.object_transaction.database.unlock_current_root()
         # let the exception follows the try chain
         return False
+
+
+class BytesAtom(Atom):
+    """
+    Represents a specialized type of Atom that holds content in a bytes-like or string format, along with
+    associated metadata like filename and MIME type.
+
+    This class encapsulates data in a manner that allows for content manipulation and provides
+    support for operability such as addition of byte-based content. The content is stored in a base64
+    encoded format for consistency.
+
+    :ivar filename: Specifies the name of the file associated with the atom.
+    :type filename: str
+    :ivar mimetype: The MIME type associated with the file content (e.g., "text/plain").
+    :type mimetype: str
+    :ivar content: Encoded string representation of the content held by this instance.
+    :type content: str
+    """
+    filename: str
+    mimetype: str
+    content: bytes
+    transaction: ObjectTransaction
+
+    def __init__(self,
+                 filename: str = None,
+                 mimetype: str = None,
+                 content: bytes = None,
+                 transaction: ObjectTransaction = None,
+                 atom_pointer: AtomPointer = None,
+                 **kwargs):
+        super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
+        self.filename = filename
+        self.mimetype = mimetype
+        self.transaction = cast(ObjectTransaction, transaction)
+
+        if not isinstance(content, bytes):
+            raise ProtoValidationException(
+                message=f"It's not possible to create a BytesAtom with {type(content)}!"
+            )
+        self.content = content
+
+    def __str__(self) -> str:
+        return f'BytesAtom with {len(self.content) if self.content else 0 } byte(s)'
+
+    def __eq__(self, other: BytesAtom) -> bool:
+        if isinstance(other, BytesAtom):
+            if self.atom_pointer and other.atom_pointer:
+                return self.atom_pointer == other.atom_pointer
+            elif self.atom_pointer and isinstance(other, bytes):
+                self._load()
+                if self.content == other:
+                    return True
+        return False
+
+    def __add__(self, other: bytes | BytesAtom) -> BytesAtom:
+        raise ProtoValidationException(
+            message=f'It is not possible to extend BytesAtom using "+"!'
+        )
+
+    def _add(self, other: bytes | BytesAtom) -> BytesAtom:
+        if isinstance(other, BytesAtom):
+            self._load()
+            other._load()
+            return BytesAtom(content=self.content + other.content)
+        elif isinstance(other, bytes):
+            self._load()
+            return BytesAtom(content=self.content + other)
+        else:
+            raise ProtoValidationException(
+                message=f"It's not possible to extend BytesAtom with {type(other)}!"
+            )
+
+    def _load(self):
+        if not self._loaded:
+            if self.transaction:
+                if self.atom_pointer.transaction_id and \
+                   self.atom_pointer.offset:
+                    loaded_content = self.transaction.database.object_space.storage_provider.get_bytes(
+                        self.atom_pointer).result()
+                    self.content = loaded_content
+            self._loaded = True
+
+    def _save(self):
+        if not self.atom_pointer and not self._saved:
+            # It's a new object
+
+            if self.transaction:
+                # Push the object tree downhill, avoiding recursion loops
+                # converting attributes strs to Literals
+                self._saving = True
+
+                # At this point all attributes has been flushed to storage if they are newly created
+                # All attributes has valid AtomPointer values (either old or new)
+                pointer = self._push_bytes(self.content)
+                self.atom_pointer = AtomPointer(pointer.transaction_id, pointer.offset)
+            else:
+                raise ProtoValidationException(
+                    message=f'An DBObject can only be saved within a given transaction!'
+                )
 

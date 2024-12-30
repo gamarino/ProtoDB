@@ -7,8 +7,8 @@ from . import dictionaries
 from .exceptions import ProtoBaseException, ProtoUserException, ProtoCorruptionException, \
                         ProtoValidationException, ProtoNotSupportedException, ProtoNotAuthorizedException
 
-from .common import DBObject, DBCollections, QueryPlan
-from .db_access import ObjectSpace, Database, ObjectTransaction
+from .common import Atom, Literal, DBObject, DBCollections, QueryPlan
+from .db_access import ObjectSpace, Database, ObjectTransaction, BytesAtom
 from .memory_storage import MemoryStorage
 from .standalone_file_storage import StandaloneFileStorage
 from .file_block_provider import FileBlockProvider
