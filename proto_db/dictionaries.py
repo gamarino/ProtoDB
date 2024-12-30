@@ -127,6 +127,8 @@ class HashDictionary(DBCollections):
         :param key: The integer key to look for in the structure.
         :return: The value (Atom) associated with the key, or None if not found.
         """
+        self._load()
+
         if self.key is None:
             return None
 
@@ -530,7 +532,7 @@ def _str_hash(string: str):
 
     string_bytes = bytearray(string.encode('utf-8'))
     for i in range(0, len(string_bytes)):
-        string_bytes[i % 8] ^= string_bytes[i]
+        buffer[i % 8] ^= string_bytes[i]
 
     return struct.unpack('Q', buffer)[0]
 
@@ -579,6 +581,8 @@ class Dictionary(DBCollections):
         item = cast(DictionaryItem, self.content.get_at(item_hash))
         if item is None:
             return None
+        if isinstance(item, Atom):
+            item._load()
         return item.value
 
     def set_at(self, key: str, value: object) -> Dictionary:

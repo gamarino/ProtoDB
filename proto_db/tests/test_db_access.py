@@ -20,7 +20,7 @@ class TestDBAccess(unittest.TestCase):
         tr.commit()
 
         tr2 = self.database.new_transaction()
-        self.assertEqual(tr2.get_root_object('test_001_data'), 'test_001',
+        self.assertEqual(tr2.get_root_object('test_001'), 'test_001_data',
                          "Value from previous transaction not preserved!")
         tr2.commit()
 

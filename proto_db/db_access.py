@@ -138,7 +138,10 @@ class Database(AbstractDatabase):
             space_history = space_history.set_at(0, initial_root)
 
         space_root = cast(RootObject, space_history.get_at(0))
+        space_root._load()
+
         db_catalog = space_root.object_root
+        db_catalog._load()
         if db_catalog:
             db_root = cast(Dictionary, db_catalog.get_at(self.database_name))
             if db_root:
