@@ -1,8 +1,9 @@
-from . import common
+from . import common, ProtoValidationException
+from typing import BinaryIO
+from io import BytesIO, SEEK_SET, SEEK_CUR, SEEK_END
 
-from .common import Future, KB, MB, GB, RootObject
+from .common import MB, RootObject
 from .exceptions import ProtoUnexpectedException
-import io
 import psutil
 import uuid
 import configparser
@@ -20,12 +21,12 @@ DEFAULT_PAGE_SIZE = 1 * MB
 
 class FileReaderFactory:
     """
-    A factory to manage reusable file readers (io.FileIO).
+    A factory to manage reusable file readers (io.BinaryIO).
 
     Readers are reused to minimize resource usage and optimize performance.
     Thread-safe due to the use of a Lock.
     """
-    available_readers: dict[str, list[io.FileIO]]
+    available_readers: dict[str, list[BinaryIO]]
     path: str
     _lock: Lock
 
@@ -39,12 +40,12 @@ class FileReaderFactory:
         self.available_readers = {}
         self._lock = Lock()
 
-    def get_reader(self, file_name: str) -> io.FileIO:
+    def get_reader(self, file_name: str) -> BinaryIO:
         """
         Fetch a file reader for the given file name. Reuse a reader if available.
 
         :param file_name: Name of the file to read.
-        :return: An open FileIO object in binary reading mode.
+        :return: An open BinaryIO object in binary reading mode.
         """
         with self._lock:
             # Reuse an available reader if possible
@@ -64,11 +65,11 @@ class FileReaderFactory:
             _logger.error(f"Permission denied when accessing: {file_name}")
             raise ProtoUnexpectedException(message=f"Permission denied reading WAL File: {file_name}")
 
-    def return_reader(self, reader: io.FileIO, file_name: str):
+    def return_reader(self, reader: BinaryIO, file_name: str):
         """
         Return a file reader to the pool for reuse.
 
-        :param reader: The FileIO object to be returned.
+        :param reader: The BinaryIO object to be returned.
         :param file_name: File name associated with the reader.
         """
         try:
@@ -158,17 +159,31 @@ class PageCache:
             )
 
 
-class ReadStreamer(io.BytesIO):
-    def __init__(self, wal_id: uuid.UUID, current_offset: int, page_size: int, page_cache: PageCache):
+class ReadStreamer(BytesIO):
+    def __init__(self, wal_id: uuid.UUID, offset: int, page_size: int, page_cache: PageCache):
         super().__init__()
         self.wal_id = wal_id
         self.page_size = page_size
         self.page_cache = page_cache
-        self.current_offset = current_offset
+        self.initial_offset = offset
+        self.current_offset = 0
         self.current_page = None
 
     def tell(self):
         return self.current_offset
+
+    def seek(self, offset: int, whence: int = SEEK_SET):
+        if whence == SEEK_CUR:
+            offset += self.current_offset
+        elif whence == SEEK_END:
+            raise ProtoValidationException(
+                message=f'In readers, seek method end relative is not supported!'
+            )
+
+        if offset < 0:
+            self.current_offset = self.initial_offset
+        else:
+            self.current_offset = self.initial_offset + offset
 
     def read(self, count: int | None = None):
         count = count or 0
@@ -266,7 +281,7 @@ class FileBlockProvider(common.BlockProvider):
     All code implemented within this class is thread-safe.
     """
 
-    current_wal: io.FileIO | None
+    current_wal: BinaryIO | None
     current_wal_id: uuid.UUID
     page_size: int
     page_cache: PageCache
@@ -329,11 +344,11 @@ class FileBlockProvider(common.BlockProvider):
                 continue
 
         self.current_wal_id = uuid.uuid4()
-        self.current_wal = open(os.path.join(self.space_path, self.current_wal_id.hex, 'ab+'))
+        self.current_wal = open(os.path.join(self.space_path, self.current_wal_id.hex), 'ab+')
 
         return self.current_wal_id, 0
 
-    def get_reader(self, wal_id: uuid.UUID, position: int) -> io.BytesIO:
+    def get_reader(self, wal_id: uuid.UUID, position: int) -> BinaryIO:
         """
         Get a streamer initialized at position in WAL file
 
@@ -350,7 +365,7 @@ class FileBlockProvider(common.BlockProvider):
         """
         return self.current_wal_id
 
-    def write_streamer(self, wal_id: uuid.UUID) -> io.FileIO:
+    def write_streamer(self, wal_id: uuid.UUID) -> BinaryIO:
         """
 
         :return:

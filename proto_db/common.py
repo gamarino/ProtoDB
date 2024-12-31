@@ -2,7 +2,7 @@
 Basic definitions
 """
 from __future__ import annotations
-from typing import cast
+from typing import cast, BinaryIO
 
 from concurrent.futures import Future
 import uuid
@@ -502,7 +502,7 @@ class DBObject(Atom):
         return new_object
 
 
-class MutableObject:
+class MutableObject(Atom):
     """
     Represents a mutable object and is used within the context
     of a transaction. The purpose of this class is to provide a means for interacting with
@@ -722,7 +722,7 @@ class BlockProvider(ABC):
         """
 
     @abstractmethod
-    def get_reader(self, wal_id: uuid.UUID, position: int) -> io.FileIO:
+    def get_reader(self, wal_id: uuid.UUID, position: int) -> io.Binary:
         """
         Get a streamer initialized at position in WAL file
         wal_id
@@ -762,14 +762,14 @@ class BlockProvider(ABC):
         """
 
     @abstractmethod
-    def get_current_root_object(self) -> RootObject:
+    def get_current_root_object(self) -> AtomPointer:
         """
         Read current root object from storage
         :return: the current root object
         """
 
     @abstractmethod
-    def update_root_object(self, new_root: RootObject):
+    def update_root_object(self, new_root: AtomPointer):
         """
         Updates or create the root object in storage
         On newly created databases, this is the first

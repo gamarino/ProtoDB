@@ -7,9 +7,10 @@ from threading import Lock
 from . import common
 from .common import MB, GB
 from .exceptions import ProtoUnexpectedException, ProtoValidationException
-from .common import Future, BlockProvider, Atom, AtomPointer, atom_class_registry, RootObject
+from .common import Future, BlockProvider, AtomPointer
 import uuid
 import logging
+import struct
 
 _logger = logging.getLogger(__name__)
 
@@ -98,14 +99,14 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
 
         self._get_new_wal()
 
-    def read_current_root(self) -> RootObject:
+    def read_current_root(self) -> AtomPointer:
         """
         Read the current root object
         :return:
         """
         return self.block_provider.get_current_root_object()
 
-    def read_lock_current_root(self) -> RootObject:
+    def read_lock_current_root(self) -> AtomPointer:
         """
         Read the current root object
         In this provider, there is no difference with
@@ -114,7 +115,7 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
         """
         return self.read_current_root()
 
-    def set_current_root(self, root_pointer: RootObject):
+    def set_current_root(self, root_pointer: AtomPointer):
         """
         Set the current root object
         :return:
@@ -132,8 +133,10 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
     def _get_new_wal(self):
         """
         Initializes a new Write-Ahead Log (WAL).
+        Allways new WALs start at buffer_size boundaries
         """
         self.current_wal_id, self.current_wal_offset = self.block_provider.get_new_wal()
+        self.current_wal_offset = (self.current_wal_offset + 1) // self.buffer_size
 
     def _save_state(self) -> WALState:
         """
@@ -258,7 +261,7 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
 
         return base_uuid, base_offset
 
-    def get_atom(self, pointer: AtomPointer) -> Future[Atom]:
+    def get_atom(self, pointer: AtomPointer) -> Future[dict]:
         """
         Retrieves an Atom from the underlying storage asynchronously.
         """
@@ -276,44 +279,12 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
 
             # Read the atom from the storage getting just the needed amount of data. No extra reads
             with streamer as wal_stream:
-                brace_count = 0
-                bracket_count = 0
-                inside_string = False
-                escape_sequence = False
-                input_string = ''
-                while True:
-                    char = _get_valid_char_data(wal_stream)
-                    input_string += char
-                    if escape_sequence:
-                        escape_sequence = False
-                        continue
-                    if char == '/':
-                        escape_sequence = True
-                        continue
-                    if char == '"':
-                        inside_string = not inside_string
-                        continue
-                    if inside_string:
-                        continue
-                    if char == '{':
-                        brace_count += 1
-                    elif char == '[':
-                        bracket_count += 1
-                    elif char in ['}', ']']:
-                        if char == '}':
-                            brace_count -= 1
-                        elif char == ']':
-                            brace_count -= 1
-                        if brace_count == 0 and bracket_count == 0:
-                            atom_data = json.load(input_string)
-                            if not 'AtomClass' in atom_data:
-                                raise ProtoValidationException(message='Invalid data structure in storage!')
-                            class_name = atom_data['AtomClass']
-                            if not class_name in atom_class_registry:
-                                raise ProtoValidationException(
-                                    message=f"Atom class '{class_name}' not registered in the system!")
-                            del atom_data['AtomClass']
-                            return atom_class_registry[class_name](**atom_data)
+                len_data = wal_stream.read(8)
+                size = struct.unpack('Q', len_data)[0]
+
+                data = wal_stream.read(size).decode('UTF-8')
+                atom_data = json.loads(data)
+                return atom_data
 
         return self.executor_pool.submit(task_read_atom)
 
@@ -322,9 +293,10 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
         Serializes and pushes an Atom into the WAL asynchronously.
         """
         def task_push_atom():
-            data = bytearray(json.dumps(atom).encode('UTF-8'))
+            data = json.dumps(atom).encode('UTF-8')
+            len_data = struct.pack('Q', len(data))
 
-            transaction_id, offset = self.push_bytes_to_wal(data)
+            transaction_id, offset = self.push_bytes_to_wal(bytearray(len_data + data))
             return AtomPointer(transaction_id, offset)
 
         return self.executor_pool.submit(task_push_atom)
@@ -348,14 +320,9 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
             # Read the atom from the storage getting just the needed amount of data. No extra reads
             with streamer as wal_stream:
                 data = wal_stream.read(8)
-                # TODO Read data count from the first 8 bytes in data
-                data_count = 0
+                size = struct.unpack('Q', data)[0]
 
-                data = bytes()
-                count = 0
-                while count < data_count:
-                    data += wal_stream.read(1)
-                    count += 1
+                data = wal_stream.read(size)
 
             return data
 
@@ -374,8 +341,7 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
                         f"Only up to {self.blob_max_size} bytes are accepted!")
 
         def task_push_bytes():
-            # TODO Write count of bytes an then the data
-            len_data = bytes(8)
+            len_data = bytearray(struct.pack('Q', len(data)))
 
             transaction_id, offset = self.push_bytes_to_wal(bytearray(len_data + data))
             return AtomPointer(transaction_id, offset)

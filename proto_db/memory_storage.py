@@ -86,11 +86,11 @@ class MemoryStorage(common.SharedStorage):
             result.set_result(atom_pointer)
             return result
 
-    def get_atom(self, atom_pointer: AtomPointer) -> Future[Atom]:
+    def get_atom(self, atom_pointer: AtomPointer) -> Future[dict]:
         """
         Retrieve an atom from the storage using its atom pointer.
         :param atom_pointer: The `AtomPointer` associated with the atom.
-        :return: A `Future` object containing the retrieved `Atom`.
+        :return: A `Future` object containing the retrieved `Atom` as a dict.
         :raises:
             ProtoCorruptionException: If the atom does not exist in the storage.
         """
