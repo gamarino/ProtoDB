@@ -502,9 +502,9 @@ class DBObject(Atom):
         return new_object
 
 
-class MutableObject(DBObject):
+class MutableObject:
     """
-    Represents a mutable object that inherits from DBObject and is used within the context
+    Represents a mutable object and is used within the context
     of a transaction. The purpose of this class is to provide a means for interacting with
     mutable states in a database-like system, ensuring that operations are performed within
     a valid transaction scope. The class supports attribute access, modification, and
