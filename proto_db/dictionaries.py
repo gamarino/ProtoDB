@@ -531,10 +531,8 @@ class DictionaryItem(Atom):
         self.value = value
 
 
-def _str_hash(string: str):
-    buffer = bytearray(8)
-    for i in range(0, len(buffer)):
-        buffer[i] = 0
+def str_hash(string: str):
+    buffer = bytearray(struct.pack('Q', len(string)))
 
     string_bytes = bytearray(string.encode('utf-8'))
     for i in range(0, len(string_bytes)):
