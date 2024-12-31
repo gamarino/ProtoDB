@@ -313,6 +313,7 @@ class Atom(metaclass=CombinedMeta):
                 elif class_name in atom_class_registry:
                     atom_pointer = AtomPointer(value['transaction_id'], value['offset'])
                     value = self.transaction.read_object(class_name, atom_pointer)
+                    value._load()
                 else:
                     raise ProtoValidationException(
                         message=f'It is not possible to load Atom of class {class_name}!'

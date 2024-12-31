@@ -140,6 +140,8 @@ class HashDictionary(DBCollections):
             node._load()
 
             if node.key == key:
+                if isinstance(node.value, Atom):
+                    node.value._load()
                 return node.value
             if key > node.key:
                 node = node.next  # Traverse to the right subtree.
@@ -414,7 +416,7 @@ class HashDictionary(DBCollections):
                     transaction = self.transaction
                 )
             else:
-                return HashDictionary()
+                return HashDictionary(transaction=self.transaction)
         elif cmp < 0:
             # Remove from the left subtree.
             if self.previous:
@@ -427,7 +429,7 @@ class HashDictionary(DBCollections):
                     transaction = self.transaction
                 )
             else:
-                return HashDictionary()
+                return HashDictionary(transaction=self.transaction)
         else:
             # Remove the value of the current node.
             if self.next:
@@ -452,7 +454,7 @@ class HashDictionary(DBCollections):
                 )
             else:
                 # It was the only node, return an empty HashDictionary.
-                return HashDictionary()
+                return HashDictionary(transaction=self.transaction)
 
         return new_node._rebalance()
 
