@@ -7,7 +7,7 @@ from .common import Atom, \
     AbstractObjectSpace, AbstractDatabase, AbstractTransaction, \
     SharedStorage, RootObject, Literal, atom_class_registry, AtomPointer
 
-from .dictionaries import HashDictionary, Dictionary, _str_hash
+from .dictionaries import HashDictionary, Dictionary
 from .lists import List
 from .sets import Set
 import datetime

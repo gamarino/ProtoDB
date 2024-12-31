@@ -7,7 +7,7 @@ from .lists import List
 
 import uuid
 import logging
-import struct
+
 
 _logger = logging.getLogger(__name__)
 
@@ -516,70 +516,74 @@ class HashDictionary(DBCollections):
 
 
 class DictionaryItem(Atom):
+    # Represents a key-value pair in a Dictionary, both durable and transaction-safe.
     key: Literal
     value: object
 
     def __init__(
             self,
-            key: str = None,
-            value: object = None,
-            transaction: AbstractTransaction = None,
-            atom_pointer: AtomPointer = None,
-            **kwargs):
+            key: str = None,  # The key for the dictionary item.
+            value: object = None,  # The value associated with the key.
+            transaction: AbstractTransaction = None,  # The associated transaction.
+            atom_pointer: AtomPointer = None,  # Pointer to the atom for durability/consistency.
+            **kwargs):  # Additional keyword arguments.
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        self.key = Literal(literal=key)
-        self.value = value
-
-
-def str_hash(string: str):
-    buffer = bytearray(struct.pack('Q', len(string)))
-
-    string_bytes = bytearray(string.encode('utf-8'))
-    for i in range(0, len(string_bytes)):
-        buffer[i % 8] ^= string_bytes[i]
-
-    return struct.unpack('Q', buffer)[0]
+        self.key = Literal(literal=key)  # Wrap the key as a Literal for durability.
+        self.value = value  # Assign the value to the dictionary item.
 
 
 class Dictionary(DBCollections):
     """
-    A mapping between strings and values
-    Dictionaries can handle any object as keys and atoms, but only using Atoms the
-    Dictionary will be durable. Mixing any other objects with Atoms is not supported (no warning will be emitted)
+    Represents a durable, transaction-safe dictionary-like mapping between strings and values.
 
+    Only Atoms are recommended as keys and values to ensure consistency and durability.
+    Mixing other objects is not supported, and no warnings will be issued for doing so.
     """
-    content: List
+
+    content: List  # Internal storage for dictionary items as a list.
 
     def __init__(
             self,
-            content: List = None,
-            transaction: AbstractTransaction = None,
-            atom_pointer: AtomPointer = None,
+            content: List = None,  # List to store the content.
+            transaction: AbstractTransaction = None,  # Transaction context for operations.
+            atom_pointer: AtomPointer = None,  # Pointer to ensure atomicity and durability.
             **kwargs):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        self.content = content if content else List(transaction=transaction)
-        self.count = self.content.count
+        self.content = content if content else List(transaction=transaction)  # Initialize content or create a new List.
+        self.count = self.content.count  # Number of items in the dictionary.
 
     def _save(self):
         if not self._saved:
             self.content._save()
             super()._save()
 
-    def as_iterable(self) -> list[tuple[str, Atom]]:
-        for item in self.content.as_iterable():
-            item = (cast(DictionaryItem, item))
-            item._load()
-            yield item.key.string, item.value
+    def as_iterable(self) -> list[tuple[str, object]]:
+        """
+        Provides an iterable generator for the dictionary's key-value pairs.
+
+        :return: A generator yielding tuples of (key, value).
+        """
+        for item in self.content.as_iterable():  # Iterate through the content.
+            item = (cast(DictionaryItem, item))  # Cast item to a DictionaryItem type.
+            item._load()  # Ensure the item is loaded into memory.
+            yield item.key.string, item.value  # Yield the key-value pair.
 
     def as_query_plan(self) -> QueryPlan:
+        """
+        Converts the dictionary into a QueryPlan, a representation for query execution.
+        :return: The dictionary's query plan.
+        """
         self._load()
         return self.content.as_query_plan()
 
     def get_at(self, key: str) -> object | None:
         """
+        Gets the element at a given key exists in the dictionary.
 
-        :param key:
-        :return:
+        Uses binary search to find the key efficiently.
+
+        :param key: The string key to be searched.
+        :return: The value storea at key or None if not found
         """
         self._load()
 
@@ -604,6 +608,16 @@ class Dictionary(DBCollections):
 
     def set_at(self, key: str, value: object) -> Dictionary:
         """
+        Inserts or updates a key-value pair in the dictionary.
+
+        If the key exists, updates its value and rebalances the underlying structure.
+        If the key does not exist, inserts the new key-value pair at the appropriate position.
+
+        :param key: The string key for the item being added or updated.
+        :param value: The value associated with the key.
+        :return: A new instance of Dictionary with the updated content.
+        """
+        """
         Returns a new HashDirectory with the value set at key
 
         :param key: int
@@ -619,8 +633,8 @@ class Dictionary(DBCollections):
         while left <= right:
             center = (left + right) // 2
 
-            item = self.content.get_at(center)
-            if item and str(item.key) == key:
+            item = cast(DictionaryItem, self.content.get_at(center))
+            if item and str(item.key) == key:  # Check if the key already exists.
                 # It's a repeated key, it's ok
                 return Dictionary(
                     content=self.content.set_at(
@@ -653,6 +667,15 @@ class Dictionary(DBCollections):
 
     def remove_at(self, key: str) -> Dictionary:
         """
+        Removes a key-value pair from the dictionary if the key exists.
+
+        If the key is found, it removes the corresponding entry and rebalances the structure.
+        If the key does not exist, the method returns the original dictionary.
+
+        :param key: The string key of the item to be removed.
+        :return: A new instance of Dictionary reflecting the removal.
+        """
+        """
         Returns a new HashDirectory with the key removed if exists
 
         :param key: int
@@ -684,6 +707,14 @@ class Dictionary(DBCollections):
 
     def has(self, key: str) -> bool:
         """
+        Checks whether a given key exists in the dictionary.
+
+        Uses binary search to find the key efficiently.
+
+        :param key: The string key to be searched.
+        :return: True if the key is found; otherwise, False.
+        """
+        """
         Test for key
 
         :param key:
@@ -707,3 +738,4 @@ class Dictionary(DBCollections):
                 left = center + 1
 
         return False
+
