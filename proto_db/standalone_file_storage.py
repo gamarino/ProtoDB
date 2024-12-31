@@ -156,21 +156,20 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
         """
         Flushes the current WAL buffer to the pending writes list.
         """
-        with self._lock:
-            if not self.current_wal_buffer:
-                return  # Nothing to flush
+        if not self.current_wal_buffer:
+            return  # Nothing to flush
 
-            self.pending_writes.append(WALWriteOperation(
-                transaction_id=self.current_wal_id,
-                offset=self.current_wal_base,
-                segments=self.current_wal_buffer
-            ))
+        self.pending_writes.append(WALWriteOperation(
+            transaction_id=self.current_wal_id,
+            offset=self.current_wal_base,
+            segments=self.current_wal_buffer
+        ))
 
-            # Reset WAL buffer
-            written_size = sum(len(segment) for segment in self.current_wal_buffer)
-            self.current_wal_base += written_size
-            self.current_wal_offset = 0
-            self.current_wal_buffer.clear()  # Clear the buffer
+        # Reset WAL buffer
+        written_size = sum(len(segment) for segment in self.current_wal_buffer)
+        self.current_wal_base += written_size
+        self.current_wal_offset = 0
+        self.current_wal_buffer.clear()  # Clear the buffer
 
     def _flush_pending_writes(self):
         """
@@ -219,6 +218,10 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
                 message="An exception occurred while flushing the WAL buffer.",
                 exception_type=e.__class__.__name__
             )
+
+    def close(self):
+        self.flush_wal()
+        self.block_provider.close()
 
     def push_bytes_to_wal(self, data: bytearray) -> tuple[uuid.UUID, int]:
         """

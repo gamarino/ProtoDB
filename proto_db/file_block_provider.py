@@ -82,6 +82,13 @@ class FileReaderFactory:
             _logger.exception(e)
             raise ProtoUnexpectedException(message=f'Unexpected exception returning reader for {file_name}')
 
+    def close(self):
+        with self._lock:
+            for readers in self.available_readers.values():
+                for reader in readers:
+                    reader.close()
+            self.available_readers = {}
+
 
 class PageCache:
     """
@@ -124,7 +131,7 @@ class PageCache:
                 return self.cache[page_key]
 
         # Cache miss: Read from disk
-        page_content = self._read_page_from_disk(wal_id.hex, page_number)
+        page_content = self._read_page_from_disk(str(wal_id), page_number)
 
         with self._lock:
             # Remove the LRU if the cache is full
@@ -147,9 +154,8 @@ class PageCache:
         """
         try:
             reader = self.reader_factory.get_reader(file)
-            with reader:  # Ensure closure after use
-                reader.seek(page_number * self.page_size)
-                data = reader.read(self.page_size)
+            reader.seek(page_number * self.page_size)
+            data = reader.read(self.page_size)
             self.reader_factory.return_reader(reader, file)  # Return the reader for reuse
             return data
         except Exception as e:
@@ -344,7 +350,7 @@ class FileBlockProvider(common.BlockProvider):
                 continue
 
         self.current_wal_id = uuid.uuid4()
-        self.current_wal = open(os.path.join(self.space_path, self.current_wal_id.hex), 'ab+')
+        self.current_wal = open(os.path.join(self.space_path, str(self.current_wal_id)), 'ab+')
 
         return self.current_wal_id, 0
 
@@ -419,3 +425,6 @@ class FileBlockProvider(common.BlockProvider):
         """
         self.current_wal.close()
         self.current_wal = None
+        self.reader_factory.close()
+
+

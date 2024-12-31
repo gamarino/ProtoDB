@@ -265,7 +265,7 @@ class Atom(metaclass=CombinedMeta):
                 if self.atom_pointer and \
                    self.atom_pointer.transaction_id and \
                    self.atom_pointer.offset:
-                    loaded_atom: Atom = self.transaction.database.object_space.storage_provider.get_atom(
+                    loaded_atom = self.transaction.database.object_space.storage_provider.get_atom(
                         self.atom_pointer).result()
                     loaded_dict = self._json_to_dict(loaded_atom)
                     for attribute_name, attribute_value in loaded_dict.items():
@@ -722,7 +722,7 @@ class BlockProvider(ABC):
         """
 
     @abstractmethod
-    def get_reader(self, wal_id: uuid.UUID, position: int) -> io.Binary:
+    def get_reader(self, wal_id: uuid.UUID, position: int) -> BinaryIO:
         """
         Get a streamer initialized at position in WAL file
         wal_id
