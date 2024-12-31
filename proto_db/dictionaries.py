@@ -3,6 +3,7 @@ from typing import cast
 
 from .exceptions import ProtoCorruptionException
 from .common import Atom, DBCollections, QueryPlan, Literal, AbstractTransaction, AtomPointer
+from .lists import List
 
 import uuid
 import logging
@@ -549,16 +550,16 @@ class Dictionary(DBCollections):
     Dictionary will be durable. Mixing any other objects with Atoms is not supported (no warning will be emitted)
 
     """
-    content: HashDictionary
+    content: List
 
     def __init__(
             self,
-            content: HashDictionary = None,
+            content: List = None,
             transaction: AbstractTransaction = None,
             atom_pointer: AtomPointer = None,
             **kwargs):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        self.content = content if content else HashDictionary(transaction=transaction)
+        self.content = content if content else List(transaction=transaction)
         self.count = self.content.count
 
     def _save(self):
@@ -567,8 +568,10 @@ class Dictionary(DBCollections):
             super()._save()
 
     def as_iterable(self) -> list[tuple[str, Atom]]:
-        for hash_value, item in self.content.as_iterable():
-            yield cast(DictionaryItem, item).key.string, cast(DictionaryItem, item).value
+        for item in self.content.as_iterable():
+            item = (cast(DictionaryItem, item))
+            item._load()
+            yield item.key.string, item.value
 
     def as_query_plan(self) -> QueryPlan:
         self._load()
@@ -582,13 +585,24 @@ class Dictionary(DBCollections):
         """
         self._load()
 
-        item_hash = _str_hash(key)
-        item = cast(DictionaryItem, self.content.get_at(item_hash))
-        if item is None:
-            return None
-        if isinstance(item, Atom):
-            item._load()
-        return item.value
+        left = 0
+        right = self.content.count - 1
+
+        while left <= right:
+            center = (left + right) // 2
+
+            item = self.content.get_at(center)
+            if item and str(item.key) == key:
+                if isinstance(item.value, Atom):
+                    item.value._load()
+                return item.value
+
+            if str(item.key) > key:
+                right = center - 1
+            else:
+                left = center + 1
+
+        return None
 
     def set_at(self, key: str, value: object) -> Dictionary:
         """
@@ -600,10 +614,42 @@ class Dictionary(DBCollections):
         """
         self._load()
 
-        item = DictionaryItem(key=key, value=value, transaction=self.transaction)
-        item_hash = _str_hash(key)
+        left = 0
+        right = self.content.count - 1
+        center = 0
+
+        while left <= right:
+            center = (left + right) // 2
+
+            item = self.content.get_at(center)
+            if item and str(item.key) == key:
+                # It's a repeated key, it's ok
+                return Dictionary(
+                    content=self.content.set_at(
+                        center,
+                        DictionaryItem(
+                            key=key,
+                            value=value,
+                            transaction=self.transaction
+                        )
+                    ),
+                    transaction=self.transaction
+                )
+
+            if str(item.key) > key:
+                right = center - 1
+            else:
+                left = center + 1
+
         return Dictionary(
-            content=self.content.set_at(item_hash, item),
+            content=self.content.insert_at(
+                left,
+                DictionaryItem(
+                    key=key,
+                    value=value,
+                    transaction=self.transaction
+                )
+            ),
             transaction=self.transaction
         )
 
@@ -616,11 +662,27 @@ class Dictionary(DBCollections):
         """
         self._load()
 
-        item_hash = _str_hash(key)
-        return Dictionary(
-            content=self.content.remove_at(item_hash),
-            transaction=self.transaction
-        )
+        left = 0
+        right = self.content.count - 1
+
+        while left <= right:
+            center = (left + right) // 2
+
+            item = self.content.get_at(center)
+            if item and str(item.key) == key:
+                # It's a replacement of an existing value
+                return Dictionary(
+                    content=self.content.remove_at(center),
+                    transaction=self.transaction
+                )
+
+            if str(item.key) > key:
+                right = center - 1
+            else:
+                left = center + 1
+
+        # Not found, nothing is changed
+        return self
 
     def has(self, key: str) -> bool:
         """
@@ -631,6 +693,19 @@ class Dictionary(DBCollections):
         """
         self._load()
 
-        item_hash = _str_hash(key)
-        return self.content.has(item_hash)
+        left = 0
+        right = self.content.count - 1
 
+        while left <= right:
+            center = (left + right) // 2
+
+            item = self.content.get_at(center)
+            if item and str(item.key) == key:
+                return True
+
+            if str(item.key) > key:
+                right = center - 1
+            else:
+                left = center + 1
+
+        return False

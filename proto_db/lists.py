@@ -101,6 +101,7 @@ class List(Atom):
 
         # Get an iterable of the List items
         def scan(node: List) -> list:
+            node._load()
             if node.previous:
                 yield from scan(node.previous)  # Subárbol izquierdo (recursión/yield)
             if not node.empty:
@@ -334,7 +335,7 @@ class List(Atom):
                     value=self.value,
                     empty=False,
                     previous=self.previous,
-                    next=self.next.set_at(cmp, value),
+                    next=self.next.set_at(cmp - 1, value),
                     transaction = self.transaction
                 )
             else:
@@ -424,7 +425,7 @@ class List(Atom):
                     value=self.value,
                     empty=False,
                     previous=self.previous,
-                    next=self.next.insert_at(cmp, value),
+                    next=self.next.insert_at(cmp - 1, value),
                     transaction = self.transaction
                 )
             else:
@@ -514,7 +515,7 @@ class List(Atom):
                     value=self.value,
                     empty=False,
                     previous=self.previous,
-                    next=self.next.remove_at(cmp),
+                    next=self.next.remove_at(cmp - 1),
                     transaction = self.transaction
                 )
             else:

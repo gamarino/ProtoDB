@@ -274,12 +274,17 @@ class Atom(metaclass=CombinedMeta):
 
     def __eq__(self, other):
         if isinstance(other, Atom):
-            if self.atom_poiner and self.atom_pointer == other.atom_pointer:
+            if self.atom_pointer and \
+               other.atom_pointer and \
+               self.atom_pointer == other.atom_pointer:
                 return True
-            else:
+            elif self.atom_pointer and other.atom_pointer:
                 return self.atom_pointer.transaction_id == other.atom_pointer.transaction_id and \
                        self.atom_pointer.offset == other.atom_pointer.offset
-        return False
+            else:
+                return self is other
+        else:
+            return False
 
     def __getattr__(self, name: str):
         if name.startswith('_') or name in ['atom_pointer', 'transaction']:
