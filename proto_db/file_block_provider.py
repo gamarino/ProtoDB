@@ -2,7 +2,7 @@ from . import common, ProtoValidationException
 from typing import BinaryIO
 from io import BytesIO, SEEK_SET, SEEK_CUR, SEEK_END
 
-from .common import MB, RootObject
+from .common import MB, RootObject, AtomPointer
 from .exceptions import ProtoUnexpectedException
 import psutil
 import uuid
@@ -153,11 +153,11 @@ class PageCache:
         :return: Raw binary page data.
         """
         try:
-            reader = self.reader_factory.get_reader(file)
-            reader.seek(page_number * self.page_size)
-            data = reader.read(self.page_size)
-            self.reader_factory.return_reader(reader, file)  # Return the reader for reuse
-            return data
+            with self.reader_factory.get_reader(file) as reader:
+                reader.seek(page_number * self.page_size)
+                data = reader.read(self.page_size)
+                self.reader_factory.return_reader(reader, file)  # Return the reader for reuse
+                return data
         except Exception as e:
             _logger.error(f"Failed to read page {page_number} from file {file}: {e}")
             raise ProtoUnexpectedException(
@@ -378,21 +378,33 @@ class FileBlockProvider(common.BlockProvider):
         """
         return self.current_wal
 
-    def get_current_root_object(self) -> RootObject:
+    def get_current_root_object(self) -> AtomPointer:
         """
         Read current root object from storage
         :return: the current root object
         """
         try:
-            root_file = open(os.path.join(self.space_path, 'space_root'), 'r')
-            root = json.load(root_file)
-            root_file.close()
-            return root
+            with open(os.path.join(self.space_path, 'space_root'), 'r') as root_file:
+                root_dict = json.load(root_file)
+                if not isinstance(root_dict, dict):
+                    raise ProtoUnexpectedException(
+                        message=f'Reading root object, a dictionary was excpected, got {type(root_dict)} instead'
+                    )
+                if not 'className' in root_dict or \
+                   not 'transaction_id' in root_dict or \
+                   not 'offset' in root_dict:
+                    raise ProtoUnexpectedException(
+                        message=f'Invalid format for root object!'
+                    )
+                root_pointer = AtomPointer(transaction_id=root_dict['transaction_id'], offset=root_dict['offset'])
+            return root_pointer
+        except FileNotFoundError:
+            return None
         except Exception as e:
             _logger.exception(e)
             raise ProtoUnexpectedException(message=f'Unexpected exception {e} reading root')
 
-    def update_root_object(self, new_root: RootObject):
+    def update_root_object(self, new_root: AtomPointer):
         """
         Updates or create the root object in storage
         On newly created databases, this is the first
@@ -403,7 +415,12 @@ class FileBlockProvider(common.BlockProvider):
         """
         try:
             root_file = open(os.path.join(self.space_path, 'space_root'), 'w')
-            root_file.write(json.dumps(new_root))
+            new_root_dict = {
+                'className': 'RootObject',
+                'transaction_id': str(new_root.transaction_id),
+                'offset': new_root.offset
+            }
+            root_file.write(json.dumps(new_root_dict))
             root_file.close()
         except Exception as e:
             _logger.exception(e)

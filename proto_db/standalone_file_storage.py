@@ -220,6 +220,7 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
             )
 
     def close(self):
+        self.state = 'Closed'
         self.flush_wal()
         self.block_provider.close()
 
@@ -331,7 +332,7 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
 
         return self.executor_pool.submit(task_read_bytes)
 
-    def push_bytes(self, data: bytes) -> Future[AtomPointer]:
+    def push_bytes(self, data: bytes) -> Future[tuple[uuid.UUID, int]]:
         """
         Serializes and pushes an Atom into the WAL asynchronously.
         """
@@ -347,6 +348,6 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
             len_data = bytearray(struct.pack('Q', len(data)))
 
             transaction_id, offset = self.push_bytes_to_wal(bytearray(len_data + data))
-            return AtomPointer(transaction_id, offset)
+            return transaction_id, offset
 
         return self.executor_pool.submit(task_push_bytes)

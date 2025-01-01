@@ -407,7 +407,14 @@ class Atom(metaclass=CombinedMeta):
                             continue
                         if name in ['transaction', 'atom_pointer']:
                             continue
-                        json_value[name] = value
+                        if isinstance(value, Atom):
+                            json_value[name] = {
+                                'className': type(value).__name__,
+                                'transaction_id': str(value.atom_pointer.transaction_id),
+                                'offset': value.atom_pointer.offset
+                            }
+                        else:
+                            json_value[name] = value
 
                     json_value = self._dict_to_json(json_value)
 
