@@ -16,20 +16,22 @@ from threading import Lock
 
 class ObjectSpace(AbstractObjectSpace):
     storage: SharedStorage
+    state: str
     _lock: Lock
 
     def __init__(self, storage: SharedStorage):
         super().__init__(storage)
         self.storage = storage
+        self.state = 'Running'
         self._lock = Lock()
 
     def _read_db_catalog(self) -> dict[str:Dictionary]:
         catalog_db = Database(self, '_db_catalog')
         read_tr = catalog_db.new_transaction()
-        root = self.storage.read_current_root()
+        root_pointer = self.storage.read_current_root()
         space_history: List = List(
             transaction=read_tr,
-            atom_pointer=root
+            atom_pointer=root_pointer
         )
         space_history._load()
         current_root = cast(RootObject, space_history.get_at(0))
@@ -39,7 +41,7 @@ class ObjectSpace(AbstractObjectSpace):
                 literal_root=Dictionary()
             )
         databases = {key:value for key, value in current_root.object_root.as_iterable()}
-        read_tr.commit()
+        read_tr.abort()
         return databases
 
     def open_database(self, database_name: str) -> Database:
@@ -48,6 +50,11 @@ class ObjectSpace(AbstractObjectSpace):
         :return:
         """
         with self._lock:
+            if self.state != 'Running':
+                raise ProtoValidationException(
+                    message=f'Object space is not running!'
+                )
+
             databases = self._read_db_catalog()
             if database_name in databases:
                 return Database(self, database_name)
@@ -62,6 +69,11 @@ class ObjectSpace(AbstractObjectSpace):
         :return:
         """
         with self._lock:
+            if self.state != 'Running':
+                raise ProtoValidationException(
+                    message=f'Object space is not running!'
+                )
+
             databases = self._read_db_catalog()
             if database_name not in databases:
                 return Database(self, database_name)
@@ -77,6 +89,11 @@ class ObjectSpace(AbstractObjectSpace):
         :return:
         """
         with self._lock:
+            if self.state != 'Running':
+                raise ProtoValidationException(
+                    message=f'Object space is not running!'
+                )
+
             databases = self._read_db_catalog()
             if old_name in databases and new_name not in databases:
                 return Database(self, new_name)
@@ -112,6 +129,17 @@ class ObjectSpace(AbstractObjectSpace):
 
             return result
 
+    def close(self):
+        with self._lock:
+            if self.state != 'Running':
+                raise ProtoValidationException(
+                    message=f'Object space is not running!'
+                )
+
+            self.storage_provider.close()
+
+            self.state = 'Closed'
+
 
 class Database(AbstractDatabase):
     database_name: str
@@ -128,6 +156,13 @@ class Database(AbstractDatabase):
         if root_pointer:
             space_history = List(transaction=read_tr, atom_pointer=root_pointer)
             space_history._load()
+            if space_history.count == 0:
+                initial_root = RootObject(
+                    object_root=Dictionary(transaction=read_tr),
+                    literal_root=Dictionary(transaction=read_tr),
+                    transaction=read_tr
+                )
+                space_history = space_history.set_at(0, initial_root)
         else:
             space_history = List(transaction=read_tr)
             initial_root = RootObject(
@@ -138,7 +173,14 @@ class Database(AbstractDatabase):
             space_history = space_history.set_at(0, initial_root)
 
         space_root = cast(RootObject, space_history.get_at(0))
-        space_root._load()
+        if space_root:
+            space_root._load()
+        else:
+            space_root = RootObject(
+                object_root=Dictionary(transaction=read_tr),
+                literal_root=Dictionary(transaction=read_tr),
+                transaction=read_tr
+            )
 
         db_catalog = space_root.object_root
         db_catalog._load()

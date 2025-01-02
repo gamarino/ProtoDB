@@ -169,7 +169,7 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
         written_size = sum(len(segment) for segment in self.current_wal_buffer)
         self.current_wal_base += written_size
         self.current_wal_offset = 0
-        self.current_wal_buffer.clear()  # Clear the buffer
+        self.current_wal_buffer = []  # Clear the buffer
 
     def _flush_pending_writes(self):
         """
@@ -220,7 +220,9 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
             )
 
     def close(self):
-        self.state = 'Closed'
+        with self._lock:
+            self.state = 'Closed'
+
         self.flush_wal()
         self.block_provider.close()
 

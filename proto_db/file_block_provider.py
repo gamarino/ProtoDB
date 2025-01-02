@@ -152,17 +152,20 @@ class PageCache:
         :param page_number: Page number to read.
         :return: Raw binary page data.
         """
+        reader = None
         try:
-            with self.reader_factory.get_reader(file) as reader:
-                reader.seek(page_number * self.page_size)
-                data = reader.read(self.page_size)
-                self.reader_factory.return_reader(reader, file)  # Return the reader for reuse
-                return data
+            reader = self.reader_factory.get_reader(file)
+            reader.seek(page_number * self.page_size)
+            data = reader.read(self.page_size)
+            return data
         except Exception as e:
             _logger.error(f"Failed to read page {page_number} from file {file}: {e}")
             raise ProtoUnexpectedException(
                 message=f"Unexpected error reading WAL {file}, page {page_number}"
             )
+        finally:
+            if reader:
+                self.reader_factory.return_reader(reader, file)  # Return the reader for reuse
 
 
 class ReadStreamer(BytesIO):
@@ -172,7 +175,7 @@ class ReadStreamer(BytesIO):
         self.page_size = page_size
         self.page_cache = page_cache
         self.initial_offset = offset
-        self.current_offset = 0
+        self.current_offset = offset
         self.current_page = None
 
     def tell(self):
@@ -208,9 +211,9 @@ class ReadStreamer(BytesIO):
             already_read = 0
             while already_read < count:
                 if page_offset >= self.page_size:
-                    self.current_page = self.page_cache.read_page(self.wal_id, page_number + 1)
                     page_number += 1
                     page_offset = 0
+                    self.current_page = self.page_cache.read_page(self.wal_id, page_number)
 
                 fragment_size = min(self.page_size - page_offset, count - already_read)
                 fragment = self.current_page[page_offset:page_offset + fragment_size]
@@ -223,7 +226,12 @@ class ReadStreamer(BytesIO):
         return value
 
     def close(self):
+        # At closing, nothing to do, it will be
+        # collected for further usage
         pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
 
 class FileBlockProvider(common.BlockProvider):

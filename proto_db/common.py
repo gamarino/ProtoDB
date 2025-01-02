@@ -28,6 +28,7 @@ class AtomPointer(object):
     def hash(self):
         return self.transaction_id.int ^ self.offset
 
+
 atom_class_registry = dict()
 
 
@@ -253,18 +254,16 @@ class Atom(metaclass=CombinedMeta):
     _saved: bool = False
 
     def __init__(self, transaction: AbstractTransaction = None, atom_pointer: AtomPointer = None, **kwargs):
+        super().__init__()
         self.transaction = transaction
         self.atom_pointer = atom_pointer
         self._loaded = False
-        for name, value in self._json_to_dict(kwargs).items():
-            setattr(self, name, value)
 
     def _load(self):
         if not self._loaded:
             if self.transaction:
                 if self.atom_pointer and \
-                   self.atom_pointer.transaction_id and \
-                   self.atom_pointer.offset:
+                   self.atom_pointer.transaction_id:
                     loaded_atom = self.transaction.database.object_space.storage_provider.get_atom(
                         self.atom_pointer).result()
                     loaded_dict = self._json_to_dict(loaded_atom)
@@ -285,12 +284,6 @@ class Atom(metaclass=CombinedMeta):
                 return self is other
         else:
             return False
-
-    def __getattr__(self, name: str):
-        if name.startswith('_') or name in ['atom_pointer', 'transaction']:
-            return super().__getattribute__(name)
-        self._load()
-        return super().__getattribute__(name)
 
     def _push_to_storage(self, json_value: dict) -> AtomPointer:
         return self.transaction.database.object_space.storage_provider.push_atom(json_value).result()
@@ -315,8 +308,23 @@ class Atom(metaclass=CombinedMeta):
                     value = bool(value['value'])
                 elif class_name == 'None':
                     value = None
+                elif class_name == 'Literal':
+                    if 'transaction_id' in value:
+                        value = Literal(
+                            atom_pointer=AtomPointer(
+                                transaction_id=uuid.UUID(value['transaction_id']),
+                                offset=value['offset']
+                            ),
+                            transaction=self.transaction
+                        )
+                        value._load()
+                    else:
+                        value = self.transaction.get_literal(value['string'])
                 elif class_name in atom_class_registry:
-                    atom_pointer = AtomPointer(value['transaction_id'], value['offset'])
+                    atom_pointer = AtomPointer(
+                        uuid.UUID(hex=value['transaction_id']),
+                        value['offset']
+                    )
                     value = self.transaction.read_object(class_name, atom_pointer)
                     value._load()
                 else:
@@ -376,6 +384,9 @@ class Atom(metaclass=CombinedMeta):
                 json_value[name] = {
                     'className': 'None',
                 }
+            else:
+                json_value[name] = value
+
         return json_value
 
     def _save(self):
@@ -387,27 +398,32 @@ class Atom(metaclass=CombinedMeta):
                 # converting attributes strs to Literals
                 self._saved = True
 
-                for name, value in self.__dict__.items():
-                    if not callable(value):
-                        if isinstance(value, Atom):
-                            if not value.transaction:
-                                value.transaction = self.transaction
-                            value._save()
-
-                if type(self) == Literal:
+                if isinstance(self, Literal):
                     json_value = {
-                        'className': type(self).__name__,
+                        'className': 'Literal',
                         'string': self.string
                     }
                 else:
                     json_value = {'className': type(self).__name__}
 
                     for name, value in self.__dict__.items():
-                        if name.startswith('_'):
+                        if callable(value) or name.startswith('_'):
                             continue
-                        if name in ['transaction', 'atom_pointer']:
+
+                        if isinstance(self, Atom) and name in ('atom_pointer', 'transaction'):
                             continue
+
                         if isinstance(value, Atom):
+                            if not value.transaction:
+                                # it is a newly created atom
+                                # it should not happen, but try to solve the misbehaviour
+                                # capture it for this transaction
+                                value.transaction = self.transaction
+                                value._saved = False
+                            if not value._saved:
+                                value.transaction = self.transaction
+                            value._save()
+
                             json_value[name] = {
                                 'className': type(value).__name__,
                                 'transaction_id': str(value.atom_pointer.transaction_id),
@@ -855,4 +871,10 @@ class SharedStorage(AbstractSharedStorage):
         :return:
         """
 
+    @abstractmethod
+    def close(self):
+        """
+        Ends all operations, make all changes stable
+        :return:
+        """
 
