@@ -226,14 +226,14 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
         self.flush_wal()
         self.block_provider.close()
 
-    def push_bytes_to_wal(self, data: bytearray) -> tuple[uuid.UUID, int]:
+    def push_bytes_to_wal(self, data: bytes) -> tuple[uuid.UUID, int]:
         """
         Adds data to the Write-Ahead Log (WAL).
         """
-        if not isinstance(data, bytearray):
-            raise ProtoValidationException(message="Data must be a bytearray.")
+        if not isinstance(data, bytes):
+            raise ProtoValidationException(message="Data must be a bytes.")
         if len(data) == 0:
-            raise ProtoValidationException(message="Cannot push an empty bytearray.")
+            raise ProtoValidationException(message="Cannot push an empty data!")
         if len(data) > self.blob_max_size:
             raise ProtoValidationException(message="Data exceeds maximum blob size.")
 
@@ -302,7 +302,7 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
             data = json.dumps(atom).encode('UTF-8')
             len_data = struct.pack('Q', len(data))
 
-            transaction_id, offset = self.push_bytes_to_wal(bytearray(len_data + data))
+            transaction_id, offset = self.push_bytes_to_wal(len_data + data)
             return AtomPointer(transaction_id, offset)
 
         return self.executor_pool.submit(task_push_atom)
