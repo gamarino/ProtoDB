@@ -65,6 +65,11 @@ def _get_valid_char_data(stream: io.FileIO) -> str:
         raise ProtoUnexpectedException(message="Error reading stream", exception_type=e.__class__.__name__) from e
 
 
+# Executor threads for async operations
+max_workers = (os.cpu_count() or 1) * 5
+executor_pool = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+
+
 class StandaloneFileStorage(common.SharedStorage, ABC):
     """
     An implementation of standalone file storage with support for Write-Ahead Logging (WAL).
@@ -73,8 +78,7 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
     def __init__(self,
                  block_provider: BlockProvider,
                  buffer_size: int = BUFFER_SIZE,
-                 blob_max_size: int = BLOB_MAX_SIZE,
-                 max_workers: int = 0):
+                 blob_max_size: int = BLOB_MAX_SIZE):
         """
         Constructor for the StandaloneFileStorage class.
         """
@@ -83,11 +87,6 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
         self.blob_max_size = blob_max_size
         self._lock = Lock()
         self.state = 'Running'
-
-        # Executor threads for async operations
-        if not max_workers:
-            max_workers = (os.cpu_count() or 1) * 5
-        self.executor_pool = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
 
         # WAL state management
         self.current_wal_id = None
@@ -292,7 +291,7 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
                 atom_data = json.loads(data)
                 return atom_data
 
-        return self.executor_pool.submit(task_read_atom)
+        return executor_pool.submit(task_read_atom)
 
     def push_atom(self, atom: dict) -> Future[AtomPointer]:
         """
@@ -305,7 +304,7 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
             transaction_id, offset = self.push_bytes_to_wal(len_data + data)
             return AtomPointer(transaction_id, offset)
 
-        return self.executor_pool.submit(task_push_atom)
+        return executor_pool.submit(task_push_atom)
 
     def get_bytes(self, pointer: AtomPointer) -> Future[bytes]:
         """
@@ -332,7 +331,7 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
 
             return data
 
-        return self.executor_pool.submit(task_read_bytes)
+        return executor_pool.submit(task_read_bytes)
 
     def push_bytes(self, data: bytes) -> Future[tuple[uuid.UUID, int]]:
         """
@@ -352,4 +351,4 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
             transaction_id, offset = self.push_bytes_to_wal(bytearray(len_data + data))
             return transaction_id, offset
 
-        return self.executor_pool.submit(task_push_bytes)
+        return executor_pool.submit(task_push_bytes)
