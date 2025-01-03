@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import uuid
+from selectors import SelectSelector
 from typing import cast
+
+from abc import ABC, abstractmethod
+from collections import defaultdict
 
 from . import DBCollections
 from .exceptions import ProtoUnexpectedException, ProtoValidationException, ProtoCorruptionException
 from .common import Atom, QueryPlan, AtomPointer
 from .db_access import ObjectTransaction
+from .lists import List
 import os
 import concurrent.futures
 
@@ -259,13 +264,17 @@ class WherePlan(QueryPlan):
     filter: Expression
 
     def __init__(self,
-                 filter: list = None,
+                 filter_spec: list = None,
+                 filter: Expression = None,
                  based_on: QueryPlan = None,
                  transaction: ObjectTransaction = None,
                  atom_pointer: AtomPointer = None,
                  **kwargs):
         super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        self.filter = Expression.compile(filter)
+        if filter_spec:
+            self.filter = Expression.compile(filter_spec)
+        else:
+            self.filter = filter
 
     def execute(self) -> list:
         # TODO
@@ -279,21 +288,109 @@ class WherePlan(QueryPlan):
         )
 
 
+class AgreggatorFunction(ABC):
+    @abstractmethod
+    def compute(self, values: list):
+        """
+        Compute the agreggotor over a set of records
+        :param records: 
+        :return: 
+        """
+
+class SumAgreggator(AgreggatorFunction):
+    def compute(self, values: list):
+        sum = 0.0
+        for value in values:
+            sum += value
+        return sum
+
+
+class AvgAggregator(AgreggatorFunction):
+    def compute(self, values: list):
+        sum = 0.0
+        for value in values:
+            sum += value
+
+        if len(values) > 0:
+            return sum / len(values)
+        else:
+            return 0.0
+
+
+class CountAggregator(AgreggatorFunction):
+    def compute(self, values: list):
+        return len(values)
+
+
+class MinAgreggator(AgreggatorFunction):
+    def compute(self, values: list):
+        minimun = None
+        for value in values:
+            if minimun is None or value < minimun:
+                minimun = value
+        return minimun
+
+
+class MaxAggregator(AgreggatorFunction):
+    def compute(self, values: list):
+        maximun = None
+        for value in values:
+            if maximun is None or value > maximun:
+                maximun = value
+        return maximun
+
+
+class AgreggatorSpec:
+    agreggator_function: AgreggatorFunction
+    field_name: str
+    alias: str
+
+    def __init__(self, agreggator_function: AgreggatorFunction, field_name: str, alias: str):
+        self.agreggator_function = agreggator_function
+        self.field_name = field_name
+        self.alias = alias
+
+    def compute(self, values: list):
+        return self.agreggator_function.compute(values)
+
+
 class GroupByPlan(QueryPlan):
     """
 
     """
+    group_fields: list
+    agreggated_fields: dict[str, AgreggatorSpec] = dict()    
 
     def __init__(self,
+                 group_fields: list = None,
+                 agreggated_fields: dict[str, AgreggatorSpec] = None,
                  based_on: QueryPlan = None,
                  transaction: ObjectTransaction = None,
                  atom_pointer: AtomPointer = None,
                  **kwargs):
         super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
+        if not group_fields:
+            raise ProtoValidationException(
+                message=f"It's not possible to group by without a list of field names to use!"
+            )
+        self.group_fields = group_fields
+        self.agreggated_fields = agreggated_fields
 
     def execute(self) -> list:
-        # TODO
-        pass
+        grouped_data = defaultdict(list)
+
+        # Agrupar directamente por campos
+        for record in self.based_on.execute():
+            key = tuple(record.get(field, None) for field in self.group_fields)
+            grouped_data[key].append(record)
+
+        # Procesar cada grupo
+        for key, rows in grouped_data.items():
+            result = dict(zip(self.group_fields, key))
+            for alias, spec in self.agreggated_fields.items():
+                values = [row.get(spec.field_name, 0) for row in rows]
+                result[alias] = spec.compute(values)
+            yield result
 
     def optimize(self, full_plan: QueryPlan) -> QueryPlan:
         return GroupByPlan(
@@ -332,17 +429,67 @@ class OrderByPlan(QueryPlan):
     """
 
     """
+    sort_spec: list
+    reversed: bool
+    
     # TODO
     def __init__(self,
+                 sort_spec: list,
+                 reversed: bool = False,
                  based_on: QueryPlan = None,
                  transaction: ObjectTransaction = None,
                  atom_pointer: AtomPointer = None,
                  **kwargs):
         super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-
+        self.sort_spec = sort_spec
+        self.reversed = reversed
+        
     def execute(self) -> list:
-        # TODO
-        pass
+        ordered_output = List(transaction=self.transaction)
+        
+        def compare(a, b) -> int:
+            cmp = 0
+            for field_name in self.sort_spec:
+                cmp = 0 if a[field_name] == b[field_name] else \
+                      1 if a[field_name] > b[field_name] else -1
+                if cmp != 0:
+                    break
+            return cmp
+
+        for record in self.based_on.execute():
+            if ordered_output.count == 0:
+                ordered_output = ordered_output.append(record)
+            else:
+                comparison = compare(record, ordered_output.get_at(-1))
+                if comparison >= 0:
+                    ordered_output = ordered_output.append(record)
+                else:
+                    # Find the right place to insert the new record
+                    left = 0
+                    right = ordered_output.count - 1
+                    center = 0
+
+                    while left <= right:
+                        center = (left + right) // 2
+
+                        item = ordered_output.get_at(center)
+                        comparison = compare(record, item)
+                        if comparison >= 0:
+                            right = center - 1
+                        else:
+                            left = center + 1
+                    
+                    ordered_output = ordered_output.insert_at(center, record)
+                    
+        # At this point, all input has been ingested and ordered_output has an ascending order list
+        if self.reversed:
+            index = ordered_output.count
+            while index > 0:
+                index -= 1
+                yield ordered_output.get_at(index)
+        else:
+            for item in ordered_output.as_iterable():
+                yield item
 
     def optimize(self, full_plan: QueryPlan) -> QueryPlan:
         # TODO
