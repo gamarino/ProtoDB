@@ -711,6 +711,131 @@ class List(Atom):
 
         return node._rebalance()
 
+    def head(self, upper_limit: int):
+        """
+        Returns a portion of the list up to the specified upper limit. The behavior
+        differs based on the `upper_limit` parameter, adjusting for cases where
+        the limit exceeds the bounds of the list or is composed negatively, as well
+        as scenarios requiring rebalancing of the nodes.
+
+        :param upper_limit:
+            The maximum number of items to include in the resulting list. If negative,
+            it represents a count from the end of the list. Values shorter or greater
+            than the bounds of the list are normalized accordingly.
+
+        :return:
+            A new list instance containing the items from the start to the specified
+            `upper_limit`, rebalanced as necessary.
+        """
+        self._load()
+
+        if upper_limit < 0:
+            upper_limit = self.count + upper_limit
+
+        if upper_limit < 0:
+            upper_limit = 0
+
+        if upper_limit >= self.count:
+            upper_limit = self.count
+
+        if upper_limit == 0:
+            # Case: Returning an empty List.
+            return List(transaction = self.transaction)
+
+        if upper_limit == self.count:
+            # Case: the full list
+            return self
+
+        node = self
+        offset = node.previous.count if node.previous else 0
+        cmp = upper_limit - offset
+
+        if cmp == 0:
+            node = List(
+                value=node.value,
+                empty=False,
+                previous=self.previous,
+                next=None,
+                transaction=self.transaction
+            )
+        elif cmp > 0 and node.next:
+            next_node = node.next.head(cmp - 1)
+            node = List(
+                value=node.value,
+                empty=False,
+                previous=self.previous,
+                next=next_node if not next_node.empty else None,
+                transaction=self.transaction
+            )
+        elif cmp < 0 and node.previous:
+            node = node.previous.head(upper_limit)
+        else:
+            return List(transaction=self.transaction)
+
+        return node._rebalance()
+
+    def tail(self, lower_limit: int):
+        """
+        Provides functionality for handling and creating a new sublist starting from the given
+        lower limit index, based on the current doubly linked list structure. The method adjusts
+        and returns either the list starting from the given position, or an empty list if the
+        provided lower limit is out of range.
+
+        :param lower_limit: The starting index from which the sublist should be created.
+            This index can be positive or negative. If negative, it starts counting from
+            the end of the list.
+        :type lower_limit: int
+        :return: The modified sublist starting from the given lower limit, or an empty list
+            if lower_limit is outside the range of the current list's indices.
+        :rtype: List
+        """
+        self._load()
+
+        if lower_limit < 0:
+            lower_limit = self.count + lower_limit
+
+        if lower_limit < 0:
+            lower_limit = 0
+
+        if lower_limit >= self.count:
+            lower_limit = self.count
+
+        if lower_limit == self.count:
+            # Case: Returning an empty List.
+            return List(transaction=self.transaction)
+
+        if lower_limit == 0:
+            # Case: the full list
+            return self
+
+        node = self
+        offset = node.previous.count if node.previous else 0
+        cmp = lower_limit - offset
+
+        if cmp == 0:
+            node = List(
+                value=node.value,
+                empty=False,
+                previous=None,
+                next=self.next,
+                transaction=self.transaction
+            )
+        elif cmp > 0 and node.next:
+            node = node.next.tail(lower_limit)
+        elif cmp < 0 and node.previous:
+            previous_node = node.next.tail(lower_limit)
+            node = List(
+                value=node.value,
+                empty=False,
+                previous=previous_node if not previous_node.empty else None,
+                next=self.next,
+                transaction=self.transaction
+            )
+        else:
+            return List(transaction=self.transaction)
+
+        return node._rebalance()
+
     def slice(self, from_offset: int, to_offset: int):
         """
         Slices a portion of a sequence based on the specified start and end offsets.
@@ -756,11 +881,6 @@ class List(Atom):
 
         # Here, it will be a non-empty list
 
-        # TODO Find a more efficient way to do this
-        new_list = List(transaction=self.transaction)
-        for offset in range(from_offset, to_offset):
-            new_list = new_list.set_at(offset-from_offset, self.get_at(offset))
-
-        return new_list
+        return self.tail(from_offset).head(to_offset - from_offset)
 
 

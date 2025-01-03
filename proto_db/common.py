@@ -446,6 +446,12 @@ class Atom(metaclass=CombinedMeta):
     def hash(self) -> int:
         return self.atom_pointer.hash()
 
+    def __getitem__(self, item: str):
+        if hasattr(self, item):
+            return super().__getitem__(item)
+        else:
+            return None
+
 
 class RootObject(Atom):
     """
@@ -564,6 +570,14 @@ class MutableObject(Atom):
 
         current_object = self.transaction.get_mutable(self.hash_key)
         return current_object.__getattr__(name)
+
+    def __setitem__(self, name: str, value):
+        self.__setattr__(name, value)
+
+
+    def __delitem__(self, name: str):
+        self.__setattr__(name, None)
+
 
     def __setattr__(self, key, value):
         if not self.transaction:

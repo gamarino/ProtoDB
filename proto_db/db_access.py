@@ -12,6 +12,7 @@ from .lists import List
 from .sets import Set
 import datetime
 from threading import Lock
+import hashlib
 
 
 class ObjectSpace(AbstractObjectSpace):
@@ -111,6 +112,71 @@ class ObjectSpace(AbstractObjectSpace):
         # TODO
         pass
 
+    def get_space_root(self) -> RootObject:
+        db = Database(self)
+        read_tr = db.new_transaction()
+        root_pointer = self.storage.read_current_root()
+        if root_pointer:
+            space_history = List(transaction=read_tr, atom_pointer=root_pointer)
+            space_history._load()
+            if space_history.count == 0:
+                initial_root = RootObject(
+                    object_root=Dictionary(transaction=read_tr),
+                    literal_root=Dictionary(transaction=read_tr),
+                    transaction=read_tr
+                )
+                space_history = space_history.set_at(0, initial_root)
+        else:
+            space_history = List(transaction=read_tr)
+            initial_root = RootObject(
+                object_root=Dictionary(transaction=read_tr),
+                literal_root=Dictionary(transaction=read_tr),
+                transaction=read_tr
+            )
+            space_history = space_history.set_at(0, initial_root)
+
+        space_root = cast(RootObject, space_history.get_at(0))
+        if space_root:
+            space_root._load()
+        else:
+            space_root = RootObject(
+                object_root=Dictionary(transaction=read_tr),
+                literal_root=Dictionary(transaction=read_tr),
+                transaction=read_tr
+            )
+
+        return space_root
+
+    def set_space_root(self, new_space_root: RootObject):
+        db = Database(self)
+        update_tr = db.new_transaction()
+
+        root_pointer = self.storage.read_current_root()
+        if root_pointer:
+            space_history = List(transaction=update_tr, atom_pointer=root_pointer)
+            space_history._load()
+            if space_history.count == 0:
+                initial_root = RootObject(
+                    object_root=Dictionary(transaction=update_tr),
+                    literal_root=Dictionary(transaction=update_tr),
+                    transaction=update_tr
+                )
+                space_history = space_history.set_at(0, initial_root)
+        else:
+            space_history = List(transaction=update_tr)
+            initial_root = RootObject(
+                object_root=Dictionary(transaction=update_tr),
+                literal_root=Dictionary(transaction=update_tr),
+                transaction=update_tr
+            )
+            space_history = space_history.set_at(0, initial_root)
+
+        space_history = space_history.insert_at(0, new_space_root)
+        space_history._save()
+
+        self.object_space.storage_provider.set_current_root(space_history.atom_pointer)
+        update_tr.abort()
+
     def get_literals(self, literals: list[str]) -> dict[str, Atom]:
         with self._lock:
             root = self.storage.read_current_root()
@@ -145,44 +211,28 @@ class Database(AbstractDatabase):
     database_name: str
     object_space: ObjectSpace
     current_root: RootObject
+    state: str
 
     def __init__(self, object_space: ObjectSpace, database_name: str):
         super().__init__(object_space)
         self.object_space = object_space
         self.database_name = database_name
+        self.state = 'Running'
+
+    def __enter(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.state = 'Closed'
+        return False
 
     def _read_db_root(self, root_pointer: AtomPointer) -> Dictionary:
         read_tr = ObjectTransaction(self)
-        if root_pointer:
-            space_history = List(transaction=read_tr, atom_pointer=root_pointer)
-            space_history._load()
-            if space_history.count == 0:
-                initial_root = RootObject(
-                    object_root=Dictionary(transaction=read_tr),
-                    literal_root=Dictionary(transaction=read_tr),
-                    transaction=read_tr
-                )
-                space_history = space_history.set_at(0, initial_root)
-        else:
-            space_history = List(transaction=read_tr)
-            initial_root = RootObject(
-                object_root=Dictionary(transaction=read_tr),
-                literal_root=Dictionary(transaction=read_tr),
-                transaction=read_tr
-            )
-            space_history = space_history.set_at(0, initial_root)
-
-        space_root = cast(RootObject, space_history.get_at(0))
-        if space_root:
-            space_root._load()
-        else:
-            space_root = RootObject(
-                object_root=Dictionary(transaction=read_tr),
-                literal_root=Dictionary(transaction=read_tr),
-                transaction=read_tr
-            )
-
-        db_catalog = space_root.object_root
+        space_root = self.object_space.get_space_root()
+        db_catalog = Dictionary(
+            atom_pointer = space_root.object_root.atom_pointer,
+            transaction=read_tr
+        )
         db_catalog._load()
         if db_catalog:
             db_root = cast(Dictionary, db_catalog.get_at(self.database_name))
@@ -193,10 +243,10 @@ class Database(AbstractDatabase):
         else:
             db_root = Dictionary()
 
-        read_tr.commit()
+        read_tr.abort()
         return db_root
 
-    def get_current_root(self) -> Dictionary:
+    def get_current_root(self) -> Dictionary | None:
         root_pointer = self.object_space.storage.read_current_root()
         return self._read_db_root(root_pointer)
 
@@ -206,30 +256,23 @@ class Database(AbstractDatabase):
 
     def set_current_root(self, new_db_root: Dictionary):
         update_tr = ObjectTransaction(self)
-        root_pointer = self.object_space.storage.read_current_root()
-        if root_pointer:
-            space_history = List(transaction=update_tr, atom_pointer=root_pointer)
-            space_history._load()
-            initial_root = space_history.get_at(0)
-        else:
-            space_history = List(transaction=update_tr)
+
+        initial_root = self.object_space.get_space_root()
+        if initial_root.transaction:
             initial_root = RootObject(
-                object_root=Dictionary(transaction=update_tr),
-                literal_root=Dictionary(transaction=update_tr),
+                atom_pointer=initial_root.atom_pointer,
                 transaction=update_tr
             )
-            space_history = space_history.set_at(0, initial_root)
 
         new_space_root = RootObject(
             object_root=initial_root.object_root.set_at(self.database_name, new_db_root),
             literal_root=initial_root.literal_root
         )
-        space_history = space_history.set_at(0, new_space_root)
-        space_history._save()
-        self.object_space.storage_provider.set_current_root(space_history.atom_pointer)
+
+        self.object_space.set_space_root(new_space_root)
         update_tr.abort()
 
-        self.object_space.storage.set_current_root(space_history.atom_pointer)
+        self.object_space.storage.set_current_root(new_space_root.atom_pointer)
 
     def unlock_current_root(self):
         return self.object_space.storage.unlock_current_root()
@@ -270,10 +313,10 @@ class Database(AbstractDatabase):
         pass
 
     def get_literal(self, string: str) -> Literal | None:
-        root = self.get_current_root()
+        root = self.object_space.get_current_root()
         if not root:
             return None
-        literal_root: Dictionary = cast(Dictionary, root.literal_root)
+        literal_root: Dictionary = root.liter
         if literal_root.has(string):
             return literal_root.get_at(string)
         else:
@@ -281,6 +324,11 @@ class Database(AbstractDatabase):
 
 
 class ObjectTransaction(AbstractTransaction):
+    """
+    Enclosing transaction
+    """
+    enclosing_transaction: ObjectTransaction = None
+
     """
     Root object at the time transaction was started
     """
@@ -338,11 +386,15 @@ class ObjectTransaction(AbstractTransaction):
     lock: Lock
     database: Database
 
-    def __init__(self, database: Database, transaction_root: Dictionary = None):
+    def __init__(self,
+                 database: Database,
+                 transaction_root: Dictionary = None,
+                 enclosing_transaction: ObjectTransaction = None):
         super().__init__()
         self.lock = Lock()
         self.new_literals = Dictionary(transaction=self)
         self.database = database
+        self.enclosing_transaction = enclosing_transaction
 
         self.transaction_root = transaction_root
         self.initial_transaction_root = transaction_root
@@ -354,6 +406,16 @@ class ObjectTransaction(AbstractTransaction):
         if transaction_root and self.transaction_root.has('_mutable_root'):
             self.initial_mutable_objects = cast(HashDictionary, self.transaction_root.get_at('_mutable_root'))
         self.mutable_objects = HashDictionary()
+
+    def __enter(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if not exc_type:
+            self.commit()
+        else:
+            self.abort()
+        return False
 
     def read_object(self, class_name: str, atom_pointer: AtomPointer) -> Atom:
         with self.lock:
@@ -479,45 +541,63 @@ class ObjectTransaction(AbstractTransaction):
                     message=f'Transaction is not running ({self.state}). It could not be committed!'
                 )
 
-            if self.new_roots.count != 0 or self.modified_mutable_objects.count != 0 or self.new_literals.count != 0:
-                # Save transaction created objects before locking database root
-                self._save_modified_mutables()
-                self._save_modified_roots()
+            if not self.enclosing_transaction:
+                # It's a base transaction, it should commit changes to db
 
-                # The folling block will be synchronized among all transactions
-                # for this database
-                with RootContextManager(object_transaction=self) as space_root:
-                    if not space_root:
-                        space_root = RootObject(
-                            object_root=Dictionary(),
-                            literal_root=Dictionary(),
-                            transaction=self
-                        )
+                if self.new_roots.count != 0 or self.modified_mutable_objects.count != 0 or self.new_literals.count != 0:
+                    # Save transaction created objects before locking database root
+                    self._save_modified_mutables()
+                    self._save_modified_roots()
 
-                    if self.new_literals.count > 0:
-                        space_tr = ObjectTransaction(self.database, space_root)
+                    # The folling block will be synchronized among all transactions
+                    # for this database
+                    with RootContextManager(object_transaction=self) as space_root:
+                        if not space_root:
+                            space_root = RootObject(
+                                object_root=Dictionary(),
+                                literal_root=Dictionary(),
+                                transaction=self
+                            )
 
-                        space_root.transaction = space_tr
-                        space_root._load()
-                        space_root = RootObject(
-                            object_root=space_root.object_root,
-                            literal_root=self._update_created_literals(space_root.literal_root),
-                            transaction=space_tr
-                        )
-                        space_root._save()
-                        space_tr.commit()
+                        if self.new_literals.count > 0:
+                            space_tr = ObjectTransaction(self.database, space_root)
 
-                    db_root = cast(Dictionary, space_root.object_root.get_at(self.database.database_name))
-                    if not db_root:
-                        db_root = Dictionary(transaction=self)
+                            space_root.transaction = space_tr
+                            space_root._load()
+                            space_root = RootObject(
+                                object_root=space_root.object_root,
+                                literal_root=self._update_created_literals(space_root.literal_root),
+                                transaction=space_tr
+                            )
+                            space_root._save()
+                            space_tr.commit()
 
-                    self._check_read_locked_objects(db_root)
+                        db_root = cast(Dictionary, space_root.object_root.get_at(self.database.database_name))
+                        if not db_root:
+                            db_root = Dictionary(transaction=self)
 
-                    db_root = self._update_mutable_indexes(db_root)
-                    db_root = self._update_database_roots(db_root)
-                    db_root.transaction = self
-                    db_root._save()
-                    self.database.set_current_root(db_root)
+                        self._check_read_locked_objects(db_root)
+
+                        db_root = self._update_mutable_indexes(db_root)
+                        db_root = self._update_database_roots(db_root)
+                        db_root.transaction = self
+                        db_root._save()
+                        self.database.set_current_root(db_root)
+            else:
+                # It's a nested transaction
+                enclosing_tr = self.enclosing_transaction
+                with enclosing_tr.lock:
+                    if enclosing_tr.state == 'Running':
+                        if self.new_literals.count > 0:
+                            enclosing_tr.new_literals = enclosing_tr.new_literals.merge(self.new_literals)
+                        if self.modified_mutable_objects.count > 0:
+                            enclosing_tr.modified_mutable_objects = enclosing_tr.modified_mutable_objects.merge(
+                                self.modified_mutable_objects)
+                        if self.new_mutable_objects.count > 0:
+                            enclosing_tr.new_mutable_objects = enclosing_tr.new_mutable_objects.merge(
+                                self.new_mutable_objects)
+                        if self.new_roots.count > 0:
+                            enclosing_tr.new_roots = enclosing_tr.new_roots.merge(self.new_roots)
 
             # At this point everything changed has been commited
             self.state = 'Commited'
@@ -541,7 +621,9 @@ class ObjectTransaction(AbstractTransaction):
         :param string:
         :return: a hash based in db persisted strings
         """
-        return _str_hash(string)
+        hash_obj = hashlib.sha256(string.encode('utf-8'))
+        hash_int = int(hash_obj.hexdigest(), 16)
+        return hash_int
 
     def get_mutable(self, key:int):
         with self.lock:

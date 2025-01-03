@@ -459,6 +459,17 @@ class HashDictionary(DBCollections):
 
         return new_node._rebalance()
 
+    def merge(self, other: HashDictionary) -> HashDictionary:
+        """
+        Merge self with other HashDictionary
+        :param other:
+        :return: the new merged dictionary
+        """
+        new_dictionary = self
+        for item_hash, value in other.as_iterable():
+            new_dictionary = new_dictionary.set_at(item_hash, value)
+        return new_dictionary
+
     def _get_first(self) -> HashDictionary | None:
         """
         Fetches the first value in a series of linked nodes. This function traverses
