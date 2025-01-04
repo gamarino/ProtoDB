@@ -15,6 +15,6 @@ from .file_block_provider import FileBlockProvider
 
 from .sets import Set
 from .lists import List
-from .dictionaries import HashDictionary, Dictionary
-from .queries import FromPlan, WherePlan, GroupByPlan, SelectPlan, HavingPlan, \
+from .dictionaries import HashDictionary, Dictionary, RepeatedKeysDictionary
+from .queries import FromPlan, WherePlan, GroupByPlan, SelectPlan, \
                      OrderByPlan, LimitPlan, OffsetPlan, ListPlan

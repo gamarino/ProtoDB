@@ -539,7 +539,7 @@ class DictionaryItem(Atom):
             atom_pointer: AtomPointer = None,  # Pointer to the atom for durability/consistency.
             **kwargs):  # Additional keyword arguments.
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        self.key = Literal(literal=key)  # Wrap the key as a Literal for durability.
+        self.key = Literal(literal=key, transaction=transaction)  # Wrap the key as a Literal for durability.
         self.value = value  # Assign the value to the dictionary item.
 
 
@@ -604,13 +604,13 @@ class Dictionary(DBCollections):
         while left <= right:
             center = (left + right) // 2
 
-            item = self.content.get_at(center)
+            item = cast(DictionaryItem, self.content.get_at(center))
             if item and str(item.key) == key:
                 if isinstance(item.value, Atom):
                     item.value._load()
                 return item.value
 
-            if str(item.key) > key:
+            if str(item.key) >= key:
                 right = center - 1
             else:
                 left = center + 1
@@ -700,7 +700,7 @@ class Dictionary(DBCollections):
         while left <= right:
             center = (left + right) // 2
 
-            item = self.content.get_at(center)
+            item = cast(DictionaryItem, self.content.get_at(center))
             if item and str(item.key) == key:
                 # It's a replacement of an existing value
                 return Dictionary(
@@ -739,7 +739,7 @@ class Dictionary(DBCollections):
         while left <= right:
             center = (left + right) // 2
 
-            item = self.content.get_at(center)
+            item = cast(DictionaryItem, self.content.get_at(center))
             if item and str(item.key) == key:
                 return True
 
@@ -750,3 +750,91 @@ class Dictionary(DBCollections):
 
         return False
 
+
+class RepeatedKeysDictionary(Dictionary):
+    """
+    Represents a dictionary-like data structure allowing multiple records
+    associated with a single key.
+
+    This class extends the base Dictionary class and provides additional
+    functionality for handling repeated keys, updating, and removing
+    associated records. Duplicate values in the list associated with a key
+    are allowed.
+
+    :ivar transaction: Reference to the transactional context of the dictionary.
+    :type transaction: Transaction
+    """
+    def get_at(self, key: str) -> List | None:
+        """
+        Gets the elements at a given key, as a List, if exists in the dictionary.
+
+        :param key: The string key to be searched.
+        :return: The value storea at key or None if not found
+        """
+        return super().get_at(key)
+
+    def set_at(self, key: str, value: Atom) -> Dictionary:
+        """
+        Inserts or updates a key-value pair in the dictionary.
+
+        This method checks if the specified key already exists in the dictionary. If the key exists,
+        its associated record list is updated with the new value
+
+        :param key: The string key for the item being added or updated.
+        :param value: The value associated with the key.
+        :return: A new instance of Dictionary with the updated content.
+        """
+
+        record_hash = value.hash()
+        if super().has(key):
+            record_list = cast(HashDictionary, super().get_at(key))
+        else:
+            record_list  = HashDictionary(transaction=self.transaction)
+        record_list = record_list.set_at(record_hash, value)
+        return super().set_at(key, record_list)
+
+    def remove_at(self, key: str) -> Dictionary:
+        """
+        Removes a key-value pair from the dictionary if the key exists.
+
+        If the key is found, it removes the corresponding entry and rebalances the structure.
+        If the key does not exist, the method returns the original dictionary.
+
+        :param key: The string key of the item to be removed.
+        :return: A new instance of Dictionary reflecting the removal.
+        """
+        """
+        Returns a new HashDirectory with the key removed if exists
+
+        :param key: int
+        :return: a new HashDirectory with the key removed
+        """
+        if super().has(key):
+            return super().remove_at(key)
+        else:
+            return self
+
+    def remove_record_at(self, key: str, record: Atom) -> Dictionary:
+        """
+        Removes a specific record from a list associated with a given key. If the key exists
+           and the record is found within the associated list, it removes the record and updates
+           the stored list. If the key does not exist, the original dictionary remains unchanged.
+
+        :param key: The key in the dictionary whose associated list must be updated (e.g., removal
+           of a specified record).
+        :type key: str
+        :param record: The specific record to be removed from the list associated with the
+           provided key.
+        :return: Returns the updated dictionary object with the list containing the record
+           removed. If the key does not exist or the record is not found, the original dictionary
+           remains unchanged.
+        :rtype: Dictionary
+        """
+        if super().has(key):
+            record_list = cast(HashDictionary, super().get_at(key))
+            record_hash = record.hash()
+            if record_list.has(record_hash):
+                record_list = record_list.remove_at(record_hash)
+                return super().set_at(key, record_list)
+
+        return self

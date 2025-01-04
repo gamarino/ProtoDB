@@ -10,6 +10,8 @@ from abc import ABC, abstractmethod, ABCMeta
 import io
 import configparser
 import datetime
+
+from . import Dictionary, RepeatedKeysDictionary
 from .exceptions import ProtoValidationException
 
 
@@ -618,25 +620,19 @@ class DBCollections(Atom):
     DBCollections provides an abstraction layer for database collections.
 
     This class serves as a base class for specific database collections, containing common
-    functionality such as managing indexes and abstract methods for data representation and
+    functionality such as data representation and
     query planning.
 
-    :ivar indexes: A dictionary mapping index names (str) to Atom objects, representing
-        the indexes associated with this collection.
-    :type indexes: dict[str, Atom] | None
     :ivar count: The total number of items in the collection.
     :type count: int
     """
-    indexes: dict[str, Atom] | None
     count: int = 0
 
     def __init__(self,
-                 indexes: dict[str, Atom] | None = None,
                  transaction: AbstractTransaction = None,
                  atom_pointer: AtomPointer = None,
                  **kwargs):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        self.indexes = indexes if indexes else {}
 
     @abstractmethod
     def as_iterable(self) -> list[object]:
@@ -689,6 +685,115 @@ class QueryPlan(Atom):
 
         :return:
         """
+
+
+class IndexedQueryPlan(QueryPlan):
+    """
+    IndexedQueryPlan is a specialized version of QueryPlan.
+
+    It provides functionality for creating and managing indexed query plans
+    that optimize query execution based on indexed data sources. This class
+    extends the base functionality of QueryPlan to incorporate the use of
+    indices in query operations.
+
+    """
+    indexes: Dictionary
+
+    def __init__(
+            self,
+            indexes: Dictionary = None,
+            based_on: QueryPlan = None,
+            atom_pointer: AtomPointer = None,
+            transaction: AbstractTransaction = None,
+            **kwargs):
+        super().__init__(based_on=based_on, atom_pointer=atom_pointer, transaction=transaction, **kwargs)
+        self.indexes = indexes if indexes else Dictionary(transaction=self.transaction)
+
+
+    def execute(self) -> list:
+        return super().execute()
+
+    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
+        return super().optimize(full_plan)
+
+    def add_index(self,
+                  field_name: str) -> IndexedQueryPlan:
+        """
+        Adds an index to the database for optimizing query performance on specified columns. This method
+        creates a new index with the given name on the columns specified in the list. Indexing can
+        significantly improve the efficiency of certain queries, particularly for large datasets.
+
+        :param field_name: field the index will be created on
+        :return: An indexed query plan that contains details of the created index and its application
+                 to the underlying query structure.
+        :rtype: IndexedQueryPlan
+        """
+        if self.indexes.has(field_name):
+            return self
+
+        # Reindex the current content on the added field
+        new_index = RepeatedKeysDictionary(transaction=self.transaction)
+        for record in self.execute():
+            if record.has(field_name):
+                new_index = new_index.set_at(record[field_name], record)
+
+        return IndexedQueryPlan(
+            indexes=self.indexes.set_at(field_name, new_index),
+            based_on=self.based_on,
+            transaction=self.transaction
+        )
+
+    def update_indexes_on_remove(self, removed_record: Atom) -> IndexedQueryPlan:
+        """
+        Update indexes when specific data is removed from a collection or database.
+
+        This function updates the internal indexes to maintain consistency
+        after the specified data is removed. It ensures that subsequent
+        queries reflect the correct indexed structure.
+
+        :param removed_record: The data item that was removed, for which the
+            indexes need to be updated.
+        :return: An updated query plan reflecting the state of indexes
+            after the removal.
+        :rtype: IndexedQueryPlan
+        """
+        new_indexes = self.indexes
+        for field_name, index in self.indexes.as_iterable():
+            index = cast(RepeatedKeysDictionary, index)
+            if removed_record[field_name]:
+                new_indexes.set_at(field_name, index.remove_record_at(removed_record[field_name], removed_record))
+
+        return IndexedQueryPlan(
+            indexes=new_indexes,
+            based_on=self.based_on,
+            transaction=self.transaction
+        )
+
+    def update_indexes_on_add(self, added_record: Atom) -> IndexedQueryPlan:
+        """
+        Updates the indexed query plan when an item is added to the dataset.
+
+        The method ensures that the internal indexes are recalibrated after
+        removing any existing data that would conflict with the new item's
+        location or plan alignment in the indexed structure. It recalculates
+        and returns the updated query plan that reflects the modifications.
+
+        :param added_record: the added data.
+        :return: The updated IndexedQueryPlan object after modification to
+            reflect changes caused by the addition operation.
+        :rtype: IndexedQueryPlan
+        """
+        new_indexes = self.indexes
+        for field_name, index in self.indexes.as_iterable():
+            index = cast(RepeatedKeysDictionary, index)
+            if added_record[field_name]:
+                new_indexes.set_at(field_name, index.set_at(added_record[field_name], added_record))
+
+        return IndexedQueryPlan(
+            indexes=new_indexes,
+            based_on=self.based_on,
+            transaction=self.transaction
+        )
 
 
 class Literal(Atom):

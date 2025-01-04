@@ -11,7 +11,7 @@ from duckdb.duckdb import limit
 
 from . import DBCollections
 from .exceptions import ProtoUnexpectedException, ProtoValidationException, ProtoCorruptionException
-from .common import Atom, QueryPlan, AtomPointer
+from .common import Atom, QueryPlan, AtomPointer, DBObject
 from .db_access import ObjectTransaction
 from .lists import List
 import os
@@ -409,7 +409,16 @@ class FromPlan(QueryPlan):
 
     def execute(self) -> list:
         for item in self.based_on.execute():
-            yield from item
+            result = DBObject(
+                transaction=self.transaction
+            )
+            if self.alias:
+                result = result._setattr(self.alias, item)
+            else:
+                for field_name, value in item.__dict__.items():
+                    if not field_name.starswith('_') and not callable(value):
+                        result = result._setattr(field_name, value)
+            yield result
 
     def optimize(self, full_plan: QueryPlan) -> QueryPlan:
         return FromPlan(
@@ -611,7 +620,11 @@ class GroupByPlan(QueryPlan):
             for alias, spec in self.agreggated_fields.items():
                 values = [row.get(spec.field_name, 0) for row in rows]
                 result[alias] = spec.compute(values)
-            yield result
+            result_object = DBObject(transaction=self.transaction)
+            for field_name, value in result.items():
+                if not field_name.startswith('_') and not callable(value):
+                    result_object = result_object._setattr(field_name, value)
+            yield result_object
 
     def optimize(self, full_plan: QueryPlan) -> QueryPlan:
         return GroupByPlan(
@@ -671,15 +684,19 @@ class SelectPlan(QueryPlan):
         :rtype: Generator[object, None, None]
         """
         for record in self.based_on.execute():
-            result = object()
+            result = DBObject(transaction=self.transaction)
             for field_name, value in self.fields.items():
                 if isinstance(value, str):
+                    dotted_fields = value.split('.')
+                    value = record
+                    for path_component in dotted_fields:
+                        value = value[path_component]
                     value = getattr(record, value)
                 elif callable(value):
                     value = value(record)
                 else:
                     continue
-                setattr(result, field_name, value)
+                result = DBObject._setattr(result, field_name, value)
             yield result
 
     def optimize(self, full_plan: QueryPlan) -> QueryPlan:
@@ -988,11 +1005,11 @@ class JoinPlan(QueryPlan):
         if self.join_type in ('external', 'inner', 'right', 'left'):
             for base_record in self.based_on.execute():
                 for join_record in self.join_query.execute():
-                    result = object()
+                    result = DBObject(transaction=self.transaction)
                     for field_name, value in base_record.__dict__.items():
-                        setattr(result, field_name, value)
+                        result = result._setattr(result, field_name, value)
                     for field_name, value in join_record.__dict__.items():
-                        setattr(result, field_name, value)
+                        result = result._setattr(result, field_name, value)
                     yield result
 
         if self.join_type in ('external', 'external_right', 'right', 'outer'):
