@@ -4,6 +4,7 @@ from typing import cast
 from .exceptions import ProtoCorruptionException
 from .common import Atom, DBCollections, QueryPlan, Literal, AbstractTransaction, AtomPointer
 from .lists import List
+from .sets import Set
 
 import uuid
 import logging
@@ -764,9 +765,9 @@ class RepeatedKeysDictionary(Dictionary):
     :ivar transaction: Reference to the transactional context of the dictionary.
     :type transaction: Transaction
     """
-    def get_at(self, key: str) -> List | None:
+    def get_at(self, key: str) -> Set | None:
         """
-        Gets the elements at a given key, as a List, if exists in the dictionary.
+        Gets the elements at a given key, as a Set, if exists in the dictionary.
 
         :param key: The string key to be searched.
         :return: The value storea at key or None if not found
@@ -784,13 +785,11 @@ class RepeatedKeysDictionary(Dictionary):
         :param value: The value associated with the key.
         :return: A new instance of Dictionary with the updated content.
         """
-
-        record_hash = value.hash()
         if super().has(key):
-            record_list = cast(HashDictionary, super().get_at(key))
+            record_list = cast(Set, super().get_at(key))
         else:
-            record_list  = HashDictionary(transaction=self.transaction)
-        record_list = record_list.set_at(record_hash, value)
+            record_list  = Set(transaction=self.transaction)
+        record_list = record_list.add(value)
         return super().set_at(key, record_list)
 
     def remove_at(self, key: str) -> Dictionary:
@@ -817,24 +816,24 @@ class RepeatedKeysDictionary(Dictionary):
     def remove_record_at(self, key: str, record: Atom) -> Dictionary:
         """
         Removes a specific record from a list associated with a given key. If the key exists
-           and the record is found within the associated list, it removes the record and updates
+           and the record is found within the associated set, it removes the record and updates
            the stored list. If the key does not exist, the original dictionary remains unchanged.
 
-        :param key: The key in the dictionary whose associated list must be updated (e.g., removal
+        :param key: The key in the dictionary whose associated set must be updated (e.g., removal
            of a specified record).
         :type key: str
-        :param record: The specific record to be removed from the list associated with the
+        :param record: The specific record to be removed from the set of associated with the
            provided key.
-        :return: Returns the updated dictionary object with the list containing the record
+        :return: Returns the updated dictionary object with the set containing the record
            removed. If the key does not exist or the record is not found, the original dictionary
            remains unchanged.
         :rtype: Dictionary
         """
         if super().has(key):
-            record_list = cast(HashDictionary, super().get_at(key))
+            record_set = cast(Set, super().get_at(key))
             record_hash = record.hash()
-            if record_list.has(record_hash):
-                record_list = record_list.remove_at(record_hash)
-                return super().set_at(key, record_list)
+            if record_set.has(record_hash):
+                record_set = record_set.remove_at(record_hash)
+                return super().set_at(key, record_set)
 
         return self

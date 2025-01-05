@@ -7,13 +7,13 @@ from typing import cast
 from abc import ABC, abstractmethod
 from collections import defaultdict
 
-from duckdb.duckdb import limit
-
 from . import DBCollections
 from .exceptions import ProtoUnexpectedException, ProtoValidationException, ProtoCorruptionException
 from .common import Atom, QueryPlan, AtomPointer, DBObject
 from .db_access import ObjectTransaction
 from .lists import List
+from .dictionaries import RepeatedKeysDictionary, Dictionary, DictionaryItem
+from .sets import Set
 import os
 import concurrent.futures
 
@@ -428,6 +428,331 @@ class FromPlan(QueryPlan):
         )
 
 
+class IndexedQueryPlan(QueryPlan):
+    """
+    IndexedQueryPlan is a specialized version of QueryPlan.
+
+    It provides functionality for creating and managing indexed query plans
+    that optimize query execution based on indexed data sources. This class
+    extends the base functionality of QueryPlan to incorporate the use of
+    indices in query operations.
+
+    """
+    indexes: Dictionary
+
+    def __init__(
+            self,
+            indexes: Dictionary = None,
+            based_on: QueryPlan = None,
+            atom_pointer: AtomPointer = None,
+            transaction: ObjectTransaction = None,
+            **kwargs):
+        super().__init__(based_on=based_on, atom_pointer=atom_pointer, transaction=transaction, **kwargs)
+        self.indexes = indexes if indexes else Dictionary(transaction=self.transaction)
+
+    def execute(self) -> list:
+        return super().execute()
+
+    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
+        return IndexedQueryPlan(
+            indexes=self.indexes,
+            based_on=self.based_on.optimize(full_plan),
+            transaction=self.transaction
+        )
+
+    def add_index(self,
+                  field_name: str) -> IndexedQueryPlan:
+        """
+        Adds an index to the database for optimizing query performance on specified columns. This method
+        creates a new index with the given name on the columns specified in the list. Indexing can
+        significantly improve the efficiency of certain queries, particularly for large datasets.
+
+        :param field_name: field the index will be created on
+        :return: An indexed query plan that contains details of the created index and its application
+                 to the underlying query structure.
+        :rtype: IndexedQueryPlan
+        """
+        if self.indexes.has(field_name):
+            return self
+
+        # Reindex the current content on the added field
+        new_index = RepeatedKeysDictionary(transaction=self.transaction)
+        for record in self.execute():
+            if record.has(field_name):
+                new_index = new_index.set_at(record[field_name], record)
+
+        return IndexedQueryPlan(
+            indexes=self.indexes.set_at(field_name, new_index),
+            based_on=self.based_on,
+            transaction=self.transaction
+        )
+
+    def update_indexes_on_remove(self, removed_record: Atom) -> IndexedQueryPlan:
+        """
+        Update indexes when specific data is removed from a collection or database.
+
+        This function updates the internal indexes to maintain consistency
+        after the specified data is removed. It ensures that subsequent
+        queries reflect the correct indexed structure.
+
+        :param removed_record: The data item that was removed, for which the
+            indexes need to be updated.
+        :return: An updated query plan reflecting the state of indexes
+            after the removal.
+        :rtype: IndexedQueryPlan
+        """
+        new_indexes = self.indexes
+        for field_name, index in self.indexes.as_iterable():
+            index = cast(RepeatedKeysDictionary, index)
+            if removed_record[field_name]:
+                new_indexes.set_at(field_name, index.remove_record_at(removed_record[field_name], removed_record))
+
+        return IndexedQueryPlan(
+            indexes=new_indexes,
+            based_on=self.based_on,
+            transaction=self.transaction
+        )
+
+    def update_indexes_on_add(self, added_record: Atom) -> IndexedQueryPlan:
+        """
+        Updates the indexed query plan when an item is added to the dataset.
+
+        The method ensures that the internal indexes are recalibrated after
+        removing any existing data that would conflict with the new item's
+        location or plan alignment in the indexed structure. It recalculates
+        and returns the updated query plan that reflects the modifications.
+
+        :param added_record: the added data.
+        :return: The updated IndexedQueryPlan object after modification to
+            reflect changes caused by the addition operation.
+        :rtype: IndexedQueryPlan
+        """
+        new_indexes = self.indexes
+        for field_name, index in self.indexes.as_iterable():
+            index = cast(RepeatedKeysDictionary, index)
+            if added_record[field_name]:
+                new_indexes.set_at(field_name, index.set_at(added_record[field_name], added_record))
+
+        return IndexedQueryPlan(
+            indexes=new_indexes,
+            based_on=self.based_on,
+            transaction=self.transaction
+        )
+
+    def position_at(self, field_name: str, value) -> int:
+        self._load()
+
+        if field_name in self.indexes:
+            index = cast(Dictionary, self.indexes[field_name])
+
+            left = 0
+            right = index.content.count - 1
+
+            while left <= right:
+                center = (left + right) // 2
+
+                item = cast(DictionaryItem, index.content.get_at(center))
+                if item and str(item.key) == value:
+                    return center
+
+                if str(item.key) > value:
+                    right = center - 1
+                else:
+                    left = center + 1
+
+            return left
+        else:
+            raise ProtoValidationException(
+                message=f'No index on field {field_name}!'
+            )
+
+    def yield_from_index(self, field_name: str, index: int) -> list:
+        while index < self.indexes[field_name].count:
+            item = cast(DictionaryItem, self.indexes.get_at(index))
+            index += 1
+            value_set = cast(Set, item.value)
+            for record in value_set.as_iterable():
+                yield record
+
+    def get_greater_than(self, field_name: str, value: object) -> list:
+        index = self.position_at(field_name, value)
+        item = cast(DictionaryItem, self.indexes[field_name].get_at(index))
+        if item.key == value:
+            item += 1
+        return self.yield_from_index(field_name, index)
+
+    def get_greater_or_equal_than(self, field_name: str, value: object) -> list:
+        index = self.position_at(field_name, value)
+        return self.yield_from_index(field_name, index)
+
+    def get_equal_than(self, field_name: str, value: object) -> list:
+        if field_name in self.indexes:
+            index = cast(Dictionary, self.indexes[field_name])
+            if index is None:
+                return []
+
+            item = cast(DictionaryItem, index.get_at(value))
+            value_set = cast(Set, item.value)
+            for record in value_set.as_iterable():
+                yield record
+        else:
+            raise ProtoValidationException(
+                message=f'No index on field {field_name}!'
+            )
+
+    def yield_up_to_index(self, field_name: str, index_up_to: int) -> list:
+        index = 0
+        while index < self.indexes[field_name].count and index < index_up_to:
+            item = cast(DictionaryItem, self.indexes.get_at(index))
+            index += 1
+            value_set = cast(Set, item.value)
+            for record in value_set.as_iterable():
+                yield record
+
+    def get_lower_than(self, field_name: str, value: object) -> list:
+        index = self.position_at(field_name, value)
+        item = cast(DictionaryItem, self.indexes[field_name].get_at(index))
+        if item.key == value:
+            item -= 1
+        return self.yield_up_to_index(field_name, index)
+
+    def get_lower_or_equal_than(self, field_name: str, value: object) -> list:
+        index = self.position_at(field_name, value)
+        return self.yield_up_to_index(field_name, index)
+
+
+class IndexedSearchPlan(IndexedQueryPlan):
+    field_to_scan: str
+    operator: Operator
+    value: str
+
+    def __init__(
+            self,
+            field_to_scan: str,
+            operator: Operator = None,
+            value: str = None,
+            indexes: Dictionary = None,
+            based_on: QueryPlan = None,
+            atom_pointer: AtomPointer = None,
+            transaction: ObjectTransaction = None,
+            **kwargs):
+        super().__init__(
+            indexes=indexes,
+            based_on=based_on,
+            atom_pointer=atom_pointer,
+            transaction=transaction, **kwargs)
+        if not field_to_scan:
+            raise ProtoValidationException(
+                message=f'The field to scan should be specified!'
+            )
+        if not operator:
+            raise ProtoValidationException(
+                message=f'The operator should be specified!'
+            )
+
+        self.field_to_scan = field_to_scan
+        if not isinstance(operator, (
+                Lower, LowerOrEqual, Equal, GreaterOrEqual, Greater)):
+            raise ProtoValidationException(
+                message=f'The operator is not valid ({operator})!'
+            )
+        self.operator = operator
+        self.value = value
+
+    def execute(self) -> list:
+        if isinstance(self.operator, Equal):
+            return self.get_equal_than(self.field_to_scan, self.value)
+        elif isinstance(self.operator, Greater):
+            return self.get_greater_than(self.field_to_scan, self.value)
+        elif isinstance(self.operator, GreaterOrEqual):
+            return self.get_greater_or_equal_than(self.field_to_scan, self.value)
+        elif isinstance(self.operator, Lower):
+            return self.get_lower_than(self.field_to_scan, self.value)
+        elif isinstance(self.operator, LowerOrEqual):
+            return self.get_lower_or_equal_than(self.field_to_scan, self.value)
+        else:
+            return []
+
+    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
+        return IndexedSearchPlan(
+            field_to_scan=self.field_to_scan,
+            operator=self.operator,
+            value=self.value,
+            indexes=self.indexes,
+            based_on=self.based_on.optimize(full_plan),
+            transaction=self.transaction
+        )
+
+
+class AndMerge(QueryPlan):
+    and_queries: list[QueryPlan]
+
+    def __init__(self,
+                 and_queries: list[QueryPlan] = None,
+                 based_on: QueryPlan = None,
+                 transaction: ObjectTransaction = None,
+                 atom_pointer: AtomPointer = None,
+                 **kwargs):
+        super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
+        self.and_queries = and_queries
+
+    def execute(self) -> list:
+        result = set()
+
+        accumulators = list()
+        for i in range(0, len(self.and_queries)):
+            accumulators[i] = set([record for record in self.and_queries])
+
+        if len(self.queries) == 1:
+            return accumulators[0]
+        else:
+            for record in accumulators[0]:
+                found = True
+                for index in range(1, len(accumulators) - 1):
+                    if record in accumulators[index]:
+                        continue
+                    else:
+                        found = False
+                        break
+                if found:
+                    result.add(record)
+
+        for record in result:
+            yield record
+
+    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
+        return AndMerge(
+            and_queries=self.and_queries,
+            based_on=self.based_on.optimize(full_plan),
+            transaction=self.transaction
+        )
+
+
+class OrMerge(QueryPlan):
+    or_queries: list[QueryPlan]
+
+    def __init__(self,
+                 or_queries: list[QueryPlan] = None,
+                 based_on: QueryPlan = None,
+                 transaction: ObjectTransaction = None,
+                 atom_pointer: AtomPointer = None,
+                 **kwargs):
+        super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
+        self.or_queries = or_queries
+
+    def execute(self) -> list:
+        for query in self.or_queries:
+            for record in query:
+                yield record
+
+    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
+        return OrMerge(
+            or_queries=self.or_queries,
+            based_on=self.based_on.optimize(full_plan),
+            transaction=self.transaction
+        )
+
+
 class WherePlan(QueryPlan):
     """
     Query plan for filtering records based on an expression.
@@ -471,9 +796,67 @@ class WherePlan(QueryPlan):
                 yield from record
 
     def optimize(self, full_plan: QueryPlan) -> QueryPlan:
-        return WherePlan(
+        based_on = self.based_on.optimize(full_plan)
+        if isinstance(self.based_on, IndexedQueryPlan):
+            # Base QueryPlan has indexes! try to use them
+            indexed_base = cast(IndexedQueryPlan, self.based_on)
+            indexed_fields = [field_name for field_name, index in indexed_base.indexes]
+            used_fields = set()
+            if isinstance(self.filter, AndExpression):
+                and_filter = cast(AndExpression, self.filter)
+                for and_term in and_filter.terms:
+                    if isinstance(and_term, Term):
+                        term = cast(Term, and_term)
+                        used_fields.add(term)
+
+                added_filters = []
+                for term in used_fields:
+                    target_attribute = term.target_attribute
+                    operation = term.operation
+                    value = cast(str, term.value)
+                    if target_attribute in indexed_base.indexes:
+                        added_filters.append(IndexedSearchPlan(
+                            based_on=based_on,
+                            field_to_scan=target_attribute,
+                            operator=operation,
+                            value=value,
+                            transaction=self.transaction
+                        ))
+
+                if len(added_filters) == 1:
+                    based_on = added_filters[0]
+                elif len(added_filters) > 1:
+                    based_on = AndMerge(added_filters)
+
+            elif isinstance(self.filter, OrExpression):
+                and_filter = cast(AndExpression, self.filter)
+                for and_term in and_filter.terms:
+                    if isinstance(and_term, Term):
+                        term = cast(Term, and_term)
+                        used_fields.add(term)
+
+                added_filters = []
+                for term in used_fields:
+                    target_attribute = term.target_attribute
+                    operation = term.operation
+                    value = cast(str, term.value)
+                    if target_attribute in indexed_base.indexes:
+                        added_filters.append(IndexedSearchPlan(
+                            based_on=based_on,
+                            field_to_scan=target_attribute,
+                            operator=operation,
+                            value=value,
+                            transaction=self.transaction
+                        ))
+
+                if len(added_filters) == 1:
+                    based_on = added_filters[0]
+                elif len(added_filters) > 1:
+                    based_on = OrMerge(added_filters)
+
+            return WherePlan(
             filter=self.filter,
-            based_on=self.based_on.optimize(full_plan),
+            based_on=based_on,
             transaction=self.transaction
         )
 
