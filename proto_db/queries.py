@@ -91,10 +91,10 @@ class Expression(ABC):
         else:
             return default_and_expression[0]
 
-    def filter_by_alias(self, alias: str):
+    def filter_by_alias(self, alias: set[str]):
         if isinstance(self, Term):
             atribute_alias = self.target_attribute.split('.', maxsplit=1)[0]
-            if atribute_alias == alias:
+            if atribute_alias in alias:
                 return self
             else:
                 return TrueTerm()
@@ -1413,16 +1413,19 @@ class JoinPlan(QueryPlan):
         based_on = self.based_on.optimize(full_plan)
         join_query = self.join_query.optimize(full_plan)
         if isinstance(previous_query, WherePlan):
-            based_on = WherePlan(
-                filter = previous_query.filter,
-                based_on = self.based_on,
-                transaction=self.transaction
-            )
-            join_query = WherePlan(
-                filter = previous_query.filter,
-                based_on = self.join_query,
-                transaction=self.transaction
-            )
+            if isinstance(based_on, FromPlan) and based_on.alias:
+                based_on = WherePlan(
+                    filter = previous_query.filter.filter_by_alias({based_on.alias}),
+                    based_on = self.based_on,
+                    transaction=self.transaction
+                )
+
+            if isinstance(join_query, FromPlan) and join_query.alias:
+                join_query = WherePlan(
+                    filter = previous_query.filter.filter_by_alias({join_query.alias}),
+                    based_on = self.join_query,
+                    transaction=self.transaction
+                )
 
         return JoinPlan(
             join_query=join_query,
