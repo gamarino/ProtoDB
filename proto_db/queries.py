@@ -392,42 +392,6 @@ class ListPlan(QueryPlan):
         return self
 
 
-class FromPlan(QueryPlan):
-    """
-
-    """
-    alias: str
-
-    def __init__(self,
-                 alias: str,
-                 based_on: QueryPlan,
-                 transaction: ObjectTransaction = None,
-                 atom_pointer: AtomPointer = None,
-                 **kwargs):
-        super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        self.alias = alias
-
-    def execute(self) -> list:
-        for item in self.based_on.execute():
-            result = DBObject(
-                transaction=self.transaction
-            )
-            if self.alias:
-                result = result._setattr(self.alias, item)
-            else:
-                for field_name, value in item.__dict__.items():
-                    if not field_name.starswith('_') and not callable(value):
-                        result = result._setattr(field_name, value)
-            yield result
-
-    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
-        return FromPlan(
-            alias=self.alias,
-            based_on=self.based_on.optimize(full_plan),
-            transaction=self.transaction
-        )
-
-
 class IndexedQueryPlan(QueryPlan):
     """
     IndexedQueryPlan is a specialized version of QueryPlan.
@@ -753,6 +717,48 @@ class OrMerge(QueryPlan):
         )
 
 
+class FromPlan(IndexedQueryPlan):
+    """
+
+    """
+    alias: str
+
+    def __init__(self,
+                 alias: str,
+                 indexes: dict[str, RepeatedKeysDictionary],
+                 based_on: QueryPlan,
+                 transaction: ObjectTransaction = None,
+                 atom_pointer: AtomPointer = None,
+                 **kwargs):
+        if alias and indexes:
+            indexes = {
+                f'{alias}.{field_name}': indexes
+                for field_name, indexes in indexes.items()
+            }
+        super().__init__(indexes=indexes, based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
+        self.alias = alias
+
+    def execute(self) -> list:
+        for item in self.based_on.execute():
+            result = DBObject(
+                transaction=self.transaction
+            )
+            if self.alias:
+                result = result._setattr(self.alias, item)
+            else:
+                for field_name, value in item.__dict__.items():
+                    if not field_name.starswith('_') and not callable(value):
+                        result = result._setattr(field_name, value)
+            yield result
+
+    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
+        return FromPlan(
+            alias=self.alias,
+            based_on=self.based_on.optimize(full_plan),
+            transaction=self.transaction
+        )
+
+
 class WherePlan(QueryPlan):
     """
     Query plan for filtering records based on an expression.
@@ -775,7 +781,7 @@ class WherePlan(QueryPlan):
                  atom_pointer: AtomPointer = None,
                  **kwargs):
         super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        if filter_spec:
+        if isinstance(filter_spec, list):
             self.filter = Expression.compile(filter_spec)
         else:
             self.filter = filter
@@ -1400,10 +1406,28 @@ class JoinPlan(QueryPlan):
                 yield from join_record
 
     def optimize(self, full_plan: QueryPlan) -> QueryPlan:
+        previous_query = full_plan
+        while previous_query and previous_query.based_on != self:
+            previous_query = previous_query.based_on
+
+        based_on = self.based_on.optimize(full_plan)
+        join_query = self.join_query.optimize(full_plan)
+        if isinstance(previous_query, WherePlan):
+            based_on = WherePlan(
+                filter = previous_query.filter,
+                based_on = self.based_on,
+                transaction=self.transaction
+            )
+            join_query = WherePlan(
+                filter = previous_query.filter,
+                based_on = self.join_query,
+                transaction=self.transaction
+            )
+
         return JoinPlan(
-            join_query=self.join_query.optimize(full_plan),
+            join_query=join_query,
             join_type=self.join_type,
-            based_on=self.based_on.optimize(full_plan),
+            based_on=based_on,
             transaction=self.transaction
         )
 
