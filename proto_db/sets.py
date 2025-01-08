@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .common import Atom, QueryPlan, AbstractTransaction, AtomPointer
-from .dictionaries import HashDictionary
+from .hash_dictionaries import HashDictionary
 
 
 class Set(Atom):

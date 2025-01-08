@@ -13,8 +13,9 @@ from .memory_storage import MemoryStorage
 from .standalone_file_storage import StandaloneFileStorage
 from .file_block_provider import FileBlockProvider
 
+from .hash_dictionaries import HashDictionary
+from .dictionaries import Dictionary, RepeatedKeysDictionary
 from .sets import Set
 from .lists import List
-from .dictionaries import HashDictionary, Dictionary, RepeatedKeysDictionary
 from .queries import FromPlan, WherePlan, GroupByPlan, SelectPlan, \
                      OrderByPlan, LimitPlan, OffsetPlan, ListPlan

@@ -11,9 +11,6 @@ import io
 import configparser
 import datetime
 
-from . import Dictionary, RepeatedKeysDictionary
-from .dictionaries import DictionaryItem
-from .sets import Set
 from .exceptions import ProtoValidationException
 
 
@@ -273,6 +270,10 @@ class Atom(metaclass=CombinedMeta):
                     loaded_dict = self._json_to_dict(loaded_atom)
                     for attribute_name, attribute_value in loaded_dict.items():
                         setattr(self, attribute_name, attribute_value)
+                        if isinstance(attribute_value, Atom):
+                            attribute_value.transaction = self.transaction
+                            attribute_value._load()
+
             self._loaded = True
 
     def __eq__(self, other):

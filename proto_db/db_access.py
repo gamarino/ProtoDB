@@ -7,7 +7,8 @@ from .common import Atom, \
     AbstractObjectSpace, AbstractDatabase, AbstractTransaction, \
     SharedStorage, RootObject, Literal, atom_class_registry, AtomPointer
 
-from .dictionaries import HashDictionary, Dictionary
+from .hash_dictionaries import HashDictionary
+from .dictionaries import Dictionary
 from .lists import List
 from .sets import Set
 import datetime
@@ -114,24 +115,22 @@ class ObjectSpace(AbstractObjectSpace):
 
     def get_space_root(self) -> RootObject:
         db = Database(self)
-        read_tr = db.new_transaction()
+        read_tr = ObjectTransaction(db)
         root_pointer = self.storage.read_current_root()
         if root_pointer:
-            space_history = List(transaction=read_tr, atom_pointer=root_pointer)
+            space_history = List(atom_pointer=root_pointer, transaction=read_tr)
             space_history._load()
             if space_history.count == 0:
                 initial_root = RootObject(
-                    object_root=Dictionary(transaction=read_tr),
-                    literal_root=Dictionary(transaction=read_tr),
-                    transaction=read_tr
+                    object_root=Dictionary(),
+                    literal_root=Dictionary(),
                 )
                 space_history = space_history.set_at(0, initial_root)
         else:
-            space_history = List(transaction=read_tr)
+            space_history = List()
             initial_root = RootObject(
-                object_root=Dictionary(transaction=read_tr),
-                literal_root=Dictionary(transaction=read_tr),
-                transaction=read_tr
+                object_root=Dictionary(),
+                literal_root=Dictionary(),
             )
             space_history = space_history.set_at(0, initial_root)
 
@@ -140,11 +139,11 @@ class ObjectSpace(AbstractObjectSpace):
             space_root._load()
         else:
             space_root = RootObject(
-                object_root=Dictionary(transaction=read_tr),
-                literal_root=Dictionary(transaction=read_tr),
-                transaction=read_tr
+                object_root=Dictionary(),
+                literal_root=Dictionary(),
             )
 
+        read_tr.abort()
         return space_root
 
     def set_space_root(self, new_space_root: RootObject):
@@ -174,7 +173,7 @@ class ObjectSpace(AbstractObjectSpace):
         space_history = space_history.insert_at(0, new_space_root)
         space_history._save()
 
-        self.object_space.storage_provider.set_current_root(space_history.atom_pointer)
+        self.storage_provider.set_current_root(space_history.atom_pointer)
         update_tr.abort()
 
     def get_literals(self, literals: list[str]) -> dict[str, Atom]:
@@ -213,7 +212,7 @@ class Database(AbstractDatabase):
     current_root: RootObject
     state: str
 
-    def __init__(self, object_space: ObjectSpace, database_name: str):
+    def __init__(self, object_space: ObjectSpace, database_name: str = None):
         super().__init__(object_space)
         self.object_space = object_space
         self.database_name = database_name
@@ -258,21 +257,27 @@ class Database(AbstractDatabase):
         update_tr = ObjectTransaction(self)
 
         initial_root = self.object_space.get_space_root()
-        if initial_root.transaction:
+        if initial_root.atom_pointer:
             initial_root = RootObject(
                 atom_pointer=initial_root.atom_pointer,
+                transaction=update_tr
+            )
+            initial_root._load()
+        else:
+            initial_root = RootObject(
+                object_root=Dictionary(transaction=update_tr),
+                literal_root=Dictionary(transaction=update_tr),
                 transaction=update_tr
             )
 
         new_space_root = RootObject(
             object_root=initial_root.object_root.set_at(self.database_name, new_db_root),
-            literal_root=initial_root.literal_root
+            literal_root=initial_root.literal_root,
+            transaction=update_tr
         )
 
         self.object_space.set_space_root(new_space_root)
         update_tr.abort()
-
-        self.object_space.storage.set_current_root(new_space_root.atom_pointer)
 
     def unlock_current_root(self):
         return self.object_space.storage.unlock_current_root()
