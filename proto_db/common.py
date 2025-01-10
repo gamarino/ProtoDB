@@ -273,8 +273,27 @@ class Atom(metaclass=CombinedMeta):
                         if isinstance(attribute_value, Atom):
                             attribute_value.transaction = self.transaction
                             attribute_value._load()
+                    self.after_load()
 
             self._loaded = True
+
+    def after_load(self):
+        """
+        Perform any additional operations after the object is loaded in memory from storage.
+        Loading will restore all fields whose name do not start with '_', or are callable.
+        If for a particular Atom some internal state should be restored, this is the right
+        place to do that.
+
+        This method will be called just once per transaction.
+
+        This method is intended to be a hook for executing custom logic once an
+        object instance has been fully loaded or initialized. Any specific routines,
+        validations, or updates required post-loading should be implemented here.
+
+        :return: None
+        :rtype: None
+        """
+        pass
 
     def __eq__(self, other):
         if isinstance(other, Atom):
@@ -386,9 +405,8 @@ class Atom(metaclass=CombinedMeta):
                     'offset': bytes_atom.atom_pointer.offset,
                 }
             elif value is None:
-                json_value[name] = {
-                    'className': 'None',
-                }
+                # There is no need to store None values, it is the default for newly created atoms
+                continue
             else:
                 json_value[name] = value
 
