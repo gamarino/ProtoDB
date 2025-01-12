@@ -19,3 +19,5 @@ from .sets import Set
 from .lists import List
 from .queries import FromPlan, WherePlan, GroupByPlan, SelectPlan, \
                      OrderByPlan, LimitPlan, OffsetPlan, ListPlan
+
+from .fsm import Timer, FSM

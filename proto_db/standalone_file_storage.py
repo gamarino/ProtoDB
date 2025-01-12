@@ -1,9 +1,12 @@
+from __future__ import annotations
 import concurrent.futures
 import io
 import json
 import os
+
 from abc import ABC
 from threading import Lock
+
 from . import common
 from .common import MB, GB
 from .exceptions import ProtoUnexpectedException, ProtoValidationException
@@ -12,11 +15,17 @@ import uuid
 import logging
 import struct
 
+
 _logger = logging.getLogger(__name__)
 
 # Default buffer and storage sizes
 BUFFER_SIZE = 1 * MB
 BLOB_MAX_SIZE = 2 * GB
+
+# Executor threads for async operations
+# Determines the number of worker threads for asynchronous execution
+max_workers = (os.cpu_count() or 1) * 5
+executor_pool = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
 
 
 class WALState:
@@ -63,11 +72,6 @@ def _get_valid_char_data(stream: io.FileIO) -> str:
             return (first_byte + stream.read(3)).decode('utf-8')
     except (IndexError, UnicodeDecodeError) as e:
         raise ProtoUnexpectedException(message="Error reading stream", exception_type=e.__class__.__name__) from e
-
-
-# Executor threads for async operations
-max_workers = (os.cpu_count() or 1) * 5
-executor_pool = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
 
 
 class StandaloneFileStorage(common.SharedStorage, ABC):
