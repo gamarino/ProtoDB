@@ -261,21 +261,27 @@ class Atom(metaclass=CombinedMeta):
         self._loaded = False
 
     def _load(self):
-        if not self._loaded:
-            if self.transaction:
-                if self.atom_pointer and \
-                   self.atom_pointer.transaction_id:
-                    loaded_atom = self.transaction.database.object_space.storage_provider.get_atom(
-                        self.atom_pointer).result()
+        # Use direct attribute access to avoid recursion through __getattr__
+        if not getattr(self, '_loaded', False):
+            # Use direct dictionary access to avoid triggering __getattr__
+            if 'transaction' in self.__dict__ and self.__dict__['transaction']:
+                transaction = self.__dict__['transaction']
+                if 'atom_pointer' in self.__dict__ and self.__dict__['atom_pointer'] and \
+                   self.__dict__['atom_pointer'].transaction_id:
+                    atom_pointer = self.__dict__['atom_pointer']
+                    loaded_atom = transaction.database.object_space.storage_provider.get_atom(
+                        atom_pointer).result()
                     loaded_dict = self._json_to_dict(loaded_atom)
                     for attribute_name, attribute_value in loaded_dict.items():
-                        setattr(self, attribute_name, attribute_value)
+                        # Use object.__setattr__ to bypass potential recursion in __setattr__
+                        object.__setattr__(self, attribute_name, attribute_value)
                         if isinstance(attribute_value, Atom):
-                            attribute_value.transaction = self.transaction
+                            object.__setattr__(attribute_value, 'transaction', transaction)
                             attribute_value._load()
                     self.after_load()
 
-            self._loaded = True
+            # Use object.__setattr__ to bypass potential recursion in __setattr__
+            object.__setattr__(self, '_loaded', True)
 
     def after_load(self):
         """
@@ -413,58 +419,60 @@ class Atom(metaclass=CombinedMeta):
         return json_value
 
     def _save(self):
-        if not self.atom_pointer and not self._saved:
-            # It's a new object
+        # Use direct attribute access to avoid recursion
+        if 'atom_pointer' not in self.__dict__ or not self.__dict__['atom_pointer']:
+            if '_saved' not in self.__dict__ or not self.__dict__['_saved']:
+                # It's a new object
 
-            if self.transaction:
-                # Push the object tree downhill, avoiding recursion loops
-                # converting attributes strs to Literals
-                self._saved = True
+                if 'transaction' in self.__dict__ and self.__dict__['transaction']:
+                    # Push the object tree downhill, avoiding recursion loops
+                    # converting attributes strs to Literals
+                    object.__setattr__(self, '_saved', True)
 
-                if isinstance(self, Literal):
-                    json_value = {
-                        'className': 'Literal',
-                        'string': self.string
-                    }
+                    if isinstance(self, Literal):
+                        json_value = {
+                            'className': 'Literal',
+                            'string': self.string
+                        }
+                    else:
+                        json_value = {'className': type(self).__name__}
+
+                        for name, value in self.__dict__.items():
+                            if callable(value) or name.startswith('_'):
+                                continue
+
+                            if isinstance(self, Atom) and name in ('atom_pointer', 'transaction'):
+                                continue
+
+                            if isinstance(value, Atom):
+                                if 'transaction' not in value.__dict__ or not value.__dict__['transaction']:
+                                    # it is a newly created atom
+                                    # it should not happen, but try to solve the misbehaviour
+                                    # capture it for this transaction
+                                    object.__setattr__(value, 'transaction', self.__dict__['transaction'])
+                                    object.__setattr__(value, '_saved', False)
+                                if '_saved' not in value.__dict__ or not value.__dict__['_saved']:
+                                    object.__setattr__(value, 'transaction', self.__dict__['transaction'])
+                                value._save()
+
+                                json_value[name] = {
+                                    'className': type(value).__name__,
+                                    'transaction_id': str(value.__dict__['atom_pointer'].transaction_id),
+                                    'offset': value.__dict__['atom_pointer'].offset
+                                }
+                            else:
+                                json_value[name] = value
+
+                        json_value = self._dict_to_json(json_value)
+
+                    # At this point all attributes has been flushed to storage if they are newly created
+                    # All attributes has valid AtomPointer values (either old or new)
+                    pointer = self._push_to_storage(json_value)
+                    object.__setattr__(self, 'atom_pointer', AtomPointer(pointer.transaction_id, pointer.offset))
                 else:
-                    json_value = {'className': type(self).__name__}
-
-                    for name, value in self.__dict__.items():
-                        if callable(value) or name.startswith('_'):
-                            continue
-
-                        if isinstance(self, Atom) and name in ('atom_pointer', 'transaction'):
-                            continue
-
-                        if isinstance(value, Atom):
-                            if not value.transaction:
-                                # it is a newly created atom
-                                # it should not happen, but try to solve the misbehaviour
-                                # capture it for this transaction
-                                value.transaction = self.transaction
-                                value._saved = False
-                            if not value._saved:
-                                value.transaction = self.transaction
-                            value._save()
-
-                            json_value[name] = {
-                                'className': type(value).__name__,
-                                'transaction_id': str(value.atom_pointer.transaction_id),
-                                'offset': value.atom_pointer.offset
-                            }
-                        else:
-                            json_value[name] = value
-
-                    json_value = self._dict_to_json(json_value)
-
-                # At this point all attributes has been flushed to storage if they are newly created
-                # All attributes has valid AtomPointer values (either old or new)
-                pointer = self._push_to_storage(json_value)
-                self.atom_pointer = AtomPointer(pointer.transaction_id, pointer.offset)
-            else:
-                raise ProtoValidationException(
-                    message=f'An DBObject can only be saved within a given transaction!'
-                )
+                    raise ProtoValidationException(
+                        message=f'An DBObject can only be saved within a given transaction!'
+                    )
 
     def hash(self) -> int:
         return self.atom_pointer.hash()
@@ -532,25 +540,41 @@ class DBObject(Atom):
         self._loaded = False
 
     def __getattr__(self, name: str):
+        if name == '_loaded':  # Prevent recursion when checking _loaded
+            return False
         self._load()
-        if hasattr(self, name):
-            return getattr(super(), name)
+        if name in self.__dict__:
+            return self.__dict__[name]
         return None
 
     def __setattr__(self, key, value):
-        self._load()
-        if hasattr(self, key):
-            super().__setattr__(key, value)
+        # Special case for _loaded to prevent recursion
+        if key == '_loaded':
+            object.__setattr__(self, key, value)
+            return
+
+        # Special case for transaction and atom_pointer during initialization
+        if key in ('transaction', 'atom_pointer'):
+            object.__setattr__(self, key, value)
+            return
+
+        # For other attributes, ensure the object is loaded first
+        if not key.startswith('_'):  # Skip internal attributes to prevent recursion
+            self._load()
+
+        if key in self.__dict__:
+            object.__setattr__(self, key, value)
         else:
             raise ProtoValidationException(
                 message=f'ProtoBase DBObjects are inmutable! Your are trying to set attribute {key}'
             )
 
     def _setattr(self, name:str, value: object) ->DBObject:
-        new_object = DBObject()
-        for name, value in self.__dict__:
-            setattr(new_object, name, value)
-        setattr(new_object, name, value)
+        new_object = DBObject(transaction=self.transaction)
+        for attr_name, attr_value in self.__dict__.items():
+            if attr_name != '_loaded':  # Skip _loaded flag to avoid recursion
+                object.__setattr__(new_object, attr_name, attr_value)
+        object.__setattr__(new_object, name, value)
         return new_object
 
 
@@ -908,4 +932,3 @@ class SharedStorage(AbstractSharedStorage):
         Ends all operations, make all changes stable
         :return:
         """
-

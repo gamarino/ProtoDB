@@ -367,7 +367,7 @@ class TrueTerm(Expression):
 
 class FalseTerm(Expression):
     def match(self, record):
-        return True
+        return False
 
 
 class ListPlan(QueryPlan):
@@ -665,14 +665,15 @@ class AndMerge(QueryPlan):
 
         accumulators = list()
         for i in range(0, len(self.and_queries)):
-            accumulators[i] = set([record for record in self.and_queries])
+            accumulators.append(set([record for record in self.and_queries[i].execute()]))
 
-        if len(self.queries) == 1:
-            return accumulators[0]
+        if len(self.and_queries) == 1:
+            for record in accumulators[0]:
+                yield record
         else:
             for record in accumulators[0]:
                 found = True
-                for index in range(1, len(accumulators) - 1):
+                for index in range(1, len(accumulators)):
                     if record in accumulators[index]:
                         continue
                     else:
@@ -681,8 +682,8 @@ class AndMerge(QueryPlan):
                 if found:
                     result.add(record)
 
-        for record in result:
-            yield record
+            for record in result:
+                yield record
 
     def optimize(self, full_plan: QueryPlan) -> QueryPlan:
         return AndMerge(
@@ -747,7 +748,7 @@ class FromPlan(IndexedQueryPlan):
                 result = result._setattr(self.alias, item)
             else:
                 for field_name, value in item.__dict__.items():
-                    if not field_name.starswith('_') and not callable(value):
+                    if not field_name.startswith('_') and not callable(value):
                         result = result._setattr(field_name, value)
             yield result
 
@@ -799,7 +800,7 @@ class WherePlan(QueryPlan):
 
         for record in self.based_on.execute():
             if self.filter.match(record):
-                yield from record
+                yield record
 
     def optimize(self, full_plan: QueryPlan) -> QueryPlan:
         based_on = self.based_on.optimize(full_plan)
@@ -1159,7 +1160,7 @@ class OrderByPlan(QueryPlan):
             return cmp
 
         ordered_output = List(transaction=self.transaction)
-        
+
         for record in self.based_on.execute():
             if ordered_output.count == 0:
                 ordered_output = ordered_output.append(record)
@@ -1182,9 +1183,9 @@ class OrderByPlan(QueryPlan):
                             right = center - 1
                         else:
                             left = center + 1
-                    
+
                     ordered_output = ordered_output.insert_at(center, record)
-                    
+
         # At this point, all input has been ingested and ordered_output has an ascending order list
         if self.reversed:
             index = ordered_output.count
@@ -1477,4 +1478,3 @@ class UnionPlan(QueryPlan):
             based_on=self.based_on.optimize(full_plan),
             transaction=self.transaction
         )
-

@@ -115,13 +115,6 @@ class Dictionary(DBCollections):
         :param value: The value associated with the key.
         :return: A new instance of Dictionary with the updated content.
         """
-        """
-        Returns a new HashDirectory with the value set at key
-
-        :param key: int
-        :param value: Atom
-        :return: a new HashDirectory with the value set at key
-        """
         self._load()
 
         left = 0
@@ -172,12 +165,6 @@ class Dictionary(DBCollections):
 
         :param key: The string key of the item to be removed.
         :return: A new instance of Dictionary reflecting the removal.
-        """
-        """
-        Returns a new HashDirectory with the key removed if exists
-
-        :param key: int
-        :return: a new HashDirectory with the key removed
         """
         self._load()
 
@@ -287,12 +274,6 @@ class RepeatedKeysDictionary(Dictionary):
 
         :param key: The string key of the item to be removed.
         :return: A new instance of Dictionary reflecting the removal.
-        """
-        """
-        Returns a new HashDirectory with the key removed if exists
-
-        :param key: int
-        :return: a new HashDirectory with the key removed
         """
         if super().has(key):
             return super().remove_at(key)

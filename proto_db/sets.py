@@ -125,3 +125,63 @@ class Set(Atom):
             content=self.content.remove_at(item_hash),  # Remove key-hash from the dictionary.
             transaction=self.transaction
         )
+
+    def union(self, other: Set) -> Set:
+        """
+        Creates a new set containing all elements from both this set and the other set.
+
+        :param other: Another Set to union with this one.
+        :return: A new Set containing all elements from both sets.
+        """
+        self._load()
+        other._load()
+
+        result = self
+        for item in other.as_iterable():
+            result = result.add(item)
+
+        return result
+
+    def intersection(self, other: Set) -> Set:
+        """
+        Creates a new set containing only elements that are present in both this set and the other set.
+
+        :param other: Another Set to intersect with this one.
+        :return: A new Set containing only elements present in both sets.
+        """
+        self._load()
+        other._load()
+
+        result = Set(transaction=self.transaction)
+        for item in self.as_iterable():
+            if isinstance(item, Atom):
+                item_hash = item.hash()
+            else:
+                item_hash = hash(item)
+
+            if other.has(item_hash):
+                result = result.add(item)
+
+        return result
+
+    def difference(self, other: Set) -> Set:
+        """
+        Creates a new set containing elements that are in this set but not in the other set.
+
+        :param other: Another Set to subtract from this one.
+        :return: A new Set containing elements in this set that are not in the other set.
+        """
+        self._load()
+        other._load()
+
+        result = Set(transaction=self.transaction)
+        for item in self.as_iterable():
+            if isinstance(item, Atom):
+                item_hash = item.hash()
+            else:
+                item_hash = hash(item)
+
+            if not other.has(item_hash):
+                result = result.add(item)
+
+        return result

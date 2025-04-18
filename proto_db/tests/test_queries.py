@@ -1,7 +1,10 @@
 import unittest
 from unittest.mock import MagicMock
 
-from your_module import ObjectTransaction, AtomPointer, SelectPlan, ListPlan
+from proto_db.db_access import ObjectTransaction, ObjectSpace, Database
+from proto_db.memory_storage import MemoryStorage
+from proto_db.common import AtomPointer
+from proto_db.queries import SelectPlan, ListPlan
 
 
 class TestSelectPlan(unittest.TestCase):
@@ -25,7 +28,9 @@ class TestSelectPlan(unittest.TestCase):
             {"id": 2, "name": "Bob", "age": 25},
             {"id": 3, "name": "Charlie", "age": 40},
         ]
-        self.transaction = ObjectTransaction()
+        self.storage_space = ObjectSpace(storage=MemoryStorage())
+        self.database = self.storage_space.new_database('TestDB')
+        self.transaction = self.database.new_transaction()
         self.atom_pointer = AtomPointer()
         self.base_plan = ListPlan(base_list=self.mock_data, transaction=self.transaction)
 
@@ -181,4 +186,3 @@ class TestSelectPlan(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

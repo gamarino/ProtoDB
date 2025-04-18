@@ -1,6 +1,7 @@
 import unittest
 import uuid
-from ..dictionaries import HashDictionary, Dictionary, DictionaryItem, Atom  # Sustituye 'your_module' por el nombre del módulo correcto
+from ..hash_dictionaries import HashDictionary
+from ..dictionaries import Dictionary, DictionaryItem, Atom
 
 
 class TestHashDictionary(unittest.TestCase):
@@ -109,5 +110,3 @@ class TestHashDictionary(unittest.TestCase):
         # Eliminar una clave
         dictionary3 = dictionary2.remove_at("key1")
         self.assertFalse(dictionary3.has("key1"), "Should confirm 'key1' is removed.")
-
-

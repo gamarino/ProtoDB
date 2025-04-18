@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import MagicMock
 import uuid
 from ..common import Atom, QueryPlan
-from ..dictionaries import HashDictionary
+from ..hash_dictionaries import HashDictionary
 from ..sets import Set  # Import the Set class
 
 
