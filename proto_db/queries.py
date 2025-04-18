@@ -16,11 +16,12 @@ from .dictionaries import RepeatedKeysDictionary, Dictionary, DictionaryItem
 from .sets import Set
 import os
 import concurrent.futures
+from .hybrid_executor import HybridExecutor
 
 
-# Executor threads for async operations
+# Executor for async operations
 max_workers = (os.cpu_count() or 1) * 5
-executor_pool = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+executor_pool = HybridExecutor(base_num_workers=max_workers // 5, sync_multiplier=5)
 
 class Expression(ABC):
     """

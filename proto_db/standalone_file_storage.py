@@ -12,6 +12,7 @@ from . import common
 from .common import MB, GB
 from .exceptions import ProtoUnexpectedException, ProtoValidationException
 from .common import Future, BlockProvider, AtomPointer
+from .hybrid_executor import HybridExecutor
 import uuid
 import logging
 import struct
@@ -98,8 +99,8 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
         self._lock = Lock()
         self.state = 'Running'
 
-        # Create thread pool for async operations
-        self.executor_pool = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+        # Create hybrid executor for async and sync operations
+        self.executor_pool = HybridExecutor(base_num_workers=max_workers // 5, sync_multiplier=5)
 
         # WAL state management
         self.current_wal_id = None

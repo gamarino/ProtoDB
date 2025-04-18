@@ -7,16 +7,17 @@ from threading import Lock
 
 from .common import MB, GB, Future
 from .exceptions import ProtoValidationException
+from .hybrid_executor import HybridExecutor
 import logging
 
 
 _logger = logging.getLogger(__name__)
 
 
-# Executor threads for FSM machines
+# Executor for FSM machines
 # Determines the number of worker threads for asynchronous execution
 max_workers = (os.cpu_count() or 1) * 5
-executor_pool = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+executor_pool = HybridExecutor(base_num_workers=max_workers // 5, sync_multiplier=5)
 
 
 class Timer:
