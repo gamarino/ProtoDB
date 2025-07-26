@@ -1,0 +1,256 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>API Reference &mdash; ProtoBase 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Core Components" href="core.html" />
+    <link rel="prev" title="Architecture" href="../architecture.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            ProtoBase
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../introduction.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">API Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="core.html">Core Components</a></li>
+<li class="toctree-l2"><a class="reference internal" href="storage.html">Storage Layer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data_structures.html">Data Structures</a></li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html">Query System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="exceptions.html">Exceptions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fsm.html">Finite State Machine</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#core-components">Core Components</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="core.html">Core Components</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#storage-layer">Storage Layer</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="storage.html">Storage Layer</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#data-structures">Data Structures</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="data_structures.html">Data Structures</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#query-system">Query System</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="queries.html">Query System</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#exceptions">Exceptions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="exceptions.html">Exceptions</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#finite-state-machine">Finite State Machine</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="fsm.html">Finite State Machine</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../development.html">Development</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">ProtoBase</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">API Reference</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/index.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="api-reference">
+<h1>API Reference<a class="headerlink" href="#api-reference" title="Link to this heading"></a></h1>
+<p>This section provides detailed API documentation for ProtoBase.</p>
+<div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">API Reference:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="core.html">Core Components</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="core.html#atom">Atom</a></li>
+<li class="toctree-l2"><a class="reference internal" href="core.html#atompointer">AtomPointer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="core.html#literal">Literal</a></li>
+<li class="toctree-l2"><a class="reference internal" href="core.html#dbobject">DBObject</a></li>
+<li class="toctree-l2"><a class="reference internal" href="core.html#mutableobject">MutableObject</a></li>
+<li class="toctree-l2"><a class="reference internal" href="core.html#dbcollections">DBCollections</a></li>
+<li class="toctree-l2"><a class="reference internal" href="core.html#queryplan">QueryPlan</a></li>
+<li class="toctree-l2"><a class="reference internal" href="core.html#blockprovider">BlockProvider</a></li>
+<li class="toctree-l2"><a class="reference internal" href="core.html#sharedstorage">SharedStorage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="core.html#objectspace">ObjectSpace</a></li>
+<li class="toctree-l2"><a class="reference internal" href="core.html#database">Database</a></li>
+<li class="toctree-l2"><a class="reference internal" href="core.html#objecttransaction">ObjectTransaction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="core.html#bytesatom">BytesAtom</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="storage.html">Storage Layer</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="storage.html#memory-storage">Memory Storage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="storage.html#standalone-file-storage">Standalone File Storage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="storage.html#file-block-provider">File Block Provider</a></li>
+<li class="toctree-l2"><a class="reference internal" href="storage.html#cluster-file-storage">Cluster File Storage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="storage.html#cloud-file-storage">Cloud File Storage</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="data_structures.html">Data Structures</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="data_structures.html#dictionary">Dictionary</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data_structures.html#hash-dictionary">Hash Dictionary</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data_structures.html#module-proto_db.lists">List</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data_structures.html#module-proto_db.sets">Set</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data_structures.html#usage-examples">Usage Examples</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="queries.html">Query System</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="queries.html#query-plans">Query Plans</a></li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html#usage-examples">Usage Examples</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="exceptions.html">Exceptions</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="exceptions.html#exception-hierarchy">Exception Hierarchy</a></li>
+<li class="toctree-l2"><a class="reference internal" href="exceptions.html#exception-classes">Exception Classes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="exceptions.html#usage-examples">Usage Examples</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="fsm.html">Finite State Machine</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="fsm.html#fsm">FSM</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fsm.html#timer">Timer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fsm.html#usage-examples">Usage Examples</a></li>
+</ul>
+</li>
+</ul>
+</div>
+<section id="core-components">
+<h2>Core Components<a class="headerlink" href="#core-components" title="Link to this heading"></a></h2>
+<p>The core components of ProtoBase include the base classes and interfaces that form the foundation of the system.</p>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="core.html">Core Components</a></li>
+</ul>
+</div>
+</section>
+<section id="storage-layer">
+<h2>Storage Layer<a class="headerlink" href="#storage-layer" title="Link to this heading"></a></h2>
+<p>The storage layer is responsible for persisting data to disk, memory, or cloud storage.</p>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="storage.html">Storage Layer</a></li>
+</ul>
+</div>
+</section>
+<section id="data-structures">
+<h2>Data Structures<a class="headerlink" href="#data-structures" title="Link to this heading"></a></h2>
+<p>ProtoBase provides several data structures built on top of the core components.</p>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="data_structures.html">Data Structures</a></li>
+</ul>
+</div>
+</section>
+<section id="query-system">
+<h2>Query System<a class="headerlink" href="#query-system" title="Link to this heading"></a></h2>
+<p>The query system allows for complex data manipulation and retrieval.</p>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="queries.html">Query System</a></li>
+</ul>
+</div>
+</section>
+<section id="exceptions">
+<h2>Exceptions<a class="headerlink" href="#exceptions" title="Link to this heading"></a></h2>
+<p>ProtoBase defines several exception classes for different error scenarios.</p>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="exceptions.html">Exceptions</a></li>
+</ul>
+</div>
+</section>
+<section id="finite-state-machine">
+<h2>Finite State Machine<a class="headerlink" href="#finite-state-machine" title="Link to this heading"></a></h2>
+<p>The FSM module provides a finite state machine implementation.</p>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="fsm.html">Finite State Machine</a></li>
+</ul>
+</div>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../architecture.html" class="btn btn-neutral float-left" title="Architecture" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="core.html" class="btn btn-neutral float-right" title="Core Components" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

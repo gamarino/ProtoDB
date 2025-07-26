@@ -1,0 +1,324 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>proto_db.sets &mdash; ProtoBase 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            ProtoBase
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">ProtoBase</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">proto_db.sets</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for proto_db.sets</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="n">Atom</span><span class="p">,</span> <span class="n">QueryPlan</span><span class="p">,</span> <span class="n">AbstractTransaction</span><span class="p">,</span> <span class="n">AtomPointer</span>
+<span class="kn">from</span> <span class="nn">.hash_dictionaries</span> <span class="kn">import</span> <span class="n">HashDictionary</span>
+
+
+<div class="viewcode-block" id="Set">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.sets.Set">[docs]</a>
+<span class="k">class</span> <span class="nc">Set</span><span class="p">(</span><span class="n">Atom</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A custom implementation of a mathematical set, storing unique elements of type `Atom`.</span>
+<span class="sd">    The internal data structure is backed by a `HashDictionary` which ensures that</span>
+<span class="sd">    duplicates are avoided and allows for efficient operations such as lookup, insertion,</span>
+<span class="sd">    and element removal.</span>
+<span class="sd">    Sets can handle any object, but only using Atoms the Set will be durable. Mixing any other</span>
+<span class="sd">    objects with Atoms is not supported (no warning will be emitted)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">content</span><span class="p">:</span> <span class="n">HashDictionary</span>  <span class="c1"># The underlying container storing the set elements.</span>
+
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Initializes a `Set` instance.</span>
+
+<span class="sd">    :param content: The `HashDictionary` instance that represents the underlying storage of the set.</span>
+<span class="sd">    :param transaction_id: (Optional) A unique transaction identifier for audit or rollback use.</span>
+<span class="sd">    :param offset: An optional offset for identifying the set&#39;s relative position in an operation.</span>
+<span class="sd">    :param kwargs: Any additional data passed for extended configurations.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="Set.__init__">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.sets.Set.__init__">[docs]</a>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+            <span class="bp">self</span><span class="p">,</span>
+            <span class="n">content</span><span class="p">:</span> <span class="n">HashDictionary</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">content</span> <span class="o">=</span> <span class="n">content</span> <span class="k">if</span> <span class="n">content</span> <span class="k">else</span> <span class="n">HashDictionary</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">)</span>  <span class="c1"># Store the underlying hash-based dictionary.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">count</span></div>
+
+
+    <span class="k">def</span> <span class="nf">_save</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_saved</span><span class="p">:</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+
+<div class="viewcode-block" id="Set.as_iterable">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.sets.Set.as_iterable">[docs]</a>
+    <span class="k">def</span> <span class="nf">as_iterable</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atom</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Converts the `Set` to an iterable structure, essentially a collection of its unique</span>
+<span class="sd">        elements, and yields each element stored in the set.</span>
+
+<span class="sd">        :return: A generator containing all the elements (`Atom`) in the set.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Iterate over the stored hash dictionary&#39;s iterable and yield its items (the stored Atoms).</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">hash_value</span><span class="p">,</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
+            <span class="k">yield</span> <span class="n">item</span></div>
+
+
+<div class="viewcode-block" id="Set.as_query_plan">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.sets.Set.as_query_plan">[docs]</a>
+    <span class="k">def</span> <span class="nf">as_query_plan</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Converts the `Set` into a `QueryPlan` object for integration with larger query</span>
+<span class="sd">        execution frameworks. Delegates the conversion to the underlying `HashDictionary`.</span>
+
+<span class="sd">        :return: A `QueryPlan` representation of the current Set.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">as_query_plan</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="Set.has">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.sets.Set.has">[docs]</a>
+    <span class="k">def</span> <span class="nf">has</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Checks whether the specified `key` exists in the `Set`.</span>
+
+<span class="sd">        :param key: The object to search for in the set. This can be an instance of `Atom`.</span>
+<span class="sd">        :return: `True` if the key exists in the set, otherwise `False`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Calculate the hash of the key, considering whether the key is an `Atom` or not.</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
+            <span class="n">item_hash</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>  <span class="c1"># Use the `hash` method of the `Atom`.</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">item_hash</span> <span class="o">=</span> <span class="nb">hash</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>  <span class="c1"># Fallback to the built-in Python hash.</span>
+
+        <span class="c1"># Check if the computed hash exists in the `HashDictionary`.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">item_hash</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Set.add">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.sets.Set.add">[docs]</a>
+    <span class="k">def</span> <span class="nf">add</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Adds the specified `key` to the `Set`, creating and returning a new `Set`</span>
+<span class="sd">        that includes the newly added key.</span>
+
+<span class="sd">        The current `Set` instance remains immutable, and instead, a new instance is returned.</span>
+
+<span class="sd">        :param key: The object to add to the set. This can be an instance of `Atom`.</span>
+<span class="sd">        :return: A new `Set` object that contains the additional key.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Calculate the hash of the key to ensure appropriate insertion; handle `Atom` objects.</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
+            <span class="n">item_hash</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>  <span class="c1"># Use the `hash` method for `Atom`.</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">item_hash</span> <span class="o">=</span> <span class="nb">hash</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>  <span class="c1"># Use the default Python hash for non-Atom objects.</span>
+
+        <span class="c1"># Create and return a new `Set` with the updated `HashDictionary`.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">Set</span><span class="p">(</span>
+            <span class="n">content</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">item_hash</span><span class="p">,</span> <span class="n">key</span><span class="p">),</span>  <span class="c1"># Add key-hash to the dictionary.</span>
+            <span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Set.remove_at">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.sets.Set.remove_at">[docs]</a>
+    <span class="k">def</span> <span class="nf">remove_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Removes the specified `key` from the `Set`, creating and returning a new `Set`</span>
+<span class="sd">        that excludes the specified key. Returns the same set if the key does not exist.</span>
+
+<span class="sd">        :param key: The object to remove from the set. This can be an instance of `Atom`.</span>
+<span class="sd">        :return: A new `Set` object with the key removed, or unchanged if the key is absent.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+
+        <span class="c1"># Calculate the hash of the key for removal; handle `Atom` objects.</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
+            <span class="n">item_hash</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>  <span class="c1"># Use the `hash` method for `Atom`.</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">item_hash</span> <span class="o">=</span> <span class="nb">hash</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>  <span class="c1"># Use the default Python hash for non-Atom objects.</span>
+
+        <span class="c1"># Create and return a new `Set` with the updated `HashDictionary`.</span>
+        <span class="k">return</span> <span class="n">Set</span><span class="p">(</span>
+            <span class="n">content</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">item_hash</span><span class="p">),</span>  <span class="c1"># Remove key-hash from the dictionary.</span>
+            <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Set.union">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.sets.Set.union">[docs]</a>
+    <span class="k">def</span> <span class="nf">union</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">:</span> <span class="n">Set</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Creates a new set containing all elements from both this set and the other set.</span>
+
+<span class="sd">        :param other: Another Set to union with this one.</span>
+<span class="sd">        :return: A new Set containing all elements from both sets.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+        <span class="n">other</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+
+        <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span>
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">other</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">result</span></div>
+
+
+<div class="viewcode-block" id="Set.intersection">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.sets.Set.intersection">[docs]</a>
+    <span class="k">def</span> <span class="nf">intersection</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">:</span> <span class="n">Set</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Creates a new set containing only elements that are present in both this set and the other set.</span>
+
+<span class="sd">        :param other: Another Set to intersect with this one.</span>
+<span class="sd">        :return: A new Set containing only elements present in both sets.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+        <span class="n">other</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+
+        <span class="n">result</span> <span class="o">=</span> <span class="n">Set</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
+                <span class="n">item_hash</span> <span class="o">=</span> <span class="n">item</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">item_hash</span> <span class="o">=</span> <span class="nb">hash</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">other</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">item_hash</span><span class="p">):</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">result</span></div>
+
+
+<div class="viewcode-block" id="Set.difference">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.sets.Set.difference">[docs]</a>
+    <span class="k">def</span> <span class="nf">difference</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">:</span> <span class="n">Set</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Creates a new set containing elements that are in this set but not in the other set.</span>
+
+<span class="sd">        :param other: Another Set to subtract from this one.</span>
+<span class="sd">        :return: A new Set containing elements in this set that are not in the other set.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+        <span class="n">other</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+
+        <span class="n">result</span> <span class="o">=</span> <span class="n">Set</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
+                <span class="n">item_hash</span> <span class="o">=</span> <span class="n">item</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">item_hash</span> <span class="o">=</span> <span class="nb">hash</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">other</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">item_hash</span><span class="p">):</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">result</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

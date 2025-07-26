@@ -1,0 +1,1312 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Core Components &mdash; ProtoBase 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Storage Layer" href="storage.html" />
+    <link rel="prev" title="API Reference" href="index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            ProtoBase
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../introduction.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Core Components</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#atom">Atom</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.common.Atom"><code class="docutils literal notranslate"><span class="pre">Atom</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#atompointer">AtomPointer</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.common.AtomPointer"><code class="docutils literal notranslate"><span class="pre">AtomPointer</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#literal">Literal</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.common.Literal"><code class="docutils literal notranslate"><span class="pre">Literal</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#dbobject">DBObject</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.common.DBObject"><code class="docutils literal notranslate"><span class="pre">DBObject</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#mutableobject">MutableObject</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.common.MutableObject"><code class="docutils literal notranslate"><span class="pre">MutableObject</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#dbcollections">DBCollections</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.common.DBCollections"><code class="docutils literal notranslate"><span class="pre">DBCollections</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#queryplan">QueryPlan</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.common.QueryPlan"><code class="docutils literal notranslate"><span class="pre">QueryPlan</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#blockprovider">BlockProvider</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.common.BlockProvider"><code class="docutils literal notranslate"><span class="pre">BlockProvider</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#sharedstorage">SharedStorage</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.common.SharedStorage"><code class="docutils literal notranslate"><span class="pre">SharedStorage</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#objectspace">ObjectSpace</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.db_access.ObjectSpace"><code class="docutils literal notranslate"><span class="pre">ObjectSpace</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#database">Database</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.db_access.Database"><code class="docutils literal notranslate"><span class="pre">Database</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#objecttransaction">ObjectTransaction</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.db_access.ObjectTransaction"><code class="docutils literal notranslate"><span class="pre">ObjectTransaction</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#bytesatom">BytesAtom</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.db_access.BytesAtom"><code class="docutils literal notranslate"><span class="pre">BytesAtom</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="storage.html">Storage Layer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data_structures.html">Data Structures</a></li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html">Query System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="exceptions.html">Exceptions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fsm.html">Finite State Machine</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="index.html#core-components">Core Components</a><ul class="current">
+<li class="toctree-l3 current"><a class="current reference internal" href="#">Core Components</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#atom">Atom</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#atompointer">AtomPointer</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#literal">Literal</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#dbobject">DBObject</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#mutableobject">MutableObject</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#dbcollections">DBCollections</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#queryplan">QueryPlan</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#blockprovider">BlockProvider</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#sharedstorage">SharedStorage</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#objectspace">ObjectSpace</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#database">Database</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#objecttransaction">ObjectTransaction</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#bytesatom">BytesAtom</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#storage-layer">Storage Layer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#data-structures">Data Structures</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#query-system">Query System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#exceptions">Exceptions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#finite-state-machine">Finite State Machine</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../development.html">Development</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">ProtoBase</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">API Reference</a></li>
+      <li class="breadcrumb-item active">Core Components</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/core.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="core-components">
+<h1>Core Components<a class="headerlink" href="#core-components" title="Link to this heading"></a></h1>
+<p id="module-proto_db.common">This module provides the core components of ProtoBase, including the base classes and interfaces that form the foundation of the system.</p>
+<section id="atom">
+<h2>Atom<a class="headerlink" href="#atom" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.common.Atom">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.common.</span></span><span class="sig-name descname"><span class="pre">Atom</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#Atom"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.Atom" title="Link to this definition"></a></dt>
+<dd><p>Represents a self-contained unit of data (Atom) that interacts with a database
+through an associated transaction mechanism. Atoms can be saved, loaded, and
+interact with storage providers to persist data in a structured format.</p>
+<p>This class implements a mechanism to serialize and deserialize its attributes
+to and from JSON for storage, and uses the notion of a ‘pointer’ (AtomPointer)
+to uniquely identify its position in the storage.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Variables<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>atom_pointer</strong> – Points to the storage location of the atom. Contains
+information like transaction ID and offset.</p></li>
+<li><p><strong>transaction</strong> – References the transaction context for operations
+involving this atom. If absent, certain operations like saving
+are not permitted.</p></li>
+<li><p><strong>_loaded</strong> – Whether the atom’s attributes have been loaded from storage.
+False by default.</p></li>
+<li><p><strong>_saved</strong> – Indicates whether the atom is in the process of being
+saved to prevent recursion loops. Defaults to False.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.Atom.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#Atom.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.Atom.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.Atom.after_load">
+<span class="sig-name descname"><span class="pre">after_load</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#Atom.after_load"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.Atom.after_load" title="Link to this definition"></a></dt>
+<dd><p>Perform any additional operations after the object is loaded in memory from storage.
+Loading will restore all fields whose name do not start with ‘_’, or are callable.
+If for a particular Atom some internal state should be restored, this is the right
+place to do that.</p>
+<p>This method will be called just once per transaction.</p>
+<p>This method is intended to be a hook for executing custom logic once an
+object instance has been fully loaded or initialized. Any specific routines,
+validations, or updates required post-loading should be implemented here.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>The <code class="docutils literal notranslate"><span class="pre">Atom</span></code> class is the fundamental building block of ProtoBase. All database objects are derived from this class. An Atom represents a piece of data that can be stored in the database.</p>
+</section>
+<section id="atompointer">
+<h2>AtomPointer<a class="headerlink" href="#atompointer" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.common.AtomPointer">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.common.</span></span><span class="sig-name descname"><span class="pre">AtomPointer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">transaction_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">offset</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#AtomPointer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.AtomPointer" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>transaction_id</strong> (<em>uuid.UUID</em>)</p></li>
+<li><p><strong>offset</strong> (<em>int</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.AtomPointer.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">transaction_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">offset</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#AtomPointer.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.AtomPointer.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>transaction_id</strong> (<em>UUID</em>)</p></li>
+<li><p><strong>offset</strong> (<em>int</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>An <code class="docutils literal notranslate"><span class="pre">AtomPointer</span></code> is a reference to a stored Atom. It contains a transaction ID (the WAL ID where the Atom is stored) and an offset (the position within the WAL).</p>
+</section>
+<section id="literal">
+<h2>Literal<a class="headerlink" href="#literal" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.common.Literal">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.common.</span></span><span class="sig-name descname"><span class="pre">Literal</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">literal</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#Literal"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.Literal" title="Link to this definition"></a></dt>
+<dd><p>Represents a Literal, which is an extension of the Atom type.</p>
+<p>This class is designed to store and manage a literal value. It provides
+methods for equality comparison, string representation, and concatenation.
+The class is initialized with a literal string, and provides additional
+support for managing this string through overloaded operators. The primary
+use of this class is for handling and encapsulating a literal string value
+that can be utilized in various string operations and comparisons.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Variables<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>string</strong> – The underlying literal string value.</p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>literal</strong> (<em>str</em>)</p></li>
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.Literal.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">literal</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#Literal.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.Literal.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>literal</strong> (<em>str</em>)</p></li>
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>The <code class="docutils literal notranslate"><span class="pre">Literal</span></code> class represents a string literal in the database. It is a simple wrapper around a string value.</p>
+</section>
+<section id="dbobject">
+<h2>DBObject<a class="headerlink" href="#dbobject" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.common.DBObject">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.common.</span></span><span class="sig-name descname"><span class="pre">DBObject</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#DBObject"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.DBObject" title="Link to this definition"></a></dt>
+<dd><p>Represents a database object that provides dynamic attribute loading and immutability.</p>
+<p>DBObject is designed to interact with protobase-based database systems. It features
+dynamic attribute loading, where unknown attributes are resolved during runtime, and
+enforces immutability by restricting direct attribute modifications. Instead, any modifications
+result in the creation of a new instance with updated attributes.</p>
+<p>If you try not access a not existing attribute, DBObjects will thow no error, instead a None
+value will be returned.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Variables<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>_loaded</strong> – Indicates whether the object’s attributes have been fully loaded.</p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.DBObject.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#DBObject.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.DBObject.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>The <code class="docutils literal notranslate"><span class="pre">DBObject</span></code> class is the base class for all database objects. It provides methods for serialization and deserialization.</p>
+</section>
+<section id="mutableobject">
+<h2>MutableObject<a class="headerlink" href="#mutableobject" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.common.MutableObject">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.common.</span></span><span class="sig-name descname"><span class="pre">MutableObject</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hash_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#MutableObject"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.MutableObject" title="Link to this definition"></a></dt>
+<dd><p>Represents a mutable object and is used within the context
+of a transaction. The purpose of this class is to provide a means for interacting with
+mutable states in a database-like system, ensuring that operations are performed within
+a valid transaction scope. The class supports attribute access, modification, and
+validation while maintaining a unique hash key for identity.</p>
+<p>This class enforces the rule that the mutable object must always work within the scope
+of a transaction, throwing exceptions otherwise. It includes mechanisms to retrieve
+and modify attributes dynamically and methods for serialization and deserialization
+(_load and _save). It also assigns either a user-defined hash key or a newly generated
+unique identifier.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Variables<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>hash_key</strong> – Unique key identifying the mutable object. This key can either be
+provided during initialization or generated if not supplied.</p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>hash_key</strong> (<em>int</em>)</p></li>
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.MutableObject.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hash_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#MutableObject.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.MutableObject.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>hash_key</strong> (<em>int</em>)</p></li>
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>The <code class="docutils literal notranslate"><span class="pre">MutableObject</span></code> class is the base class for all mutable database objects. It provides methods for tracking modifications.</p>
+</section>
+<section id="dbcollections">
+<h2>DBCollections<a class="headerlink" href="#dbcollections" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.common.DBCollections">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.common.</span></span><span class="sig-name descname"><span class="pre">DBCollections</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#DBCollections"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.DBCollections" title="Link to this definition"></a></dt>
+<dd><p>DBCollections provides an abstraction layer for database collections.</p>
+<p>This class serves as a base class for specific database collections, containing common
+functionality such as data representation and
+query planning.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Variables<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>count</strong> – The total number of items in the collection.</p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.DBCollections.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#DBCollections.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.DBCollections.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.DBCollections.as_iterable">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">as_iterable</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#DBCollections.as_iterable"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.DBCollections.as_iterable" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p></p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>list[object]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.DBCollections.as_query_plan">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">as_query_plan</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#DBCollections.as_query_plan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.DBCollections.as_query_plan" title="Link to this definition"></a></dt>
+<dd><p>Get a query plan based on this collection
+:return:</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="queries.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>The <code class="docutils literal notranslate"><span class="pre">DBCollections</span></code> class is the base class for all collection types in ProtoBase.</p>
+</section>
+<section id="queryplan">
+<h2>QueryPlan<a class="headerlink" href="#queryplan" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.common.QueryPlan">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.common.</span></span><span class="sig-name descname"><span class="pre">QueryPlan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">based_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#QueryPlan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.QueryPlan" title="Link to this definition"></a></dt>
+<dd><p>Maintains the structure and logic for a query execution plan.</p>
+<p>This class serves as a blueprint for creating and managing query execution
+plans. It is designed to abstract the process of execution and optimization
+of queries in systems, enabling extension for specific use cases or query types.
+Being an abstract class, it defines the required methods that subclasses must
+implement for their respective functionality.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Variables<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>based_on</strong> – The base query plan that this instance derives from or is built upon.</p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>based_on</strong> (<a class="reference internal" href="queries.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.QueryPlan.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">based_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#QueryPlan.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.QueryPlan.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>based_on</strong> (<a class="reference internal" href="queries.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.QueryPlan.execute">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#QueryPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.QueryPlan.execute" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p></p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.QueryPlan.optimize">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">optimize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">full_plan</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#QueryPlan.optimize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.QueryPlan.optimize" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>full_plan</strong> (<a class="reference internal" href="queries.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="queries.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>The <code class="docutils literal notranslate"><span class="pre">QueryPlan</span></code> class is the base class for all query plans in ProtoBase. It provides methods for query execution and chaining.</p>
+</section>
+<section id="blockprovider">
+<h2>BlockProvider<a class="headerlink" href="#blockprovider" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.common.BlockProvider">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.common.</span></span><span class="sig-name descname"><span class="pre">BlockProvider</span></span><a class="reference internal" href="../_modules/proto_db/common.html#BlockProvider"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.BlockProvider" title="Link to this definition"></a></dt>
+<dd><p>An abstract base class that defines the interface for a block-based storage provider.</p>
+<p>This class serves as a blueprint for managing Write-Ahead Logs (WALs) and root objects in a
+block-related storage system. It provides abstract methods for obtaining and writing data to WALs,
+retrieving the root object, and managing data durability by closing WALs and the provider. Concrete
+implementations of this class must provide functionality for these operations as outlined in the
+specifications of the abstract methods.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.BlockProvider.get_config_data">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_config_data</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#BlockProvider.get_config_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.BlockProvider.get_config_data" title="Link to this definition"></a></dt>
+<dd><p>Get config data
+:return:</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><em>ConfigParser</em></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.BlockProvider.get_new_wal">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_new_wal</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#BlockProvider.get_new_wal"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.BlockProvider.get_new_wal" title="Link to this definition"></a></dt>
+<dd><p>Get a WAL to use.
+It could be an old one, or a new one.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>a tuple with the id of the WAL and the next offset to use</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>tuple[<em>UUID</em>, int]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.BlockProvider.get_reader">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_reader</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">wal_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">position</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#BlockProvider.get_reader"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.BlockProvider.get_reader" title="Link to this definition"></a></dt>
+<dd><p>Get a streamer initialized at position in WAL file
+wal_id</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>wal_id</strong> (<em>UUID</em>)</p></li>
+<li><p><strong>position</strong> (<em>int</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><em>BinaryIO</em></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.BlockProvider.get_writer_wal">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_writer_wal</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#BlockProvider.get_writer_wal"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.BlockProvider.get_writer_wal" title="Link to this definition"></a></dt>
+<dd><p>Provides an abstract method that should be implemented by subclasses to retrieve the
+unique identifier (UUID) of the writer’s Write-Ahead Log (WAL). This UUID is used to
+identify the WAL instance associated with the writer for consistency and tracking purposes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>NotImplementedError</strong> – This method must be implemented in a subclass.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The UUID of the writer’s WAL.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>uuid.UUID</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.BlockProvider.write_streamer">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">write_streamer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">wal_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#BlockProvider.write_streamer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.BlockProvider.write_streamer" title="Link to this definition"></a></dt>
+<dd><p>This abstract method must be implemented to handle the writing of a streaming
+process for a given WAL (Write-Ahead Log) identifier. It is responsible for
+generating and returning a writable file-like object, intended for downstream
+operations that require data persistence or streaming output based on the
+specified WAL ID.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>wal_id</strong> (<em>uuid.UUID</em>) – The unique identifier (UUID) of the Write-Ahead Log (WAL) to be
+streamed.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A writable file-like object for handling the streaming operations
+associated with the given WAL ID.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>io.FileIO</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.BlockProvider.get_current_root_object">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_current_root_object</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#BlockProvider.get_current_root_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.BlockProvider.get_current_root_object" title="Link to this definition"></a></dt>
+<dd><p>Read current root object from storage
+:return: the current root object</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.BlockProvider.update_root_object">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">update_root_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_root</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#BlockProvider.update_root_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.BlockProvider.update_root_object" title="Link to this definition"></a></dt>
+<dd><p>Updates or create the root object in storage
+On newly created databases, this is the first
+operation to perform</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>new_root</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.BlockProvider.close_wal">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">close_wal</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">transaction_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#BlockProvider.close_wal"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.BlockProvider.close_wal" title="Link to this definition"></a></dt>
+<dd><p>Close a previous WAL. Flush any pending data. Make all changes durable
+:return:</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>transaction_id</strong> (<em>UUID</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.BlockProvider.close">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">close</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#BlockProvider.close"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.BlockProvider.close" title="Link to this definition"></a></dt>
+<dd><p>Close the operation of the block provider. Flush any pending data to WAL. Make all changes durable
+No further operations are allowed
+:return:</p>
+</dd></dl>
+
+</dd></dl>
+
+<p>The <code class="docutils literal notranslate"><span class="pre">BlockProvider</span></code> interface defines the contract for block providers, which are responsible for providing storage blocks for the storage layer.</p>
+</section>
+<section id="sharedstorage">
+<h2>SharedStorage<a class="headerlink" href="#sharedstorage" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.common.SharedStorage">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.common.</span></span><span class="sig-name descname"><span class="pre">SharedStorage</span></span><a class="reference internal" href="../_modules/proto_db/common.html#SharedStorage"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.SharedStorage" title="Link to this definition"></a></dt>
+<dd><p>A SharedStorage defines the minimun set of functionality required to implement a storage interface
+A SharedStorage object represents the current use instance of a permanent storage.
+A permanent storage is a set of transactions that represent the full story of the database. If you want
+to use that database, you will use an AtomStorage object to open, update or expand the database
+All methods should return concurret.futures.Future objects, and thus, depending on the actual implementation
+provides a level of paralellism to the system
+SharedStorage object should support multithreaded and multiprocessed uses, and can be safe in a multiserver
+environment, depending on the implementation</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.SharedStorage.read_current_root">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">read_current_root</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#SharedStorage.read_current_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.SharedStorage.read_current_root" title="Link to this definition"></a></dt>
+<dd><p>Read the current root object
+:return:</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.SharedStorage.read_lock_current_root">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">read_lock_current_root</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#SharedStorage.read_lock_current_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.SharedStorage.read_lock_current_root" title="Link to this definition"></a></dt>
+<dd><p>Read the current root object
+:return:</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.SharedStorage.set_current_root">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">set_current_root</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_root_pointer</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#SharedStorage.set_current_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.SharedStorage.set_current_root" title="Link to this definition"></a></dt>
+<dd><p>Set the current root object
+:return:</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>new_root_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.SharedStorage.unlock_current_root">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">unlock_current_root</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#SharedStorage.unlock_current_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.SharedStorage.unlock_current_root" title="Link to this definition"></a></dt>
+<dd><p>Unlock the current root by performing necessary operations based
+on the implementation. This method typically interacts with the state or
+systems associated with this object to achieve the unlocking process.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.SharedStorage.flush_wal">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">flush_wal</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#SharedStorage.flush_wal"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.SharedStorage.flush_wal" title="Link to this definition"></a></dt>
+<dd><p>Function to be called periodically (eg 2 minutes) to ensure no pending writes to WAL
+Additionally it is assumed that previously set_current_root, so new objects created
+before that all are included in flushed data
+This will not add any delay to operations performed after the root update, that could
+or could not be part of the flushed data.
+:return:</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.SharedStorage.close">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">close</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#SharedStorage.close"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.SharedStorage.close" title="Link to this definition"></a></dt>
+<dd><p>Ends all operations, make all changes stable
+:return:</p>
+</dd></dl>
+
+</dd></dl>
+
+<p>The <code class="docutils literal notranslate"><span class="pre">SharedStorage</span></code> interface defines the contract for storage implementations. It provides methods for reading and writing Atoms, managing transactions, and handling the root object.</p>
+<p id="module-proto_db.db_access">This module provides the database access layer of ProtoBase.</p>
+</section>
+<section id="objectspace">
+<h2>ObjectSpace<a class="headerlink" href="#objectspace" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectSpace">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.db_access.</span></span><span class="sig-name descname"><span class="pre">ObjectSpace</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">storage</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectSpace"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectSpace" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>storage</strong> (<a class="reference internal" href="#proto_db.common.SharedStorage" title="proto_db.common.SharedStorage"><em>SharedStorage</em></a>)</p>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectSpace.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">storage</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectSpace.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectSpace.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>storage</strong> (<a class="reference internal" href="#proto_db.common.SharedStorage" title="proto_db.common.SharedStorage"><em>SharedStorage</em></a>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectSpace.open_database">
+<span class="sig-name descname"><span class="pre">open_database</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">database_name</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectSpace.open_database"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectSpace.open_database" title="Link to this definition"></a></dt>
+<dd><p>Opens a database
+:return:</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>database_name</strong> (<em>str</em>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#proto_db.db_access.Database" title="proto_db.db_access.Database"><em>Database</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectSpace.new_database">
+<span class="sig-name descname"><span class="pre">new_database</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">database_name</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectSpace.new_database"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectSpace.new_database" title="Link to this definition"></a></dt>
+<dd><p>Opens a database
+:return:</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>database_name</strong> (<em>str</em>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#proto_db.db_access.Database" title="proto_db.db_access.Database"><em>Database</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectSpace.rename_database">
+<span class="sig-name descname"><span class="pre">rename_database</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">old_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">new_name</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectSpace.rename_database"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectSpace.rename_database" title="Link to this definition"></a></dt>
+<dd><p>Rename an existing database. If database is already opened, it will not
+commit anymore!
+:return:</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>old_name</strong> (<em>str</em>)</p></li>
+<li><p><strong>new_name</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectSpace.remove_database">
+<span class="sig-name descname"><span class="pre">remove_database</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectSpace.remove_database"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectSpace.remove_database" title="Link to this definition"></a></dt>
+<dd><p>Remove database from db catalog.
+If database is already opened, it will not commit anymore! Be carefull
+:return:</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>name</strong> (<em>str</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>An <code class="docutils literal notranslate"><span class="pre">ObjectSpace</span></code> is a container for multiple databases. It manages the lifecycle of databases, provides access to databases by name, and ensures proper isolation between databases.</p>
+</section>
+<section id="database">
+<h2>Database<a class="headerlink" href="#database" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.db_access.Database">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.db_access.</span></span><span class="sig-name descname"><span class="pre">Database</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">object_space</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">database_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#Database"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.Database" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>object_space</strong> (<a class="reference internal" href="#proto_db.db_access.ObjectSpace" title="proto_db.db_access.ObjectSpace"><em>ObjectSpace</em></a>)</p></li>
+<li><p><strong>database_name</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.Database.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">object_space</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">database_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#Database.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.Database.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>object_space</strong> (<a class="reference internal" href="#proto_db.db_access.ObjectSpace" title="proto_db.db_access.ObjectSpace"><em>ObjectSpace</em></a>)</p></li>
+<li><p><strong>database_name</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.Database.new_transaction">
+<span class="sig-name descname"><span class="pre">new_transaction</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#Database.new_transaction"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.Database.new_transaction" title="Link to this definition"></a></dt>
+<dd><p>Start a new read transaction
+:return:</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#proto_db.db_access.ObjectTransaction" title="proto_db.db_access.ObjectTransaction"><em>ObjectTransaction</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.Database.new_branch_database">
+<span class="sig-name descname"><span class="pre">new_branch_database</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_db_name</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#Database.new_branch_database"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.Database.new_branch_database" title="Link to this definition"></a></dt>
+<dd><p>Gets a new database, derived from the current state of the origin database.
+The derived database could be modified in an idependant history.
+Transactions in the derived database will not impact in the origin database
+:return:</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>new_db_name</strong> (<em>str</em>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#proto_db.db_access.Database" title="proto_db.db_access.Database"><em>Database</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.Database.get_literal">
+<span class="sig-name descname"><span class="pre">get_literal</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">string</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#Database.get_literal"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.Database.get_literal" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>literal</strong></p></li>
+<li><p><strong>string</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#proto_db.common.Literal" title="proto_db.common.Literal"><em>Literal</em></a> | None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>A <code class="docutils literal notranslate"><span class="pre">Database</span></code> is a container for a single database. It manages the lifecycle of transactions, provides access to the root object, and ensures proper isolation between transactions.</p>
+</section>
+<section id="objecttransaction">
+<h2>ObjectTransaction<a class="headerlink" href="#objecttransaction" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.db_access.</span></span><span class="sig-name descname"><span class="pre">ObjectTransaction</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">database</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction_root</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">enclosing_transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction" title="Link to this definition"></a></dt>
+<dd><p>Enclosing transaction</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>database</strong> (<a class="reference internal" href="#proto_db.db_access.Database" title="proto_db.db_access.Database"><em>Database</em></a>)</p></li>
+<li><p><strong>transaction_root</strong> (<a class="reference internal" href="data_structures.html#proto_db.dictionaries.Dictionary" title="proto_db.dictionaries.Dictionary"><em>Dictionary</em></a>)</p></li>
+<li><p><strong>enclosing_transaction</strong> (<a class="reference internal" href="#proto_db.db_access.ObjectTransaction" title="proto_db.db_access.ObjectTransaction"><em>ObjectTransaction</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.read_objects">
+<span class="sig-name descname"><span class="pre">read_objects</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="data_structures.html#proto_db.hash_dictionaries.HashDictionary" title="proto_db.hash_dictionaries.HashDictionary"><span class="pre">HashDictionary</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">&lt;proto_db.hash_dictionaries.HashDictionary</span> <span class="pre">object&gt;</span></em><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.read_objects" title="Link to this definition"></a></dt>
+<dd><p>Any modified or created roots within this transaction</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.state">
+<span class="sig-name descname"><span class="pre">state</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'Running'</span></em><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.state" title="Link to this definition"></a></dt>
+<dd><p>Lock to ensure smooth operation in multithreading environments</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">database</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction_root</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">enclosing_transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>database</strong> (<a class="reference internal" href="#proto_db.db_access.Database" title="proto_db.db_access.Database"><em>Database</em></a>)</p></li>
+<li><p><strong>transaction_root</strong> (<a class="reference internal" href="data_structures.html#proto_db.dictionaries.Dictionary" title="proto_db.dictionaries.Dictionary"><em>Dictionary</em></a>)</p></li>
+<li><p><strong>enclosing_transaction</strong> (<a class="reference internal" href="#proto_db.db_access.ObjectTransaction" title="proto_db.db_access.ObjectTransaction"><em>ObjectTransaction</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.new_literals">
+<span class="sig-name descname"><span class="pre">new_literals</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="data_structures.html#proto_db.dictionaries.Dictionary" title="proto_db.dictionaries.Dictionary"><span class="pre">Dictionary</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.new_literals" title="Link to this definition"></a></dt>
+<dd><p>Running, Committed or Aborted</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Transaction state</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.enclosing_transaction">
+<span class="sig-name descname"><span class="pre">enclosing_transaction</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#proto_db.db_access.ObjectTransaction" title="proto_db.db_access.ObjectTransaction"><span class="pre">ObjectTransaction</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.enclosing_transaction" title="Link to this definition"></a></dt>
+<dd><p>Root object at the time transaction was started</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.transaction_root">
+<span class="sig-name descname"><span class="pre">transaction_root</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="data_structures.html#proto_db.dictionaries.Dictionary" title="proto_db.dictionaries.Dictionary"><span class="pre">Dictionary</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.transaction_root" title="Link to this definition"></a></dt>
+<dd><p>Current root at commit time</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.new_roots">
+<span class="sig-name descname"><span class="pre">new_roots</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="data_structures.html#proto_db.dictionaries.Dictionary" title="proto_db.dictionaries.Dictionary"><span class="pre">Dictionary</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.new_roots" title="Link to this definition"></a></dt>
+<dd><p>Mutable indexes to be checked for changes at commit time.
+If at commit time, value read from current root for this mutable is not the same, that means
+another transaction(s) has committed changes during this transaction execution. So commit should
+be aborted</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.read_lock_objects">
+<span class="sig-name descname"><span class="pre">read_lock_objects</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="data_structures.html#proto_db.hash_dictionaries.HashDictionary" title="proto_db.hash_dictionaries.HashDictionary"><span class="pre">HashDictionary</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.read_lock_objects" title="Link to this definition"></a></dt>
+<dd><p>Mutable indexes modified in this transaction</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.new_mutable_objects">
+<span class="sig-name descname"><span class="pre">new_mutable_objects</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="data_structures.html#proto_db.hash_dictionaries.HashDictionary" title="proto_db.hash_dictionaries.HashDictionary"><span class="pre">HashDictionary</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.new_mutable_objects" title="Link to this definition"></a></dt>
+<dd><p>Snapshot of mutable objects at transaction start time</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.modified_mutable_objects">
+<span class="sig-name descname"><span class="pre">modified_mutable_objects</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="data_structures.html#proto_db.hash_dictionaries.HashDictionary" title="proto_db.hash_dictionaries.HashDictionary"><span class="pre">HashDictionary</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.modified_mutable_objects" title="Link to this definition"></a></dt>
+<dd><p>New mutable indexes modified in this transaction</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.initial_mutable_objects">
+<span class="sig-name descname"><span class="pre">initial_mutable_objects</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="data_structures.html#proto_db.hash_dictionaries.HashDictionary" title="proto_db.hash_dictionaries.HashDictionary"><span class="pre">HashDictionary</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.initial_mutable_objects" title="Link to this definition"></a></dt>
+<dd><p>Literals created in this transaction</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.read_object">
+<span class="sig-name descname"><span class="pre">read_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">class_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction.read_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.read_object" title="Link to this definition"></a></dt>
+<dd><p>Get an unloaded Atom based on atom_pointer, of a given Atom class.
+Just with the right class and atom_pointer, no data retrieved from
+the database.
+If the same Atom was already read in this transaction, get the same
+object as before, in order to ensure all references within this
+transaction receive exactly the same object. With this strategy
+any comparison could use object memory addresses to check for identity</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>class_name</strong> (<em>str</em>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#proto_db.common.Atom" title="proto_db.common.Atom"><em>Atom</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.get_literal">
+<span class="sig-name descname"><span class="pre">get_literal</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">string</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction.get_literal"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.get_literal" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>string</strong> (<em>str</em>)</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.get_root_object">
+<span class="sig-name descname"><span class="pre">get_root_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction.get_root_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.get_root_object" title="Link to this definition"></a></dt>
+<dd><p>Get a root object from the database root catalog</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>name</strong> (<em>str</em>)</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>object | None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.set_root_object">
+<span class="sig-name descname"><span class="pre">set_root_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction.set_root_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.set_root_object" title="Link to this definition"></a></dt>
+<dd><p>Set a root object into the database root catalog. It is the only way to persist changes</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>name</strong> (<em>str</em>)</p></li>
+<li><p><strong>value</strong> (<em>object</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.set_locked_object">
+<span class="sig-name descname"><span class="pre">set_locked_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mutable_index</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">current_atom</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction.set_locked_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.set_locked_object" title="Link to this definition"></a></dt>
+<dd><p>Sets the locked object in the system. This method is abstract and should
+be implemented by subclasses to provide specific behavior for locking
+functionality. By invoking this method, the system expects the specified
+atom to become associated with the given mutable index.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mutable_index</strong> (<em>int</em>) – The index in the mutable collection to lock.</p></li>
+<li><p><strong>current_atom</strong> (<a class="reference internal" href="#proto_db.common.Atom" title="proto_db.common.Atom"><em>Atom</em></a>) – The Atom object to associate with the locked
+mutable index.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.commit">
+<span class="sig-name descname"><span class="pre">commit</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction.commit"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.commit" title="Link to this definition"></a></dt>
+<dd><p>Close the transaction and make it persistent. All changes recorded
+Before commit all checked and modified objects will be tested if modified
+by another transaction. Transaction will proceed only if no change in
+used objects is verified.
+If a return object is specified, the full tree of related objects is persisted
+All created objects, not reachable from this return_object or any updated root
+will NOT BE PERSISTED, and they will be not usable after commit!
+:return:</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.abort">
+<span class="sig-name descname"><span class="pre">abort</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction.abort"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.abort" title="Link to this definition"></a></dt>
+<dd><p>Discard any changes made. Database is not modified. All created objects are no longer usable
+:return:</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.get_mutable">
+<span class="sig-name descname"><span class="pre">get_mutable</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction.get_mutable"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.get_mutable" title="Link to this definition"></a></dt>
+<dd><p>Retrieve a mutable object based on the provided key.</p>
+<p>This method retrieves a mutable object associated with the given key. The key
+is an integer identifier for the object. Implementations of this abstract
+method should provide the mutable object corresponding to the key.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>key</strong> (<em>int</em>) – Identifier for the object to retrieve.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The mutable object associated with the provided key.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.set_mutable">
+<span class="sig-name descname"><span class="pre">set_mutable</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction.set_mutable"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.set_mutable" title="Link to this definition"></a></dt>
+<dd><p>Sets the mutable value for the specified key.</p>
+<p>This abstract method is intended to be implemented by a subclass, allowing
+the setting of a mutable value represented by an Atom to the given key.
+The provided implementation should define the behavior for storing or
+associating the value with the key dynamically. Ensure that the input key
+and value comply with the required types.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>key</strong> (<em>int</em>) – The integer key for which the value will be set.</p></li>
+<li><p><strong>value</strong> (<a class="reference internal" href="#proto_db.common.Atom" title="proto_db.common.Atom"><em>Atom</em></a>) – The Atom instance to be associated with the specified key.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.new_hash_dictionary">
+<span class="sig-name descname"><span class="pre">new_hash_dictionary</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction.new_hash_dictionary"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.new_hash_dictionary" title="Link to this definition"></a></dt>
+<dd><p>Return a new HashDictionary conected to this transaction
+:return:</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="data_structures.html#proto_db.hash_dictionaries.HashDictionary" title="proto_db.hash_dictionaries.HashDictionary"><em>HashDictionary</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.new_dictionary">
+<span class="sig-name descname"><span class="pre">new_dictionary</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction.new_dictionary"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.new_dictionary" title="Link to this definition"></a></dt>
+<dd><p>Return a new Dictionary conected to this transaction</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p></p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="data_structures.html#proto_db.dictionaries.Dictionary" title="proto_db.dictionaries.Dictionary"><em>Dictionary</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.new_list">
+<span class="sig-name descname"><span class="pre">new_list</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction.new_list"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.new_list" title="Link to this definition"></a></dt>
+<dd><p>Return a new List connected to this transaction
+:return:</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="data_structures.html#proto_db.lists.List" title="proto_db.lists.List"><em>List</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.new_hash_set">
+<span class="sig-name descname"><span class="pre">new_hash_set</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction.new_hash_set"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.new_hash_set" title="Link to this definition"></a></dt>
+<dd><p>Return a new Set connected to this transaction
+:return:</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="data_structures.html#proto_db.sets.Set" title="proto_db.sets.Set"><em>Set</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>An <code class="docutils literal notranslate"><span class="pre">ObjectTransaction</span></code> is a context for database operations. It provides methods for reading and writing objects, ensures atomicity of operations, and manages the commit process.</p>
+</section>
+<section id="bytesatom">
+<h2>BytesAtom<a class="headerlink" href="#bytesatom" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.db_access.BytesAtom">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.db_access.</span></span><span class="sig-name descname"><span class="pre">BytesAtom</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filename</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mimetype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">content</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#BytesAtom"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.BytesAtom" title="Link to this definition"></a></dt>
+<dd><p>Represents a specialized type of Atom that holds content in a bytes-like or string format, along with
+associated metadata like filename and MIME type.</p>
+<p>This class encapsulates data in a manner that allows for content manipulation and provides
+support for operability such as addition of byte-based content. The content is stored in a base64
+encoded format for consistency.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Variables<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>filename</strong> – Specifies the name of the file associated with the atom.</p></li>
+<li><p><strong>mimetype</strong> – The MIME type associated with the file content (e.g., “text/plain”).</p></li>
+<li><p><strong>content</strong> – Encoded string representation of the content held by this instance.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>filename</strong> (<em>str</em>)</p></li>
+<li><p><strong>mimetype</strong> (<em>str</em>)</p></li>
+<li><p><strong>content</strong> (<em>str</em>)</p></li>
+<li><p><strong>transaction</strong> (<a class="reference internal" href="#proto_db.db_access.ObjectTransaction" title="proto_db.db_access.ObjectTransaction"><em>ObjectTransaction</em></a>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.BytesAtom.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filename</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mimetype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">content</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#BytesAtom.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.BytesAtom.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>filename</strong> (<em>str</em>)</p></li>
+<li><p><strong>mimetype</strong> (<em>str</em>)</p></li>
+<li><p><strong>content</strong> (<em>bytes</em>)</p></li>
+<li><p><strong>transaction</strong> (<a class="reference internal" href="#proto_db.db_access.ObjectTransaction" title="proto_db.db_access.ObjectTransaction"><em>ObjectTransaction</em></a>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>The <code class="docutils literal notranslate"><span class="pre">BytesAtom</span></code> class represents a binary data atom in the database. It is a wrapper around a bytes value.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="index.html" class="btn btn-neutral float-left" title="API Reference" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="storage.html" class="btn btn-neutral float-right" title="Storage Layer" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

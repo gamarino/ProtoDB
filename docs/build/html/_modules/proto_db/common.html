@@ -1,0 +1,1149 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>proto_db.common &mdash; ProtoBase 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            ProtoBase
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">ProtoBase</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">proto_db.common</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for proto_db.common</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Basic definitions</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">annotations</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">cast</span><span class="p">,</span> <span class="n">BinaryIO</span>
+
+<span class="kn">from</span> <span class="nn">concurrent.futures</span> <span class="kn">import</span> <span class="n">Future</span>
+<span class="kn">import</span> <span class="nn">uuid</span>
+<span class="kn">from</span> <span class="nn">abc</span> <span class="kn">import</span> <span class="n">ABC</span><span class="p">,</span> <span class="n">abstractmethod</span><span class="p">,</span> <span class="n">ABCMeta</span>
+<span class="kn">import</span> <span class="nn">io</span>
+<span class="kn">import</span> <span class="nn">configparser</span>
+<span class="kn">import</span> <span class="nn">datetime</span>
+
+<span class="kn">from</span> <span class="nn">.exceptions</span> <span class="kn">import</span> <span class="n">ProtoValidationException</span>
+
+
+<span class="c1"># Constants for storage size units</span>
+<span class="n">KB</span><span class="p">:</span> <span class="nb">int</span>  <span class="o">=</span> <span class="mi">1024</span>
+<span class="n">MB</span><span class="p">:</span> <span class="nb">int</span>  <span class="o">=</span> <span class="n">KB</span> <span class="o">*</span> <span class="n">KB</span>
+<span class="n">GB</span><span class="p">:</span> <span class="nb">int</span>  <span class="o">=</span> <span class="n">KB</span> <span class="o">*</span> <span class="n">MB</span>
+<span class="n">PB</span><span class="p">:</span> <span class="nb">int</span>  <span class="o">=</span> <span class="n">KB</span> <span class="o">*</span> <span class="n">GB</span>
+
+
+<div class="viewcode-block" id="AtomPointer">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.AtomPointer">[docs]</a>
+<span class="k">class</span> <span class="nc">AtomPointer</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<div class="viewcode-block" id="AtomPointer.__init__">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.AtomPointer.__init__">[docs]</a>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">transaction_id</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span class="n">offset</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span> <span class="o">=</span> <span class="n">transaction_id</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">offset</span> <span class="o">=</span> <span class="n">offset</span></div>
+
+
+    <span class="k">def</span> <span class="nf">hash</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span><span class="o">.</span><span class="n">int</span> <span class="o">^</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset</span></div>
+
+
+
+<span class="n">atom_class_registry</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">()</span>
+
+
+<span class="k">class</span> <span class="nc">AtomMetaclass</span><span class="p">(</span><span class="nb">type</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">bases</span><span class="p">,</span> <span class="n">class_dict</span><span class="p">):</span>
+        <span class="n">class_name</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="k">if</span> <span class="n">class_name</span> <span class="o">!=</span> <span class="s1">&#39;Atom&#39;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">class_name</span> <span class="ow">in</span> <span class="n">atom_class_registry</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
+                    <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Class repeated in atom class registry (</span><span class="si">{</span><span class="n">class_name</span><span class="si">}</span><span class="s1">). Please check it&#39;</span><span class="p">)</span>
+            <span class="n">atom_class_registry</span><span class="p">[</span><span class="n">class_name</span><span class="p">]</span> <span class="o">=</span> <span class="bp">cls</span>
+
+        <span class="c1"># Llamar al __init__ de la metaclase base</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">bases</span><span class="p">,</span> <span class="n">class_dict</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">AbstractSharedStorage</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    ABC to solve forward type definitions</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">push_atom</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">atom</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="n">AtomPointer</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Pushes an atom to the underlying system.</span>
+
+<span class="sd">        This method is an abstract method that must be implemented by subclasses.</span>
+<span class="sd">        The method takes an atom dictionary as input and returns a future representing</span>
+<span class="sd">        an `AtomPointer`. The implementation details are deferred to the derived classes.</span>
+
+<span class="sd">        :param atom: A dictionary representing the atom data to be pushed.</span>
+<span class="sd">        :return: A future object that resolves to an `AtomPointer`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_atom</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="n">Atom</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Fetches an atom using the given AtomPointer and returns a Future that resolves</span>
+<span class="sd">        to the atom. This method provides an interface for retrieving atoms, which can</span>
+<span class="sd">        be implemented asynchronously or synchronously depending on the underlying</span>
+<span class="sd">        implementation.</span>
+
+<span class="sd">        This is an abstract method and must be implemented by subclasses, enforcing</span>
+<span class="sd">        a contract that ensures a consistent pattern for atom retrieval.</span>
+
+<span class="sd">        :param atom_pointer: A pointer object that identifies the atom to be retrieved.</span>
+<span class="sd">        :type atom_pointer: AtomPointer</span>
+<span class="sd">        :return: A Future object that resolves to the retrieved Atom instance.</span>
+<span class="sd">        :rtype: Future[Atom]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_bytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieves the byte data associated with the given atom pointer.</span>
+
+<span class="sd">        This method is used to asynchronously fetch and return the byte data</span>
+<span class="sd">        corresponding to the `AtomPointer` provided. It must be implemented</span>
+<span class="sd">        by any subclass as it is declared abstract.</span>
+
+<span class="sd">        :param atom_pointer: Pointer to the atom whose byte data is to be</span>
+<span class="sd">                             retrieved.</span>
+<span class="sd">        :type atom_pointer: AtomPointer</span>
+<span class="sd">        :return: A future holding the byte data corresponding to</span>
+<span class="sd">                 the atom pointer.</span>
+<span class="sd">        :rtype: Future[bytes]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">push_bytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="n">AtomPointer</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Pushes a sequence of bytes to the underlying data structure or processing unit.</span>
+
+<span class="sd">        This method is abstract and must be implemented by subclasses. The concrete</span>
+<span class="sd">        implementation should handle the provided byte sequence according to its</span>
+<span class="sd">        specific requirements and behavior.</span>
+
+<span class="sd">        :param data: A sequence of bytes to be processed or stored.</span>
+<span class="sd">        :type data: bytes</span>
+<span class="sd">        :return: None</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+
+<span class="k">class</span> <span class="nc">AbstractObjectSpace</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    ABC to solve forward type definitions</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">storage_provider</span><span class="p">:</span> <span class="n">AbstractSharedStorage</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">storage_provider</span><span class="p">:</span> <span class="n">AbstractSharedStorage</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">storage_provider</span> <span class="o">=</span> <span class="n">storage_provider</span>
+
+
+<span class="k">class</span> <span class="nc">AbstractDatabase</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    ABC to solve forward type definitions</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">object_space</span><span class="p">:</span> <span class="n">AbstractObjectSpace</span>
+    <span class="n">database_name</span><span class="p">:</span> <span class="nb">str</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">object_space</span><span class="p">:</span> <span class="n">AbstractObjectSpace</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">object_space</span> <span class="o">=</span> <span class="n">object_space</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_literal</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">literal</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">        :param literal:</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+
+<span class="k">class</span> <span class="nc">AbstractTransaction</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    ABC to solve forward type definition</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">read_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">class_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atom</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get an unloaded Atom based on atom_pointer, of a given Atom class.</span>
+<span class="sd">        Just with the right class and atom_pointer, no data retrieved from</span>
+<span class="sd">        the database.</span>
+<span class="sd">        If the same Atom was already read in this transaction, get the same</span>
+<span class="sd">        object as before, in order to ensure all references within this</span>
+<span class="sd">        transaction receive exactly the same object. With this strategy</span>
+<span class="sd">        any comparison could use object memory addresses to check for identity</span>
+
+<span class="sd">        :param class_name:</span>
+<span class="sd">        :param atom_pointer:</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_literal</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">string</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Literal</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">        :param string:</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_mutable</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span><span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atom</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieve a mutable object based on the provided key.</span>
+
+<span class="sd">        This method retrieves a mutable object associated with the given key. The key</span>
+<span class="sd">        is an integer identifier for the object. Implementations of this abstract</span>
+<span class="sd">        method should provide the mutable object corresponding to the key.</span>
+
+<span class="sd">        :param key: Identifier for the object to retrieve.</span>
+<span class="sd">        :type key: int</span>
+<span class="sd">        :return: The mutable object associated with the provided key.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">set_mutable</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span><span class="nb">int</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span><span class="n">Atom</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets the mutable value for the specified key.</span>
+
+<span class="sd">        This abstract method is intended to be implemented by a subclass, allowing</span>
+<span class="sd">        the setting of a mutable value represented by an Atom to the given key.</span>
+<span class="sd">        The provided implementation should define the behavior for storing or</span>
+<span class="sd">        associating the value with the key dynamically. Ensure that the input key</span>
+<span class="sd">        and value comply with the required types.</span>
+
+<span class="sd">        :param key: The integer key for which the value will be set.</span>
+<span class="sd">        :type key: int</span>
+<span class="sd">        :param value: The Atom instance to be associated with the specified key.</span>
+<span class="sd">        :type value: Atom</span>
+<span class="sd">        :return: None</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">set_locked_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mutable_index</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">current_atom</span><span class="p">:</span> <span class="n">Atom</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets the locked object in the system. This method is abstract and should</span>
+<span class="sd">        be implemented by subclasses to provide specific behavior for locking</span>
+<span class="sd">        functionality. By invoking this method, the system expects the specified</span>
+<span class="sd">        atom to become associated with the given mutable index.</span>
+
+<span class="sd">        :param mutable_index: The index in the mutable collection to lock.</span>
+<span class="sd">        :type mutable_index: int</span>
+<span class="sd">        :param current_atom: The Atom object to associate with the locked</span>
+<span class="sd">            mutable index.</span>
+<span class="sd">        :type current_atom: Atom</span>
+<span class="sd">        :return: None.</span>
+<span class="sd">        :rtype: None</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+<span class="c1"># Metaclase combinada: Combina AtomMetaclass y ABCMeta</span>
+<span class="k">class</span> <span class="nc">CombinedMeta</span><span class="p">(</span><span class="n">ABCMeta</span><span class="p">,</span> <span class="n">AtomMetaclass</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+
+<div class="viewcode-block" id="Atom">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.Atom">[docs]</a>
+<span class="k">class</span> <span class="nc">Atom</span><span class="p">(</span><span class="n">metaclass</span><span class="o">=</span><span class="n">CombinedMeta</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a self-contained unit of data (Atom) that interacts with a database</span>
+<span class="sd">    through an associated transaction mechanism. Atoms can be saved, loaded, and</span>
+<span class="sd">    interact with storage providers to persist data in a structured format.</span>
+
+<span class="sd">    This class implements a mechanism to serialize and deserialize its attributes</span>
+<span class="sd">    to and from JSON for storage, and uses the notion of a &#39;pointer&#39; (AtomPointer)</span>
+<span class="sd">    to uniquely identify its position in the storage.</span>
+
+<span class="sd">    :ivar atom_pointer: Points to the storage location of the atom. Contains</span>
+<span class="sd">        information like transaction ID and offset.</span>
+<span class="sd">    :type atom_pointer: AtomPointer</span>
+<span class="sd">    :ivar transaction: References the transaction context for operations</span>
+<span class="sd">        involving this atom. If absent, certain operations like saving</span>
+<span class="sd">        are not permitted.</span>
+<span class="sd">    :type transaction: AbstractTransaction</span>
+<span class="sd">    :ivar _loaded: Whether the atom&#39;s attributes have been loaded from storage.</span>
+<span class="sd">        False by default.</span>
+<span class="sd">    :type _loaded: bool</span>
+<span class="sd">    :ivar _saved: Indicates whether the atom is in the process of being</span>
+<span class="sd">        saved to prevent recursion loops. Defaults to False.</span>
+<span class="sd">    :type _saving: bool</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span>
+    <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span>
+    <span class="n">_loaded</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">_saved</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+
+<div class="viewcode-block" id="Atom.__init__">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.Atom.__init__">[docs]</a>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span> <span class="o">=</span> <span class="n">transaction</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span> <span class="o">=</span> <span class="n">atom_pointer</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_loaded</span> <span class="o">=</span> <span class="kc">False</span></div>
+
+
+    <span class="k">def</span> <span class="nf">_load</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Use direct attribute access to avoid recursion through __getattr__</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;_loaded&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="c1"># Use direct dictionary access to avoid triggering __getattr__</span>
+            <span class="k">if</span> <span class="s1">&#39;transaction&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;transaction&#39;</span><span class="p">]:</span>
+                <span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;transaction&#39;</span><span class="p">]</span>
+                <span class="k">if</span> <span class="s1">&#39;atom_pointer&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]</span> <span class="ow">and</span> \
+                   <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">:</span>
+                    <span class="n">atom_pointer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]</span>
+                    <span class="n">loaded_atom</span> <span class="o">=</span> <span class="n">transaction</span><span class="o">.</span><span class="n">database</span><span class="o">.</span><span class="n">object_space</span><span class="o">.</span><span class="n">storage_provider</span><span class="o">.</span><span class="n">get_atom</span><span class="p">(</span>
+                        <span class="n">atom_pointer</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+                    <span class="n">loaded_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_json_to_dict</span><span class="p">(</span><span class="n">loaded_atom</span><span class="p">)</span>
+                    <span class="k">for</span> <span class="n">attribute_name</span><span class="p">,</span> <span class="n">attribute_value</span> <span class="ow">in</span> <span class="n">loaded_dict</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                        <span class="c1"># Use object.__setattr__ to bypass potential recursion in __setattr__</span>
+                        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">attribute_name</span><span class="p">,</span> <span class="n">attribute_value</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attribute_value</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
+                            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">attribute_value</span><span class="p">,</span> <span class="s1">&#39;transaction&#39;</span><span class="p">,</span> <span class="n">transaction</span><span class="p">)</span>
+                            <span class="n">attribute_value</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">after_load</span><span class="p">()</span>
+
+            <span class="c1"># Use object.__setattr__ to bypass potential recursion in __setattr__</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;_loaded&#39;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Atom.after_load">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.Atom.after_load">[docs]</a>
+    <span class="k">def</span> <span class="nf">after_load</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Perform any additional operations after the object is loaded in memory from storage.</span>
+<span class="sd">        Loading will restore all fields whose name do not start with &#39;_&#39;, or are callable.</span>
+<span class="sd">        If for a particular Atom some internal state should be restored, this is the right</span>
+<span class="sd">        place to do that.</span>
+
+<span class="sd">        This method will be called just once per transaction.</span>
+
+<span class="sd">        This method is intended to be a hook for executing custom logic once an</span>
+<span class="sd">        object instance has been fully loaded or initialized. Any specific routines,</span>
+<span class="sd">        validations, or updates required post-loading should be implemented here.</span>
+
+<span class="sd">        :return: None</span>
+<span class="sd">        :rtype: None</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+
+    <span class="k">def</span> <span class="fm">__eq__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span> <span class="ow">and</span> \
+               <span class="n">other</span><span class="o">.</span><span class="n">atom_pointer</span> <span class="ow">and</span> \
+               <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">atom_pointer</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">True</span>
+            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span> <span class="ow">and</span> <span class="n">other</span><span class="o">.</span><span class="n">atom_pointer</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">transaction_id</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">transaction_id</span> <span class="ow">and</span> \
+                       <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">self</span> <span class="ow">is</span> <span class="n">other</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="k">def</span> <span class="nf">_push_to_storage</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">json_value</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">database</span><span class="o">.</span><span class="n">object_space</span><span class="o">.</span><span class="n">storage_provider</span><span class="o">.</span><span class="n">push_atom</span><span class="p">(</span><span class="n">json_value</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_json_to_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">json_data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">json_data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="s1">&#39;className&#39;</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span>
+                <span class="n">class_name</span> <span class="o">=</span> <span class="n">value</span><span class="p">[</span><span class="s1">&#39;className&#39;</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">class_name</span> <span class="o">==</span> <span class="s1">&#39;datetime.datetime&#39;</span><span class="p">:</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">fromisoformat</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;iso&#39;</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span class="s1">&#39;datetime.date&#39;</span><span class="p">:</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="o">.</span><span class="n">fromisoformat</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;iso&#39;</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span class="s1">&#39;datetime.timedelta&#39;</span><span class="p">:</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">timedelta</span><span class="p">(</span><span class="n">microseconds</span><span class="o">=</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;microseconds&#39;</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span class="s1">&#39;int&#39;</span><span class="p">:</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;value&#39;</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span class="s1">&#39;float&#39;</span><span class="p">:</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;value&#39;</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span class="s1">&#39;bool&#39;</span><span class="p">:</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;value&#39;</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span class="s1">&#39;None&#39;</span><span class="p">:</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span class="s1">&#39;Literal&#39;</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="s1">&#39;transaction_id&#39;</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span>
+                        <span class="n">value</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">(</span>
+                            <span class="n">atom_pointer</span><span class="o">=</span><span class="n">AtomPointer</span><span class="p">(</span>
+                                <span class="n">transaction_id</span><span class="o">=</span><span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;transaction_id&#39;</span><span class="p">]),</span>
+                                <span class="n">offset</span><span class="o">=</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;offset&#39;</span><span class="p">]</span>
+                            <span class="p">),</span>
+                            <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+                        <span class="p">)</span>
+                        <span class="n">value</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">get_literal</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;string&#39;</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">class_name</span> <span class="ow">in</span> <span class="n">atom_class_registry</span><span class="p">:</span>
+                    <span class="n">atom_pointer</span> <span class="o">=</span> <span class="n">AtomPointer</span><span class="p">(</span>
+                        <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">(</span><span class="nb">hex</span><span class="o">=</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;transaction_id&#39;</span><span class="p">]),</span>
+                        <span class="n">value</span><span class="p">[</span><span class="s1">&#39;offset&#39;</span><span class="p">]</span>
+                    <span class="p">)</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">read_object</span><span class="p">(</span><span class="n">class_name</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="p">)</span>
+                    <span class="n">value</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
+                        <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;It is not possible to load Atom of class </span><span class="si">{</span><span class="n">class_name</span><span class="si">}</span><span class="s1">!&#39;</span>
+                    <span class="p">)</span>
+            <span class="n">data</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+
+        <span class="k">return</span> <span class="n">data</span>
+
+    <span class="k">def</span> <span class="nf">_dict_to_json</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="n">json_value</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">db_access</span>
+
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">value</span><span class="o">.</span><span class="n">transaction</span><span class="p">:</span>
+                    <span class="n">value</span><span class="o">.</span><span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+                <span class="n">value</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+                    <span class="s1">&#39;transaction_id&#39;</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span>
+                    <span class="s1">&#39;offset&#39;</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span>
+                <span class="p">}</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">):</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="s1">&#39;datetime.datetime&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;iso&#39;</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(),</span>
+                <span class="p">}</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="p">):</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="s1">&#39;datetime.date&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;iso&#39;</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">isoformat</span><span class="p">,</span>
+                <span class="p">}</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">timedelta</span><span class="p">):</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="s1">&#39;datetime.timedelta&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;microseconds&#39;</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">microseconds</span><span class="p">,</span>
+                <span class="p">}</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">float</span><span class="p">):</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">):</span>
+                <span class="n">bytes_atom</span> <span class="o">=</span> <span class="n">db_access</span><span class="o">.</span><span class="n">BytesAtom</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+                <span class="n">bytes_atom</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="s1">&#39;BytesAtom&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;transaction_id&#39;</span><span class="p">:</span> <span class="n">bytes_atom</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span>
+                    <span class="s1">&#39;offset&#39;</span><span class="p">:</span> <span class="n">bytes_atom</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span>
+                <span class="p">}</span>
+            <span class="k">elif</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># There is no need to store None values, it is the default for newly created atoms</span>
+                <span class="k">continue</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+
+        <span class="k">return</span> <span class="n">json_value</span>
+
+    <span class="k">def</span> <span class="nf">_save</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Use direct attribute access to avoid recursion</span>
+        <span class="k">if</span> <span class="s1">&#39;atom_pointer&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]:</span>
+            <span class="k">if</span> <span class="s1">&#39;_saved&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;_saved&#39;</span><span class="p">]:</span>
+                <span class="c1"># It&#39;s a new object</span>
+
+                <span class="k">if</span> <span class="s1">&#39;transaction&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;transaction&#39;</span><span class="p">]:</span>
+                    <span class="c1"># Push the object tree downhill, avoiding recursion loops</span>
+                    <span class="c1"># converting attributes strs to Literals</span>
+                    <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;_saved&#39;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+
+                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">Literal</span><span class="p">):</span>
+                        <span class="n">json_value</span> <span class="o">=</span> <span class="p">{</span>
+                            <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="s1">&#39;Literal&#39;</span><span class="p">,</span>
+                            <span class="s1">&#39;string&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">string</span>
+                        <span class="p">}</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">json_value</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">}</span>
+
+                        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                            <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="ow">or</span> <span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;_&#39;</span><span class="p">):</span>
+                                <span class="k">continue</span>
+
+                            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">Atom</span><span class="p">)</span> <span class="ow">and</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">,</span> <span class="s1">&#39;transaction&#39;</span><span class="p">):</span>
+                                <span class="k">continue</span>
+
+                            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
+                                <span class="k">if</span> <span class="s1">&#39;transaction&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">value</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">value</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;transaction&#39;</span><span class="p">]:</span>
+                                    <span class="c1"># it is a newly created atom</span>
+                                    <span class="c1"># it should not happen, but try to solve the misbehaviour</span>
+                                    <span class="c1"># capture it for this transaction</span>
+                                    <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s1">&#39;transaction&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;transaction&#39;</span><span class="p">])</span>
+                                    <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s1">&#39;_saved&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+                                <span class="k">if</span> <span class="s1">&#39;_saved&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">value</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">value</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;_saved&#39;</span><span class="p">]:</span>
+                                    <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s1">&#39;transaction&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;transaction&#39;</span><span class="p">])</span>
+                                <span class="n">value</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+
+                                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                                    <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+                                    <span class="s1">&#39;transaction_id&#39;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">),</span>
+                                    <span class="s1">&#39;offset&#39;</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">offset</span>
+                                <span class="p">}</span>
+                            <span class="k">else</span><span class="p">:</span>
+                                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+
+                        <span class="n">json_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dict_to_json</span><span class="p">(</span><span class="n">json_value</span><span class="p">)</span>
+
+                    <span class="c1"># At this point all attributes has been flushed to storage if they are newly created</span>
+                    <span class="c1"># All attributes has valid AtomPointer values (either old or new)</span>
+                    <span class="n">pointer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_push_to_storage</span><span class="p">(</span><span class="n">json_value</span><span class="p">)</span>
+                    <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;atom_pointer&#39;</span><span class="p">,</span> <span class="n">AtomPointer</span><span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">))</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
+                        <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;An DBObject can only be saved within a given transaction!&#39;</span>
+                    <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">hash</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">):</span>
+            <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__getitem__</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<span class="k">class</span> <span class="nc">RootObject</span><span class="p">(</span><span class="n">Atom</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents the root object in a data structure.</span>
+
+<span class="sd">    This class serves as the root element for a hierarchical or structured data</span>
+<span class="sd">    representation. It provides access to basic components and operations</span>
+<span class="sd">    to manage and utilize the data structure effectively. `RootObject` inherits</span>
+<span class="sd">    from `Atom`, enabling integration with its core functionalities and properties.</span>
+
+<span class="sd">    :ivar object_root: The primary root object representing structured data.</span>
+<span class="sd">    :type object_root: Atom</span>
+<span class="sd">    :ivar literal_root: An auxiliary root object used for managing literals</span>
+<span class="sd">        within the data structure.</span>
+<span class="sd">    :type literal_root: Atom</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">object_root</span><span class="p">:</span> <span class="n">Atom</span>
+    <span class="n">literal_root</span><span class="p">:</span> <span class="n">Atom</span>
+    <span class="n">created_at</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
+                 <span class="n">object_root</span><span class="p">:</span> <span class="n">Atom</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">literal_root</span><span class="p">:</span> <span class="n">Atom</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="o">**</span><span class="n">kwargs</span>
+                 <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">object_root</span> <span class="o">=</span> <span class="n">object_root</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">literal_root</span> <span class="o">=</span> <span class="n">literal_root</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">created_at</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="DBObject">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.DBObject">[docs]</a>
+<span class="k">class</span> <span class="nc">DBObject</span><span class="p">(</span><span class="n">Atom</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a database object that provides dynamic attribute loading and immutability.</span>
+
+<span class="sd">    DBObject is designed to interact with protobase-based database systems. It features</span>
+<span class="sd">    dynamic attribute loading, where unknown attributes are resolved during runtime, and</span>
+<span class="sd">    enforces immutability by restricting direct attribute modifications. Instead, any modifications</span>
+<span class="sd">    result in the creation of a new instance with updated attributes.</span>
+
+<span class="sd">    If you try not access a not existing attribute, DBObjects will thow no error, instead a None</span>
+<span class="sd">    value will be returned.</span>
+
+<span class="sd">    :ivar _loaded: Indicates whether the object&#39;s attributes have been fully loaded.</span>
+<span class="sd">    :type _loaded: bool</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="DBObject.__init__">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.DBObject.__init__">[docs]</a>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
+                 <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_loaded</span> <span class="o">=</span> <span class="kc">False</span></div>
+
+
+    <span class="k">def</span> <span class="fm">__getattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;_loaded&#39;</span><span class="p">:</span>  <span class="c1"># Prevent recursion when checking _loaded</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="c1"># Special case for _loaded to prevent recursion</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="o">==</span> <span class="s1">&#39;_loaded&#39;</span><span class="p">:</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="c1"># Special case for transaction and atom_pointer during initialization</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">(</span><span class="s1">&#39;transaction&#39;</span><span class="p">,</span> <span class="s1">&#39;atom_pointer&#39;</span><span class="p">):</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="c1"># For other attributes, ensure the object is loaded first</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">key</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;_&#39;</span><span class="p">):</span>  <span class="c1"># Skip internal attributes to prevent recursion</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">:</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
+                <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;ProtoBase DBObjects are inmutable! Your are trying to set attribute </span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s1">&#39;</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span><span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span><span class="n">DBObject</span><span class="p">:</span>
+        <span class="n">new_object</span> <span class="o">=</span> <span class="n">DBObject</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">attr_name</span><span class="p">,</span> <span class="n">attr_value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">attr_name</span> <span class="o">!=</span> <span class="s1">&#39;_loaded&#39;</span><span class="p">:</span>  <span class="c1"># Skip _loaded flag to avoid recursion</span>
+                <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">new_object</span><span class="p">,</span> <span class="n">attr_name</span><span class="p">,</span> <span class="n">attr_value</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">new_object</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">new_object</span></div>
+
+
+
+<div class="viewcode-block" id="MutableObject">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.MutableObject">[docs]</a>
+<span class="k">class</span> <span class="nc">MutableObject</span><span class="p">(</span><span class="n">Atom</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a mutable object and is used within the context</span>
+<span class="sd">    of a transaction. The purpose of this class is to provide a means for interacting with</span>
+<span class="sd">    mutable states in a database-like system, ensuring that operations are performed within</span>
+<span class="sd">    a valid transaction scope. The class supports attribute access, modification, and</span>
+<span class="sd">    validation while maintaining a unique hash key for identity.</span>
+
+<span class="sd">    This class enforces the rule that the mutable object must always work within the scope</span>
+<span class="sd">    of a transaction, throwing exceptions otherwise. It includes mechanisms to retrieve</span>
+<span class="sd">    and modify attributes dynamically and methods for serialization and deserialization</span>
+<span class="sd">    (_load and _save). It also assigns either a user-defined hash key or a newly generated</span>
+<span class="sd">    unique identifier.</span>
+
+<span class="sd">    :ivar hash_key: Unique key identifying the mutable object. This key can either be</span>
+<span class="sd">        provided during initialization or generated if not supplied.</span>
+<span class="sd">    :type hash_key: int</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">hash_key</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+
+<div class="viewcode-block" id="MutableObject.__init__">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.MutableObject.__init__">[docs]</a>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
+                 <span class="n">hash_key</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+                 <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">hash_key</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">hash_key</span> <span class="o">=</span> <span class="n">hash_key</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">hash_key</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="o">.</span><span class="n">int</span></div>
+
+
+    <span class="k">def</span> <span class="fm">__getattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
+                <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;You can&#39;t access a mutable object out of the scope of a transaction!&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">current_object</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">get_mutable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hash_key</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">current_object</span><span class="o">.</span><span class="fm">__getattr__</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="fm">__setitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+
+
+    <span class="k">def</span> <span class="fm">__delitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+
+    <span class="k">def</span> <span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
+                <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;You can&#39;t access a mutable object out of the scope of a transaction!&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">current_object</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">DBObject</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">get_mutable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hash_key</span><span class="p">))</span>
+        <span class="n">new_object</span> <span class="o">=</span> <span class="n">current_object</span><span class="o">.</span><span class="n">_setattr</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">set_mutable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hash_key</span><span class="p">,</span> <span class="n">new_object</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">:</span>
+            <span class="c1"># Object is stored in DB and it is going to be modified.</span>
+            <span class="c1"># It should be added to the set of objects to be checked if were modified</span>
+            <span class="c1"># by other transaction simoultaneously with this transaction</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">set_locked_object</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hash_key</span><span class="p">,</span> <span class="n">current_object</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__hasattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
+                <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;You can&#39;t access a mutable object out of the scope of a transaction!&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">current_object</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">get_mutable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hash_key</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">current_object</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_load</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">pass</span>
+
+    <span class="k">def</span> <span class="nf">_save</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">pass</span>
+
+    <span class="k">def</span> <span class="nf">hash</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="DBCollections">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.DBCollections">[docs]</a>
+<span class="k">class</span> <span class="nc">DBCollections</span><span class="p">(</span><span class="n">Atom</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    DBCollections provides an abstraction layer for database collections.</span>
+
+<span class="sd">    This class serves as a base class for specific database collections, containing common</span>
+<span class="sd">    functionality such as data representation and</span>
+<span class="sd">    query planning.</span>
+
+<span class="sd">    :ivar count: The total number of items in the collection.</span>
+<span class="sd">    :type count: int</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+
+<div class="viewcode-block" id="DBCollections.__init__">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.DBCollections.__init__">[docs]</a>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
+                 <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DBCollections.as_iterable">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.DBCollections.as_iterable">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">as_iterable</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">object</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="DBCollections.as_query_plan">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.DBCollections.as_query_plan">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">as_query_plan</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get a query plan based on this collection</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="QueryPlan">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.common.QueryPlan">[docs]</a>
+<span class="k">class</span> <span class="nc">QueryPlan</span><span class="p">(</span><span class="n">Atom</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Maintains the structure and logic for a query execution plan.</span>
+
+<span class="sd">    This class serves as a blueprint for creating and managing query execution</span>
+<span class="sd">    plans. It is designed to abstract the process of execution and optimization</span>
+<span class="sd">    of queries in systems, enabling extension for specific use cases or query types.</span>
+<span class="sd">    Being an abstract class, it defines the required methods that subclasses must</span>
+<span class="sd">    implement for their respective functionality.</span>
+
+<span class="sd">    :ivar based_on: The base query plan that this instance derives from or is built upon.</span>
+<span class="sd">    :type based_on: QueryPlan</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">based_on</span><span class="p">:</span> <span class="n">QueryPlan</span>
+
+<div class="viewcode-block" id="QueryPlan.__init__">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.common.QueryPlan.__init__">[docs]</a>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
+                 <span class="n">based_on</span><span class="p">:</span> <span class="n">QueryPlan</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="o">=</span> <span class="n">based_on</span></div>
+
+
+<div class="viewcode-block" id="QueryPlan.execute">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.common.QueryPlan.execute">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="QueryPlan.optimize">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.common.QueryPlan.optimize">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">full_plan</span><span class="p">:</span> <span class="n">QueryPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Literal">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.Literal">[docs]</a>
+<span class="k">class</span> <span class="nc">Literal</span><span class="p">(</span><span class="n">Atom</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a Literal, which is an extension of the Atom type.</span>
+
+<span class="sd">    This class is designed to store and manage a literal value. It provides</span>
+<span class="sd">    methods for equality comparison, string representation, and concatenation.</span>
+<span class="sd">    The class is initialized with a literal string, and provides additional</span>
+<span class="sd">    support for managing this string through overloaded operators. The primary</span>
+<span class="sd">    use of this class is for handling and encapsulating a literal string value</span>
+<span class="sd">    that can be utilized in various string operations and comparisons.</span>
+
+<span class="sd">    :ivar string: The underlying literal string value.</span>
+<span class="sd">    :type string: str</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">string</span><span class="p">:</span> <span class="nb">str</span>
+
+<div class="viewcode-block" id="Literal.__init__">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.Literal.__init__">[docs]</a>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
+                 <span class="n">literal</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">string</span> <span class="o">=</span> <span class="n">literal</span> <span class="ow">or</span> <span class="s1">&#39;&#39;</span></div>
+
+
+    <span class="k">def</span> <span class="fm">__eq__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Literal</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="n">Literal</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">string</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">string</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">string</span> <span class="o">==</span> <span class="n">other</span>
+
+    <span class="k">def</span> <span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">string</span>
+
+    <span class="k">def</span> <span class="fm">__add__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Literal</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Literal</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="n">Literal</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">Literal</span><span class="p">(</span><span class="n">literal</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">string</span> <span class="o">+</span> <span class="n">other</span><span class="o">.</span><span class="n">string</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Literal</span><span class="p">(</span><span class="n">literal</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">string</span> <span class="o">+</span> <span class="n">other</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="BlockProvider">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider">[docs]</a>
+<span class="k">class</span> <span class="nc">BlockProvider</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    An abstract base class that defines the interface for a block-based storage provider.</span>
+
+<span class="sd">    This class serves as a blueprint for managing Write-Ahead Logs (WALs) and root objects in a</span>
+<span class="sd">    block-related storage system. It provides abstract methods for obtaining and writing data to WALs,</span>
+<span class="sd">    retrieving the root object, and managing data durability by closing WALs and the provider. Concrete</span>
+<span class="sd">    implementations of this class must provide functionality for these operations as outlined in the</span>
+<span class="sd">    specifications of the abstract methods.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="BlockProvider.get_config_data">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider.get_config_data">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_config_data</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">configparser</span><span class="o">.</span><span class="n">ConfigParser</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get config data</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="BlockProvider.get_new_wal">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider.get_new_wal">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_new_wal</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get a WAL to use.</span>
+<span class="sd">        It could be an old one, or a new one.</span>
+
+<span class="sd">        :return: a tuple with the id of the WAL and the next offset to use</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="BlockProvider.get_reader">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider.get_reader">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_reader</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wal_id</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span class="n">position</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BinaryIO</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get a streamer initialized at position in WAL file</span>
+<span class="sd">        wal_id</span>
+
+<span class="sd">        :param wal_id:</span>
+<span class="sd">        :param position:</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="BlockProvider.get_writer_wal">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider.get_writer_wal">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_writer_wal</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Provides an abstract method that should be implemented by subclasses to retrieve the</span>
+<span class="sd">        unique identifier (UUID) of the writer&#39;s Write-Ahead Log (WAL). This UUID is used to</span>
+<span class="sd">        identify the WAL instance associated with the writer for consistency and tracking purposes.</span>
+
+<span class="sd">        :raises NotImplementedError: This method must be implemented in a subclass.</span>
+<span class="sd">        :return: The UUID of the writer&#39;s WAL.</span>
+<span class="sd">        :rtype: uuid.UUID</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="BlockProvider.write_streamer">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider.write_streamer">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">write_streamer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wal_id</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">io</span><span class="o">.</span><span class="n">FileIO</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        This abstract method must be implemented to handle the writing of a streaming</span>
+<span class="sd">        process for a given WAL (Write-Ahead Log) identifier. It is responsible for</span>
+<span class="sd">        generating and returning a writable file-like object, intended for downstream</span>
+<span class="sd">        operations that require data persistence or streaming output based on the</span>
+<span class="sd">        specified WAL ID.</span>
+
+<span class="sd">        :param wal_id: The unique identifier (UUID) of the Write-Ahead Log (WAL) to be</span>
+<span class="sd">                       streamed.</span>
+<span class="sd">        :type wal_id: uuid.UUID</span>
+<span class="sd">        :return: A writable file-like object for handling the streaming operations</span>
+<span class="sd">                 associated with the given WAL ID.</span>
+<span class="sd">        :rtype: io.FileIO</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="BlockProvider.get_current_root_object">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider.get_current_root_object">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_current_root_object</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Read current root object from storage</span>
+<span class="sd">        :return: the current root object</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="BlockProvider.update_root_object">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider.update_root_object">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">update_root_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_root</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Updates or create the root object in storage</span>
+<span class="sd">        On newly created databases, this is the first</span>
+<span class="sd">        operation to perform</span>
+
+<span class="sd">        :param new_root:</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="BlockProvider.close_wal">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider.close_wal">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">close_wal</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">transaction_id</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Close a previous WAL. Flush any pending data. Make all changes durable</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="BlockProvider.close">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider.close">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Close the operation of the block provider. Flush any pending data to WAL. Make all changes durable</span>
+<span class="sd">        No further operations are allowed</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="SharedStorage">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.SharedStorage">[docs]</a>
+<span class="k">class</span> <span class="nc">SharedStorage</span><span class="p">(</span><span class="n">AbstractSharedStorage</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A SharedStorage defines the minimun set of functionality required to implement a storage interface</span>
+<span class="sd">    A SharedStorage object represents the current use instance of a permanent storage.</span>
+<span class="sd">    A permanent storage is a set of transactions that represent the full story of the database. If you want</span>
+<span class="sd">    to use that database, you will use an AtomStorage object to open, update or expand the database</span>
+<span class="sd">    All methods should return concurret.futures.Future objects, and thus, depending on the actual implementation</span>
+<span class="sd">    provides a level of paralellism to the system</span>
+<span class="sd">    SharedStorage object should support multithreaded and multiprocessed uses, and can be safe in a multiserver</span>
+<span class="sd">    environment, depending on the implementation</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="SharedStorage.read_current_root">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.SharedStorage.read_current_root">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">read_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Read the current root object</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="SharedStorage.read_lock_current_root">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.SharedStorage.read_lock_current_root">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">read_lock_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Read the current root object</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="SharedStorage.set_current_root">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.SharedStorage.set_current_root">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">set_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_root_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Set the current root object</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="SharedStorage.unlock_current_root">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.SharedStorage.unlock_current_root">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">unlock_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Unlock the current root by performing necessary operations based</span>
+<span class="sd">        on the implementation. This method typically interacts with the state or</span>
+<span class="sd">        systems associated with this object to achieve the unlocking process.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="SharedStorage.flush_wal">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.SharedStorage.flush_wal">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">flush_wal</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Function to be called periodically (eg 2 minutes) to ensure no pending writes to WAL</span>
+<span class="sd">        Additionally it is assumed that previously set_current_root, so new objects created</span>
+<span class="sd">        before that all are included in flushed data</span>
+<span class="sd">        This will not add any delay to operations performed after the root update, that could</span>
+<span class="sd">        or could not be part of the flushed data.</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="SharedStorage.close">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.SharedStorage.close">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ends all operations, make all changes stable</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

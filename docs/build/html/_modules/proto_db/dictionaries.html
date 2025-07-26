@@ -1,0 +1,452 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>proto_db.dictionaries &mdash; ProtoBase 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            ProtoBase
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">ProtoBase</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">proto_db.dictionaries</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for proto_db.dictionaries</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">annotations</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">cast</span>
+
+<span class="kn">from</span> <span class="nn">.exceptions</span> <span class="kn">import</span> <span class="n">ProtoCorruptionException</span>
+<span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="n">Atom</span><span class="p">,</span> <span class="n">DBCollections</span><span class="p">,</span> <span class="n">QueryPlan</span><span class="p">,</span> <span class="n">Literal</span><span class="p">,</span> <span class="n">AbstractTransaction</span><span class="p">,</span> <span class="n">AtomPointer</span>
+<span class="kn">from</span> <span class="nn">.lists</span> <span class="kn">import</span> <span class="n">List</span>
+<span class="kn">from</span> <span class="nn">.sets</span> <span class="kn">import</span> <span class="n">Set</span>
+
+<span class="kn">import</span> <span class="nn">uuid</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+
+
+<span class="n">_logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">DictionaryItem</span><span class="p">(</span><span class="n">Atom</span><span class="p">):</span>
+    <span class="c1"># Represents a key-value pair in a Dictionary, both durable and transaction-safe.</span>
+    <span class="n">key</span><span class="p">:</span> <span class="n">Literal</span>
+    <span class="n">value</span><span class="p">:</span> <span class="nb">object</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+            <span class="bp">self</span><span class="p">,</span>
+            <span class="n">key</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># The key for the dictionary item.</span>
+            <span class="n">value</span><span class="p">:</span> <span class="nb">object</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># The value associated with the key.</span>
+            <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># The associated transaction.</span>
+            <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># Pointer to the atom for durability/consistency.</span>
+            <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>  <span class="c1"># Additional keyword arguments.</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">key</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">(</span><span class="n">literal</span><span class="o">=</span><span class="n">key</span><span class="p">,</span> <span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">)</span>  <span class="c1"># Wrap the key as a Literal for durability.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">value</span>  <span class="c1"># Assign the value to the dictionary item.</span>
+
+
+<div class="viewcode-block" id="Dictionary">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.Dictionary">[docs]</a>
+<span class="k">class</span> <span class="nc">Dictionary</span><span class="p">(</span><span class="n">DBCollections</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a durable, transaction-safe dictionary-like mapping between strings and values.</span>
+
+<span class="sd">    Only Atoms are recommended as keys and values to ensure consistency and durability.</span>
+<span class="sd">    Mixing other objects is not supported, and no warnings will be issued for doing so.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">content</span><span class="p">:</span> <span class="n">List</span>  <span class="c1"># Internal storage for dictionary items as a list.</span>
+
+<div class="viewcode-block" id="Dictionary.__init__">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.Dictionary.__init__">[docs]</a>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+            <span class="bp">self</span><span class="p">,</span>
+            <span class="n">content</span><span class="p">:</span> <span class="n">List</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># List to store the content.</span>
+            <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># Transaction context for operations.</span>
+            <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># Pointer to ensure atomicity and durability.</span>
+            <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">content</span> <span class="o">=</span> <span class="n">content</span> <span class="k">if</span> <span class="n">content</span> <span class="k">else</span> <span class="n">List</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">)</span>  <span class="c1"># Initialize content or create a new List.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">count</span>  <span class="c1"># Number of items in the dictionary.</span></div>
+
+
+    <span class="k">def</span> <span class="nf">_save</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_saved</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+
+<div class="viewcode-block" id="Dictionary.as_iterable">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.Dictionary.as_iterable">[docs]</a>
+    <span class="k">def</span> <span class="nf">as_iterable</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Provides an iterable generator for the dictionary&#39;s key-value pairs.</span>
+
+<span class="sd">        :return: A generator yielding tuples of (key, value).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>  <span class="c1"># Iterate through the content.</span>
+            <span class="n">item</span> <span class="o">=</span> <span class="p">(</span><span class="n">cast</span><span class="p">(</span><span class="n">DictionaryItem</span><span class="p">,</span> <span class="n">item</span><span class="p">))</span>  <span class="c1"># Cast item to a DictionaryItem type.</span>
+            <span class="n">item</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>  <span class="c1"># Ensure the item is loaded into memory.</span>
+            <span class="k">yield</span> <span class="n">item</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">string</span><span class="p">,</span> <span class="n">item</span><span class="o">.</span><span class="n">value</span>  <span class="c1"># Yield the key-value pair.</span></div>
+
+
+<div class="viewcode-block" id="Dictionary.as_query_plan">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.Dictionary.as_query_plan">[docs]</a>
+    <span class="k">def</span> <span class="nf">as_query_plan</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Converts the dictionary into a QueryPlan, a representation for query execution.</span>
+<span class="sd">        :return: The dictionary&#39;s query plan.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">as_query_plan</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="Dictionary.get_at">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.Dictionary.get_at">[docs]</a>
+    <span class="k">def</span> <span class="nf">get_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">object</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets the element at a given key exists in the dictionary.</span>
+
+<span class="sd">        Uses binary search to find the key efficiently.</span>
+
+<span class="sd">        :param key: The string key to be searched.</span>
+<span class="sd">        :return: The value storea at key or None if not found</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+
+        <span class="n">left</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">right</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">count</span> <span class="o">-</span> <span class="mi">1</span>
+
+        <span class="k">while</span> <span class="n">left</span> <span class="o">&lt;=</span> <span class="n">right</span><span class="p">:</span>
+            <span class="n">center</span> <span class="o">=</span> <span class="p">(</span><span class="n">left</span> <span class="o">+</span> <span class="n">right</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+
+            <span class="n">item</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">DictionaryItem</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">center</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">item</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">==</span> <span class="n">key</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
+                    <span class="n">item</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+                <span class="k">return</span> <span class="n">item</span><span class="o">.</span><span class="n">value</span>
+
+            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">key</span><span class="p">:</span>
+                <span class="n">right</span> <span class="o">=</span> <span class="n">center</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">left</span> <span class="o">=</span> <span class="n">center</span> <span class="o">+</span> <span class="mi">1</span>
+
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="Dictionary.set_at">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.Dictionary.set_at">[docs]</a>
+    <span class="k">def</span> <span class="nf">set_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dictionary</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Inserts or updates a key-value pair in the dictionary.</span>
+
+<span class="sd">        If the key exists, updates its value and rebalances the underlying structure.</span>
+<span class="sd">        If the key does not exist, inserts the new key-value pair at the appropriate position.</span>
+
+<span class="sd">        :param key: The string key for the item being added or updated.</span>
+<span class="sd">        :param value: The value associated with the key.</span>
+<span class="sd">        :return: A new instance of Dictionary with the updated content.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+
+        <span class="n">left</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">right</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">count</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="n">center</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="k">while</span> <span class="n">left</span> <span class="o">&lt;=</span> <span class="n">right</span><span class="p">:</span>
+            <span class="n">center</span> <span class="o">=</span> <span class="p">(</span><span class="n">left</span> <span class="o">+</span> <span class="n">right</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+
+            <span class="n">item</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">DictionaryItem</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">center</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">item</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">==</span> <span class="n">key</span><span class="p">:</span>  <span class="c1"># Check if the key already exists.</span>
+                <span class="c1"># It&#39;s a repeated key, it&#39;s ok</span>
+                <span class="k">return</span> <span class="n">Dictionary</span><span class="p">(</span>
+                    <span class="n">content</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span>
+                        <span class="n">center</span><span class="p">,</span>
+                        <span class="n">DictionaryItem</span><span class="p">(</span>
+                            <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>
+                            <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span>
+                            <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+                        <span class="p">)</span>
+                    <span class="p">),</span>
+                    <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+                <span class="p">)</span>
+
+            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">key</span><span class="p">:</span>
+                <span class="n">right</span> <span class="o">=</span> <span class="n">center</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">left</span> <span class="o">=</span> <span class="n">center</span> <span class="o">+</span> <span class="mi">1</span>
+
+        <span class="k">return</span> <span class="n">Dictionary</span><span class="p">(</span>
+            <span class="n">content</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">insert_at</span><span class="p">(</span>
+                <span class="n">left</span><span class="p">,</span>
+                <span class="n">DictionaryItem</span><span class="p">(</span>
+                    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>
+                    <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span>
+                    <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+                <span class="p">)</span>
+            <span class="p">),</span>
+            <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Dictionary.remove_at">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.Dictionary.remove_at">[docs]</a>
+    <span class="k">def</span> <span class="nf">remove_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dictionary</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Removes a key-value pair from the dictionary if the key exists.</span>
+
+<span class="sd">        If the key is found, it removes the corresponding entry and rebalances the structure.</span>
+<span class="sd">        If the key does not exist, the method returns the original dictionary.</span>
+
+<span class="sd">        :param key: The string key of the item to be removed.</span>
+<span class="sd">        :return: A new instance of Dictionary reflecting the removal.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+
+        <span class="n">left</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">right</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">count</span> <span class="o">-</span> <span class="mi">1</span>
+
+        <span class="k">while</span> <span class="n">left</span> <span class="o">&lt;=</span> <span class="n">right</span><span class="p">:</span>
+            <span class="n">center</span> <span class="o">=</span> <span class="p">(</span><span class="n">left</span> <span class="o">+</span> <span class="n">right</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+
+            <span class="n">item</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">DictionaryItem</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">center</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">item</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">==</span> <span class="n">key</span><span class="p">:</span>
+                <span class="c1"># It&#39;s a replacement of an existing value</span>
+                <span class="k">return</span> <span class="n">Dictionary</span><span class="p">(</span>
+                    <span class="n">content</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">center</span><span class="p">),</span>
+                    <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+                <span class="p">)</span>
+
+            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">key</span><span class="p">:</span>
+                <span class="n">right</span> <span class="o">=</span> <span class="n">center</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">left</span> <span class="o">=</span> <span class="n">center</span> <span class="o">+</span> <span class="mi">1</span>
+
+        <span class="c1"># Not found, nothing is changed</span>
+        <span class="k">return</span> <span class="bp">self</span></div>
+
+
+<div class="viewcode-block" id="Dictionary.has">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.Dictionary.has">[docs]</a>
+    <span class="k">def</span> <span class="nf">has</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Checks whether a given key exists in the dictionary.</span>
+
+<span class="sd">        Uses binary search to find the key efficiently.</span>
+
+<span class="sd">        :param key: The string key to be searched.</span>
+<span class="sd">        :return: True if the key is found; otherwise, False.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test for key</span>
+
+<span class="sd">        :param key:</span>
+<span class="sd">        :return: True if key is in the dictionary, False otherwise</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+
+        <span class="n">left</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">right</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">count</span> <span class="o">-</span> <span class="mi">1</span>
+
+        <span class="k">while</span> <span class="n">left</span> <span class="o">&lt;=</span> <span class="n">right</span><span class="p">:</span>
+            <span class="n">center</span> <span class="o">=</span> <span class="p">(</span><span class="n">left</span> <span class="o">+</span> <span class="n">right</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+
+            <span class="n">item</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">DictionaryItem</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">center</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">item</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">==</span> <span class="n">key</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">True</span>
+
+            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">key</span><span class="p">:</span>
+                <span class="n">right</span> <span class="o">=</span> <span class="n">center</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">left</span> <span class="o">=</span> <span class="n">center</span> <span class="o">+</span> <span class="mi">1</span>
+
+        <span class="k">return</span> <span class="kc">False</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="RepeatedKeysDictionary">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.RepeatedKeysDictionary">[docs]</a>
+<span class="k">class</span> <span class="nc">RepeatedKeysDictionary</span><span class="p">(</span><span class="n">Dictionary</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a dictionary-like data structure allowing multiple records</span>
+<span class="sd">    associated with a single key.</span>
+
+<span class="sd">    This class extends the base Dictionary class and provides additional</span>
+<span class="sd">    functionality for handling repeated keys, updating, and removing</span>
+<span class="sd">    associated records. Duplicate values in the list associated with a key</span>
+<span class="sd">    are allowed.</span>
+
+<span class="sd">    :ivar transaction: Reference to the transactional context of the dictionary.</span>
+<span class="sd">    :type transaction: Transaction</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="RepeatedKeysDictionary.get_at">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.RepeatedKeysDictionary.get_at">[docs]</a>
+    <span class="k">def</span> <span class="nf">get_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets the elements at a given key, as a Set, if exists in the dictionary.</span>
+
+<span class="sd">        :param key: The string key to be searched.</span>
+<span class="sd">        :return: The value storea at key or None if not found</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">key</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RepeatedKeysDictionary.set_at">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.RepeatedKeysDictionary.set_at">[docs]</a>
+    <span class="k">def</span> <span class="nf">set_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">Atom</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dictionary</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Inserts or updates a key-value pair in the dictionary.</span>
+
+<span class="sd">        This method checks if the specified key already exists in the dictionary. If the key exists,</span>
+<span class="sd">        its associated record list is updated with the new value</span>
+
+<span class="sd">        :param key: The string key for the item being added or updated.</span>
+<span class="sd">        :param value: The value associated with the key.</span>
+<span class="sd">        :return: A new instance of Dictionary with the updated content.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
+            <span class="n">record_list</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Set</span><span class="p">,</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">key</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">record_list</span>  <span class="o">=</span> <span class="n">Set</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+        <span class="n">record_list</span> <span class="o">=</span> <span class="n">record_list</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">record_list</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RepeatedKeysDictionary.remove_at">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.RepeatedKeysDictionary.remove_at">[docs]</a>
+    <span class="k">def</span> <span class="nf">remove_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dictionary</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Removes a key-value pair from the dictionary if the key exists.</span>
+
+<span class="sd">        If the key is found, it removes the corresponding entry and rebalances the structure.</span>
+<span class="sd">        If the key does not exist, the method returns the original dictionary.</span>
+
+<span class="sd">        :param key: The string key of the item to be removed.</span>
+<span class="sd">        :return: A new instance of Dictionary reflecting the removal.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
+            <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span></div>
+
+
+<div class="viewcode-block" id="RepeatedKeysDictionary.remove_record_at">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.RepeatedKeysDictionary.remove_record_at">[docs]</a>
+    <span class="k">def</span> <span class="nf">remove_record_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">record</span><span class="p">:</span> <span class="n">Atom</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dictionary</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Removes a specific record from a list associated with a given key. If the key exists</span>
+<span class="sd">           and the record is found within the associated set, it removes the record and updates</span>
+<span class="sd">           the stored list. If the key does not exist, the original dictionary remains unchanged.</span>
+
+<span class="sd">        :param key: The key in the dictionary whose associated set must be updated (e.g., removal</span>
+<span class="sd">           of a specified record).</span>
+<span class="sd">        :type key: str</span>
+<span class="sd">        :param record: The specific record to be removed from the set of associated with the</span>
+<span class="sd">           provided key.</span>
+<span class="sd">        :return: Returns the updated dictionary object with the set containing the record</span>
+<span class="sd">           removed. If the key does not exist or the record is not found, the original dictionary</span>
+<span class="sd">           remains unchanged.</span>
+<span class="sd">        :rtype: Dictionary</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
+            <span class="n">record_set</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Set</span><span class="p">,</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">key</span><span class="p">))</span>
+            <span class="n">record_hash</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">record_set</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">record_hash</span><span class="p">):</span>
+                <span class="n">record_set</span> <span class="o">=</span> <span class="n">record_set</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">record_hash</span><span class="p">)</span>
+                <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">record_set</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="bp">self</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

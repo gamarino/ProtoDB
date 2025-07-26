@@ -1,0 +1,479 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Exceptions &mdash; ProtoBase 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Finite State Machine" href="fsm.html" />
+    <link rel="prev" title="Query System" href="queries.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            ProtoBase
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../introduction.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="core.html">Core Components</a></li>
+<li class="toctree-l2"><a class="reference internal" href="storage.html">Storage Layer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data_structures.html">Data Structures</a></li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html">Query System</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Exceptions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#exception-hierarchy">Exception Hierarchy</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#exception-classes">Exception Classes</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#protobaseexception">ProtoBaseException</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#protouserexception">ProtoUserException</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#protovalidationexception">ProtoValidationException</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#protonotsupportedexception">ProtoNotSupportedException</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#protonotauthorizedexception">ProtoNotAuthorizedException</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#protocorruptionexception">ProtoCorruptionException</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#protounexpectedexception">ProtoUnexpectedException</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#cloudstorageerror">CloudStorageError</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#usage-examples">Usage Examples</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#handling-exceptions">Handling Exceptions</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#raising-custom-exceptions">Raising Custom Exceptions</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="fsm.html">Finite State Machine</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#core-components">Core Components</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#storage-layer">Storage Layer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#data-structures">Data Structures</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#query-system">Query System</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="index.html#exceptions">Exceptions</a><ul class="current">
+<li class="toctree-l3 current"><a class="current reference internal" href="#">Exceptions</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#exception-hierarchy">Exception Hierarchy</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#exception-classes">Exception Classes</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#usage-examples">Usage Examples</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#finite-state-machine">Finite State Machine</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../development.html">Development</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">ProtoBase</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">API Reference</a></li>
+      <li class="breadcrumb-item active">Exceptions</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/exceptions.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="exceptions">
+<h1>Exceptions<a class="headerlink" href="#exceptions" title="Link to this heading"></a></h1>
+<p id="module-proto_db.exceptions">This module provides the exception classes used by ProtoBase for different error scenarios.</p>
+<section id="exception-hierarchy">
+<h2>Exception Hierarchy<a class="headerlink" href="#exception-hierarchy" title="Link to this heading"></a></h2>
+<p>ProtoBase defines a hierarchy of exception classes to handle different types of errors:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">ProtoBaseException</span></code>: The base class for all ProtoBase exceptions.
+- <code class="docutils literal notranslate"><span class="pre">ProtoUserException</span></code>: Base class for exceptions that are expected to be handled by the user.</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ProtoValidationException</span></code>: Raised when validation fails.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ProtoNotSupportedException</span></code>: Raised when an operation is not supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ProtoNotAuthorizedException</span></code>: Raised when an operation is not authorized.</p></li>
+</ul>
+</div></blockquote>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ProtoCorruptionException</span></code>: Raised when data corruption is detected.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ProtoUnexpectedException</span></code>: Base class for unexpected exceptions.
+- <code class="docutils literal notranslate"><span class="pre">CloudStorageError</span></code>: Raised for cloud storage specific errors.</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="exception-classes">
+<h2>Exception Classes<a class="headerlink" href="#exception-classes" title="Link to this heading"></a></h2>
+<section id="protobaseexception">
+<h3>ProtoBaseException<a class="headerlink" href="#protobaseexception" title="Link to this heading"></a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.exceptions.ProtoBaseException">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.exceptions.</span></span><span class="sig-name descname"><span class="pre">ProtoBaseException</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/exceptions.html#ProtoBaseException"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.exceptions.ProtoBaseException" title="Link to this definition"></a></dt>
+<dd><p>Base exception for ProtoBase exceptions</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>code</strong> (<em>int</em>)</p></li>
+<li><p><strong>exception_type</strong> (<em>str</em>)</p></li>
+<li><p><strong>message</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.exceptions.ProtoBaseException.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/exceptions.html#ProtoBaseException.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.exceptions.ProtoBaseException.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>code</strong> (<em>int</em>)</p></li>
+<li><p><strong>exception_type</strong> (<em>str</em>)</p></li>
+<li><p><strong>message</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>The base class for all ProtoBase exceptions. All other exception classes inherit from this class.</p>
+</section>
+<section id="protouserexception">
+<h3>ProtoUserException<a class="headerlink" href="#protouserexception" title="Link to this heading"></a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.exceptions.ProtoUserException">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.exceptions.</span></span><span class="sig-name descname"><span class="pre">ProtoUserException</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/exceptions.html#ProtoUserException"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.exceptions.ProtoUserException" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>code</strong> (<em>int</em>)</p></li>
+<li><p><strong>exception_type</strong> (<em>str</em>)</p></li>
+<li><p><strong>message</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.exceptions.ProtoUserException.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/exceptions.html#ProtoUserException.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.exceptions.ProtoUserException.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>code</strong> (<em>int</em>)</p></li>
+<li><p><strong>exception_type</strong> (<em>str</em>)</p></li>
+<li><p><strong>message</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>Base class for exceptions that are expected to be handled by the user. These exceptions indicate errors in the user’s code or input.</p>
+</section>
+<section id="protovalidationexception">
+<h3>ProtoValidationException<a class="headerlink" href="#protovalidationexception" title="Link to this heading"></a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.exceptions.ProtoValidationException">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.exceptions.</span></span><span class="sig-name descname"><span class="pre">ProtoValidationException</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/exceptions.html#ProtoValidationException"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.exceptions.ProtoValidationException" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>code</strong> (<em>int</em>)</p></li>
+<li><p><strong>exception_type</strong> (<em>str</em>)</p></li>
+<li><p><strong>message</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.exceptions.ProtoValidationException.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/exceptions.html#ProtoValidationException.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.exceptions.ProtoValidationException.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>code</strong> (<em>int</em>)</p></li>
+<li><p><strong>exception_type</strong> (<em>str</em>)</p></li>
+<li><p><strong>message</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>Raised when validation fails. This can happen when invalid arguments are passed to a method or when an operation would result in an invalid state.</p>
+</section>
+<section id="protonotsupportedexception">
+<h3>ProtoNotSupportedException<a class="headerlink" href="#protonotsupportedexception" title="Link to this heading"></a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.exceptions.ProtoNotSupportedException">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.exceptions.</span></span><span class="sig-name descname"><span class="pre">ProtoNotSupportedException</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">40000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/exceptions.html#ProtoNotSupportedException"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.exceptions.ProtoNotSupportedException" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>code</strong> (<em>int</em>)</p></li>
+<li><p><strong>exception_type</strong> (<em>str</em>)</p></li>
+<li><p><strong>message</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.exceptions.ProtoNotSupportedException.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">40000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/exceptions.html#ProtoNotSupportedException.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.exceptions.ProtoNotSupportedException.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>code</strong> (<em>int</em>)</p></li>
+<li><p><strong>exception_type</strong> (<em>str</em>)</p></li>
+<li><p><strong>message</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>Raised when an operation is not supported. This can happen when trying to use a feature that is not implemented or not available in the current context.</p>
+</section>
+<section id="protonotauthorizedexception">
+<h3>ProtoNotAuthorizedException<a class="headerlink" href="#protonotauthorizedexception" title="Link to this heading"></a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.exceptions.ProtoNotAuthorizedException">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.exceptions.</span></span><span class="sig-name descname"><span class="pre">ProtoNotAuthorizedException</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/exceptions.html#ProtoNotAuthorizedException"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.exceptions.ProtoNotAuthorizedException" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>code</strong> (<em>int</em>)</p></li>
+<li><p><strong>exception_type</strong> (<em>str</em>)</p></li>
+<li><p><strong>message</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.exceptions.ProtoNotAuthorizedException.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/exceptions.html#ProtoNotAuthorizedException.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.exceptions.ProtoNotAuthorizedException.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>code</strong> (<em>int</em>)</p></li>
+<li><p><strong>exception_type</strong> (<em>str</em>)</p></li>
+<li><p><strong>message</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>Raised when an operation is not authorized. This can happen when trying to perform an operation that requires higher privileges.</p>
+</section>
+<section id="protocorruptionexception">
+<h3>ProtoCorruptionException<a class="headerlink" href="#protocorruptionexception" title="Link to this heading"></a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.exceptions.ProtoCorruptionException">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.exceptions.</span></span><span class="sig-name descname"><span class="pre">ProtoCorruptionException</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">30000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/exceptions.html#ProtoCorruptionException"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.exceptions.ProtoCorruptionException" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>code</strong> (<em>int</em>)</p></li>
+<li><p><strong>exception_type</strong> (<em>str</em>)</p></li>
+<li><p><strong>message</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.exceptions.ProtoCorruptionException.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">30000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/exceptions.html#ProtoCorruptionException.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.exceptions.ProtoCorruptionException.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>code</strong> (<em>int</em>)</p></li>
+<li><p><strong>exception_type</strong> (<em>str</em>)</p></li>
+<li><p><strong>message</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>Raised when data corruption is detected. This can happen when reading corrupted data from storage or when an internal consistency check fails.</p>
+</section>
+<section id="protounexpectedexception">
+<h3>ProtoUnexpectedException<a class="headerlink" href="#protounexpectedexception" title="Link to this heading"></a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.exceptions.ProtoUnexpectedException">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.exceptions.</span></span><span class="sig-name descname"><span class="pre">ProtoUnexpectedException</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/exceptions.html#ProtoUnexpectedException"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.exceptions.ProtoUnexpectedException" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>code</strong> (<em>int</em>)</p></li>
+<li><p><strong>exception_type</strong> (<em>str</em>)</p></li>
+<li><p><strong>message</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.exceptions.ProtoUnexpectedException.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/exceptions.html#ProtoUnexpectedException.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.exceptions.ProtoUnexpectedException.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>code</strong> (<em>int</em>)</p></li>
+<li><p><strong>exception_type</strong> (<em>str</em>)</p></li>
+<li><p><strong>message</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>Base class for unexpected exceptions. These exceptions indicate errors that are not expected to occur in normal operation and may indicate bugs in the code.</p>
+</section>
+<section id="cloudstorageerror">
+<h3>CloudStorageError<a class="headerlink" href="#cloudstorageerror" title="Link to this heading"></a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.CloudStorageError">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_file_storage.</span></span><span class="sig-name descname"><span class="pre">CloudStorageError</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudStorageError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudStorageError" title="Link to this definition"></a></dt>
+<dd><p>Exception raised for cloud storage specific errors.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>code</strong> (<em>int</em>)</p></li>
+<li><p><strong>exception_type</strong> (<em>str</em>)</p></li>
+<li><p><strong>message</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Raised for cloud storage specific errors. This can happen when there are issues with S3 operations or when the cloud storage is misconfigured.</p>
+</section>
+</section>
+<section id="usage-examples">
+<h2>Usage Examples<a class="headerlink" href="#usage-examples" title="Link to this heading"></a></h2>
+<section id="handling-exceptions">
+<h3>Handling Exceptions<a class="headerlink" href="#handling-exceptions" title="Link to this heading"></a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">proto_db</span>
+<span class="kn">from</span> <span class="nn">proto_db.exceptions</span> <span class="kn">import</span> <span class="n">ProtoBaseException</span><span class="p">,</span> <span class="n">ProtoValidationException</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="c1"># Perform an operation that might raise an exception</span>
+    <span class="n">storage</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">MemoryStorage</span><span class="p">()</span>
+    <span class="n">space</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">ObjectSpace</span><span class="p">(</span><span class="n">storage</span><span class="p">)</span>
+    <span class="n">db</span> <span class="o">=</span> <span class="n">space</span><span class="o">.</span><span class="n">get_database</span><span class="p">(</span><span class="s2">&quot;test_db&quot;</span><span class="p">)</span>
+    <span class="n">tr</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span class="p">()</span>
+
+    <span class="c1"># This will raise a ProtoValidationException if the key is not a string</span>
+    <span class="n">tr</span><span class="o">.</span><span class="n">set_root_object</span><span class="p">(</span><span class="mi">123</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
+
+    <span class="n">tr</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+<span class="k">except</span> <span class="n">ProtoValidationException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="c1"># Handle validation errors</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Validation error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="k">except</span> <span class="n">ProtoBaseException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="c1"># Handle other ProtoBase exceptions</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ProtoBase error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="c1"># Handle unexpected exceptions</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unexpected error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="k">finally</span><span class="p">:</span>
+    <span class="c1"># Clean up resources</span>
+    <span class="k">if</span> <span class="s1">&#39;storage&#39;</span> <span class="ow">in</span> <span class="nb">locals</span><span class="p">():</span>
+        <span class="n">storage</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="raising-custom-exceptions">
+<h3>Raising Custom Exceptions<a class="headerlink" href="#raising-custom-exceptions" title="Link to this heading"></a></h3>
+<p>You can also define your own exception classes that inherit from the ProtoBase exception classes:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">proto_db.exceptions</span> <span class="kn">import</span> <span class="n">ProtoUserException</span>
+
+<span class="k">class</span> <span class="nc">MyCustomException</span><span class="p">(</span><span class="n">ProtoUserException</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A custom exception for my application.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">,</span> <span class="n">custom_info</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="n">message</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">custom_info</span> <span class="o">=</span> <span class="n">custom_info</span>
+
+<span class="c1"># Raise the custom exception</span>
+<span class="k">raise</span> <span class="n">MyCustomException</span><span class="p">(</span><span class="s2">&quot;Something went wrong&quot;</span><span class="p">,</span> <span class="n">custom_info</span><span class="o">=</span><span class="s2">&quot;Additional information&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="queries.html" class="btn btn-neutral float-left" title="Query System" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="fsm.html" class="btn btn-neutral float-right" title="Finite State Machine" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

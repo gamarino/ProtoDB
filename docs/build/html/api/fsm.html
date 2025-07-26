@@ -1,0 +1,608 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Finite State Machine &mdash; ProtoBase 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Advanced Usage" href="../advanced_usage.html" />
+    <link rel="prev" title="Exceptions" href="exceptions.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            ProtoBase
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../introduction.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="core.html">Core Components</a></li>
+<li class="toctree-l2"><a class="reference internal" href="storage.html">Storage Layer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data_structures.html">Data Structures</a></li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html">Query System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="exceptions.html">Exceptions</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Finite State Machine</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#fsm">FSM</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.fsm.FSM"><code class="docutils literal notranslate"><span class="pre">FSM</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#timer">Timer</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.fsm.Timer"><code class="docutils literal notranslate"><span class="pre">Timer</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#usage-examples">Usage Examples</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#basic-fsm">Basic FSM</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#fsm-with-actions">FSM with Actions</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#fsm-with-guards">FSM with Guards</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#fsm-with-timers">FSM with Timers</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#advanced-fsm-usage">Advanced FSM Usage</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#core-components">Core Components</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#storage-layer">Storage Layer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#data-structures">Data Structures</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#query-system">Query System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#exceptions">Exceptions</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="index.html#finite-state-machine">Finite State Machine</a><ul class="current">
+<li class="toctree-l3 current"><a class="current reference internal" href="#">Finite State Machine</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#fsm">FSM</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#timer">Timer</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#usage-examples">Usage Examples</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../development.html">Development</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">ProtoBase</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">API Reference</a></li>
+      <li class="breadcrumb-item active">Finite State Machine</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/fsm.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="finite-state-machine">
+<h1>Finite State Machine<a class="headerlink" href="#finite-state-machine" title="Link to this heading"></a></h1>
+<p id="module-proto_db.fsm">This module provides a Finite State Machine (FSM) implementation for ProtoBase.</p>
+<section id="fsm">
+<h2>FSM<a class="headerlink" href="#fsm" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.fsm.FSM">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.fsm.</span></span><span class="sig-name descname"><span class="pre">FSM</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fsm_definition</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/fsm.html#FSM"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.fsm.FSM" title="Link to this definition"></a></dt>
+<dd><p>Class representing a finite state machine (FSM).
+Handles state transitions, event processing, timers, and post-processing tasks.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>fsm_definition</strong> (<em>dict</em><em>[</em><em>str</em><em>, </em><em>dict</em><em>[</em><em>str</em><em>, </em><em>callable</em><em>]</em><em>]</em>)</p>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.fsm.FSM.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fsm_definition</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/fsm.html#FSM.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.fsm.FSM.__init__" title="Link to this definition"></a></dt>
+<dd><p>Initializes the FSM instance, sets the initial state, and executes the <cite>Initializing</cite> event.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>fsm_definition</strong> (<em>dict</em><em>[</em><em>str</em><em>, </em><em>dict</em><em>[</em><em>str</em><em>, </em><em>callable</em><em>]</em><em>]</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.fsm.FSM.send_event">
+<span class="sig-name descname"><span class="pre">send_event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_fsm</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/fsm.html#FSM.send_event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.fsm.FSM.send_event" title="Link to this definition"></a></dt>
+<dd><p>Sends an event to the FSM, optionally targeting a different FSM.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>event</strong> (<em>dict</em>)</p></li>
+<li><p><strong>target_fsm</strong> (<a class="reference internal" href="#proto_db.fsm.FSM" title="proto_db.fsm.FSM"><em>FSM</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>Future</em></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.fsm.FSM.change_state">
+<span class="sig-name descname"><span class="pre">change_state</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_state</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/fsm.html#FSM.change_state"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.fsm.FSM.change_state" title="Link to this definition"></a></dt>
+<dd><p>Changes the FSM state to the new state if it’s valid.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>new_state</strong> (<em>str</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.fsm.FSM.process_event">
+<span class="sig-name descname"><span class="pre">process_event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/fsm.html#FSM.process_event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.fsm.FSM.process_event" title="Link to this definition"></a></dt>
+<dd><p>Processes an event based on the current state and executes post-processing tasks.</p>
+<p>This method handles the event processing workflow:
+1. Determines the appropriate state for the event
+2. Executes the event handler if one exists for the current state
+3. Executes any post-processing tasks registered during event handling</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>event</strong> (<em>dict</em>) – A dictionary containing event information, must have a ‘name’ key.
+Example: {‘name’: ‘start’, ‘data’: ‘additional_info’}</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.fsm.FSM.after_processing">
+<span class="sig-name descname"><span class="pre">after_processing</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">function</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/fsm.html#FSM.after_processing"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.fsm.FSM.after_processing" title="Link to this definition"></a></dt>
+<dd><p>Registers a task to be executed after processing an event.</p>
+<p>This method allows event handlers to schedule tasks that should run after
+the event processing is complete and the lock is released.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>function</strong> (<em>callable</em>) – The function to execute after event processing</p></li>
+<li><p><strong>*args</strong> – Positional arguments to pass to the function</p></li>
+<li><p><strong>**kwargs</strong> – Keyword arguments to pass to the function</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+<p class="rubric">Example</p>
+<p><a href="#id1"><span class="problematic" id="id2">``</span></a><a href="#id3"><span class="problematic" id="id4">`</span></a>python
+def on_event_complete(data):</p>
+<blockquote>
+<div><p>print(f”Event completed with data: {data}”)</p>
+</div></blockquote>
+<p>fsm.after_processing(on_event_complete, “event data”)
+<a href="#id5"><span class="problematic" id="id6">``</span></a><a href="#id7"><span class="problematic" id="id8">`</span></a></p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.fsm.FSM.timer_processed">
+<span class="sig-name descname"><span class="pre">timer_processed</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">timer</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/fsm.html#FSM.timer_processed"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.fsm.FSM.timer_processed" title="Link to this definition"></a></dt>
+<dd><p>Removes the timer from active timers once it has finished processing.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>timer</strong> (<a class="reference internal" href="#proto_db.fsm.Timer" title="proto_db.fsm.Timer"><em>Timer</em></a>) – The timer that has completed or been canceled</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.fsm.FSM.start_timer">
+<span class="sig-name descname"><span class="pre">start_timer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">delay_in_ms</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">event</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/fsm.html#FSM.start_timer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.fsm.FSM.start_timer" title="Link to this definition"></a></dt>
+<dd><p>Starts a timer that triggers an event after a specified delay.</p>
+<p>This method creates a timer that will trigger the specified event after
+the given delay. The timer can be canceled before it triggers by calling
+its <cite>stop()</cite> method.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>delay_in_ms</strong> (<em>int</em>) – The delay in milliseconds before the event is triggered</p></li>
+<li><p><strong>event</strong> (<em>dict</em>) – The event to trigger when the timer expires
+Example: {‘name’: ‘timeout’, ‘data’: ‘additional_info’}</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A Timer object that can be used to cancel the timer</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#proto_db.fsm.Timer" title="proto_db.fsm.Timer"><em>Timer</em></a></p>
+</dd>
+</dl>
+<p class="rubric">Example</p>
+<p><a href="#id9"><span class="problematic" id="id10">``</span></a><a href="#id11"><span class="problematic" id="id12">`</span></a>python
+# Start a timer that triggers a ‘timeout’ event after 5 seconds
+timer = fsm.start_timer(5000, {‘name’: ‘timeout’})</p>
+<p># Cancel the timer before it triggers
+timer.stop()
+<a href="#id13"><span class="problematic" id="id14">``</span></a><a href="#id15"><span class="problematic" id="id16">`</span></a></p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.fsm.FSM.stop_all_timers">
+<span class="sig-name descname"><span class="pre">stop_all_timers</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/fsm.html#FSM.stop_all_timers"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.fsm.FSM.stop_all_timers" title="Link to this definition"></a></dt>
+<dd><p>Cancels all active timers.</p>
+<p>This method stops all timers that were started by this FSM instance
+and have not yet triggered or been canceled.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>The <code class="docutils literal notranslate"><span class="pre">FSM</span></code> class is a Finite State Machine implementation. It allows you to define states, transitions between states, and actions to be performed on transitions.</p>
+</section>
+<section id="timer">
+<h2>Timer<a class="headerlink" href="#timer" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.fsm.Timer">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.fsm.</span></span><span class="sig-name descname"><span class="pre">Timer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">timer_execution</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/fsm.html#Timer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.fsm.Timer" title="Link to this definition"></a></dt>
+<dd><p>Class to manage delayed execution of events using a threading pool.</p>
+<p>This class provides a way to schedule events to be executed after a delay,
+with the ability to cancel the execution before it happens.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>timer_execution</strong> (<em>Future</em>)</p>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="proto_db.fsm.Timer.timer_execution">
+<span class="sig-name descname"><span class="pre">timer_execution</span></span><a class="headerlink" href="#proto_db.fsm.Timer.timer_execution" title="Link to this definition"></a></dt>
+<dd><p>The Future object representing the asynchronous timer task</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>concurrent.futures._base.Future</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="proto_db.fsm.Timer.canceled">
+<span class="sig-name descname"><span class="pre">canceled</span></span><a class="headerlink" href="#proto_db.fsm.Timer.canceled" title="Link to this definition"></a></dt>
+<dd><p>A flag indicating whether the timer has been canceled</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.fsm.Timer.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">timer_execution</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/fsm.html#Timer.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.fsm.Timer.__init__" title="Link to this definition"></a></dt>
+<dd><p>Initialize a new Timer instance.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>timer_execution</strong> (<em>Future</em>) – The Future object representing the asynchronous timer task</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.fsm.Timer.stop">
+<span class="sig-name descname"><span class="pre">stop</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/fsm.html#Timer.stop"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.fsm.Timer.stop" title="Link to this definition"></a></dt>
+<dd><p>Cancels the timer and prevents the associated event from being executed.</p>
+<p>This method sets the canceled flag to True and attempts to cancel the
+underlying Future. If the timer task has already started executing,
+it will check the canceled flag and exit early.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.fsm.Timer.wait_til_processed">
+<span class="sig-name descname"><span class="pre">wait_til_processed</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/fsm.html#Timer.wait_til_processed"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.fsm.Timer.wait_til_processed" title="Link to this definition"></a></dt>
+<dd><p>Waits until the timer has finished executing or has been canceled.</p>
+<p>This method blocks until the timer task completes. If the timer has been
+canceled, this method returns immediately without waiting.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This method will propagate any exceptions raised by the timer task.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>The <code class="docutils literal notranslate"><span class="pre">Timer</span></code> class provides timing functionality for the FSM. It can be used to trigger transitions after a certain amount of time.</p>
+</section>
+<section id="usage-examples">
+<h2>Usage Examples<a class="headerlink" href="#usage-examples" title="Link to this heading"></a></h2>
+<section id="basic-fsm">
+<h3>Basic FSM<a class="headerlink" href="#basic-fsm" title="Link to this heading"></a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">proto_db.fsm</span> <span class="kn">import</span> <span class="n">FSM</span>
+
+<span class="c1"># Create an FSM</span>
+<span class="n">fsm</span> <span class="o">=</span> <span class="n">FSM</span><span class="p">()</span>
+
+<span class="c1"># Define states</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;idle&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;running&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;paused&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;stopped&quot;</span><span class="p">)</span>
+
+<span class="c1"># Define transitions</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;idle&quot;</span><span class="p">,</span> <span class="s2">&quot;running&quot;</span><span class="p">,</span> <span class="s2">&quot;start&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;running&quot;</span><span class="p">,</span> <span class="s2">&quot;paused&quot;</span><span class="p">,</span> <span class="s2">&quot;pause&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;paused&quot;</span><span class="p">,</span> <span class="s2">&quot;running&quot;</span><span class="p">,</span> <span class="s2">&quot;resume&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;running&quot;</span><span class="p">,</span> <span class="s2">&quot;stopped&quot;</span><span class="p">,</span> <span class="s2">&quot;stop&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;paused&quot;</span><span class="p">,</span> <span class="s2">&quot;stopped&quot;</span><span class="p">,</span> <span class="s2">&quot;stop&quot;</span><span class="p">)</span>
+
+<span class="c1"># Set the initial state</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">set_state</span><span class="p">(</span><span class="s2">&quot;idle&quot;</span><span class="p">)</span>
+
+<span class="c1"># Trigger transitions</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">trigger</span><span class="p">(</span><span class="s2">&quot;start&quot;</span><span class="p">)</span>  <span class="c1"># State changes to &quot;running&quot;</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">trigger</span><span class="p">(</span><span class="s2">&quot;pause&quot;</span><span class="p">)</span>  <span class="c1"># State changes to &quot;paused&quot;</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">trigger</span><span class="p">(</span><span class="s2">&quot;resume&quot;</span><span class="p">)</span>  <span class="c1"># State changes to &quot;running&quot;</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">trigger</span><span class="p">(</span><span class="s2">&quot;stop&quot;</span><span class="p">)</span>   <span class="c1"># State changes to &quot;stopped&quot;</span>
+
+<span class="c1"># Check the current state</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">fsm</span><span class="o">.</span><span class="n">state</span><span class="p">)</span>  <span class="c1"># Output: stopped</span>
+</pre></div>
+</div>
+</section>
+<section id="fsm-with-actions">
+<h3>FSM with Actions<a class="headerlink" href="#fsm-with-actions" title="Link to this heading"></a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">proto_db.fsm</span> <span class="kn">import</span> <span class="n">FSM</span>
+
+<span class="c1"># Create an FSM</span>
+<span class="n">fsm</span> <span class="o">=</span> <span class="n">FSM</span><span class="p">()</span>
+
+<span class="c1"># Define states</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;idle&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;running&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;paused&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;stopped&quot;</span><span class="p">)</span>
+
+<span class="c1"># Define actions</span>
+<span class="k">def</span> <span class="nf">on_start</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Starting...&quot;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">on_pause</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Pausing...&quot;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">on_resume</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Resuming...&quot;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">on_stop</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Stopping...&quot;</span><span class="p">)</span>
+
+<span class="c1"># Define transitions with actions</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;idle&quot;</span><span class="p">,</span> <span class="s2">&quot;running&quot;</span><span class="p">,</span> <span class="s2">&quot;start&quot;</span><span class="p">,</span> <span class="n">on_start</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;running&quot;</span><span class="p">,</span> <span class="s2">&quot;paused&quot;</span><span class="p">,</span> <span class="s2">&quot;pause&quot;</span><span class="p">,</span> <span class="n">on_pause</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;paused&quot;</span><span class="p">,</span> <span class="s2">&quot;running&quot;</span><span class="p">,</span> <span class="s2">&quot;resume&quot;</span><span class="p">,</span> <span class="n">on_resume</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;running&quot;</span><span class="p">,</span> <span class="s2">&quot;stopped&quot;</span><span class="p">,</span> <span class="s2">&quot;stop&quot;</span><span class="p">,</span> <span class="n">on_stop</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;paused&quot;</span><span class="p">,</span> <span class="s2">&quot;stopped&quot;</span><span class="p">,</span> <span class="s2">&quot;stop&quot;</span><span class="p">,</span> <span class="n">on_stop</span><span class="p">)</span>
+
+<span class="c1"># Set the initial state</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">set_state</span><span class="p">(</span><span class="s2">&quot;idle&quot;</span><span class="p">)</span>
+
+<span class="c1"># Trigger transitions</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">trigger</span><span class="p">(</span><span class="s2">&quot;start&quot;</span><span class="p">)</span>  <span class="c1"># Prints &quot;Starting...&quot; and changes state to &quot;running&quot;</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">trigger</span><span class="p">(</span><span class="s2">&quot;pause&quot;</span><span class="p">)</span>  <span class="c1"># Prints &quot;Pausing...&quot; and changes state to &quot;paused&quot;</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">trigger</span><span class="p">(</span><span class="s2">&quot;resume&quot;</span><span class="p">)</span>  <span class="c1"># Prints &quot;Resuming...&quot; and changes state to &quot;running&quot;</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">trigger</span><span class="p">(</span><span class="s2">&quot;stop&quot;</span><span class="p">)</span>   <span class="c1"># Prints &quot;Stopping...&quot; and changes state to &quot;stopped&quot;</span>
+</pre></div>
+</div>
+</section>
+<section id="fsm-with-guards">
+<h3>FSM with Guards<a class="headerlink" href="#fsm-with-guards" title="Link to this heading"></a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">proto_db.fsm</span> <span class="kn">import</span> <span class="n">FSM</span>
+
+<span class="c1"># Create an FSM</span>
+<span class="n">fsm</span> <span class="o">=</span> <span class="n">FSM</span><span class="p">()</span>
+
+<span class="c1"># Define states</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;idle&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;running&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;paused&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;stopped&quot;</span><span class="p">)</span>
+
+<span class="c1"># Define a guard condition</span>
+<span class="n">is_authorized</span> <span class="o">=</span> <span class="kc">False</span>
+
+<span class="k">def</span> <span class="nf">check_authorization</span><span class="p">():</span>
+    <span class="k">return</span> <span class="n">is_authorized</span>
+
+<span class="c1"># Define transitions with guards</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;idle&quot;</span><span class="p">,</span> <span class="s2">&quot;running&quot;</span><span class="p">,</span> <span class="s2">&quot;start&quot;</span><span class="p">,</span> <span class="n">guard</span><span class="o">=</span><span class="n">check_authorization</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;running&quot;</span><span class="p">,</span> <span class="s2">&quot;paused&quot;</span><span class="p">,</span> <span class="s2">&quot;pause&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;paused&quot;</span><span class="p">,</span> <span class="s2">&quot;running&quot;</span><span class="p">,</span> <span class="s2">&quot;resume&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;running&quot;</span><span class="p">,</span> <span class="s2">&quot;stopped&quot;</span><span class="p">,</span> <span class="s2">&quot;stop&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;paused&quot;</span><span class="p">,</span> <span class="s2">&quot;stopped&quot;</span><span class="p">,</span> <span class="s2">&quot;stop&quot;</span><span class="p">)</span>
+
+<span class="c1"># Set the initial state</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">set_state</span><span class="p">(</span><span class="s2">&quot;idle&quot;</span><span class="p">)</span>
+
+<span class="c1"># Try to trigger a transition with a guard that returns False</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">trigger</span><span class="p">(</span><span class="s2">&quot;start&quot;</span><span class="p">)</span>  <span class="c1"># State remains &quot;idle&quot; because the guard returns False</span>
+
+<span class="c1"># Change the guard condition</span>
+<span class="n">is_authorized</span> <span class="o">=</span> <span class="kc">True</span>
+
+<span class="c1"># Try again</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">trigger</span><span class="p">(</span><span class="s2">&quot;start&quot;</span><span class="p">)</span>  <span class="c1"># State changes to &quot;running&quot; because the guard now returns True</span>
+</pre></div>
+</div>
+</section>
+<section id="fsm-with-timers">
+<h3>FSM with Timers<a class="headerlink" href="#fsm-with-timers" title="Link to this heading"></a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">from</span> <span class="nn">proto_db.fsm</span> <span class="kn">import</span> <span class="n">FSM</span><span class="p">,</span> <span class="n">Timer</span>
+
+<span class="c1"># Create an FSM</span>
+<span class="n">fsm</span> <span class="o">=</span> <span class="n">FSM</span><span class="p">()</span>
+
+<span class="c1"># Define states</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;idle&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;running&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;paused&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;stopped&quot;</span><span class="p">)</span>
+
+<span class="c1"># Define a timer</span>
+<span class="n">timer</span> <span class="o">=</span> <span class="n">Timer</span><span class="p">()</span>
+
+<span class="c1"># Define transitions</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;idle&quot;</span><span class="p">,</span> <span class="s2">&quot;running&quot;</span><span class="p">,</span> <span class="s2">&quot;start&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;running&quot;</span><span class="p">,</span> <span class="s2">&quot;paused&quot;</span><span class="p">,</span> <span class="s2">&quot;pause&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;paused&quot;</span><span class="p">,</span> <span class="s2">&quot;running&quot;</span><span class="p">,</span> <span class="s2">&quot;resume&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;running&quot;</span><span class="p">,</span> <span class="s2">&quot;stopped&quot;</span><span class="p">,</span> <span class="s2">&quot;stop&quot;</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;paused&quot;</span><span class="p">,</span> <span class="s2">&quot;stopped&quot;</span><span class="p">,</span> <span class="s2">&quot;stop&quot;</span><span class="p">)</span>
+
+<span class="c1"># Define a timed transition</span>
+<span class="k">def</span> <span class="nf">check_timeout</span><span class="p">():</span>
+    <span class="k">return</span> <span class="n">timer</span><span class="o">.</span><span class="n">elapsed</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mf">5.0</span>  <span class="c1"># 5 seconds</span>
+
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;running&quot;</span><span class="p">,</span> <span class="s2">&quot;stopped&quot;</span><span class="p">,</span> <span class="s2">&quot;timeout&quot;</span><span class="p">,</span> <span class="n">guard</span><span class="o">=</span><span class="n">check_timeout</span><span class="p">)</span>
+
+<span class="c1"># Set the initial state</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">set_state</span><span class="p">(</span><span class="s2">&quot;idle&quot;</span><span class="p">)</span>
+
+<span class="c1"># Start the timer and transition to &quot;running&quot;</span>
+<span class="n">timer</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">trigger</span><span class="p">(</span><span class="s2">&quot;start&quot;</span><span class="p">)</span>  <span class="c1"># State changes to &quot;running&quot;</span>
+
+<span class="c1"># Wait for the timeout</span>
+<span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">6</span><span class="p">)</span>  <span class="c1"># Wait for 6 seconds</span>
+
+<span class="c1"># Check for timed transitions</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">check_timed_transitions</span><span class="p">()</span>  <span class="c1"># State changes to &quot;stopped&quot; because the timeout guard returns True</span>
+</pre></div>
+</div>
+</section>
+<section id="advanced-fsm-usage">
+<h3>Advanced FSM Usage<a class="headerlink" href="#advanced-fsm-usage" title="Link to this heading"></a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">proto_db.fsm</span> <span class="kn">import</span> <span class="n">FSM</span>
+
+<span class="c1"># Create an FSM</span>
+<span class="n">fsm</span> <span class="o">=</span> <span class="n">FSM</span><span class="p">()</span>
+
+<span class="c1"># Define states with entry and exit actions</span>
+<span class="k">def</span> <span class="nf">on_enter_idle</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Entering idle state&quot;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">on_exit_idle</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Exiting idle state&quot;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">on_enter_running</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Entering running state&quot;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">on_exit_running</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Exiting running state&quot;</span><span class="p">)</span>
+
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;idle&quot;</span><span class="p">,</span> <span class="n">on_enter</span><span class="o">=</span><span class="n">on_enter_idle</span><span class="p">,</span> <span class="n">on_exit</span><span class="o">=</span><span class="n">on_exit_idle</span><span class="p">)</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_state</span><span class="p">(</span><span class="s2">&quot;running&quot;</span><span class="p">,</span> <span class="n">on_enter</span><span class="o">=</span><span class="n">on_enter_running</span><span class="p">,</span> <span class="n">on_exit</span><span class="o">=</span><span class="n">on_exit_running</span><span class="p">)</span>
+
+<span class="c1"># Define transitions with actions and guards</span>
+<span class="k">def</span> <span class="nf">on_start</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Starting...&quot;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">check_can_start</span><span class="p">():</span>
+    <span class="k">return</span> <span class="kc">True</span>
+
+<span class="n">fsm</span><span class="o">.</span><span class="n">add_transition</span><span class="p">(</span><span class="s2">&quot;idle&quot;</span><span class="p">,</span> <span class="s2">&quot;running&quot;</span><span class="p">,</span> <span class="s2">&quot;start&quot;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="n">on_start</span><span class="p">,</span> <span class="n">guard</span><span class="o">=</span><span class="n">check_can_start</span><span class="p">)</span>
+
+<span class="c1"># Set the initial state</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">set_state</span><span class="p">(</span><span class="s2">&quot;idle&quot;</span><span class="p">)</span>  <span class="c1"># Prints &quot;Entering idle state&quot;</span>
+
+<span class="c1"># Trigger a transition</span>
+<span class="n">fsm</span><span class="o">.</span><span class="n">trigger</span><span class="p">(</span><span class="s2">&quot;start&quot;</span><span class="p">)</span>  <span class="c1"># Prints &quot;Exiting idle state&quot;, &quot;Starting...&quot;, &quot;Entering running state&quot;</span>
+
+<span class="c1"># Get all available transitions from the current state</span>
+<span class="n">transitions</span> <span class="o">=</span> <span class="n">fsm</span><span class="o">.</span><span class="n">get_transitions_from_state</span><span class="p">(</span><span class="s2">&quot;running&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">transitions</span><span class="p">)</span>  <span class="c1"># Output: List of transitions from &quot;running&quot; state</span>
+</pre></div>
+</div>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="exceptions.html" class="btn btn-neutral float-left" title="Exceptions" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../advanced_usage.html" class="btn btn-neutral float-right" title="Advanced Usage" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
