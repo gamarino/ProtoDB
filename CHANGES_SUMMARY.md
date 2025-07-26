@@ -45,3 +45,13 @@ The proto_db package is now ready to be built and uploaded to PyPI. To do this:
 2. **Continuous Integration**: Set up CI/CD pipelines to automate testing and deployment.
 3. **Documentation**: Consider generating API documentation using tools like Sphinx.
 4. **Contribution Guidelines**: Add detailed contribution guidelines to encourage community involvement.
+
+## Recent Documentation Updates
+
+1. **Advanced Storage Options**: Added comprehensive documentation for:
+   - `ClusterFileStorage`: Distributed storage for high availability and horizontal scaling
+   - `CloudFileStorage`: Cloud-based storage using S3-compatible object storage services
+
+2. **Package Exports**: Updated `__init__.py` to expose the advanced storage options, making them easily accessible to users.
+
+3. **Use Cases**: Added detailed use cases for the advanced storage options to help users understand when and how to use them effectively.

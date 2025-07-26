@@ -19,6 +19,8 @@ The system is built around the concept of "atoms" - self-contained units of data
 - **Multiple Storage Backends**: 
   - `MemoryStorage`: In-memory storage for testing or ephemeral data
   - `StandaloneFileStorage`: File-based storage with Write-Ahead Logging (WAL)
+  - `ClusterFileStorage`: Distributed storage for high availability and horizontal scaling
+  - `CloudFileStorage`: Cloud-based storage using S3-compatible object storage services
 - **Rich Data Structures**:
   - `Dictionary`: Key-value mapping with string keys
   - `List`: Ordered collection of items
@@ -156,6 +158,8 @@ The storage layer is responsible for persisting atoms to disk or memory. It prov
 
 - **MemoryStorage**: In-memory storage for testing or ephemeral data
 - **StandaloneFileStorage**: File-based storage with Write-Ahead Logging (WAL)
+- **ClusterFileStorage**: Distributed storage with support for multiple nodes in a cluster environment
+- **CloudFileStorage**: Cloud-based storage using S3-compatible object storage services
 
 ### Data Structures
 
@@ -179,6 +183,99 @@ The query system allows for complex data manipulation:
 - **SelectPlan**: Projecting specific fields
 - **LimitPlan** and **OffsetPlan**: Pagination
 
+## Advanced Storage Options
+
+ProtoBase offers advanced storage options for distributed and cloud environments:
+
+### ClusterFileStorage
+
+`ClusterFileStorage` extends `StandaloneFileStorage` to provide distributed storage capabilities across multiple nodes in a cluster.
+
+**Key Features:**
+- **Distributed Coordination**: Nodes communicate to maintain data consistency
+- **Vote-based Locking**: Implements distributed locking through a voting mechanism
+- **Root Synchronization**: Ensures all nodes have a consistent view of the root object
+- **Cached Page Retrieval**: Allows nodes to retrieve pages from other nodes in the cluster
+
+**Use Cases:**
+- **High Availability Systems**: Deploy across multiple servers for fault tolerance
+- **Horizontal Scaling**: Distribute load across multiple nodes
+- **Geographically Distributed Applications**: Maintain data consistency across different locations
+- **Real-time Collaborative Applications**: Support concurrent access from multiple users
+
+**Example:**
+```python
+from proto_db.cluster_file_storage import ClusterFileStorage
+from proto_db.file_block_provider import FileBlockProvider
+from proto_db.db_access import ObjectSpace, Database
+
+# Create a block provider
+block_provider = FileBlockProvider(directory="data")
+
+# Create a cluster storage with multiple servers
+storage = ClusterFileStorage(
+    block_provider=block_provider,
+    server_id="server1",
+    host="localhost",
+    port=8000,
+    servers=[("localhost", 8000), ("localhost", 8001), ("localhost", 8002)]
+)
+
+# Create an object space and database as usual
+object_space = ObjectSpace(storage=storage)
+database = object_space.new_database('ClusterDB')
+```
+
+### CloudFileStorage
+
+`CloudFileStorage` extends `ClusterFileStorage` to provide cloud-based storage using S3-compatible object storage services.
+
+**Key Features:**
+- **Cloud Storage Integration**: Store data in S3-compatible object storage
+- **Local Caching**: Maintain a local cache for improved performance
+- **Background Uploading**: Asynchronously upload data to cloud storage
+- **Batched Operations**: Group operations for efficient processing
+
+**Use Cases:**
+- **Scalable Storage**: Leverage cloud infrastructure for virtually unlimited storage
+- **Disaster Recovery**: Ensure data durability through cloud storage redundancy
+- **Cost-Effective Archiving**: Store historical data in cost-effective cloud storage
+- **Hybrid Cloud Deployments**: Combine on-premises and cloud resources
+- **Global Access**: Make data accessible from anywhere with internet connectivity
+
+**Example:**
+```python
+from proto_db.cloud_file_storage import CloudFileStorage, CloudBlockProvider, S3Client
+from proto_db.db_access import ObjectSpace, Database
+
+# Create an S3 client
+s3_client = S3Client(
+    bucket="my-protobase-bucket",
+    prefix="db-data/",
+    endpoint_url="https://s3.amazonaws.com",
+    access_key="YOUR_ACCESS_KEY",
+    secret_key="YOUR_SECRET_KEY",
+    region="us-east-1"
+)
+
+# Create a cloud block provider
+block_provider = CloudBlockProvider(
+    s3_client=s3_client,
+    cache_dir="local-cache",
+    cache_size=1024 * 1024 * 1024  # 1GB cache
+)
+
+# Create a cloud storage
+storage = CloudFileStorage(
+    block_provider=block_provider,
+    server_id="cloud-server-1"
+)
+
+# Create an object space and database as usual
+object_space = ObjectSpace(storage=storage)
+database = object_space.new_database('CloudDB')
+```
+
 ## Development
 
 ### Running Tests
@@ -195,6 +292,8 @@ python -m unittest discover proto_db/tests
 - `proto_db/db_access.py`: Database access layer
 - `proto_db/standalone_file_storage.py`: File-based storage implementation
 - `proto_db/memory_storage.py`: In-memory storage implementation
+- `proto_db/cluster_file_storage.py`: Distributed storage implementation
+- `proto_db/cloud_file_storage.py`: Cloud-based storage implementation
 - `proto_db/dictionaries.py`, `proto_db/lists.py`, `proto_db/sets.py`: Data structures
 - `proto_db/queries.py`: Query system
 - `proto_db/tests/`: Test cases
