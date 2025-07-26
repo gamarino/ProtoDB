@@ -4,33 +4,404 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] use hybrid_executor in the package">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="ProjectLevelVcsManager" settingsEditedManually="true">
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;gamarino&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/gamarino/ProtoDB.git&quot;,
+    &quot;accountId&quot;: &quot;1354360d-bedc-4660-a2e4-030db6594fc2&quot;
+  }
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;customColor&quot;: &quot;&quot;,
+  &quot;associatedIndex&quot;: 4
+}</component>
+  <component name="ProjectId" id="2r7g9QgMLqabDPL5JPGu35qeJcf" />
+  <component name="ProjectLevelVcsManager">
     <ConfirmationsSetting value="2" id="Add" />
+  </component>
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
   </component>
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
-    "git-widget-placeholder": "master"
+    "Python tests.Python tests in test_db_access.py.executor": "Run",
+    "Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor": "Run",
+    "Python tests.Python tests in test_file_block_provider.py.executor": "Debug",
+    "Python tests.Python tests in test_standalone_file_storage.py.executor": "Debug",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "com.google.cloudcode.ide_session_index": "20250726_0000",
+    "git-widget-placeholder": "master",
+    "junie.onboarding.icon.badge.shown": "true",
+    "last_opened_file_path": "/home/gamarino/odoo/ProtoBase/proto_db/tests",
+    "node.js.detected.package.eslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "ml.llm.LLMThirdPartyAiProvidersConfigurable",
+    "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/proto_db/tests" />
+      <recent name="$PROJECT_DIR$/proto_db" />
+    </key>
+  </component>
+  <component name="RunManager" selected="Python tests.Python tests in test_db_access_with_standalone_file_storage.py">
+    <configuration name="Python tests in test_db_access.py" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
+      <module name="ProtoBase" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="_new_additionalArguments" value="&quot;&quot;" />
+      <option name="_new_target" value="&quot;$PROJECT_DIR$/proto_db/tests/test_db_access.py&quot;" />
+      <option name="_new_targetType" value="&quot;PATH&quot;" />
+      <method v="2" />
+    </configuration>
+    <configuration name="Python tests in test_db_access_with_standalone_file_storage.py" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
+      <module name="ProtoBase" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="_new_additionalArguments" value="&quot;&quot;" />
+      <option name="_new_target" value="&quot;$PROJECT_DIR$/proto_db/tests/test_db_access_with_standalone_file_storage.py&quot;" />
+      <option name="_new_targetType" value="&quot;PATH&quot;" />
+      <method v="2" />
+    </configuration>
+    <configuration name="Python tests in test_file_block_provider.py" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
+      <module name="ProtoBase" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="_new_additionalArguments" value="&quot;&quot;" />
+      <option name="_new_target" value="&quot;$PROJECT_DIR$/proto_db/tests/test_file_block_provider.py&quot;" />
+      <option name="_new_targetType" value="&quot;PATH&quot;" />
+      <method v="2" />
+    </configuration>
+    <configuration name="Python tests in test_standalone_file_storage.py" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
+      <module name="ProtoBase" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="_new_additionalArguments" value="&quot;&quot;" />
+      <option name="_new_target" value="&quot;$PROJECT_DIR$/proto_db/tests/test_standalone_file_storage.py&quot;" />
+      <option name="_new_targetType" value="&quot;PATH&quot;" />
+      <method v="2" />
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Python tests.Python tests in test_db_access_with_standalone_file_storage.py" />
+        <item itemvalue="Python tests.Python tests in test_db_access.py" />
+        <item itemvalue="Python tests.Python tests in test_standalone_file_storage.py" />
+        <item itemvalue="Python tests.Python tests in test_file_block_provider.py" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-09060db00ec0-JavaScript-PY-251.26927.90" />
+        <option value="bundled-python-sdk-41e8cd69c857-64d779b69b7a-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-251.26927.90" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
+    <task id="LOCAL-00001" summary="[WIP] dictionaries with comments">
+      <option name="closed" value="true" />
+      <created>1735662570025</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1735662570025</updated>
+    </task>
+    <task id="LOCAL-00002" summary="[WIP] standalone_file_storage.py, file_block_provider: clean up to abstract classes">
+      <option name="closed" value="true" />
+      <created>1735678420637</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1735678420637</updated>
+    </task>
+    <task id="LOCAL-00003" summary="[WIP]">
+      <option name="closed" value="true" />
+      <created>1735681379574</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1735681379574</updated>
+    </task>
+    <task id="LOCAL-00004" summary="[WIP]">
+      <option name="closed" value="true" />
+      <created>1735767527031</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1735767527031</updated>
+    </task>
+    <task id="LOCAL-00005" summary="[WIP] db_access con standalone_file_storage. Test pasado, 100_000 records en 46s">
+      <option name="closed" value="true" />
+      <created>1735784866575</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1735784866576</updated>
+    </task>
+    <task id="LOCAL-00006" summary="[WIP] transacciones anidadas, listas con head, tail y split optimo, factorización de acceso a los roots, manejo flexible de database y transacciones con bloques with">
+      <option name="closed" value="true" />
+      <created>1735866366408</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1735866366408</updated>
+    </task>
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[WIP] transacciones anidadas, listas con head, tail y split optimo, factorización de acceso a los roots, manejo flexible de database y transacciones con bloques with" />
+      <created>1735915379904</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1735915379904</updated>
+      <workItem from="1735915382371" duration="18455000" />
+      <workItem from="1735994939753" duration="23511000" />
+      <workItem from="1736345402774" duration="8069000" />
+      <workItem from="1736427627679" duration="391000" />
+      <workItem from="1736522486757" duration="15828000" />
+      <workItem from="1743823683294" duration="866000" />
+      <workItem from="1744982726161" duration="9553000" />
+      <workItem from="1753541463109" duration="808000" />
+    </task>
+    <task id="LOCAL-00007" summary="[WIP] standalone_file_storage.py : push_to_wal with bytes, not bytearray">
+      <option name="closed" value="true" />
+      <created>1735916618420</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1735916618420</updated>
+    </task>
+    <task id="LOCAL-00008" summary="[WIP] standalone_file_storage.py : global executor pool">
+      <option name="closed" value="true" />
+      <created>1735916920016</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1735916920016</updated>
+    </task>
+    <task id="LOCAL-00009" summary="[WIP] queries">
+      <option name="closed" value="true" />
+      <created>1735923639918</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1735923639918</updated>
+    </task>
+    <task id="LOCAL-00010" summary="[WIP] queries">
+      <option name="closed" value="true" />
+      <created>1735937066733</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1735937066733</updated>
+    </task>
+    <task id="LOCAL-00011" summary="[WIP] queries, IndexedQueryPlan">
+      <option name="closed" value="true" />
+      <created>1736002131939</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1736002131940</updated>
+    </task>
+    <task id="LOCAL-00012" summary="[WIP] queries: indexed queries optiminizations on WherePlan">
+      <option name="closed" value="true" />
+      <created>1736080451335</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1736080451335</updated>
+    </task>
+    <task id="LOCAL-00013" summary="[WIP] queries: WherePlan after JoinPlan, optimized to prefiltered Joins">
+      <option name="closed" value="true" />
+      <created>1736121790150</created>
+      <option name="number" value="00013" />
+      <option name="presentableId" value="LOCAL-00013" />
+      <option name="project" value="LOCAL" />
+      <updated>1736121790150</updated>
+    </task>
+    <task id="LOCAL-00014" summary="[WIP] queries: WherePlan after JoinPlan, optimized to prefiltered Joins">
+      <option name="closed" value="true" />
+      <created>1736123202336</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1736123202336</updated>
+    </task>
+    <task id="LOCAL-00015" summary="[WIP] dependencias circulares, test básicos arreglados">
+      <option name="closed" value="true" />
+      <created>1736352454770</created>
+      <option name="number" value="00015" />
+      <option name="presentableId" value="LOCAL-00015" />
+      <option name="project" value="LOCAL" />
+      <updated>1736352454770</updated>
+    </task>
+    <task id="LOCAL-00016" summary="[WIP] after_load en Atom, no guardar None attributes">
+      <option name="closed" value="true" />
+      <created>1736522933544</created>
+      <option name="number" value="00016" />
+      <option name="presentableId" value="LOCAL-00016" />
+      <option name="project" value="LOCAL" />
+      <updated>1736522933544</updated>
+    </task>
+    <task id="LOCAL-00017" summary="[WIP] fsm: máquina de estados básica">
+      <option name="closed" value="true" />
+      <created>1736641863501</created>
+      <option name="number" value="00017" />
+      <option name="presentableId" value="LOCAL-00017" />
+      <option name="project" value="LOCAL" />
+      <updated>1736641863501</updated>
+    </task>
+    <task id="LOCAL-00018" summary="[WIP] mejoras varias por AI Junie">
+      <option name="closed" value="true" />
+      <created>1744990117163</created>
+      <option name="number" value="00018" />
+      <option name="presentableId" value="LOCAL-00018" />
+      <option name="project" value="LOCAL" />
+      <updated>1744990117163</updated>
+    </task>
+    <task id="LOCAL-00019" summary="[ADD] README]">
+      <option name="closed" value="true" />
+      <created>1744990529127</created>
+      <option name="number" value="00019" />
+      <option name="presentableId" value="LOCAL-00019" />
+      <option name="project" value="LOCAL" />
+      <updated>1744990529127</updated>
+    </task>
+    <task id="LOCAL-00020" summary="[IMP] hybrid_executor.py">
+      <option name="closed" value="true" />
+      <created>1745011617696</created>
+      <option name="number" value="00020" />
+      <option name="presentableId" value="LOCAL-00020" />
+      <option name="project" value="LOCAL" />
+      <updated>1745011617696</updated>
+    </task>
+    <task id="LOCAL-00021" summary="[FIX] use hybrid_executor in the package">
+      <option name="closed" value="true" />
+      <created>1745012016658</created>
+      <option name="number" value="00021" />
+      <option name="presentableId" value="LOCAL-00021" />
+      <option name="project" value="LOCAL" />
+      <updated>1745012016658</updated>
+    </task>
+    <option name="localTasksCounter" value="22" />
     <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="[WIP] dictionaries with comments" />
-    <option name="LAST_COMMIT_MESSAGE" value="[WIP] dictionaries with comments" />
+    <MESSAGE value="[WIP] standalone_file_storage.py, file_block_provider: clean up to abstract classes" />
+    <MESSAGE value="[WIP]" />
+    <MESSAGE value="[WIP] db_access con standalone_file_storage. Test pasado, 100_000 records en 46s" />
+    <MESSAGE value="[WIP] transacciones anidadas, listas con head, tail y split optimo, factorización de acceso a los roots, manejo flexible de database y transacciones con bloques with" />
+    <MESSAGE value="[WIP] standalone_file_storage.py : push_to_wal with bytes, not bytearray" />
+    <MESSAGE value="[WIP] standalone_file_storage.py : global executor pool" />
+    <MESSAGE value="[WIP] queries" />
+    <MESSAGE value="[WIP] queries, IndexedQueryPlan" />
+    <MESSAGE value="[WIP] queries: indexed queries optiminizations on WherePlan" />
+    <MESSAGE value="[WIP] queries: WherePlan after JoinPlan, optimized to prefiltered Joins" />
+    <MESSAGE value="[WIP] dependencias circulares, test básicos arreglados" />
+    <MESSAGE value="[WIP] after_load en Atom, no guardar None attributes" />
+    <MESSAGE value="[WIP] fsm: máquina de estados básica" />
+    <MESSAGE value="[WIP] mejoras varias por AI Junie" />
+    <MESSAGE value="[ADD] README]" />
+    <MESSAGE value="[IMP] hybrid_executor.py" />
+    <MESSAGE value="[FIX] use hybrid_executor in the package" />
+    <option name="LAST_COMMIT_MESSAGE" value="[FIX] use hybrid_executor in the package" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/proto_db/file_block_provider.py</url>
+          <line>411</line>
+          <option name="timeStamp" value="112" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/proto_db/tests/test_db_access_with_standalone_file_storage.py</url>
+          <line>71</line>
+          <option name="timeStamp" value="154" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <condition expression="transaction == None" language="Python" />
+          <url>file://$PROJECT_DIR$/proto_db/dictionaries.py</url>
+          <line>27</line>
+          <option name="timeStamp" value="156" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/proto_db/common.py</url>
+          <line>260</line>
+          <option name="timeStamp" value="157" />
+        </line-breakpoint>
+      </breakpoints>
+      <default-breakpoints>
+        <breakpoint type="python-exception">
+          <properties notifyOnTerminate="true" exception="BaseException">
+            <option name="notifyOnTerminate" value="true" />
+          </properties>
+        </breakpoint>
+      </default-breakpoints>
+    </breakpoint-manager>
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/ProtoBase$.coverage" NAME=" Coverage Results" MODIFIED="1735662288344" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/ProtoBase$.coverage" NAME=" Coverage Results" MODIFIED="1736352327720" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>

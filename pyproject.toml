@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "proto_db"
+version = "0.1.0"
+description = "A transactional, object-oriented database system implemented in Python"
+readme = "README.md"
+authors = [
+    {name = "ProtoBase Team", email = "example@example.com"}
+]
+license = {text = "MIT"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+keywords = ["database", "transactional", "object-oriented"]
+requires-python = ">=3.11"
+dependencies = []
+
+[project.urls]
+"Homepage" = "https://github.com/yourusername/ProtoBase"
+"Bug Tracker" = "https://github.com/yourusername/ProtoBase/issues"
+
+[tool.setuptools]
+packages = ["proto_db"]

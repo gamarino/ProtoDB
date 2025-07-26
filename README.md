@@ -33,10 +33,10 @@ The system is built around the concept of "atoms" - self-contained units of data
 
 ## Installation
 
-ProtoBase requires Python 3.11 or higher. It's recommended to use a virtual environment:
+ProtoBase requires Python 3.11 or higher. You can install it directly from PyPI:
 
 ```bash
-# Create a virtual environment
+# Create a virtual environment (recommended)
 python -m venv .venv
 
 # Activate the virtual environment
@@ -45,12 +45,19 @@ python -m venv .venv
 # On Unix/MacOS:
 source .venv/bin/activate
 
+# Install from PyPI
+pip install proto_db
+```
+
+Alternatively, you can install from the source:
+
+```bash
 # Clone the repository
 git clone https://github.com/yourusername/ProtoBase.git
 cd ProtoBase
 
-# Install dependencies (if any)
-# pip install -r requirements.txt
+# Install in development mode
+pip install -e .
 ```
 
 ## Basic Usage
@@ -194,7 +201,7 @@ python -m unittest discover proto_db/tests
 
 ## License
 
-[Add your license information here]
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Contributing
 
