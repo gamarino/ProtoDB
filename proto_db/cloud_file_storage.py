@@ -861,6 +861,8 @@ class CloudFileStorage(ClusterFileStorage):
                 self._process_pending_uploads()
             except Exception as e:
                 _logger.error(f"Error in background uploader: {e}")
+                # Add a small sleep to avoid tight loop in case of repeated errors
+                time.sleep(0.1)
 
     def _process_pending_uploads(self):
         """
@@ -868,13 +870,20 @@ class CloudFileStorage(ClusterFileStorage):
         """
         operations = []
 
-        with self.upload_lock:
+        # Use a timeout when acquiring the lock to avoid potential deadlocks
+        if not self.upload_lock.acquire(timeout=5):  # 5 seconds timeout
+            _logger.warning("Could not acquire upload_lock in _process_pending_uploads, skipping this cycle")
+            return
+
+        try:
             if not self.pending_uploads:
                 return
 
             # Get all pending uploads
             operations = self.pending_uploads
             self.pending_uploads = []
+        finally:
+            self.upload_lock.release()
 
         if not operations:
             return
@@ -928,8 +937,13 @@ class CloudFileStorage(ClusterFileStorage):
                 _logger.error(f"Failed to upload operations for WAL {wal_id}: {e}")
 
                 # Put operations back in the pending list
-                with self.upload_lock:
-                    self.pending_uploads.extend(ops)
+                if not self.upload_lock.acquire(timeout=5):  # 5 seconds timeout
+                    _logger.warning("Could not acquire upload_lock to put operations back in pending_uploads, operations will be lost")
+                else:
+                    try:
+                        self.pending_uploads.extend(ops)
+                    finally:
+                        self.upload_lock.release()
 
     def _flush_wal(self):
         """
@@ -946,13 +960,25 @@ class CloudFileStorage(ClusterFileStorage):
 
         if written_size > 0:
             # Get the operation that was just added to pending_writes
-            with self._lock:
+            if not self._lock.acquire(timeout=5):  # 5 seconds timeout
+                _logger.warning("Could not acquire _lock in _flush_wal, skipping adding to pending_uploads")
+                return written_size
+
+            try:
                 if self.pending_writes:
                     operation = self.pending_writes[-1]
 
                     # Add to pending uploads
-                    with self.upload_lock:
+                    if not self.upload_lock.acquire(timeout=5):  # 5 seconds timeout
+                        _logger.warning("Could not acquire upload_lock in _flush_wal, skipping adding to pending_uploads")
+                        return written_size
+
+                    try:
                         self.pending_uploads.append(operation)
+                    finally:
+                        self.upload_lock.release()
+            finally:
+                self._lock.release()
 
         return written_size
 
@@ -980,15 +1006,19 @@ class CloudFileStorage(ClusterFileStorage):
         This method overrides the base implementation to also process pending uploads
         before closing.
         """
-        # Process pending uploads
-        self._process_pending_uploads()
-
-        # Stop the background uploader thread
+        # First stop the background uploader thread to avoid potential deadlocks
         self.uploader_running = False
 
         # Wait for the uploader thread to finish
         if hasattr(self, 'uploader_thread') and self.uploader_thread.is_alive():
             self.uploader_thread.join(timeout=2.0)  # Wait up to 2 seconds for the thread to finish
+
+        # Now process any remaining pending uploads
+        try:
+            self._process_pending_uploads()
+        except Exception as e:
+            _logger.error(f"Error processing pending uploads during close: {e}")
+            # Continue with closing even if processing fails
 
         # Call the parent implementation
         super().close()
