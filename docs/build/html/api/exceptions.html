@@ -64,6 +64,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#protocorruptionexception">ProtoCorruptionException</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#protounexpectedexception">ProtoUnexpectedException</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#cloudstorageerror">CloudStorageError</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#cloudclusterstorageerror">CloudClusterStorageError</a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#usage-examples">Usage Examples</a><ul>
@@ -138,7 +139,8 @@
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">ProtoCorruptionException</span></code>: Raised when data corruption is detected.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">ProtoUnexpectedException</span></code>: Base class for unexpected exceptions.
-- <code class="docutils literal notranslate"><span class="pre">CloudStorageError</span></code>: Raised for cloud storage specific errors.</p></li>
+- <code class="docutils literal notranslate"><span class="pre">CloudStorageError</span></code>: Raised for cloud storage specific errors.
+- <code class="docutils literal notranslate"><span class="pre">CloudClusterStorageError</span></code>: Raised for cloud cluster storage specific errors.</p></li>
 </ul>
 </li>
 </ul>
@@ -388,6 +390,25 @@
 </dd></dl>
 
 <p>Raised for cloud storage specific errors. This can happen when there are issues with S3 operations or when the cloud storage is misconfigured.</p>
+</section>
+<section id="cloudclusterstorageerror">
+<h3>CloudClusterStorageError<a class="headerlink" href="#cloudclusterstorageerror" title="Link to this heading"></a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.cloud_cluster_file_storage.CloudClusterStorageError">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_cluster_file_storage.</span></span><span class="sig-name descname"><span class="pre">CloudClusterStorageError</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_cluster_file_storage.html#CloudClusterStorageError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_cluster_file_storage.CloudClusterStorageError" title="Link to this definition"></a></dt>
+<dd><p>Exception raised for cloud cluster storage specific errors.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>code</strong> (<em>int</em>)</p></li>
+<li><p><strong>exception_type</strong> (<em>str</em>)</p></li>
+<li><p><strong>message</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Raised for cloud cluster storage specific errors. This can happen when there are issues with distributed operations in a cluster environment that uses S3 as the final storage for data.</p>
 </section>
 </section>
 <section id="usage-examples">

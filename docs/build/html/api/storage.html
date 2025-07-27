@@ -79,6 +79,11 @@
 <li class="toctree-l4"><a class="reference internal" href="#proto_db.cloud_file_storage.CloudStorageError"><code class="docutils literal notranslate"><span class="pre">CloudStorageError</span></code></a></li>
 </ul>
 </li>
+<li class="toctree-l3"><a class="reference internal" href="#cloud-cluster-file-storage">Cloud Cluster File Storage</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage"><code class="docutils literal notranslate"><span class="pre">CloudClusterFileStorage</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.cloud_cluster_file_storage.CloudClusterStorageError"><code class="docutils literal notranslate"><span class="pre">CloudClusterStorageError</span></code></a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="data_structures.html">Data Structures</a></li>
@@ -93,6 +98,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#file-block-provider">File Block Provider</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#cluster-file-storage">Cluster File Storage</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#cloud-file-storage">Cloud File Storage</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#cloud-cluster-file-storage">Cloud Cluster File Storage</a></li>
 </ul>
 </li>
 </ul>
@@ -1520,6 +1526,157 @@ Concrete implementations should be provided for specific S3 providers.</p>
 </dd></dl>
 
 <p>The <code class="docutils literal notranslate"><span class="pre">CloudStorageError</span></code> class is an exception raised for cloud storage specific errors.</p>
+</section>
+<section id="cloud-cluster-file-storage">
+<h2>Cloud Cluster File Storage<a class="headerlink" href="#cloud-cluster-file-storage" title="Link to this heading"></a></h2>
+<dl class="py class" id="module-proto_db.cloud_cluster_file_storage">
+<dt class="sig sig-object py" id="proto_db.cloud_cluster_file_storage.CloudClusterFileStorage">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_cluster_file_storage.</span></span><span class="sig-name descname"><span class="pre">CloudClusterFileStorage</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">block_provider</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">server_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">host</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">port</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">servers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vote_timeout_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">read_timeout_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">retry_interval_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_retries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">buffer_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1048576</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blob_max_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2147483648</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_workers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">upload_interval_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5000</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_cluster_file_storage.html#CloudClusterFileStorage"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage" title="Link to this definition"></a></dt>
+<dd><p>An implementation of cloud cluster file storage with support for distributed operations and S3 storage.</p>
+<p>This class combines the functionality of CloudFileStorage and ClusterFileStorage to provide
+a storage solution that works in a multi-server cluster environment while using S3 as the
+final storage for data. It supports distributed operations like vote-based exclusive locking,
+root synchronization, and cached page retrieval between servers, as well as cloud storage
+features like background uploading to S3 and local caching.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>block_provider</strong> (<a class="reference internal" href="#proto_db.cloud_file_storage.CloudBlockProvider" title="proto_db.cloud_file_storage.CloudBlockProvider"><em>CloudBlockProvider</em></a>)</p></li>
+<li><p><strong>server_id</strong> (<em>str</em>)</p></li>
+<li><p><strong>host</strong> (<em>str</em>)</p></li>
+<li><p><strong>port</strong> (<em>int</em>)</p></li>
+<li><p><strong>servers</strong> (<a class="reference internal" href="data_structures.html#proto_db.lists.List" title="proto_db.lists.List"><em>List</em></a><em>[</em><em>Tuple</em><em>[</em><em>str</em><em>, </em><em>int</em><em>]</em><em>]</em>)</p></li>
+<li><p><strong>vote_timeout_ms</strong> (<em>int</em>)</p></li>
+<li><p><strong>read_timeout_ms</strong> (<em>int</em>)</p></li>
+<li><p><strong>retry_interval_ms</strong> (<em>int</em>)</p></li>
+<li><p><strong>max_retries</strong> (<em>int</em>)</p></li>
+<li><p><strong>buffer_size</strong> (<em>int</em>)</p></li>
+<li><p><strong>blob_max_size</strong> (<em>int</em>)</p></li>
+<li><p><strong>max_workers</strong> (<em>int</em>)</p></li>
+<li><p><strong>upload_interval_ms</strong> (<em>int</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">block_provider</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">server_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">host</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">port</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">servers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vote_timeout_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">read_timeout_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">retry_interval_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_retries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">buffer_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1048576</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blob_max_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2147483648</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_workers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">upload_interval_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5000</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_cluster_file_storage.html#CloudClusterFileStorage.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.__init__" title="Link to this definition"></a></dt>
+<dd><p>Constructor for the CloudClusterFileStorage class.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>block_provider</strong> (<a class="reference internal" href="#proto_db.cloud_file_storage.CloudBlockProvider" title="proto_db.cloud_file_storage.CloudBlockProvider"><em>CloudBlockProvider</em></a>) – The underlying cloud block provider</p></li>
+<li><p><strong>server_id</strong> (<em>str</em>) – Unique identifier for this server</p></li>
+<li><p><strong>host</strong> (<em>str</em>) – Host address to bind to</p></li>
+<li><p><strong>port</strong> (<em>int</em>) – Port to listen on</p></li>
+<li><p><strong>servers</strong> (<em>List</em><em>[</em><em>Tuple</em><em>[</em><em>str</em><em>, </em><em>int</em><em>]</em><em>]</em>) – List of (host, port) tuples for all servers in the cluster</p></li>
+<li><p><strong>vote_timeout_ms</strong> (<em>int</em>) – Timeout for vote requests in milliseconds</p></li>
+<li><p><strong>read_timeout_ms</strong> (<em>int</em>) – Timeout for page requests in milliseconds</p></li>
+<li><p><strong>retry_interval_ms</strong> (<em>int</em>) – Interval between retries in milliseconds</p></li>
+<li><p><strong>max_retries</strong> (<em>int</em>) – Maximum number of retry attempts</p></li>
+<li><p><strong>buffer_size</strong> (<em>int</em>) – Size of the WAL buffer in bytes</p></li>
+<li><p><strong>blob_max_size</strong> (<em>int</em>) – Maximum size of a blob in bytes</p></li>
+<li><p><strong>max_workers</strong> (<em>int</em>) – Number of worker threads for asynchronous operations</p></li>
+<li><p><strong>upload_interval_ms</strong> (<em>int</em>) – Interval between S3 uploads in milliseconds</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.read_lock_current_root">
+<span class="sig-name descname"><span class="pre">read_lock_current_root</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_cluster_file_storage.html#CloudClusterFileStorage.read_lock_current_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.read_lock_current_root" title="Link to this definition"></a></dt>
+<dd><p>Read and lock the current root object.</p>
+<p>This method acquires a distributed lock on the root object before reading it.
+It ensures that the root object is synchronized across all servers in the cluster
+and that the latest version is retrieved from S3 if necessary.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The current root object pointer</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer">AtomPointer</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.set_current_root">
+<span class="sig-name descname"><span class="pre">set_current_root</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">root_pointer</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_cluster_file_storage.html#CloudClusterFileStorage.set_current_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.set_current_root" title="Link to this definition"></a></dt>
+<dd><p>Set the current root object.</p>
+<p>This method updates the root object, broadcasts the update to all servers,
+and ensures the update is persisted to S3.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>root_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>) – The new root object pointer</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.get_reader">
+<span class="sig-name descname"><span class="pre">get_reader</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">wal_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">position</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_cluster_file_storage.html#CloudClusterFileStorage.get_reader"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.get_reader" title="Link to this definition"></a></dt>
+<dd><p>Get a reader for the specified WAL at the given position.</p>
+<p>This method first tries to get the data from the local cache, then from the
+local file system, then from other servers in the cluster, and finally from S3.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>wal_id</strong> (<em>UUID</em>) – WAL ID</p></li>
+<li><p><strong>position</strong> (<em>int</em>) – Position in the WAL</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A reader for the WAL data</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>io.BytesIO</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.flush_wal">
+<span class="sig-name descname"><span class="pre">flush_wal</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_cluster_file_storage.html#CloudClusterFileStorage.flush_wal"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.flush_wal" title="Link to this definition"></a></dt>
+<dd><p>Public method to flush WAL buffer and process pending writes.</p>
+<p>This method ensures that WAL data is flushed to disk, processed for pending writes,
+and uploaded to S3. It also broadcasts the updates to other servers in the cluster.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A tuple containing (bytes_flushed, operations_processed)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>tuple</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.close">
+<span class="sig-name descname"><span class="pre">close</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_cluster_file_storage.html#CloudClusterFileStorage.close"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.close" title="Link to this definition"></a></dt>
+<dd><p>Closes the storage, flushing any pending writes and releasing resources.</p>
+<p>This method ensures that all pending uploads are processed, the background uploader
+thread is stopped, and the network manager is stopped before closing the storage.</p>
+</dd></dl>
+
+</dd></dl>
+
+<p><code class="docutils literal notranslate"><span class="pre">CloudClusterFileStorage</span></code> combines the functionality of <code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code> and <code class="docutils literal notranslate"><span class="pre">ClusterFileStorage</span></code> to provide a comprehensive solution for multi-server environments operating in a cluster and using S3 as the final storage for data. It supports distributed operations like vote-based exclusive locking, root synchronization, and cached page retrieval between servers, as well as cloud storage features like background uploading to S3 and local caching.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.cloud_cluster_file_storage.CloudClusterStorageError">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_cluster_file_storage.</span></span><span class="sig-name descname"><span class="pre">CloudClusterStorageError</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_cluster_file_storage.html#CloudClusterStorageError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_cluster_file_storage.CloudClusterStorageError" title="Link to this definition"></a></dt>
+<dd><p>Exception raised for cloud cluster storage specific errors.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>code</strong> (<em>int</em>)</p></li>
+<li><p><strong>exception_type</strong> (<em>str</em>)</p></li>
+<li><p><strong>message</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<p>The <code class="docutils literal notranslate"><span class="pre">CloudClusterStorageError</span></code> class is an exception raised for cloud cluster storage specific errors.</p>
 </section>
 </section>
 

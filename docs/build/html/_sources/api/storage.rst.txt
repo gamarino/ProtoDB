@@ -105,3 +105,20 @@ The ``S3ObjectMetadata`` class represents metadata for an S3 object. It includes
    :special-members: __init__
 
 The ``CloudStorageError`` class is an exception raised for cloud storage specific errors.
+
+Cloud Cluster File Storage
+-------------------------
+
+.. module:: proto_db.cloud_cluster_file_storage
+
+.. autoclass:: CloudClusterFileStorage
+   :members:
+   :special-members: __init__
+
+``CloudClusterFileStorage`` combines the functionality of ``CloudFileStorage`` and ``ClusterFileStorage`` to provide a comprehensive solution for multi-server environments operating in a cluster and using S3 as the final storage for data. It supports distributed operations like vote-based exclusive locking, root synchronization, and cached page retrieval between servers, as well as cloud storage features like background uploading to S3 and local caching.
+
+.. autoclass:: CloudClusterStorageError
+   :members:
+   :special-members: __init__
+
+The ``CloudClusterStorageError`` class is an exception raised for cloud cluster storage specific errors.

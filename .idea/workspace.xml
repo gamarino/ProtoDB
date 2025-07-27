@@ -4,9 +4,25 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] use hybrid_executor in the package">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[IMP] documentation in sphinx generated">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/advanced_usage.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/advanced_usage.doctree" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/api/exceptions.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/api/exceptions.doctree" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/api/storage.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/api/storage.doctree" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/environment.pickle" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/environment.pickle" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/index.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_sources/advanced_usage.rst.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_sources/advanced_usage.rst.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_sources/api/exceptions.rst.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_sources/api/exceptions.rst.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_sources/api/storage.rst.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_sources/api/storage.rst.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/advanced_usage.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/advanced_usage.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/exceptions.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/exceptions.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/index.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/storage.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/storage.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/genindex.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/genindex.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/index.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/objects.inv" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/objects.inv" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/py-modindex.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/py-modindex.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/searchindex.js" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/searchindex.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -29,6 +45,9 @@
     &quot;assignee&quot;: &quot;gamarino&quot;
   }
 }</component>
+  <component name="GithubDefaultAccount">
+    <option name="defaultAccountId" value="1354360d-bedc-4660-a2e4-030db6594fc2" />
+  </component>
   <component name="GithubPullRequestsUISettings">{
   &quot;selectedUrlAndAccountId&quot;: {
     &quot;url&quot;: &quot;https://github.com/gamarino/ProtoDB.git&quot;,
@@ -49,16 +68,19 @@
   </component>
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
+    "Makefile Target.Makefile (1).executor": "Run",
+    "Makefile Target.Makefile (3).executor": "Run",
+    "Makefile Target.Makefile.executor": "Run",
     "Python tests.Python tests in test_db_access.py.executor": "Run",
     "Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor": "Run",
     "Python tests.Python tests in test_file_block_provider.py.executor": "Debug",
     "Python tests.Python tests in test_standalone_file_storage.py.executor": "Debug",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
-    "com.google.cloudcode.ide_session_index": "20250726_0000",
+    "com.google.cloudcode.ide_session_index": "20250726_0002",
     "git-widget-placeholder": "master",
     "junie.onboarding.icon.badge.shown": "true",
-    "last_opened_file_path": "/home/gamarino/odoo/ProtoBase/proto_db/tests",
+    "last_opened_file_path": "/home/gamarino/odoo/ProtoBase/docs/source",
     "node.js.detected.package.eslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
     "node.js.selected.package.tslint": "(autodetect)",
@@ -73,7 +95,31 @@
       <recent name="$PROJECT_DIR$/proto_db" />
     </key>
   </component>
-  <component name="RunManager" selected="Python tests.Python tests in test_db_access_with_standalone_file_storage.py">
+  <component name="RunManager" selected="Makefile Target.Makefile (3)">
+    <configuration name="Makefile (1)" type="MAKEFILE_TARGET_RUN_CONFIGURATION" factoryName="Makefile" temporary="true">
+      <makefile filename="$PROJECT_DIR$/docs/Makefile" target="" workingDirectory="" arguments="">
+        <envs />
+      </makefile>
+      <method v="2" />
+    </configuration>
+    <configuration name="Makefile (2)" type="MAKEFILE_TARGET_RUN_CONFIGURATION" factoryName="Makefile">
+      <makefile filename="$PROJECT_DIR$/docs/Makefile" target="" workingDirectory="$PROJECT_DIR$/docs/source" arguments="">
+        <envs />
+      </makefile>
+      <method v="2" />
+    </configuration>
+    <configuration name="Makefile (3)" type="MAKEFILE_TARGET_RUN_CONFIGURATION" factoryName="Makefile" temporary="true">
+      <makefile filename="$PROJECT_DIR$/docs/Makefile" target="" workingDirectory="" arguments="">
+        <envs />
+      </makefile>
+      <method v="2" />
+    </configuration>
+    <configuration name="Makefile" type="MAKEFILE_TARGET_RUN_CONFIGURATION" factoryName="Makefile" temporary="true">
+      <makefile filename="$PROJECT_DIR$/docs/Makefile" target="" workingDirectory="" arguments="">
+        <envs />
+      </makefile>
+      <method v="2" />
+    </configuration>
     <configuration name="Python tests in test_db_access.py" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
       <module name="ProtoBase" />
       <option name="ENV_FILES" value="" />
@@ -106,44 +152,13 @@
       <option name="_new_targetType" value="&quot;PATH&quot;" />
       <method v="2" />
     </configuration>
-    <configuration name="Python tests in test_file_block_provider.py" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
-      <module name="ProtoBase" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
-      <option name="IS_MODULE_SDK" value="true" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="_new_additionalArguments" value="&quot;&quot;" />
-      <option name="_new_target" value="&quot;$PROJECT_DIR$/proto_db/tests/test_file_block_provider.py&quot;" />
-      <option name="_new_targetType" value="&quot;PATH&quot;" />
-      <method v="2" />
-    </configuration>
-    <configuration name="Python tests in test_standalone_file_storage.py" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
-      <module name="ProtoBase" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
-      <option name="IS_MODULE_SDK" value="true" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="_new_additionalArguments" value="&quot;&quot;" />
-      <option name="_new_target" value="&quot;$PROJECT_DIR$/proto_db/tests/test_standalone_file_storage.py&quot;" />
-      <option name="_new_targetType" value="&quot;PATH&quot;" />
-      <method v="2" />
-    </configuration>
     <recent_temporary>
       <list>
+        <item itemvalue="Makefile Target.Makefile (3)" />
+        <item itemvalue="Makefile Target.Makefile (1)" />
+        <item itemvalue="Makefile Target.Makefile" />
         <item itemvalue="Python tests.Python tests in test_db_access_with_standalone_file_storage.py" />
         <item itemvalue="Python tests.Python tests in test_db_access.py" />
-        <item itemvalue="Python tests.Python tests in test_standalone_file_storage.py" />
-        <item itemvalue="Python tests.Python tests in test_file_block_provider.py" />
       </list>
     </recent_temporary>
   </component>
@@ -218,7 +233,8 @@
       <workItem from="1736522486757" duration="15828000" />
       <workItem from="1743823683294" duration="866000" />
       <workItem from="1744982726161" duration="9553000" />
-      <workItem from="1753541463109" duration="808000" />
+      <workItem from="1753541463109" duration="1149000" />
+      <workItem from="1753567167029" duration="7343000" />
     </task>
     <task id="LOCAL-00007" summary="[WIP] standalone_file_storage.py : push_to_wal with bytes, not bytearray">
       <option name="closed" value="true" />
@@ -340,7 +356,23 @@
       <option name="project" value="LOCAL" />
       <updated>1745012016658</updated>
     </task>
-    <option name="localTasksCounter" value="22" />
+    <task id="LOCAL-00022" summary="[IMP] implement all necessary to submit to pypy">
+      <option name="closed" value="true" />
+      <created>1753542417147</created>
+      <option name="number" value="00022" />
+      <option name="presentableId" value="LOCAL-00022" />
+      <option name="project" value="LOCAL" />
+      <updated>1753542417147</updated>
+    </task>
+    <task id="LOCAL-00023" summary="[IMP] documentation in sphinx generated">
+      <option name="closed" value="true" />
+      <created>1753569513485</created>
+      <option name="number" value="00023" />
+      <option name="presentableId" value="LOCAL-00023" />
+      <option name="project" value="LOCAL" />
+      <updated>1753569513485</updated>
+    </task>
+    <option name="localTasksCounter" value="24" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -365,7 +397,9 @@
     <MESSAGE value="[ADD] README]" />
     <MESSAGE value="[IMP] hybrid_executor.py" />
     <MESSAGE value="[FIX] use hybrid_executor in the package" />
-    <option name="LAST_COMMIT_MESSAGE" value="[FIX] use hybrid_executor in the package" />
+    <MESSAGE value="[IMP] implement all necessary to submit to pypy" />
+    <MESSAGE value="[IMP] documentation in sphinx generated" />
+    <option name="LAST_COMMIT_MESSAGE" value="[IMP] documentation in sphinx generated" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
