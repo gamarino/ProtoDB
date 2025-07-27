@@ -18,6 +18,7 @@ ProtoBase defines a hierarchy of exception classes to handle different types of 
   - ``ProtoCorruptionException``: Raised when data corruption is detected.
   - ``ProtoUnexpectedException``: Base class for unexpected exceptions.
     - ``CloudStorageError``: Raised for cloud storage specific errors.
+    - ``CloudClusterStorageError``: Raised for cloud cluster storage specific errors.
 
 Exception Classes
 ---------------
@@ -94,6 +95,15 @@ CloudStorageError
 
 Raised for cloud storage specific errors. This can happen when there are issues with S3 operations or when the cloud storage is misconfigured.
 
+CloudClusterStorageError
+~~~~~~~~~~~~~~~
+
+.. autoclass:: proto_db.cloud_cluster_file_storage.CloudClusterStorageError
+   :members:
+   :special-members: __init__
+
+Raised for cloud cluster storage specific errors. This can happen when there are issues with distributed operations in a cluster environment that uses S3 as the final storage for data.
+
 Usage Examples
 -------------
 
@@ -104,17 +114,17 @@ Handling Exceptions
 
     import proto_db
     from proto_db.exceptions import ProtoBaseException, ProtoValidationException
-    
+
     try:
         # Perform an operation that might raise an exception
         storage = proto_db.MemoryStorage()
         space = proto_db.ObjectSpace(storage)
         db = space.get_database("test_db")
         tr = db.new_transaction()
-        
+
         # This will raise a ProtoValidationException if the key is not a string
         tr.set_root_object(123, "value")
-        
+
         tr.commit()
     except ProtoValidationException as e:
         # Handle validation errors
@@ -138,7 +148,7 @@ You can also define your own exception classes that inherit from the ProtoBase e
 .. code-block:: python
 
     from proto_db.exceptions import ProtoUserException
-    
+
     class MyCustomException(ProtoUserException):
         """
         A custom exception for my application.
@@ -146,6 +156,6 @@ You can also define your own exception classes that inherit from the ProtoBase e
         def __init__(self, message, custom_info=None):
             super().__init__(message=message)
             self.custom_info = custom_info
-    
+
     # Raise the custom exception
     raise MyCustomException("Something went wrong", custom_info="Additional information")
