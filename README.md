@@ -228,13 +228,14 @@ database = object_space.new_database('ClusterDB')
 
 ### CloudFileStorage
 
-`CloudFileStorage` extends `ClusterFileStorage` to provide cloud-based storage using S3-compatible object storage services.
+`CloudFileStorage` extends `ClusterFileStorage` to provide cloud-based storage using both Amazon S3 and Google Cloud Storage services.
 
 **Key Features:**
-- **Cloud Storage Integration**: Store data in S3-compatible object storage
+- **Multiple Cloud Provider Support**: Store data in Amazon S3 or Google Cloud Storage
 - **Local Caching**: Maintain a local cache for improved performance
 - **Background Uploading**: Asynchronously upload data to cloud storage
 - **Batched Operations**: Group operations for efficient processing
+- **Proper Thread Management**: Ensures background uploader threads are properly managed
 
 **Use Cases:**
 - **Scalable Storage**: Leverage cloud infrastructure for virtually unlimited storage
@@ -243,7 +244,7 @@ database = object_space.new_database('ClusterDB')
 - **Hybrid Cloud Deployments**: Combine on-premises and cloud resources
 - **Global Access**: Make data accessible from anywhere with internet connectivity
 
-**Example:**
+**Example with Amazon S3:**
 ```python
 from proto_db.cloud_file_storage import CloudFileStorage, CloudBlockProvider, S3Client
 from proto_db.db_access import ObjectSpace, Database
@@ -260,7 +261,7 @@ s3_client = S3Client(
 
 # Create a cloud block provider
 block_provider = CloudBlockProvider(
-    s3_client=s3_client,
+    cloud_client=s3_client,
     cache_dir="local-cache",
     cache_size=1024 * 1024 * 1024  # 1GB cache
 )
@@ -274,6 +275,90 @@ storage = CloudFileStorage(
 # Create an object space and database as usual
 object_space = ObjectSpace(storage=storage)
 database = object_space.new_database('CloudDB')
+```
+
+**Example with Google Cloud Storage:**
+```python
+from proto_db.cloud_file_storage import CloudFileStorage, CloudBlockProvider, GoogleCloudClient
+from proto_db.db_access import ObjectSpace, Database
+
+# Create a Google Cloud Storage client
+gcs_client = GoogleCloudClient(
+    bucket="my-protobase-bucket",
+    prefix="db-data/",
+    project_id="my-project-id",
+    credentials_path="/path/to/credentials.json"
+)
+
+# Create a cloud block provider
+block_provider = CloudBlockProvider(
+    cloud_client=gcs_client,
+    cache_dir="gcs-cache",
+    cache_size=1024 * 1024 * 1024  # 1GB cache
+)
+
+# Create a cloud storage
+storage = CloudFileStorage(
+    block_provider=block_provider,
+    server_id="cloud-server-1"
+)
+
+# Create an object space and database as usual
+object_space = ObjectSpace(storage=storage)
+database = object_space.new_database('CloudDB')
+```
+
+### CloudClusterFileStorage
+
+`CloudClusterFileStorage` combines the features of `ClusterFileStorage` and `CloudFileStorage` to provide distributed cloud-based storage with support for both Amazon S3 and Google Cloud Storage.
+
+**Key Features:**
+- **Distributed Cloud Storage**: Combines distributed coordination with cloud storage capabilities
+- **Page Caching**: Maintains a local cache of cloud pages for improved performance
+- **Multi-Provider Support**: Works with both Amazon S3 and Google Cloud Storage
+- **Fault Tolerance**: Provides high availability through distributed nodes and cloud redundancy
+- **Horizontal Scaling**: Distribute load across multiple nodes while leveraging cloud storage
+
+**Use Cases:**
+- **Global Distributed Applications**: Deploy across multiple regions with cloud storage as the backbone
+- **High-Performance Distributed Systems**: Combine local caching with cloud durability
+- **Disaster Recovery Solutions**: Ensure data availability even in case of node failures
+- **Hybrid Multi-Cloud Deployments**: Operate across different cloud providers and on-premises infrastructure
+
+**Example:**
+```python
+from proto_db.cloud_cluster_file_storage import CloudClusterFileStorage
+from proto_db.cloud_file_storage import CloudBlockProvider, GoogleCloudClient
+from proto_db.db_access import ObjectSpace, Database
+
+# Create a Google Cloud Storage client
+gcs_client = GoogleCloudClient(
+    bucket="my-protobase-bucket",
+    prefix="db-data/",
+    project_id="my-project-id",
+    credentials_path="/path/to/credentials.json"
+)
+
+# Create a cloud block provider
+block_provider = CloudBlockProvider(
+    cloud_client=gcs_client,
+    cache_dir="gcs-cache",
+    cache_size=1024 * 1024 * 1024  # 1GB cache
+)
+
+# Create a cloud cluster storage
+storage = CloudClusterFileStorage(
+    block_provider=block_provider,
+    server_id="cloud-cluster-node-1",
+    host="localhost",
+    port=8000,
+    servers=[("localhost", 8000), ("localhost", 8001), ("localhost", 8002)],
+    page_cache_dir="cloud_page_cache"
+)
+
+# Create an object space and database as usual
+object_space = ObjectSpace(storage=storage)
+database = object_space.new_database('CloudClusterDB')
 ```
 
 ## Development
