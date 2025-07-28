@@ -60,12 +60,12 @@ class TestStandaloneFileStorage(unittest.TestCase):
         data = bytes(b"Prueba")  # 2048 bytes (excede buffer de 1024).
         transaction_id, offset = self.storage.push_bytes(data).result()
 
-        self.assertEqual(offset, 2048)
+        self.assertEqual(offset, 2049)  # 2048 + 1 for format indicator
 
         data = bytes(b"Prueba")  # 2048 bytes (excede buffer de 1024).
         transaction_id, offset = self.storage.push_bytes(data).result()
 
-        self.assertEqual(offset, 2048 + len("Prueba") + 8)
+        self.assertEqual(offset, 2049 + len("Prueba") + 8 + 1)  # 2049 (previous offset) + data length + 8 (header) + 1 (format indicator)
 
     def test_push_bytes_exceeding_blob_max_size(self):
         """

@@ -25,6 +25,22 @@ Standalone File Storage
 
 ``StandaloneFileStorage`` is a file-based storage implementation. It stores Atoms in files on disk, uses Write-Ahead Logging (WAL) for durability, and provides persistence across process restarts.
 
+Data Serialization Formats
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``StandaloneFileStorage`` supports multiple data serialization formats:
+
+* **JSON UTF-8** (``FORMAT_JSON_UTF8``): The default format, used for backward compatibility.
+* **MessagePack** (``FORMAT_MSGPACK``): A more efficient binary serialization format.
+* **Raw Binary** (``FORMAT_RAW_BINARY``): For storing raw binary data without additional serialization.
+
+Format indicators are used to identify the serialization format of stored data, allowing for seamless reading of data regardless of the format it was stored in. This provides flexibility in choosing the most appropriate serialization format for different types of data.
+
+Methods for specific formats:
+
+* ``push_atom_msgpack(atom)``: Pushes an atom using MessagePack serialization.
+* ``push_bytes_msgpack(data)``: Pushes a Python object using MessagePack serialization.
+
 .. autoclass:: WALState
    :members:
    :special-members: __init__

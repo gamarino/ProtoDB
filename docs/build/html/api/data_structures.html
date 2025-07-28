@@ -136,8 +136,9 @@
 <h2>Dictionary<a class="headerlink" href="#dictionary" title="Link to this heading"></a></h2>
 <dl class="py class" id="module-proto_db.dictionaries">
 <dt class="sig sig-object py" id="proto_db.dictionaries.Dictionary">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.dictionaries.</span></span><span class="sig-name descname"><span class="pre">Dictionary</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">content</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/dictionaries.html#Dictionary"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.dictionaries.Dictionary" title="Link to this definition"></a></dt>
-<dd><p>Represents a durable, transaction-safe dictionary-like mapping between strings and values.</p>
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.dictionaries.</span></span><span class="sig-name descname"><span class="pre">Dictionary</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">content</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">op_log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/dictionaries.html#Dictionary"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.dictionaries.Dictionary" title="Link to this definition"></a></dt>
+<dd><p>Represents a durable, transaction-safe dictionary-like mapping between strings and values,
+with support for concurrent modifications.</p>
 <p>Only Atoms are recommended as keys and values to ensure consistency and durability.
 Mixing other objects is not supported, and no warnings will be issued for doing so.</p>
 <dl class="field-list simple">
@@ -146,18 +147,20 @@ Mixing other objects is not supported, and no warnings will be issued for doing 
 <li><p><strong>content</strong> (<a class="reference internal" href="#proto_db.lists.List" title="proto_db.lists.List"><em>List</em></a>)</p></li>
 <li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
 <li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+<li><p><strong>op_log</strong> (<em>list</em>)</p></li>
 </ul>
 </dd>
 </dl>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.dictionaries.Dictionary.__init__">
-<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">content</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/dictionaries.html#Dictionary.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.dictionaries.Dictionary.__init__" title="Link to this definition"></a></dt>
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">content</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">op_log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/dictionaries.html#Dictionary.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.dictionaries.Dictionary.__init__" title="Link to this definition"></a></dt>
 <dd><dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>content</strong> (<a class="reference internal" href="#proto_db.lists.List" title="proto_db.lists.List"><em>List</em></a>)</p></li>
 <li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
 <li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+<li><p><strong>op_log</strong> (<em>list</em>)</p></li>
 </ul>
 </dd>
 </dl>
@@ -271,25 +274,38 @@ If the key does not exist, the method returns the original dictionary.</p>
 <p>A <code class="docutils literal notranslate"><span class="pre">Dictionary</span></code> is a key-value mapping with string keys. It supports adding, removing, and updating key-value pairs, provides efficient lookup by key, and can store any type of value.</p>
 <dl class="py class">
 <dt class="sig sig-object py" id="proto_db.dictionaries.RepeatedKeysDictionary">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.dictionaries.</span></span><span class="sig-name descname"><span class="pre">RepeatedKeysDictionary</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">content</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/dictionaries.html#RepeatedKeysDictionary"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.dictionaries.RepeatedKeysDictionary" title="Link to this definition"></a></dt>
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.dictionaries.</span></span><span class="sig-name descname"><span class="pre">RepeatedKeysDictionary</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">content</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">op_log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/dictionaries.html#RepeatedKeysDictionary"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.dictionaries.RepeatedKeysDictionary" title="Link to this definition"></a></dt>
 <dd><p>Represents a dictionary-like data structure allowing multiple records
-associated with a single key.</p>
+associated with a single key, with support for concurrent modifications.</p>
 <p>This class extends the base Dictionary class and provides additional
 functionality for handling repeated keys, updating, and removing
 associated records. Duplicate values in the list associated with a key
 are allowed.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Variables<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>transaction</strong> – Reference to the transactional context of the dictionary.</p>
-</dd>
-<dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><ul class="simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
 <li><p><strong>content</strong> (<a class="reference internal" href="#proto_db.lists.List" title="proto_db.lists.List"><em>List</em></a>)</p></li>
-<li><p><strong>transaction</strong> (<em>Transaction</em>)</p></li>
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
 <li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+<li><p><strong>op_log</strong> (<em>list</em>)</p></li>
 </ul>
 </dd>
 </dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.dictionaries.RepeatedKeysDictionary.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">content</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">op_log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/dictionaries.html#RepeatedKeysDictionary.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.dictionaries.RepeatedKeysDictionary.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>content</strong> (<a class="reference internal" href="#proto_db.lists.List" title="proto_db.lists.List"><em>List</em></a>)</p></li>
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+<li><p><strong>op_log</strong> (<em>list</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.dictionaries.RepeatedKeysDictionary.get_at">
 <span class="sig-name descname"><span class="pre">get_at</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/dictionaries.html#RepeatedKeysDictionary.get_at"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.dictionaries.RepeatedKeysDictionary.get_at" title="Link to this definition"></a></dt>
@@ -310,7 +326,7 @@ are allowed.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.dictionaries.RepeatedKeysDictionary.set_at">
 <span class="sig-name descname"><span class="pre">set_at</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/dictionaries.html#RepeatedKeysDictionary.set_at"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.dictionaries.RepeatedKeysDictionary.set_at" title="Link to this definition"></a></dt>
-<dd><p>Inserts or updates a key-value pair in the dictionary.</p>
+<dd><p>Registers an intent to insert or update a key-value pair in the dictionary.</p>
 <p>This method checks if the specified key already exists in the dictionary. If the key exists,
 its associated record list is updated with the new value</p>
 <dl class="field-list simple">
@@ -324,7 +340,7 @@ its associated record list is updated with the new value</p>
 <dd class="field-even"><p>A new instance of Dictionary with the updated content.</p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="#proto_db.dictionaries.Dictionary" title="proto_db.dictionaries.Dictionary"><em>Dictionary</em></a></p>
+<dd class="field-odd"><p><a class="reference internal" href="#proto_db.dictionaries.RepeatedKeysDictionary" title="proto_db.dictionaries.RepeatedKeysDictionary"><em>RepeatedKeysDictionary</em></a></p>
 </dd>
 </dl>
 </dd></dl>
@@ -332,9 +348,7 @@ its associated record list is updated with the new value</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.dictionaries.RepeatedKeysDictionary.remove_at">
 <span class="sig-name descname"><span class="pre">remove_at</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/dictionaries.html#RepeatedKeysDictionary.remove_at"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.dictionaries.RepeatedKeysDictionary.remove_at" title="Link to this definition"></a></dt>
-<dd><p>Removes a key-value pair from the dictionary if the key exists.</p>
-<p>If the key is found, it removes the corresponding entry and rebalances the structure.
-If the key does not exist, the method returns the original dictionary.</p>
+<dd><p>Registers an intent to remove a key and its associated values from the dictionary.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>key</strong> (<em>str</em>) – The string key of the item to be removed.</p>
@@ -343,7 +357,7 @@ If the key does not exist, the method returns the original dictionary.</p>
 <dd class="field-even"><p>A new instance of Dictionary reflecting the removal.</p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="#proto_db.dictionaries.Dictionary" title="proto_db.dictionaries.Dictionary"><em>Dictionary</em></a></p>
+<dd class="field-odd"><p><a class="reference internal" href="#proto_db.dictionaries.RepeatedKeysDictionary" title="proto_db.dictionaries.RepeatedKeysDictionary"><em>RepeatedKeysDictionary</em></a></p>
 </dd>
 </dl>
 </dd></dl>
@@ -351,27 +365,19 @@ If the key does not exist, the method returns the original dictionary.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.dictionaries.RepeatedKeysDictionary.remove_record_at">
 <span class="sig-name descname"><span class="pre">remove_record_at</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">record</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/dictionaries.html#RepeatedKeysDictionary.remove_record_at"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.dictionaries.RepeatedKeysDictionary.remove_record_at" title="Link to this definition"></a></dt>
-<dd><dl class="simple">
-<dt>Removes a specific record from a list associated with a given key. If the key exists</dt><dd><p>and the record is found within the associated set, it removes the record and updates
-the stored list. If the key does not exist, the original dictionary remains unchanged.</p>
-</dd>
-</dl>
+<dd><p>Registers an intent to remove a specific record from the set associated with a given key.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>key</strong> (<em>str</em>) – The key in the dictionary whose associated set must be updated (e.g., removal
-of a specified record).</p></li>
-<li><p><strong>record</strong> (<a class="reference internal" href="core.html#proto_db.common.Atom" title="proto_db.common.Atom"><em>Atom</em></a>) – The specific record to be removed from the set of associated with the
-provided key.</p></li>
+<li><p><strong>key</strong> (<em>str</em>) – The key in the dictionary whose associated set must be updated.</p></li>
+<li><p><strong>record</strong> (<a class="reference internal" href="core.html#proto_db.common.Atom" title="proto_db.common.Atom"><em>Atom</em></a>) – The specific record to be removed from the set.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>Returns the updated dictionary object with the set containing the record
-removed. If the key does not exist or the record is not found, the original dictionary
-remains unchanged.</p>
+<dd class="field-even"><p>Returns an updated dictionary object with the intended removal logged.</p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="#proto_db.dictionaries.Dictionary" title="proto_db.dictionaries.Dictionary">Dictionary</a></p>
+<dd class="field-odd"><p><a class="reference internal" href="#proto_db.dictionaries.RepeatedKeysDictionary" title="proto_db.dictionaries.RepeatedKeysDictionary"><em>RepeatedKeysDictionary</em></a></p>
 </dd>
 </dl>
 </dd></dl>

@@ -4,11 +4,24 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[IMP] queries.py: add count optimization">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[IMP] ConcurrentOptimized Dictionaries">
+      <change afterPath="$PROJECT_DIR$/STORAGE_FORMAT_CHANGES.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/proto_db/tests/test_format_indicators.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/db_access.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/api/data_structures.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/api/data_structures.doctree" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/api/storage.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/api/storage.doctree" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/environment.pickle" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/environment.pickle" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/dictionaries.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/dictionaries.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/standalone_file_storage.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/standalone_file_storage.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_sources/api/storage.rst.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_sources/api/storage.rst.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/data_structures.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/data_structures.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/storage.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/storage.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/genindex.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/genindex.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/objects.inv" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/objects.inv" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/searchindex.js" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/searchindex.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/source/api/storage.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/storage.rst" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/standalone_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/standalone_file_storage.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_standalone_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_standalone_file_storage.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -52,29 +65,29 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Makefile Target.Makefile (1).executor&quot;: &quot;Run&quot;,
-    &quot;Makefile Target.Makefile (3).executor&quot;: &quot;Run&quot;,
-    &quot;Makefile Target.Makefile.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests in test_db_access.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests in test_file_block_provider.py.executor&quot;: &quot;Debug&quot;,
-    &quot;Python tests.Python tests in test_standalone_file_storage.py.executor&quot;: &quot;Debug&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;com.google.cloudcode.ide_session_index&quot;: &quot;20250728_0000&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/home/gamarino/odoo/ProtoBase/docs/source&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;ml.llm.LLMThirdPartyAiProvidersConfigurable&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Makefile Target.Makefile (1).executor": "Run",
+    "Makefile Target.Makefile (3).executor": "Run",
+    "Makefile Target.Makefile.executor": "Run",
+    "Python tests.Python tests in test_db_access.py.executor": "Run",
+    "Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor": "Run",
+    "Python tests.Python tests in test_file_block_provider.py.executor": "Debug",
+    "Python tests.Python tests in test_standalone_file_storage.py.executor": "Debug",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "com.google.cloudcode.ide_session_index": "20250728_0000",
+    "git-widget-placeholder": "master",
+    "junie.onboarding.icon.badge.shown": "true",
+    "last_opened_file_path": "/home/gamarino/odoo/ProtoBase/docs/source",
+    "node.js.detected.package.eslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "ml.llm.LLMConfigurable",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/proto_db/tests" />
@@ -399,14 +412,29 @@
       <option name="project" value="LOCAL" />
       <updated>1753715850253</updated>
     </task>
-    <option name="localTasksCounter" value="29" />
+    <task id="LOCAL-00029" summary="[IMP] ConcurrentOptimized object, which can integrated modifications on objects by concurrent non conflicting transactions">
+      <option name="closed" value="true" />
+      <created>1753717827094</created>
+      <option name="number" value="00029" />
+      <option name="presentableId" value="LOCAL-00029" />
+      <option name="project" value="LOCAL" />
+      <updated>1753717827094</updated>
+    </task>
+    <task id="LOCAL-00030" summary="[IMP] ConcurrentOptimized Dictionaries">
+      <option name="closed" value="true" />
+      <created>1753718893335</created>
+      <option name="number" value="00030" />
+      <option name="presentableId" value="LOCAL-00030" />
+      <option name="project" value="LOCAL" />
+      <updated>1753718893335</updated>
+    </task>
+    <option name="localTasksCounter" value="31" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[WIP] dictionaries with comments" />
     <MESSAGE value="[WIP] standalone_file_storage.py, file_block_provider: clean up to abstract classes" />
     <MESSAGE value="[WIP]" />
     <MESSAGE value="[WIP] db_access con standalone_file_storage. Test pasado, 100_000 records en 46s" />
@@ -430,7 +458,9 @@
     <MESSAGE value="[IMP] cloud_cluster_file_storage: implments a local cache to maximize throughput of s3 reads" />
     <MESSAGE value="[IMP] queries.py: add further optimizations" />
     <MESSAGE value="[IMP] queries.py: add count optimization" />
-    <option name="LAST_COMMIT_MESSAGE" value="[IMP] queries.py: add count optimization" />
+    <MESSAGE value="[IMP] ConcurrentOptimized object, which can integrated modifications on objects by concurrent non conflicting transactions" />
+    <MESSAGE value="[IMP] ConcurrentOptimized Dictionaries" />
+    <option name="LAST_COMMIT_MESSAGE" value="[IMP] ConcurrentOptimized Dictionaries" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

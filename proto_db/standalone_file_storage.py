@@ -3,6 +3,7 @@ import concurrent.futures
 import io
 import json
 import os
+import msgpack
 
 from abc import ABC
 from threading import Lock
@@ -16,6 +17,11 @@ from .hybrid_executor import HybridExecutor
 import uuid
 import logging
 import struct
+
+# Format indicators for data serialization
+FORMAT_RAW_BINARY = 0x00  # Raw binary data (no serialization)
+FORMAT_JSON_UTF8 = 0x01   # JSON serialized data in UTF-8 encoding
+FORMAT_MSGPACK = 0x02     # MessagePack serialized data
 
 
 _logger = logging.getLogger(__name__)
@@ -394,6 +400,9 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
         """
         Retrieves an Atom from the underlying storage asynchronously.
 
+        This method supports both the legacy format (without format indicator) and 
+        the new format with format indicators (JSON UTF-8 or MessagePack).
+
         Args:
             pointer: An AtomPointer indicating the location of the atom
 
@@ -414,23 +423,87 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
                     # It is already in memory
                     streamer = io.BytesIO(self.in_memory_segments[(pointer.transaction_id, pointer.offset)])
                 else:
-                    # It should be find in block provider
+                    # It should be found in block provider
                     streamer = self.block_provider.get_reader(pointer.transaction_id, pointer.offset)
 
             # Read the atom from the storage getting just the needed amount of data. No extra reads
             with streamer as wal_stream:
+                # Read the size header (8 bytes)
                 len_data = wal_stream.read(8)
                 size = struct.unpack('Q', len_data)[0]
 
-                data = wal_stream.read(size).decode('UTF-8')
-                atom_data = json.loads(data)
+                # Try to read the format indicator (1 byte)
+                format_indicator_bytes = wal_stream.read(1)
+                format_indicator = format_indicator_bytes[0] if format_indicator_bytes else None
+
+                # Check if it's a valid format indicator
+                if format_indicator in (FORMAT_JSON_UTF8, FORMAT_MSGPACK):
+                    # New format with indicator
+                    data = wal_stream.read(size)
+
+                    if format_indicator == FORMAT_JSON_UTF8:
+                        # JSON UTF-8 format
+                        atom_data = json.loads(data.decode('UTF-8'))
+                    else:  # FORMAT_MSGPACK
+                        # MessagePack format
+                        atom_data = msgpack.unpackb(data)
+                else:
+                    # Legacy format (no indicator) - assume JSON UTF-8
+                    # We need to put back the byte we read as format indicator
+                    if format_indicator_bytes:
+                        data = format_indicator_bytes + wal_stream.read(size - 1)
+                    else:
+                        data = wal_stream.read(size)
+
+                    atom_data = json.loads(data.decode('UTF-8'))
+
                 return atom_data
 
         return self.executor_pool.submit(task_read_atom)
 
-    def push_atom(self, atom: dict) -> Future[AtomPointer]:
+    def push_atom(self, atom: dict, format_type: int = FORMAT_JSON_UTF8) -> Future[AtomPointer]:
         """
         Serializes and pushes an Atom into the WAL asynchronously.
+
+        Args:
+            atom: The atom data to be stored
+            format_type: The format indicator for serialization (default: FORMAT_JSON_UTF8)
+
+        Returns:
+            Future[AtomPointer]: A Future that resolves to an AtomPointer indicating
+                                the location where the atom was stored
+
+        Raises:
+            ProtoValidationException: If the storage is not in 'Running' state or if format_type is invalid
+        """
+        if self.state != 'Running':
+            raise ProtoValidationException(message="Storage is not in 'Running' state.")
+
+        if format_type not in (FORMAT_JSON_UTF8, FORMAT_MSGPACK):
+            raise ProtoValidationException(message=f"Invalid format type: {format_type}")
+
+        def task_push_atom():
+            if format_type == FORMAT_JSON_UTF8:
+                # JSON UTF-8 serialization
+                data = json.dumps(atom).encode('UTF-8')
+            else:  # FORMAT_MSGPACK
+                # MessagePack serialization
+                data = msgpack.packb(atom)
+
+            # Add format indicator after length
+            format_indicator = bytes([format_type])
+            len_data = struct.pack('Q', len(data))
+
+            transaction_id, offset = self.push_bytes_to_wal(len_data + format_indicator + data)
+            return AtomPointer(transaction_id, offset)
+
+        return self.executor_pool.submit(task_push_atom)
+
+    def push_atom_msgpack(self, atom: dict) -> Future[AtomPointer]:
+        """
+        Serializes and pushes an Atom into the WAL asynchronously using MessagePack format.
+
+        This is a convenience method that calls push_atom with FORMAT_MSGPACK.
 
         Args:
             atom: The atom data to be stored
@@ -442,20 +515,14 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
         Raises:
             ProtoValidationException: If the storage is not in 'Running' state
         """
-        if self.state != 'Running':
-            raise ProtoValidationException(message="Storage is not in 'Running' state.")
-        def task_push_atom():
-            data = json.dumps(atom).encode('UTF-8')
-            len_data = struct.pack('Q', len(data))
-
-            transaction_id, offset = self.push_bytes_to_wal(len_data + data)
-            return AtomPointer(transaction_id, offset)
-
-        return self.executor_pool.submit(task_push_atom)
+        return self.push_atom(atom, FORMAT_MSGPACK)
 
     def get_bytes(self, pointer: AtomPointer) -> Future[bytes]:
         """
         Retrieves raw bytes from the underlying storage asynchronously.
+
+        This method supports both the legacy format (without format indicator) and 
+        the new format with format indicators.
 
         Args:
             pointer: An AtomPointer indicating the location of the data
@@ -477,26 +544,45 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
                     # It is already in memory
                     streamer = io.BytesIO(self.in_memory_segments[(pointer.transaction_id, pointer.offset)])
                 else:
-                    # It should be find in block provider
+                    # It should be found in block provider
                     streamer = self.block_provider.get_reader(pointer.transaction_id, pointer.offset)
 
             # Read the atom from the storage getting just the needed amount of data. No extra reads
             with streamer as wal_stream:
-                data = wal_stream.read(8)
-                size = struct.unpack('Q', data)[0]
+                # Read the size header (8 bytes)
+                len_data = wal_stream.read(8)
+                size = struct.unpack('Q', len_data)[0]
 
-                data = wal_stream.read(size)
+                # Try to read the format indicator (1 byte)
+                format_indicator_bytes = wal_stream.read(1)
+                format_indicator = format_indicator_bytes[0] if format_indicator_bytes else None
+
+                # Check if it's a valid format indicator
+                if format_indicator in (FORMAT_RAW_BINARY, FORMAT_JSON_UTF8, FORMAT_MSGPACK):
+                    # New format with indicator
+                    data = wal_stream.read(size)
+                else:
+                    # Legacy format (no indicator)
+                    # We need to put back the byte we read as format indicator
+                    if format_indicator_bytes:
+                        data = format_indicator_bytes + wal_stream.read(size - 1)
+                    else:
+                        data = wal_stream.read(size)
 
             return data
 
         return self.executor_pool.submit(task_read_bytes)
 
-    def push_bytes(self, data: bytes) -> Future[tuple[uuid.UUID, int]]:
+    def push_bytes(self, data: bytes, format_type: int = FORMAT_RAW_BINARY) -> Future[tuple[uuid.UUID, int]]:
         """
         Serializes and pushes raw bytes into the WAL asynchronously.
 
+        This method adds a format indicator after the size header to specify the data format.
+        By default, it uses FORMAT_RAW_BINARY for raw binary data.
+
         Args:
             data: The bytes to be stored
+            format_type: The format indicator for the data (default: FORMAT_RAW_BINARY)
 
         Returns:
             Future[tuple[uuid.UUID, int]]: A Future that resolves to a tuple containing
@@ -504,7 +590,7 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
 
         Raises:
             ProtoValidationException: If data is not bytes, is empty, exceeds maximum size,
-                                     or if the storage is not in 'Running' state
+                                     if the storage is not in 'Running' state, or if format_type is invalid
         """
         if self.state != 'Running':
             raise ProtoValidationException(message="Storage is not in 'Running' state.")
@@ -516,6 +602,8 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
             raise ProtoValidationException(
                 message=f"Data exceeds maximum blob size ({len(data)} bytes). "
                         f"Only up to {self.blob_max_size} bytes are accepted!")
+        if format_type not in (FORMAT_RAW_BINARY, FORMAT_JSON_UTF8, FORMAT_MSGPACK):
+            raise ProtoValidationException(message=f"Invalid format type: {format_type}")
 
         # Ensure we have a WAL buffer to write to
         with self._lock:
@@ -526,9 +614,35 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
             # Pack the length as a 8-byte unsigned long
             len_data = struct.pack('Q', len(data))
 
-            # Combine length and data and push to WAL
-            combined_data = len_data + data
+            # Add format indicator
+            format_indicator = bytes([format_type])
+
+            # Combine length, format indicator, and data and push to WAL
+            combined_data = len_data + format_indicator + data
             transaction_id, offset = self.push_bytes_to_wal(combined_data)
             return transaction_id, offset
 
         return self.executor_pool.submit(task_push_bytes)
+
+    def push_bytes_msgpack(self, data: dict) -> Future[tuple[uuid.UUID, int]]:
+        """
+        Serializes a dictionary to MessagePack format and pushes it into the WAL asynchronously.
+
+        This is a convenience method that serializes the dictionary using MessagePack
+        and then calls push_bytes with FORMAT_MSGPACK.
+
+        Args:
+            data: The dictionary to be serialized and stored
+
+        Returns:
+            Future[tuple[uuid.UUID, int]]: A Future that resolves to a tuple containing
+                                          the transaction ID and offset where the data was stored
+
+        Raises:
+            ProtoValidationException: If the storage is not in 'Running' state
+        """
+        # Serialize the dictionary to MessagePack format
+        packed_data = msgpack.packb(data)
+
+        # Push the serialized data with the MessagePack format indicator
+        return self.push_bytes(packed_data, FORMAT_MSGPACK)

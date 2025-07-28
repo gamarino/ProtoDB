@@ -57,8 +57,7 @@
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#standalone-file-storage">Standalone File Storage</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#proto_db.standalone_file_storage.StandaloneFileStorage"><code class="docutils literal notranslate"><span class="pre">StandaloneFileStorage</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#proto_db.standalone_file_storage.WALState"><code class="docutils literal notranslate"><span class="pre">WALState</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#proto_db.standalone_file_storage.WALWriteOperation"><code class="docutils literal notranslate"><span class="pre">WALWriteOperation</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#data-serialization-formats">Data Serialization Formats</a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#file-block-provider">File Block Provider</a><ul>
@@ -443,6 +442,8 @@ closes the underlying block provider, and shuts down the executor pool.</p>
 <dt class="sig sig-object py" id="proto_db.standalone_file_storage.StandaloneFileStorage.get_atom">
 <span class="sig-name descname"><span class="pre">get_atom</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pointer</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#StandaloneFileStorage.get_atom"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage.get_atom" title="Link to this definition"></a></dt>
 <dd><p>Retrieves an Atom from the underlying storage asynchronously.</p>
+<p>This method supports both the legacy format (without format indicator) and
+the new format with format indicators (JSON UTF-8 or MessagePack).</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>) – An AtomPointer indicating the location of the atom</p>
@@ -461,8 +462,36 @@ closes the underlying block provider, and shuts down the executor pool.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.standalone_file_storage.StandaloneFileStorage.push_atom">
-<span class="sig-name descname"><span class="pre">push_atom</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">atom</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#StandaloneFileStorage.push_atom"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage.push_atom" title="Link to this definition"></a></dt>
+<span class="sig-name descname"><span class="pre">push_atom</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">atom</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">format_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#StandaloneFileStorage.push_atom"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage.push_atom" title="Link to this definition"></a></dt>
 <dd><p>Serializes and pushes an Atom into the WAL asynchronously.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>atom</strong> (<em>dict</em>) – The atom data to be stored</p></li>
+<li><p><strong>format_type</strong> (<em>int</em>) – The format indicator for serialization (default: FORMAT_JSON_UTF8)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>A Future that resolves to an AtomPointer indicating</dt><dd><p>the location where the atom was stored</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Future[<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer">AtomPointer</a>]</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="exceptions.html#proto_db.exceptions.ProtoValidationException" title="proto_db.exceptions.ProtoValidationException"><strong>ProtoValidationException</strong></a> – If the storage is not in ‘Running’ state or if format_type is invalid</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.standalone_file_storage.StandaloneFileStorage.push_atom_msgpack">
+<span class="sig-name descname"><span class="pre">push_atom_msgpack</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">atom</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#StandaloneFileStorage.push_atom_msgpack"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage.push_atom_msgpack" title="Link to this definition"></a></dt>
+<dd><p>Serializes and pushes an Atom into the WAL asynchronously using MessagePack format.</p>
+<p>This is a convenience method that calls push_atom with FORMAT_MSGPACK.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>atom</strong> (<em>dict</em>) – The atom data to be stored</p>
@@ -487,6 +516,8 @@ closes the underlying block provider, and shuts down the executor pool.</p>
 <dt class="sig sig-object py" id="proto_db.standalone_file_storage.StandaloneFileStorage.get_bytes">
 <span class="sig-name descname"><span class="pre">get_bytes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pointer</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#StandaloneFileStorage.get_bytes"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage.get_bytes" title="Link to this definition"></a></dt>
 <dd><p>Retrieves raw bytes from the underlying storage asynchronously.</p>
+<p>This method supports both the legacy format (without format indicator) and
+the new format with format indicators.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>) – An AtomPointer indicating the location of the data</p>
@@ -505,11 +536,16 @@ closes the underlying block provider, and shuts down the executor pool.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.standalone_file_storage.StandaloneFileStorage.push_bytes">
-<span class="sig-name descname"><span class="pre">push_bytes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#StandaloneFileStorage.push_bytes"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage.push_bytes" title="Link to this definition"></a></dt>
+<span class="sig-name descname"><span class="pre">push_bytes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">format_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#StandaloneFileStorage.push_bytes"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage.push_bytes" title="Link to this definition"></a></dt>
 <dd><p>Serializes and pushes raw bytes into the WAL asynchronously.</p>
+<p>This method adds a format indicator after the size header to specify the data format.
+By default, it uses FORMAT_RAW_BINARY for raw binary data.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>data</strong> (<em>bytes</em>) – The bytes to be stored</p>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>bytes</em>) – The bytes to be stored</p></li>
+<li><p><strong>format_type</strong> (<em>int</em>) – The format indicator for the data (default: FORMAT_RAW_BINARY)</p></li>
+</ul>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
 <dd class="field-even"><p><dl class="simple">
@@ -523,7 +559,33 @@ closes the underlying block provider, and shuts down the executor pool.</p>
 </dd>
 <dt class="field-even">Raises<span class="colon">:</span></dt>
 <dd class="field-even"><p><a class="reference internal" href="exceptions.html#proto_db.exceptions.ProtoValidationException" title="proto_db.exceptions.ProtoValidationException"><strong>ProtoValidationException</strong></a> – If data is not bytes, is empty, exceeds maximum size,
-    or if the storage is not in ‘Running’ state</p>
+    if the storage is not in ‘Running’ state, or if format_type is invalid</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.standalone_file_storage.StandaloneFileStorage.push_bytes_msgpack">
+<span class="sig-name descname"><span class="pre">push_bytes_msgpack</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#StandaloneFileStorage.push_bytes_msgpack"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage.push_bytes_msgpack" title="Link to this definition"></a></dt>
+<dd><p>Serializes a dictionary to MessagePack format and pushes it into the WAL asynchronously.</p>
+<p>This is a convenience method that serializes the dictionary using MessagePack
+and then calls push_bytes with FORMAT_MSGPACK.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> (<em>dict</em>) – The dictionary to be serialized and stored</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>A Future that resolves to a tuple containing</dt><dd><p>the transaction ID and offset where the data was stored</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Future[tuple[uuid.UUID, int]]</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="exceptions.html#proto_db.exceptions.ProtoValidationException" title="proto_db.exceptions.ProtoValidationException"><strong>ProtoValidationException</strong></a> – If the storage is not in ‘Running’ state</p>
 </dd>
 </dl>
 </dd></dl>
@@ -531,6 +593,20 @@ closes the underlying block provider, and shuts down the executor pool.</p>
 </dd></dl>
 
 <p><code class="docutils literal notranslate"><span class="pre">StandaloneFileStorage</span></code> is a file-based storage implementation. It stores Atoms in files on disk, uses Write-Ahead Logging (WAL) for durability, and provides persistence across process restarts.</p>
+<section id="data-serialization-formats">
+<h3>Data Serialization Formats<a class="headerlink" href="#data-serialization-formats" title="Link to this heading"></a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">StandaloneFileStorage</span></code> supports multiple data serialization formats:</p>
+<ul class="simple">
+<li><p><strong>JSON UTF-8</strong> (<code class="docutils literal notranslate"><span class="pre">FORMAT_JSON_UTF8</span></code>): The default format, used for backward compatibility.</p></li>
+<li><p><strong>MessagePack</strong> (<code class="docutils literal notranslate"><span class="pre">FORMAT_MSGPACK</span></code>): A more efficient binary serialization format.</p></li>
+<li><p><strong>Raw Binary</strong> (<code class="docutils literal notranslate"><span class="pre">FORMAT_RAW_BINARY</span></code>): For storing raw binary data without additional serialization.</p></li>
+</ul>
+<p>Format indicators are used to identify the serialization format of stored data, allowing for seamless reading of data regardless of the format it was stored in. This provides flexibility in choosing the most appropriate serialization format for different types of data.</p>
+<p>Methods for specific formats:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">push_atom_msgpack(atom)</span></code>: Pushes an atom using MessagePack serialization.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">push_bytes_msgpack(data)</span></code>: Pushes a Python object using MessagePack serialization.</p></li>
+</ul>
 <dl class="py class">
 <dt class="sig sig-object py" id="proto_db.standalone_file_storage.WALState">
 <em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.standalone_file_storage.</span></span><span class="sig-name descname"><span class="pre">WALState</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">wal_buffer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">wal_offset</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">wal_base</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#WALState"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.WALState" title="Link to this definition"></a></dt>
@@ -573,6 +649,7 @@ closes the underlying block provider, and shuts down the executor pool.</p>
 </dd></dl>
 
 <p>The <code class="docutils literal notranslate"><span class="pre">WALWriteOperation</span></code> class represents a write operation in the WAL. It contains the transaction ID, offset, and segments to be written.</p>
+</section>
 </section>
 <section id="file-block-provider">
 <h2>File Block Provider<a class="headerlink" href="#file-block-provider" title="Link to this heading"></a></h2>
