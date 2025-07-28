@@ -4,11 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[IMP] cloud_cluster_file_storage: implments a local cache to maximize throughput of s3 reads">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[IMP] queries.py: add count optimization">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/proto_db/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_queries.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/db_access.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -383,7 +383,23 @@
       <option name="project" value="LOCAL" />
       <updated>1753627255246</updated>
     </task>
-    <option name="localTasksCounter" value="27" />
+    <task id="LOCAL-00027" summary="[IMP] queries.py: add further optimizations">
+      <option name="closed" value="true" />
+      <created>1753714082489</created>
+      <option name="number" value="00027" />
+      <option name="presentableId" value="LOCAL-00027" />
+      <option name="project" value="LOCAL" />
+      <updated>1753714082490</updated>
+    </task>
+    <task id="LOCAL-00028" summary="[IMP] queries.py: add count optimization">
+      <option name="closed" value="true" />
+      <created>1753715850253</created>
+      <option name="number" value="00028" />
+      <option name="presentableId" value="LOCAL-00028" />
+      <option name="project" value="LOCAL" />
+      <updated>1753715850253</updated>
+    </task>
+    <option name="localTasksCounter" value="29" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -412,7 +428,9 @@
     <MESSAGE value="[IMP] documentation in sphinx generated" />
     <MESSAGE value="[FIX] cloud_file_storage: prevent deadlocks in test" />
     <MESSAGE value="[IMP] cloud_cluster_file_storage: implments a local cache to maximize throughput of s3 reads" />
-    <option name="LAST_COMMIT_MESSAGE" value="[IMP] cloud_cluster_file_storage: implments a local cache to maximize throughput of s3 reads" />
+    <MESSAGE value="[IMP] queries.py: add further optimizations" />
+    <MESSAGE value="[IMP] queries.py: add count optimization" />
+    <option name="LAST_COMMIT_MESSAGE" value="[IMP] queries.py: add count optimization" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -435,7 +453,7 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/common.py</url>
-          <line>260</line>
+          <line>720</line>
           <option name="timeStamp" value="157" />
         </line-breakpoint>
       </breakpoints>

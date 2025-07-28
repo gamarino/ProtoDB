@@ -5,7 +5,7 @@ from typing import cast
 from .exceptions import ProtoValidationException, ProtoLockingException
 from .common import Atom, \
     AbstractObjectSpace, AbstractDatabase, AbstractTransaction, \
-    SharedStorage, RootObject, Literal, atom_class_registry, AtomPointer
+    SharedStorage, RootObject, Literal, atom_class_registry, AtomPointer, ConcurrentOptimized
 
 from .hash_dictionaries import HashDictionary
 from .dictionaries import Dictionary
@@ -494,14 +494,40 @@ class ObjectTransaction(AbstractTransaction):
                 if isinstance(value, Atom):
                     value._save()
 
-    def _check_read_locked_objects(self, current_root: Dictionary):
-        if self.read_lock_objects.count > 0:
-            current_mutable_root: HashDictionary = cast(HashDictionary, current_root.get_at('_mutable_root'))
-            for key, value in self.read_lock_objects.as_iterable():
-                if current_mutable_root.get_at(key) != value:
-                    raise ProtoLockingException(
-                        message=f'Another transaction has modified an object modified in this transaction!'
-                    )
+    def _check_read_locked_objects(self, current_root: RootObject):
+        """
+        Check if any of the read-locked objects have been modified by another transaction.
+
+        :param current_root: The current root object of the database at commit time.
+        """
+        if not self.read_lock_objects:
+            return
+
+        for name, original_object_pointer in self.read_lock_objects.items():
+            current_object_pointer = current_root.object_root.get_at(name, as_pointer=True)
+            if original_object_pointer != current_object_pointer:
+                # CONCURRENT MODIFICATION DETECTED
+                new_object = self.new_roots.get(name)
+
+                # Check if the object supports automatic merging
+                if new_object and isinstance(new_object, ConcurrentOptimized):
+                    try:
+                        # Load the currently committed object from the database
+                        current_db_object = current_root.object_root.get_at(name)
+                        # Attempt to rebase our changes on top of the concurrent version
+                        rebased_object = new_object._rebase_on_concurrent_update(current_db_object)
+                        # If successful, replace the object in our transaction with the merged one
+                        self.new_roots[name] = rebased_object
+                        # And continue to the next locked object
+                        continue
+                    except Exception as e:
+                        # If merge fails, raise a specific error
+                        raise ProtoLockingException(
+                            f"Concurrent transaction detected on '{name}' and automatic merge failed: {e}"
+                        ) from e
+
+                raise ProtoLockingException(f"Concurrent transaction detected on object '{name}' "
+                                                 f"that does not support automatic merging.")
 
     def _update_created_literals(self, current_literal_root: Dictionary) -> Dictionary:
         if self.new_literals.count > 0:

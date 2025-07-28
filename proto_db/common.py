@@ -220,6 +220,36 @@ class AbstractTransaction(ABC):
         :rtype: None
         """
 
+    @abstractmethod
+    def get_mutable(self, obj_id, obj_type):
+        pass
+
+    @abstractmethod
+    def set_mutable(self, obj, obj_type):
+        pass
+
+
+class ConcurrentOptimized:
+    """
+    A mixin class for objects that can handle concurrent modifications
+    by rebasing their changes on top of a more recent version of the object.
+    """
+    def _rebase_on_concurrent_update(self, current_db_object: 'Atom') -> 'Atom':
+        """
+        This method is called on the new object (from the current transaction)
+        when a concurrent modification is detected on the original object.
+
+        It should try to apply the changes made in the current transaction
+        on top of the 'current_db_object'.
+
+        :param current_db_object: The object state as it is in the database at commit time.
+        :return: A new object with the changes from this transaction merged
+                 into the current_db_object.
+        :raises: ProtoNotSupportedException if the merge is not possible.
+        """
+        raise NotImplementedError("This object does not implement concurrent merge logic.")
+
+
 # Metaclase combinada: Combina AtomMetaclass y ABCMeta
 class CombinedMeta(ABCMeta, AtomMetaclass):
     pass
