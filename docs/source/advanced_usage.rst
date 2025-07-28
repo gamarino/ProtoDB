@@ -64,33 +64,37 @@ This ensures that only one node can write to the database at a time, preventing 
 Cloud Storage with CloudFileStorage
 ----------------------------------
 
-ProtoBase also provides cloud storage capabilities through the ``CloudFileStorage`` class. This allows you to store data in S3-compatible object storage services.
+ProtoBase provides cloud storage capabilities through the ``CloudFileStorage`` class. This allows you to store data in cloud object storage services like Amazon S3 or Google Cloud Storage.
 
 Setting Up Cloud Storage
 ~~~~~~~~~~~~~~~~~~~~~~
 
 To set up cloud storage, you need to:
 
-1. Create an S3 client
-2. Create a ``CloudBlockProvider`` with the S3 client
+1. Create a cloud storage client (S3Client or GoogleCloudClient)
+2. Create a ``CloudBlockProvider`` with the cloud storage client
 3. Create a ``CloudFileStorage`` with the block provider
 
-Here's an example using the built-in mock S3 client for testing:
+Here's an example using Amazon S3:
 
 .. code-block:: python
 
     import proto_db
 
-    # Create a mock S3 client (for testing)
-    s3_client = proto_db.MockS3Client(
+    # Create an S3 client
+    s3_client = proto_db.S3Client(
         bucket="my-bucket",
-        prefix="my-prefix"
+        prefix="my-prefix",
+        endpoint_url="https://s3.amazonaws.com",
+        access_key="my-access-key",
+        secret_key="my-secret-key",
+        region="us-west-2"
     )
 
     # Create a cloud block provider
     block_provider = proto_db.CloudBlockProvider(
-        s3_client=s3_client,
-        cache_dir="cloud_cache",
+        cloud_client=s3_client,
+        cache_dir="s3_cache",
         cache_size=500 * 1024 * 1024,  # 500 MB cache
         object_size=5 * 1024 * 1024     # 5 MB objects
     )
@@ -105,52 +109,124 @@ Here's an example using the built-in mock S3 client for testing:
     space = proto_db.ObjectSpace(storage)
     db = space.get_database("my_database")
 
-For production use, you would implement a concrete S3 client that connects to your S3-compatible storage service.
+Here's an example using Google Cloud Storage:
+
+.. code-block:: python
+
+    import proto_db
+
+    # Create a Google Cloud Storage client
+    gcs_client = proto_db.GoogleCloudClient(
+        bucket="my-bucket",
+        prefix="my-prefix",
+        project_id="my-project",
+        credentials_path="/path/to/credentials.json"
+    )
+
+    # Create a cloud block provider
+    block_provider = proto_db.CloudBlockProvider(
+        cloud_client=gcs_client,
+        cache_dir="gcs_cache",
+        cache_size=500 * 1024 * 1024,  # 500 MB cache
+        object_size=5 * 1024 * 1024     # 5 MB objects
+    )
+
+    # Create a cloud file storage
+    storage = proto_db.CloudFileStorage(
+        block_provider=block_provider,
+        upload_interval_ms=5000  # Upload every 5 seconds
+    )
+
+    # Create an object space and database as before
+    space = proto_db.ObjectSpace(storage)
+    db = space.get_database("my_database")
+
+For testing purposes, you can use the built-in mock clients:
+
+.. code-block:: python
+
+    # Mock S3 client
+    s3_client = proto_db.MockS3Client(
+        bucket="my-bucket",
+        prefix="my-prefix"
+    )
+
+    # Mock Google Cloud Storage client
+    gcs_client = proto_db.MockGoogleCloudClient(
+        bucket="my-bucket",
+        prefix="my-prefix"
+    )
 
 Local Caching
 ~~~~~~~~~~~~
 
-``CloudFileStorage`` uses local caching to improve performance. When an object is read from S3, it is cached locally. Subsequent reads of the same object will use the local cache, avoiding the need to fetch the object from S3 again.
+``CloudFileStorage`` uses local caching to improve performance. When an object is read from cloud storage (Amazon S3 or Google Cloud Storage), it is cached locally. Subsequent reads of the same object will use the local cache, avoiding the need to fetch the object from cloud storage again.
 
 The cache is managed automatically, with least recently used objects being evicted when the cache size limit is reached.
 
 Background Uploading
 ~~~~~~~~~~~~~~~~~~
 
-``CloudFileStorage`` also supports background uploading of data to S3. When data is written to the database, it is first stored locally and then uploaded to S3 in the background. This allows the application to continue working without waiting for the upload to complete.
+``CloudFileStorage`` also supports background uploading of data to cloud storage. When data is written to the database, it is first stored locally and then uploaded to cloud storage (Amazon S3 or Google Cloud Storage) in the background. This allows the application to continue working without waiting for the upload to complete.
 
 The upload interval can be configured to balance between performance and durability.
 
 Combined Cluster and Cloud Storage with CloudClusterFileStorage
 -------------------------------------------------------------
 
-ProtoBase provides a comprehensive solution for multi-server environments with the ``CloudClusterFileStorage`` class. This class combines the functionality of ``ClusterFileStorage`` and ``CloudFileStorage`` to provide a storage solution that works in a cluster environment while using S3 as the final storage for data.
+ProtoBase provides a comprehensive solution for multi-server environments with the ``CloudClusterFileStorage`` class. This class combines the functionality of ``ClusterFileStorage`` and ``CloudFileStorage`` to provide a storage solution that works in a cluster environment while using cloud object storage (Amazon S3 or Google Cloud Storage) as the final storage for data.
 
 Setting Up Cloud Cluster Storage
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To set up cloud cluster storage, you need to:
 
-1. Create an S3 client
-2. Create a ``CloudBlockProvider`` with the S3 client
+1. Create a cloud storage client (S3Client or GoogleCloudClient)
+2. Create a ``CloudBlockProvider`` with the cloud storage client
 3. Define a list of servers in the cluster
 4. Create a ``CloudClusterFileStorage`` instance on each node
 
-Here's an example:
+Here's an example using Amazon S3:
 
 .. code-block:: python
 
     import proto_db
 
-    # Create a mock S3 client (for testing)
-    s3_client = proto_db.MockS3Client(
+    # Create an S3 client
+    s3_client = proto_db.S3Client(
         bucket="my-bucket",
-        prefix="my-prefix"
+        prefix="my-prefix",
+        endpoint_url="https://s3.amazonaws.com",
+        access_key="my-access-key",
+        secret_key="my-secret-key",
+        region="us-west-2"
     )
 
     # Create a cloud block provider
     block_provider = proto_db.CloudBlockProvider(
-        s3_client=s3_client,
+        cloud_client=s3_client,
+        cache_dir="cloud_cluster_cache",
+        cache_size=500 * 1024 * 1024,  # 500 MB cache
+        object_size=5 * 1024 * 1024     # 5 MB objects
+    )
+
+Here's an example using Google Cloud Storage:
+
+.. code-block:: python
+
+    import proto_db
+
+    # Create a Google Cloud Storage client
+    gcs_client = proto_db.GoogleCloudClient(
+        bucket="my-bucket",
+        prefix="my-prefix",
+        project_id="my-project",
+        credentials_path="/path/to/credentials.json"
+    )
+
+    # Create a cloud block provider
+    block_provider = proto_db.CloudBlockProvider(
+        cloud_client=gcs_client,
         cache_dir="cloud_cluster_cache",
         cache_size=500 * 1024 * 1024,  # 500 MB cache
         object_size=5 * 1024 * 1024     # 5 MB objects
@@ -170,7 +246,8 @@ Here's an example:
         host="node1.example.com",
         port=12345,
         servers=servers,
-        upload_interval_ms=5000  # Upload every 5 seconds
+        upload_interval_ms=5000,  # Upload every 5 seconds
+        page_cache_dir="cloud_page_cache"  # Directory for cloud page cache
     )
 
     # Create an object space and database as before
@@ -184,13 +261,13 @@ Key Features
 
 1. **Distributed Coordination**: Uses a vote-based locking mechanism for distributed coordination, ensuring that only one node can write to the database at a time.
 
-2. **Cloud Storage**: Stores data in S3-compatible object storage, providing durability and scalability.
+2. **Cloud Storage**: Stores data in cloud object storage (Amazon S3 or Google Cloud Storage), providing durability and scalability.
 
 3. **Local Caching**: Uses local caching to improve performance, with least recently used objects being evicted when the cache size limit is reached.
 
-4. **Background Uploading**: Supports background uploading of data to S3, allowing the application to continue working without waiting for the upload to complete.
+4. **Background Uploading**: Supports background uploading of data to cloud storage, allowing the application to continue working without waiting for the upload to complete.
 
-5. **Fault Tolerance**: Provides fault tolerance through redundancy, with data being available from multiple sources (local cache, other nodes, S3).
+5. **Fault Tolerance**: Provides fault tolerance through redundancy, with data being available from multiple sources (local cache, other nodes, cloud storage).
 
 Use Cases
 ~~~~~~~~
@@ -198,7 +275,7 @@ Use Cases
 ``CloudClusterFileStorage`` is ideal for:
 
 - Multi-server applications that need high availability and horizontal scaling
-- Cloud-native applications that need to store data in S3-compatible object storage
+- Cloud-native applications that need to store data in cloud object storage (Amazon S3 or Google Cloud Storage)
 - Applications that need both the distributed coordination of a cluster and the durability of cloud storage
 
 Performance Optimization
@@ -236,7 +313,7 @@ Choose the appropriate storage implementation based on your needs:
 - ``MemoryStorage``: For testing and development, or for temporary data that doesn't need to be persisted.
 - ``StandaloneFileStorage``: For single-node applications that need persistence.
 - ``ClusterFileStorage``: For distributed applications that need high availability and horizontal scaling.
-- ``CloudFileStorage``: For cloud-native applications that need to store data in S3-compatible object storage.
+- ``CloudFileStorage``: For cloud-native applications that need to store data in cloud object storage (Amazon S3 or Google Cloud Storage).
 - ``CloudClusterFileStorage``: For multi-server applications that need both distributed coordination and cloud storage.
 
 Optimize Queries

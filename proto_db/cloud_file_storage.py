@@ -11,6 +11,7 @@ import logging
 import base64
 import hashlib
 from typing import Dict, List, Optional, Tuple, Any, Set, BinaryIO
+from abc import ABC, abstractmethod
 
 from . import common
 from .common import MB, GB, Future, BlockProvider, AtomPointer
@@ -22,11 +23,14 @@ from .cluster_file_storage import ClusterFileStorage, ClusterNetworkManager
 _logger = logging.getLogger(__name__)
 
 # Default cloud storage settings
-DEFAULT_S3_OBJECT_SIZE = 5 * MB  # Default size for S3 objects
+DEFAULT_OBJECT_SIZE = 5 * MB  # Default size for cloud storage objects
 DEFAULT_LOCAL_CACHE_SIZE = 500 * MB  # Default size for local cache
 DEFAULT_CACHE_DIR = "cloud_cache"  # Default directory for local cache
-DEFAULT_UPLOAD_INTERVAL_MS = 5000  # 5 seconds between S3 uploads
+DEFAULT_UPLOAD_INTERVAL_MS = 5000  # 5 seconds between cloud uploads
 DEFAULT_CLEANUP_INTERVAL_MS = 60000  # 1 minute between cache cleanups
+
+# For backward compatibility
+DEFAULT_S3_OBJECT_SIZE = DEFAULT_OBJECT_SIZE
 
 
 class CloudStorageError(ProtoUnexpectedException):
@@ -36,9 +40,9 @@ class CloudStorageError(ProtoUnexpectedException):
     pass
 
 
-class S3ObjectMetadata:
+class CloudObjectMetadata:
     """
-    Metadata for an S3 object.
+    Metadata for a cloud storage object.
     """
     def __init__(self, 
                  key: str, 
@@ -48,10 +52,10 @@ class S3ObjectMetadata:
                  is_cached: bool = False,
                  cache_path: str = None):
         """
-        Initialize S3 object metadata.
+        Initialize cloud object metadata.
 
         Args:
-            key: The S3 object key
+            key: The object key
             size: The size of the object in bytes
             etag: The ETag of the object (usually MD5 hash)
             last_modified: The last modified timestamp
@@ -65,13 +69,103 @@ class S3ObjectMetadata:
         self.is_cached = is_cached
         self.cache_path = cache_path
 
+# For backward compatibility
+S3ObjectMetadata = CloudObjectMetadata
 
-class S3Client:
+
+class CloudStorageClient(ABC):
     """
-    Abstract S3 client interface.
+    Abstract cloud storage client interface.
 
-    This class defines the interface for interacting with S3-compatible storage.
-    Concrete implementations should be provided for specific S3 providers.
+    This class defines the interface for interacting with cloud storage providers.
+    Concrete implementations should be provided for specific cloud providers.
+    """
+
+    def __init__(self, 
+                 bucket: str, 
+                 prefix: str = ""):
+        """
+        Initialize the cloud storage client.
+
+        Args:
+            bucket: The storage bucket name
+            prefix: The prefix for all objects in the bucket
+        """
+        self.bucket = bucket
+        self.prefix = prefix
+
+        # Initialize the client
+        self._init_client()
+
+    @abstractmethod
+    def _init_client(self):
+        """
+        Initialize the cloud storage client.
+
+        This method should be implemented by concrete subclasses to initialize
+        the specific cloud storage client implementation.
+        """
+        pass
+
+    @abstractmethod
+    def get_object(self, key: str) -> Tuple[bytes, Dict[str, Any]]:
+        """
+        Get an object from cloud storage.
+
+        Args:
+            key: The object key
+
+        Returns:
+            Tuple containing the object data and metadata
+        """
+        pass
+
+    @abstractmethod
+    def put_object(self, key: str, data: bytes) -> Dict[str, Any]:
+        """
+        Put an object to cloud storage.
+
+        Args:
+            key: The object key
+            data: The object data
+
+        Returns:
+            Object metadata
+        """
+        pass
+
+    @abstractmethod
+    def list_objects(self, prefix: str = None) -> List[Dict[str, Any]]:
+        """
+        List objects in cloud storage.
+
+        Args:
+            prefix: The prefix to filter objects
+
+        Returns:
+            List of object metadata
+        """
+        pass
+
+    @abstractmethod
+    def delete_object(self, key: str) -> bool:
+        """
+        Delete an object from cloud storage.
+
+        Args:
+            key: The object key
+
+        Returns:
+            True if the object was deleted, False otherwise
+        """
+        pass
+
+
+class S3Client(CloudStorageClient):
+    """
+    S3 client implementation.
+
+    This class implements the CloudStorageClient interface for S3-compatible storage.
     """
 
     def __init__(self, 
@@ -92,24 +186,58 @@ class S3Client:
             secret_key: The S3 secret key
             region: The S3 region
         """
-        self.bucket = bucket
-        self.prefix = prefix
         self.endpoint_url = endpoint_url
         self.access_key = access_key
         self.secret_key = secret_key
         self.region = region
 
-        # Initialize the client
-        self._init_client()
+        # Call parent constructor
+        super().__init__(bucket, prefix)
 
     def _init_client(self):
         """
         Initialize the S3 client.
 
-        This method should be implemented by concrete subclasses to initialize
-        the specific S3 client implementation.
+        This method initializes the S3 client using the boto3 library if available,
+        or falls back to a mock implementation for testing.
         """
-        raise NotImplementedError("Subclasses must implement _init_client")
+        try:
+            import boto3
+            from botocore.client import Config
+
+            # Create session with credentials if provided
+            session_kwargs = {}
+            if self.access_key and self.secret_key:
+                session_kwargs['aws_access_key_id'] = self.access_key
+                session_kwargs['aws_secret_access_key'] = self.secret_key
+
+            if self.region:
+                session_kwargs['region_name'] = self.region
+
+            session = boto3.session.Session(**session_kwargs)
+
+            # Create S3 client
+            client_kwargs = {}
+            if self.endpoint_url:
+                client_kwargs['endpoint_url'] = self.endpoint_url
+
+            # Use a config that allows for large files
+            client_kwargs['config'] = Config(
+                signature_version='s3v4',
+                s3={'addressing_style': 'path'}
+            )
+
+            self.client = session.client('s3', **client_kwargs)
+            self.resource = session.resource('s3', **client_kwargs)
+            self.bucket_obj = self.resource.Bucket(self.bucket)
+
+            _logger.info(f"Initialized S3 client for bucket '{self.bucket}'")
+        except ImportError:
+            _logger.warning("boto3 not installed, using mock implementation")
+            self.client = None
+            self.resource = None
+            self.bucket_obj = None
+            self.objects = {}
 
     def get_object(self, key: str) -> Tuple[bytes, Dict[str, Any]]:
         """
@@ -121,7 +249,37 @@ class S3Client:
         Returns:
             Tuple containing the object data and metadata
         """
-        raise NotImplementedError("Subclasses must implement get_object")
+        if self.client is None:
+            # Mock implementation
+            full_key = f"{self.prefix}/{key}" if self.prefix else key
+            if full_key not in self.objects:
+                raise CloudStorageError(message=f"Object '{full_key}' not found in mock S3")
+
+            obj = self.objects[full_key]
+            metadata = {
+                "ETag": obj["etag"],
+                "ContentLength": len(obj["data"]),
+                "LastModified": obj["last_modified"]
+            }
+
+            return obj["data"], metadata
+        else:
+            # Real implementation
+            full_key = f"{self.prefix}/{key}" if self.prefix else key
+
+            try:
+                response = self.client.get_object(Bucket=self.bucket, Key=full_key)
+                data = response['Body'].read()
+
+                metadata = {
+                    "ETag": response.get('ETag', ''),
+                    "ContentLength": response.get('ContentLength', len(data)),
+                    "LastModified": response.get('LastModified', time.time())
+                }
+
+                return data, metadata
+            except Exception as e:
+                raise CloudStorageError(message=f"Failed to get object '{full_key}' from S3: {e}")
 
     def put_object(self, key: str, data: bytes) -> Dict[str, Any]:
         """
@@ -134,7 +292,46 @@ class S3Client:
         Returns:
             Object metadata
         """
-        raise NotImplementedError("Subclasses must implement put_object")
+        if self.client is None:
+            # Mock implementation
+            full_key = f"{self.prefix}/{key}" if self.prefix else key
+            etag = hashlib.md5(data).hexdigest()
+            last_modified = time.time()
+
+            self.objects[full_key] = {
+                "data": data,
+                "etag": etag,
+                "last_modified": last_modified
+            }
+
+            metadata = {
+                "ETag": etag,
+                "ContentLength": len(data),
+                "LastModified": last_modified
+            }
+
+            _logger.debug(f"Put object '{full_key}' to mock S3 (size: {len(data)} bytes)")
+            return metadata
+        else:
+            # Real implementation
+            full_key = f"{self.prefix}/{key}" if self.prefix else key
+
+            try:
+                response = self.client.put_object(
+                    Bucket=self.bucket,
+                    Key=full_key,
+                    Body=data
+                )
+
+                metadata = {
+                    "ETag": response.get('ETag', ''),
+                    "ContentLength": len(data),
+                    "LastModified": time.time()
+                }
+
+                return metadata
+            except Exception as e:
+                raise CloudStorageError(message=f"Failed to put object '{full_key}' to S3: {e}")
 
     def list_objects(self, prefix: str = None) -> List[Dict[str, Any]]:
         """
@@ -146,7 +343,44 @@ class S3Client:
         Returns:
             List of object metadata
         """
-        raise NotImplementedError("Subclasses must implement list_objects")
+        if self.client is None:
+            # Mock implementation
+            list_prefix = f"{self.prefix}/{prefix}" if self.prefix and prefix else (self.prefix or prefix or "")
+
+            result = []
+            for key, obj in self.objects.items():
+                if not list_prefix or key.startswith(list_prefix):
+                    result.append({
+                        "Key": key,
+                        "ETag": obj["etag"],
+                        "Size": len(obj["data"]),
+                        "LastModified": obj["last_modified"]
+                    })
+
+            return result
+        else:
+            # Real implementation
+            list_prefix = f"{self.prefix}/{prefix}" if self.prefix and prefix else (self.prefix or prefix or "")
+
+            try:
+                paginator = self.client.get_paginator('list_objects_v2')
+                pages = paginator.paginate(Bucket=self.bucket, Prefix=list_prefix)
+
+                result = []
+                for page in pages:
+                    if 'Contents' in page:
+                        for obj in page['Contents']:
+                            result.append({
+                                "Key": obj['Key'],
+                                "ETag": obj.get('ETag', ''),
+                                "Size": obj.get('Size', 0),
+                                "LastModified": obj.get('LastModified', time.time())
+                            })
+
+                return result
+            except Exception as e:
+                _logger.warning(f"Failed to list objects with prefix '{list_prefix}' in S3: {e}")
+                return []
 
     def delete_object(self, key: str) -> bool:
         """
@@ -158,26 +392,44 @@ class S3Client:
         Returns:
             True if the object was deleted, False otherwise
         """
-        raise NotImplementedError("Subclasses must implement delete_object")
+        if self.client is None:
+            # Mock implementation
+            full_key = f"{self.prefix}/{key}" if self.prefix else key
+            if full_key in self.objects:
+                del self.objects[full_key]
+                _logger.debug(f"Deleted object '{full_key}' from mock S3")
+                return True
+            return False
+        else:
+            # Real implementation
+            full_key = f"{self.prefix}/{key}" if self.prefix else key
+
+            try:
+                self.client.delete_object(Bucket=self.bucket, Key=full_key)
+                _logger.debug(f"Deleted object '{full_key}' from S3")
+                return True
+            except Exception as e:
+                _logger.warning(f"Failed to delete object '{full_key}' from S3: {e}")
+                return False
 
 
-class MockS3Client(S3Client):
+class MockCloudStorageClient(CloudStorageClient):
     """
-    Mock implementation of S3Client for testing and development.
+    Mock implementation of CloudStorageClient for testing and development.
 
-    This implementation stores objects in memory and simulates S3 behavior.
+    This implementation stores objects in memory and simulates cloud storage behavior.
     """
 
     def _init_client(self):
         """
-        Initialize the mock S3 client.
+        Initialize the mock cloud storage client.
         """
         self.objects = {}
-        _logger.info(f"Initialized MockS3Client with bucket '{self.bucket}' and prefix '{self.prefix}'")
+        _logger.info(f"Initialized MockCloudStorageClient with bucket '{self.bucket}' and prefix '{self.prefix}'")
 
     def get_object(self, key: str) -> Tuple[bytes, Dict[str, Any]]:
         """
-        Get an object from the mock S3 storage.
+        Get an object from the mock cloud storage.
 
         Args:
             key: The object key
@@ -187,7 +439,7 @@ class MockS3Client(S3Client):
         """
         full_key = f"{self.prefix}/{key}" if self.prefix else key
         if full_key not in self.objects:
-            raise CloudStorageError(message=f"Object '{full_key}' not found in mock S3")
+            raise CloudStorageError(message=f"Object '{full_key}' not found in mock cloud storage")
 
         obj = self.objects[full_key]
         metadata = {
@@ -200,7 +452,7 @@ class MockS3Client(S3Client):
 
     def put_object(self, key: str, data: bytes) -> Dict[str, Any]:
         """
-        Put an object to the mock S3 storage.
+        Put an object to the mock cloud storage.
 
         Args:
             key: The object key
@@ -225,12 +477,12 @@ class MockS3Client(S3Client):
             "LastModified": last_modified
         }
 
-        _logger.debug(f"Put object '{full_key}' to mock S3 (size: {len(data)} bytes)")
+        _logger.debug(f"Put object '{full_key}' to mock cloud storage (size: {len(data)} bytes)")
         return metadata
 
     def list_objects(self, prefix: str = None) -> List[Dict[str, Any]]:
         """
-        List objects in the mock S3 storage.
+        List objects in the mock cloud storage.
 
         Args:
             prefix: The prefix to filter objects
@@ -254,7 +506,7 @@ class MockS3Client(S3Client):
 
     def delete_object(self, key: str) -> bool:
         """
-        Delete an object from the mock S3 storage.
+        Delete an object from the mock cloud storage.
 
         Args:
             key: The object key
@@ -265,37 +517,74 @@ class MockS3Client(S3Client):
         full_key = f"{self.prefix}/{key}" if self.prefix else key
         if full_key in self.objects:
             del self.objects[full_key]
-            _logger.debug(f"Deleted object '{full_key}' from mock S3")
+            _logger.debug(f"Deleted object '{full_key}' from mock cloud storage")
             return True
         return False
+
+
+class MockS3Client(MockCloudStorageClient):
+    """
+    Mock implementation of S3Client for testing and development.
+
+    This implementation inherits from MockCloudStorageClient and adds S3-specific behavior.
+    """
+
+    def __init__(self, 
+                 bucket: str, 
+                 prefix: str = "",
+                 endpoint_url: str = None,
+                 access_key: str = None,
+                 secret_key: str = None,
+                 region: str = None):
+        """
+        Initialize the mock S3 client.
+
+        Args:
+            bucket: The S3 bucket name
+            prefix: The prefix for all objects in the bucket
+            endpoint_url: The S3 endpoint URL
+            access_key: The S3 access key
+            secret_key: The S3 secret key
+            region: The S3 region
+        """
+        self.endpoint_url = endpoint_url
+        self.access_key = access_key
+        self.secret_key = secret_key
+        self.region = region
+
+        # Call parent constructor
+        super().__init__(bucket, prefix)
 
 
 class CloudBlockProvider(BlockProvider):
     """
     Block provider implementation for cloud storage.
 
-    This class implements the BlockProvider interface for S3-compatible storage,
+    This class implements the BlockProvider interface for cloud storage providers,
     with local caching to improve performance.
     """
 
     def __init__(self, 
-                 s3_client: S3Client,
+                 cloud_client: CloudStorageClient,
                  cache_dir: str = DEFAULT_CACHE_DIR,
                  cache_size: int = DEFAULT_LOCAL_CACHE_SIZE,
-                 object_size: int = DEFAULT_S3_OBJECT_SIZE):
+                 object_size: int = DEFAULT_OBJECT_SIZE):
         """
         Initialize the cloud block provider.
 
         Args:
-            s3_client: The S3 client to use
+            cloud_client: The cloud storage client to use
             cache_dir: Directory for local cache
             cache_size: Maximum size of local cache in bytes
-            object_size: Size of S3 objects in bytes
+            object_size: Size of cloud storage objects in bytes
         """
-        self.s3_client = s3_client
+        self.cloud_client = cloud_client
         self.cache_dir = cache_dir
         self.cache_size = cache_size
         self.object_size = object_size
+
+        # For backward compatibility
+        self.s3_client = cloud_client
 
         # Create cache directory if it doesn't exist
         os.makedirs(self.cache_dir, exist_ok=True)
@@ -331,9 +620,9 @@ class CloudBlockProvider(BlockProvider):
                 with open(cache_metadata_path, 'r') as f:
                     metadata = json.load(f)
 
-                # Convert metadata to S3ObjectMetadata objects
+                # Convert metadata to CloudObjectMetadata objects
                 for key, meta in metadata.items():
-                    self.cache_metadata[key] = S3ObjectMetadata(
+                    self.cache_metadata[key] = CloudObjectMetadata(
                         key=meta["key"],
                         size=meta["size"],
                         etag=meta["etag"],
@@ -382,11 +671,11 @@ class CloudBlockProvider(BlockProvider):
         config = configparser.ConfigParser()
 
         try:
-            # Try to get config from S3
-            data, _ = self.s3_client.get_object("space.config")
+            # Try to get config from cloud storage
+            data, _ = self.cloud_client.get_object("space.config")
             config_str = data.decode('utf-8')
             config.read_string(config_str)
-            _logger.info("Loaded configuration from S3")
+            _logger.info("Loaded configuration from cloud storage")
         except Exception as e:
             _logger.warning(f"Failed to load configuration from S3: {e}")
             _logger.info("Creating default configuration")
@@ -397,23 +686,23 @@ class CloudBlockProvider(BlockProvider):
                 "cache_size": str(self.cache_size)
             }
 
-            # Save configuration to S3
+            # Save configuration to cloud storage
             config_str = io.StringIO()
             config.write(config_str)
-            self.s3_client.put_object("space.config", config_str.getvalue().encode('utf-8'))
+            self.cloud_client.put_object("space.config", config_str.getvalue().encode('utf-8'))
 
         return config
 
     def _get_object_key(self, wal_id: uuid.UUID, position: int) -> str:
         """
-        Get the S3 object key for a WAL position.
+        Get the cloud storage object key for a WAL position.
 
         Args:
             wal_id: The WAL ID
             position: The position in the WAL
 
         Returns:
-            The S3 object key
+            The cloud storage object key
         """
         # Calculate the object index based on position and object size
         object_index = position // self.object_size
@@ -421,22 +710,22 @@ class CloudBlockProvider(BlockProvider):
 
     def _get_object_offset(self, position: int) -> int:
         """
-        Get the offset within an S3 object for a WAL position.
+        Get the offset within a cloud storage object for a WAL position.
 
         Args:
             position: The position in the WAL
 
         Returns:
-            The offset within the S3 object
+            The offset within the cloud storage object
         """
         return position % self.object_size
 
     def _cache_object(self, key: str, data: bytes, metadata: Dict[str, Any]) -> S3ObjectMetadata:
         """
-        Cache an S3 object locally.
+        Cache a cloud storage object locally.
 
         Args:
-            key: The S3 object key
+            key: The cloud storage object key
             data: The object data
             metadata: The object metadata
 
@@ -456,7 +745,7 @@ class CloudBlockProvider(BlockProvider):
                 f.write(data)
 
             # Update cache metadata
-            cache_meta = S3ObjectMetadata(
+            cache_meta = CloudObjectMetadata(
                 key=key,
                 size=len(data),
                 etag=metadata.get("ETag"),
@@ -564,8 +853,8 @@ class CloudBlockProvider(BlockProvider):
                     _logger.warning(f"Failed to open cached object '{key}': {e}")
 
         try:
-            # Get the object from S3
-            data, metadata = self.s3_client.get_object(key)
+            # Get the object from cloud storage
+            data, metadata = self.cloud_client.get_object(key)
 
             # Cache the object
             cache_meta = self._cache_object(key, data, metadata)
@@ -575,7 +864,7 @@ class CloudBlockProvider(BlockProvider):
             f.seek(offset)
             return f
         except Exception as e:
-            _logger.error(f"Failed to get object '{key}' from S3: {e}")
+            _logger.error(f"Failed to get object '{key}' from cloud storage: {e}")
             raise CloudStorageError(message=f"Failed to read from WAL {wal_id} at position {position}: {e}")
 
     def get_writer_wal(self) -> uuid.UUID:
@@ -608,8 +897,8 @@ class CloudBlockProvider(BlockProvider):
         # Create a temporary file for writing
         temp_file = io.BytesIO()
 
-        # Create a wrapper that tracks the position and flushes to S3
-        class S3Writer:
+        # Create a wrapper that tracks the position and flushes to cloud storage
+        class CloudWriter:
             def __init__(self, provider: CloudBlockProvider, wal_id: uuid.UUID, buffer: io.BytesIO):
                 self.provider = provider
                 self.wal_id = wal_id
@@ -662,7 +951,7 @@ class CloudBlockProvider(BlockProvider):
                         wal_meta["last_position"] = max(wal_meta.get("last_position", 0), self.position)
                         self.provider.wal_metadata[str(self.wal_id)] = wal_meta
 
-                    # Split the data into S3 objects
+                    # Split the data into cloud storage objects
                     for i in range(0, len(data), self.provider.object_size):
                         # Calculate the object key and data
                         start_position = i
@@ -672,13 +961,13 @@ class CloudBlockProvider(BlockProvider):
                         key = self.provider._get_object_key(self.wal_id, start_position)
 
                         try:
-                            # Upload to S3
-                            metadata = self.provider.s3_client.put_object(key, object_data)
+                            # Upload to cloud storage
+                            metadata = self.provider.cloud_client.put_object(key, object_data)
 
                             # Cache the object
                             self.provider._cache_object(key, object_data, metadata)
                         except Exception as e:
-                            _logger.error(f"Failed to upload object '{key}' to S3: {e}")
+                            _logger.error(f"Failed to upload object '{key}' to cloud storage: {e}")
                             raise CloudStorageError(message=f"Failed to write to WAL {self.wal_id}: {e}")
 
                 self.closed = True
@@ -690,7 +979,7 @@ class CloudBlockProvider(BlockProvider):
             def __exit__(self, exc_type, exc_val, exc_tb):
                 self.close()
 
-        return S3Writer(self, wal_id, temp_file)
+        return CloudWriter(self, wal_id, temp_file)
 
     def get_current_root_object(self) -> AtomPointer:
         """
@@ -701,8 +990,8 @@ class CloudBlockProvider(BlockProvider):
         """
         with self.root_lock:
             try:
-                # Try to get the root object from S3
-                data, _ = self.s3_client.get_object("space_root")
+                # Try to get the root object from cloud storage
+                data, _ = self.cloud_client.get_object("space_root")
                 root_dict = json.loads(data.decode('utf-8'))
 
                 if not isinstance(root_dict, dict):
@@ -724,7 +1013,7 @@ class CloudBlockProvider(BlockProvider):
 
                 return root_pointer
             except Exception as e:
-                _logger.warning(f"Failed to get root object from S3: {e}")
+                _logger.warning(f"Failed to get root object from cloud storage: {e}")
                 return None
 
     def update_root_object(self, new_root: AtomPointer):
@@ -743,9 +1032,9 @@ class CloudBlockProvider(BlockProvider):
                     "offset": new_root.offset
                 }
 
-                # Convert to JSON and upload to S3
+                # Convert to JSON and upload to cloud storage
                 data = json.dumps(root_dict).encode('utf-8')
-                self.s3_client.put_object("space_root", data)
+                self.cloud_client.put_object("space_root", data)
 
                 _logger.info(f"Updated root object: {root_dict}")
             except Exception as e:
@@ -773,9 +1062,9 @@ class CloudBlockProvider(BlockProvider):
 
 class CloudFileStorage(ClusterFileStorage):
     """
-    An implementation of cloud file storage with support for S3-like object storage.
+    An implementation of cloud file storage with support for cloud object storage.
 
-    This class extends ClusterFileStorage to add support for storing data in an S3-like
+    This class extends ClusterFileStorage to add support for storing data in a cloud
     object storage service, with local caching to improve performance.
     """
 
@@ -850,7 +1139,7 @@ class CloudFileStorage(ClusterFileStorage):
 
     def _background_uploader(self):
         """
-        Background thread for uploading pending writes to S3.
+        Background thread for uploading pending writes to cloud storage.
         """
         while self.state == 'Running' and self.uploader_running:
             try:
@@ -866,7 +1155,7 @@ class CloudFileStorage(ClusterFileStorage):
 
     def _process_pending_uploads(self):
         """
-        Process pending uploads to S3.
+        Process pending uploads to cloud storage.
         """
         operations = []
 
@@ -1004,7 +1293,7 @@ class CloudFileStorage(ClusterFileStorage):
         Closes the storage, flushing any pending writes and releasing resources.
 
         This method overrides the base implementation to also process pending uploads
-        before closing.
+        to cloud storage before closing.
         """
         # First stop the background uploader thread to avoid potential deadlocks
         self.uploader_running = False
@@ -1024,3 +1313,249 @@ class CloudFileStorage(ClusterFileStorage):
         super().close()
 
         _logger.info("Closed CloudFileStorage")
+
+
+class GoogleCloudClient(CloudStorageClient):
+    """
+    Google Cloud Storage client implementation.
+
+    This class implements the CloudStorageClient interface for Google Cloud Storage.
+    """
+
+    def __init__(self, 
+                 bucket: str, 
+                 prefix: str = "",
+                 project_id: str = None,
+                 credentials_path: str = None):
+        """
+        Initialize the Google Cloud Storage client.
+
+        Args:
+            bucket: The GCS bucket name
+            prefix: The prefix for all objects in the bucket
+            project_id: The Google Cloud project ID
+            credentials_path: Path to the Google Cloud credentials file
+        """
+        self.project_id = project_id
+        self.credentials_path = credentials_path
+
+        # Call parent constructor
+        super().__init__(bucket, prefix)
+
+    def _init_client(self):
+        """
+        Initialize the Google Cloud Storage client.
+
+        This method initializes the Google Cloud Storage client using the
+        google-cloud-storage library if available, or falls back to a mock
+        implementation for testing.
+        """
+        try:
+            from google.cloud import storage
+            from google.oauth2 import service_account
+
+            if self.credentials_path:
+                credentials = service_account.Credentials.from_service_account_file(
+                    self.credentials_path
+                )
+                self.client = storage.Client(
+                    project=self.project_id,
+                    credentials=credentials
+                )
+            else:
+                self.client = storage.Client(project=self.project_id)
+
+            self.bucket_obj = self.client.bucket(self.bucket)
+            _logger.info(f"Initialized Google Cloud Storage client for bucket '{self.bucket}'")
+        except ImportError:
+            _logger.warning("google-cloud-storage not installed, using mock implementation")
+            self.client = None
+            self.bucket_obj = None
+            self.objects = {}
+
+    def get_object(self, key: str) -> Tuple[bytes, Dict[str, Any]]:
+        """
+        Get an object from Google Cloud Storage.
+
+        Args:
+            key: The object key
+
+        Returns:
+            Tuple containing the object data and metadata
+        """
+        if self.client is None:
+            # Mock implementation
+            full_key = f"{self.prefix}/{key}" if self.prefix else key
+            if full_key not in self.objects:
+                raise CloudStorageError(message=f"Object '{full_key}' not found in mock GCS")
+
+            obj = self.objects[full_key]
+            metadata = {
+                "ETag": obj["etag"],
+                "ContentLength": len(obj["data"]),
+                "LastModified": obj["last_modified"]
+            }
+
+            return obj["data"], metadata
+        else:
+            # Real implementation
+            full_key = f"{self.prefix}/{key}" if self.prefix else key
+            blob = self.bucket_obj.blob(full_key)
+
+            try:
+                data = blob.download_as_bytes()
+                metadata = {
+                    "ETag": blob.etag,
+                    "ContentLength": blob.size,
+                    "LastModified": blob.updated
+                }
+                return data, metadata
+            except Exception as e:
+                raise CloudStorageError(message=f"Failed to get object '{full_key}' from GCS: {e}")
+
+    def put_object(self, key: str, data: bytes) -> Dict[str, Any]:
+        """
+        Put an object to Google Cloud Storage.
+
+        Args:
+            key: The object key
+            data: The object data
+
+        Returns:
+            Object metadata
+        """
+        if self.client is None:
+            # Mock implementation
+            full_key = f"{self.prefix}/{key}" if self.prefix else key
+            etag = hashlib.md5(data).hexdigest()
+            last_modified = time.time()
+
+            self.objects[full_key] = {
+                "data": data,
+                "etag": etag,
+                "last_modified": last_modified
+            }
+
+            metadata = {
+                "ETag": etag,
+                "ContentLength": len(data),
+                "LastModified": last_modified
+            }
+
+            _logger.debug(f"Put object '{full_key}' to mock GCS (size: {len(data)} bytes)")
+            return metadata
+        else:
+            # Real implementation
+            full_key = f"{self.prefix}/{key}" if self.prefix else key
+            blob = self.bucket_obj.blob(full_key)
+
+            try:
+                blob.upload_from_string(data)
+                metadata = {
+                    "ETag": blob.etag,
+                    "ContentLength": blob.size,
+                    "LastModified": blob.updated
+                }
+                return metadata
+            except Exception as e:
+                raise CloudStorageError(message=f"Failed to put object '{full_key}' to GCS: {e}")
+
+    def list_objects(self, prefix: str = None) -> List[Dict[str, Any]]:
+        """
+        List objects in Google Cloud Storage.
+
+        Args:
+            prefix: The prefix to filter objects
+
+        Returns:
+            List of object metadata
+        """
+        if self.client is None:
+            # Mock implementation
+            list_prefix = f"{self.prefix}/{prefix}" if self.prefix and prefix else (self.prefix or prefix or "")
+
+            result = []
+            for key, obj in self.objects.items():
+                if not list_prefix or key.startswith(list_prefix):
+                    result.append({
+                        "Key": key,
+                        "ETag": obj["etag"],
+                        "Size": len(obj["data"]),
+                        "LastModified": obj["last_modified"]
+                    })
+
+            return result
+        else:
+            # Real implementation
+            list_prefix = f"{self.prefix}/{prefix}" if self.prefix and prefix else (self.prefix or prefix or "")
+            blobs = self.bucket_obj.list_blobs(prefix=list_prefix)
+
+            result = []
+            for blob in blobs:
+                result.append({
+                    "Key": blob.name,
+                    "ETag": blob.etag,
+                    "Size": blob.size,
+                    "LastModified": blob.updated
+                })
+
+            return result
+
+    def delete_object(self, key: str) -> bool:
+        """
+        Delete an object from Google Cloud Storage.
+
+        Args:
+            key: The object key
+
+        Returns:
+            True if the object was deleted, False otherwise
+        """
+        if self.client is None:
+            # Mock implementation
+            full_key = f"{self.prefix}/{key}" if self.prefix else key
+            if full_key in self.objects:
+                del self.objects[full_key]
+                _logger.debug(f"Deleted object '{full_key}' from mock GCS")
+                return True
+            return False
+        else:
+            # Real implementation
+            full_key = f"{self.prefix}/{key}" if self.prefix else key
+            blob = self.bucket_obj.blob(full_key)
+
+            try:
+                blob.delete()
+                _logger.debug(f"Deleted object '{full_key}' from GCS")
+                return True
+            except Exception as e:
+                _logger.warning(f"Failed to delete object '{full_key}' from GCS: {e}")
+                return False
+
+
+class MockGoogleCloudClient(MockCloudStorageClient):
+    """
+    Mock implementation of GoogleCloudClient for testing and development.
+
+    This implementation inherits from MockCloudStorageClient and adds GCS-specific behavior.
+    """
+
+    def __init__(self, 
+                 bucket: str, 
+                 prefix: str = "",
+                 project_id: str = None,
+                 credentials_path: str = None):
+        """
+        Initialize the mock Google Cloud Storage client.
+
+        Args:
+            bucket: The GCS bucket name
+            prefix: The prefix for all objects in the bucket
+            project_id: The Google Cloud project ID
+            credentials_path: Path to the Google Cloud credentials file
+        """
+        self.project_id = project_id
+        self.credentials_path = credentials_path
+
+        # Call parent constructor
+        super().__init__(bucket, prefix)

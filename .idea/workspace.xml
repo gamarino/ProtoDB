@@ -4,10 +4,20 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] cloud_file_storage: prevent deadlocks in test">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[IMP] cloud_cluster_file_storage: implments a local cache to maximize throughput of s3 reads">
+      <change afterPath="$PROJECT_DIR$/CHANGES_GOOGLE_CLOUD_STORAGE.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Estrategia_de_seguridad.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/proto_db/tests/test_cloud_cluster_file_storage_with_gcs.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/proto_db/tests/test_cloud_file_storage_with_gcs.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/proto_db/tests/test_google_cloud_client.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/source/advanced_usage.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/advanced_usage.rst" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/source/api/exceptions.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/exceptions.rst" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/source/api/storage.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/storage.rst" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/source/architecture.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/architecture.rst" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/source/introduction.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/introduction.rst" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/proto_db/cloud_cluster_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/cloud_cluster_file_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_cloud_cluster_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_cloud_cluster_file_storage.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/cloud_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/cloud_file_storage.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -62,7 +72,7 @@
     "Python tests.Python tests in test_standalone_file_storage.py.executor": "Debug",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
-    "com.google.cloudcode.ide_session_index": "20250726_0002",
+    "com.google.cloudcode.ide_session_index": "20250728_0000",
     "git-widget-placeholder": "master",
     "junie.onboarding.icon.badge.shown": "true",
     "last_opened_file_path": "/home/gamarino/odoo/ProtoBase/docs/source",
@@ -219,7 +229,8 @@
       <workItem from="1743823683294" duration="866000" />
       <workItem from="1744982726161" duration="9553000" />
       <workItem from="1753541463109" duration="1149000" />
-      <workItem from="1753567167029" duration="8637000" />
+      <workItem from="1753567167029" duration="12281000" />
+      <workItem from="1753706608123" duration="1007000" />
     </task>
     <task id="LOCAL-00007" summary="[WIP] standalone_file_storage.py : push_to_wal with bytes, not bytearray">
       <option name="closed" value="true" />
@@ -373,7 +384,15 @@
       <option name="project" value="LOCAL" />
       <updated>1753626505824</updated>
     </task>
-    <option name="localTasksCounter" value="26" />
+    <task id="LOCAL-00026" summary="[IMP] cloud_cluster_file_storage: implments a local cache to maximize throughput of s3 reads">
+      <option name="closed" value="true" />
+      <created>1753627255246</created>
+      <option name="number" value="00026" />
+      <option name="presentableId" value="LOCAL-00026" />
+      <option name="project" value="LOCAL" />
+      <updated>1753627255246</updated>
+    </task>
+    <option name="localTasksCounter" value="27" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -401,7 +420,8 @@
     <MESSAGE value="[IMP] implement all necessary to submit to pypy" />
     <MESSAGE value="[IMP] documentation in sphinx generated" />
     <MESSAGE value="[FIX] cloud_file_storage: prevent deadlocks in test" />
-    <option name="LAST_COMMIT_MESSAGE" value="[FIX] cloud_file_storage: prevent deadlocks in test" />
+    <MESSAGE value="[IMP] cloud_cluster_file_storage: implments a local cache to maximize throughput of s3 reads" />
+    <option name="LAST_COMMIT_MESSAGE" value="[IMP] cloud_cluster_file_storage: implments a local cache to maximize throughput of s3 reads" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

@@ -17,19 +17,23 @@ from .common import MB, GB, Future, BlockProvider, AtomPointer
 from .exceptions import ProtoUnexpectedException, ProtoValidationException
 from .fsm import FSM
 from .standalone_file_storage import StandaloneFileStorage, WALState, WALWriteOperation
-from .cluster_file_storage import ClusterFileStorage, ClusterNetworkManager
-from .cloud_file_storage import CloudFileStorage, CloudBlockProvider, S3Client
+from .cluster_file_storage import ClusterFileStorage, ClusterNetworkManager, MSG_TYPE_PAGE_RESPONSE
+from .cloud_file_storage import CloudFileStorage, CloudBlockProvider, CloudStorageClient, S3Client, GoogleCloudClient
 from .file_block_provider import FileBlockProvider
 
 _logger = logging.getLogger(__name__)
 
 # Default cloud cluster storage settings
-DEFAULT_S3_OBJECT_SIZE = 5 * MB  # Default size for S3 objects
+DEFAULT_OBJECT_SIZE = 5 * MB  # Default size for cloud storage objects
 DEFAULT_LOCAL_CACHE_SIZE = 500 * MB  # Default size for local cache
 DEFAULT_CACHE_DIR = "cloud_cluster_cache"  # Default directory for local cache
-DEFAULT_S3_CACHE_DIR = "s3_page_cache"  # Default directory for S3 page cache
-DEFAULT_UPLOAD_INTERVAL_MS = 5000  # 5 seconds between S3 uploads
+DEFAULT_PAGE_CACHE_DIR = "cloud_page_cache"  # Default directory for cloud page cache
+DEFAULT_UPLOAD_INTERVAL_MS = 5000  # 5 seconds between cloud uploads
 DEFAULT_CLEANUP_INTERVAL_MS = 60000  # 1 minute between cache cleanups
+
+# For backward compatibility
+DEFAULT_S3_OBJECT_SIZE = DEFAULT_OBJECT_SIZE
+DEFAULT_S3_CACHE_DIR = DEFAULT_PAGE_CACHE_DIR
 
 
 class CloudClusterStorageError(ProtoUnexpectedException):
@@ -41,13 +45,13 @@ class CloudClusterStorageError(ProtoUnexpectedException):
 
 class CloudClusterFileStorage(CloudFileStorage):
     """
-    An implementation of cloud cluster file storage with support for distributed operations and S3 storage.
+    An implementation of cloud cluster file storage with support for distributed operations and cloud storage.
 
     This class combines the functionality of CloudFileStorage and ClusterFileStorage to provide
-    a storage solution that works in a multi-server cluster environment while using S3 as the
-    final storage for data. It supports distributed operations like vote-based exclusive locking,
-    root synchronization, and cached page retrieval between servers, as well as cloud storage
-    features like background uploading to S3 and local caching.
+    a storage solution that works in a multi-server cluster environment while using cloud storage
+    (such as S3 or Google Cloud Storage) as the final storage for data. It supports distributed 
+    operations like vote-based exclusive locking, root synchronization, and cached page retrieval 
+    between servers, as well as cloud storage features like background uploading and local caching.
     """
 
     def __init__(self,
@@ -64,7 +68,8 @@ class CloudClusterFileStorage(CloudFileStorage):
                  blob_max_size: int = common.GB * 2,
                  max_workers: int = (os.cpu_count() or 1) * 5,
                  upload_interval_ms: int = DEFAULT_UPLOAD_INTERVAL_MS,
-                 s3_cache_dir: str = DEFAULT_S3_CACHE_DIR):
+                 page_cache_dir: str = DEFAULT_PAGE_CACHE_DIR,
+                 s3_cache_dir: str = None):
         """
         Constructor for the CloudClusterFileStorage class.
 
@@ -81,8 +86,9 @@ class CloudClusterFileStorage(CloudFileStorage):
             buffer_size: Size of the WAL buffer in bytes
             blob_max_size: Maximum size of a blob in bytes
             max_workers: Number of worker threads for asynchronous operations
-            upload_interval_ms: Interval between S3 uploads in milliseconds
-            s3_cache_dir: Directory for S3 page cache
+            upload_interval_ms: Interval between cloud uploads in milliseconds
+            page_cache_dir: Directory for cloud page cache
+            s3_cache_dir: Directory for S3 page cache (deprecated, use page_cache_dir instead)
         """
         # Initialize CloudFileStorage
         super().__init__(
@@ -101,28 +107,33 @@ class CloudClusterFileStorage(CloudFileStorage):
             upload_interval_ms=upload_interval_ms
         )
 
-        # Initialize S3 page cache
-        self.s3_cache_dir = s3_cache_dir
-        self.s3_cache_lock = threading.Lock()
+        # Initialize cloud page cache
+        # For backward compatibility
+        if s3_cache_dir is not None:
+            self.page_cache_dir = s3_cache_dir
+        else:
+            self.page_cache_dir = page_cache_dir
+
+        self.page_cache_lock = threading.Lock()
 
         # Create cache directory if it doesn't exist
-        os.makedirs(self.s3_cache_dir, exist_ok=True)
+        os.makedirs(self.page_cache_dir, exist_ok=True)
 
         # Initialize the cache using StandaloneFileStorage with a FileBlockProvider
-        self.s3_page_cache_provider = FileBlockProvider(
-            base_dir=os.path.join(self.s3_cache_dir, "blocks"),
+        self.page_cache_provider = FileBlockProvider(
+            base_dir=os.path.join(self.page_cache_dir, "blocks"),
             create_if_missing=True
         )
 
-        self.s3_page_cache = StandaloneFileStorage(
-            block_provider=self.s3_page_cache_provider,
+        self.page_cache = StandaloneFileStorage(
+            block_provider=self.page_cache_provider,
             buffer_size=buffer_size,
             blob_max_size=blob_max_size,
             max_workers=max_workers // 2  # Use fewer workers for the cache
         )
 
-        # Dictionary to map S3 keys to cache pointers
-        self.s3_key_to_pointer = {}
+        # Dictionary to map cloud storage keys to cache pointers
+        self.cloud_key_to_pointer = {}
 
         # Load existing cache mappings if available
         self._load_cache_mappings()
@@ -130,43 +141,50 @@ class CloudClusterFileStorage(CloudFileStorage):
         # Override the network manager's page request handler to check the cache
         self._setup_cache_aware_network_manager()
 
-        _logger.info(f"Initialized CloudClusterFileStorage for server {self.server_id} with S3 page cache at {self.s3_cache_dir}")
+        # For backward compatibility
+        self.s3_cache_dir = self.page_cache_dir
+        self.s3_cache_lock = self.page_cache_lock
+        self.s3_page_cache_provider = self.page_cache_provider
+        self.s3_page_cache = self.page_cache
+        self.s3_key_to_pointer = self.cloud_key_to_pointer
+
+        _logger.info(f"Initialized CloudClusterFileStorage for server {self.server_id} with cloud page cache at {self.page_cache_dir}")
 
     def _load_cache_mappings(self):
         """
         Load cache mappings from disk.
 
-        This method loads the mapping between S3 keys and cache pointers from a JSON file.
+        This method loads the mapping between cloud storage keys and cache pointers from a JSON file.
         """
-        cache_mappings_path = os.path.join(self.s3_cache_dir, "cache_mappings.json")
+        cache_mappings_path = os.path.join(self.page_cache_dir, "cache_mappings.json")
         if os.path.exists(cache_mappings_path):
             try:
                 with open(cache_mappings_path, 'r') as f:
                     mappings = json.load(f)
 
                 # Convert string keys to tuples and string UUIDs to UUID objects
-                for s3_key, pointer_data in mappings.items():
-                    self.s3_key_to_pointer[s3_key] = AtomPointer(
+                for cloud_key, pointer_data in mappings.items():
+                    self.cloud_key_to_pointer[cloud_key] = AtomPointer(
                         transaction_id=uuid.UUID(pointer_data["transaction_id"]),
                         offset=pointer_data["offset"]
                     )
 
-                _logger.info(f"Loaded {len(self.s3_key_to_pointer)} S3 page cache mappings")
+                _logger.info(f"Loaded {len(self.cloud_key_to_pointer)} cloud page cache mappings")
             except Exception as e:
-                _logger.warning(f"Failed to load S3 page cache mappings: {e}")
+                _logger.warning(f"Failed to load cloud page cache mappings: {e}")
 
     def _save_cache_mappings(self):
         """
         Save cache mappings to disk.
 
-        This method saves the mapping between S3 keys and cache pointers to a JSON file.
+        This method saves the mapping between cloud storage keys and cache pointers to a JSON file.
         """
-        cache_mappings_path = os.path.join(self.s3_cache_dir, "cache_mappings.json")
+        cache_mappings_path = os.path.join(self.page_cache_dir, "cache_mappings.json")
         try:
             # Convert AtomPointer objects to dictionaries
             mappings = {}
-            for s3_key, pointer in self.s3_key_to_pointer.items():
-                mappings[s3_key] = {
+            for cloud_key, pointer in self.cloud_key_to_pointer.items():
+                mappings[cloud_key] = {
                     "transaction_id": str(pointer.transaction_id),
                     "offset": pointer.offset
                 }
@@ -174,68 +192,74 @@ class CloudClusterFileStorage(CloudFileStorage):
             with open(cache_mappings_path, 'w') as f:
                 json.dump(mappings, f)
 
-            _logger.debug(f"Saved {len(self.s3_key_to_pointer)} S3 page cache mappings")
+            _logger.debug(f"Saved {len(self.cloud_key_to_pointer)} cloud page cache mappings")
         except Exception as e:
-            _logger.warning(f"Failed to save S3 page cache mappings: {e}")
+            _logger.warning(f"Failed to save cloud page cache mappings: {e}")
 
-    def _cache_s3_page(self, s3_key: str, data: bytes) -> AtomPointer:
+    def _cache_cloud_page(self, cloud_key: str, data: bytes) -> AtomPointer:
         """
-        Cache a page from S3 in the local cache.
+        Cache a page from cloud storage in the local cache.
 
         Args:
-            s3_key: The S3 object key
+            cloud_key: The cloud storage object key
             data: The page data
 
         Returns:
             AtomPointer: A pointer to the cached data
         """
-        with self.s3_cache_lock:
+        with self.page_cache_lock:
             # Check if the page is already cached
-            if s3_key in self.s3_key_to_pointer:
-                return self.s3_key_to_pointer[s3_key]
+            if cloud_key in self.cloud_key_to_pointer:
+                return self.cloud_key_to_pointer[cloud_key]
 
             # Store the data in the cache
-            future = self.s3_page_cache.push_bytes(data)
+            future = self.page_cache.push_bytes(data)
             transaction_id, offset = future.result()
 
             # Create a pointer to the cached data
             pointer = AtomPointer(transaction_id=transaction_id, offset=offset)
 
             # Update the mapping
-            self.s3_key_to_pointer[s3_key] = pointer
+            self.cloud_key_to_pointer[cloud_key] = pointer
 
             # Save the updated mappings
             self._save_cache_mappings()
 
-            _logger.debug(f"Cached S3 page {s3_key} (size: {len(data)} bytes)")
+            _logger.debug(f"Cached cloud page {cloud_key} (size: {len(data)} bytes)")
             return pointer
 
-    def _get_cached_s3_page(self, s3_key: str) -> Optional[bytes]:
+    # For backward compatibility
+    _cache_s3_page = _cache_cloud_page
+
+    def _get_cached_cloud_page(self, cloud_key: str) -> Optional[bytes]:
         """
         Get a page from the local cache.
 
         Args:
-            s3_key: The S3 object key
+            cloud_key: The cloud storage object key
 
         Returns:
             Optional[bytes]: The cached data, or None if not found
         """
-        with self.s3_cache_lock:
-            if s3_key not in self.s3_key_to_pointer:
+        with self.page_cache_lock:
+            if cloud_key not in self.cloud_key_to_pointer:
                 return None
 
-            pointer = self.s3_key_to_pointer[s3_key]
+            pointer = self.cloud_key_to_pointer[cloud_key]
 
             try:
                 # Get the data from the cache
-                future = self.s3_page_cache.get_bytes(pointer)
+                future = self.page_cache.get_bytes(pointer)
                 return future.result()
             except Exception as e:
-                _logger.warning(f"Failed to read cached S3 page {s3_key}: {e}")
+                _logger.warning(f"Failed to read cached cloud page {cloud_key}: {e}")
                 # Remove the invalid mapping
-                del self.s3_key_to_pointer[s3_key]
+                del self.cloud_key_to_pointer[cloud_key]
                 self._save_cache_mappings()
                 return None
+
+    # For backward compatibility
+    _get_cached_s3_page = _get_cached_cloud_page
 
     def read_lock_current_root(self) -> AtomPointer:
         """
@@ -255,7 +279,7 @@ class CloudClusterFileStorage(CloudFileStorage):
             _logger.warning(f"Failed to acquire distributed lock for root update (received {votes} votes)")
             raise CloudClusterStorageError(message=f"Failed to acquire distributed lock for root update")
 
-        # Process any pending uploads to ensure we have the latest data
+        # Process any pending uploads to ensure we have the latest data from cloud storage
         self._process_pending_uploads()
 
         # Read the root object
@@ -281,18 +305,18 @@ class CloudClusterFileStorage(CloudFileStorage):
             root_pointer.offset
         )
 
-        # Process pending uploads to ensure the update is persisted to S3
+        # Process pending uploads to ensure the update is persisted to cloud storage
         self._process_pending_uploads()
 
-        _logger.info(f"Updated root object, notified {servers_updated} servers, and persisted to S3")
+        _logger.info(f"Updated root object, notified {servers_updated} servers, and persisted to cloud storage")
 
     def get_reader(self, wal_id: uuid.UUID, position: int) -> io.BytesIO:
         """
         Get a reader for the specified WAL at the given position.
 
         This method first tries to get the data from the local cache, then from the
-        S3 page cache, then from the local file system, then from other servers in 
-        the cluster, and finally from S3.
+        cloud page cache, then from the local file system, then from other servers in 
+        the cluster, and finally from cloud storage.
 
         Args:
             wal_id: WAL ID
@@ -306,12 +330,12 @@ class CloudClusterFileStorage(CloudFileStorage):
             if (wal_id, position) in self.in_memory_segments:
                 return io.BytesIO(self.in_memory_segments[(wal_id, position)])
 
-        # Get the S3 object key for this WAL position
-        s3_key = self.block_provider._get_object_key(wal_id, position)
+        # Get the cloud storage object key for this WAL position
+        cloud_key = self.block_provider._get_object_key(wal_id, position)
         offset = self.block_provider._get_object_offset(position)
 
-        # Check if the data is in the S3 page cache
-        cached_data = self._get_cached_s3_page(s3_key)
+        # Check if the data is in the cloud page cache
+        cached_data = self._get_cached_cloud_page(cloud_key)
         if cached_data:
             # Create a reader with the correct offset
             reader = io.BytesIO(cached_data)
@@ -323,27 +347,27 @@ class CloudClusterFileStorage(CloudFileStorage):
             try:
                 # First check if it's in the local file system cache
                 with self.block_provider.cache_lock:
-                    if s3_key in self.block_provider.cache_metadata and self.block_provider.cache_metadata[s3_key].is_cached:
-                        cache_meta = self.block_provider.cache_metadata[s3_key]
+                    if cloud_key in self.block_provider.cache_metadata and self.block_provider.cache_metadata[cloud_key].is_cached:
+                        cache_meta = self.block_provider.cache_metadata[cloud_key]
                         f = open(cache_meta.cache_path, 'rb')
                         f.seek(offset)
                         return f
 
-                # If not in local cache, get from S3 and cache it
-                data, metadata = self.block_provider.s3_client.get_object(s3_key)
+                # If not in local cache, get from cloud storage and cache it
+                data, metadata = self.block_provider.cloud_client.get_object(cloud_key)
 
                 # Cache the object in the block provider's cache
-                self.block_provider._cache_object(s3_key, data, metadata)
+                self.block_provider._cache_object(cloud_key, data, metadata)
 
-                # Also cache it in our S3 page cache for cluster-wide sharing
-                self._cache_s3_page(s3_key, data)
+                # Also cache it in our cloud page cache for cluster-wide sharing
+                self._cache_cloud_page(cloud_key, data)
 
                 # Return a reader for the data
                 reader = io.BytesIO(data)
                 reader.seek(offset)
                 return reader
             except Exception as e:
-                _logger.debug(f"Failed to read from local file system or S3: {e}")
+                _logger.debug(f"Failed to read from local file system or cloud storage: {e}")
 
                 # Try to get the data from other servers
                 for retry in range(self.max_retries):
@@ -357,7 +381,7 @@ class CloudClusterFileStorage(CloudFileStorage):
                         # If we got a full page, cache it
                         if len(data) >= object_size:
                             full_page_data = data[:object_size]
-                            self._cache_s3_page(s3_key, full_page_data)
+                            self._cache_cloud_page(cloud_key, full_page_data)
 
                         return io.BytesIO(data)
 
@@ -366,7 +390,7 @@ class CloudClusterFileStorage(CloudFileStorage):
 
                 # If all retries fail, raise an exception
                 raise CloudClusterStorageError(
-                    message=f"Failed to read WAL {wal_id} at position {position} from any server or S3"
+                    message=f"Failed to read WAL {wal_id} at position {position} from any server or cloud storage"
                 )
         except Exception as e:
             # If all methods fail, raise an exception
@@ -379,7 +403,7 @@ class CloudClusterFileStorage(CloudFileStorage):
         Public method to flush WAL buffer and process pending writes.
 
         This method ensures that WAL data is flushed to disk, processed for pending writes,
-        and uploaded to S3. It also broadcasts the updates to other servers in the cluster.
+        and uploaded to cloud storage. It also broadcasts the updates to other servers in the cluster.
 
         Returns:
             tuple: A tuple containing (bytes_flushed, operations_processed)
@@ -398,10 +422,10 @@ class CloudClusterFileStorage(CloudFileStorage):
 
     def _setup_cache_aware_network_manager(self):
         """
-        Override the network manager's page request handler to check the S3 page cache.
+        Override the network manager's page request handler to check the cloud page cache.
 
         This method replaces the default _handle_page_request method of the network manager
-        with a custom implementation that checks the S3 page cache before trying to read
+        with a custom implementation that checks the cloud page cache before trying to read
         from disk or memory.
         """
         original_handle_page_request = self.network_manager._handle_page_request
@@ -424,11 +448,11 @@ class CloudClusterFileStorage(CloudFileStorage):
                 # Convert string WAL ID to UUID
                 wal_id = uuid.UUID(wal_id_str)
 
-                # Get the S3 object key for this WAL position
-                s3_key = self.block_provider._get_object_key(wal_id, offset)
+                # Get the cloud storage object key for this WAL position
+                cloud_key = self.block_provider._get_object_key(wal_id, offset)
 
-                # Check if the data is in the S3 page cache
-                cached_data = self._get_cached_s3_page(s3_key)
+                # Check if the data is in the cloud page cache
+                cached_data = self._get_cached_cloud_page(cloud_key)
                 if cached_data:
                     # Get the correct portion of the data
                     page_offset = self.block_provider._get_object_offset(offset)
@@ -448,7 +472,7 @@ class CloudClusterFileStorage(CloudFileStorage):
                     }
 
                     self.network_manager._send_message(addr[0], addr[1], response)
-                    _logger.debug(f"Sent page response from S3 cache for request {request_id} to {addr[0]}:{addr[1]}")
+                    _logger.debug(f"Sent page response from cloud cache for request {request_id} to {addr[0]}:{addr[1]}")
 
                     # Send the event to the FSM
                     self.network_manager.fsm.send_event({
@@ -461,7 +485,7 @@ class CloudClusterFileStorage(CloudFileStorage):
 
                     return
 
-                # If not in S3 page cache, fall back to the original handler
+                # If not in cloud page cache, fall back to the original handler
                 original_handle_page_request(message, addr)
 
             except Exception as e:
@@ -477,7 +501,7 @@ class CloudClusterFileStorage(CloudFileStorage):
         Closes the storage, flushing any pending writes and releasing resources.
 
         This method ensures that all pending uploads are processed, the background uploader
-        thread is stopped, the S3 page cache is closed, and the network manager is stopped 
+        thread is stopped, the cloud page cache is closed, and the network manager is stopped 
         before closing the storage.
         """
         # Process pending uploads
@@ -490,13 +514,13 @@ class CloudClusterFileStorage(CloudFileStorage):
         if hasattr(self, 'uploader_thread') and self.uploader_thread.is_alive():
             self.uploader_thread.join(timeout=2.0)  # Wait up to 2 seconds for the thread to finish
 
-        # Close the S3 page cache
-        if hasattr(self, 's3_page_cache'):
+        # Close the cloud page cache
+        if hasattr(self, 'page_cache'):
             try:
-                self.s3_page_cache.close()
-                _logger.info("Closed S3 page cache")
+                self.page_cache.close()
+                _logger.info("Closed cloud page cache")
             except Exception as e:
-                _logger.warning(f"Error closing S3 page cache: {e}")
+                _logger.warning(f"Error closing cloud page cache: {e}")
 
         # Call the parent implementation (CloudFileStorage.close)
         super().close()

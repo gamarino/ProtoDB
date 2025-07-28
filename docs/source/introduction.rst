@@ -14,7 +14,7 @@ Key Features
 * **Transactional Operations**: All database operations are performed within transactions, ensuring data consistency.
 * **Query System**: Powerful query capabilities including filtering, joining, grouping, and sorting.
 * **Distributed Capabilities**: Support for distributed operations across multiple nodes in a cluster.
-* **Cloud Integration**: Seamless integration with S3-compatible object storage services.
+* **Cloud Integration**: Seamless integration with cloud object storage services (Amazon S3 and Google Cloud Storage).
 
 Use Cases
 --------
