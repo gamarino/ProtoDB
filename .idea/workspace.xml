@@ -4,11 +4,12 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] README.md">
-      <change afterPath="$PROJECT_DIR$/CHANGELOG.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] README.md, pyproject.toml: update to current status">
+      <change afterPath="$PROJECT_DIR$/examples/README.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/examples/simple_example.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/examples/task_manager.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/examples/task_manager_data/5ee2d17a-66d2-491a-8d40-0ac52acdb63c" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/examples/task_manager_data/697b328d-7b00-40f3-9a31-c96a2d7b6ea7" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -431,14 +432,21 @@
       <option name="project" value="LOCAL" />
       <updated>1753738512819</updated>
     </task>
-    <option name="localTasksCounter" value="33" />
+    <task id="LOCAL-00033" summary="[FIX] README.md, pyproject.toml: update to current status">
+      <option name="closed" value="true" />
+      <created>1753739560627</created>
+      <option name="number" value="00033" />
+      <option name="presentableId" value="LOCAL-00033" />
+      <option name="project" value="LOCAL" />
+      <updated>1753739560627</updated>
+    </task>
+    <option name="localTasksCounter" value="34" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[WIP] db_access con standalone_file_storage. Test pasado, 100_000 records en 46s" />
     <MESSAGE value="[WIP] transacciones anidadas, listas con head, tail y split optimo, factorización de acceso a los roots, manejo flexible de database y transacciones con bloques with" />
     <MESSAGE value="[WIP] standalone_file_storage.py : push_to_wal with bytes, not bytearray" />
     <MESSAGE value="[WIP] standalone_file_storage.py : global executor pool" />
@@ -463,7 +471,8 @@
     <MESSAGE value="[IMP] ConcurrentOptimized Dictionaries" />
     <MESSAGE value="[IMP] Multiformat storage implamentation" />
     <MESSAGE value="[FIX] README.md" />
-    <option name="LAST_COMMIT_MESSAGE" value="[FIX] README.md" />
+    <MESSAGE value="[FIX] README.md, pyproject.toml: update to current status" />
+    <option name="LAST_COMMIT_MESSAGE" value="[FIX] README.md, pyproject.toml: update to current status" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
