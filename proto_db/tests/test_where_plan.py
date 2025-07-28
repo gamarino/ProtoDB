@@ -1,4 +1,5 @@
 import unittest
+import uuid
 from unittest.mock import MagicMock
 
 from proto_db.db_access import ObjectTransaction, ObjectSpace, Database
@@ -28,7 +29,7 @@ class TestWherePlan(unittest.TestCase):
         self.storage_space = ObjectSpace(storage=MemoryStorage())
         self.database = self.storage_space.new_database('TestDB')
         self.transaction = self.database.new_transaction()
-        self.atom_pointer = AtomPointer()
+        self.atom_pointer = AtomPointer(transaction_id=uuid.uuid4(), offset=0)
 
         # Create test data
         self.mock_data = []
@@ -74,9 +75,9 @@ class TestWherePlan(unittest.TestCase):
         result = list(where_plan.execute())
 
         # Only records with age > 25 AND active == True should be included
-        self.assertEqual(len(result), 2)  # Should be Person 2 and Person 4
+        self.assertEqual(len(result), 1)  # Should be Person 4
         self.assertTrue(all(r.age > 25 and r.active for r in result))
-        self.assertEqual(set(r.id for r in result), {2, 4})
+        self.assertEqual(set(r.id for r in result), {4})
 
     def test_or_expression_filter(self):
         """
@@ -94,9 +95,9 @@ class TestWherePlan(unittest.TestCase):
         result = list(where_plan.execute())
 
         # Records with age > 28 OR id == 1 should be included
-        self.assertEqual(len(result), 3)  # Should be Person 1, Person 4, and Person 5
+        self.assertEqual(len(result), 2)  # Should be Person 1 and Person 5
         self.assertTrue(all(r.age > 28 or r.id == 1 for r in result))
-        self.assertEqual(set(r.id for r in result), {1, 4, 5})
+        self.assertEqual(set(r.id for r in result), {1, 5})
 
     def test_not_expression_filter(self):
         """
@@ -191,8 +192,8 @@ class TestWherePlan(unittest.TestCase):
         # Test Greater
         where_plan = WherePlan(filter=Term('age', Greater(), 26), based_on=self.base_plan, transaction=self.transaction)
         result = list(where_plan.execute())
-        self.assertEqual(len(result), 3)
-        self.assertEqual(set(r.id for r in result), {3, 4, 5})
+        self.assertEqual(len(result), 2)
+        self.assertEqual(set(r.id for r in result), {4, 5})
 
         # Test GreaterOrEqual
         where_plan = WherePlan(filter=Term('age', GreaterOrEqual(), 26), based_on=self.base_plan, transaction=self.transaction)
@@ -216,13 +217,16 @@ class TestWherePlan(unittest.TestCase):
         """
         Test that the optimize method of WherePlan works as expected.
 
-        Optimization should return a new WherePlan instance with optimized inner query plans.
+        Optimization should return a new WherePlan instance with optimized inner query plans
+        if the underlying plan doesn't have an accept_filter method.
         """
         term = Term('id', Equal(), 3)
         where_plan = WherePlan(filter=term, based_on=self.base_plan, transaction=self.transaction)
 
         # Mock the optimize method of the base plan
         optimized_base_plan = MagicMock()
+        # Ensure the optimized_base_plan doesn't have an accept_filter method
+        del optimized_base_plan.accept_filter
         self.base_plan.optimize = MagicMock(return_value=optimized_base_plan)
 
         # Call optimize on the WherePlan

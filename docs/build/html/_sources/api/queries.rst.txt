@@ -71,6 +71,24 @@ SelectPlan
 
 ``SelectPlan`` projects specific fields. It takes a projection function and a base plan, returns transformed records, and can be used to extract specific fields.
 
+CountPlan
+~~~~~~~~
+
+.. autoclass:: CountPlan
+   :members:
+   :special-members: __init__
+
+``CountPlan`` counts the results from a sub-plan. It takes a base plan and returns a single record with the count. It is optimized to use index counts whenever possible, avoiding full data iteration.
+
+CountResultPlan
+~~~~~~~~~~~~~
+
+.. autoclass:: CountResultPlan
+   :members:
+   :special-members: __init__
+
+``CountResultPlan`` is a terminal plan that holds and returns a pre-calculated count. It is the result of an optimized CountPlan.
+
 LimitPlan
 ~~~~~~~~
 
@@ -98,6 +116,40 @@ ListPlan
 
 ``ListPlan`` is a simple plan that wraps a list. It provides an iterator over the list and can be used as the basis for other query plans.
 
+Optimized Counting
+----------------
+
+Several query plan classes implement optimized counting methods to improve performance when only the count of results is needed, not the actual data. These optimizations avoid iterating through all records when possible.
+
+IndexedSearchPlan.count()
+~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``IndexedSearchPlan`` class provides a fast count method that leverages the underlying index count. This avoids iterating over the actual data.
+
+.. code-block:: python
+
+    # Using an indexed field for counting is much faster
+    indexed_search = proto_db.IndexedSearchPlan(
+        field_to_scan="city",
+        operator="==",
+        value="New York",
+        based_on=indexed_from_plan,
+        transaction=transaction
+    )
+
+    # Get the count directly without iterating
+    count = indexed_search.count()
+
+AndMerge.count()
+~~~~~~~~~~~~~
+
+The ``AndMerge`` class optimizes counting for the intersection of sub-queries. It iterates the smaller result set and checks for existence in the larger one, without materializing full objects.
+
+OrMerge.count()
+~~~~~~~~~~~~
+
+The ``OrMerge`` class optimizes counting for the union of sub-queries. It uses a set to efficiently combine IDs and get the final count of unique results.
+
 Usage Examples
 -------------
 
@@ -107,32 +159,32 @@ Basic Query
 .. code-block:: python
 
     import proto_db
-    
+
     # Create a list of dictionaries
     users = proto_db.List()
-    
+
     # Add some users
     user1 = proto_db.Dictionary()
     user1["name"] = "John"
     user1["age"] = 30
     user1["city"] = "New York"
     users.append(user1)
-    
+
     user2 = proto_db.Dictionary()
     user2["name"] = "Jane"
     user2["age"] = 25
     user2["city"] = "Boston"
     users.append(user2)
-    
+
     user3 = proto_db.Dictionary()
     user3["name"] = "Bob"
     user3["age"] = 35
     user3["city"] = "New York"
     users.append(user3)
-    
+
     # Create a query plan
     from_plan = proto_db.FromPlan(users)
-    
+
     # Execute the query
     for user in from_plan.execute():
         print(user["name"])  # Output: John, Jane, Bob
@@ -147,7 +199,7 @@ Filtering
         filter=lambda user: user["city"] == "New York",
         based_on=from_plan
     )
-    
+
     # Execute the query
     for user in where_plan.execute():
         print(user["name"])  # Output: John, Bob
@@ -162,7 +214,7 @@ Projection
         projection=lambda user: {"name": user["name"], "age": user["age"]},
         based_on=from_plan
     )
-    
+
     # Execute the query
     for user in select_plan.execute():
         print(f"{user['name']}: {user['age']}")  # Output: John: 30, Jane: 25, Bob: 35
@@ -177,7 +229,7 @@ Sorting
         key=lambda user: user["age"],
         based_on=from_plan
     )
-    
+
     # Execute the query
     for user in order_plan.execute():
         print(f"{user['name']}: {user['age']}")  # Output: Jane: 25, John: 30, Bob: 35
@@ -192,13 +244,13 @@ Grouping
         key=lambda user: user["city"],
         based_on=from_plan
     )
-    
+
     # Execute the query
     for city, users_in_city in group_plan.execute():
         print(f"{city}: {len(users_in_city)} users")
         for user in users_in_city:
             print(f"  {user['name']}")
-    
+
     # Output:
     # New York: 2 users
     #   John
@@ -213,32 +265,32 @@ Joining
 
     # Create a list of cities
     cities = proto_db.List()
-    
+
     # Add some cities
     city1 = proto_db.Dictionary()
     city1["name"] = "New York"
     city1["country"] = "USA"
     cities.append(city1)
-    
+
     city2 = proto_db.Dictionary()
     city2["name"] = "Boston"
     city2["country"] = "USA"
     cities.append(city2)
-    
+
     # Create a query plan for cities
     cities_plan = proto_db.FromPlan(cities)
-    
+
     # Join users and cities
     join_plan = proto_db.JoinPlan(
         left=from_plan,
         right=cities_plan,
         condition=lambda user, city: user["city"] == city["name"]
     )
-    
+
     # Execute the query
     for user, city in join_plan.execute():
         print(f"{user['name']} lives in {city['name']}, {city['country']}")
-    
+
     # Output:
     # John lives in New York, USA
     # Jane lives in Boston, USA
@@ -254,21 +306,21 @@ Pagination
         limit=2,
         based_on=from_plan
     )
-    
+
     # Execute the query
     for user in limit_plan.execute():
         print(user["name"])  # Output: John, Jane
-    
+
     # Skip the first user
     offset_plan = proto_db.OffsetPlan(
         offset=1,
         based_on=from_plan
     )
-    
+
     # Execute the query
     for user in offset_plan.execute():
         print(user["name"])  # Output: Jane, Bob
-    
+
     # Combine limit and offset for pagination
     page_plan = proto_db.LimitPlan(
         limit=1,
@@ -277,10 +329,39 @@ Pagination
             based_on=from_plan
         )
     )
-    
+
     # Execute the query
     for user in page_plan.execute():
         print(user["name"])  # Output: Jane
+
+Counting
+~~~~~~~
+
+.. code-block:: python
+
+    # Count all users
+    count_plan = proto_db.CountPlan(
+        based_on=from_plan,
+        transaction=from_plan.transaction
+    )
+
+    # Execute the query
+    result = list(count_plan.execute())
+    print(f"Total users: {result[0]['count']}")  # Output: Total users: 3
+
+    # Count users from New York
+    filtered_count_plan = proto_db.CountPlan(
+        based_on=proto_db.WherePlan(
+            filter=lambda user: user["city"] == "New York",
+            based_on=from_plan,
+            transaction=from_plan.transaction
+        ),
+        transaction=from_plan.transaction
+    )
+
+    # Execute the query
+    result = list(filtered_count_plan.execute())
+    print(f"Users from New York: {result[0]['count']}")  # Output: Users from New York: 2
 
 Chaining
 ~~~~~~~
@@ -298,7 +379,7 @@ Chaining
             )
         )
     )
-    
+
     # Execute the query
     for user in chain_plan.execute():
         print(user["name"])  # Output: Bob, John

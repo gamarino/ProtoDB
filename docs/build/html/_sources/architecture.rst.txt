@@ -99,7 +99,7 @@ CloudFileStorage
 
 ``CloudFileStorage`` extends ``ClusterFileStorage`` to add support for cloud storage. It:
 
-- Stores data in S3-compatible object storage
+- Stores data in cloud object storage (Amazon S3 or Google Cloud Storage)
 - Provides local caching for performance
 - Supports background uploading of data
 - Is suitable for cloud-native applications

@@ -73,8 +73,12 @@
 <li class="toctree-l3"><a class="reference internal" href="#cloud-file-storage">Cloud File Storage</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#proto_db.cloud_file_storage.CloudFileStorage"><code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#proto_db.cloud_file_storage.CloudBlockProvider"><code class="docutils literal notranslate"><span class="pre">CloudBlockProvider</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.cloud_file_storage.CloudStorageClient"><code class="docutils literal notranslate"><span class="pre">CloudStorageClient</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#proto_db.cloud_file_storage.S3Client"><code class="docutils literal notranslate"><span class="pre">S3Client</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.cloud_file_storage.GoogleCloudClient"><code class="docutils literal notranslate"><span class="pre">GoogleCloudClient</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#proto_db.cloud_file_storage.MockS3Client"><code class="docutils literal notranslate"><span class="pre">MockS3Client</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.cloud_file_storage.MockGoogleCloudClient"><code class="docutils literal notranslate"><span class="pre">MockGoogleCloudClient</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.cloud_file_storage.CloudObjectMetadata"><code class="docutils literal notranslate"><span class="pre">CloudObjectMetadata</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#proto_db.cloud_file_storage.S3ObjectMetadata"><code class="docutils literal notranslate"><span class="pre">S3ObjectMetadata</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#proto_db.cloud_file_storage.CloudStorageError"><code class="docutils literal notranslate"><span class="pre">CloudStorageError</span></code></a></li>
 </ul>
@@ -1046,8 +1050,8 @@ votes_received: Number of positive votes received</p>
 <dl class="py class" id="module-proto_db.cloud_file_storage">
 <dt class="sig sig-object py" id="proto_db.cloud_file_storage.CloudFileStorage">
 <em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_file_storage.</span></span><span class="sig-name descname"><span class="pre">CloudFileStorage</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">block_provider</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">server_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">host</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">port</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">servers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vote_timeout_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">read_timeout_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">retry_interval_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_retries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">buffer_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1048576</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blob_max_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2147483648</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_workers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">upload_interval_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5000</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudFileStorage"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudFileStorage" title="Link to this definition"></a></dt>
-<dd><p>An implementation of cloud file storage with support for S3-like object storage.</p>
-<p>This class extends ClusterFileStorage to add support for storing data in an S3-like
+<dd><p>An implementation of cloud file storage with support for cloud object storage.</p>
+<p>This class extends ClusterFileStorage to add support for storing data in a cloud
 object storage service, with local caching to improve performance.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
@@ -1113,22 +1117,22 @@ object storage service, with local caching to improve performance.</p>
 <span class="sig-name descname"><span class="pre">close</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudFileStorage.close"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudFileStorage.close" title="Link to this definition"></a></dt>
 <dd><p>Closes the storage, flushing any pending writes and releasing resources.</p>
 <p>This method overrides the base implementation to also process pending uploads
-before closing.</p>
+to cloud storage before closing.</p>
 </dd></dl>
 
 </dd></dl>
 
-<p><code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code> extends <code class="docutils literal notranslate"><span class="pre">ClusterFileStorage</span></code> to add support for cloud storage. It stores data in S3-compatible object storage, provides local caching for performance, supports background uploading of data, and is suitable for cloud-native applications.</p>
+<p><code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code> extends <code class="docutils literal notranslate"><span class="pre">ClusterFileStorage</span></code> to add support for cloud storage. It stores data in cloud object storage (Amazon S3 or Google Cloud Storage), provides local caching for performance, supports background uploading of data, and is suitable for cloud-native applications.</p>
 <dl class="py class">
 <dt class="sig sig-object py" id="proto_db.cloud_file_storage.CloudBlockProvider">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_file_storage.</span></span><span class="sig-name descname"><span class="pre">CloudBlockProvider</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">s3_client</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cloud_cache'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">524288000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5242880</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudBlockProvider"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudBlockProvider" title="Link to this definition"></a></dt>
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_file_storage.</span></span><span class="sig-name descname"><span class="pre">CloudBlockProvider</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cloud_client</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cloud_cache'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">524288000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5242880</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudBlockProvider"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudBlockProvider" title="Link to this definition"></a></dt>
 <dd><p>Block provider implementation for cloud storage.</p>
-<p>This class implements the BlockProvider interface for S3-compatible storage,
+<p>This class implements the BlockProvider interface for cloud storage providers,
 with local caching to improve performance.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>s3_client</strong> (<a class="reference internal" href="#proto_db.cloud_file_storage.S3Client" title="proto_db.cloud_file_storage.S3Client"><em>S3Client</em></a>)</p></li>
+<li><p><strong>cloud_client</strong> (<a class="reference internal" href="#proto_db.cloud_file_storage.CloudStorageClient" title="proto_db.cloud_file_storage.CloudStorageClient"><em>CloudStorageClient</em></a>)</p></li>
 <li><p><strong>cache_dir</strong> (<em>str</em>)</p></li>
 <li><p><strong>cache_size</strong> (<em>int</em>)</p></li>
 <li><p><strong>object_size</strong> (<em>int</em>)</p></li>
@@ -1137,15 +1141,15 @@ with local caching to improve performance.</p>
 </dl>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.cloud_file_storage.CloudBlockProvider.__init__">
-<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">s3_client</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cloud_cache'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">524288000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5242880</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudBlockProvider.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudBlockProvider.__init__" title="Link to this definition"></a></dt>
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cloud_client</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cloud_cache'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">524288000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5242880</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudBlockProvider.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudBlockProvider.__init__" title="Link to this definition"></a></dt>
 <dd><p>Initialize the cloud block provider.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>s3_client</strong> (<a class="reference internal" href="#proto_db.cloud_file_storage.S3Client" title="proto_db.cloud_file_storage.S3Client"><em>S3Client</em></a>) – The S3 client to use</p></li>
+<li><p><strong>cloud_client</strong> (<a class="reference internal" href="#proto_db.cloud_file_storage.CloudStorageClient" title="proto_db.cloud_file_storage.CloudStorageClient"><em>CloudStorageClient</em></a>) – The cloud storage client to use</p></li>
 <li><p><strong>cache_dir</strong> (<em>str</em>) – Directory for local cache</p></li>
 <li><p><strong>cache_size</strong> (<em>int</em>) – Maximum size of local cache in bytes</p></li>
-<li><p><strong>object_size</strong> (<em>int</em>) – Size of S3 objects in bytes</p></li>
+<li><p><strong>object_size</strong> (<em>int</em>) – Size of cloud storage objects in bytes</p></li>
 </ul>
 </dd>
 </dl>
@@ -1271,13 +1275,114 @@ with local caching to improve performance.</p>
 
 </dd></dl>
 
-<p>The <code class="docutils literal notranslate"><span class="pre">CloudBlockProvider</span></code> class is a block provider implementation that uses S3-compatible object storage for storage. It is used by <code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code> to read and write blocks.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">CloudBlockProvider</span></code> class is a block provider implementation that uses cloud object storage for storage. It is used by <code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code> to read and write blocks and works with any implementation of the <code class="docutils literal notranslate"><span class="pre">CloudStorageClient</span></code> interface.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.CloudStorageClient">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_file_storage.</span></span><span class="sig-name descname"><span class="pre">CloudStorageClient</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bucket</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudStorageClient"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudStorageClient" title="Link to this definition"></a></dt>
+<dd><p>Abstract cloud storage client interface.</p>
+<p>This class defines the interface for interacting with cloud storage providers.
+Concrete implementations should be provided for specific cloud providers.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>bucket</strong> (<em>str</em>)</p></li>
+<li><p><strong>prefix</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.CloudStorageClient.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bucket</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudStorageClient.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudStorageClient.__init__" title="Link to this definition"></a></dt>
+<dd><p>Initialize the cloud storage client.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>bucket</strong> (<em>str</em>) – The storage bucket name</p></li>
+<li><p><strong>prefix</strong> (<em>str</em>) – The prefix for all objects in the bucket</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.CloudStorageClient.get_object">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudStorageClient.get_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudStorageClient.get_object" title="Link to this definition"></a></dt>
+<dd><p>Get an object from cloud storage.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>key</strong> (<em>str</em>) – The object key</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Tuple containing the object data and metadata</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><em>Tuple</em>[bytes, <em>Dict</em>[str, <em>Any</em>]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.CloudStorageClient.put_object">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">put_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudStorageClient.put_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudStorageClient.put_object" title="Link to this definition"></a></dt>
+<dd><p>Put an object to cloud storage.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>key</strong> (<em>str</em>) – The object key</p></li>
+<li><p><strong>data</strong> (<em>bytes</em>) – The object data</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Object metadata</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><em>Dict</em>[str, <em>Any</em>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.CloudStorageClient.list_objects">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">list_objects</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">prefix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudStorageClient.list_objects"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudStorageClient.list_objects" title="Link to this definition"></a></dt>
+<dd><p>List objects in cloud storage.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>prefix</strong> (<em>str</em>) – The prefix to filter objects</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>List of object metadata</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><em>List</em>[<em>Dict</em>[str, <em>Any</em>]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.CloudStorageClient.delete_object">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">delete_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudStorageClient.delete_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudStorageClient.delete_object" title="Link to this definition"></a></dt>
+<dd><p>Delete an object from cloud storage.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>key</strong> (<em>str</em>) – The object key</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>True if the object was deleted, False otherwise</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>The <code class="docutils literal notranslate"><span class="pre">CloudStorageClient</span></code> is an abstract base class that defines the interface for cloud storage clients. Concrete implementations are provided for specific cloud providers like Amazon S3 and Google Cloud Storage.</p>
 <dl class="py class">
 <dt class="sig sig-object py" id="proto_db.cloud_file_storage.S3Client">
 <em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_file_storage.</span></span><span class="sig-name descname"><span class="pre">S3Client</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bucket</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">endpoint_url</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">access_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">secret_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">region</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#S3Client"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.S3Client" title="Link to this definition"></a></dt>
-<dd><p>Abstract S3 client interface.</p>
-<p>This class defines the interface for interacting with S3-compatible storage.
-Concrete implementations should be provided for specific S3 providers.</p>
+<dd><p>S3 client implementation.</p>
+<p>This class implements the CloudStorageClient interface for S3-compatible storage.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
@@ -1381,28 +1486,42 @@ Concrete implementations should be provided for specific S3 providers.</p>
 
 </dd></dl>
 
-<p>The <code class="docutils literal notranslate"><span class="pre">S3Client</span></code> interface defines the contract for S3 client implementations. It provides methods for getting, putting, listing, and deleting objects in S3-compatible storage.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">S3Client</span></code> class is an implementation of the <code class="docutils literal notranslate"><span class="pre">CloudStorageClient</span></code> interface for Amazon S3. It provides methods for getting, putting, listing, and deleting objects in S3-compatible storage.</p>
 <dl class="py class">
-<dt class="sig sig-object py" id="proto_db.cloud_file_storage.MockS3Client">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_file_storage.</span></span><span class="sig-name descname"><span class="pre">MockS3Client</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bucket</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">endpoint_url</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">access_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">secret_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">region</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#MockS3Client"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.MockS3Client" title="Link to this definition"></a></dt>
-<dd><p>Mock implementation of S3Client for testing and development.</p>
-<p>This implementation stores objects in memory and simulates S3 behavior.</p>
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.GoogleCloudClient">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_file_storage.</span></span><span class="sig-name descname"><span class="pre">GoogleCloudClient</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bucket</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">project_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">credentials_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#GoogleCloudClient"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.GoogleCloudClient" title="Link to this definition"></a></dt>
+<dd><p>Google Cloud Storage client implementation.</p>
+<p>This class implements the CloudStorageClient interface for Google Cloud Storage.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>bucket</strong> (<em>str</em>)</p></li>
 <li><p><strong>prefix</strong> (<em>str</em>)</p></li>
-<li><p><strong>endpoint_url</strong> (<em>str</em>)</p></li>
-<li><p><strong>access_key</strong> (<em>str</em>)</p></li>
-<li><p><strong>secret_key</strong> (<em>str</em>)</p></li>
-<li><p><strong>region</strong> (<em>str</em>)</p></li>
+<li><p><strong>project_id</strong> (<em>str</em>)</p></li>
+<li><p><strong>credentials_path</strong> (<em>str</em>)</p></li>
 </ul>
 </dd>
 </dl>
 <dl class="py method">
-<dt class="sig sig-object py" id="proto_db.cloud_file_storage.MockS3Client.get_object">
-<span class="sig-name descname"><span class="pre">get_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#MockS3Client.get_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.MockS3Client.get_object" title="Link to this definition"></a></dt>
-<dd><p>Get an object from the mock S3 storage.</p>
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.GoogleCloudClient.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bucket</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">project_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">credentials_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#GoogleCloudClient.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.GoogleCloudClient.__init__" title="Link to this definition"></a></dt>
+<dd><p>Initialize the Google Cloud Storage client.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>bucket</strong> (<em>str</em>) – The GCS bucket name</p></li>
+<li><p><strong>prefix</strong> (<em>str</em>) – The prefix for all objects in the bucket</p></li>
+<li><p><strong>project_id</strong> (<em>str</em>) – The Google Cloud project ID</p></li>
+<li><p><strong>credentials_path</strong> (<em>str</em>) – Path to the Google Cloud credentials file</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.GoogleCloudClient.get_object">
+<span class="sig-name descname"><span class="pre">get_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#GoogleCloudClient.get_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.GoogleCloudClient.get_object" title="Link to this definition"></a></dt>
+<dd><p>Get an object from Google Cloud Storage.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>key</strong> (<em>str</em>) – The object key</p>
@@ -1417,9 +1536,9 @@ Concrete implementations should be provided for specific S3 providers.</p>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="proto_db.cloud_file_storage.MockS3Client.put_object">
-<span class="sig-name descname"><span class="pre">put_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#MockS3Client.put_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.MockS3Client.put_object" title="Link to this definition"></a></dt>
-<dd><p>Put an object to the mock S3 storage.</p>
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.GoogleCloudClient.put_object">
+<span class="sig-name descname"><span class="pre">put_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#GoogleCloudClient.put_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.GoogleCloudClient.put_object" title="Link to this definition"></a></dt>
+<dd><p>Put an object to Google Cloud Storage.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
@@ -1437,9 +1556,9 @@ Concrete implementations should be provided for specific S3 providers.</p>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="proto_db.cloud_file_storage.MockS3Client.list_objects">
-<span class="sig-name descname"><span class="pre">list_objects</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">prefix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#MockS3Client.list_objects"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.MockS3Client.list_objects" title="Link to this definition"></a></dt>
-<dd><p>List objects in the mock S3 storage.</p>
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.GoogleCloudClient.list_objects">
+<span class="sig-name descname"><span class="pre">list_objects</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">prefix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#GoogleCloudClient.list_objects"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.GoogleCloudClient.list_objects" title="Link to this definition"></a></dt>
+<dd><p>List objects in Google Cloud Storage.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>prefix</strong> (<em>str</em>) – The prefix to filter objects</p>
@@ -1454,9 +1573,9 @@ Concrete implementations should be provided for specific S3 providers.</p>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="proto_db.cloud_file_storage.MockS3Client.delete_object">
-<span class="sig-name descname"><span class="pre">delete_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#MockS3Client.delete_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.MockS3Client.delete_object" title="Link to this definition"></a></dt>
-<dd><p>Delete an object from the mock S3 storage.</p>
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.GoogleCloudClient.delete_object">
+<span class="sig-name descname"><span class="pre">delete_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#GoogleCloudClient.delete_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.GoogleCloudClient.delete_object" title="Link to this definition"></a></dt>
+<dd><p>Delete an object from Google Cloud Storage.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>key</strong> (<em>str</em>) – The object key</p>
@@ -1472,11 +1591,83 @@ Concrete implementations should be provided for specific S3 providers.</p>
 
 </dd></dl>
 
+<p>The <code class="docutils literal notranslate"><span class="pre">GoogleCloudClient</span></code> class is an implementation of the <code class="docutils literal notranslate"><span class="pre">CloudStorageClient</span></code> interface for Google Cloud Storage. It provides methods for getting, putting, listing, and deleting objects in Google Cloud Storage.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.MockS3Client">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_file_storage.</span></span><span class="sig-name descname"><span class="pre">MockS3Client</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bucket</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">endpoint_url</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">access_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">secret_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">region</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#MockS3Client"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.MockS3Client" title="Link to this definition"></a></dt>
+<dd><p>Mock implementation of S3Client for testing and development.</p>
+<p>This implementation inherits from MockCloudStorageClient and adds S3-specific behavior.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>bucket</strong> (<em>str</em>)</p></li>
+<li><p><strong>prefix</strong> (<em>str</em>)</p></li>
+<li><p><strong>endpoint_url</strong> (<em>str</em>)</p></li>
+<li><p><strong>access_key</strong> (<em>str</em>)</p></li>
+<li><p><strong>secret_key</strong> (<em>str</em>)</p></li>
+<li><p><strong>region</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.MockS3Client.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bucket</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">endpoint_url</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">access_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">secret_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">region</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#MockS3Client.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.MockS3Client.__init__" title="Link to this definition"></a></dt>
+<dd><p>Initialize the mock S3 client.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>bucket</strong> (<em>str</em>) – The S3 bucket name</p></li>
+<li><p><strong>prefix</strong> (<em>str</em>) – The prefix for all objects in the bucket</p></li>
+<li><p><strong>endpoint_url</strong> (<em>str</em>) – The S3 endpoint URL</p></li>
+<li><p><strong>access_key</strong> (<em>str</em>) – The S3 access key</p></li>
+<li><p><strong>secret_key</strong> (<em>str</em>) – The S3 secret key</p></li>
+<li><p><strong>region</strong> (<em>str</em>) – The S3 region</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
 <p>The <code class="docutils literal notranslate"><span class="pre">MockS3Client</span></code> class is a mock implementation of the <code class="docutils literal notranslate"><span class="pre">S3Client</span></code> interface for testing and development. It simulates S3 behavior without requiring an actual S3 service.</p>
 <dl class="py class">
-<dt class="sig sig-object py" id="proto_db.cloud_file_storage.S3ObjectMetadata">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_file_storage.</span></span><span class="sig-name descname"><span class="pre">S3ObjectMetadata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">size</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">etag</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">last_modified</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">is_cached</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#S3ObjectMetadata"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.S3ObjectMetadata" title="Link to this definition"></a></dt>
-<dd><p>Metadata for an S3 object.</p>
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.MockGoogleCloudClient">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_file_storage.</span></span><span class="sig-name descname"><span class="pre">MockGoogleCloudClient</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bucket</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">project_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">credentials_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#MockGoogleCloudClient"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.MockGoogleCloudClient" title="Link to this definition"></a></dt>
+<dd><p>Mock implementation of GoogleCloudClient for testing and development.</p>
+<p>This implementation inherits from MockCloudStorageClient and adds GCS-specific behavior.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>bucket</strong> (<em>str</em>)</p></li>
+<li><p><strong>prefix</strong> (<em>str</em>)</p></li>
+<li><p><strong>project_id</strong> (<em>str</em>)</p></li>
+<li><p><strong>credentials_path</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.MockGoogleCloudClient.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bucket</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">project_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">credentials_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#MockGoogleCloudClient.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.MockGoogleCloudClient.__init__" title="Link to this definition"></a></dt>
+<dd><p>Initialize the mock Google Cloud Storage client.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>bucket</strong> (<em>str</em>) – The GCS bucket name</p></li>
+<li><p><strong>prefix</strong> (<em>str</em>) – The prefix for all objects in the bucket</p></li>
+<li><p><strong>project_id</strong> (<em>str</em>) – The Google Cloud project ID</p></li>
+<li><p><strong>credentials_path</strong> (<em>str</em>) – Path to the Google Cloud credentials file</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>The <code class="docutils literal notranslate"><span class="pre">MockGoogleCloudClient</span></code> class is a mock implementation of the <code class="docutils literal notranslate"><span class="pre">GoogleCloudClient</span></code> interface for testing and development. It simulates Google Cloud Storage behavior without requiring an actual Google Cloud Storage service.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.CloudObjectMetadata">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_file_storage.</span></span><span class="sig-name descname"><span class="pre">CloudObjectMetadata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">size</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">etag</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">last_modified</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">is_cached</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudObjectMetadata"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudObjectMetadata" title="Link to this definition"></a></dt>
+<dd><p>Metadata for a cloud storage object.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
@@ -1490,13 +1681,13 @@ Concrete implementations should be provided for specific S3 providers.</p>
 </dd>
 </dl>
 <dl class="py method">
-<dt class="sig sig-object py" id="proto_db.cloud_file_storage.S3ObjectMetadata.__init__">
-<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">size</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">etag</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">last_modified</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">is_cached</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#S3ObjectMetadata.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.S3ObjectMetadata.__init__" title="Link to this definition"></a></dt>
-<dd><p>Initialize S3 object metadata.</p>
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.CloudObjectMetadata.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">size</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">etag</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">last_modified</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">is_cached</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudObjectMetadata.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudObjectMetadata.__init__" title="Link to this definition"></a></dt>
+<dd><p>Initialize cloud object metadata.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>key</strong> (<em>str</em>) – The S3 object key</p></li>
+<li><p><strong>key</strong> (<em>str</em>) – The object key</p></li>
 <li><p><strong>size</strong> (<em>int</em>) – The size of the object in bytes</p></li>
 <li><p><strong>etag</strong> (<em>str</em>) – The ETag of the object (usually MD5 hash)</p></li>
 <li><p><strong>last_modified</strong> (<em>float</em>) – The last modified timestamp</p></li>
@@ -1509,7 +1700,14 @@ Concrete implementations should be provided for specific S3 providers.</p>
 
 </dd></dl>
 
-<p>The <code class="docutils literal notranslate"><span class="pre">S3ObjectMetadata</span></code> class represents metadata for an S3 object. It includes the key, size, ETag, last modified timestamp, and caching information.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">CloudObjectMetadata</span></code> class represents metadata for a cloud storage object. It includes the key, size, ETag, last modified timestamp, and caching information.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.S3ObjectMetadata">
+<span class="sig-prename descclassname"><span class="pre">proto_db.cloud_file_storage.</span></span><span class="sig-name descname"><span class="pre">S3ObjectMetadata</span></span><a class="headerlink" href="#proto_db.cloud_file_storage.S3ObjectMetadata" title="Link to this definition"></a></dt>
+<dd><p>alias of <a class="reference internal" href="#proto_db.cloud_file_storage.CloudObjectMetadata" title="proto_db.cloud_file_storage.CloudObjectMetadata"><code class="xref py py-class docutils literal notranslate"><span class="pre">CloudObjectMetadata</span></code></a></p>
+</dd></dl>
+
+<p>The <code class="docutils literal notranslate"><span class="pre">S3ObjectMetadata</span></code> class is an alias for <code class="docutils literal notranslate"><span class="pre">CloudObjectMetadata</span></code> for backward compatibility.</p>
 <dl class="py class">
 <dt class="sig sig-object py" id="proto_db.cloud_file_storage.CloudStorageError">
 <em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_file_storage.</span></span><span class="sig-name descname"><span class="pre">CloudStorageError</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudStorageError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudStorageError" title="Link to this definition"></a></dt>
@@ -1531,13 +1729,13 @@ Concrete implementations should be provided for specific S3 providers.</p>
 <h2>Cloud Cluster File Storage<a class="headerlink" href="#cloud-cluster-file-storage" title="Link to this heading"></a></h2>
 <dl class="py class" id="module-proto_db.cloud_cluster_file_storage">
 <dt class="sig sig-object py" id="proto_db.cloud_cluster_file_storage.CloudClusterFileStorage">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_cluster_file_storage.</span></span><span class="sig-name descname"><span class="pre">CloudClusterFileStorage</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">block_provider</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">server_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">host</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">port</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">servers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vote_timeout_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">read_timeout_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">retry_interval_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_retries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">buffer_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1048576</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blob_max_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2147483648</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_workers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">upload_interval_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5000</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_cluster_file_storage.html#CloudClusterFileStorage"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage" title="Link to this definition"></a></dt>
-<dd><p>An implementation of cloud cluster file storage with support for distributed operations and S3 storage.</p>
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_cluster_file_storage.</span></span><span class="sig-name descname"><span class="pre">CloudClusterFileStorage</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">block_provider</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">server_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">host</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">port</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">servers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vote_timeout_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">read_timeout_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">retry_interval_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_retries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">buffer_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1048576</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blob_max_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2147483648</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_workers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">upload_interval_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">page_cache_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cloud_page_cache'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">s3_cache_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_cluster_file_storage.html#CloudClusterFileStorage"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage" title="Link to this definition"></a></dt>
+<dd><p>An implementation of cloud cluster file storage with support for distributed operations and cloud storage.</p>
 <p>This class combines the functionality of CloudFileStorage and ClusterFileStorage to provide
-a storage solution that works in a multi-server cluster environment while using S3 as the
-final storage for data. It supports distributed operations like vote-based exclusive locking,
-root synchronization, and cached page retrieval between servers, as well as cloud storage
-features like background uploading to S3 and local caching.</p>
+a storage solution that works in a multi-server cluster environment while using cloud storage
+(such as S3 or Google Cloud Storage) as the final storage for data. It supports distributed
+operations like vote-based exclusive locking, root synchronization, and cached page retrieval
+between servers, as well as cloud storage features like background uploading and local caching.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
@@ -1554,12 +1752,14 @@ features like background uploading to S3 and local caching.</p>
 <li><p><strong>blob_max_size</strong> (<em>int</em>)</p></li>
 <li><p><strong>max_workers</strong> (<em>int</em>)</p></li>
 <li><p><strong>upload_interval_ms</strong> (<em>int</em>)</p></li>
+<li><p><strong>page_cache_dir</strong> (<em>str</em>)</p></li>
+<li><p><strong>s3_cache_dir</strong> (<em>str</em>)</p></li>
 </ul>
 </dd>
 </dl>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.__init__">
-<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">block_provider</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">server_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">host</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">port</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">servers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vote_timeout_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">read_timeout_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">retry_interval_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_retries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">buffer_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1048576</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blob_max_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2147483648</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_workers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">upload_interval_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5000</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_cluster_file_storage.html#CloudClusterFileStorage.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.__init__" title="Link to this definition"></a></dt>
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">block_provider</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">server_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">host</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">port</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">servers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vote_timeout_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">read_timeout_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">retry_interval_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_retries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">buffer_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1048576</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blob_max_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2147483648</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_workers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">upload_interval_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">page_cache_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cloud_page_cache'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">s3_cache_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_cluster_file_storage.html#CloudClusterFileStorage.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.__init__" title="Link to this definition"></a></dt>
 <dd><p>Constructor for the CloudClusterFileStorage class.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
@@ -1576,7 +1776,9 @@ features like background uploading to S3 and local caching.</p>
 <li><p><strong>buffer_size</strong> (<em>int</em>) – Size of the WAL buffer in bytes</p></li>
 <li><p><strong>blob_max_size</strong> (<em>int</em>) – Maximum size of a blob in bytes</p></li>
 <li><p><strong>max_workers</strong> (<em>int</em>) – Number of worker threads for asynchronous operations</p></li>
-<li><p><strong>upload_interval_ms</strong> (<em>int</em>) – Interval between S3 uploads in milliseconds</p></li>
+<li><p><strong>upload_interval_ms</strong> (<em>int</em>) – Interval between cloud uploads in milliseconds</p></li>
+<li><p><strong>page_cache_dir</strong> (<em>str</em>) – Directory for cloud page cache</p></li>
+<li><p><strong>s3_cache_dir</strong> (<em>str</em>) – Directory for S3 page cache (deprecated, use page_cache_dir instead)</p></li>
 </ul>
 </dd>
 </dl>
@@ -1617,7 +1819,8 @@ and ensures the update is persisted to S3.</p>
 <span class="sig-name descname"><span class="pre">get_reader</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">wal_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">position</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_cluster_file_storage.html#CloudClusterFileStorage.get_reader"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.get_reader" title="Link to this definition"></a></dt>
 <dd><p>Get a reader for the specified WAL at the given position.</p>
 <p>This method first tries to get the data from the local cache, then from the
-local file system, then from other servers in the cluster, and finally from S3.</p>
+cloud page cache, then from the local file system, then from other servers in
+the cluster, and finally from cloud storage.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
@@ -1639,7 +1842,7 @@ local file system, then from other servers in the cluster, and finally from S3.<
 <span class="sig-name descname"><span class="pre">flush_wal</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_cluster_file_storage.html#CloudClusterFileStorage.flush_wal"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.flush_wal" title="Link to this definition"></a></dt>
 <dd><p>Public method to flush WAL buffer and process pending writes.</p>
 <p>This method ensures that WAL data is flushed to disk, processed for pending writes,
-and uploaded to S3. It also broadcasts the updates to other servers in the cluster.</p>
+and uploaded to cloud storage. It also broadcasts the updates to other servers in the cluster.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
 <dd class="field-odd"><p>A tuple containing (bytes_flushed, operations_processed)</p>
@@ -1655,12 +1858,13 @@ and uploaded to S3. It also broadcasts the updates to other servers in the clust
 <span class="sig-name descname"><span class="pre">close</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_cluster_file_storage.html#CloudClusterFileStorage.close"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.close" title="Link to this definition"></a></dt>
 <dd><p>Closes the storage, flushing any pending writes and releasing resources.</p>
 <p>This method ensures that all pending uploads are processed, the background uploader
-thread is stopped, and the network manager is stopped before closing the storage.</p>
+thread is stopped, the cloud page cache is closed, and the network manager is stopped
+before closing the storage.</p>
 </dd></dl>
 
 </dd></dl>
 
-<p><code class="docutils literal notranslate"><span class="pre">CloudClusterFileStorage</span></code> combines the functionality of <code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code> and <code class="docutils literal notranslate"><span class="pre">ClusterFileStorage</span></code> to provide a comprehensive solution for multi-server environments operating in a cluster and using S3 as the final storage for data. It supports distributed operations like vote-based exclusive locking, root synchronization, and cached page retrieval between servers, as well as cloud storage features like background uploading to S3 and local caching.</p>
+<p><code class="docutils literal notranslate"><span class="pre">CloudClusterFileStorage</span></code> combines the functionality of <code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code> and <code class="docutils literal notranslate"><span class="pre">ClusterFileStorage</span></code> to provide a comprehensive solution for multi-server environments operating in a cluster and using cloud object storage (Amazon S3 or Google Cloud Storage) as the final storage for data. It supports distributed operations like vote-based exclusive locking, root synchronization, and cached page retrieval between servers, as well as cloud storage features like background uploading to cloud storage and local caching.</p>
 <dl class="py class">
 <dt class="sig sig-object py" id="proto_db.cloud_cluster_file_storage.CloudClusterStorageError">
 <em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_cluster_file_storage.</span></span><span class="sig-name descname"><span class="pre">CloudClusterStorageError</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_cluster_file_storage.html#CloudClusterStorageError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_cluster_file_storage.CloudClusterStorageError" title="Link to this definition"></a></dt>

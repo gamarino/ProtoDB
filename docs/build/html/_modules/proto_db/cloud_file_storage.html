@@ -88,6 +88,7 @@
 <span class="kn">import</span> <span class="nn">base64</span>
 <span class="kn">import</span> <span class="nn">hashlib</span>
 <span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">BinaryIO</span>
+<span class="kn">from</span> <span class="nn">abc</span> <span class="kn">import</span> <span class="n">ABC</span><span class="p">,</span> <span class="n">abstractmethod</span>
 
 <span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">common</span>
 <span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="n">MB</span><span class="p">,</span> <span class="n">GB</span><span class="p">,</span> <span class="n">Future</span><span class="p">,</span> <span class="n">BlockProvider</span><span class="p">,</span> <span class="n">AtomPointer</span>
@@ -99,11 +100,14 @@
 <span class="n">_logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
 
 <span class="c1"># Default cloud storage settings</span>
-<span class="n">DEFAULT_S3_OBJECT_SIZE</span> <span class="o">=</span> <span class="mi">5</span> <span class="o">*</span> <span class="n">MB</span>  <span class="c1"># Default size for S3 objects</span>
+<span class="n">DEFAULT_OBJECT_SIZE</span> <span class="o">=</span> <span class="mi">5</span> <span class="o">*</span> <span class="n">MB</span>  <span class="c1"># Default size for cloud storage objects</span>
 <span class="n">DEFAULT_LOCAL_CACHE_SIZE</span> <span class="o">=</span> <span class="mi">500</span> <span class="o">*</span> <span class="n">MB</span>  <span class="c1"># Default size for local cache</span>
 <span class="n">DEFAULT_CACHE_DIR</span> <span class="o">=</span> <span class="s2">&quot;cloud_cache&quot;</span>  <span class="c1"># Default directory for local cache</span>
-<span class="n">DEFAULT_UPLOAD_INTERVAL_MS</span> <span class="o">=</span> <span class="mi">5000</span>  <span class="c1"># 5 seconds between S3 uploads</span>
+<span class="n">DEFAULT_UPLOAD_INTERVAL_MS</span> <span class="o">=</span> <span class="mi">5000</span>  <span class="c1"># 5 seconds between cloud uploads</span>
 <span class="n">DEFAULT_CLEANUP_INTERVAL_MS</span> <span class="o">=</span> <span class="mi">60000</span>  <span class="c1"># 1 minute between cache cleanups</span>
+
+<span class="c1"># For backward compatibility</span>
+<span class="n">DEFAULT_S3_OBJECT_SIZE</span> <span class="o">=</span> <span class="n">DEFAULT_OBJECT_SIZE</span>
 
 
 <div class="viewcode-block" id="CloudStorageError">
@@ -116,14 +120,14 @@
 
 
 
-<div class="viewcode-block" id="S3ObjectMetadata">
-<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.S3ObjectMetadata">[docs]</a>
-<span class="k">class</span> <span class="nc">S3ObjectMetadata</span><span class="p">:</span>
+<div class="viewcode-block" id="CloudObjectMetadata">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.CloudObjectMetadata">[docs]</a>
+<span class="k">class</span> <span class="nc">CloudObjectMetadata</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Metadata for an S3 object.</span>
+<span class="sd">    Metadata for a cloud storage object.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-<div class="viewcode-block" id="S3ObjectMetadata.__init__">
-<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.S3ObjectMetadata.__init__">[docs]</a>
+<div class="viewcode-block" id="CloudObjectMetadata.__init__">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.CloudObjectMetadata.__init__">[docs]</a>
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> 
                  <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> 
                  <span class="n">size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> 
@@ -132,10 +136,10 @@
                  <span class="n">is_cached</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
                  <span class="n">cache_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Initialize S3 object metadata.</span>
+<span class="sd">        Initialize cloud object metadata.</span>
 
 <span class="sd">        Args:</span>
-<span class="sd">            key: The S3 object key</span>
+<span class="sd">            key: The object key</span>
 <span class="sd">            size: The size of the object in bytes</span>
 <span class="sd">            etag: The ETag of the object (usually MD5 hash)</span>
 <span class="sd">            last_modified: The last modified timestamp</span>
@@ -151,15 +155,123 @@
 </div>
 
 
+<span class="c1"># For backward compatibility</span>
+<span class="n">S3ObjectMetadata</span> <span class="o">=</span> <span class="n">CloudObjectMetadata</span>
+
+
+<div class="viewcode-block" id="CloudStorageClient">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.CloudStorageClient">[docs]</a>
+<span class="k">class</span> <span class="nc">CloudStorageClient</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract cloud storage client interface.</span>
+
+<span class="sd">    This class defines the interface for interacting with cloud storage providers.</span>
+<span class="sd">    Concrete implementations should be provided for specific cloud providers.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="CloudStorageClient.__init__">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.CloudStorageClient.__init__">[docs]</a>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> 
+                 <span class="n">bucket</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> 
+                 <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize the cloud storage client.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            bucket: The storage bucket name</span>
+<span class="sd">            prefix: The prefix for all objects in the bucket</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bucket</span> <span class="o">=</span> <span class="n">bucket</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="o">=</span> <span class="n">prefix</span>
+
+        <span class="c1"># Initialize the client</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_init_client</span><span class="p">()</span></div>
+
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">_init_client</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize the cloud storage client.</span>
+
+<span class="sd">        This method should be implemented by concrete subclasses to initialize</span>
+<span class="sd">        the specific cloud storage client implementation.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span>
+
+<div class="viewcode-block" id="CloudStorageClient.get_object">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.CloudStorageClient.get_object">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">bytes</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get an object from cloud storage.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            key: The object key</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Tuple containing the object data and metadata</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="CloudStorageClient.put_object">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.CloudStorageClient.put_object">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">put_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Put an object to cloud storage.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            key: The object key</span>
+<span class="sd">            data: The object data</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Object metadata</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="CloudStorageClient.list_objects">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.CloudStorageClient.list_objects">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">list_objects</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        List objects in cloud storage.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            prefix: The prefix to filter objects</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            List of object metadata</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="CloudStorageClient.delete_object">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.CloudStorageClient.delete_object">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">delete_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Delete an object from cloud storage.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            key: The object key</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            True if the object was deleted, False otherwise</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+</div>
+
+
 
 <div class="viewcode-block" id="S3Client">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.S3Client">[docs]</a>
-<span class="k">class</span> <span class="nc">S3Client</span><span class="p">:</span>
+<span class="k">class</span> <span class="nc">S3Client</span><span class="p">(</span><span class="n">CloudStorageClient</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Abstract S3 client interface.</span>
+<span class="sd">    S3 client implementation.</span>
 
-<span class="sd">    This class defines the interface for interacting with S3-compatible storage.</span>
-<span class="sd">    Concrete implementations should be provided for specific S3 providers.</span>
+<span class="sd">    This class implements the CloudStorageClient interface for S3-compatible storage.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
 <div class="viewcode-block" id="S3Client.__init__">
@@ -182,25 +294,59 @@
 <span class="sd">            secret_key: The S3 secret key</span>
 <span class="sd">            region: The S3 region</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">bucket</span> <span class="o">=</span> <span class="n">bucket</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="o">=</span> <span class="n">prefix</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">endpoint_url</span> <span class="o">=</span> <span class="n">endpoint_url</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">access_key</span> <span class="o">=</span> <span class="n">access_key</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">secret_key</span> <span class="o">=</span> <span class="n">secret_key</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">region</span> <span class="o">=</span> <span class="n">region</span>
 
-        <span class="c1"># Initialize the client</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_init_client</span><span class="p">()</span></div>
+        <span class="c1"># Call parent constructor</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">bucket</span><span class="p">,</span> <span class="n">prefix</span><span class="p">)</span></div>
 
 
     <span class="k">def</span> <span class="nf">_init_client</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Initialize the S3 client.</span>
 
-<span class="sd">        This method should be implemented by concrete subclasses to initialize</span>
-<span class="sd">        the specific S3 client implementation.</span>
+<span class="sd">        This method initializes the S3 client using the boto3 library if available,</span>
+<span class="sd">        or falls back to a mock implementation for testing.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Subclasses must implement _init_client&quot;</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">import</span> <span class="nn">boto3</span>
+            <span class="kn">from</span> <span class="nn">botocore.client</span> <span class="kn">import</span> <span class="n">Config</span>
+
+            <span class="c1"># Create session with credentials if provided</span>
+            <span class="n">session_kwargs</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">access_key</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">secret_key</span><span class="p">:</span>
+                <span class="n">session_kwargs</span><span class="p">[</span><span class="s1">&#39;aws_access_key_id&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">access_key</span>
+                <span class="n">session_kwargs</span><span class="p">[</span><span class="s1">&#39;aws_secret_access_key&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">secret_key</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">region</span><span class="p">:</span>
+                <span class="n">session_kwargs</span><span class="p">[</span><span class="s1">&#39;region_name&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">region</span>
+
+            <span class="n">session</span> <span class="o">=</span> <span class="n">boto3</span><span class="o">.</span><span class="n">session</span><span class="o">.</span><span class="n">Session</span><span class="p">(</span><span class="o">**</span><span class="n">session_kwargs</span><span class="p">)</span>
+
+            <span class="c1"># Create S3 client</span>
+            <span class="n">client_kwargs</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">endpoint_url</span><span class="p">:</span>
+                <span class="n">client_kwargs</span><span class="p">[</span><span class="s1">&#39;endpoint_url&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">endpoint_url</span>
+
+            <span class="c1"># Use a config that allows for large files</span>
+            <span class="n">client_kwargs</span><span class="p">[</span><span class="s1">&#39;config&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">Config</span><span class="p">(</span>
+                <span class="n">signature_version</span><span class="o">=</span><span class="s1">&#39;s3v4&#39;</span><span class="p">,</span>
+                <span class="n">s3</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;addressing_style&#39;</span><span class="p">:</span> <span class="s1">&#39;path&#39;</span><span class="p">}</span>
+            <span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">client</span><span class="p">(</span><span class="s1">&#39;s3&#39;</span><span class="p">,</span> <span class="o">**</span><span class="n">client_kwargs</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">resource</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">resource</span><span class="p">(</span><span class="s1">&#39;s3&#39;</span><span class="p">,</span> <span class="o">**</span><span class="n">client_kwargs</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">bucket_obj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">resource</span><span class="o">.</span><span class="n">Bucket</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bucket</span><span class="p">)</span>
+
+            <span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Initialized S3 client for bucket &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">bucket</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+            <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;boto3 not installed, using mock implementation&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">resource</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">bucket_obj</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">objects</span> <span class="o">=</span> <span class="p">{}</span>
 
 <div class="viewcode-block" id="S3Client.get_object">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.S3Client.get_object">[docs]</a>
@@ -214,7 +360,37 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            Tuple containing the object data and metadata</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Subclasses must implement get_object&quot;</span><span class="p">)</span></div>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Mock implementation</span>
+            <span class="n">full_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="k">else</span> <span class="n">key</span>
+            <span class="k">if</span> <span class="n">full_key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">CloudStorageError</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; not found in mock S3&quot;</span><span class="p">)</span>
+
+            <span class="n">obj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="p">[</span><span class="n">full_key</span><span class="p">]</span>
+            <span class="n">metadata</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;ETag&quot;</span><span class="p">:</span> <span class="n">obj</span><span class="p">[</span><span class="s2">&quot;etag&quot;</span><span class="p">],</span>
+                <span class="s2">&quot;ContentLength&quot;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">obj</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]),</span>
+                <span class="s2">&quot;LastModified&quot;</span><span class="p">:</span> <span class="n">obj</span><span class="p">[</span><span class="s2">&quot;last_modified&quot;</span><span class="p">]</span>
+            <span class="p">}</span>
+
+            <span class="k">return</span> <span class="n">obj</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">],</span> <span class="n">metadata</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Real implementation</span>
+            <span class="n">full_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="k">else</span> <span class="n">key</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get_object</span><span class="p">(</span><span class="n">Bucket</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">bucket</span><span class="p">,</span> <span class="n">Key</span><span class="o">=</span><span class="n">full_key</span><span class="p">)</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="n">response</span><span class="p">[</span><span class="s1">&#39;Body&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+                <span class="n">metadata</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s2">&quot;ETag&quot;</span><span class="p">:</span> <span class="n">response</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;ETag&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">),</span>
+                    <span class="s2">&quot;ContentLength&quot;</span><span class="p">:</span> <span class="n">response</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;ContentLength&#39;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)),</span>
+                    <span class="s2">&quot;LastModified&quot;</span><span class="p">:</span> <span class="n">response</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;LastModified&#39;</span><span class="p">,</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">())</span>
+                <span class="p">}</span>
+
+                <span class="k">return</span> <span class="n">data</span><span class="p">,</span> <span class="n">metadata</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">CloudStorageError</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Failed to get object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; from S3: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="S3Client.put_object">
@@ -230,7 +406,46 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            Object metadata</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Subclasses must implement put_object&quot;</span><span class="p">)</span></div>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Mock implementation</span>
+            <span class="n">full_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="k">else</span> <span class="n">key</span>
+            <span class="n">etag</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">md5</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">()</span>
+            <span class="n">last_modified</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="p">[</span><span class="n">full_key</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="n">data</span><span class="p">,</span>
+                <span class="s2">&quot;etag&quot;</span><span class="p">:</span> <span class="n">etag</span><span class="p">,</span>
+                <span class="s2">&quot;last_modified&quot;</span><span class="p">:</span> <span class="n">last_modified</span>
+            <span class="p">}</span>
+
+            <span class="n">metadata</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;ETag&quot;</span><span class="p">:</span> <span class="n">etag</span><span class="p">,</span>
+                <span class="s2">&quot;ContentLength&quot;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">),</span>
+                <span class="s2">&quot;LastModified&quot;</span><span class="p">:</span> <span class="n">last_modified</span>
+            <span class="p">}</span>
+
+            <span class="n">_logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Put object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; to mock S3 (size: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="si">}</span><span class="s2"> bytes)&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">metadata</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Real implementation</span>
+            <span class="n">full_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="k">else</span> <span class="n">key</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">put_object</span><span class="p">(</span>
+                    <span class="n">Bucket</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">bucket</span><span class="p">,</span>
+                    <span class="n">Key</span><span class="o">=</span><span class="n">full_key</span><span class="p">,</span>
+                    <span class="n">Body</span><span class="o">=</span><span class="n">data</span>
+                <span class="p">)</span>
+
+                <span class="n">metadata</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s2">&quot;ETag&quot;</span><span class="p">:</span> <span class="n">response</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;ETag&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">),</span>
+                    <span class="s2">&quot;ContentLength&quot;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">),</span>
+                    <span class="s2">&quot;LastModified&quot;</span><span class="p">:</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+                <span class="p">}</span>
+
+                <span class="k">return</span> <span class="n">metadata</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">CloudStorageError</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Failed to put object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; to S3: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="S3Client.list_objects">
@@ -245,7 +460,44 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            List of object metadata</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Subclasses must implement list_objects&quot;</span><span class="p">)</span></div>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Mock implementation</span>
+            <span class="n">list_prefix</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="ow">and</span> <span class="n">prefix</span> <span class="k">else</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="ow">or</span> <span class="n">prefix</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+
+            <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">obj</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">list_prefix</span> <span class="ow">or</span> <span class="n">key</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">list_prefix</span><span class="p">):</span>
+                    <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                        <span class="s2">&quot;Key&quot;</span><span class="p">:</span> <span class="n">key</span><span class="p">,</span>
+                        <span class="s2">&quot;ETag&quot;</span><span class="p">:</span> <span class="n">obj</span><span class="p">[</span><span class="s2">&quot;etag&quot;</span><span class="p">],</span>
+                        <span class="s2">&quot;Size&quot;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">obj</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]),</span>
+                        <span class="s2">&quot;LastModified&quot;</span><span class="p">:</span> <span class="n">obj</span><span class="p">[</span><span class="s2">&quot;last_modified&quot;</span><span class="p">]</span>
+                    <span class="p">})</span>
+
+            <span class="k">return</span> <span class="n">result</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Real implementation</span>
+            <span class="n">list_prefix</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="ow">and</span> <span class="n">prefix</span> <span class="k">else</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="ow">or</span> <span class="n">prefix</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">paginator</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get_paginator</span><span class="p">(</span><span class="s1">&#39;list_objects_v2&#39;</span><span class="p">)</span>
+                <span class="n">pages</span> <span class="o">=</span> <span class="n">paginator</span><span class="o">.</span><span class="n">paginate</span><span class="p">(</span><span class="n">Bucket</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">bucket</span><span class="p">,</span> <span class="n">Prefix</span><span class="o">=</span><span class="n">list_prefix</span><span class="p">)</span>
+
+                <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="k">for</span> <span class="n">page</span> <span class="ow">in</span> <span class="n">pages</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="s1">&#39;Contents&#39;</span> <span class="ow">in</span> <span class="n">page</span><span class="p">:</span>
+                        <span class="k">for</span> <span class="n">obj</span> <span class="ow">in</span> <span class="n">page</span><span class="p">[</span><span class="s1">&#39;Contents&#39;</span><span class="p">]:</span>
+                            <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                                <span class="s2">&quot;Key&quot;</span><span class="p">:</span> <span class="n">obj</span><span class="p">[</span><span class="s1">&#39;Key&#39;</span><span class="p">],</span>
+                                <span class="s2">&quot;ETag&quot;</span><span class="p">:</span> <span class="n">obj</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;ETag&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">),</span>
+                                <span class="s2">&quot;Size&quot;</span><span class="p">:</span> <span class="n">obj</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;Size&#39;</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+                                <span class="s2">&quot;LastModified&quot;</span><span class="p">:</span> <span class="n">obj</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;LastModified&#39;</span><span class="p">,</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">())</span>
+                            <span class="p">})</span>
+
+                <span class="k">return</span> <span class="n">result</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to list objects with prefix &#39;</span><span class="si">{</span><span class="n">list_prefix</span><span class="si">}</span><span class="s2">&#39; in S3: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="p">[]</span></div>
 
 
 <div class="viewcode-block" id="S3Client.delete_object">
@@ -260,32 +512,46 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            True if the object was deleted, False otherwise</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Subclasses must implement delete_object&quot;</span><span class="p">)</span></div>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Mock implementation</span>
+            <span class="n">full_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="k">else</span> <span class="n">key</span>
+            <span class="k">if</span> <span class="n">full_key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="p">:</span>
+                <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="p">[</span><span class="n">full_key</span><span class="p">]</span>
+                <span class="n">_logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Deleted object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; from mock S3&quot;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="kc">True</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Real implementation</span>
+            <span class="n">full_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="k">else</span> <span class="n">key</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">delete_object</span><span class="p">(</span><span class="n">Bucket</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">bucket</span><span class="p">,</span> <span class="n">Key</span><span class="o">=</span><span class="n">full_key</span><span class="p">)</span>
+                <span class="n">_logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Deleted object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; from S3&quot;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="kc">True</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to delete object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; from S3: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="kc">False</span></div>
 </div>
 
 
 
-<div class="viewcode-block" id="MockS3Client">
-<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.MockS3Client">[docs]</a>
-<span class="k">class</span> <span class="nc">MockS3Client</span><span class="p">(</span><span class="n">S3Client</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">MockCloudStorageClient</span><span class="p">(</span><span class="n">CloudStorageClient</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Mock implementation of S3Client for testing and development.</span>
+<span class="sd">    Mock implementation of CloudStorageClient for testing and development.</span>
 
-<span class="sd">    This implementation stores objects in memory and simulates S3 behavior.</span>
+<span class="sd">    This implementation stores objects in memory and simulates cloud storage behavior.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="k">def</span> <span class="nf">_init_client</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Initialize the mock S3 client.</span>
+<span class="sd">        Initialize the mock cloud storage client.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">objects</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Initialized MockS3Client with bucket &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">bucket</span><span class="si">}</span><span class="s2">&#39; and prefix &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+        <span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Initialized MockCloudStorageClient with bucket &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">bucket</span><span class="si">}</span><span class="s2">&#39; and prefix &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
 
-<div class="viewcode-block" id="MockS3Client.get_object">
-<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.MockS3Client.get_object">[docs]</a>
     <span class="k">def</span> <span class="nf">get_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">bytes</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Get an object from the mock S3 storage.</span>
+<span class="sd">        Get an object from the mock cloud storage.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            key: The object key</span>
@@ -295,7 +561,7 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">full_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="k">else</span> <span class="n">key</span>
         <span class="k">if</span> <span class="n">full_key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="n">CloudStorageError</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; not found in mock S3&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">CloudStorageError</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; not found in mock cloud storage&quot;</span><span class="p">)</span>
 
         <span class="n">obj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="p">[</span><span class="n">full_key</span><span class="p">]</span>
         <span class="n">metadata</span> <span class="o">=</span> <span class="p">{</span>
@@ -304,14 +570,11 @@
             <span class="s2">&quot;LastModified&quot;</span><span class="p">:</span> <span class="n">obj</span><span class="p">[</span><span class="s2">&quot;last_modified&quot;</span><span class="p">]</span>
         <span class="p">}</span>
 
-        <span class="k">return</span> <span class="n">obj</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">],</span> <span class="n">metadata</span></div>
+        <span class="k">return</span> <span class="n">obj</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">],</span> <span class="n">metadata</span>
 
-
-<div class="viewcode-block" id="MockS3Client.put_object">
-<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.MockS3Client.put_object">[docs]</a>
     <span class="k">def</span> <span class="nf">put_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Put an object to the mock S3 storage.</span>
+<span class="sd">        Put an object to the mock cloud storage.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            key: The object key</span>
@@ -336,15 +599,12 @@
             <span class="s2">&quot;LastModified&quot;</span><span class="p">:</span> <span class="n">last_modified</span>
         <span class="p">}</span>
 
-        <span class="n">_logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Put object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; to mock S3 (size: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="si">}</span><span class="s2"> bytes)&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">metadata</span></div>
+        <span class="n">_logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Put object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; to mock cloud storage (size: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="si">}</span><span class="s2"> bytes)&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">metadata</span>
 
-
-<div class="viewcode-block" id="MockS3Client.list_objects">
-<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.MockS3Client.list_objects">[docs]</a>
     <span class="k">def</span> <span class="nf">list_objects</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        List objects in the mock S3 storage.</span>
+<span class="sd">        List objects in the mock cloud storage.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            prefix: The prefix to filter objects</span>
@@ -364,14 +624,11 @@
                     <span class="s2">&quot;LastModified&quot;</span><span class="p">:</span> <span class="n">obj</span><span class="p">[</span><span class="s2">&quot;last_modified&quot;</span><span class="p">]</span>
                 <span class="p">})</span>
 
-        <span class="k">return</span> <span class="n">result</span></div>
+        <span class="k">return</span> <span class="n">result</span>
 
-
-<div class="viewcode-block" id="MockS3Client.delete_object">
-<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.MockS3Client.delete_object">[docs]</a>
     <span class="k">def</span> <span class="nf">delete_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Delete an object from the mock S3 storage.</span>
+<span class="sd">        Delete an object from the mock cloud storage.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            key: The object key</span>
@@ -382,9 +639,47 @@
         <span class="n">full_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="k">else</span> <span class="n">key</span>
         <span class="k">if</span> <span class="n">full_key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="p">:</span>
             <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="p">[</span><span class="n">full_key</span><span class="p">]</span>
-            <span class="n">_logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Deleted object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; from mock S3&quot;</span><span class="p">)</span>
+            <span class="n">_logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Deleted object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; from mock cloud storage&quot;</span><span class="p">)</span>
             <span class="k">return</span> <span class="kc">True</span>
-        <span class="k">return</span> <span class="kc">False</span></div>
+        <span class="k">return</span> <span class="kc">False</span>
+
+
+<div class="viewcode-block" id="MockS3Client">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.MockS3Client">[docs]</a>
+<span class="k">class</span> <span class="nc">MockS3Client</span><span class="p">(</span><span class="n">MockCloudStorageClient</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Mock implementation of S3Client for testing and development.</span>
+
+<span class="sd">    This implementation inherits from MockCloudStorageClient and adds S3-specific behavior.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="MockS3Client.__init__">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.MockS3Client.__init__">[docs]</a>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> 
+                 <span class="n">bucket</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> 
+                 <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
+                 <span class="n">endpoint_url</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">access_key</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">secret_key</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">region</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize the mock S3 client.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            bucket: The S3 bucket name</span>
+<span class="sd">            prefix: The prefix for all objects in the bucket</span>
+<span class="sd">            endpoint_url: The S3 endpoint URL</span>
+<span class="sd">            access_key: The S3 access key</span>
+<span class="sd">            secret_key: The S3 secret key</span>
+<span class="sd">            region: The S3 region</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">endpoint_url</span> <span class="o">=</span> <span class="n">endpoint_url</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">access_key</span> <span class="o">=</span> <span class="n">access_key</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">secret_key</span> <span class="o">=</span> <span class="n">secret_key</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">region</span> <span class="o">=</span> <span class="n">region</span>
+
+        <span class="c1"># Call parent constructor</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">bucket</span><span class="p">,</span> <span class="n">prefix</span><span class="p">)</span></div>
 </div>
 
 
@@ -395,30 +690,33 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Block provider implementation for cloud storage.</span>
 
-<span class="sd">    This class implements the BlockProvider interface for S3-compatible storage,</span>
+<span class="sd">    This class implements the BlockProvider interface for cloud storage providers,</span>
 <span class="sd">    with local caching to improve performance.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
 <div class="viewcode-block" id="CloudBlockProvider.__init__">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.CloudBlockProvider.__init__">[docs]</a>
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> 
-                 <span class="n">s3_client</span><span class="p">:</span> <span class="n">S3Client</span><span class="p">,</span>
+                 <span class="n">cloud_client</span><span class="p">:</span> <span class="n">CloudStorageClient</span><span class="p">,</span>
                  <span class="n">cache_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">DEFAULT_CACHE_DIR</span><span class="p">,</span>
                  <span class="n">cache_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">DEFAULT_LOCAL_CACHE_SIZE</span><span class="p">,</span>
-                 <span class="n">object_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">DEFAULT_S3_OBJECT_SIZE</span><span class="p">):</span>
+                 <span class="n">object_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">DEFAULT_OBJECT_SIZE</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Initialize the cloud block provider.</span>
 
 <span class="sd">        Args:</span>
-<span class="sd">            s3_client: The S3 client to use</span>
+<span class="sd">            cloud_client: The cloud storage client to use</span>
 <span class="sd">            cache_dir: Directory for local cache</span>
 <span class="sd">            cache_size: Maximum size of local cache in bytes</span>
-<span class="sd">            object_size: Size of S3 objects in bytes</span>
+<span class="sd">            object_size: Size of cloud storage objects in bytes</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">s3_client</span> <span class="o">=</span> <span class="n">s3_client</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cloud_client</span> <span class="o">=</span> <span class="n">cloud_client</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">cache_dir</span> <span class="o">=</span> <span class="n">cache_dir</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">cache_size</span> <span class="o">=</span> <span class="n">cache_size</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">object_size</span> <span class="o">=</span> <span class="n">object_size</span>
+
+        <span class="c1"># For backward compatibility</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">s3_client</span> <span class="o">=</span> <span class="n">cloud_client</span>
 
         <span class="c1"># Create cache directory if it doesn&#39;t exist</span>
         <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cache_dir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
@@ -455,9 +753,9 @@
                 <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">cache_metadata_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
                     <span class="n">metadata</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
 
-                <span class="c1"># Convert metadata to S3ObjectMetadata objects</span>
+                <span class="c1"># Convert metadata to CloudObjectMetadata objects</span>
                 <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">meta</span> <span class="ow">in</span> <span class="n">metadata</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">cache_metadata</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">S3ObjectMetadata</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">cache_metadata</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">CloudObjectMetadata</span><span class="p">(</span>
                         <span class="n">key</span><span class="o">=</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;key&quot;</span><span class="p">],</span>
                         <span class="n">size</span><span class="o">=</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;size&quot;</span><span class="p">],</span>
                         <span class="n">etag</span><span class="o">=</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;etag&quot;</span><span class="p">],</span>
@@ -506,11 +804,11 @@
         <span class="n">config</span> <span class="o">=</span> <span class="n">configparser</span><span class="o">.</span><span class="n">ConfigParser</span><span class="p">()</span>
 
         <span class="k">try</span><span class="p">:</span>
-            <span class="c1"># Try to get config from S3</span>
-            <span class="n">data</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">s3_client</span><span class="o">.</span><span class="n">get_object</span><span class="p">(</span><span class="s2">&quot;space.config&quot;</span><span class="p">)</span>
+            <span class="c1"># Try to get config from cloud storage</span>
+            <span class="n">data</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cloud_client</span><span class="o">.</span><span class="n">get_object</span><span class="p">(</span><span class="s2">&quot;space.config&quot;</span><span class="p">)</span>
             <span class="n">config_str</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
             <span class="n">config</span><span class="o">.</span><span class="n">read_string</span><span class="p">(</span><span class="n">config_str</span><span class="p">)</span>
-            <span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Loaded configuration from S3&quot;</span><span class="p">)</span>
+            <span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Loaded configuration from cloud storage&quot;</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
             <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to load configuration from S3: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
             <span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Creating default configuration&quot;</span><span class="p">)</span>
@@ -521,23 +819,23 @@
                 <span class="s2">&quot;cache_size&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cache_size</span><span class="p">)</span>
             <span class="p">}</span>
 
-            <span class="c1"># Save configuration to S3</span>
+            <span class="c1"># Save configuration to cloud storage</span>
             <span class="n">config_str</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span>
             <span class="n">config</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">config_str</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">s3_client</span><span class="o">.</span><span class="n">put_object</span><span class="p">(</span><span class="s2">&quot;space.config&quot;</span><span class="p">,</span> <span class="n">config_str</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cloud_client</span><span class="o">.</span><span class="n">put_object</span><span class="p">(</span><span class="s2">&quot;space.config&quot;</span><span class="p">,</span> <span class="n">config_str</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span class="p">))</span>
 
         <span class="k">return</span> <span class="n">config</span>
 
     <span class="k">def</span> <span class="nf">_get_object_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wal_id</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span class="n">position</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Get the S3 object key for a WAL position.</span>
+<span class="sd">        Get the cloud storage object key for a WAL position.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            wal_id: The WAL ID</span>
 <span class="sd">            position: The position in the WAL</span>
 
 <span class="sd">        Returns:</span>
-<span class="sd">            The S3 object key</span>
+<span class="sd">            The cloud storage object key</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># Calculate the object index based on position and object size</span>
         <span class="n">object_index</span> <span class="o">=</span> <span class="n">position</span> <span class="o">//</span> <span class="bp">self</span><span class="o">.</span><span class="n">object_size</span>
@@ -545,22 +843,22 @@
 
     <span class="k">def</span> <span class="nf">_get_object_offset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">position</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Get the offset within an S3 object for a WAL position.</span>
+<span class="sd">        Get the offset within a cloud storage object for a WAL position.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            position: The position in the WAL</span>
 
 <span class="sd">        Returns:</span>
-<span class="sd">            The offset within the S3 object</span>
+<span class="sd">            The offset within the cloud storage object</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="n">position</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">object_size</span>
 
     <span class="k">def</span> <span class="nf">_cache_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">,</span> <span class="n">metadata</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">S3ObjectMetadata</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Cache an S3 object locally.</span>
+<span class="sd">        Cache a cloud storage object locally.</span>
 
 <span class="sd">        Args:</span>
-<span class="sd">            key: The S3 object key</span>
+<span class="sd">            key: The cloud storage object key</span>
 <span class="sd">            data: The object data</span>
 <span class="sd">            metadata: The object metadata</span>
 
@@ -580,7 +878,7 @@
                 <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
 
             <span class="c1"># Update cache metadata</span>
-            <span class="n">cache_meta</span> <span class="o">=</span> <span class="n">S3ObjectMetadata</span><span class="p">(</span>
+            <span class="n">cache_meta</span> <span class="o">=</span> <span class="n">CloudObjectMetadata</span><span class="p">(</span>
                 <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>
                 <span class="n">size</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">),</span>
                 <span class="n">etag</span><span class="o">=</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;ETag&quot;</span><span class="p">),</span>
@@ -696,8 +994,8 @@
                     <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to open cached object &#39;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&#39;: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
         <span class="k">try</span><span class="p">:</span>
-            <span class="c1"># Get the object from S3</span>
-            <span class="n">data</span><span class="p">,</span> <span class="n">metadata</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">s3_client</span><span class="o">.</span><span class="n">get_object</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+            <span class="c1"># Get the object from cloud storage</span>
+            <span class="n">data</span><span class="p">,</span> <span class="n">metadata</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cloud_client</span><span class="o">.</span><span class="n">get_object</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
 
             <span class="c1"># Cache the object</span>
             <span class="n">cache_meta</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cache_object</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">metadata</span><span class="p">)</span>
@@ -707,7 +1005,7 @@
             <span class="n">f</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="n">offset</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">f</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="n">_logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to get object &#39;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&#39; from S3: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">_logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to get object &#39;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&#39; from cloud storage: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
             <span class="k">raise</span> <span class="n">CloudStorageError</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Failed to read from WAL </span><span class="si">{</span><span class="n">wal_id</span><span class="si">}</span><span class="s2"> at position </span><span class="si">{</span><span class="n">position</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
 
 
@@ -746,8 +1044,8 @@
         <span class="c1"># Create a temporary file for writing</span>
         <span class="n">temp_file</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">()</span>
 
-        <span class="c1"># Create a wrapper that tracks the position and flushes to S3</span>
-        <span class="k">class</span> <span class="nc">S3Writer</span><span class="p">:</span>
+        <span class="c1"># Create a wrapper that tracks the position and flushes to cloud storage</span>
+        <span class="k">class</span> <span class="nc">CloudWriter</span><span class="p">:</span>
             <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">provider</span><span class="p">:</span> <span class="n">CloudBlockProvider</span><span class="p">,</span> <span class="n">wal_id</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span class="n">buffer</span><span class="p">:</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">):</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">provider</span> <span class="o">=</span> <span class="n">provider</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">wal_id</span> <span class="o">=</span> <span class="n">wal_id</span>
@@ -800,7 +1098,7 @@
                         <span class="n">wal_meta</span><span class="p">[</span><span class="s2">&quot;last_position&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">wal_meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;last_position&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">position</span><span class="p">)</span>
                         <span class="bp">self</span><span class="o">.</span><span class="n">provider</span><span class="o">.</span><span class="n">wal_metadata</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wal_id</span><span class="p">)]</span> <span class="o">=</span> <span class="n">wal_meta</span>
 
-                    <span class="c1"># Split the data into S3 objects</span>
+                    <span class="c1"># Split the data into cloud storage objects</span>
                     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">provider</span><span class="o">.</span><span class="n">object_size</span><span class="p">):</span>
                         <span class="c1"># Calculate the object key and data</span>
                         <span class="n">start_position</span> <span class="o">=</span> <span class="n">i</span>
@@ -810,13 +1108,13 @@
                         <span class="n">key</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">provider</span><span class="o">.</span><span class="n">_get_object_key</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wal_id</span><span class="p">,</span> <span class="n">start_position</span><span class="p">)</span>
 
                         <span class="k">try</span><span class="p">:</span>
-                            <span class="c1"># Upload to S3</span>
-                            <span class="n">metadata</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">provider</span><span class="o">.</span><span class="n">s3_client</span><span class="o">.</span><span class="n">put_object</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">object_data</span><span class="p">)</span>
+                            <span class="c1"># Upload to cloud storage</span>
+                            <span class="n">metadata</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">provider</span><span class="o">.</span><span class="n">cloud_client</span><span class="o">.</span><span class="n">put_object</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">object_data</span><span class="p">)</span>
 
                             <span class="c1"># Cache the object</span>
                             <span class="bp">self</span><span class="o">.</span><span class="n">provider</span><span class="o">.</span><span class="n">_cache_object</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">object_data</span><span class="p">,</span> <span class="n">metadata</span><span class="p">)</span>
                         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-                            <span class="n">_logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to upload object &#39;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&#39; to S3: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                            <span class="n">_logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to upload object &#39;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&#39; to cloud storage: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
                             <span class="k">raise</span> <span class="n">CloudStorageError</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Failed to write to WAL </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">wal_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
                 <span class="bp">self</span><span class="o">.</span><span class="n">closed</span> <span class="o">=</span> <span class="kc">True</span>
@@ -828,7 +1126,7 @@
             <span class="k">def</span> <span class="fm">__exit__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_val</span><span class="p">,</span> <span class="n">exc_tb</span><span class="p">):</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
 
-        <span class="k">return</span> <span class="n">S3Writer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wal_id</span><span class="p">,</span> <span class="n">temp_file</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="n">CloudWriter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wal_id</span><span class="p">,</span> <span class="n">temp_file</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="CloudBlockProvider.get_current_root_object">
@@ -842,8 +1140,8 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">root_lock</span><span class="p">:</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="c1"># Try to get the root object from S3</span>
-                <span class="n">data</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">s3_client</span><span class="o">.</span><span class="n">get_object</span><span class="p">(</span><span class="s2">&quot;space_root&quot;</span><span class="p">)</span>
+                <span class="c1"># Try to get the root object from cloud storage</span>
+                <span class="n">data</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cloud_client</span><span class="o">.</span><span class="n">get_object</span><span class="p">(</span><span class="s2">&quot;space_root&quot;</span><span class="p">)</span>
                 <span class="n">root_dict</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span class="p">))</span>
 
                 <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">root_dict</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
@@ -865,7 +1163,7 @@
 
                 <span class="k">return</span> <span class="n">root_pointer</span>
             <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-                <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to get root object from S3: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to get root object from cloud storage: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
                 <span class="k">return</span> <span class="kc">None</span></div>
 
 
@@ -887,9 +1185,9 @@
                     <span class="s2">&quot;offset&quot;</span><span class="p">:</span> <span class="n">new_root</span><span class="o">.</span><span class="n">offset</span>
                 <span class="p">}</span>
 
-                <span class="c1"># Convert to JSON and upload to S3</span>
+                <span class="c1"># Convert to JSON and upload to cloud storage</span>
                 <span class="n">data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">root_dict</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">s3_client</span><span class="o">.</span><span class="n">put_object</span><span class="p">(</span><span class="s2">&quot;space_root&quot;</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">cloud_client</span><span class="o">.</span><span class="n">put_object</span><span class="p">(</span><span class="s2">&quot;space_root&quot;</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
 
                 <span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Updated root object: </span><span class="si">{</span><span class="n">root_dict</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
             <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
@@ -927,9 +1225,9 @@
 <a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.CloudFileStorage">[docs]</a>
 <span class="k">class</span> <span class="nc">CloudFileStorage</span><span class="p">(</span><span class="n">ClusterFileStorage</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    An implementation of cloud file storage with support for S3-like object storage.</span>
+<span class="sd">    An implementation of cloud file storage with support for cloud object storage.</span>
 
-<span class="sd">    This class extends ClusterFileStorage to add support for storing data in an S3-like</span>
+<span class="sd">    This class extends ClusterFileStorage to add support for storing data in a cloud</span>
 <span class="sd">    object storage service, with local caching to improve performance.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
@@ -1007,7 +1305,7 @@
 
     <span class="k">def</span> <span class="nf">_background_uploader</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Background thread for uploading pending writes to S3.</span>
+<span class="sd">        Background thread for uploading pending writes to cloud storage.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">==</span> <span class="s1">&#39;Running&#39;</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">uploader_running</span><span class="p">:</span>
             <span class="k">try</span><span class="p">:</span>
@@ -1018,20 +1316,29 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">_process_pending_uploads</span><span class="p">()</span>
             <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
                 <span class="n">_logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error in background uploader: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="c1"># Add a small sleep to avoid tight loop in case of repeated errors</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
 
     <span class="k">def</span> <span class="nf">_process_pending_uploads</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Process pending uploads to S3.</span>
+<span class="sd">        Process pending uploads to cloud storage.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">operations</span> <span class="o">=</span> <span class="p">[]</span>
 
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">upload_lock</span><span class="p">:</span>
+        <span class="c1"># Use a timeout when acquiring the lock to avoid potential deadlocks</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">upload_lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">):</span>  <span class="c1"># 5 seconds timeout</span>
+            <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Could not acquire upload_lock in _process_pending_uploads, skipping this cycle&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="k">try</span><span class="p">:</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">pending_uploads</span><span class="p">:</span>
                 <span class="k">return</span>
 
             <span class="c1"># Get all pending uploads</span>
             <span class="n">operations</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pending_uploads</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">pending_uploads</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">upload_lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
 
         <span class="k">if</span> <span class="ow">not</span> <span class="n">operations</span><span class="p">:</span>
             <span class="k">return</span>
@@ -1085,8 +1392,13 @@
                 <span class="n">_logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to upload operations for WAL </span><span class="si">{</span><span class="n">wal_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
                 <span class="c1"># Put operations back in the pending list</span>
-                <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">upload_lock</span><span class="p">:</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">pending_uploads</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">ops</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">upload_lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">):</span>  <span class="c1"># 5 seconds timeout</span>
+                    <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Could not acquire upload_lock to put operations back in pending_uploads, operations will be lost&quot;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">pending_uploads</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">ops</span><span class="p">)</span>
+                    <span class="k">finally</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">upload_lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
 
     <span class="k">def</span> <span class="nf">_flush_wal</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -1103,13 +1415,25 @@
 
         <span class="k">if</span> <span class="n">written_size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
             <span class="c1"># Get the operation that was just added to pending_writes</span>
-            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">):</span>  <span class="c1"># 5 seconds timeout</span>
+                <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Could not acquire _lock in _flush_wal, skipping adding to pending_uploads&quot;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">written_size</span>
+
+            <span class="k">try</span><span class="p">:</span>
                 <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">pending_writes</span><span class="p">:</span>
                     <span class="n">operation</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pending_writes</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
 
                     <span class="c1"># Add to pending uploads</span>
-                    <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">upload_lock</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">upload_lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">):</span>  <span class="c1"># 5 seconds timeout</span>
+                        <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Could not acquire upload_lock in _flush_wal, skipping adding to pending_uploads&quot;</span><span class="p">)</span>
+                        <span class="k">return</span> <span class="n">written_size</span>
+
+                    <span class="k">try</span><span class="p">:</span>
                         <span class="bp">self</span><span class="o">.</span><span class="n">pending_uploads</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">operation</span><span class="p">)</span>
+                    <span class="k">finally</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">upload_lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+            <span class="k">finally</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
 
         <span class="k">return</span> <span class="n">written_size</span>
 
@@ -1140,22 +1464,296 @@
 <span class="sd">        Closes the storage, flushing any pending writes and releasing resources.</span>
 
 <span class="sd">        This method overrides the base implementation to also process pending uploads</span>
-<span class="sd">        before closing.</span>
+<span class="sd">        to cloud storage before closing.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># Process pending uploads</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_process_pending_uploads</span><span class="p">()</span>
-
-        <span class="c1"># Stop the background uploader thread</span>
+        <span class="c1"># First stop the background uploader thread to avoid potential deadlocks</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">uploader_running</span> <span class="o">=</span> <span class="kc">False</span>
 
         <span class="c1"># Wait for the uploader thread to finish</span>
         <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;uploader_thread&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">uploader_thread</span><span class="o">.</span><span class="n">is_alive</span><span class="p">():</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">uploader_thread</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mf">2.0</span><span class="p">)</span>  <span class="c1"># Wait up to 2 seconds for the thread to finish</span>
 
+        <span class="c1"># Now process any remaining pending uploads</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_process_pending_uploads</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">_logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error processing pending uploads during close: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="c1"># Continue with closing even if processing fails</span>
+
         <span class="c1"># Call the parent implementation</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
 
         <span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Closed CloudFileStorage&quot;</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="GoogleCloudClient">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.GoogleCloudClient">[docs]</a>
+<span class="k">class</span> <span class="nc">GoogleCloudClient</span><span class="p">(</span><span class="n">CloudStorageClient</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Google Cloud Storage client implementation.</span>
+
+<span class="sd">    This class implements the CloudStorageClient interface for Google Cloud Storage.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="GoogleCloudClient.__init__">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.GoogleCloudClient.__init__">[docs]</a>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> 
+                 <span class="n">bucket</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> 
+                 <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
+                 <span class="n">project_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">credentials_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize the Google Cloud Storage client.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            bucket: The GCS bucket name</span>
+<span class="sd">            prefix: The prefix for all objects in the bucket</span>
+<span class="sd">            project_id: The Google Cloud project ID</span>
+<span class="sd">            credentials_path: Path to the Google Cloud credentials file</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">project_id</span> <span class="o">=</span> <span class="n">project_id</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">credentials_path</span> <span class="o">=</span> <span class="n">credentials_path</span>
+
+        <span class="c1"># Call parent constructor</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">bucket</span><span class="p">,</span> <span class="n">prefix</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span> <span class="nf">_init_client</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize the Google Cloud Storage client.</span>
+
+<span class="sd">        This method initializes the Google Cloud Storage client using the</span>
+<span class="sd">        google-cloud-storage library if available, or falls back to a mock</span>
+<span class="sd">        implementation for testing.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">from</span> <span class="nn">google.cloud</span> <span class="kn">import</span> <span class="n">storage</span>
+            <span class="kn">from</span> <span class="nn">google.oauth2</span> <span class="kn">import</span> <span class="n">service_account</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">credentials_path</span><span class="p">:</span>
+                <span class="n">credentials</span> <span class="o">=</span> <span class="n">service_account</span><span class="o">.</span><span class="n">Credentials</span><span class="o">.</span><span class="n">from_service_account_file</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">credentials_path</span>
+                <span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="o">=</span> <span class="n">storage</span><span class="o">.</span><span class="n">Client</span><span class="p">(</span>
+                    <span class="n">project</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">project_id</span><span class="p">,</span>
+                    <span class="n">credentials</span><span class="o">=</span><span class="n">credentials</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="o">=</span> <span class="n">storage</span><span class="o">.</span><span class="n">Client</span><span class="p">(</span><span class="n">project</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">project_id</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">bucket_obj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">bucket</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bucket</span><span class="p">)</span>
+            <span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Initialized Google Cloud Storage client for bucket &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">bucket</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+            <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;google-cloud-storage not installed, using mock implementation&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">bucket_obj</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">objects</span> <span class="o">=</span> <span class="p">{}</span>
+
+<div class="viewcode-block" id="GoogleCloudClient.get_object">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.GoogleCloudClient.get_object">[docs]</a>
+    <span class="k">def</span> <span class="nf">get_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">bytes</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get an object from Google Cloud Storage.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            key: The object key</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Tuple containing the object data and metadata</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Mock implementation</span>
+            <span class="n">full_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="k">else</span> <span class="n">key</span>
+            <span class="k">if</span> <span class="n">full_key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">CloudStorageError</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; not found in mock GCS&quot;</span><span class="p">)</span>
+
+            <span class="n">obj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="p">[</span><span class="n">full_key</span><span class="p">]</span>
+            <span class="n">metadata</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;ETag&quot;</span><span class="p">:</span> <span class="n">obj</span><span class="p">[</span><span class="s2">&quot;etag&quot;</span><span class="p">],</span>
+                <span class="s2">&quot;ContentLength&quot;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">obj</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]),</span>
+                <span class="s2">&quot;LastModified&quot;</span><span class="p">:</span> <span class="n">obj</span><span class="p">[</span><span class="s2">&quot;last_modified&quot;</span><span class="p">]</span>
+            <span class="p">}</span>
+
+            <span class="k">return</span> <span class="n">obj</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">],</span> <span class="n">metadata</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Real implementation</span>
+            <span class="n">full_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="k">else</span> <span class="n">key</span>
+            <span class="n">blob</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bucket_obj</span><span class="o">.</span><span class="n">blob</span><span class="p">(</span><span class="n">full_key</span><span class="p">)</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="n">blob</span><span class="o">.</span><span class="n">download_as_bytes</span><span class="p">()</span>
+                <span class="n">metadata</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s2">&quot;ETag&quot;</span><span class="p">:</span> <span class="n">blob</span><span class="o">.</span><span class="n">etag</span><span class="p">,</span>
+                    <span class="s2">&quot;ContentLength&quot;</span><span class="p">:</span> <span class="n">blob</span><span class="o">.</span><span class="n">size</span><span class="p">,</span>
+                    <span class="s2">&quot;LastModified&quot;</span><span class="p">:</span> <span class="n">blob</span><span class="o">.</span><span class="n">updated</span>
+                <span class="p">}</span>
+                <span class="k">return</span> <span class="n">data</span><span class="p">,</span> <span class="n">metadata</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">CloudStorageError</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Failed to get object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; from GCS: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="GoogleCloudClient.put_object">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.GoogleCloudClient.put_object">[docs]</a>
+    <span class="k">def</span> <span class="nf">put_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Put an object to Google Cloud Storage.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            key: The object key</span>
+<span class="sd">            data: The object data</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Object metadata</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Mock implementation</span>
+            <span class="n">full_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="k">else</span> <span class="n">key</span>
+            <span class="n">etag</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">md5</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">()</span>
+            <span class="n">last_modified</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="p">[</span><span class="n">full_key</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="n">data</span><span class="p">,</span>
+                <span class="s2">&quot;etag&quot;</span><span class="p">:</span> <span class="n">etag</span><span class="p">,</span>
+                <span class="s2">&quot;last_modified&quot;</span><span class="p">:</span> <span class="n">last_modified</span>
+            <span class="p">}</span>
+
+            <span class="n">metadata</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;ETag&quot;</span><span class="p">:</span> <span class="n">etag</span><span class="p">,</span>
+                <span class="s2">&quot;ContentLength&quot;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">),</span>
+                <span class="s2">&quot;LastModified&quot;</span><span class="p">:</span> <span class="n">last_modified</span>
+            <span class="p">}</span>
+
+            <span class="n">_logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Put object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; to mock GCS (size: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="si">}</span><span class="s2"> bytes)&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">metadata</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Real implementation</span>
+            <span class="n">full_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="k">else</span> <span class="n">key</span>
+            <span class="n">blob</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bucket_obj</span><span class="o">.</span><span class="n">blob</span><span class="p">(</span><span class="n">full_key</span><span class="p">)</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">blob</span><span class="o">.</span><span class="n">upload_from_string</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+                <span class="n">metadata</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s2">&quot;ETag&quot;</span><span class="p">:</span> <span class="n">blob</span><span class="o">.</span><span class="n">etag</span><span class="p">,</span>
+                    <span class="s2">&quot;ContentLength&quot;</span><span class="p">:</span> <span class="n">blob</span><span class="o">.</span><span class="n">size</span><span class="p">,</span>
+                    <span class="s2">&quot;LastModified&quot;</span><span class="p">:</span> <span class="n">blob</span><span class="o">.</span><span class="n">updated</span>
+                <span class="p">}</span>
+                <span class="k">return</span> <span class="n">metadata</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">CloudStorageError</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Failed to put object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; to GCS: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="GoogleCloudClient.list_objects">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.GoogleCloudClient.list_objects">[docs]</a>
+    <span class="k">def</span> <span class="nf">list_objects</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        List objects in Google Cloud Storage.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            prefix: The prefix to filter objects</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            List of object metadata</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Mock implementation</span>
+            <span class="n">list_prefix</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="ow">and</span> <span class="n">prefix</span> <span class="k">else</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="ow">or</span> <span class="n">prefix</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+
+            <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">obj</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">list_prefix</span> <span class="ow">or</span> <span class="n">key</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">list_prefix</span><span class="p">):</span>
+                    <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                        <span class="s2">&quot;Key&quot;</span><span class="p">:</span> <span class="n">key</span><span class="p">,</span>
+                        <span class="s2">&quot;ETag&quot;</span><span class="p">:</span> <span class="n">obj</span><span class="p">[</span><span class="s2">&quot;etag&quot;</span><span class="p">],</span>
+                        <span class="s2">&quot;Size&quot;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">obj</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]),</span>
+                        <span class="s2">&quot;LastModified&quot;</span><span class="p">:</span> <span class="n">obj</span><span class="p">[</span><span class="s2">&quot;last_modified&quot;</span><span class="p">]</span>
+                    <span class="p">})</span>
+
+            <span class="k">return</span> <span class="n">result</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Real implementation</span>
+            <span class="n">list_prefix</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="ow">and</span> <span class="n">prefix</span> <span class="k">else</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="ow">or</span> <span class="n">prefix</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+            <span class="n">blobs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bucket_obj</span><span class="o">.</span><span class="n">list_blobs</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="n">list_prefix</span><span class="p">)</span>
+
+            <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">blob</span> <span class="ow">in</span> <span class="n">blobs</span><span class="p">:</span>
+                <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                    <span class="s2">&quot;Key&quot;</span><span class="p">:</span> <span class="n">blob</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                    <span class="s2">&quot;ETag&quot;</span><span class="p">:</span> <span class="n">blob</span><span class="o">.</span><span class="n">etag</span><span class="p">,</span>
+                    <span class="s2">&quot;Size&quot;</span><span class="p">:</span> <span class="n">blob</span><span class="o">.</span><span class="n">size</span><span class="p">,</span>
+                    <span class="s2">&quot;LastModified&quot;</span><span class="p">:</span> <span class="n">blob</span><span class="o">.</span><span class="n">updated</span>
+                <span class="p">})</span>
+
+            <span class="k">return</span> <span class="n">result</span></div>
+
+
+<div class="viewcode-block" id="GoogleCloudClient.delete_object">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.GoogleCloudClient.delete_object">[docs]</a>
+    <span class="k">def</span> <span class="nf">delete_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Delete an object from Google Cloud Storage.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            key: The object key</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            True if the object was deleted, False otherwise</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Mock implementation</span>
+            <span class="n">full_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="k">else</span> <span class="n">key</span>
+            <span class="k">if</span> <span class="n">full_key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="p">:</span>
+                <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="p">[</span><span class="n">full_key</span><span class="p">]</span>
+                <span class="n">_logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Deleted object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; from mock GCS&quot;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="kc">True</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Real implementation</span>
+            <span class="n">full_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="k">else</span> <span class="n">key</span>
+            <span class="n">blob</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bucket_obj</span><span class="o">.</span><span class="n">blob</span><span class="p">(</span><span class="n">full_key</span><span class="p">)</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">blob</span><span class="o">.</span><span class="n">delete</span><span class="p">()</span>
+                <span class="n">_logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Deleted object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; from GCS&quot;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="kc">True</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to delete object &#39;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">&#39; from GCS: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="kc">False</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="MockGoogleCloudClient">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.MockGoogleCloudClient">[docs]</a>
+<span class="k">class</span> <span class="nc">MockGoogleCloudClient</span><span class="p">(</span><span class="n">MockCloudStorageClient</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Mock implementation of GoogleCloudClient for testing and development.</span>
+
+<span class="sd">    This implementation inherits from MockCloudStorageClient and adds GCS-specific behavior.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="MockGoogleCloudClient.__init__">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_file_storage.MockGoogleCloudClient.__init__">[docs]</a>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> 
+                 <span class="n">bucket</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> 
+                 <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
+                 <span class="n">project_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">credentials_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize the mock Google Cloud Storage client.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            bucket: The GCS bucket name</span>
+<span class="sd">            prefix: The prefix for all objects in the bucket</span>
+<span class="sd">            project_id: The Google Cloud project ID</span>
+<span class="sd">            credentials_path: Path to the Google Cloud credentials file</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">project_id</span> <span class="o">=</span> <span class="n">project_id</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">credentials_path</span> <span class="o">=</span> <span class="n">credentials_path</span>
+
+        <span class="c1"># Call parent constructor</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">bucket</span><span class="p">,</span> <span class="n">prefix</span><span class="p">)</span></div>
 </div>
 
 </pre></div>

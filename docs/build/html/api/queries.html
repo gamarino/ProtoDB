@@ -61,9 +61,17 @@
 <li class="toctree-l4"><a class="reference internal" href="#groupbyplan">GroupByPlan</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#orderbyplan">OrderByPlan</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#selectplan">SelectPlan</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#countplan">CountPlan</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#countresultplan">CountResultPlan</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#limitplan">LimitPlan</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#offsetplan">OffsetPlan</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#listplan">ListPlan</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#optimized-counting">Optimized Counting</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#indexedsearchplan-count">IndexedSearchPlan.count()</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#andmerge-count">AndMerge.count()</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#ormerge-count">OrMerge.count()</a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#usage-examples">Usage Examples</a><ul>
@@ -74,6 +82,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#grouping">Grouping</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#joining">Joining</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#pagination">Pagination</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#counting">Counting</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#chaining">Chaining</a></li>
 </ul>
 </li>
@@ -87,6 +96,7 @@
 <li class="toctree-l2 current"><a class="reference internal" href="index.html#query-system">Query System</a><ul class="current">
 <li class="toctree-l3 current"><a class="current reference internal" href="#">Query System</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#query-plans">Query Plans</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#optimized-counting">Optimized Counting</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#usage-examples">Usage Examples</a></li>
 </ul>
 </li>
@@ -322,12 +332,28 @@ that match the filter are yielded.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.queries.WherePlan.optimize">
 <span class="sig-name descname"><span class="pre">optimize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">full_plan</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#WherePlan.optimize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.WherePlan.optimize" title="Link to this definition"></a></dt>
-<dd><dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p></p>
+<dd><p>Optimizes the current execution plan node.</p>
+<p>This method is a core part of the query optimizer. It applies several
+strategies to transform the query plan into a more efficient equivalent.
+The primary optimizations include:
+1.  Filter Reordering: For AND expressions, reorder predicates to execute</p>
+<blockquote>
+<div><p>the most selective and least expensive ones first.</p>
+</div></blockquote>
+<ol class="arabic simple" start="2">
+<li><p>Predicate Pushdown: Attempt to move the filter logic (“predicate”)
+further down the execution tree, closer to the data source. This
+reduces the volume of data processed in upstream operators (like Joins).</p></li>
+<li><p>Index Utilization: If a predicate can be satisfied using an index,
+transform this plan node into an <cite>IndexedSearchPlan</cite>.</p></li>
+</ol>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>full_plan</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>) – The root of the entire query plan, providing context if needed.</p>
 </dd>
-<dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><p><strong>full_plan</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>An optimized <cite>QueryPlan</cite>, which may be a different type of node
+(e.g., <cite>IndexedSearchPlan</cite>) or a reconfigured <cite>WherePlan</cite>.</p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
@@ -341,292 +367,49 @@ that match the filter are yielded.</p>
 </section>
 <section id="joinplan">
 <h3>JoinPlan<a class="headerlink" href="#joinplan" title="Link to this heading"></a></h3>
-<dl class="py class">
-<dt class="sig sig-object py" id="proto_db.queries.JoinPlan">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.queries.</span></span><span class="sig-name descname"><span class="pre">JoinPlan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">join_query</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">join_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">based_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#JoinPlan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.JoinPlan" title="Link to this definition"></a></dt>
-<dd><p>JoinPlan class facilitates the execution and optimization of a structured join
-operation, supporting multiple join types including external, left, right,
-inner, and outer join types. It extends QueryPlan and is integral in handling
-complex join queries in a data processing pipeline. Validation is performed
-to ensure appropriate join query and join type are provided.</p>
-<p>The class’s purpose is to encapsulate the logic for various join operations
-while allowing optimization of the underlying query plan. Usage entails
-instantiating the class with the necessary parameters and calling the execute
-or optimize methods for respective operations.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Variables<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>join_query</strong> – The query plan to be used for the join operation.</p></li>
-<li><p><strong>join_type</strong> – The type of join operation to perform. Valid types include
-‘external’, ‘left’, ‘right’, ‘inner’, ‘external_left’, ‘external_right’,
-and ‘outer’.</p></li>
-</ul>
-</dd>
-<dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><ul class="simple">
-<li><p><strong>join_query</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
-<li><p><strong>join_type</strong> (<em>str</em>)</p></li>
-<li><p><strong>based_on</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
-<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
-<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
-</ul>
-</dd>
-</dl>
-<dl class="py method">
-<dt class="sig sig-object py" id="proto_db.queries.JoinPlan.__init__">
-<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">join_query</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">join_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">based_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#JoinPlan.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.JoinPlan.__init__" title="Link to this definition"></a></dt>
-<dd><dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>join_query</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
-<li><p><strong>join_type</strong> (<em>str</em>)</p></li>
-<li><p><strong>based_on</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
-<li><p><strong>transaction</strong> (<a class="reference internal" href="core.html#proto_db.db_access.ObjectTransaction" title="proto_db.db_access.ObjectTransaction"><em>ObjectTransaction</em></a>)</p></li>
-<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
-</ul>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="proto_db.queries.JoinPlan.execute">
-<span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#JoinPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.JoinPlan.execute" title="Link to this definition"></a></dt>
-<dd><p>Executes the join operation based on the specified join type and returns a list of
-results corresponding to the joined records.</p>
-<dl class="simple">
-<dt>The joined operation type can be one of the following:</dt><dd><ul class="simple">
-<li><p>‘external’</p></li>
-<li><p>‘external_left’</p></li>
-<li><p>‘external_right’</p></li>
-<li><p>‘left’</p></li>
-<li><p>‘right’</p></li>
-<li><p>‘outer’</p></li>
-<li><p>‘inner’</p></li>
-</ul>
-</dd>
-</dl>
-<p>Records are iteratively processed and combined, depending on the join type provided.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>self</strong> – Instance of the class performing the join operation.</p>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>A list containing the combined records resulting from the join operation.</p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>list</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="proto_db.queries.JoinPlan.optimize">
-<span class="sig-name descname"><span class="pre">optimize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">full_plan</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#JoinPlan.optimize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.JoinPlan.optimize" title="Link to this definition"></a></dt>
-<dd><dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p></p>
-</dd>
-<dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><p><strong>full_plan</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
-</dd>
-</dl>
-</dd></dl>
-
-</dd></dl>
-
 <p><code class="docutils literal notranslate"><span class="pre">JoinPlan</span></code> joins multiple data sources. It takes two plans and a join condition, returns records that satisfy the join condition, and supports inner, left, right, and full joins.</p>
 </section>
 <section id="groupbyplan">
 <h3>GroupByPlan<a class="headerlink" href="#groupbyplan" title="Link to this heading"></a></h3>
-<dl class="py class">
-<dt class="sig sig-object py" id="proto_db.queries.GroupByPlan">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.queries.</span></span><span class="sig-name descname"><span class="pre">GroupByPlan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">group_fields</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">agreggated_fields</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">based_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#GroupByPlan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.GroupByPlan" title="Link to this definition"></a></dt>
-<dd><p>Query plan for grouping records and applying aggregate functions.</p>
-<p>This plan groups records based on the specified <cite>group_fields</cite>, then applies
-aggregate functions (<cite>agreggated_fields</cite>) to each group to compute summary
-statistics or values.</p>
-<p>Attributes:
-- group_fields (list): Fields used for grouping records.
-- agreggated_fields (dict[str, AgreggatorSpec]): Aggregators applied to grouped data.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>group_fields</strong> (<em>list</em>)</p></li>
-<li><p><strong>agreggated_fields</strong> (<em>dict</em><em>[</em><em>str</em><em>, </em><em>AgreggatorSpec</em><em>]</em>)</p></li>
-<li><p><strong>based_on</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
-<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
-<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
-</ul>
-</dd>
-</dl>
-<dl class="py method">
-<dt class="sig sig-object py" id="proto_db.queries.GroupByPlan.__init__">
-<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">group_fields</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">agreggated_fields</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">based_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#GroupByPlan.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.GroupByPlan.__init__" title="Link to this definition"></a></dt>
-<dd><dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>group_fields</strong> (<em>list</em>)</p></li>
-<li><p><strong>agreggated_fields</strong> (<em>dict</em><em>[</em><em>str</em><em>, </em><em>AgreggatorSpec</em><em>]</em>)</p></li>
-<li><p><strong>based_on</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
-<li><p><strong>transaction</strong> (<a class="reference internal" href="core.html#proto_db.db_access.ObjectTransaction" title="proto_db.db_access.ObjectTransaction"><em>ObjectTransaction</em></a>)</p></li>
-<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
-</ul>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="proto_db.queries.GroupByPlan.execute">
-<span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#GroupByPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.GroupByPlan.execute" title="Link to this definition"></a></dt>
-<dd><p>Group records by <cite>group_fields</cite> and compute aggregates.</p>
-<p>Records from the underlying <cite>based_on</cite> query are grouped in memory,
-and for each group, aggregate functions are applied as specified in
-<cite>agreggated_fields</cite>.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A generator yielding grouped and aggregated records.</p>
-</dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>list</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="proto_db.queries.GroupByPlan.optimize">
-<span class="sig-name descname"><span class="pre">optimize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">full_plan</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#GroupByPlan.optimize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.GroupByPlan.optimize" title="Link to this definition"></a></dt>
-<dd><dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p></p>
-</dd>
-<dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><p><strong>full_plan</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
-</dd>
-</dl>
-</dd></dl>
-
-</dd></dl>
-
 <p><code class="docutils literal notranslate"><span class="pre">GroupByPlan</span></code> groups records by a key. It takes a key function and a base plan, returns groups of records with the same key, and can be used for aggregation.</p>
 </section>
 <section id="orderbyplan">
 <h3>OrderByPlan<a class="headerlink" href="#orderbyplan" title="Link to this heading"></a></h3>
-<dl class="py class">
-<dt class="sig sig-object py" id="proto_db.queries.OrderByPlan">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.queries.</span></span><span class="sig-name descname"><span class="pre">OrderByPlan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sort_spec</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reversed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">based_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#OrderByPlan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.OrderByPlan" title="Link to this definition"></a></dt>
-<dd><p>Query plan for ordering records based on specified fields.</p>
-<p>This class consumes records from another query plan (<cite>based_on</cite>), sorts
-those records according to a given sorting specification (<cite>sort_spec</cite>),
-and optionally reverses the order.</p>
-<p>Attributes:
-- sort_spec (list): A list of field names that dictate the sorting priority.
-- reversed (bool): Whether to reverse the result (descending order).</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>sort_spec</strong> (<em>list</em>)</p></li>
-<li><p><strong>reversed</strong> (<em>bool</em>)</p></li>
-<li><p><strong>based_on</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
-<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
-<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
-</ul>
-</dd>
-</dl>
-<dl class="py method">
-<dt class="sig sig-object py" id="proto_db.queries.OrderByPlan.__init__">
-<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sort_spec</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reversed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">based_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#OrderByPlan.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.OrderByPlan.__init__" title="Link to this definition"></a></dt>
-<dd><dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>sort_spec</strong> (<em>list</em>)</p></li>
-<li><p><strong>reversed</strong> (<em>bool</em>)</p></li>
-<li><p><strong>based_on</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
-<li><p><strong>transaction</strong> (<a class="reference internal" href="core.html#proto_db.db_access.ObjectTransaction" title="proto_db.db_access.ObjectTransaction"><em>ObjectTransaction</em></a>)</p></li>
-<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
-</ul>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="proto_db.queries.OrderByPlan.execute">
-<span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#OrderByPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.OrderByPlan.execute" title="Link to this definition"></a></dt>
-<dd><p>Execute the order-by logic over the input records.</p>
-<p>Records are fetched from the <cite>based_on</cite> query plan, compared using the
-provided <cite>sort_spec</cite>, and sorted into ascending or descending order.</p>
-<p>The sorting uses a binary search to find the insertion point for new records,
-ensuring efficient insertion in sorted order.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A generator yielding sorted records.</p>
-</dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>list</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="proto_db.queries.OrderByPlan.optimize">
-<span class="sig-name descname"><span class="pre">optimize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">full_plan</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#OrderByPlan.optimize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.OrderByPlan.optimize" title="Link to this definition"></a></dt>
-<dd><dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p></p>
-</dd>
-<dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><p><strong>full_plan</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
-</dd>
-</dl>
-</dd></dl>
-
-</dd></dl>
-
 <p><code class="docutils literal notranslate"><span class="pre">OrderByPlan</span></code> sorts records. It takes a key function and a base plan, returns records sorted by the key, and supports ascending and descending order.</p>
 </section>
 <section id="selectplan">
 <h3>SelectPlan<a class="headerlink" href="#selectplan" title="Link to this heading"></a></h3>
 <dl class="py class">
 <dt class="sig sig-object py" id="proto_db.queries.SelectPlan">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.queries.</span></span><span class="sig-name descname"><span class="pre">SelectPlan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fields</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">based_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#SelectPlan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.SelectPlan" title="Link to this definition"></a></dt>
-<dd><p>Class that represents a plan for selecting specific fields from a query result.</p>
-<p>This class is used to generate a new set of records by applying field selection
-rules to an underlying <cite>QueryPlan</cite>. It allows specifying which fields to include
-and how they are derived from the original query results. Fields can be specified
-as direct attribute names from the original result or as callables to generate
-values dynamically.</p>
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.queries.</span></span><span class="sig-name descname"><span class="pre">SelectPlan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fields</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">based_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#SelectPlan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.SelectPlan" title="Link to this definition"></a></dt>
+<dd><p>A query plan that selects and transforms fields from records produced by another query plan.</p>
+<p>This plan allows for both direct field mapping (renaming fields) and dynamic field
+generation through callable functions. It’s useful for projecting and transforming
+data in a query pipeline.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Variables<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>fields</strong> – Mapping of field names to values or callables defining how the
-field should be derived from the original query results.</p>
-</dd>
-<dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><ul class="simple">
-<li><p><strong>fields</strong> (<em>dict</em><em>[</em><em>str</em><em>, </em><em>str</em><em> | </em><em>callable</em><em>]</em>)</p></li>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fields</strong> (<em>dict</em>)</p></li>
 <li><p><strong>based_on</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
-<li><p><strong>transaction</strong> (<a class="reference internal" href="core.html#proto_db.db_access.ObjectTransaction" title="proto_db.db_access.ObjectTransaction"><em>ObjectTransaction</em></a>)</p></li>
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
 <li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
 </ul>
 </dd>
 </dl>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.queries.SelectPlan.__init__">
-<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fields</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">based_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#SelectPlan.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.SelectPlan.__init__" title="Link to this definition"></a></dt>
-<dd><dl class="field-list simple">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fields</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">based_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#SelectPlan.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.SelectPlan.__init__" title="Link to this definition"></a></dt>
+<dd><p>Initialize a SelectPlan with field mappings and a base query plan.</p>
+<dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>fields</strong> (<em>dict</em><em>[</em><em>str</em><em>, </em><em>str</em><em> | </em><em>callable</em><em>]</em>)</p></li>
-<li><p><strong>based_on</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
-<li><p><strong>transaction</strong> (<a class="reference internal" href="core.html#proto_db.db_access.ObjectTransaction" title="proto_db.db_access.ObjectTransaction"><em>ObjectTransaction</em></a>)</p></li>
-<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+<li><p><strong>fields</strong> (<em>dict</em>) – A dictionary mapping output field names to either:
+- Source field names (strings) for direct mapping
+- Callable functions that take a record and return a value</p></li>
+<li><p><strong>based_on</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>) – The query plan that produces the records to transform</p></li>
+<li><p><strong>transaction</strong> (<a class="reference internal" href="core.html#proto_db.db_access.ObjectTransaction" title="proto_db.db_access.ObjectTransaction"><em>ObjectTransaction</em></a>) – The transaction context</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>) – Pointer to the atom in storage</p></li>
+<li><p><strong>**kwargs</strong> – Additional arguments</p></li>
 </ul>
 </dd>
 </dl>
@@ -635,25 +418,15 @@ field should be derived from the original query results.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.queries.SelectPlan.execute">
 <span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#SelectPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.SelectPlan.execute" title="Link to this definition"></a></dt>
-<dd><p>Executes a transformation process over records fetched from the underlying
-source, applies field mappings to each record, and outputs the transformed
-results as a generator.</p>
-<p>The function processes records provided by <cite>self.based_on.execute()</cite>, applies
-field transformations defined in <cite>self.fields</cite>, and constructs new objects
-with the resultant field values. Each record is either derived through string
-attribute access or callable functions provided in the field mapping.</p>
+<dd><p>Execute the plan, transforming records from the base plan according to field mappings.</p>
+<p>For each record from the base plan, this method creates a new record with fields
+mapped according to the field specification provided at initialization.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>self</strong> – The class instance containing the input source <cite>based_on</cite> and
-mapping definitions <cite>fields</cite>. The <cite>fields</cite> attribute defines which fields
-are processed and how transformations are applied.</p>
+<dt class="field-odd">Yields<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Transformed records with the specified field mappings applied.</p>
 </dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>Generator producing transformed objects created from the input
-records, enriched with fields mapped as per <cite>self.fields</cite>.</p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>Generator[object, None, None]</p>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>Any exception that might be raised by callable field mappings.</strong> – </p>
 </dd>
 </dl>
 </dd></dl>
@@ -661,15 +434,15 @@ records, enriched with fields mapped as per <cite>self.fields</cite>.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.queries.SelectPlan.optimize">
 <span class="sig-name descname"><span class="pre">optimize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">full_plan</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#SelectPlan.optimize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.SelectPlan.optimize" title="Link to this definition"></a></dt>
-<dd><dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p></p>
+<dd><p>Optimize this plan and its dependencies.</p>
+<p>This method delegates optimization to the underlying plan and then
+creates a new SelectPlan with the optimized base.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>full_plan</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>) – The complete query plan for context</p>
 </dd>
-<dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><p><strong>full_plan</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>An optimized version of this plan</p>
 </dd>
 </dl>
 </dd></dl>
@@ -678,72 +451,120 @@ records, enriched with fields mapped as per <cite>self.fields</cite>.</p>
 
 <p><code class="docutils literal notranslate"><span class="pre">SelectPlan</span></code> projects specific fields. It takes a projection function and a base plan, returns transformed records, and can be used to extract specific fields.</p>
 </section>
-<section id="limitplan">
-<h3>LimitPlan<a class="headerlink" href="#limitplan" title="Link to this heading"></a></h3>
+<section id="countplan">
+<h3>CountPlan<a class="headerlink" href="#countplan" title="Link to this heading"></a></h3>
 <dl class="py class">
-<dt class="sig sig-object py" id="proto_db.queries.LimitPlan">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.queries.</span></span><span class="sig-name descname"><span class="pre">LimitPlan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">limit_count</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">based_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#LimitPlan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.LimitPlan" title="Link to this definition"></a></dt>
-<dd><p>Represents a query plan that imposes a limit on the number of records to process.</p>
-<p>The LimitPlan class is used to define a query plan that enforces a constraint on
-the maximum number of records retrieved or processed from its associated query
-plan. This is achieved using a counter that tracks the number of records yielded
-and stops subsequent processing once the limit is reached. Additionally, the
-class provides optimization functionalities by enabling modifications of the
-underlying query plan while retaining the limit constraint. It is initialized
-with a required limit count and optional parameters to define its base plan and
-transaction context.</p>
+<dt class="sig sig-object py" id="proto_db.queries.CountPlan">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.queries.</span></span><span class="sig-name descname"><span class="pre">CountPlan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">based_on</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#CountPlan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.CountPlan" title="Link to this definition"></a></dt>
+<dd><p>A query plan that counts the results from a sub-plan.
+This plan is optimized to use index counts whenever possible,
+avoiding full data iteration.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Variables<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>limit_count</strong> – The maximum number of records to process.</p>
-</dd>
-<dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><ul class="simple">
-<li><p><strong>limit_count</strong> (<em>int</em>)</p></li>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
 <li><p><strong>based_on</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
 <li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
-<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
 </ul>
 </dd>
 </dl>
 <dl class="py method">
-<dt class="sig sig-object py" id="proto_db.queries.LimitPlan.__init__">
-<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">limit_count</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">based_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#LimitPlan.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.LimitPlan.__init__" title="Link to this definition"></a></dt>
+<dt class="sig sig-object py" id="proto_db.queries.CountPlan.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">based_on</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#CountPlan.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.CountPlan.__init__" title="Link to this definition"></a></dt>
+<dd><p>Initializes the CountPlan.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>based_on</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>) – The underlying plan whose results will be counted.</p></li>
+<li><p><strong>transaction</strong> (<a class="reference internal" href="core.html#proto_db.db_access.ObjectTransaction" title="proto_db.db_access.ObjectTransaction"><em>ObjectTransaction</em></a>) – The active transaction.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.queries.CountPlan.execute">
+<span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#CountPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.CountPlan.execute" title="Link to this definition"></a></dt>
+<dd><p>Executes the count. If no optimization is possible,
+it iterates through the sub-plan’s results and counts them.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>123}].</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>A list containing a single dictionary with the count, e.g., [{‘count’</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.queries.CountPlan.optimize">
+<span class="sig-name descname"><span class="pre">optimize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">full_plan</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#CountPlan.optimize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.CountPlan.optimize" title="Link to this definition"></a></dt>
+<dd><p>Optimizes the counting process.</p>
+<p>If the underlying plan can provide a count efficiently (e.g., it’s an
+indexed search), this method will delegate the counting to it.
+Otherwise, it returns itself to perform a standard iteration count.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A plan that can provide the count, potentially a new optimized plan
+or itself.</p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>full_plan</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p><code class="docutils literal notranslate"><span class="pre">CountPlan</span></code> counts the results from a sub-plan. It takes a base plan and returns a single record with the count. It is optimized to use index counts whenever possible, avoiding full data iteration.</p>
+</section>
+<section id="countresultplan">
+<h3>CountResultPlan<a class="headerlink" href="#countresultplan" title="Link to this heading"></a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.queries.CountResultPlan">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.queries.</span></span><span class="sig-name descname"><span class="pre">CountResultPlan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">count_value</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#CountResultPlan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.CountResultPlan" title="Link to this definition"></a></dt>
+<dd><p>A terminal plan that simply holds and returns a pre-calculated count.
+This is the result of an optimized CountPlan.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>count_value</strong> (<em>int</em>)</p></li>
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.queries.CountResultPlan.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">count_value</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#CountResultPlan.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.CountResultPlan.__init__" title="Link to this definition"></a></dt>
 <dd><dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>limit_count</strong> (<em>int</em>)</p></li>
-<li><p><strong>based_on</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
+<li><p><strong>count_value</strong> (<em>int</em>)</p></li>
 <li><p><strong>transaction</strong> (<a class="reference internal" href="core.html#proto_db.db_access.ObjectTransaction" title="proto_db.db_access.ObjectTransaction"><em>ObjectTransaction</em></a>)</p></li>
-<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
 </ul>
 </dd>
 </dl>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="proto_db.queries.LimitPlan.execute">
-<span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#LimitPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.LimitPlan.execute" title="Link to this definition"></a></dt>
-<dd><p>Executes a generator function to fetch records from an underlying data source
-while imposing a limit on the number of records processed. This function
-iterates over a generator from the base execution and yields records until
-the specified limit is reached.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>self</strong> – Instance of the class containing execution logic.</p>
+<dt class="sig sig-object py" id="proto_db.queries.CountResultPlan.execute">
+<span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#CountResultPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.CountResultPlan.execute" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p></p>
 </dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>A generator yielding records with a hard limit on the count, if
-applicable.</p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>generator</p>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>list[dict]</p>
 </dd>
 </dl>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="proto_db.queries.LimitPlan.optimize">
-<span class="sig-name descname"><span class="pre">optimize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">full_plan</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#LimitPlan.optimize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.LimitPlan.optimize" title="Link to this definition"></a></dt>
+<dt class="sig sig-object py" id="proto_db.queries.CountResultPlan.optimize">
+<span class="sig-name descname"><span class="pre">optimize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">full_plan</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#CountResultPlan.optimize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.CountResultPlan.optimize" title="Link to this definition"></a></dt>
 <dd><dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
 <dd class="field-odd"><p></p>
@@ -759,92 +580,14 @@ applicable.</p>
 
 </dd></dl>
 
+<p><code class="docutils literal notranslate"><span class="pre">CountResultPlan</span></code> is a terminal plan that holds and returns a pre-calculated count. It is the result of an optimized CountPlan.</p>
+</section>
+<section id="limitplan">
+<h3>LimitPlan<a class="headerlink" href="#limitplan" title="Link to this heading"></a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">LimitPlan</span></code> limits the number of records returned. It takes a limit and a base plan, and returns at most the specified number of records.</p>
 </section>
 <section id="offsetplan">
 <h3>OffsetPlan<a class="headerlink" href="#offsetplan" title="Link to this heading"></a></h3>
-<dl class="py class">
-<dt class="sig sig-object py" id="proto_db.queries.OffsetPlan">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.queries.</span></span><span class="sig-name descname"><span class="pre">OffsetPlan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">offset</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">based_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#OffsetPlan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.OffsetPlan" title="Link to this definition"></a></dt>
-<dd><p>Manage query execution with an offset, bypassing a specified number of initial records.</p>
-<p>This class extends the QueryPlan and introduces an offset mechanism to skip the initial
-records while executing the query plan. It leverages the functionality of the parent
-QueryPlan class while adding additional capabilities related to offset-based query
-processing. This class is commonly used in cases where paginated or incremental data
-retrieval is necessary.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Variables<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>offset</strong> – Number of records to skip in the result set.</p>
-</dd>
-<dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><ul class="simple">
-<li><p><strong>offset</strong> (<em>int</em>)</p></li>
-<li><p><strong>based_on</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
-<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
-<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
-</ul>
-</dd>
-</dl>
-<dl class="py method">
-<dt class="sig sig-object py" id="proto_db.queries.OffsetPlan.__init__">
-<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">offset</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">based_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#OffsetPlan.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.OffsetPlan.__init__" title="Link to this definition"></a></dt>
-<dd><dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>offset</strong> (<em>int</em>)</p></li>
-<li><p><strong>based_on</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
-<li><p><strong>transaction</strong> (<a class="reference internal" href="core.html#proto_db.db_access.ObjectTransaction" title="proto_db.db_access.ObjectTransaction"><em>ObjectTransaction</em></a>)</p></li>
-<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
-</ul>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="proto_db.queries.OffsetPlan.execute">
-<span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#OffsetPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.OffsetPlan.execute" title="Link to this definition"></a></dt>
-<dd><p>Executes the underlying data retrieval process while skipping a specified number of
-initial results. This method is useful in scenarios where data pagination or result
-offsetting is required. The retrieved records will be lazily returned using a generator,
-allowing for memory-efficient processing of potentially large datasets.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Raises<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>AttributeError</strong> – If <code class="docutils literal notranslate"><span class="pre">self.based_on</span></code> does not have an <cite>execute</cite> method.</p>
-</dd>
-<dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><ul class="simple">
-<li><p><strong>self</strong> (<em>Any</em>) – The instance on which the method is invoked.</p></li>
-<li><p><strong>self.offset</strong> (<em>int</em>) – The number of initial records to skip before yielding results.</p></li>
-</ul>
-</dd>
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A generator of records from the underlying data source, starting from the
-<code class="docutils literal notranslate"><span class="pre">self.offset</span></code> index.</p>
-</dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>Generator</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="proto_db.queries.OffsetPlan.optimize">
-<span class="sig-name descname"><span class="pre">optimize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">full_plan</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#OffsetPlan.optimize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.OffsetPlan.optimize" title="Link to this definition"></a></dt>
-<dd><dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p></p>
-</dd>
-<dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><p><strong>full_plan</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
-</dd>
-</dl>
-</dd></dl>
-
-</dd></dl>
-
 <p><code class="docutils literal notranslate"><span class="pre">OffsetPlan</span></code> skips a number of records. It takes an offset and a base plan, and returns records starting from the specified offset.</p>
 </section>
 <section id="listplan">
@@ -908,6 +651,35 @@ allowing for memory-efficient processing of potentially large datasets.</p>
 </dd></dl>
 
 <p><code class="docutils literal notranslate"><span class="pre">ListPlan</span></code> is a simple plan that wraps a list. It provides an iterator over the list and can be used as the basis for other query plans.</p>
+</section>
+</section>
+<section id="optimized-counting">
+<h2>Optimized Counting<a class="headerlink" href="#optimized-counting" title="Link to this heading"></a></h2>
+<p>Several query plan classes implement optimized counting methods to improve performance when only the count of results is needed, not the actual data. These optimizations avoid iterating through all records when possible.</p>
+<section id="indexedsearchplan-count">
+<h3>IndexedSearchPlan.count()<a class="headerlink" href="#indexedsearchplan-count" title="Link to this heading"></a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">IndexedSearchPlan</span></code> class provides a fast count method that leverages the underlying index count. This avoids iterating over the actual data.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Using an indexed field for counting is much faster</span>
+<span class="n">indexed_search</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">IndexedSearchPlan</span><span class="p">(</span>
+    <span class="n">field_to_scan</span><span class="o">=</span><span class="s2">&quot;city&quot;</span><span class="p">,</span>
+    <span class="n">operator</span><span class="o">=</span><span class="s2">&quot;==&quot;</span><span class="p">,</span>
+    <span class="n">value</span><span class="o">=</span><span class="s2">&quot;New York&quot;</span><span class="p">,</span>
+    <span class="n">based_on</span><span class="o">=</span><span class="n">indexed_from_plan</span><span class="p">,</span>
+    <span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span>
+<span class="p">)</span>
+
+<span class="c1"># Get the count directly without iterating</span>
+<span class="n">count</span> <span class="o">=</span> <span class="n">indexed_search</span><span class="o">.</span><span class="n">count</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="andmerge-count">
+<h3>AndMerge.count()<a class="headerlink" href="#andmerge-count" title="Link to this heading"></a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">AndMerge</span></code> class optimizes counting for the intersection of sub-queries. It iterates the smaller result set and checks for existence in the larger one, without materializing full objects.</p>
+</section>
+<section id="ormerge-count">
+<h3>OrMerge.count()<a class="headerlink" href="#ormerge-count" title="Link to this heading"></a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">OrMerge</span></code> class optimizes counting for the union of sub-queries. It uses a set to efficiently combine IDs and get the final count of unique results.</p>
 </section>
 </section>
 <section id="usage-examples">
@@ -1083,6 +855,34 @@ allowing for memory-efficient processing of potentially large datasets.</p>
 <span class="c1"># Execute the query</span>
 <span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">page_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
     <span class="nb">print</span><span class="p">(</span><span class="n">user</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">])</span>  <span class="c1"># Output: Jane</span>
+</pre></div>
+</div>
+</section>
+<section id="counting">
+<h3>Counting<a class="headerlink" href="#counting" title="Link to this heading"></a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Count all users</span>
+<span class="n">count_plan</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">CountPlan</span><span class="p">(</span>
+    <span class="n">based_on</span><span class="o">=</span><span class="n">from_plan</span><span class="p">,</span>
+    <span class="n">transaction</span><span class="o">=</span><span class="n">from_plan</span><span class="o">.</span><span class="n">transaction</span>
+<span class="p">)</span>
+
+<span class="c1"># Execute the query</span>
+<span class="n">result</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">count_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Total users: </span><span class="si">{</span><span class="n">result</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">&#39;count&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>  <span class="c1"># Output: Total users: 3</span>
+
+<span class="c1"># Count users from New York</span>
+<span class="n">filtered_count_plan</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">CountPlan</span><span class="p">(</span>
+    <span class="n">based_on</span><span class="o">=</span><span class="n">proto_db</span><span class="o">.</span><span class="n">WherePlan</span><span class="p">(</span>
+        <span class="nb">filter</span><span class="o">=</span><span class="k">lambda</span> <span class="n">user</span><span class="p">:</span> <span class="n">user</span><span class="p">[</span><span class="s2">&quot;city&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;New York&quot;</span><span class="p">,</span>
+        <span class="n">based_on</span><span class="o">=</span><span class="n">from_plan</span><span class="p">,</span>
+        <span class="n">transaction</span><span class="o">=</span><span class="n">from_plan</span><span class="o">.</span><span class="n">transaction</span>
+    <span class="p">),</span>
+    <span class="n">transaction</span><span class="o">=</span><span class="n">from_plan</span><span class="o">.</span><span class="n">transaction</span>
+<span class="p">)</span>
+
+<span class="c1"># Execute the query</span>
+<span class="n">result</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">filtered_count_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Users from New York: </span><span class="si">{</span><span class="n">result</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">&#39;count&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>  <span class="c1"># Output: Users from New York: 2</span>
 </pre></div>
 </div>
 </section>

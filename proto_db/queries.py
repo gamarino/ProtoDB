@@ -649,6 +649,25 @@ class IndexedSearchPlan(IndexedQueryPlan):
             transaction=self.transaction
         )
 
+    def count(self) -> int:
+        """
+        Provides a fast count of results by leveraging the underlying index count.
+        This avoids iterating over the actual data.
+
+        Returns:
+            The number of items that match the search criteria.
+        """
+        # This assumes the underlying plan is an IndexedQueryPlan, which it should be.
+        if self.operator in ['==', 'eq']:
+            # The `get_equal_than` method returns a list-like object from the index
+            # that already knows its own count.
+            return self.based_on.get_equal_than(self.field_to_scan, self.value).count
+
+        # For other operators like '>', '<', etc., we might still need to iterate,
+        # but only on the index, which is still faster than a full table scan.
+        # A simple implementation would be:
+        return len(list(self.execute()))
+
 
 class AndMerge(QueryPlan):
     and_queries: list[QueryPlan]
@@ -694,6 +713,37 @@ class AndMerge(QueryPlan):
             transaction=self.transaction
         )
 
+    def count(self) -> int:
+        """
+        Calculates the count of the intersection of sub-queries.
+        It optimizes by iterating the smaller result set and checking for
+        existence in the larger one, without materializing full objects.
+        """
+        if not self.and_queries:
+            return 0
+
+        # Optimize sub-queries first
+        optimized_queries = [q.optimize(self) for q in self.and_queries]
+
+        # Get iterators of IDs, not full objects
+        id_iterators = [q.keys_iterator() for q in optimized_queries]
+
+        # Sort by potential size (if a count() method is available)
+        id_iterators.sort(key=lambda it: it.count() if hasattr(it, 'count') else float('inf'))
+
+        # Use the smallest set as the base for iteration
+        base_ids = set(id_iterators[0])
+        if not base_ids:
+            return 0
+
+        # Intersect with the other sets
+        for other_iterator in id_iterators[1:]:
+            base_ids.intersection_update(other_iterator)
+            if not base_ids:
+                return 0
+
+        return len(base_ids)
+
 
 class OrMerge(QueryPlan):
     or_queries: list[QueryPlan]
@@ -718,6 +768,23 @@ class OrMerge(QueryPlan):
             based_on=self.based_on.optimize(full_plan),
             transaction=self.transaction
         )
+
+    def count(self) -> int:
+        """
+        Calculates the count of the union of sub-queries.
+        It uses a set to efficiently combine IDs and get the final count
+        of unique results.
+        """
+        # Optimize sub-queries and get their ID iterators
+        optimized_queries = [q.optimize(self) for q in self.or_queries]
+        id_iterators = [q.keys_iterator() for q in optimized_queries]
+
+        # Union all IDs using a set to handle duplicates automatically
+        all_ids = set()
+        for iterator in id_iterators:
+            all_ids.update(iterator)
+
+        return len(all_ids)
 
 
 class FromPlan(IndexedQueryPlan):
@@ -850,7 +917,7 @@ class WherePlan(QueryPlan):
         # 3. INDEX UTILIZATION (the original optimization)
         # Check if the filter is a simple equality term that can be served by an index
         # on the underlying `IndexedQueryPlan`.
-        if isinstance(current_filter, Term) and current_filter.operation in ['==', 'eq']:
+        if isinstance(current_filter, Term) and isinstance(current_filter.operation, Equal):
             if isinstance(optimized_based_on, IndexedQueryPlan):
                 # If the target attribute is indexed, replace this `WherePlan`
                 # with a more efficient `IndexedSearchPlan`.
@@ -1077,3 +1144,70 @@ class SelectPlan(QueryPlan):
             based_on=optimized_base,
             transaction=self.transaction
         )
+
+class CountPlan(QueryPlan):
+    """
+    A query plan that counts the results from a sub-plan.
+    This plan is optimized to use index counts whenever possible,
+    avoiding full data iteration.
+    """
+    def __init__(self, based_on: 'QueryPlan', transaction: 'ObjectTransaction'):
+        """
+        Initializes the CountPlan.
+
+        Args:
+            based_on: The underlying plan whose results will be counted.
+            transaction: The active transaction.
+        """
+        super().__init__(based_on=based_on, transaction=transaction)
+        self.alias = 'count'
+
+    def execute(self) -> list[dict]:
+        """
+        Executes the count. If no optimization is possible,
+        it iterates through the sub-plan's results and counts them.
+
+        Returns:
+            A list containing a single dictionary with the count, e.g., [{'count': 123}].
+        """
+        count = sum(1 for _ in self.based_on.execute())
+        return [{'count': count}]
+
+    def optimize(self, full_plan: 'QueryPlan') -> 'QueryPlan':
+        """
+        Optimizes the counting process.
+
+        If the underlying plan can provide a count efficiently (e.g., it's an
+        indexed search), this method will delegate the counting to it.
+        Otherwise, it returns itself to perform a standard iteration count.
+
+        Returns:
+            A plan that can provide the count, potentially a new optimized plan
+            or itself.
+        """
+        optimized_based_on = self.based_on.optimize(full_plan)
+
+        # Duck-typing: Check if the optimized underlying plan has a fast `count` method.
+        if hasattr(optimized_based_on, 'count'):
+            # Delegate counting to the specialized method of the sub-plan.
+            return CountResultPlan(count_value=optimized_based_on.count(), transaction=self.transaction)
+
+        self.based_on = optimized_based_on
+        return self
+
+
+class CountResultPlan(QueryPlan):
+    """
+    A terminal plan that simply holds and returns a pre-calculated count.
+    This is the result of an optimized CountPlan.
+    """
+    def __init__(self, count_value: int, transaction: 'ObjectTransaction'):
+        super().__init__(based_on=None, transaction=transaction)
+        self.count_value = count_value
+        self.alias = 'count'
+
+    def execute(self) -> list[dict]:
+        return [{'count': self.count_value}]
+
+    def optimize(self, full_plan: 'QueryPlan') -> 'QueryPlan':
+        return self

@@ -163,28 +163,32 @@
 </section>
 <section id="cloud-storage-with-cloudfilestorage">
 <h2>Cloud Storage with CloudFileStorage<a class="headerlink" href="#cloud-storage-with-cloudfilestorage" title="Link to this heading"></a></h2>
-<p>ProtoBase also provides cloud storage capabilities through the <code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code> class. This allows you to store data in S3-compatible object storage services.</p>
+<p>ProtoBase provides cloud storage capabilities through the <code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code> class. This allows you to store data in cloud object storage services like Amazon S3 or Google Cloud Storage.</p>
 <section id="setting-up-cloud-storage">
 <h3>Setting Up Cloud Storage<a class="headerlink" href="#setting-up-cloud-storage" title="Link to this heading"></a></h3>
 <p>To set up cloud storage, you need to:</p>
 <ol class="arabic simple">
-<li><p>Create an S3 client</p></li>
-<li><p>Create a <code class="docutils literal notranslate"><span class="pre">CloudBlockProvider</span></code> with the S3 client</p></li>
+<li><p>Create a cloud storage client (S3Client or GoogleCloudClient)</p></li>
+<li><p>Create a <code class="docutils literal notranslate"><span class="pre">CloudBlockProvider</span></code> with the cloud storage client</p></li>
 <li><p>Create a <code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code> with the block provider</p></li>
 </ol>
-<p>Here’s an example using the built-in mock S3 client for testing:</p>
+<p>Here’s an example using Amazon S3:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">proto_db</span>
 
-<span class="c1"># Create a mock S3 client (for testing)</span>
-<span class="n">s3_client</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">MockS3Client</span><span class="p">(</span>
+<span class="c1"># Create an S3 client</span>
+<span class="n">s3_client</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">S3Client</span><span class="p">(</span>
     <span class="n">bucket</span><span class="o">=</span><span class="s2">&quot;my-bucket&quot;</span><span class="p">,</span>
-    <span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;my-prefix&quot;</span>
+    <span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;my-prefix&quot;</span><span class="p">,</span>
+    <span class="n">endpoint_url</span><span class="o">=</span><span class="s2">&quot;https://s3.amazonaws.com&quot;</span><span class="p">,</span>
+    <span class="n">access_key</span><span class="o">=</span><span class="s2">&quot;my-access-key&quot;</span><span class="p">,</span>
+    <span class="n">secret_key</span><span class="o">=</span><span class="s2">&quot;my-secret-key&quot;</span><span class="p">,</span>
+    <span class="n">region</span><span class="o">=</span><span class="s2">&quot;us-west-2&quot;</span>
 <span class="p">)</span>
 
 <span class="c1"># Create a cloud block provider</span>
 <span class="n">block_provider</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">CloudBlockProvider</span><span class="p">(</span>
-    <span class="n">s3_client</span><span class="o">=</span><span class="n">s3_client</span><span class="p">,</span>
-    <span class="n">cache_dir</span><span class="o">=</span><span class="s2">&quot;cloud_cache&quot;</span><span class="p">,</span>
+    <span class="n">cloud_client</span><span class="o">=</span><span class="n">s3_client</span><span class="p">,</span>
+    <span class="n">cache_dir</span><span class="o">=</span><span class="s2">&quot;s3_cache&quot;</span><span class="p">,</span>
     <span class="n">cache_size</span><span class="o">=</span><span class="mi">500</span> <span class="o">*</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span><span class="p">,</span>  <span class="c1"># 500 MB cache</span>
     <span class="n">object_size</span><span class="o">=</span><span class="mi">5</span> <span class="o">*</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span>     <span class="c1"># 5 MB objects</span>
 <span class="p">)</span>
@@ -200,43 +204,110 @@
 <span class="n">db</span> <span class="o">=</span> <span class="n">space</span><span class="o">.</span><span class="n">get_database</span><span class="p">(</span><span class="s2">&quot;my_database&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>For production use, you would implement a concrete S3 client that connects to your S3-compatible storage service.</p>
-</section>
-<section id="local-caching">
-<h3>Local Caching<a class="headerlink" href="#local-caching" title="Link to this heading"></a></h3>
-<p><code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code> uses local caching to improve performance. When an object is read from S3, it is cached locally. Subsequent reads of the same object will use the local cache, avoiding the need to fetch the object from S3 again.</p>
-<p>The cache is managed automatically, with least recently used objects being evicted when the cache size limit is reached.</p>
-</section>
-<section id="background-uploading">
-<h3>Background Uploading<a class="headerlink" href="#background-uploading" title="Link to this heading"></a></h3>
-<p><code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code> also supports background uploading of data to S3. When data is written to the database, it is first stored locally and then uploaded to S3 in the background. This allows the application to continue working without waiting for the upload to complete.</p>
-<p>The upload interval can be configured to balance between performance and durability.</p>
-</section>
-</section>
-<section id="combined-cluster-and-cloud-storage-with-cloudclusterfilestorage">
-<h2>Combined Cluster and Cloud Storage with CloudClusterFileStorage<a class="headerlink" href="#combined-cluster-and-cloud-storage-with-cloudclusterfilestorage" title="Link to this heading"></a></h2>
-<p>ProtoBase provides a comprehensive solution for multi-server environments with the <code class="docutils literal notranslate"><span class="pre">CloudClusterFileStorage</span></code> class. This class combines the functionality of <code class="docutils literal notranslate"><span class="pre">ClusterFileStorage</span></code> and <code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code> to provide a storage solution that works in a cluster environment while using S3 as the final storage for data.</p>
-<section id="setting-up-cloud-cluster-storage">
-<h3>Setting Up Cloud Cluster Storage<a class="headerlink" href="#setting-up-cloud-cluster-storage" title="Link to this heading"></a></h3>
-<p>To set up cloud cluster storage, you need to:</p>
-<ol class="arabic simple">
-<li><p>Create an S3 client</p></li>
-<li><p>Create a <code class="docutils literal notranslate"><span class="pre">CloudBlockProvider</span></code> with the S3 client</p></li>
-<li><p>Define a list of servers in the cluster</p></li>
-<li><p>Create a <code class="docutils literal notranslate"><span class="pre">CloudClusterFileStorage</span></code> instance on each node</p></li>
-</ol>
-<p>Here’s an example:</p>
+<p>Here’s an example using Google Cloud Storage:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">proto_db</span>
 
-<span class="c1"># Create a mock S3 client (for testing)</span>
+<span class="c1"># Create a Google Cloud Storage client</span>
+<span class="n">gcs_client</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">GoogleCloudClient</span><span class="p">(</span>
+    <span class="n">bucket</span><span class="o">=</span><span class="s2">&quot;my-bucket&quot;</span><span class="p">,</span>
+    <span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;my-prefix&quot;</span><span class="p">,</span>
+    <span class="n">project_id</span><span class="o">=</span><span class="s2">&quot;my-project&quot;</span><span class="p">,</span>
+    <span class="n">credentials_path</span><span class="o">=</span><span class="s2">&quot;/path/to/credentials.json&quot;</span>
+<span class="p">)</span>
+
+<span class="c1"># Create a cloud block provider</span>
+<span class="n">block_provider</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">CloudBlockProvider</span><span class="p">(</span>
+    <span class="n">cloud_client</span><span class="o">=</span><span class="n">gcs_client</span><span class="p">,</span>
+    <span class="n">cache_dir</span><span class="o">=</span><span class="s2">&quot;gcs_cache&quot;</span><span class="p">,</span>
+    <span class="n">cache_size</span><span class="o">=</span><span class="mi">500</span> <span class="o">*</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span><span class="p">,</span>  <span class="c1"># 500 MB cache</span>
+    <span class="n">object_size</span><span class="o">=</span><span class="mi">5</span> <span class="o">*</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span>     <span class="c1"># 5 MB objects</span>
+<span class="p">)</span>
+
+<span class="c1"># Create a cloud file storage</span>
+<span class="n">storage</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">CloudFileStorage</span><span class="p">(</span>
+    <span class="n">block_provider</span><span class="o">=</span><span class="n">block_provider</span><span class="p">,</span>
+    <span class="n">upload_interval_ms</span><span class="o">=</span><span class="mi">5000</span>  <span class="c1"># Upload every 5 seconds</span>
+<span class="p">)</span>
+
+<span class="c1"># Create an object space and database as before</span>
+<span class="n">space</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">ObjectSpace</span><span class="p">(</span><span class="n">storage</span><span class="p">)</span>
+<span class="n">db</span> <span class="o">=</span> <span class="n">space</span><span class="o">.</span><span class="n">get_database</span><span class="p">(</span><span class="s2">&quot;my_database&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>For testing purposes, you can use the built-in mock clients:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Mock S3 client</span>
 <span class="n">s3_client</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">MockS3Client</span><span class="p">(</span>
     <span class="n">bucket</span><span class="o">=</span><span class="s2">&quot;my-bucket&quot;</span><span class="p">,</span>
     <span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;my-prefix&quot;</span>
 <span class="p">)</span>
 
+<span class="c1"># Mock Google Cloud Storage client</span>
+<span class="n">gcs_client</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">MockGoogleCloudClient</span><span class="p">(</span>
+    <span class="n">bucket</span><span class="o">=</span><span class="s2">&quot;my-bucket&quot;</span><span class="p">,</span>
+    <span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;my-prefix&quot;</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="local-caching">
+<h3>Local Caching<a class="headerlink" href="#local-caching" title="Link to this heading"></a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code> uses local caching to improve performance. When an object is read from cloud storage (Amazon S3 or Google Cloud Storage), it is cached locally. Subsequent reads of the same object will use the local cache, avoiding the need to fetch the object from cloud storage again.</p>
+<p>The cache is managed automatically, with least recently used objects being evicted when the cache size limit is reached.</p>
+</section>
+<section id="background-uploading">
+<h3>Background Uploading<a class="headerlink" href="#background-uploading" title="Link to this heading"></a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code> also supports background uploading of data to cloud storage. When data is written to the database, it is first stored locally and then uploaded to cloud storage (Amazon S3 or Google Cloud Storage) in the background. This allows the application to continue working without waiting for the upload to complete.</p>
+<p>The upload interval can be configured to balance between performance and durability.</p>
+</section>
+</section>
+<section id="combined-cluster-and-cloud-storage-with-cloudclusterfilestorage">
+<h2>Combined Cluster and Cloud Storage with CloudClusterFileStorage<a class="headerlink" href="#combined-cluster-and-cloud-storage-with-cloudclusterfilestorage" title="Link to this heading"></a></h2>
+<p>ProtoBase provides a comprehensive solution for multi-server environments with the <code class="docutils literal notranslate"><span class="pre">CloudClusterFileStorage</span></code> class. This class combines the functionality of <code class="docutils literal notranslate"><span class="pre">ClusterFileStorage</span></code> and <code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code> to provide a storage solution that works in a cluster environment while using cloud object storage (Amazon S3 or Google Cloud Storage) as the final storage for data.</p>
+<section id="setting-up-cloud-cluster-storage">
+<h3>Setting Up Cloud Cluster Storage<a class="headerlink" href="#setting-up-cloud-cluster-storage" title="Link to this heading"></a></h3>
+<p>To set up cloud cluster storage, you need to:</p>
+<ol class="arabic simple">
+<li><p>Create a cloud storage client (S3Client or GoogleCloudClient)</p></li>
+<li><p>Create a <code class="docutils literal notranslate"><span class="pre">CloudBlockProvider</span></code> with the cloud storage client</p></li>
+<li><p>Define a list of servers in the cluster</p></li>
+<li><p>Create a <code class="docutils literal notranslate"><span class="pre">CloudClusterFileStorage</span></code> instance on each node</p></li>
+</ol>
+<p>Here’s an example using Amazon S3:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">proto_db</span>
+
+<span class="c1"># Create an S3 client</span>
+<span class="n">s3_client</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">S3Client</span><span class="p">(</span>
+    <span class="n">bucket</span><span class="o">=</span><span class="s2">&quot;my-bucket&quot;</span><span class="p">,</span>
+    <span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;my-prefix&quot;</span><span class="p">,</span>
+    <span class="n">endpoint_url</span><span class="o">=</span><span class="s2">&quot;https://s3.amazonaws.com&quot;</span><span class="p">,</span>
+    <span class="n">access_key</span><span class="o">=</span><span class="s2">&quot;my-access-key&quot;</span><span class="p">,</span>
+    <span class="n">secret_key</span><span class="o">=</span><span class="s2">&quot;my-secret-key&quot;</span><span class="p">,</span>
+    <span class="n">region</span><span class="o">=</span><span class="s2">&quot;us-west-2&quot;</span>
+<span class="p">)</span>
+
 <span class="c1"># Create a cloud block provider</span>
 <span class="n">block_provider</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">CloudBlockProvider</span><span class="p">(</span>
-    <span class="n">s3_client</span><span class="o">=</span><span class="n">s3_client</span><span class="p">,</span>
+    <span class="n">cloud_client</span><span class="o">=</span><span class="n">s3_client</span><span class="p">,</span>
+    <span class="n">cache_dir</span><span class="o">=</span><span class="s2">&quot;cloud_cluster_cache&quot;</span><span class="p">,</span>
+    <span class="n">cache_size</span><span class="o">=</span><span class="mi">500</span> <span class="o">*</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span><span class="p">,</span>  <span class="c1"># 500 MB cache</span>
+    <span class="n">object_size</span><span class="o">=</span><span class="mi">5</span> <span class="o">*</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span>     <span class="c1"># 5 MB objects</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Here’s an example using Google Cloud Storage:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">proto_db</span>
+
+<span class="c1"># Create a Google Cloud Storage client</span>
+<span class="n">gcs_client</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">GoogleCloudClient</span><span class="p">(</span>
+    <span class="n">bucket</span><span class="o">=</span><span class="s2">&quot;my-bucket&quot;</span><span class="p">,</span>
+    <span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;my-prefix&quot;</span><span class="p">,</span>
+    <span class="n">project_id</span><span class="o">=</span><span class="s2">&quot;my-project&quot;</span><span class="p">,</span>
+    <span class="n">credentials_path</span><span class="o">=</span><span class="s2">&quot;/path/to/credentials.json&quot;</span>
+<span class="p">)</span>
+
+<span class="c1"># Create a cloud block provider</span>
+<span class="n">block_provider</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">CloudBlockProvider</span><span class="p">(</span>
+    <span class="n">cloud_client</span><span class="o">=</span><span class="n">gcs_client</span><span class="p">,</span>
     <span class="n">cache_dir</span><span class="o">=</span><span class="s2">&quot;cloud_cluster_cache&quot;</span><span class="p">,</span>
     <span class="n">cache_size</span><span class="o">=</span><span class="mi">500</span> <span class="o">*</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span><span class="p">,</span>  <span class="c1"># 500 MB cache</span>
     <span class="n">object_size</span><span class="o">=</span><span class="mi">5</span> <span class="o">*</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span>     <span class="c1"># 5 MB objects</span>
@@ -256,7 +327,8 @@
     <span class="n">host</span><span class="o">=</span><span class="s2">&quot;node1.example.com&quot;</span><span class="p">,</span>
     <span class="n">port</span><span class="o">=</span><span class="mi">12345</span><span class="p">,</span>
     <span class="n">servers</span><span class="o">=</span><span class="n">servers</span><span class="p">,</span>
-    <span class="n">upload_interval_ms</span><span class="o">=</span><span class="mi">5000</span>  <span class="c1"># Upload every 5 seconds</span>
+    <span class="n">upload_interval_ms</span><span class="o">=</span><span class="mi">5000</span><span class="p">,</span>  <span class="c1"># Upload every 5 seconds</span>
+    <span class="n">page_cache_dir</span><span class="o">=</span><span class="s2">&quot;cloud_page_cache&quot;</span>  <span class="c1"># Directory for cloud page cache</span>
 <span class="p">)</span>
 
 <span class="c1"># Create an object space and database as before</span>
@@ -270,10 +342,10 @@
 <p><code class="docutils literal notranslate"><span class="pre">CloudClusterFileStorage</span></code> provides the following key features:</p>
 <ol class="arabic simple">
 <li><p><strong>Distributed Coordination</strong>: Uses a vote-based locking mechanism for distributed coordination, ensuring that only one node can write to the database at a time.</p></li>
-<li><p><strong>Cloud Storage</strong>: Stores data in S3-compatible object storage, providing durability and scalability.</p></li>
+<li><p><strong>Cloud Storage</strong>: Stores data in cloud object storage (Amazon S3 or Google Cloud Storage), providing durability and scalability.</p></li>
 <li><p><strong>Local Caching</strong>: Uses local caching to improve performance, with least recently used objects being evicted when the cache size limit is reached.</p></li>
-<li><p><strong>Background Uploading</strong>: Supports background uploading of data to S3, allowing the application to continue working without waiting for the upload to complete.</p></li>
-<li><p><strong>Fault Tolerance</strong>: Provides fault tolerance through redundancy, with data being available from multiple sources (local cache, other nodes, S3).</p></li>
+<li><p><strong>Background Uploading</strong>: Supports background uploading of data to cloud storage, allowing the application to continue working without waiting for the upload to complete.</p></li>
+<li><p><strong>Fault Tolerance</strong>: Provides fault tolerance through redundancy, with data being available from multiple sources (local cache, other nodes, cloud storage).</p></li>
 </ol>
 </section>
 <section id="use-cases">
@@ -281,7 +353,7 @@
 <p><code class="docutils literal notranslate"><span class="pre">CloudClusterFileStorage</span></code> is ideal for:</p>
 <ul class="simple">
 <li><p>Multi-server applications that need high availability and horizontal scaling</p></li>
-<li><p>Cloud-native applications that need to store data in S3-compatible object storage</p></li>
+<li><p>Cloud-native applications that need to store data in cloud object storage (Amazon S3 or Google Cloud Storage)</p></li>
 <li><p>Applications that need both the distributed coordination of a cluster and the durability of cloud storage</p></li>
 </ul>
 </section>
@@ -315,7 +387,7 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">MemoryStorage</span></code>: For testing and development, or for temporary data that doesn’t need to be persisted.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">StandaloneFileStorage</span></code>: For single-node applications that need persistence.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">ClusterFileStorage</span></code>: For distributed applications that need high availability and horizontal scaling.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code>: For cloud-native applications that need to store data in S3-compatible object storage.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code>: For cloud-native applications that need to store data in cloud object storage (Amazon S3 or Google Cloud Storage).</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">CloudClusterFileStorage</span></code>: For multi-server applications that need both distributed coordination and cloud storage.</p></li>
 </ul>
 </section>

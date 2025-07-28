@@ -93,7 +93,7 @@ CloudStorageError
    :members:
    :special-members: __init__
 
-Raised for cloud storage specific errors. This can happen when there are issues with S3 operations or when the cloud storage is misconfigured.
+Raised for cloud storage specific errors. This can happen when there are issues with cloud storage operations (Amazon S3 or Google Cloud Storage) or when the cloud storage is misconfigured.
 
 CloudClusterStorageError
 ~~~~~~~~~~~~~~~
@@ -102,7 +102,7 @@ CloudClusterStorageError
    :members:
    :special-members: __init__
 
-Raised for cloud cluster storage specific errors. This can happen when there are issues with distributed operations in a cluster environment that uses S3 as the final storage for data.
+Raised for cloud cluster storage specific errors. This can happen when there are issues with distributed operations in a cluster environment that uses cloud object storage (Amazon S3 or Google Cloud Storage) as the final storage for data.
 
 Usage Examples
 -------------

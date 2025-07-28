@@ -87,7 +87,6 @@
  | <a href="#G"><strong>G</strong></a>
  | <a href="#H"><strong>H</strong></a>
  | <a href="#I"><strong>I</strong></a>
- | <a href="#J"><strong>J</strong></a>
  | <a href="#L"><strong>L</strong></a>
  | <a href="#M"><strong>M</strong></a>
  | <a href="#N"><strong>N</strong></a>
@@ -111,9 +110,17 @@
 </li>
         <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudFileStorage.__init__">(proto_db.cloud_file_storage.CloudFileStorage method)</a>
 </li>
-        <li><a href="api/storage.html#proto_db.cloud_file_storage.S3Client.__init__">(proto_db.cloud_file_storage.S3Client method)</a>
+        <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudObjectMetadata.__init__">(proto_db.cloud_file_storage.CloudObjectMetadata method)</a>
 </li>
-        <li><a href="api/storage.html#proto_db.cloud_file_storage.S3ObjectMetadata.__init__">(proto_db.cloud_file_storage.S3ObjectMetadata method)</a>
+        <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudStorageClient.__init__">(proto_db.cloud_file_storage.CloudStorageClient method)</a>
+</li>
+        <li><a href="api/storage.html#proto_db.cloud_file_storage.GoogleCloudClient.__init__">(proto_db.cloud_file_storage.GoogleCloudClient method)</a>
+</li>
+        <li><a href="api/storage.html#proto_db.cloud_file_storage.MockGoogleCloudClient.__init__">(proto_db.cloud_file_storage.MockGoogleCloudClient method)</a>
+</li>
+        <li><a href="api/storage.html#proto_db.cloud_file_storage.MockS3Client.__init__">(proto_db.cloud_file_storage.MockS3Client method)</a>
+</li>
+        <li><a href="api/storage.html#proto_db.cloud_file_storage.S3Client.__init__">(proto_db.cloud_file_storage.S3Client method)</a>
 </li>
         <li><a href="api/storage.html#proto_db.cluster_file_storage.ClusterFileStorage.__init__">(proto_db.cluster_file_storage.ClusterFileStorage method)</a>
 </li>
@@ -169,19 +176,13 @@
 </li>
         <li><a href="api/storage.html#proto_db.memory_storage.MemoryStorage.__init__">(proto_db.memory_storage.MemoryStorage method)</a>
 </li>
+        <li><a href="api/queries.html#proto_db.queries.CountPlan.__init__">(proto_db.queries.CountPlan method)</a>
+</li>
+        <li><a href="api/queries.html#proto_db.queries.CountResultPlan.__init__">(proto_db.queries.CountResultPlan method)</a>
+</li>
         <li><a href="api/queries.html#proto_db.queries.FromPlan.__init__">(proto_db.queries.FromPlan method)</a>
 </li>
-        <li><a href="api/queries.html#proto_db.queries.GroupByPlan.__init__">(proto_db.queries.GroupByPlan method)</a>
-</li>
-        <li><a href="api/queries.html#proto_db.queries.JoinPlan.__init__">(proto_db.queries.JoinPlan method)</a>
-</li>
-        <li><a href="api/queries.html#proto_db.queries.LimitPlan.__init__">(proto_db.queries.LimitPlan method)</a>
-</li>
         <li><a href="api/queries.html#proto_db.queries.ListPlan.__init__">(proto_db.queries.ListPlan method)</a>
-</li>
-        <li><a href="api/queries.html#proto_db.queries.OffsetPlan.__init__">(proto_db.queries.OffsetPlan method)</a>
-</li>
-        <li><a href="api/queries.html#proto_db.queries.OrderByPlan.__init__">(proto_db.queries.OrderByPlan method)</a>
 </li>
         <li><a href="api/queries.html#proto_db.queries.SelectPlan.__init__">(proto_db.queries.SelectPlan method)</a>
 </li>
@@ -288,8 +289,6 @@
         <li><a href="api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.close">(proto_db.standalone_file_storage.StandaloneFileStorage method)</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudBlockProvider.close_wal">close_wal() (proto_db.cloud_file_storage.CloudBlockProvider method)</a>
 
       <ul>
@@ -298,6 +297,8 @@
         <li><a href="api/storage.html#proto_db.file_block_provider.FileBlockProvider.close_wal">(proto_db.file_block_provider.FileBlockProvider method)</a>
 </li>
       </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudBlockProvider">CloudBlockProvider (class in proto_db.cloud_file_storage)</a>
 </li>
       <li><a href="api/storage.html#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage">CloudClusterFileStorage (class in proto_db.cloud_cluster_file_storage)</a>
@@ -305,6 +306,10 @@
       <li><a href="api/exceptions.html#proto_db.cloud_cluster_file_storage.CloudClusterStorageError">CloudClusterStorageError (class in proto_db.cloud_cluster_file_storage)</a>, <a href="api/storage.html#proto_db.cloud_cluster_file_storage.CloudClusterStorageError">[1]</a>
 </li>
       <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudFileStorage">CloudFileStorage (class in proto_db.cloud_file_storage)</a>
+</li>
+      <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudObjectMetadata">CloudObjectMetadata (class in proto_db.cloud_file_storage)</a>
+</li>
+      <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudStorageClient">CloudStorageClient (class in proto_db.cloud_file_storage)</a>
 </li>
       <li><a href="api/exceptions.html#proto_db.cloud_file_storage.CloudStorageError">CloudStorageError (class in proto_db.cloud_file_storage)</a>, <a href="api/storage.html#proto_db.cloud_file_storage.CloudStorageError">[1]</a>
 </li>
@@ -315,6 +320,10 @@
       <li><a href="api/core.html#proto_db.db_access.ObjectTransaction.commit">commit() (proto_db.db_access.ObjectTransaction method)</a>
 </li>
       <li><a href="api/data_structures.html#proto_db.sets.Set.content">content (proto_db.sets.Set attribute)</a>
+</li>
+      <li><a href="api/queries.html#proto_db.queries.CountPlan">CountPlan (class in proto_db.queries)</a>
+</li>
+      <li><a href="api/queries.html#proto_db.queries.CountResultPlan">CountResultPlan (class in proto_db.queries)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -328,14 +337,16 @@
 </li>
       <li><a href="api/core.html#proto_db.common.DBObject">DBObject (class in proto_db.common)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/storage.html#proto_db.cloud_file_storage.MockS3Client.delete_object">delete_object() (proto_db.cloud_file_storage.MockS3Client method)</a>
+      <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudStorageClient.delete_object">delete_object() (proto_db.cloud_file_storage.CloudStorageClient method)</a>
 
       <ul>
+        <li><a href="api/storage.html#proto_db.cloud_file_storage.GoogleCloudClient.delete_object">(proto_db.cloud_file_storage.GoogleCloudClient method)</a>
+</li>
         <li><a href="api/storage.html#proto_db.cloud_file_storage.S3Client.delete_object">(proto_db.cloud_file_storage.S3Client method)</a>
 </li>
       </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/data_structures.html#proto_db.dictionaries.Dictionary">Dictionary (class in proto_db.dictionaries)</a>
 </li>
       <li><a href="api/data_structures.html#proto_db.sets.Set.difference">difference() (proto_db.sets.Set method)</a>
@@ -351,19 +362,13 @@
       <li><a href="api/core.html#proto_db.common.QueryPlan.execute">execute() (proto_db.common.QueryPlan method)</a>, <a href="api/queries.html#proto_db.common.QueryPlan.execute">[1]</a>
 
       <ul>
+        <li><a href="api/queries.html#proto_db.queries.CountPlan.execute">(proto_db.queries.CountPlan method)</a>
+</li>
+        <li><a href="api/queries.html#proto_db.queries.CountResultPlan.execute">(proto_db.queries.CountResultPlan method)</a>
+</li>
         <li><a href="api/queries.html#proto_db.queries.FromPlan.execute">(proto_db.queries.FromPlan method)</a>
 </li>
-        <li><a href="api/queries.html#proto_db.queries.GroupByPlan.execute">(proto_db.queries.GroupByPlan method)</a>
-</li>
-        <li><a href="api/queries.html#proto_db.queries.JoinPlan.execute">(proto_db.queries.JoinPlan method)</a>
-</li>
-        <li><a href="api/queries.html#proto_db.queries.LimitPlan.execute">(proto_db.queries.LimitPlan method)</a>
-</li>
         <li><a href="api/queries.html#proto_db.queries.ListPlan.execute">(proto_db.queries.ListPlan method)</a>
-</li>
-        <li><a href="api/queries.html#proto_db.queries.OffsetPlan.execute">(proto_db.queries.OffsetPlan method)</a>
-</li>
-        <li><a href="api/queries.html#proto_db.queries.OrderByPlan.execute">(proto_db.queries.OrderByPlan method)</a>
 </li>
         <li><a href="api/queries.html#proto_db.queries.SelectPlan.execute">(proto_db.queries.SelectPlan method)</a>
 </li>
@@ -462,9 +467,11 @@
         <li><a href="api/storage.html#proto_db.file_block_provider.FileBlockProvider.get_new_wal">(proto_db.file_block_provider.FileBlockProvider method)</a>
 </li>
       </ul></li>
-      <li><a href="api/storage.html#proto_db.cloud_file_storage.MockS3Client.get_object">get_object() (proto_db.cloud_file_storage.MockS3Client method)</a>
+      <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudStorageClient.get_object">get_object() (proto_db.cloud_file_storage.CloudStorageClient method)</a>
 
       <ul>
+        <li><a href="api/storage.html#proto_db.cloud_file_storage.GoogleCloudClient.get_object">(proto_db.cloud_file_storage.GoogleCloudClient method)</a>
+</li>
         <li><a href="api/storage.html#proto_db.cloud_file_storage.S3Client.get_object">(proto_db.cloud_file_storage.S3Client method)</a>
 </li>
       </ul></li>
@@ -490,7 +497,7 @@
         <li><a href="api/storage.html#proto_db.file_block_provider.FileBlockProvider.get_writer_wal">(proto_db.file_block_provider.FileBlockProvider method)</a>
 </li>
       </ul></li>
-      <li><a href="api/queries.html#proto_db.queries.GroupByPlan">GroupByPlan (class in proto_db.queries)</a>
+      <li><a href="api/storage.html#proto_db.cloud_file_storage.GoogleCloudClient">GoogleCloudClient (class in proto_db.cloud_file_storage)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -529,24 +536,16 @@
   </ul></td>
 </tr></table>
 
-<h2 id="J">J</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/queries.html#proto_db.queries.JoinPlan">JoinPlan (class in proto_db.queries)</a>
-</li>
-  </ul></td>
-</tr></table>
-
 <h2 id="L">L</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/queries.html#proto_db.queries.LimitPlan">LimitPlan (class in proto_db.queries)</a>
-</li>
       <li><a href="api/data_structures.html#proto_db.lists.List">List (class in proto_db.lists)</a>
 </li>
-      <li><a href="api/storage.html#proto_db.cloud_file_storage.MockS3Client.list_objects">list_objects() (proto_db.cloud_file_storage.MockS3Client method)</a>
+      <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudStorageClient.list_objects">list_objects() (proto_db.cloud_file_storage.CloudStorageClient method)</a>
 
       <ul>
+        <li><a href="api/storage.html#proto_db.cloud_file_storage.GoogleCloudClient.list_objects">(proto_db.cloud_file_storage.GoogleCloudClient method)</a>
+</li>
         <li><a href="api/storage.html#proto_db.cloud_file_storage.S3Client.list_objects">(proto_db.cloud_file_storage.S3Client method)</a>
 </li>
       </ul></li>
@@ -565,6 +564,8 @@
       <li><a href="api/storage.html#proto_db.memory_storage.MemoryStorage">MemoryStorage (class in proto_db.memory_storage)</a>
 </li>
       <li><a href="api/data_structures.html#proto_db.hash_dictionaries.HashDictionary.merge">merge() (proto_db.hash_dictionaries.HashDictionary method)</a>
+</li>
+      <li><a href="api/storage.html#proto_db.cloud_file_storage.MockGoogleCloudClient">MockGoogleCloudClient (class in proto_db.cloud_file_storage)</a>
 </li>
       <li><a href="api/storage.html#proto_db.cloud_file_storage.MockS3Client">MockS3Client (class in proto_db.cloud_file_storage)</a>
 </li>
@@ -647,36 +648,24 @@
 </li>
       <li><a href="api/core.html#proto_db.db_access.ObjectTransaction">ObjectTransaction (class in proto_db.db_access)</a>
 </li>
-      <li><a href="api/queries.html#proto_db.queries.OffsetPlan">OffsetPlan (class in proto_db.queries)</a>
-</li>
       <li><a href="api/core.html#proto_db.db_access.ObjectSpace.open_database">open_database() (proto_db.db_access.ObjectSpace method)</a>
 </li>
       <li><a href="api/core.html#proto_db.common.QueryPlan.optimize">optimize() (proto_db.common.QueryPlan method)</a>, <a href="api/queries.html#proto_db.common.QueryPlan.optimize">[1]</a>
 
       <ul>
+        <li><a href="api/queries.html#proto_db.queries.CountPlan.optimize">(proto_db.queries.CountPlan method)</a>
+</li>
+        <li><a href="api/queries.html#proto_db.queries.CountResultPlan.optimize">(proto_db.queries.CountResultPlan method)</a>
+</li>
         <li><a href="api/queries.html#proto_db.queries.FromPlan.optimize">(proto_db.queries.FromPlan method)</a>
 </li>
-        <li><a href="api/queries.html#proto_db.queries.GroupByPlan.optimize">(proto_db.queries.GroupByPlan method)</a>
-</li>
-        <li><a href="api/queries.html#proto_db.queries.JoinPlan.optimize">(proto_db.queries.JoinPlan method)</a>
-</li>
-        <li><a href="api/queries.html#proto_db.queries.LimitPlan.optimize">(proto_db.queries.LimitPlan method)</a>
-</li>
         <li><a href="api/queries.html#proto_db.queries.ListPlan.optimize">(proto_db.queries.ListPlan method)</a>
-</li>
-        <li><a href="api/queries.html#proto_db.queries.OffsetPlan.optimize">(proto_db.queries.OffsetPlan method)</a>
-</li>
-        <li><a href="api/queries.html#proto_db.queries.OrderByPlan.optimize">(proto_db.queries.OrderByPlan method)</a>
 </li>
         <li><a href="api/queries.html#proto_db.queries.SelectPlan.optimize">(proto_db.queries.SelectPlan method)</a>
 </li>
         <li><a href="api/queries.html#proto_db.queries.WherePlan.optimize">(proto_db.queries.WherePlan method)</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/queries.html#proto_db.queries.OrderByPlan">OrderByPlan (class in proto_db.queries)</a>
-</li>
   </ul></td>
 </tr></table>
 
@@ -820,9 +809,11 @@
       </ul></li>
       <li><a href="api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.push_bytes_to_wal">push_bytes_to_wal() (proto_db.standalone_file_storage.StandaloneFileStorage method)</a>
 </li>
-      <li><a href="api/storage.html#proto_db.cloud_file_storage.MockS3Client.put_object">put_object() (proto_db.cloud_file_storage.MockS3Client method)</a>
+      <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudStorageClient.put_object">put_object() (proto_db.cloud_file_storage.CloudStorageClient method)</a>
 
       <ul>
+        <li><a href="api/storage.html#proto_db.cloud_file_storage.GoogleCloudClient.put_object">(proto_db.cloud_file_storage.GoogleCloudClient method)</a>
+</li>
         <li><a href="api/storage.html#proto_db.cloud_file_storage.S3Client.put_object">(proto_db.cloud_file_storage.S3Client method)</a>
 </li>
       </ul></li>
@@ -904,7 +895,7 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/storage.html#proto_db.cloud_file_storage.S3Client">S3Client (class in proto_db.cloud_file_storage)</a>
 </li>
-      <li><a href="api/storage.html#proto_db.cloud_file_storage.S3ObjectMetadata">S3ObjectMetadata (class in proto_db.cloud_file_storage)</a>
+      <li><a href="api/storage.html#proto_db.cloud_file_storage.S3ObjectMetadata">S3ObjectMetadata (in module proto_db.cloud_file_storage)</a>
 </li>
       <li><a href="api/queries.html#proto_db.queries.SelectPlan">SelectPlan (class in proto_db.queries)</a>
 </li>
