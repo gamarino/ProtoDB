@@ -303,6 +303,36 @@
 <span class="sd">        :rtype: None</span>
 <span class="sd">        &quot;&quot;&quot;</span>
 
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_mutable</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj_id</span><span class="p">,</span> <span class="n">obj_type</span><span class="p">):</span>
+        <span class="k">pass</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">set_mutable</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">,</span> <span class="n">obj_type</span><span class="p">):</span>
+        <span class="k">pass</span>
+
+
+<span class="k">class</span> <span class="nc">ConcurrentOptimized</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A mixin class for objects that can handle concurrent modifications</span>
+<span class="sd">    by rebasing their changes on top of a more recent version of the object.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">_rebase_on_concurrent_update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">current_db_object</span><span class="p">:</span> <span class="s1">&#39;Atom&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;Atom&#39;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        This method is called on the new object (from the current transaction)</span>
+<span class="sd">        when a concurrent modification is detected on the original object.</span>
+
+<span class="sd">        It should try to apply the changes made in the current transaction</span>
+<span class="sd">        on top of the &#39;current_db_object&#39;.</span>
+
+<span class="sd">        :param current_db_object: The object state as it is in the database at commit time.</span>
+<span class="sd">        :return: A new object with the changes from this transaction merged</span>
+<span class="sd">                 into the current_db_object.</span>
+<span class="sd">        :raises: ProtoNotSupportedException if the merge is not possible.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;This object does not implement concurrent merge logic.&quot;</span><span class="p">)</span>
+
+
 <span class="c1"># Metaclase combinada: Combina AtomMetaclass y ABCMeta</span>
 <span class="k">class</span> <span class="nc">CombinedMeta</span><span class="p">(</span><span class="n">ABCMeta</span><span class="p">,</span> <span class="n">AtomMetaclass</span><span class="p">):</span>
     <span class="k">pass</span>

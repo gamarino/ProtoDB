@@ -71,6 +71,7 @@
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#usage-examples">Usage Examples</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#dictionary-example">Dictionary Example</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#repeatedkeysdictionary-example">RepeatedKeysDictionary Example</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#hash-dictionary-example">Hash Dictionary Example</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#list-example">List Example</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#set-example">Set Example</a></li>
@@ -377,7 +378,15 @@ remains unchanged.</p>
 
 </dd></dl>
 
-<p>A <code class="docutils literal notranslate"><span class="pre">RepeatedKeysDictionary</span></code> is a dictionary that allows multiple values for the same key. It is useful for representing one-to-many relationships.</p>
+<p>A <code class="docutils literal notranslate"><span class="pre">RepeatedKeysDictionary</span></code> is a dictionary that allows multiple values for the same key. It is useful for representing one-to-many relationships. Each key in the dictionary is associated with a <code class="docutils literal notranslate"><span class="pre">Set</span></code> of values, allowing efficient storage and retrieval of multiple values per key.</p>
+<p>The class provides methods for:</p>
+<ul class="simple">
+<li><p>Adding values to a key’s set with <code class="docutils literal notranslate"><span class="pre">set_at</span></code></p></li>
+<li><p>Retrieving all values for a key as a <code class="docutils literal notranslate"><span class="pre">Set</span></code> with <code class="docutils literal notranslate"><span class="pre">get_at</span></code></p></li>
+<li><p>Removing all values for a key with <code class="docutils literal notranslate"><span class="pre">remove_at</span></code></p></li>
+<li><p>Removing a specific value from a key’s set with <code class="docutils literal notranslate"><span class="pre">remove_record_at</span></code></p></li>
+<li><p>Handling concurrent modifications with <code class="docutils literal notranslate"><span class="pre">_rebase_on_concurrent_update</span></code></p></li>
+</ul>
 </section>
 <section id="hash-dictionary">
 <h2>Hash Dictionary<a class="headerlink" href="#hash-dictionary" title="Link to this heading"></a></h2>
@@ -1031,6 +1040,55 @@ that excludes the specified key. Returns the same set if the key does not exist.
 <span class="c1"># Iterate over key-value pairs</span>
 <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">d</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="repeatedkeysdictionary-example">
+<h3>RepeatedKeysDictionary Example<a class="headerlink" href="#repeatedkeysdictionary-example" title="Link to this heading"></a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">proto_db</span>
+
+<span class="c1"># Create a transaction and database</span>
+<span class="n">db</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">Database</span><span class="p">()</span>
+<span class="n">tr</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span class="p">()</span>
+
+<span class="c1"># Create a repeated keys dictionary</span>
+<span class="n">rkd</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">RepeatedKeysDictionary</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">tr</span><span class="p">)</span>
+
+<span class="c1"># Add multiple values for the same key</span>
+<span class="n">rkd</span> <span class="o">=</span> <span class="n">rkd</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="s2">&quot;category&quot;</span><span class="p">,</span> <span class="s2">&quot;Electronics&quot;</span><span class="p">)</span>
+<span class="n">rkd</span> <span class="o">=</span> <span class="n">rkd</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="s2">&quot;category&quot;</span><span class="p">,</span> <span class="s2">&quot;Computers&quot;</span><span class="p">)</span>
+<span class="n">rkd</span> <span class="o">=</span> <span class="n">rkd</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="s2">&quot;category&quot;</span><span class="p">,</span> <span class="s2">&quot;Laptops&quot;</span><span class="p">)</span>
+
+<span class="c1"># Add values for another key</span>
+<span class="n">rkd</span> <span class="o">=</span> <span class="n">rkd</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="s2">&quot;tags&quot;</span><span class="p">,</span> <span class="s2">&quot;Sale&quot;</span><span class="p">)</span>
+<span class="n">rkd</span> <span class="o">=</span> <span class="n">rkd</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="s2">&quot;tags&quot;</span><span class="p">,</span> <span class="s2">&quot;New&quot;</span><span class="p">)</span>
+
+<span class="c1"># Get all values for a key as a Set</span>
+<span class="n">categories</span> <span class="o">=</span> <span class="n">rkd</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="s2">&quot;category&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Categories:&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">cat</span> <span class="k">for</span> <span class="n">cat</span> <span class="ow">in</span> <span class="n">categories</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">()])</span>
+<span class="c1"># Output: Categories: [&#39;Electronics&#39;, &#39;Computers&#39;, &#39;Laptops&#39;]</span>
+
+<span class="c1"># Check if a key exists</span>
+<span class="k">if</span> <span class="n">rkd</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="s2">&quot;tags&quot;</span><span class="p">):</span>
+    <span class="n">tags</span> <span class="o">=</span> <span class="n">rkd</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="s2">&quot;tags&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Tags:&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">tag</span> <span class="k">for</span> <span class="n">tag</span> <span class="ow">in</span> <span class="n">tags</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">()])</span>
+    <span class="c1"># Output: Tags: [&#39;Sale&#39;, &#39;New&#39;]</span>
+
+<span class="c1"># Remove a specific value from a key&#39;s set</span>
+<span class="n">rkd</span> <span class="o">=</span> <span class="n">rkd</span><span class="o">.</span><span class="n">remove_record_at</span><span class="p">(</span><span class="s2">&quot;category&quot;</span><span class="p">,</span> <span class="s2">&quot;Computers&quot;</span><span class="p">)</span>
+
+<span class="c1"># Get the updated set of values</span>
+<span class="n">updated_categories</span> <span class="o">=</span> <span class="n">rkd</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="s2">&quot;category&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Updated categories:&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">cat</span> <span class="k">for</span> <span class="n">cat</span> <span class="ow">in</span> <span class="n">updated_categories</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">()])</span>
+<span class="c1"># Output: Updated categories: [&#39;Electronics&#39;, &#39;Laptops&#39;]</span>
+
+<span class="c1"># Remove all values for a key</span>
+<span class="n">rkd</span> <span class="o">=</span> <span class="n">rkd</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="s2">&quot;tags&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Has tags:&quot;</span><span class="p">,</span> <span class="n">rkd</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="s2">&quot;tags&quot;</span><span class="p">))</span>  <span class="c1"># Output: Has tags: False</span>
+
+<span class="c1"># Store the dictionary in the database</span>
+<span class="n">tr</span><span class="o">.</span><span class="n">set_root_object</span><span class="p">(</span><span class="s2">&quot;product_attributes&quot;</span><span class="p">,</span> <span class="n">rkd</span><span class="p">)</span>
+<span class="n">tr</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
 </pre></div>
 </div>
 </section>

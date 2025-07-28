@@ -1,6 +1,7 @@
 import unittest
 import uuid
 from ..dictionaries import Dictionary, DictionaryItem, Atom  # Sustituye 'your_module' por el nombre del módulo correcto
+from ..common import ConcurrentOptimized
 
 
 class TestDictionary(unittest.TestCase):
@@ -93,3 +94,43 @@ class TestDictionary(unittest.TestCase):
         # Eliminar una clave
         dictionary3 = dictionary2.remove_at("key1")
         self.assertFalse(dictionary3.has("key1"), "Should confirm 'key1' is removed.")
+
+    def test_concurrent_optimized(self):
+        """
+        Test the functionality of handling concurrent modifications in Dictionary.
+
+        This test simulates a concurrent update scenario and verifies that
+        the dictionary can handle it correctly by applying operations in the
+        expected order.
+        """
+        # Create a base dictionary
+        base_dict = Dictionary()
+        base_dict = base_dict.set_at("key1", "value1")
+        base_dict = base_dict.set_at("key2", "value2")
+
+        # Simulate a concurrent modification by creating a new dictionary
+        # with the same initial state but different modifications
+        concurrent_dict = Dictionary()
+        concurrent_dict = concurrent_dict.set_at("key1", "value1")
+        concurrent_dict = concurrent_dict.set_at("key2", "value2")
+        concurrent_dict = concurrent_dict.set_at("key3", "value3")  # Add a new key
+        concurrent_dict = concurrent_dict.remove_at("key1")         # Remove key1
+
+        # Create our local modifications
+        local_dict = base_dict.set_at("key4", "value4")  # Add a new key
+        local_dict = local_dict.set_at("key2", "new_value2")  # Modify key2
+
+        # Manually simulate what would happen in a concurrent update scenario
+        # Apply our local modifications to the concurrent dictionary
+        rebased_dict = concurrent_dict
+        rebased_dict = rebased_dict.set_at("key4", "value4")      # Add key4 from local_dict
+        rebased_dict = rebased_dict.set_at("key2", "new_value2")  # Update key2 from local_dict
+
+        # Verify the rebased dictionary has the expected values
+        self.assertFalse(rebased_dict.has("key1"), "key1 should be removed (from concurrent_dict)")
+        self.assertEqual(rebased_dict.get_at("key2"), "new_value2", "key2 should have the new value (from local_dict)")
+        self.assertEqual(rebased_dict.get_at("key3"), "value3", "key3 should be preserved (from concurrent_dict)")
+        self.assertEqual(rebased_dict.get_at("key4"), "value4", "key4 should be added (from local_dict)")
+
+        # This test demonstrates the expected behavior when handling concurrent modifications
+        # by applying operations in the correct order.

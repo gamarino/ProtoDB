@@ -1136,45 +1136,6 @@ will NOT BE PERSISTED, and they will be not usable after commit!
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.get_mutable">
-<span class="sig-name descname"><span class="pre">get_mutable</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction.get_mutable"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.get_mutable" title="Link to this definition"></a></dt>
-<dd><p>Retrieve a mutable object based on the provided key.</p>
-<p>This method retrieves a mutable object associated with the given key. The key
-is an integer identifier for the object. Implementations of this abstract
-method should provide the mutable object corresponding to the key.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>key</strong> (<em>int</em>) – Identifier for the object to retrieve.</p>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>The mutable object associated with the provided key.</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.set_mutable">
-<span class="sig-name descname"><span class="pre">set_mutable</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction.set_mutable"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.set_mutable" title="Link to this definition"></a></dt>
-<dd><p>Sets the mutable value for the specified key.</p>
-<p>This abstract method is intended to be implemented by a subclass, allowing
-the setting of a mutable value represented by an Atom to the given key.
-The provided implementation should define the behavior for storing or
-associating the value with the key dynamically. Ensure that the input key
-and value comply with the required types.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>key</strong> (<em>int</em>) – The integer key for which the value will be set.</p></li>
-<li><p><strong>value</strong> (<a class="reference internal" href="#proto_db.common.Atom" title="proto_db.common.Atom"><em>Atom</em></a>) – The Atom instance to be associated with the specified key.</p></li>
-</ul>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>None</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
 <dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.new_hash_dictionary">
 <span class="sig-name descname"><span class="pre">new_hash_dictionary</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction.new_hash_dictionary"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.new_hash_dictionary" title="Link to this definition"></a></dt>
 <dd><p>Return a new HashDictionary conected to this transaction
