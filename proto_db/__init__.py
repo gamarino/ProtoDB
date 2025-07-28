@@ -19,7 +19,6 @@ from .hash_dictionaries import HashDictionary
 from .dictionaries import Dictionary, RepeatedKeysDictionary
 from .sets import Set
 from .lists import List
-from .queries import FromPlan, WherePlan, GroupByPlan, SelectPlan, \
-                     OrderByPlan, LimitPlan, OffsetPlan, ListPlan
+from .queries import FromPlan, WherePlan, ListPlan, SelectPlan
 
 from .fsm import Timer, FSM

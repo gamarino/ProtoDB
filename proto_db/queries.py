@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import uuid
@@ -803,70 +804,103 @@ class WherePlan(QueryPlan):
             if self.filter.match(record):
                 yield record
 
-    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
-        based_on = self.based_on.optimize(full_plan)
-        if isinstance(self.based_on, IndexedQueryPlan):
-            # Base QueryPlan has indexes! try to use them
-            indexed_base = cast(IndexedQueryPlan, self.based_on)
-            indexed_fields = [field_name for field_name, index in indexed_base.indexes]
-            used_fields = set()
-            if isinstance(self.filter, AndExpression):
-                and_filter = cast(AndExpression, self.filter)
-                for and_term in and_filter.terms:
-                    if isinstance(and_term, Term):
-                        term = cast(Term, and_term)
-                        used_fields.add(term)
+    def optimize(self, full_plan: 'QueryPlan') -> 'QueryPlan':
+        """
+        Optimizes the current execution plan node.
 
-                added_filters = []
-                for term in used_fields:
-                    target_attribute = term.target_attribute
-                    operation = term.operation
-                    value = cast(str, term.value)
-                    if target_attribute in indexed_base.indexes:
-                        added_filters.append(IndexedSearchPlan(
-                            based_on=based_on,
-                            field_to_scan=target_attribute,
-                            operator=operation,
-                            value=value,
-                            transaction=self.transaction
-                        ))
+        This method is a core part of the query optimizer. It applies several
+        strategies to transform the query plan into a more efficient equivalent.
+        The primary optimizations include:
+        1.  Filter Reordering: For AND expressions, reorder predicates to execute
+            the most selective and least expensive ones first.
+        2.  Predicate Pushdown: Attempt to move the filter logic ("predicate")
+            further down the execution tree, closer to the data source. This
+            reduces the volume of data processed in upstream operators (like Joins).
+        3.  Index Utilization: If a predicate can be satisfied using an index,
+            transform this plan node into an `IndexedSearchPlan`.
 
-                if len(added_filters) == 1:
-                    based_on = added_filters[0]
-                elif len(added_filters) > 1:
-                    based_on = AndMerge(added_filters)
+        Args:
+            full_plan: The root of the entire query plan, providing context if needed.
 
-            elif isinstance(self.filter, OrExpression):
-                and_filter = cast(AndExpression, self.filter)
-                for and_term in and_filter.terms:
-                    if isinstance(and_term, Term):
-                        term = cast(Term, and_term)
-                        used_fields.add(term)
+        Returns:
+            An optimized `QueryPlan`, which may be a different type of node
+            (e.g., `IndexedSearchPlan`) or a reconfigured `WherePlan`.
+        """
+        # First, recursively optimize the source plan upon which this filter operates.
+        optimized_based_on = self.based_on.optimize(full_plan)
 
-                added_filters = []
-                for term in used_fields:
-                    target_attribute = term.target_attribute
-                    operation = term.operation
-                    value = cast(str, term.value)
-                    if target_attribute in indexed_base.indexes:
-                        added_filters.append(IndexedSearchPlan(
-                            based_on=based_on,
-                            field_to_scan=target_attribute,
-                            operator=operation,
-                            value=value,
-                            transaction=self.transaction
-                        ))
+        # 1. FILTER REORDERING
+        # For composite AND expressions, reorder the terms based on a cost/selectivity
+        # heuristic. This ensures that cheaper and more selective predicates are
+        # evaluated first, potentially short-circuiting the evaluation early.
+        current_filter = self.filter
+        if isinstance(current_filter, AndExpression):
+            current_filter = self._reorder_and_expression(current_filter)
 
-                if len(added_filters) == 1:
-                    based_on = added_filters[0]
-                elif len(added_filters) > 1:
-                    based_on = OrMerge(added_filters)
+        # 2. PREDICATE PUSHDOWN
+        # Attempt to "push" this where clause down to the underlying plan node.
+        # If the underlying node has an `accept_filter` method, it means it can
+        # integrate the filter more efficiently (e.g., a JoinPlan applying it
+        # pre-join, or a FromPlan applying it at the storage access level).
+        if hasattr(optimized_based_on, 'accept_filter'):
+            # The underlying plan will absorb the filter and return a new, optimized plan.
+            # This `WherePlan` node can then be eliminated from the tree.
+            return optimized_based_on.accept_filter(current_filter)
 
-            return WherePlan(
-            filter=self.filter,
-            based_on=based_on,
-            transaction=self.transaction
-        )
+        # 3. INDEX UTILIZATION (the original optimization)
+        # Check if the filter is a simple equality term that can be served by an index
+        # on the underlying `IndexedQueryPlan`.
+        if isinstance(current_filter, Term) and current_filter.operation in ['==', 'eq']:
+            if isinstance(optimized_based_on, IndexedQueryPlan):
+                # If the target attribute is indexed, replace this `WherePlan`
+                # with a more efficient `IndexedSearchPlan`.
+                if current_filter.target_attribute in optimized_based_on.indexes:
+                    return IndexedSearchPlan(
+                        field_to_scan=current_filter.target_attribute,
+                        operator=current_filter.operation,
+                        value=current_filter.value,
+                        indexes=optimized_based_on.indexes,
+                        based_on=optimized_based_on,
+                        transaction=self.transaction
+                    )
+
+        # If no specific optimization could be applied, return a `WherePlan`
+        # with the optimized base and the (potentially reordered) filter.
+        self.based_on = optimized_based_on
+        self.filter = current_filter
+        return self
+
+    def _reorder_and_expression(self, and_expression: 'AndExpression') -> 'AndExpression':
+        """
+        Sorts terms within an AndExpression based on a cost heuristic.
+
+        The goal is to place less expensive and more selective terms at the
+        beginning of the terms list. This allows the execution engine to
+        reject non-matching records as early as possible.
+
+        Args:
+            and_expression: The AndExpression instance to reorder.
+
+        Returns:
+            A new AndExpression with the terms sorted according to the cost model.
+        """
+
+        def get_term_cost(term):
+            """
+            Calculates a cost for a filter term. A lower cost is better.
+            This heuristic can be expanded to include index availability,
+            cardinality estimates, etc.
+            """
+            # Simple heuristic: equality checks are generally cheaper and more
+            # selective than other operations.
+            if isinstance(term, Term) and term.operation in ['==', 'eq']:
+                # A check on an indexed field would ideally have a cost of 0.
+                return 1 
+            return 10 # Represents a higher cost for other operations.
+
+        # Sort the terms, placing the lowest-cost terms first.
+        sorted_terms = sorted(and_expression.terms, key=get_term_cost)
+        return AndExpression(terms=sorted_terms)
 
 
 class AgreggatorFunction(ABC):
@@ -932,550 +966,114 @@ class MinAgreggator(AgreggatorFunction):
                 minimun = value
         return minimun
 
-
 class MaxAggregator(AgreggatorFunction):
+    """
+    An aggregator that finds the maximum value in a list of values.
+
+    It initializes the maximum value to None and then iterates through the list,
+    updating the maximum value whenever a larger value is found.
+    It returns the overall maximum value. If the list is empty, it returns None.
+    """
     def compute(self, values: list):
-        maximun = None
+        """
+        Computes the maximum value from a list of values.
+
+        Args:
+            values: The list of values to compute the maximum from.
+
+        Returns:
+            The maximum value in the list, or None if the list is empty.
+        """
+        max_value = None
         for value in values:
-            if maximun is None or value > maximun:
-                maximun = value
-        return maximun
+            if max_value is None or value > max_value:
+                max_value = value
 
-
-class AgreggatorSpec:
-    agreggator_function: AgreggatorFunction
-    field_name: str
-    alias: str
-
-    def __init__(self, agreggator_function: AgreggatorFunction, field_name: str, alias: str):
-        self.agreggator_function = agreggator_function
-        self.field_name = field_name
-        self.alias = alias
-
-    def compute(self, values: list):
-        return self.agreggator_function.compute(values)
-
-
-class GroupByPlan(QueryPlan):
-    """
-    Query plan for grouping records and applying aggregate functions.
-
-    This plan groups records based on the specified `group_fields`, then applies
-    aggregate functions (`agreggated_fields`) to each group to compute summary
-    statistics or values.
-
-    Attributes:
-    - group_fields (list): Fields used for grouping records.
-    - agreggated_fields (dict[str, AgreggatorSpec]): Aggregators applied to grouped data.
-    """
-
-    group_fields: list
-    agreggated_fields: dict[str, AgreggatorSpec] = dict()
-
-    def __init__(self,
-                 group_fields: list = None,
-                 agreggated_fields: dict[str, AgreggatorSpec] = None,
-                 based_on: QueryPlan = None,
-                 transaction: ObjectTransaction = None,
-                 atom_pointer: AtomPointer = None,
-                 **kwargs):
-        super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        if not group_fields:
-            raise ProtoValidationException(
-                message=f"It's not possible to group by without a list of field names to use!"
-            )
-        self.group_fields = group_fields
-        self.agreggated_fields = agreggated_fields
-
-    def execute(self) -> list:
-        """
-        Group records by `group_fields` and compute aggregates.
-
-        Records from the underlying `based_on` query are grouped in memory,
-        and for each group, aggregate functions are applied as specified in
-        `agreggated_fields`.
-
-        :return: A generator yielding grouped and aggregated records.
-        :rtype: list
-        """
-        grouped_data = defaultdict(list)
-
-        # Agrupar directamente por campos
-        for record in self.based_on.execute():
-            key = tuple(record.get(field, None) for field in self.group_fields)
-            grouped_data[key].append(record)
-
-        # Procesar cada grupo
-        for key, rows in grouped_data.items():
-            result = dict(zip(self.group_fields, key))
-            for alias, spec in self.agreggated_fields.items():
-                values = [row.get(spec.field_name, 0) for row in rows]
-                result[alias] = spec.compute(values)
-            result_object = DBObject(transaction=self.transaction)
-            for field_name, value in result.items():
-                if not field_name.startswith('_') and not callable(value):
-                    result_object = result_object._setattr(field_name, value)
-            yield result_object
-
-    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
-        return GroupByPlan(
-            based_on=self.based_on.optimize(full_plan),
-            transaction=self.transaction
-        )
+        return max_value
 
 
 class SelectPlan(QueryPlan):
     """
-    Class that represents a plan for selecting specific fields from a query result.
+    A query plan that selects and transforms fields from records produced by another query plan.
 
-    This class is used to generate a new set of records by applying field selection
-    rules to an underlying `QueryPlan`. It allows specifying which fields to include
-    and how they are derived from the original query results. Fields can be specified
-    as direct attribute names from the original result or as callables to generate
-    values dynamically.
-
-    :ivar fields: Mapping of field names to values or callables defining how the
-        field should be derived from the original query results.
-    :type fields: dict[str, str | callable]
+    This plan allows for both direct field mapping (renaming fields) and dynamic field
+    generation through callable functions. It's useful for projecting and transforming
+    data in a query pipeline.
     """
 
-    fields: dict[str, str | callable]
+    def __init__(self, fields: dict, based_on: QueryPlan = None, transaction: 'ObjectTransaction' = None, 
+                 atom_pointer: AtomPointer = None, **kwargs):
+        """
+        Initialize a SelectPlan with field mappings and a base query plan.
 
-    def __init__(self,
-                 fields: dict[str, str | callable] = None,
-                 based_on: QueryPlan = None,
-                 transaction: ObjectTransaction = None,
-                 atom_pointer: AtomPointer = None,
-                 **kwargs):
+        Args:
+            fields: A dictionary mapping output field names to either:
+                   - Source field names (strings) for direct mapping
+                   - Callable functions that take a record and return a value
+            based_on: The query plan that produces the records to transform
+            transaction: The transaction context
+            atom_pointer: Pointer to the atom in storage
+            **kwargs: Additional arguments
+        """
         super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
+        self.fields = fields
 
-        if not fields:
-            self.fields = dict()
-        else:
-            self.fields = fields
-
-    def execute(self) -> list:
+    def execute(self):
         """
-        Executes a transformation process over records fetched from the underlying
-        source, applies field mappings to each record, and outputs the transformed
-        results as a generator.
+        Execute the plan, transforming records from the base plan according to field mappings.
 
-        The function processes records provided by `self.based_on.execute()`, applies
-        field transformations defined in `self.fields`, and constructs new objects
-        with the resultant field values. Each record is either derived through string
-        attribute access or callable functions provided in the field mapping.
+        For each record from the base plan, this method creates a new record with fields
+        mapped according to the field specification provided at initialization.
 
-        :param self: The class instance containing the input source `based_on` and
-            mapping definitions `fields`. The `fields` attribute defines which fields
-            are processed and how transformations are applied.
+        Yields:
+            Transformed records with the specified field mappings applied.
 
-        :return: Generator producing transformed objects created from the input
-            records, enriched with fields mapped as per `self.fields`.
-
-        :rtype: Generator[object, None, None]
+        Raises:
+            Any exception that might be raised by callable field mappings.
         """
+        if not self.based_on:
+            return
+
         for record in self.based_on.execute():
-            result = DBObject(transaction=self.transaction)
-            for field_name, value in self.fields.items():
-                if isinstance(value, str):
-                    dotted_fields = value.split('.')
-                    value = record
-                    for path_component in dotted_fields:
-                        value = value[path_component]
-                    value = getattr(record, value)
-                elif callable(value):
-                    value = value(record)
+            result = {}
+
+            for output_field, source_spec in self.fields.items():
+                if callable(source_spec):
+                    # Dynamic field generation through a callable
+                    # Let any exceptions propagate up to the caller
+                    result[output_field] = source_spec(record)
                 else:
-                    continue
-                result = DBObject._setattr(result, field_name, value)
+                    # Direct field mapping
+                    # Only include the field if it exists in the source record
+                    value = record.get(source_spec)
+                    if value is not None:
+                        result[output_field] = value
+
             yield result
 
-    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
+    def optimize(self, full_plan: 'QueryPlan'):
+        """
+        Optimize this plan and its dependencies.
+
+        This method delegates optimization to the underlying plan and then
+        creates a new SelectPlan with the optimized base.
+
+        Args:
+            full_plan: The complete query plan for context
+
+        Returns:
+            An optimized version of this plan
+        """
+        if not self.based_on:
+            return self
+
+        optimized_base = self.based_on.optimize(full_plan)
+
+        if optimized_base is self.based_on:
+            return self
+
         return SelectPlan(
             fields=self.fields,
-            based_on=self.based_on.optimize(full_plan),
-            transaction=self.transaction
-        )
-
-
-class OrderByPlan(QueryPlan):
-    """
-    Query plan for ordering records based on specified fields.
-
-    This class consumes records from another query plan (`based_on`), sorts
-    those records according to a given sorting specification (`sort_spec`),
-    and optionally reverses the order.
-
-    Attributes:
-    - sort_spec (list): A list of field names that dictate the sorting priority.
-    - reversed (bool): Whether to reverse the result (descending order).
-    """
-
-    sort_spec: list
-    reversed: bool
-
-    def __init__(self,
-                 sort_spec: list,
-                 reversed: bool = False,
-                 based_on: QueryPlan = None,
-                 transaction: ObjectTransaction = None,
-                 atom_pointer: AtomPointer = None,
-                 **kwargs):
-        super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        self.sort_spec = sort_spec
-        self.reversed = reversed
-
-    def execute(self) -> list:
-        """
-        Execute the order-by logic over the input records.
-
-        Records are fetched from the `based_on` query plan, compared using the
-        provided `sort_spec`, and sorted into ascending or descending order.
-
-        The sorting uses a binary search to find the insertion point for new records,
-        ensuring efficient insertion in sorted order.
-
-        :return: A generator yielding sorted records.
-        :rtype: list
-        """
-        ordered_output = List(transaction=self.transaction)
-
-        def compare(a, b) -> int:
-            """
-            Compare two records based on the fields in `sort_spec`.
-
-            Fields are evaluated in order of priority. If the two records are
-            the same for a field, the next field in the list is used.
-
-            :param a: The first record to compare.
-            :param b: The second record to compare.
-            :return: -1 if `a < b`, 1 if `a > b`, 0 if they are equal.
-            :rtype: int
-            """
-            cmp = 0
-            for field_name in self.sort_spec:
-                cmp = 0 if a[field_name] == b[field_name] else \
-                    1 if a[field_name] > b[field_name] else -1
-                if cmp != 0:
-                    break
-            return cmp
-
-        ordered_output = List(transaction=self.transaction)
-
-        for record in self.based_on.execute():
-            if ordered_output.count == 0:
-                ordered_output = ordered_output.append(record)
-            else:
-                comparison = compare(record, ordered_output.get_at(-1))
-                if comparison >= 0:
-                    ordered_output = ordered_output.append(record)
-                else:
-                    # Find the right place to insert the new record
-                    left = 0
-                    right = ordered_output.count - 1
-                    center = 0
-
-                    while left <= right:
-                        center = (left + right) // 2
-
-                        item = ordered_output.get_at(center)
-                        comparison = compare(record, item)
-                        if comparison >= 0:
-                            right = center - 1
-                        else:
-                            left = center + 1
-
-                    ordered_output = ordered_output.insert_at(center, record)
-
-        # At this point, all input has been ingested and ordered_output has an ascending order list
-        if self.reversed:
-            index = ordered_output.count
-            while index > 0:
-                index -= 1
-                yield ordered_output.get_at(index)
-        else:
-            for item in ordered_output.as_iterable():
-                yield item
-
-    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
-        return OrderByPlan(
-            based_on=self.based_on.optimize(full_plan),
-            transaction=self.transaction
-        )
-
-
-class LimitPlan(QueryPlan):
-    """
-    Represents a query plan that imposes a limit on the number of records to process.
-
-    The LimitPlan class is used to define a query plan that enforces a constraint on
-    the maximum number of records retrieved or processed from its associated query
-    plan. This is achieved using a counter that tracks the number of records yielded
-    and stops subsequent processing once the limit is reached. Additionally, the
-    class provides optimization functionalities by enabling modifications of the
-    underlying query plan while retaining the limit constraint. It is initialized
-    with a required limit count and optional parameters to define its base plan and
-    transaction context.
-
-    :ivar limit_count: The maximum number of records to process.
-    :type limit_count: int
-    """
-
-    limit_count: int
-
-    def __init__(self,
-                 limit_count: int = 0,
-                 based_on: QueryPlan = None,
-                 transaction: ObjectTransaction = None,
-                 atom_pointer: AtomPointer = None,
-                 **kwargs):
-        super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-
-        if limit_count == 0:
-            raise ProtoValidationException(
-                message=f'Invalid limit count!'
-            )
-        self.limit_count = limit_count
-
-    def execute(self) -> list:
-        """
-        Executes a generator function to fetch records from an underlying data source
-        while imposing a limit on the number of records processed. This function
-        iterates over a generator from the base execution and yields records until
-        the specified limit is reached.
-
-        :param self: Instance of the class containing execution logic.
-        :return: A generator yielding records with a hard limit on the count, if
-            applicable.
-        :rtype: generator
-        """
-        count = 0
-        for record in self.based_on.execute():
-            count += 1
-            if count > self.limit_count:
-                break
-            yield from record
-
-    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
-        return LimitPlan(
-            limit_count=self.limit_count,
-            based_on=self.based_on.optimize(full_plan),
-            transaction=self.transaction
-        )
-
-
-class OffsetPlan(QueryPlan):
-    """
-    Manage query execution with an offset, bypassing a specified number of initial records.
-
-    This class extends the QueryPlan and introduces an offset mechanism to skip the initial
-    records while executing the query plan. It leverages the functionality of the parent
-    QueryPlan class while adding additional capabilities related to offset-based query
-    processing. This class is commonly used in cases where paginated or incremental data
-    retrieval is necessary.
-
-    :ivar offset: Number of records to skip in the result set.
-    :type offset: int
-    """
-    offset: int
-
-    def __init__(self,
-                 offset: int = 0,
-                 based_on: QueryPlan = None,
-                 transaction: ObjectTransaction = None,
-                 atom_pointer: AtomPointer = None,
-                 **kwargs):
-        super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        if offset < 0:
-            raise ProtoValidationException(
-                message=f'Invalid offset count!'
-            )
-        self.offset = offset
-
-    def execute(self) -> list:
-        """
-        Executes the underlying data retrieval process while skipping a specified number of
-        initial results. This method is useful in scenarios where data pagination or result
-        offsetting is required. The retrieved records will be lazily returned using a generator,
-        allowing for memory-efficient processing of potentially large datasets.
-
-        :raises AttributeError: If ``self.based_on`` does not have an `execute` method.
-        :param self: The instance on which the method is invoked.
-        :type self: Any
-        :param self.offset: The number of initial records to skip before yielding results.
-        :type self.offset: int
-
-        :returns: A generator of records from the underlying data source, starting from the
-            ``self.offset`` index.
-        :rtype: Generator
-        """
-        current_count = 0
-        for record in self.based_on.execute():
-            current_count += 1
-            if current_count > self.offset:
-                yield from record
-
-    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
-        return OffsetPlan(
-            offset=self.offset,
-            based_on=self.based_on.optimize(full_plan),
-            transaction=self.transaction
-        )
-
-
-class JoinPlan(QueryPlan):
-    """
-    JoinPlan class facilitates the execution and optimization of a structured join
-    operation, supporting multiple join types including external, left, right,
-    inner, and outer join types. It extends QueryPlan and is integral in handling
-    complex join queries in a data processing pipeline. Validation is performed
-    to ensure appropriate join query and join type are provided.
-
-    The class's purpose is to encapsulate the logic for various join operations
-    while allowing optimization of the underlying query plan. Usage entails
-    instantiating the class with the necessary parameters and calling the execute
-    or optimize methods for respective operations.
-
-    :ivar join_query: The query plan to be used for the join operation.
-    :type join_query: QueryPlan
-    :ivar join_type: The type of join operation to perform. Valid types include
-        'external', 'left', 'right', 'inner', 'external_left', 'external_right',
-        and 'outer'.
-    :type join_type: str
-    """
-    join_query: QueryPlan
-    join_type: str
-
-    def __init__(self,
-                 join_query: QueryPlan = None,
-                 join_type: str = None,
-                 based_on: QueryPlan = None,
-                 transaction: ObjectTransaction = None,
-                 atom_pointer: AtomPointer = None,
-                 **kwargs):
-        super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        if not join_query:
-            raise ProtoValidationException(
-                message=f'Missing join query!'
-            )
-        self.join_query = join_query
-
-        if join_type and join_type in \
-                ('external', 'left', 'right', 'inner',
-                 'external_left', 'external_right', 'outer'):
-            self.join_type = join_type
-        else:
-            raise ProtoValidationException(
-                message=f'Invalid join type {join_type}!'
-            )
-
-    def execute(self) -> list:
-        """
-        Executes the join operation based on the specified join type and returns a list of
-        results corresponding to the joined records.
-
-        The joined operation type can be one of the following:
-            - 'external'
-            - 'external_left'
-            - 'external_right'
-            - 'left'
-            - 'right'
-            - 'outer'
-            - 'inner'
-
-        Records are iteratively processed and combined, depending on the join type provided.
-
-        :param self: Instance of the class performing the join operation.
-        :return: A list containing the combined records resulting from the join operation.
-        :rtype: list
-        """
-        if self.join_type in ('external', 'external_left', 'left', 'outer'):
-            for base_record in self.based_on.execute():
-                yield from base_record
-
-        if self.join_type in ('external', 'inner', 'right', 'left'):
-            for base_record in self.based_on.execute():
-                for join_record in self.join_query.execute():
-                    result = DBObject(transaction=self.transaction)
-                    for field_name, value in base_record.__dict__.items():
-                        result = result._setattr(result, field_name, value)
-                    for field_name, value in join_record.__dict__.items():
-                        result = result._setattr(result, field_name, value)
-                    yield result
-
-        if self.join_type in ('external', 'external_right', 'right', 'outer'):
-            for join_record in self.join_query.execute():
-                yield from join_record
-
-    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
-        previous_query = full_plan
-        while previous_query and previous_query.based_on != self:
-            previous_query = previous_query.based_on
-
-        based_on = self.based_on.optimize(full_plan)
-        join_query = self.join_query.optimize(full_plan)
-        if isinstance(previous_query, WherePlan):
-            if isinstance(based_on, FromPlan) and based_on.alias:
-                based_on = WherePlan(
-                    filter = previous_query.filter.filter_by_alias({based_on.alias}),
-                    based_on = self.based_on,
-                    transaction=self.transaction
-                )
-
-            if isinstance(join_query, FromPlan) and join_query.alias:
-                join_query = WherePlan(
-                    filter = previous_query.filter.filter_by_alias({join_query.alias}),
-                    based_on = self.join_query,
-                    transaction=self.transaction
-                )
-
-        return JoinPlan(
-            join_query=join_query,
-            join_type=self.join_type,
-            based_on=based_on,
-            transaction=self.transaction
-        )
-
-
-class UnionPlan(QueryPlan):
-    """
-    Represents a plan that combines the results of two query plans using the union operation.
-
-    This class facilitates combining the results of one query plan with those of
-    another, effectively executing a union operation. It ensures that both query
-    plans are valid and provides efficient execution and optimization mechanisms.
-    The `UnionPlan` inherits from `QueryPlan` and extends its functionality
-    to incorporate union-based operations.
-
-    :ivar union_query: The query plan to be merged with the base query plan.
-    :type union_query: QueryPlan
-    """
-    union_query: QueryPlan
-
-    def __init__(self,
-                 union_query: QueryPlan = None,
-                 based_on: QueryPlan = None,
-                 transaction: ObjectTransaction = None,
-                 atom_pointer: AtomPointer = None,
-                 **kwargs):
-        super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-
-        if not union_query:
-            raise ProtoValidationException(
-                message=f'Missing union query!'
-            )
-        self.union_query = union_query
-
-    def execute(self) -> list:
-        for base_record in self.based_on.execute():
-            yield from base_record
-
-        for union_record in self.union_query.execute():
-            yield from union_record
-
-    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
-        return UnionPlan(
-            union_query=self.union_query.optimize(full_plan),
-            based_on=self.based_on.optimize(full_plan),
+            based_on=optimized_base,
             transaction=self.transaction
         )

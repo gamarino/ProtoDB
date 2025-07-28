@@ -5,19 +5,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[IMP] cloud_cluster_file_storage: implments a local cache to maximize throughput of s3 reads">
-      <change afterPath="$PROJECT_DIR$/CHANGES_GOOGLE_CLOUD_STORAGE.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Estrategia_de_seguridad.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/proto_db/tests/test_cloud_cluster_file_storage_with_gcs.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/proto_db/tests/test_cloud_file_storage_with_gcs.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/proto_db/tests/test_google_cloud_client.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/advanced_usage.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/advanced_usage.rst" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/api/exceptions.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/exceptions.rst" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/api/storage.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/storage.rst" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/architecture.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/architecture.rst" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/introduction.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/introduction.rst" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/cloud_cluster_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/cloud_cluster_file_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/cloud_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/cloud_file_storage.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_queries.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -61,29 +52,29 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Makefile Target.Makefile (1).executor": "Run",
-    "Makefile Target.Makefile (3).executor": "Run",
-    "Makefile Target.Makefile.executor": "Run",
-    "Python tests.Python tests in test_db_access.py.executor": "Run",
-    "Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor": "Run",
-    "Python tests.Python tests in test_file_block_provider.py.executor": "Debug",
-    "Python tests.Python tests in test_standalone_file_storage.py.executor": "Debug",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "com.google.cloudcode.ide_session_index": "20250728_0000",
-    "git-widget-placeholder": "master",
-    "junie.onboarding.icon.badge.shown": "true",
-    "last_opened_file_path": "/home/gamarino/odoo/ProtoBase/docs/source",
-    "node.js.detected.package.eslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "ml.llm.LLMThirdPartyAiProvidersConfigurable",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Makefile Target.Makefile (1).executor&quot;: &quot;Run&quot;,
+    &quot;Makefile Target.Makefile (3).executor&quot;: &quot;Run&quot;,
+    &quot;Makefile Target.Makefile.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in test_db_access.py.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in test_file_block_provider.py.executor&quot;: &quot;Debug&quot;,
+    &quot;Python tests.Python tests in test_standalone_file_storage.py.executor&quot;: &quot;Debug&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;com.google.cloudcode.ide_session_index&quot;: &quot;20250728_0000&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/gamarino/odoo/ProtoBase/docs/source&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;ml.llm.LLMThirdPartyAiProvidersConfigurable&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/proto_db/tests" />
