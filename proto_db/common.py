@@ -568,6 +568,8 @@ class DBObject(Atom):
                  **kwargs):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
         self._loaded = False
+        for key, value in kwargs.items():
+            object.__setattr__(self, key, value)
 
     def __getattr__(self, name: str):
         if name == '_loaded':  # Prevent recursion when checking _loaded

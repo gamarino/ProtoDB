@@ -4,12 +4,12 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] README.md, pyproject.toml: update to current status">
-      <change afterPath="$PROJECT_DIR$/examples/README.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/examples/simple_example.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/examples/task_manager.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/examples/task_manager_data/5ee2d17a-66d2-491a-8d40-0ac52acdb63c" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/examples/task_manager_data/697b328d-7b00-40f3-9a31-c96a2d7b6ea7" afterDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[IMP] examples">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/simple_example.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/simple_example.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/db_access.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -62,9 +62,10 @@
     "Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor": "Run",
     "Python tests.Python tests in test_file_block_provider.py.executor": "Debug",
     "Python tests.Python tests in test_standalone_file_storage.py.executor": "Debug",
+    "Python.simple_example.executor": "Debug",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
-    "com.google.cloudcode.ide_session_index": "20250728_0000",
+    "com.google.cloudcode.ide_session_index": "20250731_0000",
     "git-widget-placeholder": "master",
     "junie.onboarding.icon.badge.shown": "true",
     "last_opened_file_path": "/home/gamarino/odoo/ProtoBase/docs/source",
@@ -82,7 +83,7 @@
       <recent name="$PROJECT_DIR$/proto_db" />
     </key>
   </component>
-  <component name="RunManager" selected="Makefile Target.Makefile (3)">
+  <component name="RunManager" selected="Python.simple_example">
     <configuration name="Makefile (1)" type="MAKEFILE_TARGET_RUN_CONFIGURATION" factoryName="Makefile" temporary="true">
       <makefile filename="$PROJECT_DIR$/docs/Makefile" target="" workingDirectory="" arguments="">
         <envs />
@@ -107,20 +108,27 @@
       </makefile>
       <method v="2" />
     </configuration>
-    <configuration name="Python tests in test_db_access.py" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
+    <configuration name="simple_example" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="ProtoBase" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
       <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
       <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/examples" />
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="_new_additionalArguments" value="&quot;&quot;" />
-      <option name="_new_target" value="&quot;$PROJECT_DIR$/proto_db/tests/test_db_access.py&quot;" />
-      <option name="_new_targetType" value="&quot;PATH&quot;" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/examples/simple_example.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
     <configuration name="Python tests in test_db_access_with_standalone_file_storage.py" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
@@ -141,11 +149,11 @@
     </configuration>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.simple_example" />
         <item itemvalue="Makefile Target.Makefile (3)" />
         <item itemvalue="Makefile Target.Makefile (1)" />
         <item itemvalue="Makefile Target.Makefile" />
         <item itemvalue="Python tests.Python tests in test_db_access_with_standalone_file_storage.py" />
-        <item itemvalue="Python tests.Python tests in test_db_access.py" />
       </list>
     </recent_temporary>
   </component>
@@ -223,6 +231,7 @@
       <workItem from="1753541463109" duration="1149000" />
       <workItem from="1753567167029" duration="12281000" />
       <workItem from="1753706608123" duration="1007000" />
+      <workItem from="1753971491417" duration="7217000" />
     </task>
     <task id="LOCAL-00007" summary="[WIP] standalone_file_storage.py : push_to_wal with bytes, not bytearray">
       <option name="closed" value="true" />
@@ -440,14 +449,29 @@
       <option name="project" value="LOCAL" />
       <updated>1753739560627</updated>
     </task>
-    <option name="localTasksCounter" value="34" />
+    <task id="LOCAL-00034" summary="[IMP] examples">
+      <option name="closed" value="true" />
+      <created>1753740095624</created>
+      <option name="number" value="00034" />
+      <option name="presentableId" value="LOCAL-00034" />
+      <option name="project" value="LOCAL" />
+      <updated>1753740095624</updated>
+    </task>
+    <task id="LOCAL-00035" summary="[IMP] examples">
+      <option name="closed" value="true" />
+      <created>1753740119296</created>
+      <option name="number" value="00035" />
+      <option name="presentableId" value="LOCAL-00035" />
+      <option name="project" value="LOCAL" />
+      <updated>1753740119296</updated>
+    </task>
+    <option name="localTasksCounter" value="36" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[WIP] transacciones anidadas, listas con head, tail y split optimo, factorización de acceso a los roots, manejo flexible de database y transacciones con bloques with" />
     <MESSAGE value="[WIP] standalone_file_storage.py : push_to_wal with bytes, not bytearray" />
     <MESSAGE value="[WIP] standalone_file_storage.py : global executor pool" />
     <MESSAGE value="[WIP] queries" />
@@ -472,7 +496,8 @@
     <MESSAGE value="[IMP] Multiformat storage implamentation" />
     <MESSAGE value="[FIX] README.md" />
     <MESSAGE value="[FIX] README.md, pyproject.toml: update to current status" />
-    <option name="LAST_COMMIT_MESSAGE" value="[FIX] README.md, pyproject.toml: update to current status" />
+    <MESSAGE value="[IMP] examples" />
+    <option name="LAST_COMMIT_MESSAGE" value="[IMP] examples" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -495,8 +520,23 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/common.py</url>
-          <line>720</line>
+          <line>722</line>
           <option name="timeStamp" value="157" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/examples/task_manager.py</url>
+          <line>18</line>
+          <option name="timeStamp" value="158" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/examples/simple_example.py</url>
+          <line>53</line>
+          <option name="timeStamp" value="159" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/proto_db/common.py</url>
+          <line>510</line>
+          <option name="timeStamp" value="161" />
         </line-breakpoint>
       </breakpoints>
       <default-breakpoints>
@@ -509,6 +549,7 @@
     </breakpoint-manager>
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/ProtoBase$simple_example.coverage" NAME="simple_example Coverage Results" MODIFIED="1753990589370" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$.coverage" NAME=" Coverage Results" MODIFIED="1736352327720" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>

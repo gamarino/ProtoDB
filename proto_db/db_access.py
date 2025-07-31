@@ -503,7 +503,7 @@ class ObjectTransaction(AbstractTransaction):
         if not self.read_lock_objects:
             return
 
-        for name, original_object_pointer in self.read_lock_objects.items():
+        for name, original_object_pointer in self.read_lock_objects.as_iterable():
             current_object_pointer = current_root.object_root.get_at(name, as_pointer=True)
             if original_object_pointer != current_object_pointer:
                 # CONCURRENT MODIFICATION DETECTED

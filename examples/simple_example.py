@@ -18,8 +18,14 @@ import sys
 # Add the parent directory to the path to import proto_db
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from proto_db import ObjectSpace, DBObject, MutableObject
 from proto_db.memory_storage import MemoryStorage
-from proto_db.db_access import ObjectSpace
+
+
+class User(DBObject):
+    """
+    A class representing a User
+    """
 
 
 def main():
@@ -43,50 +49,47 @@ def main():
     print("\nCreating transaction...")
     tr = database.new_transaction()
 
-    # Store a simple string value
-    print("Storing a string value...")
-    tr.set_root_object('greeting', 'Hello, ProtoBase!')
-
     # Create and store a dictionary
-    print("Creating a dictionary...")
-    user = tr.new_dictionary()
-    user = user.set_at('name', 'John Doe')
-    user = user.set_at('email', 'john@example.com')
-    user = user.set_at('role', 'admin')
-    tr.set_root_object('user', user)
+    print("Creating a list of users")
+    users = tr.new_list()
 
-    # Create and store a list
-    print("Creating a list...")
-    numbers = tr.new_list()
-    for i in range(5):
-        numbers = numbers.set_at(i, i * 10)
-    tr.set_root_object('numbers', numbers)
+    user1 = User(
+        name='John Doe',
+        email='john@example.com',
+        role='admin'
+    )
+    users = users.append_last(user1)
 
-    # Commit the transaction
-    print("\nCommitting transaction...")
+    user2 = User(
+        name='Jane Doe',
+        email='jane@example.com',
+        role='user'
+    )
+    users = users.append_last(user2)
+
+    user3 = User(
+        name='Dan Doe',
+        email='dan@example.com',
+        role='user',
+        friends=tr.new_list().append_last(user2).append_last(user1)
+    )
+    users = users.append_last(user3)
+
+    tr.set_root_object('users', users)
     tr.commit()
-    print("Transaction committed successfully!")
 
-    # Create a new transaction to retrieve the values
-    print("\nCreating a new transaction to retrieve values...")
-    tr2 = database.new_transaction()
+    tr = database.new_transaction()
+    read_users = tr.get_root_object('users')
 
-    # Retrieve the string value
-    greeting = tr2.get_root_object('greeting')
-    print(f"\nRetrieved greeting: {greeting}")
+    for u in read_users.as_iterable():
+        print(f'Name: {u.name}')
+        print(f'Email: {u.email}')
+        print(f'Role: {u.role}')
+        if u.friends:
+            for f in u.friends.as_iterable():
+                print(f'Friend: {f.name}')
 
-    # Retrieve and display the dictionary
-    user = tr2.get_root_object('user')
-    print("\nRetrieved user:")
-    print(f"  Name: {user.get_at('name')}")
-    print(f"  Email: {user.get_at('email')}")
-    print(f"  Role: {user.get_at('role')}")
-
-    # Retrieve and display the list
-    numbers = tr2.get_root_object('numbers')
-    print("\nRetrieved numbers:")
-    for i in range(numbers.length()):
-        print(f"  numbers[{i}] = {numbers.get_at(i)}")
+    tr.commit()
 
     print("\nExample completed successfully!")
 
