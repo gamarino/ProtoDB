@@ -690,22 +690,12 @@ class List(Atom):
         self._load()
 
         node = self
-        while node:
-            node._load()
-
-            if node.next:
-                node = node.next
-            else:
-                break
 
         node = List(
-            value=node.value,
+            value=item,
             empty=False,
-            previous=None,
-            next=List(
-                value=item,
-                transaction = self.transaction
-            ),
+            previous=node if not node.empty else None,
+            next=None,
             transaction = self.transaction
         )
 
