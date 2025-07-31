@@ -75,6 +75,10 @@ def main():
     )
     users = users.append_last(user3)
 
+    # DBObjects are inmutable. You can create a new one with changed attribute
+    user4 = user3._setattr('email', 'dan4@example_com')
+    users = users.append_last(user4)
+
     tr.set_root_object('users', users)
     tr.commit()
 
@@ -88,6 +92,7 @@ def main():
         if u.friends:
             for f in u.friends.as_iterable():
                 print(f'Friend: {f.name}')
+        print('--' * 20)
 
     tr.commit()
 

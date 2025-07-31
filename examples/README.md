@@ -8,10 +8,11 @@ This directory contains example applications that demonstrate the capabilities o
 
 The Task Manager example demonstrates a simple but powerful task management application built with ProtoBase. It showcases key features including:
 
-- **Transactional Operations**: All database operations are performed within transactions that ensure data consistency
-- **Rich Data Structures**: Using ProtoBase's Dictionary data structure for storing and retrieving tasks
-- **Query Capabilities**: Filtering and sorting tasks using ProtoBase's query system
-- **Persistence**: Storing tasks in a file-based database that persists between application runs
+- **Transactional Operations**: All database operations are performed within transactions that ensure data consistency.
+- **Object-Oriented Data Modeling**: Using `DBObject` to represent data as Python objects, making the code more intuitive and readable.
+- **Rich Data Structures**: Employing ProtoBase's `Dictionary` to organize and store `Task` objects.
+- **Powerful Query Capabilities**: Filtering and sorting tasks by their object attributes using ProtoBase's query system.
+- **Persistence**: Storing tasks in a file-based database that persists between application runs.
 
 ### Running the Example
 
@@ -52,7 +53,35 @@ Each method demonstrates ProtoBase's transaction model:
 
 ### Key Concepts Demonstrated
 
+#### Object-Oriented Modeling with `DBObject`
+
+ProtoBase allows you to model your data using Python classes that inherit from `DBObject`. This makes data manipulation more intuitive and your code easier to read and maintain.
+
+```python
+# Define a Task class that inherits from DBObject
+class Task(DBObject):
+    """
+    A class representing a Task, stored as a DBObject.
+    """
+    pass
+
+# Create a new Task instance
+task = Task(
+    id=task_id,
+    title="Implement user authentication",
+    description="Add login/logout functionality",
+    priority="high",
+    status="pending"
+)
+
+# Access properties like regular object attributes
+print(f"Title: {task.title}")
+print(f"Status: {task.status}")
+```
+
 #### Transactions
+
+All operations that modify the database are performed within a transaction, ensuring atomicity and consistency.
 
 ```python
 # Create a new transaction
@@ -60,68 +89,46 @@ tr = self.database.new_transaction()
 
 # Perform operations
 tasks_dict = tr.get_root_object('tasks')
+task = Task(**task_data) # task_data is a dict with task properties
 tasks_dict = tasks_dict.set(task_id, task)
 tr.set_root_object('tasks', tasks_dict)
 
-# Commit the transaction
+# Commit the transaction to persist changes
 tr.commit()
 ```
 
-#### Data Structures
+#### Queries on Object Attributes
+
+The query system is powerful and allows you to filter data based on the attributes of your `DBObject` instances.
 
 ```python
-# Create a new dictionary
-task = tr.new_dictionary()
-
-# Set properties
-task = task.set("title", title)
-task = task.set("priority", priority)
-
-# Check if a key exists
-if task.has(key):
-    value = task.get(key)
-```
-
-#### Queries
-
-```python
-# Create a query plan
+# Create a query plan from the tasks dictionary
 query_plan = tasks_dict.as_query_plan()
 
-# Apply filters
-filter_expression = Expression.compile(['value', '.', 'status', '==', status])
+# Apply filters based on DBObject attributes
+# Note: 'value' refers to the Task object in the dictionary
+filter_expression = Expression.compile(['value', '.', 'priority', '==', 'high'])
 query_plan = WherePlan(filter=filter_expression, based_on=query_plan)
-
-# Apply sorting
-query_plan = OrderByPlan(
-    order_by=[('value', '.', sort_by)], 
-    ascending=ascending,
-    based_on=query_plan
-)
 
 # Execute the query
 for item in query_plan.execute():
     # Process results
     task = item.value
+    print(f"High priority task: {task.title}")
 ```
 
 ### Extending the Example
 
 You can extend this example in several ways:
 
-1. **Add More Query Types**: Implement more complex queries using JoinPlan, GroupByPlan, or other query plans
-2. **Use Different Storage Backends**: Modify the example to use ClusterFileStorage or CloudFileStorage
-3. **Add User Interface**: Build a simple CLI or web interface on top of the TaskManager class
-4. **Implement Task Dependencies**: Extend the data model to support task dependencies
+1. **Add More Query Types**: Implement more complex queries using JoinPlan, GroupByPlan, or other query plans.
+2. **Use Different Storage Backends**: Modify the example to use ClusterFileStorage or CloudFileStorage.
+3. **Add User Interface**: Build a simple CLI or web interface on top of the TaskManager class.
+4. **Implement Task Dependencies**: Extend the data model to support task dependencies, for example by adding a `tr.new_list()` to a `Task` object.
 
 ## Simple Example
 
-The Simple Example (`simple_example.py`) provides a minimal demonstration of ProtoBase's core functionality:
-
-- **In-Memory Storage**: Using ProtoBase's MemoryStorage for quick, non-persistent data storage
-- **Basic Transactions**: Creating and committing transactions
-- **Data Structures**: Working with Dictionary and List data structures
-- **Root Objects**: Storing and retrieving objects from the database
+The Simple Example (`simple_example.py`) provides a minimal demonstration of ProtoBase's core functionality, showing how to store and retrieve different data structures within transactions. This example is ideal for getting started with ProtoBase and understanding its basic concepts.
 
 ### Running the Example
 
@@ -134,21 +141,3 @@ cd examples
 # Run the simple example
 python simple_example.py
 ```
-
-The example will:
-1. Create an in-memory database
-2. Store a string, a dictionary, and a list in the database
-3. Commit the transaction
-4. Create a new transaction to retrieve the stored data
-5. Display the retrieved data
-
-This example is ideal for getting started with ProtoBase and understanding its basic concepts before moving on to more complex examples.
-
-## Future Examples
-
-More examples will be added in the future to demonstrate other features of ProtoBase, such as:
-
-- Using different storage backends (ClusterFileStorage, CloudFileStorage)
-- Working with other data structures (List, Set, HashDictionary)
-- Implementing more complex query patterns
-- Building real-time collaborative applications
