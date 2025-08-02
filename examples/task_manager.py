@@ -79,7 +79,7 @@ class TaskManager:
             raise ValueError("Priority must be 'low', 'medium', or 'high'")
 
         tr = self.database.new_transaction()
-        tasks_dict = tr.get_root_object('tasks')
+        tasks_dict = tr.get_root_object('tasks') or tr.new_dictionary()
         task_id = str(uuid.uuid4())
 
         task_data = {
@@ -94,7 +94,7 @@ class TaskManager:
             task_data["due_date"] = due_date
 
         task = Task(**task_data)
-        tasks_dict = tasks_dict.set(task_id, task)
+        tasks_dict = tasks_dict.set_at(task.id, task)
         tr.set_root_object('tasks', tasks_dict)
         tr.commit()
 
@@ -106,13 +106,13 @@ class TaskManager:
         Update an existing task.
         """
         tr = self.database.new_transaction()
-        tasks_dict = tr.get_root_object('tasks')
+        tasks_dict = tr.get_root_object('tasks') or tr.new_dictionary()
 
         if not tasks_dict.has(task_id):
             print(f"Task with ID {task_id} not found")
             return False
 
-        old_task = tasks_dict.get(task_id)
+        old_task = tasks_dict.get_at(task_id)
         task_props = {
             'id': old_task.id,
             'title': old_task.title,
@@ -129,7 +129,7 @@ class TaskManager:
                 task_props[key] = value
 
         new_task = Task(**task_props)
-        tasks_dict = tasks_dict.set(task_id, new_task)
+        tasks_dict = tasks_dict.set_at(task_id, new_task)
         tr.set_root_object('tasks', tasks_dict)
         tr.commit()
 
@@ -141,13 +141,13 @@ class TaskManager:
         Delete a task.
         """
         tr = self.database.new_transaction()
-        tasks_dict = tr.get_root_object('tasks')
+        tasks_dict = tr.get_root_object('tasks') or tr.new_dictionary()
 
         if not tasks_dict.has(task_id):
             print(f"Task with ID {task_id} not found")
             return False
 
-        tasks_dict = tasks_dict.remove(task_id)
+        tasks_dict = tasks_dict.remove_at(task_id)
         tr.set_root_object('tasks', tasks_dict)
         tr.commit()
 
@@ -187,10 +187,10 @@ class TaskManager:
         Get all tasks.
         """
         tr = self.database.new_transaction()
-        tasks_dict = tr.get_root_object('tasks')
+        tasks_dict = tr.get_root_object('tasks') or tr.new_dictionary()
         tasks = []
-        for task_id in tasks_dict.keys():
-            task = tasks_dict.get(task_id)
+        for task_id, task in tasks_dict.as_iterable():
+            task = tasks_dict.get_at(task_id)
             tasks.append(self._task_to_dict(task))
         return tasks
 
@@ -199,17 +199,17 @@ class TaskManager:
         Query tasks based on criteria.
         """
         tr = self.database.new_transaction()
-        tasks_dict = tr.get_root_object('tasks')
+        tasks_dict = tr.get_root_object('tasks') or tr.new_dictionary()
         query_plan = tasks_dict.as_query_plan()
 
         if status or priority:
             filter_parts = []
             if status:
-                filter_parts.extend(['value', '.', 'status', '==', status])
+                filter_parts.extend(['status', '==', status])
             if priority:
                 if filter_parts:
                     filter_parts.append('and')
-                filter_parts.extend(['value', '.', 'priority', '==', priority])
+                filter_parts.extend(['priority', '==', priority])
 
             filter_expression = Expression.compile(filter_parts)
             query_plan = WherePlan(filter=filter_expression, based_on=query_plan)
@@ -240,7 +240,7 @@ def print_task(task):
 
 def demo():
     """Run a demonstration of the TaskManager."""
-    manager = TaskManager(storage_type="file")
+    manager = TaskManager()
 
     task1_id = manager.add_task(
         title="Implement user authentication",
