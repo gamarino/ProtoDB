@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[IMP] First implementation of performance analysis (Fully automated by Junie AI)">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[ADD] Chat IA evolución proto">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -49,32 +49,37 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Makefile Target.Makefile (1).executor&quot;: &quot;Run&quot;,
-    &quot;Makefile Target.Makefile (3).executor&quot;: &quot;Run&quot;,
-    &quot;Makefile Target.Makefile.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests in test_db_access.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests in test_file_block_provider.py.executor&quot;: &quot;Debug&quot;,
-    &quot;Python tests.Python tests in test_standalone_file_storage.py.executor&quot;: &quot;Debug&quot;,
-    &quot;Python.simple_example.executor&quot;: &quot;Debug&quot;,
-    &quot;Python.simple_performance_benchmark.executor&quot;: &quot;Debug&quot;,
-    &quot;Python.task_manager.executor&quot;: &quot;Debug&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;com.google.cloudcode.ide_session_index&quot;: &quot;20250801_0001&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/home/gamarino/odoo/ProtoBase/docs/source&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;ml.llm.LLMConfigurable&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Makefile Target.Makefile (1).executor": "Run",
+    "Makefile Target.Makefile (3).executor": "Run",
+    "Makefile Target.Makefile.executor": "Run",
+    "Python tests.Python tests in test_db_access.py.executor": "Run",
+    "Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor": "Run",
+    "Python tests.Python tests in test_file_block_provider.py.executor": "Debug",
+    "Python tests.Python tests in test_standalone_file_storage.py.executor": "Debug",
+    "Python.simple_example.executor": "Debug",
+    "Python.simple_performance_benchmark.executor": "Debug",
+    "Python.task_manager.executor": "Debug",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "com.google.cloudcode.ide_session_index": "20250801_0001",
+    "git-widget-placeholder": "master",
+    "junie.onboarding.icon.badge.shown": "true",
+    "last_opened_file_path": "/home/gamarino/odoo/ProtoBase",
+    "node.js.detected.package.eslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "ml.llm.LLMConfigurable",
+    "vue.rearranger.settings.migration": "true"
+  },
+  "keyToStringList": {
+    "com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File": [
+      "Requirements"
+    ]
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/proto_db/tests" />
@@ -254,7 +259,7 @@
       <workItem from="1753567167029" duration="12281000" />
       <workItem from="1753706608123" duration="1007000" />
       <workItem from="1753971491417" duration="12098000" />
-      <workItem from="1754077196604" duration="36083000" />
+      <workItem from="1754077196604" duration="37792000" />
     </task>
     <task id="LOCAL-00007" summary="[WIP] standalone_file_storage.py : push_to_wal with bytes, not bytearray">
       <option name="closed" value="true" />
@@ -528,14 +533,21 @@
       <option name="project" value="LOCAL" />
       <updated>1754108606474</updated>
     </task>
-    <option name="localTasksCounter" value="41" />
+    <task id="LOCAL-00041" summary="[ADD] Chat IA evolución proto">
+      <option name="closed" value="true" />
+      <created>1754150424660</created>
+      <option name="number" value="00041" />
+      <option name="presentableId" value="LOCAL-00041" />
+      <option name="project" value="LOCAL" />
+      <updated>1754150424660</updated>
+    </task>
+    <option name="localTasksCounter" value="42" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[WIP] queries: WherePlan after JoinPlan, optimized to prefiltered Joins" />
     <MESSAGE value="[WIP] dependencias circulares, test básicos arreglados" />
     <MESSAGE value="[WIP] after_load en Atom, no guardar None attributes" />
     <MESSAGE value="[WIP] fsm: máquina de estados básica" />
@@ -560,7 +572,8 @@
     <MESSAGE value="[WIP] simple_example.py: TODO: list with errors" />
     <MESSAGE value="[FIX] errors in commit logic" />
     <MESSAGE value="[IMP] First implementation of performance analysis (Fully automated by Junie AI)" />
-    <option name="LAST_COMMIT_MESSAGE" value="[IMP] First implementation of performance analysis (Fully automated by Junie AI)" />
+    <MESSAGE value="[ADD] Chat IA evolución proto" />
+    <option name="LAST_COMMIT_MESSAGE" value="[ADD] Chat IA evolución proto" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
