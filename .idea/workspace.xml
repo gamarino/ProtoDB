@@ -4,16 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] errors in commit logic">
-      <change afterPath="$PROJECT_DIR$/examples/comprehensive_benchmark.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/examples/db_performance_benchmark.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/examples/minimal_benchmark.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/examples/performance_benchmark.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/examples/simple_performance_benchmark.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/examples/update_benchmark.py" afterDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[IMP] First implementation of performance analysis (Fully automated by Junie AI)">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/examples/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/task_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/task_manager.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -262,7 +254,7 @@
       <workItem from="1753567167029" duration="12281000" />
       <workItem from="1753706608123" duration="1007000" />
       <workItem from="1753971491417" duration="12098000" />
-      <workItem from="1754077196604" duration="29026000" />
+      <workItem from="1754077196604" duration="36083000" />
     </task>
     <task id="LOCAL-00007" summary="[WIP] standalone_file_storage.py : push_to_wal with bytes, not bytearray">
       <option name="closed" value="true" />
@@ -528,14 +520,21 @@
       <option name="project" value="LOCAL" />
       <updated>1754105801491</updated>
     </task>
-    <option name="localTasksCounter" value="40" />
+    <task id="LOCAL-00040" summary="[IMP] First implementation of performance analysis (Fully automated by Junie AI)">
+      <option name="closed" value="true" />
+      <created>1754108606474</created>
+      <option name="number" value="00040" />
+      <option name="presentableId" value="LOCAL-00040" />
+      <option name="project" value="LOCAL" />
+      <updated>1754108606474</updated>
+    </task>
+    <option name="localTasksCounter" value="41" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[WIP] queries: indexed queries optiminizations on WherePlan" />
     <MESSAGE value="[WIP] queries: WherePlan after JoinPlan, optimized to prefiltered Joins" />
     <MESSAGE value="[WIP] dependencias circulares, test básicos arreglados" />
     <MESSAGE value="[WIP] after_load en Atom, no guardar None attributes" />
@@ -560,7 +559,8 @@
     <MESSAGE value="[FIX] task_manager.py: in proper proto_db style" />
     <MESSAGE value="[WIP] simple_example.py: TODO: list with errors" />
     <MESSAGE value="[FIX] errors in commit logic" />
-    <option name="LAST_COMMIT_MESSAGE" value="[FIX] errors in commit logic" />
+    <MESSAGE value="[IMP] First implementation of performance analysis (Fully automated by Junie AI)" />
+    <option name="LAST_COMMIT_MESSAGE" value="[IMP] First implementation of performance analysis (Fully automated by Junie AI)" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
