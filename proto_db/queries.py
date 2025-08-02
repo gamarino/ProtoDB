@@ -76,12 +76,12 @@ class Expression(ABC):
                     raise ProtoValidationException(
                         message=f'Invalid term definition: {term_def}. It should contain at least two operands!'
                     )
-                operand = Operator.get_operator(term_def[1])
-                if len(term_def) != operand.parameter_count + 1:
+                operand = Operator.get_operator(expression[1])
+                if len(expression) != operand.parameter_count + 1:
                     raise ProtoValidationException(
                         message=f'Operand {operand} expect at list {operand.parameter_count} parameters!'
                     )
-                return Term(term_def[0], operand, term_def[2]), local_index
+                return Term(expression[0], operand, expression[2]), local_index
 
         default_and_expression = list()
         while index < len(expression):
@@ -357,7 +357,7 @@ class Term(Expression):
 
     def match(self, record):
         return self.operation.match(
-            getattr(record, self.target_attribute),
+            getattr(record.value, self.target_attribute),
             self.value
         )
 

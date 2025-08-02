@@ -36,6 +36,7 @@ class Set(Atom):
     def _save(self):
         if not self._saved:
             super()._save()
+            self.content.transaction = self.transaction
             self.content._save()
 
     def as_iterable(self) -> list[Atom]:

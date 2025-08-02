@@ -56,6 +56,7 @@ class Dictionary(DBCollections, ConcurrentOptimized):
 
     def _save(self):
         if not self._saved:
+            self.content.transaction = self.transaction
             self.content._save()
             super()._save()
 
