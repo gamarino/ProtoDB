@@ -4,8 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[ADD] Chat IA evolución proto">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] improved literal management">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/db_access.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/dictionaries.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -63,7 +66,7 @@
     "Python.task_manager.executor": "Debug",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
-    "com.google.cloudcode.ide_session_index": "20250801_0001",
+    "com.google.cloudcode.ide_session_index": "20250803_0001",
     "git-widget-placeholder": "master",
     "junie.onboarding.icon.badge.shown": "true",
     "last_opened_file_path": "/home/gamarino/odoo/ProtoBase",
@@ -86,7 +89,7 @@
       <recent name="$PROJECT_DIR$/proto_db" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.task_manager">
+  <component name="RunManager" selected="Python.simple_example">
     <configuration name="Makefile (1)" type="MAKEFILE_TARGET_RUN_CONFIGURATION" factoryName="Makefile" temporary="true">
       <makefile filename="$PROJECT_DIR$/docs/Makefile" target="" workingDirectory="" arguments="">
         <envs />
@@ -176,8 +179,8 @@
     </configuration>
     <recent_temporary>
       <list>
-        <item itemvalue="Python.task_manager" />
         <item itemvalue="Python.simple_example" />
+        <item itemvalue="Python.task_manager" />
         <item itemvalue="Python.simple_performance_benchmark" />
         <item itemvalue="Makefile Target.Makefile (3)" />
         <item itemvalue="Makefile Target.Makefile (1)" />
@@ -259,7 +262,8 @@
       <workItem from="1753567167029" duration="12281000" />
       <workItem from="1753706608123" duration="1007000" />
       <workItem from="1753971491417" duration="12098000" />
-      <workItem from="1754077196604" duration="37792000" />
+      <workItem from="1754077196604" duration="39026000" />
+      <workItem from="1754229840756" duration="12627000" />
     </task>
     <task id="LOCAL-00007" summary="[WIP] standalone_file_storage.py : push_to_wal with bytes, not bytearray">
       <option name="closed" value="true" />
@@ -541,14 +545,29 @@
       <option name="project" value="LOCAL" />
       <updated>1754150424660</updated>
     </task>
-    <option name="localTasksCounter" value="42" />
+    <task id="LOCAL-00042" summary="[ADD] Chat IA evolución proto">
+      <option name="closed" value="true" />
+      <created>1754156540176</created>
+      <option name="number" value="00042" />
+      <option name="presentableId" value="LOCAL-00042" />
+      <option name="project" value="LOCAL" />
+      <updated>1754156540176</updated>
+    </task>
+    <task id="LOCAL-00043" summary="[FIX] improved literal management">
+      <option name="closed" value="true" />
+      <created>1754234779832</created>
+      <option name="number" value="00043" />
+      <option name="presentableId" value="LOCAL-00043" />
+      <option name="project" value="LOCAL" />
+      <updated>1754234779832</updated>
+    </task>
+    <option name="localTasksCounter" value="44" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[WIP] dependencias circulares, test básicos arreglados" />
     <MESSAGE value="[WIP] after_load en Atom, no guardar None attributes" />
     <MESSAGE value="[WIP] fsm: máquina de estados básica" />
     <MESSAGE value="[WIP] mejoras varias por AI Junie" />
@@ -573,7 +592,8 @@
     <MESSAGE value="[FIX] errors in commit logic" />
     <MESSAGE value="[IMP] First implementation of performance analysis (Fully automated by Junie AI)" />
     <MESSAGE value="[ADD] Chat IA evolución proto" />
-    <option name="LAST_COMMIT_MESSAGE" value="[ADD] Chat IA evolución proto" />
+    <MESSAGE value="[FIX] improved literal management" />
+    <option name="LAST_COMMIT_MESSAGE" value="[FIX] improved literal management" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -590,18 +610,8 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/common.py</url>
-          <line>726</line>
+          <line>733</line>
           <option name="timeStamp" value="157" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/proto_db/common.py</url>
-          <line>514</line>
-          <option name="timeStamp" value="161" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/proto_db/common.py</url>
-          <line>506</line>
-          <option name="timeStamp" value="186" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/queries.py</url>
@@ -612,6 +622,21 @@
           <url>file://$PROJECT_DIR$/examples/simple_example.py</url>
           <line>84</line>
           <option name="timeStamp" value="203" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/proto_db/common.py</url>
+          <line>521</line>
+          <option name="timeStamp" value="208" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/proto_db/common.py</url>
+          <line>513</line>
+          <option name="timeStamp" value="211" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/proto_db/common.py</url>
+          <line>493</line>
+          <option name="timeStamp" value="229" />
         </line-breakpoint>
       </breakpoints>
       <default-breakpoints>
@@ -624,7 +649,7 @@
     </breakpoint-manager>
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/ProtoBase$simple_example.coverage" NAME="simple_example Coverage Results" MODIFIED="1754105221327" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/ProtoBase$simple_example.coverage" NAME="simple_example Coverage Results" MODIFIED="1754257217889" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$simple_performance_benchmark.coverage" NAME="simple_performance_benchmark Coverage Results" MODIFIED="1754096409583" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$.coverage" NAME=" Coverage Results" MODIFIED="1736352327720" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/ProtoBase$task_manager.coverage" NAME="task_manager Coverage Results" MODIFIED="1754105756618" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />

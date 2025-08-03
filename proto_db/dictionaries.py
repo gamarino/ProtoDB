@@ -15,7 +15,7 @@ _logger = logging.getLogger(__name__)
 
 class DictionaryItem(Atom):
     # Represents a key-value pair in a Dictionary, both durable and transaction-safe.
-    key: Literal
+    key: string
     value: object
 
     def __init__(
@@ -26,7 +26,7 @@ class DictionaryItem(Atom):
             atom_pointer: AtomPointer = None,  # Pointer to the atom for durability/consistency.
             **kwargs):  # Additional keyword arguments.
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        self.key = Literal(literal=key, transaction=transaction)  # Wrap the key as a Literal for durability.
+        self.key = key  # Wrap the key as a Literal for durability.
         self.value = value  # Assign the value to the dictionary item.
 
 
@@ -69,7 +69,7 @@ class Dictionary(DBCollections, ConcurrentOptimized):
         for item in self.content.as_iterable():  # Iterate through the content.
             item = (cast(DictionaryItem, item))  # Cast item to a DictionaryItem type.
             item._load()  # Ensure the item is loaded into memory.
-            yield item.key.string, item.value  # Yield the key-value pair.
+            yield item.key, item.value  # Yield the key-value pair.
 
     def as_query_plan(self) -> QueryPlan:
         """
@@ -124,14 +124,14 @@ class Dictionary(DBCollections, ConcurrentOptimized):
 
         left = 0
         right = self.content.count - 1
-        new_content = None
+        new_content = self.content
 
         while left <= right:
             center = (left + right) // 2
 
             item = cast(DictionaryItem, self.content.get_at(center))
             if item and str(item.key) == key:  # Check if the key already exists.
-                new_content = self.content.set_at(
+                new_content = new_content.set_at(
                     center,
                     DictionaryItem(
                         key=key,
@@ -145,7 +145,7 @@ class Dictionary(DBCollections, ConcurrentOptimized):
             else:
                 left = center + 1
         else:
-            new_content = self.content.insert_at(
+            new_content = new_content.insert_at(
                 left,
                 DictionaryItem(
                     key=key,

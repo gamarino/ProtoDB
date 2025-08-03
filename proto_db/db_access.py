@@ -165,30 +165,31 @@ class ObjectSpace(AbstractObjectSpace):
         with self._lock:
             root = self.get_space_root(lock=False)
             literal_catalog: Dictionary = cast(Dictionary, root.literal_root)
-            new_literals = set()
-            for literal in literals:
-                if literal_catalog.has(literal.string):
-                    existing_literal = literal_catalog.get_at(literal.string)
+            new_literals = list()
+            for literal_string, literal in literals.as_iterable():
+                if literal_catalog.has(literal_string):
+                    existing_literal = literal_catalog.get_at(literal_string)
                     literal.atom_pointer = existing_literal.atom_pointer
                 else:
-                    new_literals.add(literal)
+                    new_literals.append(literal)
 
             if new_literals:
                 # There are non resolved literals still
 
                 root = self.get_space_root(lock=True)
                 literal_catalog: Dictionary = cast(Dictionary, root.literal_root)
-                new_literals = False
+                literal_catalog.transaction = read_tr
+                update_catalog = False
                 for literal in new_literals:
-                    if not literal_catalog.has(literal.literal):
+                    if not literal_catalog.has(literal.string):
                         literal._save()
-                        literal_catalog = literal_catalog.set_at(literal, literal)
-                        new_literals = True
+                        literal_catalog = literal_catalog.set_at(literal.string, literal)
+                        update_catalog = True
                     else:
                         existing_literal = literal_catalog.get_at(literal.string)
                         literal.atom_pointer = existing_literal.atom_pointer
 
-                if new_literals:
+                if update_catalog:
                     literal_catalog._save()
                     root = RootObject(
                         object_root=root.object_root,
@@ -409,6 +410,8 @@ class ObjectTransaction(AbstractTransaction):
         if self.transaction_root and self.transaction_root.has('_mutable_root'):
             self.initial_mutable_objects = cast(HashDictionary, self.transaction_root.get_at('_mutable_root'))
         self.mutable_objects = HashDictionary()
+        self.literals = self.database.object_space.get_space_root().literal_root if self.database else \
+                        self.new_dictionary()
 
     def __enter(self):
         return self
@@ -438,7 +441,7 @@ class ObjectTransaction(AbstractTransaction):
         if self.new_literals.has(string):
             return self.new_literals.get_at(string)
         else:
-            existing_literal = self.database.get_literal(string)
+            existing_literal = self.literals.get_at(string)
             if existing_literal:
                 return existing_literal
             else:
@@ -466,8 +469,12 @@ class ObjectTransaction(AbstractTransaction):
         :param value:
         :return:
         """
+
         if isinstance(value, Atom):
             value._save()
+
+        # Ensure all new literals are created
+        self._update_created_literals(self.new_literals)
 
         with self.lock:
             if self.transaction_root:
@@ -530,8 +537,8 @@ class ObjectTransaction(AbstractTransaction):
                                                  f"that does not support automatic merging.")
 
     def _update_created_literals(self, current_literal_root: Dictionary) -> Dictionary:
-        literal_update_tr = self.database.new_transaction()
-        current_literal_root = self.database.read_db_root().literal_root
+        literal_update_tr = ObjectTransaction(self.database, storage=self.storage)
+        current_literal_root = self.database.read_db_root()
         if self.new_literals.count > 0:
             for key, value in self.new_literals.as_iterable():
                 if not current_literal_root.has(key):
@@ -579,9 +586,6 @@ class ObjectTransaction(AbstractTransaction):
 
                 if self.new_roots.count != 0 or self.modified_mutable_objects.count != 0 or self.new_literals.count != 0:
                     # Save transaction created objects before locking database root
-
-                    if self.new_literals.count > 0:
-                        self.database.update_literals(self.new_literals)
 
                     self._save_modified_mutables()
                     self._save_modified_roots()

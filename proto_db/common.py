@@ -11,8 +11,7 @@ import io
 import configparser
 import datetime
 
-from .exceptions import ProtoValidationException
-
+from .exceptions import ProtoValidationException, ProtoCorruptionException
 
 # Constants for storage size units
 KB: int  = 1024
@@ -455,7 +454,7 @@ class Atom(metaclass=CombinedMeta):
                     # converting attributes strs to Literals
                     object.__setattr__(self, '_saved', True)
 
-                    if isinstance(self, Literal):
+                    if isinstance(self, Literal) and not self.atom_pointer:
                         json_value = {
                             'className': 'Literal',
                             'string': self.string
@@ -486,6 +485,22 @@ class Atom(metaclass=CombinedMeta):
                                     'transaction_id': str(value.__dict__['atom_pointer'].transaction_id),
                                     'offset': value.__dict__['atom_pointer'].offset
                                 }
+
+                            elif isinstance(value, str):
+                                literal = self.transaction.get_literal(value)
+                                if not literal.atom_pointer:
+                                    self.transaction._update_created_literals(self.transaction.new_literals)
+                                if not literal.atom_pointer:
+                                    raise ProtoCorruptionException(
+                                        message="Corruption saving string as literal!"
+                                    )
+
+                                json_value[name] = {
+                                    'className': type(literal).__name__,
+                                    'transaction_id': str(literal.__dict__['atom_pointer'].transaction_id),
+                                    'offset': literal.__dict__['atom_pointer'].offset
+                                }
+
                             else:
                                 json_value[name] = value
 
@@ -777,12 +792,12 @@ class Literal(Atom):
     string: str
 
     def __init__(self,
-                 literal: str = None,
+                 string: str = None,
                  transaction: AbstractTransaction = None,
                  atom_pointer: AtomPointer = None,
                  **kwargs):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        self.string = literal or ''
+        self.string = string or ''
 
     def __eq__(self, other: str | Literal) -> bool:
         if isinstance(other, Literal):
