@@ -29,7 +29,7 @@ class ObjectSpace(AbstractObjectSpace):
         self._lock = Lock()
 
     def _read_db_catalog(self) -> dict[str:Dictionary]:
-        read_tr = ObjectTransaction(None, storage_provider=self.storage_provider)
+        read_tr = ObjectTransaction(None, storage=self.storage)
         root_pointer = self.storage.read_current_root()
         space_history: List = List(
             transaction=read_tr,
@@ -113,95 +113,92 @@ class ObjectSpace(AbstractObjectSpace):
         # TODO
         pass
 
-    def get_space_root(self, lock=False) -> RootObject:
-        read_tr = ObjectTransaction(None, storage_provider=self.storage_provider)
+    def finish_update(self):
+        return self.storage.unlock_current_root()
+
+    def get_space_history(self, lock=False) -> List:
+        read_tr = ObjectTransaction(None, storage=self.storage)
 
         if lock:
             root_pointer = self.storage.read_lock_current_root()
         else:
             root_pointer = self.storage.read_current_root()
-        if root_pointer:
-            space_history = List(
-                atom_pointer=root_pointer,
-                transaction=read_tr
-            )
-            space_history._load()
-            if space_history.count == 0:
-                initial_root = RootObject(
-                    object_root=Dictionary(),
-                    literal_root=Dictionary(),
-                    transaction=read_tr
-                )
-                space_history = space_history.set_at(0, initial_root)
-        else:
-            space_history = List()
-            initial_root = RootObject(
-                object_root=Dictionary(),
-                literal_root=Dictionary(),
-                transaction=read_tr
-            )
-            space_history = space_history.set_at(0, initial_root)
 
-        space_root = cast(RootObject, space_history.get_at(0))
-        if space_root:
-            space_root._load()
+        if root_pointer:
+            space_history = List(transaction=read_tr, atom_pointer=root_pointer)
+            space_history._load()
         else:
+            space_history = List(transaction=read_tr)
+
+        return space_history
+
+    def get_space_root(self, lock=False) -> RootObject:
+        read_tr = ObjectTransaction(None, storage=self.storage)
+
+        space_history = self.get_space_history(lock)
+
+        if space_history.count == 0:
             space_root = RootObject(
                 object_root=Dictionary(),
                 literal_root=Dictionary(),
                 transaction=read_tr
             )
+        else:
+            space_root = space_history.get_at(0)
 
         return space_root
 
-    def finish_update(self):
-        return self.storage.unlock_current_root()
-
     def set_space_root(self, new_space_root: RootObject):
-        update_tr = ObjectTransaction(None, storage_provider=self.storage_provider)
+        update_tr = ObjectTransaction(None, storage=self.storage)
 
+        space_history = self.get_space_history()
 
-        root_pointer = self.storage.read_current_root()
-        if root_pointer:
-            space_history = List(transaction=update_tr, atom_pointer=root_pointer)
-            space_history._load()
-            if space_history.count == 0:
-                initial_root = RootObject(
-                    object_root=Dictionary(transaction=update_tr),
-                    literal_root=Dictionary(transaction=update_tr),
-                    transaction=update_tr
-                )
-        else:
-            space_history = List(transaction=update_tr)
-            initial_root = RootObject(
-                object_root=Dictionary(transaction=update_tr),
-                literal_root=Dictionary(transaction=update_tr),
-                transaction=update_tr
-            )
-
+        new_space_root.transaction = update_tr
         space_history = space_history.insert_at(0, new_space_root)
         space_history._save()
 
         self.storage_provider.set_current_root(space_history.atom_pointer)
-        update_tr.abort()
 
-    def get_literals(self, literals: list[str]) -> dict[str, Atom]:
+    def get_literals(self, literals: Dictionary) -> dict[str, Literal]:
+        read_tr = ObjectTransaction(None, storage=self.storage)
+
         with self._lock:
-            root = self.storage.read_current_root()
+            root = self.get_space_root(lock=False)
             literal_catalog: Dictionary = cast(Dictionary, root.literal_root)
-            result = {}
+            new_literals = set()
             for literal in literals:
-                if literal_catalog.has(literal):
-                    result[literal] = literal_catalog.get_at(literal)
+                if literal_catalog.has(literal.string):
+                    existing_literal = literal_catalog.get_at(literal.string)
+                    literal.atom_pointer = existing_literal.atom_pointer
                 else:
-                    new_literal = Literal(literal=literal)
-                    result[literal] = new_literal
-                    literal_catalog.set_at(literal, new_literal)
+                    new_literals.add(literal)
 
-            root.literal_root = literal_catalog
-            self.storage.set_current_root(root)
+            if new_literals:
+                # There are non resolved literals still
 
-            return result
+                root = self.get_space_root(lock=True)
+                literal_catalog: Dictionary = cast(Dictionary, root.literal_root)
+                new_literals = False
+                for literal in new_literals:
+                    if not literal_catalog.has(literal.literal):
+                        literal._save()
+                        literal_catalog = literal_catalog.set_at(literal, literal)
+                        new_literals = True
+                    else:
+                        existing_literal = literal_catalog.get_at(literal.string)
+                        literal.atom_pointer = existing_literal.atom_pointer
+
+                if new_literals:
+                    literal_catalog._save()
+                    root = RootObject(
+                        object_root=root.object_root,
+                        literal_root=literal_catalog,
+                        transaction=read_tr
+                    )
+                    self.set_space_root(root)
+
+                self.storage.unlock_current_root()
+
 
     def close(self):
         with self._lock:
@@ -235,23 +232,7 @@ class Database(AbstractDatabase):
         return False
 
     def update_literals(self, new_literals: Dictionary) -> Dictionary:
-        ul_tr = ObjectTransaction(self)
-        space_root: RootObject = self.object_space.get_space_root(lock=True)
-        literal_root: Dictionary = space_root.literal_root
-
-        if new_literals.count > 0:
-            for name, literal in new_literals.as_iterable():
-                if not literal_root.has(name):
-                    literal._save()
-                    literal_root = literal_root.set_at(name, literal)
-
-        space_root = RootObject(
-            literal_root=literal_root,
-            object_root=space_root.object_root,
-            transaction=ul_tr
-        )
-
-        self.object_space.set_space_root(space_root)
+        return self.object_space.get_literals(new_literals)
 
     def read_db_root(self, lock=False) -> Dictionary:
         read_tr = ObjectTransaction(self)
@@ -341,16 +322,6 @@ class Database(AbstractDatabase):
         #         empty databases if the database didn't exist at the time)
         pass
 
-    def get_literal(self, string: str) -> Literal | None:
-        root = self.object_space.get_current_root()
-        if not root:
-            return None
-        literal_root: Dictionary = root.liter
-        if literal_root.has(string):
-            return literal_root.get_at(string)
-        else:
-            return None
-
 
 class ObjectTransaction(AbstractTransaction):
     """
@@ -418,7 +389,7 @@ class ObjectTransaction(AbstractTransaction):
     def __init__(self,
                  database: Database,
                  db_root: Dictionary = None,
-                 storage_provider = None,
+                 storage = None,
                  enclosing_transaction: ObjectTransaction = None):
         super().__init__()
         self.lock = RLock()
@@ -428,8 +399,8 @@ class ObjectTransaction(AbstractTransaction):
 
         self.transaction_root = db_root
         self.initial_transaction_root = self.transaction_root
-        self.storage_provider = storage_provider if storage_provider else \
-                                database.object_space.storage_provider if database else None
+        self.storage = storage if storage else \
+                       database.object_space.storage if database else None
         self.new_roots = Dictionary()
         self.read_lock_objects = HashDictionary()
         self.new_mutable_objects = HashDictionary()

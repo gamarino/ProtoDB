@@ -133,14 +133,6 @@ class AbstractDatabase(ABC):
     def __init__(self, object_space: AbstractObjectSpace):
         self.object_space = object_space
 
-    @abstractmethod
-    def get_literal(self, literal: str):
-        """
-
-        :param literal:
-        :return:
-        """
-
 
 class AbstractTransaction(ABC):
     """
@@ -303,7 +295,7 @@ class Atom(metaclass=CombinedMeta):
                 if 'atom_pointer' in self.__dict__ and self.__dict__['atom_pointer'] and \
                    self.__dict__['atom_pointer'].transaction_id:
                     atom_pointer = self.__dict__['atom_pointer']
-                    loaded_atom = transaction.storage_provider.get_atom(
+                    loaded_atom = transaction.storage.get_atom(
                         atom_pointer).result()
                     loaded_dict = self._json_to_dict(loaded_atom)
                     for attribute_name, attribute_value in loaded_dict.items():
@@ -350,7 +342,7 @@ class Atom(metaclass=CombinedMeta):
             return False
 
     def _push_to_storage(self, json_value: dict) -> AtomPointer:
-        return self.transaction.storage_provider.push_atom(json_value).result()
+        return self.transaction.storage.push_atom(json_value).result()
 
     def _json_to_dict(self, json_data: dict) -> dict:
         data = {}
