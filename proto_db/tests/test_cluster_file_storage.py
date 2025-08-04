@@ -1,17 +1,11 @@
+import io
 import unittest
 from unittest.mock import Mock, MagicMock, patch
 from uuid import uuid4
-import io
-import struct
-import socket
-import threading
-import time
-from typing import List, Tuple
 
-from ..cluster_file_storage import ClusterFileStorage, ClusterNetworkManager
-from ..standalone_file_storage import StandaloneFileStorage, WALState, AtomPointer
-from ..common import BlockProvider
-from ..exceptions import ProtoValidationException, ProtoUnexpectedException
+from ..cluster_file_storage import ClusterFileStorage
+from ..exceptions import ProtoUnexpectedException
+from ..standalone_file_storage import AtomPointer
 
 
 class TestClusterFileStorage(unittest.TestCase):
@@ -54,7 +48,6 @@ class TestClusterFileStorage(unittest.TestCase):
                 max_retries=3,  # Number of retries for network operations
                 retry_interval_ms=10  # Short interval for tests
             )
-
 
     def test_init_storage(self):
         """
@@ -128,7 +121,6 @@ class TestClusterFileStorage(unittest.TestCase):
         self.mock_network_manager.broadcast_root_update.assert_called_once_with(
             test_pointer.transaction_id, test_pointer.offset
         )
-
 
     def test_unlock_current_root(self):
         """

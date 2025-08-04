@@ -1,9 +1,7 @@
-import unittest
 import asyncio
-import concurrent.futures
 import time
-import threading
-from unittest.mock import MagicMock, patch
+import unittest
+from unittest.mock import patch
 
 from ..hybrid_executor import HybridExecutor, sync_task, async_task
 
@@ -69,6 +67,7 @@ class TestHybridExecutor(unittest.TestCase):
         """
         Test that submitting a synchronous task works correctly.
         """
+
         # Define a simple synchronous task
         def simple_sync_task():
             return "sync result"
@@ -83,6 +82,7 @@ class TestHybridExecutor(unittest.TestCase):
         """
         Test that submitting an asynchronous task works correctly.
         """
+
         # Define a simple asynchronous task
         async def simple_async_task():
             await asyncio.sleep(0.1)
@@ -98,6 +98,7 @@ class TestHybridExecutor(unittest.TestCase):
         """
         Test that submitting a coroutine object works correctly.
         """
+
         # Create a coroutine object
         async def coro_func():
             await asyncio.sleep(0.1)
@@ -115,6 +116,7 @@ class TestHybridExecutor(unittest.TestCase):
         """
         Test that multiple tasks can be executed concurrently.
         """
+
         # Define tasks that will run concurrently
         def sync_task_with_delay(delay):
             time.sleep(delay)
@@ -194,6 +196,7 @@ class TestHybridExecutor(unittest.TestCase):
         """
         Test that errors in synchronous tasks are properly propagated.
         """
+
         # Define a task that raises an exception
         def failing_sync_task():
             raise ValueError("Sync task error")
@@ -211,6 +214,7 @@ class TestHybridExecutor(unittest.TestCase):
         """
         Test that errors in asynchronous tasks are properly propagated.
         """
+
         # Define a task that raises an exception
         async def failing_async_task():
             await asyncio.sleep(0.1)

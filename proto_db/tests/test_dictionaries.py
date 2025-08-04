@@ -1,7 +1,6 @@
 import unittest
-import uuid
-from ..dictionaries import Dictionary, DictionaryItem, Atom  # Sustituye 'your_module' por el nombre del módulo correcto
-from ..common import ConcurrentOptimized
+
+from ..dictionaries import Dictionary, Atom  # Sustituye 'your_module' por el nombre del módulo correcto
 
 
 class TestDictionary(unittest.TestCase):
@@ -114,7 +113,7 @@ class TestDictionary(unittest.TestCase):
         concurrent_dict = concurrent_dict.set_at("key1", "value1")
         concurrent_dict = concurrent_dict.set_at("key2", "value2")
         concurrent_dict = concurrent_dict.set_at("key3", "value3")  # Add a new key
-        concurrent_dict = concurrent_dict.remove_at("key1")         # Remove key1
+        concurrent_dict = concurrent_dict.remove_at("key1")  # Remove key1
 
         # Create our local modifications
         local_dict = base_dict.set_at("key4", "value4")  # Add a new key
@@ -123,7 +122,7 @@ class TestDictionary(unittest.TestCase):
         # Manually simulate what would happen in a concurrent update scenario
         # Apply our local modifications to the concurrent dictionary
         rebased_dict = concurrent_dict
-        rebased_dict = rebased_dict.set_at("key4", "value4")      # Add key4 from local_dict
+        rebased_dict = rebased_dict.set_at("key4", "value4")  # Add key4 from local_dict
         rebased_dict = rebased_dict.set_at("key2", "new_value2")  # Update key2 from local_dict
 
         # Verify the rebased dictionary has the expected values

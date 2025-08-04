@@ -1,24 +1,20 @@
 from __future__ import annotations
-import concurrent.futures
+
+import hashlib
 import io
 import json
+import logging
 import os
-import socket
 import threading
 import time
 import uuid
-import logging
-import base64
-import hashlib
-from typing import Dict, List, Optional, Tuple, Any, Set, BinaryIO
 from abc import ABC, abstractmethod
+from typing import Dict, List, Tuple, Any, BinaryIO
 
 from . import common
-from .common import MB, GB, Future, BlockProvider, AtomPointer
+from .cluster_file_storage import ClusterFileStorage
+from .common import MB, BlockProvider, AtomPointer
 from .exceptions import ProtoUnexpectedException, ProtoValidationException
-from .fsm import FSM
-from .standalone_file_storage import StandaloneFileStorage, WALState, WALWriteOperation
-from .cluster_file_storage import ClusterFileStorage, ClusterNetworkManager
 
 _logger = logging.getLogger(__name__)
 
@@ -44,10 +40,11 @@ class CloudObjectMetadata:
     """
     Metadata for a cloud storage object.
     """
-    def __init__(self, 
-                 key: str, 
-                 size: int, 
-                 etag: str = None, 
+
+    def __init__(self,
+                 key: str,
+                 size: int,
+                 etag: str = None,
                  last_modified: float = None,
                  is_cached: bool = False,
                  cache_path: str = None):
@@ -69,6 +66,7 @@ class CloudObjectMetadata:
         self.is_cached = is_cached
         self.cache_path = cache_path
 
+
 # For backward compatibility
 S3ObjectMetadata = CloudObjectMetadata
 
@@ -81,8 +79,8 @@ class CloudStorageClient(ABC):
     Concrete implementations should be provided for specific cloud providers.
     """
 
-    def __init__(self, 
-                 bucket: str, 
+    def __init__(self,
+                 bucket: str,
                  prefix: str = ""):
         """
         Initialize the cloud storage client.
@@ -168,8 +166,8 @@ class S3Client(CloudStorageClient):
     This class implements the CloudStorageClient interface for S3-compatible storage.
     """
 
-    def __init__(self, 
-                 bucket: str, 
+    def __init__(self,
+                 bucket: str,
                  prefix: str = "",
                  endpoint_url: str = None,
                  access_key: str = None,
@@ -529,8 +527,8 @@ class MockS3Client(MockCloudStorageClient):
     This implementation inherits from MockCloudStorageClient and adds S3-specific behavior.
     """
 
-    def __init__(self, 
-                 bucket: str, 
+    def __init__(self,
+                 bucket: str,
                  prefix: str = "",
                  endpoint_url: str = None,
                  access_key: str = None,
@@ -564,7 +562,7 @@ class CloudBlockProvider(BlockProvider):
     with local caching to improve performance.
     """
 
-    def __init__(self, 
+    def __init__(self,
                  cloud_client: CloudStorageClient,
                  cache_dir: str = DEFAULT_CACHE_DIR,
                  cache_size: int = DEFAULT_LOCAL_CACHE_SIZE,
@@ -608,7 +606,7 @@ class CloudBlockProvider(BlockProvider):
         self.config_data = self._load_config()
 
         _logger.info(f"Initialized CloudBlockProvider with cache_dir='{self.cache_dir}', "
-                    f"cache_size={self.cache_size}, object_size={self.object_size}")
+                     f"cache_size={self.cache_size}, object_size={self.object_size}")
 
     def _load_cache_metadata(self):
         """
@@ -634,7 +632,7 @@ class CloudBlockProvider(BlockProvider):
                         self.current_cache_size += meta["size"]
 
                 _logger.info(f"Loaded {len(self.cache_metadata)} cache metadata entries, "
-                            f"current cache size: {self.current_cache_size} bytes")
+                             f"current cache size: {self.current_cache_size} bytes")
             except Exception as e:
                 _logger.warning(f"Failed to load cache metadata: {e}")
 
@@ -1000,8 +998,8 @@ class CloudBlockProvider(BlockProvider):
                     )
 
                 if "className" not in root_dict or \
-                   "transaction_id" not in root_dict or \
-                   "offset" not in root_dict:
+                        "transaction_id" not in root_dict or \
+                        "offset" not in root_dict:
                     raise CloudStorageError(
                         message="Invalid format for root object!"
                     )
@@ -1227,7 +1225,8 @@ class CloudFileStorage(ClusterFileStorage):
 
                 # Put operations back in the pending list
                 if not self.upload_lock.acquire(timeout=5):  # 5 seconds timeout
-                    _logger.warning("Could not acquire upload_lock to put operations back in pending_uploads, operations will be lost")
+                    _logger.warning(
+                        "Could not acquire upload_lock to put operations back in pending_uploads, operations will be lost")
                 else:
                     try:
                         self.pending_uploads.extend(ops)
@@ -1259,7 +1258,8 @@ class CloudFileStorage(ClusterFileStorage):
 
                     # Add to pending uploads
                     if not self.upload_lock.acquire(timeout=5):  # 5 seconds timeout
-                        _logger.warning("Could not acquire upload_lock in _flush_wal, skipping adding to pending_uploads")
+                        _logger.warning(
+                            "Could not acquire upload_lock in _flush_wal, skipping adding to pending_uploads")
                         return written_size
 
                     try:
@@ -1322,8 +1322,8 @@ class GoogleCloudClient(CloudStorageClient):
     This class implements the CloudStorageClient interface for Google Cloud Storage.
     """
 
-    def __init__(self, 
-                 bucket: str, 
+    def __init__(self,
+                 bucket: str,
                  prefix: str = "",
                  project_id: str = None,
                  credentials_path: str = None):
@@ -1540,8 +1540,8 @@ class MockGoogleCloudClient(MockCloudStorageClient):
     This implementation inherits from MockCloudStorageClient and adds GCS-specific behavior.
     """
 
-    def __init__(self, 
-                 bucket: str, 
+    def __init__(self,
+                 bucket: str,
                  prefix: str = "",
                  project_id: str = None,
                  credentials_path: str = None):

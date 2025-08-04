@@ -2,12 +2,12 @@ import unittest
 import uuid
 from unittest.mock import MagicMock
 
-from proto_db.db_access import ObjectTransaction, ObjectSpace, Database
-from proto_db.memory_storage import MemoryStorage
 from proto_db.common import AtomPointer, DBObject
+from proto_db.db_access import ObjectSpace
+from proto_db.memory_storage import MemoryStorage
 from proto_db.queries import (
-    WherePlan, ListPlan, Expression, Term, AndExpression, OrExpression, NotExpression,
-    Equal, NotEqual, Greater, GreaterOrEqual, Lower, LowerOrEqual, Contains, In
+    WherePlan, ListPlan, Term, AndExpression, OrExpression, NotExpression,
+    Equal, NotEqual, Greater, GreaterOrEqual, Lower, LowerOrEqual
 )
 
 
@@ -196,7 +196,8 @@ class TestWherePlan(unittest.TestCase):
         self.assertEqual(set(r.id for r in result), {4, 5})
 
         # Test GreaterOrEqual
-        where_plan = WherePlan(filter=Term('age', GreaterOrEqual(), 26), based_on=self.base_plan, transaction=self.transaction)
+        where_plan = WherePlan(filter=Term('age', GreaterOrEqual(), 26), based_on=self.base_plan,
+                               transaction=self.transaction)
         result = list(where_plan.execute())
         self.assertEqual(len(result), 3)
         self.assertEqual(set(r.id for r in result), {3, 4, 5})
@@ -208,7 +209,8 @@ class TestWherePlan(unittest.TestCase):
         self.assertEqual(set(r.id for r in result), {1, 2})
 
         # Test LowerOrEqual
-        where_plan = WherePlan(filter=Term('age', LowerOrEqual(), 26), based_on=self.base_plan, transaction=self.transaction)
+        where_plan = WherePlan(filter=Term('age', LowerOrEqual(), 26), based_on=self.base_plan,
+                               transaction=self.transaction)
         result = list(where_plan.execute())
         self.assertEqual(len(result), 3)
         self.assertEqual(set(r.id for r in result), {1, 2, 3})

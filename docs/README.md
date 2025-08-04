@@ -34,7 +34,8 @@ cd docs
 make.bat html
 ```
 
-The generated HTML documentation will be in the `docs/build/html` directory. You can open `docs/build/html/index.html` in a web browser to view it.
+The generated HTML documentation will be in the `docs/build/html` directory. You can open `docs/build/html/index.html`
+in a web browser to view it.
 
 ### Building Other Formats
 

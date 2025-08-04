@@ -1,7 +1,7 @@
 import unittest
-import uuid
+
+from ..dictionaries import Dictionary, Atom
 from ..hash_dictionaries import HashDictionary
-from ..dictionaries import Dictionary, DictionaryItem, Atom
 
 
 class TestHashDictionary(unittest.TestCase):

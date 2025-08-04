@@ -1,12 +1,12 @@
 import asyncio
 import concurrent.futures
-import threading
-import time
 import inspect
 import logging
 import os
+import threading
+import time
 from itertools import cycle
-import math # Used for rounding
+
 
 # Basic logging setup (configure as needed in your application)
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(threadName)s - %(levelname)s - %(message)s')
@@ -39,6 +39,7 @@ class HybridExecutor:
     - Libraries needing internal async I/O execution without controlling the
       caller's event loop, while potentially exposing a sync API.
     """
+
     def __init__(self, base_num_workers: int | None = None, sync_multiplier: float | int = 2):
         """
         Initializes the HybridExecutor.
@@ -58,9 +59,9 @@ class HybridExecutor:
         """
         # --- Validate sync_multiplier (K) ---
         if not isinstance(sync_multiplier, (int, float)) or sync_multiplier < 1:
-             # We allow K >= 1, so setting K=1 means sync pool size == async pool size.
-             raise ValueError(f"sync_multiplier (K) must be a number >= 1, got: {sync_multiplier}")
-        self._sync_multiplier = sync_multiplier # Store K for logging
+            # We allow K >= 1, so setting K=1 means sync pool size == async pool size.
+            raise ValueError(f"sync_multiplier (K) must be a number >= 1, got: {sync_multiplier}")
+        self._sync_multiplier = sync_multiplier  # Store K for logging
 
         # --- Determine Async Pool Size (N) ---
         num_cores = os.cpu_count()
@@ -68,15 +69,17 @@ class HybridExecutor:
             if num_cores:
                 # Default N to number of CPU cores if detectable
                 self._num_async_workers = num_cores
-                logging.info(f"HybridExecutor: base_num_workers not specified. Using N={self._num_async_workers} (CPU cores) async workers.")
+                logging.info(
+                    f"HybridExecutor: base_num_workers not specified. Using N={self._num_async_workers} (CPU cores) async workers.")
             else:
                 # Fallback if os.cpu_count() fails
-                self._num_async_workers = 4 # A sensible fallback value
-                logging.warning(f"HybridExecutor: Could not determine CPU cores. Using fallback N={self._num_async_workers} async workers.")
+                self._num_async_workers = 4  # A sensible fallback value
+                logging.warning(
+                    f"HybridExecutor: Could not determine CPU cores. Using fallback N={self._num_async_workers} async workers.")
         else:
             # Use user-specified N
             if base_num_workers <= 0:
-                 raise ValueError("base_num_workers must be greater than 0")
+                raise ValueError("base_num_workers must be greater than 0")
             self._num_async_workers = base_num_workers
             logging.info(f"HybridExecutor: Using specified N={self._num_async_workers} async workers.")
 
@@ -84,13 +87,14 @@ class HybridExecutor:
         # Calculate K*N, ensuring at least 1 sync worker for functionality.
         # Rounding handles non-integer K, int() converts, max(1,...) ensures minimum.
         self._num_sync_workers = max(1, int(round(self._sync_multiplier * self._num_async_workers)))
-        logging.info(f"HybridExecutor: Using K={self._sync_multiplier}. Calculated {self._num_sync_workers} sync workers (max(1, int(round(K*N)))).")
+        logging.info(
+            f"HybridExecutor: Using K={self._sync_multiplier}. Calculated {self._num_sync_workers} sync workers (max(1, int(round(K*N)))).")
 
         # === Initialize Sync Pool ===
         # Standard thread pool for synchronous tasks.
         # This pool directly benefits from no-GIL for CPU-bound Python tasks.
         self._sync_executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=self._num_sync_workers, # Set size to K*N
+            max_workers=self._num_sync_workers,  # Set size to K*N
             thread_name_prefix='SyncWorker'
         )
 
@@ -99,8 +103,8 @@ class HybridExecutor:
         self._async_loops: list[asyncio.AbstractEventLoop] = []
         self._async_threads: list[threading.Thread] = []
         self._async_threads_started_events: list[threading.Event] = []
-        self._async_loop_iterator = None # For round-robin distribution
-        self._async_submit_lock = threading.Lock() # Protects the iterator during submit
+        self._async_loop_iterator = None  # For round-robin distribution
+        self._async_submit_lock = threading.Lock()  # Protects the iterator during submit
 
         logging.info(f"HybridExecutor: Creating N={self._num_async_workers} async worker threads/loops...")
         # Create N async worker threads.
@@ -130,18 +134,19 @@ class HybridExecutor:
         # This prevents submitting tasks before the loops are ready.
         logging.info(f"HybridExecutor: Waiting for all N={self._num_async_workers} AsyncLoopThreads to start...")
         for i, event in enumerate(self._async_threads_started_events):
-            event.wait() # Block until the event is set by the corresponding thread.
+            event.wait()  # Block until the event is set by the corresponding thread.
             logging.debug(f"HybridExecutor: AsyncLoopThread-{i} started.")
 
         # Initialize the round-robin iterator over the list of async loops.
         # This must be done *after* the loops list is populated.
         if self._async_loops:
-             self._async_loop_iterator = cycle(self._async_loops)
+            self._async_loop_iterator = cycle(self._async_loops)
         else:
-             # Edge case: N=0 (shouldn't happen with validation base_num_workers > 0)
-             logging.warning("HybridExecutor: No async worker threads were created.")
+            # Edge case: N=0 (shouldn't happen with validation base_num_workers > 0)
+            logging.warning("HybridExecutor: No async worker threads were created.")
 
-        logging.info(f"HybridExecutor initialized. {self._num_sync_workers} sync workers and {self._num_async_workers} async workers ready.")
+        logging.info(
+            f"HybridExecutor initialized. {self._num_sync_workers} sync workers and {self._num_async_workers} async workers ready.")
 
     def _run_async_loop(self, loop: asyncio.AbstractEventLoop, started_event: threading.Event):
         """
@@ -165,8 +170,8 @@ class HybridExecutor:
             # This call blocks until loop.stop() is called.
             loop.run_forever()
         except Exception as e:
-             # Log unexpected errors during loop execution
-             logging.error(f"Unexpected error in {thread_name} during run_forever: {e}", exc_info=True)
+            # Log unexpected errors during loop execution
+            logging.error(f"Unexpected error in {thread_name} during run_forever: {e}", exc_info=True)
         finally:
             # --- Graceful Cleanup Sequence for this specific loop ---
             logging.info(f"Closing event loop in {thread_name}...")
@@ -190,14 +195,14 @@ class HybridExecutor:
                 logging.debug(f"{thread_name}: Async generators shut down.")
 
             except Exception as e:
-                 # Log errors during cleanup but don't prevent loop closing.
-                 logging.error(f"Error during event loop cleanup in {thread_name}: {e}")
+                # Log errors during cleanup but don't prevent loop closing.
+                logging.error(f"Error during event loop cleanup in {thread_name}: {e}")
             finally:
-                 # 3. Close the loop itself.
-                 # Check if closed already to prevent errors.
-                 if not loop.is_closed():
-                      loop.close()
-                      logging.info(f"Event loop in {thread_name} closed.")
+                # 3. Close the loop itself.
+                # Check if closed already to prevent errors.
+                if not loop.is_closed():
+                    loop.close()
+                    logging.info(f"Event loop in {thread_name} closed.")
 
     def submit(self, fn, *args, **kwargs) -> concurrent.futures.Future:
         """
@@ -224,15 +229,15 @@ class HybridExecutor:
         if inspect.iscoroutinefunction(fn) or inspect.iscoroutine(fn):
             # --- Handle Asynchronous Task ---
             if not self._async_loop_iterator:
-                 # Safety check: cannot submit async tasks if no async workers exist.
-                 raise RuntimeError("HybridExecutor has no async workers configured to run the task.")
+                # Safety check: cannot submit async tasks if no async workers exist.
+                raise RuntimeError("HybridExecutor has no async workers configured to run the task.")
 
             # If it's already a coroutine object, use it directly.
             # Otherwise, call the async function to create the coroutine object.
             if inspect.iscoroutine(fn):
-                 coro = fn
+                coro = fn
             else:
-                 coro = fn(*args, **kwargs)
+                coro = fn(*args, **kwargs)
 
             # Select the next async event loop using thread-safe round-robin.
             with self._async_submit_lock:
@@ -241,10 +246,10 @@ class HybridExecutor:
 
             # Optional: Log which loop is getting the task.
             try:
-                 loop_index = self._async_loops.index(target_loop)
-                 thread_name = f"AsyncLoopThread-{loop_index}"
+                loop_index = self._async_loops.index(target_loop)
+                thread_name = f"AsyncLoopThread-{loop_index}"
             except ValueError:
-                 thread_name = "target loop" # Should not happen if setup is correct
+                thread_name = "target loop"  # Should not happen if setup is correct
             logging.debug(f"Submitting async task {getattr(fn, '__name__', 'coroutine')} to {thread_name}")
 
             # Schedule the coroutine on the chosen loop from this (potentially different) thread.
@@ -278,27 +283,27 @@ class HybridExecutor:
 
         # --- Shutdown Async Pool ---
         if self._async_loops:
-             # 1. Request all async loops to stop.
-             # `call_soon_threadsafe` is needed to schedule `loop.stop()` from this
-             # (potentially external) thread onto each loop's own thread.
-             logging.info(f"Requesting stop for {len(self._async_loops)} async event loops...")
-             for i, loop in enumerate(self._async_loops):
-                 if loop.is_running():
-                      logging.debug(f"Sending stop request to loop {i}...")
-                      loop.call_soon_threadsafe(loop.stop)
-                 else:
-                      logging.debug(f"Loop {i} was not running.")
+            # 1. Request all async loops to stop.
+            # `call_soon_threadsafe` is needed to schedule `loop.stop()` from this
+            # (potentially external) thread onto each loop's own thread.
+            logging.info(f"Requesting stop for {len(self._async_loops)} async event loops...")
+            for i, loop in enumerate(self._async_loops):
+                if loop.is_running():
+                    logging.debug(f"Sending stop request to loop {i}...")
+                    loop.call_soon_threadsafe(loop.stop)
+                else:
+                    logging.debug(f"Loop {i} was not running.")
 
-             # 2. Wait for all async worker threads to terminate.
-             # They will exit after their `loop.run_forever()` returns (due to `loop.stop()`)
-             # and they complete the cleanup in the `finally` block of `_run_async_loop`.
-             logging.info(f"Waiting for {len(self._async_threads)} AsyncLoopThreads to finish...")
-             for i, thread in enumerate(self._async_threads):
-                 thread.join() # Wait for the thread to completely finish.
-                 logging.debug(f"AsyncLoopThread-{i} finished.")
-             logging.info("All AsyncLoopThreads finished.")
+            # 2. Wait for all async worker threads to terminate.
+            # They will exit after their `loop.run_forever()` returns (due to `loop.stop()`)
+            # and they complete the cleanup in the `finally` block of `_run_async_loop`.
+            logging.info(f"Waiting for {len(self._async_threads)} AsyncLoopThreads to finish...")
+            for i, thread in enumerate(self._async_threads):
+                thread.join()  # Wait for the thread to completely finish.
+                logging.debug(f"AsyncLoopThread-{i} finished.")
+            logging.info("All AsyncLoopThreads finished.")
         else:
-             logging.info("No async worker threads to shut down.")
+            logging.info("No async worker threads to shut down.")
 
         # --- Shutdown Sync Pool ---
         # Use the standard shutdown method of ThreadPoolExecutor.
@@ -320,6 +325,7 @@ class HybridExecutor:
         # even if exceptions occurred within the block.
         self.shutdown()
 
+
 # --- Example Tasks (unchanged, for demonstration) ---
 def sync_task(task_id, duration):
     """Example synchronous task simulating blocking work."""
@@ -329,13 +335,15 @@ def sync_task(task_id, duration):
     logging.info(result)
     return result
 
+
 async def async_task(task_id, duration):
     """Example asynchronous task simulating non-blocking I/O."""
     logging.info(f"Async task {task_id}: Starting (will await asyncio.sleep for {duration}s).")
-    await asyncio.sleep(duration) # Simulates waiting for I/O cooperatively
+    await asyncio.sleep(duration)  # Simulates waiting for I/O cooperatively
     result = f"Async task {task_id}: Completed after {duration}s"
     logging.info(result)
     return result
+
 
 # --- Example Usage (demonstrates configuration and submission) ---
 if __name__ == "__main__":
@@ -347,43 +355,44 @@ if __name__ == "__main__":
     # and 2*N sync workers.
     try:
         with HybridExecutor() as executor1:
-             print(f"Executor 1 Info: Async Workers={executor1._num_async_workers}, Sync Workers={executor1._num_sync_workers}, K={executor1._sync_multiplier}")
-             futures1 = [
-                 executor1.submit(sync_task, "S1.1", 1.5),
-                 executor1.submit(async_task, "A1.1", 2.0),
-                 executor1.submit(sync_task, "S1.2", 0.5),
-                 executor1.submit(async_task, "A1.2", 1.0)
-             ]
-             print("Executor 1: Tasks submitted. Waiting for results...")
-             for future in concurrent.futures.as_completed(futures1):
-                 try:
-                      print(f"Executor 1: Result received -> {future.result()}")
-                 except Exception as e:
-                      logging.error(f"Executor 1: Task raised an exception: {e}")
-             print("Executor 1: All tasks likely completed.")
+            print(
+                f"Executor 1 Info: Async Workers={executor1._num_async_workers}, Sync Workers={executor1._num_sync_workers}, K={executor1._sync_multiplier}")
+            futures1 = [
+                executor1.submit(sync_task, "S1.1", 1.5),
+                executor1.submit(async_task, "A1.1", 2.0),
+                executor1.submit(sync_task, "S1.2", 0.5),
+                executor1.submit(async_task, "A1.2", 1.0)
+            ]
+            print("Executor 1: Tasks submitted. Waiting for results...")
+            for future in concurrent.futures.as_completed(futures1):
+                try:
+                    print(f"Executor 1: Result received -> {future.result()}")
+                except Exception as e:
+                    logging.error(f"Executor 1: Task raised an exception: {e}")
+            print("Executor 1: All tasks likely completed.")
     except Exception as e:
-         logging.error(f"Error during Executor 1 execution: {e}", exc_info=True)
-
+        logging.error(f"Error during Executor 1 execution: {e}", exc_info=True)
 
     print("\n--- Example 2: Specifying base workers and sync multiplier (k=1) ---")
     # Explicitly set N=4 async workers and K=1 (so 1*4=4 sync workers)
     try:
         with HybridExecutor(base_num_workers=4, sync_multiplier=1) as executor2:
-            print(f"Executor 2 Info: Async Workers={executor2._num_async_workers}, Sync Workers={executor2._num_sync_workers}, K={executor2._sync_multiplier}")
+            print(
+                f"Executor 2 Info: Async Workers={executor2._num_async_workers}, Sync Workers={executor2._num_sync_workers}, K={executor2._sync_multiplier}")
             futures2 = [
-                 executor2.submit(sync_task, "S2.1", 1.0),
-                 executor2.submit(async_task, "A2.1", 1.2),
-                 executor2.submit(sync_task, "S2.2", 1.1), # Will run concurrently if cores allow
-                 executor2.submit(async_task, "A2.2", 0.8) # Will run concurrently on async loops
+                executor2.submit(sync_task, "S2.1", 1.0),
+                executor2.submit(async_task, "A2.1", 1.2),
+                executor2.submit(sync_task, "S2.2", 1.1),  # Will run concurrently if cores allow
+                executor2.submit(async_task, "A2.2", 0.8)  # Will run concurrently on async loops
             ]
             print("Executor 2: Tasks submitted. Waiting for results...")
             for future in concurrent.futures.as_completed(futures2):
-                 try:
-                      print(f"Executor 2: Result received -> {future.result()}")
-                 except Exception as e:
-                      logging.error(f"Executor 2: Task raised an exception: {e}")
+                try:
+                    print(f"Executor 2: Result received -> {future.result()}")
+                except Exception as e:
+                    logging.error(f"Executor 2: Task raised an exception: {e}")
             print("Executor 2: All tasks likely completed.")
     except Exception as e:
-         logging.error(f"Error during Executor 2 execution: {e}", exc_info=True)
+        logging.error(f"Error during Executor 2 execution: {e}", exc_info=True)
 
     print("\n--- Example program finished ---")

@@ -4,7 +4,8 @@ This document describes the implementation of Google Cloud Storage support in Pr
 
 ## Overview
 
-ProtoBase now supports both Amazon S3 and Google Cloud Storage as backend storage options for `CloudFileStorage` and `CloudClusterFileStorage`. This allows you to choose the cloud storage provider that best fits your needs.
+ProtoBase now supports both Amazon S3 and Google Cloud Storage as backend storage options for `CloudFileStorage` and
+`CloudClusterFileStorage`. This allows you to choose the cloud storage provider that best fits your needs.
 
 ## Implementation
 
@@ -20,13 +21,14 @@ The cloud storage support is implemented through the following classes:
 ## Changes Made
 
 1. Completed the implementation of `S3Client` by adding the missing abstract methods:
-   - `_init_client`: Initializes the S3 client using boto3 or falls back to a mock implementation.
-   - `get_object`: Gets an object from S3.
-   - `put_object`: Puts an object to S3.
-   - `list_objects`: Lists objects in S3.
-   - `delete_object`: Deletes an object from S3.
+    - `_init_client`: Initializes the S3 client using boto3 or falls back to a mock implementation.
+    - `get_object`: Gets an object from S3.
+    - `put_object`: Puts an object to S3.
+    - `list_objects`: Lists objects in S3.
+    - `delete_object`: Deletes an object from S3.
 
-2. Ensured that `CloudBlockProvider`, `CloudFileStorage`, and `CloudClusterFileStorage` work with both `S3Client` and `GoogleCloudClient`.
+2. Ensured that `CloudBlockProvider`, `CloudFileStorage`, and `CloudClusterFileStorage` work with both `S3Client` and
+   `GoogleCloudClient`.
 
 ## Usage
 
@@ -100,7 +102,8 @@ storage = CloudFileStorage(
 
 ### Using CloudClusterFileStorage
 
-The usage for `CloudClusterFileStorage` is similar, just replace `CloudFileStorage` with `CloudClusterFileStorage` in the examples above.
+The usage for `CloudClusterFileStorage` is similar, just replace `CloudFileStorage` with `CloudClusterFileStorage` in
+the examples above.
 
 ```python
 from proto_db.cloud_cluster_file_storage import CloudClusterFileStorage

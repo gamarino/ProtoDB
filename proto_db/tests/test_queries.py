@@ -1,9 +1,8 @@
 import unittest
-from unittest.mock import MagicMock, PropertyMock
+from unittest.mock import MagicMock
 
-from proto_db.db_access import ObjectTransaction, ObjectSpace, Database
+from proto_db.db_access import ObjectSpace
 from proto_db.memory_storage import MemoryStorage
-from proto_db.common import AtomPointer
 from proto_db.queries import SelectPlan, ListPlan, WherePlan, AndExpression, Term, CountPlan, CountResultPlan, QueryPlan
 
 
@@ -139,7 +138,7 @@ class TestSelectPlan(unittest.TestCase):
         mock_base_plan.optimize.return_value = optimized_mock_plan
 
         select_plan = SelectPlan(fields={"field": "id"}, based_on=mock_base_plan, transaction=self.transaction)
-        
+
         result = select_plan.optimize(None)
 
         mock_base_plan.optimize.assert_called_once_with(None)
@@ -176,6 +175,7 @@ class TestSelectPlan(unittest.TestCase):
         Ensures that if a lambda or function raises an exception during execution,
         it is not silently ignored and bubbles up as expected.
         """
+
         def faulty_callable(record):
             if record["id"] == 2:
                 raise ValueError("A test-induced processing error")
@@ -196,6 +196,7 @@ class TestWherePlanOptimizer(unittest.TestCase):
     This suite validates the specific optimization strategies implemented in the
     `WherePlan.optimize` method, such as filter reordering and predicate pushdown.
     """
+
     def setUp(self):
         """
         Set up common resources for the optimizer tests.
@@ -220,7 +221,7 @@ class TestWherePlanOptimizer(unittest.TestCase):
         # Create an AND expression with the expensive term first.
         and_filter = AndExpression(terms=[expensive_term, cheaper_term])
         where_plan = WherePlan(filter=and_filter, based_on=self.base_plan, transaction=self.transaction)
-        
+
         # We can directly test the helper method to isolate this functionality.
         reordered_filter = where_plan._reorder_and_expression(and_filter)
 

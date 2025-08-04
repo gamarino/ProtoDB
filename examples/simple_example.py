@@ -18,7 +18,7 @@ import sys
 # Add the parent directory to the path to import proto_db
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from proto_db import ObjectSpace, DBObject, MutableObject
+from proto_db import ObjectSpace, DBObject
 from proto_db.memory_storage import MemoryStorage
 
 

@@ -1,10 +1,15 @@
 # Changes to Fix CloudFileStorage Test Hanging Issue
 
 ## Problem Description
-The test for `cloud_file_storage.py` was hanging indefinitely (taking more than 10 minutes to complete). After analyzing the code, I identified that the issue was related to the background uploader thread in the `CloudFileStorage` class.
+
+The test for `cloud_file_storage.py` was hanging indefinitely (taking more than 10 minutes to complete). After analyzing
+the code, I identified that the issue was related to the background uploader thread in the `CloudFileStorage` class.
 
 ## Root Cause
-The background uploader thread in `CloudFileStorage` runs in an infinite loop as long as `self.state == 'Running'`. However, there was no mechanism to properly stop this thread when the storage was closed, causing the test to hang indefinitely.
+
+The background uploader thread in `CloudFileStorage` runs in an infinite loop as long as `self.state == 'Running'`.
+However, there was no mechanism to properly stop this thread when the storage was closed, causing the test to hang
+indefinitely.
 
 ## Changes Made
 
@@ -60,6 +65,9 @@ The background uploader thread in `CloudFileStorage` runs in an infinite loop as
    ```
 
 ## Expected Outcome
-These changes should ensure that the background uploader thread is properly stopped when the storage is closed, which should fix the issue with the test hanging indefinitely.
 
-The test now checks for `self.assertFalse(self.storage.uploader_running)` to verify that the uploader thread has been stopped, which should now pass with these changes.
+These changes should ensure that the background uploader thread is properly stopped when the storage is closed, which
+should fix the issue with the test hanging indefinitely.
+
+The test now checks for `self.assertFalse(self.storage.uploader_running)` to verify that the uploader thread has been
+stopped, which should now pass with these changes.

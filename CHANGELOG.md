@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Google Cloud Storage Support
 
 - Added `GoogleCloudClient` as an implementation of `CloudStorageClient` for Google Cloud Storage
-- Ensured that `CloudBlockProvider`, `CloudFileStorage`, and `CloudClusterFileStorage` work with both `S3Client` and `GoogleCloudClient`
+- Ensured that `CloudBlockProvider`, `CloudFileStorage`, and `CloudClusterFileStorage` work with both `S3Client` and
+  `GoogleCloudClient`
 - Added comprehensive test suites for Google Cloud Storage integration
 - Added usage examples for Google Cloud Storage in documentation
 
@@ -22,10 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added support for JSON UTF-8 (the original format) and MessagePack (a new efficient binary format)
 - Maintained backward compatibility with existing data
 - Added new methods to support the new formats:
-  - `push_atom(atom: dict, format_type: int = FORMAT_JSON_UTF8) -> Future[AtomPointer]`
-  - `push_atom_msgpack(atom: dict) -> Future[AtomPointer]`
-  - `push_bytes(data: bytes, format_type: int = FORMAT_RAW_BINARY) -> Future[tuple[uuid.UUID, int]]`
-  - `push_bytes_msgpack(data: dict) -> Future[tuple[uuid.UUID, int]]`
+    - `push_atom(atom: dict, format_type: int = FORMAT_JSON_UTF8) -> Future[AtomPointer]`
+    - `push_atom_msgpack(atom: dict) -> Future[AtomPointer]`
+    - `push_bytes(data: bytes, format_type: int = FORMAT_RAW_BINARY) -> Future[tuple[uuid.UUID, int]]`
+    - `push_bytes_msgpack(data: dict) -> Future[tuple[uuid.UUID, int]]`
 
 #### PyPI Package Support
 
@@ -54,8 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Completed the implementation of `S3Client` by adding missing abstract methods:
-  - `_init_client`: Initializes the S3 client using boto3 or falls back to a mock implementation
-  - `get_object`: Gets an object from S3
-  - `put_object`: Puts an object to S3
-  - `list_objects`: Lists objects in S3
-  - `delete_object`: Deletes an object from S3
+    - `_init_client`: Initializes the S3 client using boto3 or falls back to a mock implementation
+    - `get_object`: Gets an object from S3
+    - `put_object`: Puts an object to S3
+    - `list_objects`: Lists objects in S3
+    - `delete_object`: Deletes an object from S3

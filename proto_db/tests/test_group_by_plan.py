@@ -1,9 +1,9 @@
 import unittest
 from unittest.mock import MagicMock
 
-from proto_db.db_access import ObjectTransaction, ObjectSpace, Database
-from proto_db.memory_storage import MemoryStorage
 from proto_db.common import AtomPointer, DBObject
+from proto_db.db_access import ObjectSpace
+from proto_db.memory_storage import MemoryStorage
 from proto_db.queries import (
     GroupByPlan, ListPlan, SumAgreggator, AvgAggregator, CountAggregator,
     MinAgreggator, MaxAgreggator, AgreggatorSpec

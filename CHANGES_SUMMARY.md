@@ -1,32 +1,39 @@
 # Changes Made to Convert proto_db into a PyPI Package
 
-This document summarizes the changes made to convert the proto_db project into a module that can be uploaded to the Python Package Index (PyPI).
+This document summarizes the changes made to convert the proto_db project into a module that can be uploaded to the
+Python Package Index (PyPI).
 
 ## Files Created
 
-1. **pyproject.toml**: Configuration file for the package, including metadata, dependencies, and build system information.
-   - Defined package name, version, description, authors, license, and classifiers
-   - Specified Python 3.11 as the minimum required version
-   - Configured setuptools as the build backend
+1. **pyproject.toml**: Configuration file for the package, including metadata, dependencies, and build system
+   information.
+    - Defined package name, version, description, authors, license, and classifiers
+    - Specified Python 3.11 as the minimum required version
+    - Configured setuptools as the build backend
 
-2. **LICENSE**: Added an MIT License file to clearly specify the terms under which the software can be used, modified, and distributed.
+2. **LICENSE**: Added an MIT License file to clearly specify the terms under which the software can be used, modified,
+   and distributed.
 
-3. **MANIFEST.in**: Created to ensure that non-Python files (LICENSE, README.md) are included in the package distribution.
+3. **MANIFEST.in**: Created to ensure that non-Python files (LICENSE, README.md) are included in the package
+   distribution.
 
-4. **test_install.py**: Script to test the local installation of the package, verifying that it can be installed and used correctly.
+4. **test_install.py**: Script to test the local installation of the package, verifying that it can be installed and
+   used correctly.
 
-5. **PYPI_UPLOAD.md**: Documentation on how to build and upload the package to PyPI, including prerequisites, build instructions, testing procedures, and automation options.
+5. **PYPI_UPLOAD.md**: Documentation on how to build and upload the package to PyPI, including prerequisites, build
+   instructions, testing procedures, and automation options.
 
 ## Files Modified
 
 1. **README.md**: Updated to include:
-   - Installation instructions for installing from PyPI
-   - Alternative installation instructions for installing from source
-   - License information with a link to the LICENSE file
+    - Installation instructions for installing from PyPI
+    - Alternative installation instructions for installing from source
+    - License information with a link to the LICENSE file
 
 ## No Changes Required
 
-1. **proto_db/__init__.py**: The existing file already properly imports and exposes the package's components, so no changes were needed.
+1. **proto_db/__init__.py**: The existing file already properly imports and exposes the package's components, so no
+   changes were needed.
 
 ## Next Steps
 
@@ -49,9 +56,11 @@ The proto_db package is now ready to be built and uploaded to PyPI. To do this:
 ## Recent Documentation Updates
 
 1. **Advanced Storage Options**: Added comprehensive documentation for:
-   - `ClusterFileStorage`: Distributed storage for high availability and horizontal scaling
-   - `CloudFileStorage`: Cloud-based storage using S3-compatible object storage services
+    - `ClusterFileStorage`: Distributed storage for high availability and horizontal scaling
+    - `CloudFileStorage`: Cloud-based storage using S3-compatible object storage services
 
-2. **Package Exports**: Updated `__init__.py` to expose the advanced storage options, making them easily accessible to users.
+2. **Package Exports**: Updated `__init__.py` to expose the advanced storage options, making them easily accessible to
+   users.
 
-3. **Use Cases**: Added detailed use cases for the advanced storage options to help users understand when and how to use them effectively.
+3. **Use Cases**: Added detailed use cases for the advanced storage options to help users understand when and how to use
+   them effectively.

@@ -1,20 +1,20 @@
 from __future__ import annotations
-import concurrent.futures
+
 import io
 import json
+import logging
 import os
 import socket
 import threading
 import time
 import uuid
-import logging
-from typing import Dict, List, Optional, Tuple, Any, Set
+from typing import Dict, List, Optional, Tuple, Any
 
 from . import common
-from .common import MB, GB, Future, BlockProvider, AtomPointer
-from .exceptions import ProtoUnexpectedException, ProtoValidationException
+from .common import BlockProvider, AtomPointer
+from .exceptions import ProtoUnexpectedException
 from .fsm import FSM
-from .standalone_file_storage import StandaloneFileStorage, WALState, WALWriteOperation
+from .standalone_file_storage import StandaloneFileStorage
 
 _logger = logging.getLogger(__name__)
 
@@ -42,9 +42,9 @@ class ClusterNetworkManager:
     including vote requests/responses, page requests/responses, and root updates.
     """
 
-    def __init__(self, 
+    def __init__(self,
                  server_id: str,
-                 host: str, 
+                 host: str,
                  port: int,
                  servers: List[Tuple[str, int]],
                  vote_timeout_ms: int = DEFAULT_VOTE_TIMEOUT_MS,
@@ -369,9 +369,9 @@ class ClusterNetworkManager:
                 self.vote_responses[request_id][responder_id] = vote_granted
 
         self.fsm.send_event({
-            'name': 'VoteResponse', 
-            'request_id': request_id, 
-            'responder_id': responder_id, 
+            'name': 'VoteResponse',
+            'request_id': request_id,
+            'responder_id': responder_id,
             'vote_granted': vote_granted
         })
 
@@ -444,8 +444,8 @@ class ClusterNetworkManager:
             self._send_message(addr[0], addr[1], response)
 
         self.fsm.send_event({
-            'name': 'PageRequest', 
-            'request_id': request_id, 
+            'name': 'PageRequest',
+            'request_id': request_id,
             'requester_id': requester_id,
             'wal_id': wal_id_str,
             'offset': offset
@@ -487,8 +487,8 @@ class ClusterNetworkManager:
                 }
 
         self.fsm.send_event({
-            'name': 'PageResponse', 
-            'request_id': request_id, 
+            'name': 'PageResponse',
+            'request_id': request_id,
             'responder_id': responder_id,
             'wal_id': wal_id,
             'offset': offset,
@@ -524,7 +524,7 @@ class ClusterNetworkManager:
             _logger.error(f"Error handling root update: {e}")
 
         self.fsm.send_event({
-            'name': 'RootUpdate', 
+            'name': 'RootUpdate',
             'updater_id': updater_id,
             'transaction_id': transaction_id_str,
             'offset': offset
@@ -797,15 +797,18 @@ class ClusterFileStorage(StandaloneFileStorage):
             self.servers = servers
 
         # Load timeouts and retry settings
-        self.vote_timeout_ms = vote_timeout_ms or config.getint('cluster', 'vote_timeout_ms', fallback=DEFAULT_VOTE_TIMEOUT_MS)
-        self.read_timeout_ms = read_timeout_ms or config.getint('cluster', 'read_timeout_ms', fallback=DEFAULT_READ_TIMEOUT_MS)
-        self.retry_interval_ms = retry_interval_ms or config.getint('cluster', 'retry_interval_ms', fallback=DEFAULT_RETRY_INTERVAL_MS)
+        self.vote_timeout_ms = vote_timeout_ms or config.getint('cluster', 'vote_timeout_ms',
+                                                                fallback=DEFAULT_VOTE_TIMEOUT_MS)
+        self.read_timeout_ms = read_timeout_ms or config.getint('cluster', 'read_timeout_ms',
+                                                                fallback=DEFAULT_READ_TIMEOUT_MS)
+        self.retry_interval_ms = retry_interval_ms or config.getint('cluster', 'retry_interval_ms',
+                                                                    fallback=DEFAULT_RETRY_INTERVAL_MS)
         self.max_retries = max_retries or config.getint('cluster', 'max_retries', fallback=DEFAULT_MAX_RETRIES)
 
         _logger.info(f"Cluster configuration: server_id={self.server_id}, host={self.host}, port={self.port}, "
-                    f"servers={self.servers}, vote_timeout_ms={self.vote_timeout_ms}, "
-                    f"read_timeout_ms={self.read_timeout_ms}, retry_interval_ms={self.retry_interval_ms}, "
-                    f"max_retries={self.max_retries}")
+                     f"servers={self.servers}, vote_timeout_ms={self.vote_timeout_ms}, "
+                     f"read_timeout_ms={self.read_timeout_ms}, retry_interval_ms={self.retry_interval_ms}, "
+                     f"max_retries={self.max_retries}")
 
         # Initialize network manager
         self.network_manager = ClusterNetworkManager(
@@ -873,7 +876,7 @@ class ClusterFileStorage(StandaloneFileStorage):
 
         # Broadcast the update to all servers
         servers_updated = self.network_manager.broadcast_root_update(
-            root_pointer.transaction_id, 
+            root_pointer.transaction_id,
             root_pointer.offset
         )
 

@@ -1,85 +1,100 @@
-
-
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" data-content_root="../../">
+<html class="writer-html5" data-content_root="../../" lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>proto_db.dictionaries &mdash; ProtoBase 0.1.0 documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=80d5e7a1" />
-      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>proto_db.dictionaries &mdash; ProtoBase 0.1.0 documentation</title>
+    <link href="../../_static/pygments.css?v=80d5e7a1" rel="stylesheet" type="text/css"/>
+    <link href="../../_static/css/theme.css?v=e59714d7" rel="stylesheet" type="text/css"/>
 
-  
-      <script src="../../_static/jquery.js?v=5d32c60e"></script>
-      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../../_static/documentation_options.js?v=01f34227"></script>
-      <script src="../../_static/doctools.js?v=9bcbadda"></script>
-      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+
+    <script src="../../_static/jquery.js?v=5d32c60e"></script>
+    <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+    <script src="../../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/js/theme.js"></script>
-    <link rel="index" title="Index" href="../../genindex.html" />
-    <link rel="search" title="Search" href="../../search.html" /> 
+    <link href="../../genindex.html" rel="index" title="Index"/>
+    <link href="../../search.html" rel="search" title="Search"/>
 </head>
 
-<body class="wy-body-for-nav"> 
-  <div class="wy-grid-for-nav">
-    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
-      <div class="wy-side-scroll">
-        <div class="wy-side-nav-search" >
+<body class="wy-body-for-nav">
+<div class="wy-grid-for-nav">
+    <nav class="wy-nav-side" data-toggle="wy-nav-shift">
+        <div class="wy-side-scroll">
+            <div class="wy-side-nav-search">
 
-          
-          
-          <a href="../../index.html" class="icon icon-home">
-            ProtoBase
-          </a>
-<div role="search">
-  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
-    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
-    <input type="hidden" name="check_keywords" value="yes" />
-    <input type="hidden" name="area" value="default" />
-  </form>
-</div>
-        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
-</ul>
 
+                <a class="icon icon-home" href="../../index.html">
+                    ProtoBase
+                </a>
+                <div role="search">
+                    <form action="../../search.html" class="wy-form" id="rtd-search-form" method="get">
+                        <input aria-label="Search docs" name="q" placeholder="Search docs" type="text"/>
+                        <input name="check_keywords" type="hidden" value="yes"/>
+                        <input name="area" type="hidden" value="default"/>
+                    </form>
+                </div>
+            </div>
+            <div aria-label="Navigation menu" class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation">
+                <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a>
+                    </li>
+                    <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a>
+                    </li>
+                    <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a>
+                    </li>
+                    <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a>
+                    </li>
+                    <li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a>
+                    </li>
+                    <li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced
+                        Usage</a></li>
+                    <li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a>
+                    </li>
+                </ul>
+
+            </div>
         </div>
-      </div>
     </nav>
 
-    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
-          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="../../index.html">ProtoBase</a>
-      </nav>
+    <section class="wy-nav-content-wrap" data-toggle="wy-nav-shift">
+        <nav aria-label="Mobile navigation menu" class="wy-nav-top">
+            <i class="fa fa-bars" data-toggle="wy-nav-top"></i>
+            <a href="../../index.html">ProtoBase</a>
+        </nav>
 
-      <div class="wy-nav-content">
-        <div class="rst-content">
-          <div role="navigation" aria-label="Page navigation">
-  <ul class="wy-breadcrumbs">
-      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
-          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
-      <li class="breadcrumb-item active">proto_db.dictionaries</li>
-      <li class="wy-breadcrumbs-aside">
-      </li>
-  </ul>
-  <hr/>
-</div>
-          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
-           <div itemprop="articleBody">
-             
-  <h1>Source code for proto_db.dictionaries</h1><div class="highlight"><pre>
-<span></span><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">annotations</span>
+        <div class="wy-nav-content">
+            <div class="rst-content">
+                <div aria-label="Page navigation" role="navigation">
+                    <ul class="wy-breadcrumbs">
+                        <li><a aria-label="Home" class="icon icon-home" href="../../index.html"></a></li>
+                        <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+                        <li class="breadcrumb-item active">proto_db.dictionaries</li>
+                        <li class="wy-breadcrumbs-aside">
+                        </li>
+                    </ul>
+                    <hr/>
+                </div>
+                <div class="document" itemscope="itemscope" itemtype="http://schema.org/Article" role="main">
+                    <div itemprop="articleBody">
+
+                        <h1>Source code for proto_db.dictionaries</h1>
+                        <div class="highlight"><pre>
+<span></span><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span
+                                class="n">annotations</span>
 <span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">cast</span>
 
-<span class="kn">from</span> <span class="nn">.exceptions</span> <span class="kn">import</span> <span class="n">ProtoCorruptionException</span><span class="p">,</span> <span class="n">ProtoNotSupportedException</span>
-<span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="n">Atom</span><span class="p">,</span> <span class="n">DBCollections</span><span class="p">,</span> <span class="n">QueryPlan</span><span class="p">,</span> <span class="n">Literal</span><span class="p">,</span> <span class="n">AbstractTransaction</span><span class="p">,</span> <span class="n">AtomPointer</span><span class="p">,</span> <span class="n">ConcurrentOptimized</span>
+<span class="kn">from</span> <span class="nn">.exceptions</span> <span class="kn">import</span> <span class="n">ProtoCorruptionException</span><span
+                                class="p">,</span> <span class="n">ProtoNotSupportedException</span>
+<span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span
+                                class="n">Atom</span><span class="p">,</span> <span class="n">DBCollections</span><span
+                                class="p">,</span> <span class="n">QueryPlan</span><span class="p">,</span> <span
+                                class="n">Literal</span><span class="p">,</span> <span
+                                class="n">AbstractTransaction</span><span class="p">,</span> <span
+                                class="n">AtomPointer</span><span class="p">,</span> <span
+                                class="n">ConcurrentOptimized</span>
 <span class="kn">from</span> <span class="nn">.lists</span> <span class="kn">import</span> <span class="n">List</span>
 <span class="kn">from</span> <span class="nn">.sets</span> <span class="kn">import</span> <span class="n">Set</span>
 
@@ -87,29 +102,52 @@
 <span class="kn">import</span> <span class="nn">logging</span>
 
 
-<span class="n">_logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+<span class="n">_logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span
+                                class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span
+                                class="p">)</span>
 
 
-<span class="k">class</span> <span class="nc">DictionaryItem</span><span class="p">(</span><span class="n">Atom</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">DictionaryItem</span><span class="p">(</span><span
+                                class="n">Atom</span><span class="p">):</span>
     <span class="c1"># Represents a key-value pair in a Dictionary, both durable and transaction-safe.</span>
     <span class="n">key</span><span class="p">:</span> <span class="n">Literal</span>
     <span class="n">value</span><span class="p">:</span> <span class="nb">object</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
             <span class="bp">self</span><span class="p">,</span>
-            <span class="n">key</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># The key for the dictionary item.</span>
-            <span class="n">value</span><span class="p">:</span> <span class="nb">object</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># The value associated with the key.</span>
-            <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># The associated transaction.</span>
-            <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># Pointer to the atom for durability/consistency.</span>
+            <span class="n">key</span><span class="p">:</span> <span class="nb">str</span> <span
+                                class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span
+                                class="c1"># The key for the dictionary item.</span>
+            <span class="n">value</span><span class="p">:</span> <span class="nb">object</span> <span class="o">=</span> <span
+                                class="kc">None</span><span class="p">,</span>  <span class="c1"># The value associated with the key.</span>
+            <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span
+                                class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span
+                                class="c1"># The associated transaction.</span>
+            <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span
+                                class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span
+                                class="c1"># Pointer to the atom for durability/consistency.</span>
             <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>  <span class="c1"># Additional keyword arguments.</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">key</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">(</span><span class="n">literal</span><span class="o">=</span><span class="n">key</span><span class="p">,</span> <span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">)</span>  <span class="c1"># Wrap the key as a Literal for durability.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">value</span>  <span class="c1"># Assign the value to the dictionary item.</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span
+                                class="fm">__init__</span><span class="p">(</span><span
+                                class="n">transaction</span><span class="o">=</span><span
+                                class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span
+                                class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span
+                                class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">key</span> <span class="o">=</span> <span
+                                class="n">Literal</span><span class="p">(</span><span class="n">literal</span><span
+                                class="o">=</span><span class="n">key</span><span class="p">,</span> <span class="n">transaction</span><span
+                                class="o">=</span><span class="n">transaction</span><span class="p">)</span>  <span
+                                class="c1"># Wrap the key as a Literal for durability.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span
+                                class="n">value</span>  <span
+                                class="c1"># Assign the value to the dictionary item.</span>
 
 
 <div class="viewcode-block" id="Dictionary">
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.Dictionary">[docs]</a>
-<span class="k">class</span> <span class="nc">Dictionary</span><span class="p">(</span><span class="n">DBCollections</span><span class="p">,</span> <span class="n">ConcurrentOptimized</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">Dictionary</span><span class="p">(</span><span
+        class="n">DBCollections</span><span class="p">,</span> <span class="n">ConcurrentOptimized</span><span
+        class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents a durable, transaction-safe dictionary-like mapping between strings and values,</span>
 <span class="sd">    with support for concurrent modifications.</span>
@@ -125,50 +163,84 @@
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.Dictionary.__init__">[docs]</a>
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
             <span class="bp">self</span><span class="p">,</span>
-            <span class="n">content</span><span class="p">:</span> <span class="n">List</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># List to store the content.</span>
-            <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># Transaction context for operations.</span>
-            <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># Pointer to ensure atomicity and durability.</span>
-            <span class="n">op_log</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">content</span><span class="p">:</span> <span class="n">List</span> <span class="o">=</span> <span
+        class="kc">None</span><span class="p">,</span>  <span class="c1"># List to store the content.</span>
+            <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span
+        class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># Transaction context for operations.</span>
+            <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span
+        class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># Pointer to ensure atomicity and durability.</span>
+            <span class="n">op_log</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span
+        class="kc">None</span><span class="p">,</span>
             <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">content</span> <span class="o">=</span> <span class="n">content</span> <span class="k">if</span> <span class="n">content</span> <span class="k">else</span> <span class="n">List</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">)</span>  <span class="c1"># Initialize content or create a new List.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">count</span>  <span class="c1"># Number of items in the dictionary.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">op_log</span> <span class="o">=</span> <span class="n">op_log</span> <span class="k">if</span> <span class="n">op_log</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">[]</span></div>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span
+        class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span
+        class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span
+        class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span
+        class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">content</span> <span
+        class="o">=</span> <span class="n">content</span> <span class="k">if</span> <span class="n">content</span> <span
+        class="k">else</span> <span class="n">List</span><span class="p">(</span><span class="n">transaction</span><span
+        class="o">=</span><span class="n">transaction</span><span class="p">)</span>  <span class="c1"># Initialize content or create a new List.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span
+        class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span
+        class="n">count</span>  <span class="c1"># Number of items in the dictionary.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">op_log</span> <span class="o">=</span> <span
+        class="n">op_log</span> <span class="k">if</span> <span class="n">op_log</span> <span class="ow">is</span> <span
+        class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">[]</span></div>
 
 
-    <span class="k">def</span> <span class="nf">_save</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_saved</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
-            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+    <span class="k">def</span> <span class="nf">_save</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">_saved</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span
+        class="o">.</span><span class="n">_save</span><span class="p">()</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span
+        class="n">_save</span><span class="p">()</span>
 
 <div class="viewcode-block" id="Dictionary.as_iterable">
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.Dictionary.as_iterable">[docs]</a>
-    <span class="k">def</span> <span class="nf">as_iterable</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">]]:</span>
+    <span class="k">def</span> <span class="nf">as_iterable</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span
+        class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span
+        class="p">,</span> <span class="nb">object</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Provides an iterable generator for the dictionary&#39;s key-value pairs.</span>
 
 <span class="sd">        :return: A generator yielding tuples of (key, value).</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>  <span class="c1"># Iterate through the content.</span>
-            <span class="n">item</span> <span class="o">=</span> <span class="p">(</span><span class="n">cast</span><span class="p">(</span><span class="n">DictionaryItem</span><span class="p">,</span> <span class="n">item</span><span class="p">))</span>  <span class="c1"># Cast item to a DictionaryItem type.</span>
-            <span class="n">item</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>  <span class="c1"># Ensure the item is loaded into memory.</span>
-            <span class="k">yield</span> <span class="n">item</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">string</span><span class="p">,</span> <span class="n">item</span><span class="o">.</span><span class="n">value</span>  <span class="c1"># Yield the key-value pair.</span></div>
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span
+        class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span
+        class="n">as_iterable</span><span class="p">():</span>  <span class="c1"># Iterate through the content.</span>
+            <span class="n">item</span> <span class="o">=</span> <span class="p">(</span><span
+        class="n">cast</span><span class="p">(</span><span class="n">DictionaryItem</span><span class="p">,</span> <span
+        class="n">item</span><span class="p">))</span>  <span class="c1"># Cast item to a DictionaryItem type.</span>
+            <span class="n">item</span><span class="o">.</span><span class="n">_load</span><span
+        class="p">()</span>  <span class="c1"># Ensure the item is loaded into memory.</span>
+            <span class="k">yield</span> <span class="n">item</span><span class="o">.</span><span
+        class="n">key</span><span class="o">.</span><span class="n">string</span><span class="p">,</span> <span
+        class="n">item</span><span class="o">.</span><span class="n">value</span>  <span class="c1"># Yield the key-value pair.</span></div>
 
 
 <div class="viewcode-block" id="Dictionary.as_query_plan">
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.Dictionary.as_query_plan">[docs]</a>
-    <span class="k">def</span> <span class="nf">as_query_plan</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">as_query_plan</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Converts the dictionary into a QueryPlan, a representation for query execution.</span>
 <span class="sd">        :return: The dictionary&#39;s query plan.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">as_query_plan</span><span class="p">()</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span
+        class="o">.</span><span class="n">as_query_plan</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="Dictionary.get_at">
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.Dictionary.get_at">[docs]</a>
-    <span class="k">def</span> <span class="nf">get_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">object</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">get_at</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span
+        class="p">)</span> <span class="o">-&gt;</span> <span class="nb">object</span> <span class="o">|</span> <span
+        class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Gets the element at a given key exists in the dictionary.</span>
 
@@ -180,28 +252,49 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
 
         <span class="n">left</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="n">right</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">count</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="n">right</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">content</span><span class="o">.</span><span class="n">count</span> <span class="o">-</span> <span
+        class="mi">1</span>
 
-        <span class="k">while</span> <span class="n">left</span> <span class="o">&lt;=</span> <span class="n">right</span><span class="p">:</span>
-            <span class="n">center</span> <span class="o">=</span> <span class="p">(</span><span class="n">left</span> <span class="o">+</span> <span class="n">right</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+        <span class="k">while</span> <span class="n">left</span> <span class="o">&lt;=</span> <span
+        class="n">right</span><span class="p">:</span>
+            <span class="n">center</span> <span class="o">=</span> <span class="p">(</span><span
+        class="n">left</span> <span class="o">+</span> <span class="n">right</span><span class="p">)</span> <span
+        class="o">//</span> <span class="mi">2</span>
 
-            <span class="n">item</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">DictionaryItem</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">center</span><span class="p">))</span>
-            <span class="k">if</span> <span class="n">item</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">==</span> <span class="n">key</span><span class="p">:</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
-                    <span class="n">item</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
-                <span class="k">return</span> <span class="n">item</span><span class="o">.</span><span class="n">value</span>
+            <span class="n">item</span> <span class="o">=</span> <span class="n">cast</span><span
+        class="p">(</span><span class="n">DictionaryItem</span><span class="p">,</span> <span
+        class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span
+        class="n">get_at</span><span class="p">(</span><span class="n">center</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">item</span> <span class="ow">and</span> <span
+        class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span
+        class="p">)</span> <span class="o">==</span> <span class="n">key</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span
+        class="n">item</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span
+        class="n">Atom</span><span class="p">):</span>
+                    <span class="n">item</span><span class="o">.</span><span class="n">value</span><span
+        class="o">.</span><span class="n">_load</span><span class="p">()</span>
+                <span class="k">return</span> <span class="n">item</span><span class="o">.</span><span
+        class="n">value</span>
 
-            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">key</span><span class="p">:</span>
-                <span class="n">right</span> <span class="o">=</span> <span class="n">center</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span
+        class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">&gt;=</span> <span
+        class="n">key</span><span class="p">:</span>
+                <span class="n">right</span> <span class="o">=</span> <span class="n">center</span> <span
+        class="o">-</span> <span class="mi">1</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">left</span> <span class="o">=</span> <span class="n">center</span> <span class="o">+</span> <span class="mi">1</span>
+                <span class="n">left</span> <span class="o">=</span> <span class="n">center</span> <span
+        class="o">+</span> <span class="mi">1</span>
 
         <span class="k">return</span> <span class="kc">None</span></div>
 
 
 <div class="viewcode-block" id="Dictionary.set_at">
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.Dictionary.set_at">[docs]</a>
-    <span class="k">def</span> <span class="nf">set_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dictionary</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">set_at</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span
+        class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span
+        class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dictionary</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Inserts or updates a key-value pair in the dictionary.</span>
 
@@ -215,49 +308,79 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
 
         <span class="n">left</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="n">right</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">count</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="n">right</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">content</span><span class="o">.</span><span class="n">count</span> <span class="o">-</span> <span
+        class="mi">1</span>
         <span class="n">new_content</span> <span class="o">=</span> <span class="kc">None</span>
 
-        <span class="k">while</span> <span class="n">left</span> <span class="o">&lt;=</span> <span class="n">right</span><span class="p">:</span>
-            <span class="n">center</span> <span class="o">=</span> <span class="p">(</span><span class="n">left</span> <span class="o">+</span> <span class="n">right</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+        <span class="k">while</span> <span class="n">left</span> <span class="o">&lt;=</span> <span
+        class="n">right</span><span class="p">:</span>
+            <span class="n">center</span> <span class="o">=</span> <span class="p">(</span><span
+        class="n">left</span> <span class="o">+</span> <span class="n">right</span><span class="p">)</span> <span
+        class="o">//</span> <span class="mi">2</span>
 
-            <span class="n">item</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">DictionaryItem</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">center</span><span class="p">))</span>
-            <span class="k">if</span> <span class="n">item</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">==</span> <span class="n">key</span><span class="p">:</span>  <span class="c1"># Check if the key already exists.</span>
-                <span class="n">new_content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span>
+            <span class="n">item</span> <span class="o">=</span> <span class="n">cast</span><span
+        class="p">(</span><span class="n">DictionaryItem</span><span class="p">,</span> <span
+        class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span
+        class="n">get_at</span><span class="p">(</span><span class="n">center</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">item</span> <span class="ow">and</span> <span
+        class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span
+        class="p">)</span> <span class="o">==</span> <span class="n">key</span><span class="p">:</span>  <span
+        class="c1"># Check if the key already exists.</span>
+                <span class="n">new_content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">content</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span>
                     <span class="n">center</span><span class="p">,</span>
                     <span class="n">DictionaryItem</span><span class="p">(</span>
-                        <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>
+                        <span class="n">key</span><span class="o">=</span><span class="n">key</span><span
+        class="p">,</span>
                         <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span>
-                        <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+                        <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span
+        class="o">.</span><span class="n">transaction</span>
                     <span class="p">)</span>
                 <span class="p">)</span>
                 <span class="k">break</span>
-            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">key</span><span class="p">:</span>
-                <span class="n">right</span> <span class="o">=</span> <span class="n">center</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span
+        class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">&gt;</span> <span
+        class="n">key</span><span class="p">:</span>
+                <span class="n">right</span> <span class="o">=</span> <span class="n">center</span> <span
+        class="o">-</span> <span class="mi">1</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">left</span> <span class="o">=</span> <span class="n">center</span> <span class="o">+</span> <span class="mi">1</span>
+                <span class="n">left</span> <span class="o">=</span> <span class="n">center</span> <span
+        class="o">+</span> <span class="mi">1</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">new_content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">insert_at</span><span class="p">(</span>
+            <span class="n">new_content</span> <span class="o">=</span> <span class="bp">self</span><span
+        class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">insert_at</span><span
+        class="p">(</span>
                 <span class="n">left</span><span class="p">,</span>
                 <span class="n">DictionaryItem</span><span class="p">(</span>
                     <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>
-                    <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span>
-                    <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+                    <span class="n">value</span><span class="o">=</span><span class="n">value</span><span
+        class="p">,</span>
+                    <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span
+        class="o">.</span><span class="n">transaction</span>
                 <span class="p">)</span>
             <span class="p">)</span>
 
-        <span class="n">new_op_log</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">op_log</span> <span class="o">+</span> <span class="p">[(</span><span class="s1">&#39;set&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)]</span>
+        <span class="n">new_op_log</span> <span class="o">=</span> <span class="bp">self</span><span
+        class="o">.</span><span class="n">op_log</span> <span class="o">+</span> <span class="p">[(</span><span
+        class="s1">&#39;set&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span
+        class="n">value</span><span class="p">)]</span>
 
         <span class="k">return</span> <span class="n">Dictionary</span><span class="p">(</span>
-            <span class="n">content</span><span class="o">=</span><span class="n">new_content</span><span class="p">,</span>
-            <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span>
+            <span class="n">content</span><span class="o">=</span><span class="n">new_content</span><span
+        class="p">,</span>
+            <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span
+        class="o">.</span><span class="n">transaction</span><span class="p">,</span>
             <span class="n">op_log</span><span class="o">=</span><span class="n">new_op_log</span>
         <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="Dictionary.remove_at">
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.Dictionary.remove_at">[docs]</a>
-    <span class="k">def</span> <span class="nf">remove_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dictionary</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">remove_at</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span
+        class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span
+        class="n">Dictionary</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Removes a key-value pair from the dictionary if the key exists.</span>
 
@@ -270,26 +393,47 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
 
         <span class="n">left</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="n">right</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">count</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="n">right</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">content</span><span class="o">.</span><span class="n">count</span> <span class="o">-</span> <span
+        class="mi">1</span>
 
-        <span class="k">while</span> <span class="n">left</span> <span class="o">&lt;=</span> <span class="n">right</span><span class="p">:</span>
-            <span class="n">center</span> <span class="o">=</span> <span class="p">(</span><span class="n">left</span> <span class="o">+</span> <span class="n">right</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+        <span class="k">while</span> <span class="n">left</span> <span class="o">&lt;=</span> <span
+        class="n">right</span><span class="p">:</span>
+            <span class="n">center</span> <span class="o">=</span> <span class="p">(</span><span
+        class="n">left</span> <span class="o">+</span> <span class="n">right</span><span class="p">)</span> <span
+        class="o">//</span> <span class="mi">2</span>
 
-            <span class="n">item</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">DictionaryItem</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">center</span><span class="p">))</span>
-            <span class="k">if</span> <span class="n">item</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">==</span> <span class="n">key</span><span class="p">:</span>
+            <span class="n">item</span> <span class="o">=</span> <span class="n">cast</span><span
+        class="p">(</span><span class="n">DictionaryItem</span><span class="p">,</span> <span
+        class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span
+        class="n">get_at</span><span class="p">(</span><span class="n">center</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">item</span> <span class="ow">and</span> <span
+        class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span
+        class="p">)</span> <span class="o">==</span> <span class="n">key</span><span class="p">:</span>
                 <span class="c1"># It&#39;s a replacement of an existing value</span>
-                <span class="n">new_content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">center</span><span class="p">)</span>
-                <span class="n">new_op_log</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">op_log</span> <span class="o">+</span> <span class="p">[(</span><span class="s1">&#39;remove&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="kc">None</span><span class="p">)]</span>
+                <span class="n">new_content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">content</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span
+        class="n">center</span><span class="p">)</span>
+                <span class="n">new_op_log</span> <span class="o">=</span> <span class="bp">self</span><span
+        class="o">.</span><span class="n">op_log</span> <span class="o">+</span> <span class="p">[(</span><span
+        class="s1">&#39;remove&#39;</span><span class="p">,</span> <span class="n">key</span><span
+        class="p">,</span> <span class="kc">None</span><span class="p">)]</span>
                 <span class="k">return</span> <span class="n">Dictionary</span><span class="p">(</span>
-                    <span class="n">content</span><span class="o">=</span><span class="n">new_content</span><span class="p">,</span>
-                    <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span>
+                    <span class="n">content</span><span class="o">=</span><span class="n">new_content</span><span
+        class="p">,</span>
+                    <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span
+        class="o">.</span><span class="n">transaction</span><span class="p">,</span>
                     <span class="n">op_log</span><span class="o">=</span><span class="n">new_op_log</span>
                 <span class="p">)</span>
 
-            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">key</span><span class="p">:</span>
-                <span class="n">right</span> <span class="o">=</span> <span class="n">center</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span
+        class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">&gt;</span> <span
+        class="n">key</span><span class="p">:</span>
+                <span class="n">right</span> <span class="o">=</span> <span class="n">center</span> <span
+        class="o">-</span> <span class="mi">1</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">left</span> <span class="o">=</span> <span class="n">center</span> <span class="o">+</span> <span class="mi">1</span>
+                <span class="n">left</span> <span class="o">=</span> <span class="n">center</span> <span
+        class="o">+</span> <span class="mi">1</span>
 
         <span class="c1"># Not found, nothing is changed</span>
         <span class="k">return</span> <span class="bp">self</span></div>
@@ -297,7 +441,9 @@
 
 <div class="viewcode-block" id="Dictionary.has">
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.Dictionary.has">[docs]</a>
-    <span class="k">def</span> <span class="nf">has</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">has</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span
+        class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Checks whether a given key exists in the dictionary.</span>
 
@@ -309,40 +455,71 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
 
         <span class="n">left</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="n">right</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">count</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="n">right</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">content</span><span class="o">.</span><span class="n">count</span> <span class="o">-</span> <span
+        class="mi">1</span>
 
-        <span class="k">while</span> <span class="n">left</span> <span class="o">&lt;=</span> <span class="n">right</span><span class="p">:</span>
-            <span class="n">center</span> <span class="o">=</span> <span class="p">(</span><span class="n">left</span> <span class="o">+</span> <span class="n">right</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+        <span class="k">while</span> <span class="n">left</span> <span class="o">&lt;=</span> <span
+        class="n">right</span><span class="p">:</span>
+            <span class="n">center</span> <span class="o">=</span> <span class="p">(</span><span
+        class="n">left</span> <span class="o">+</span> <span class="n">right</span><span class="p">)</span> <span
+        class="o">//</span> <span class="mi">2</span>
 
-            <span class="n">item</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">DictionaryItem</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">center</span><span class="p">))</span>
-            <span class="k">if</span> <span class="n">item</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">==</span> <span class="n">key</span><span class="p">:</span>
+            <span class="n">item</span> <span class="o">=</span> <span class="n">cast</span><span
+        class="p">(</span><span class="n">DictionaryItem</span><span class="p">,</span> <span
+        class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span
+        class="n">get_at</span><span class="p">(</span><span class="n">center</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">item</span> <span class="ow">and</span> <span
+        class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span
+        class="p">)</span> <span class="o">==</span> <span class="n">key</span><span class="p">:</span>
                 <span class="k">return</span> <span class="kc">True</span>
 
-            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">key</span><span class="p">:</span>
-                <span class="n">right</span> <span class="o">=</span> <span class="n">center</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span
+        class="n">item</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="o">&gt;</span> <span
+        class="n">key</span><span class="p">:</span>
+                <span class="n">right</span> <span class="o">=</span> <span class="n">center</span> <span
+        class="o">-</span> <span class="mi">1</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">left</span> <span class="o">=</span> <span class="n">center</span> <span class="o">+</span> <span class="mi">1</span>
+                <span class="n">left</span> <span class="o">=</span> <span class="n">center</span> <span
+        class="o">+</span> <span class="mi">1</span>
 
         <span class="k">return</span> <span class="kc">False</span></div>
 
 
-    <span class="k">def</span> <span class="nf">_rebase_on_concurrent_update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">current_db_object</span><span class="p">:</span> <span class="n">Atom</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atom</span><span class="p">:</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">current_db_object</span><span class="p">,</span> <span class="n">Dictionary</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">_rebase_on_concurrent_update</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">current_db_object</span><span class="p">:</span> <span
+        class="n">Atom</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atom</span><span
+        class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span
+        class="n">current_db_object</span><span class="p">,</span> <span class="n">Dictionary</span><span
+        class="p">):</span>
             <span class="k">raise</span> <span class="n">ProtoNotSupportedException</span><span class="p">(</span>
                 <span class="s2">&quot;Cannot rebase onto a different object type.&quot;</span>
             <span class="p">)</span>
 
-        <span class="n">rebased_dict</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Dictionary</span><span class="p">,</span> <span class="n">current_db_object</span><span class="p">)</span>
-        <span class="n">rebased_dict</span><span class="o">.</span><span class="n">op_log</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">rebased_dict</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span
+        class="n">Dictionary</span><span class="p">,</span> <span class="n">current_db_object</span><span
+        class="p">)</span>
+        <span class="n">rebased_dict</span><span class="o">.</span><span class="n">op_log</span> <span
+        class="o">=</span> <span class="p">[]</span>
 
-        <span class="k">for</span> <span class="n">op_type</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">op_log</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">op_type</span> <span class="o">==</span> <span class="s1">&#39;set&#39;</span><span class="p">:</span>
-                <span class="n">rebased_dict</span> <span class="o">=</span> <span class="n">rebased_dict</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
-            <span class="k">elif</span> <span class="n">op_type</span> <span class="o">==</span> <span class="s1">&#39;remove&#39;</span><span class="p">:</span>
-                <span class="n">rebased_dict</span> <span class="o">=</span> <span class="n">rebased_dict</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">op_type</span><span class="p">,</span> <span
+        class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span
+        class="bp">self</span><span class="o">.</span><span class="n">op_log</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">op_type</span> <span class="o">==</span> <span class="s1">&#39;set&#39;</span><span
+        class="p">:</span>
+                <span class="n">rebased_dict</span> <span class="o">=</span> <span class="n">rebased_dict</span><span
+        class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">key</span><span
+        class="p">,</span> <span class="n">value</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">op_type</span> <span class="o">==</span> <span class="s1">&#39;remove&#39;</span><span
+        class="p">:</span>
+                <span class="n">rebased_dict</span> <span class="o">=</span> <span class="n">rebased_dict</span><span
+        class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">key</span><span
+        class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="n">ProtoNotSupportedException</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Unknown operation &#39;</span><span class="si">{</span><span class="n">op_type</span><span class="si">}</span><span class="s2">&#39; during rebase.&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;Unknown operation &#39;</span><span
+        class="si">{</span><span class="n">op_type</span><span class="si">}</span><span class="s2">&#39; during rebase.&quot;</span>
                 <span class="p">)</span>
         <span class="k">return</span> <span class="n">rebased_dict</span></div>
 
@@ -350,7 +527,8 @@
 
 <div class="viewcode-block" id="RepeatedKeysDictionary">
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.RepeatedKeysDictionary">[docs]</a>
-<span class="k">class</span> <span class="nc">RepeatedKeysDictionary</span><span class="p">(</span><span class="n">Dictionary</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">RepeatedKeysDictionary</span><span class="p">(</span><span class="n">Dictionary</span><span
+        class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents a dictionary-like data structure allowing multiple records</span>
 <span class="sd">    associated with a single key, with support for concurrent modifications.</span>
@@ -364,29 +542,48 @@
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.RepeatedKeysDictionary.__init__">[docs]</a>
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
             <span class="bp">self</span><span class="p">,</span>
-            <span class="n">content</span><span class="p">:</span> <span class="n">List</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-            <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-            <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-            <span class="n">op_log</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">content</span><span class="p">:</span> <span class="n">List</span> <span class="o">=</span> <span
+        class="kc">None</span><span class="p">,</span>
+            <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span
+        class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span
+        class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">op_log</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span
+        class="kc">None</span><span class="p">,</span>
             <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="n">content</span><span class="p">,</span> <span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="n">op_log</span><span class="o">=</span><span class="n">op_log</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span
+        class="fm">__init__</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span
+        class="n">content</span><span class="p">,</span> <span class="n">transaction</span><span class="o">=</span><span
+        class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span
+        class="n">atom_pointer</span><span class="p">,</span> <span class="n">op_log</span><span class="o">=</span><span
+        class="n">op_log</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span
+        class="p">)</span></div>
 
 
 <div class="viewcode-block" id="RepeatedKeysDictionary.get_at">
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.RepeatedKeysDictionary.get_at">[docs]</a>
-    <span class="k">def</span> <span class="nf">get_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">get_at</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span
+        class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span> <span class="o">|</span> <span
+        class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Gets the elements at a given key, as a Set, if exists in the dictionary.</span>
 
 <span class="sd">        :param key: The string key to be searched.</span>
 <span class="sd">        :return: The value storea at key or None if not found</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">key</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span
+        class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">key</span><span
+        class="p">)</span></div>
 
 
 <div class="viewcode-block" id="RepeatedKeysDictionary.set_at">
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.RepeatedKeysDictionary.set_at">[docs]</a>
-    <span class="k">def</span> <span class="nf">set_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">Atom</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RepeatedKeysDictionary</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">set_at</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span
+        class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">Atom</span><span
+        class="p">)</span> <span class="o">-&gt;</span> <span class="n">RepeatedKeysDictionary</span><span
+        class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Registers an intent to insert or update a key-value pair in the dictionary.</span>
 
@@ -397,37 +594,64 @@
 <span class="sd">        :param value: The value associated with the key.</span>
 <span class="sd">        :return: A new instance of Dictionary with the updated content.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
-            <span class="n">record_list</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Set</span><span class="p">,</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">key</span><span class="p">))</span>
+        <span class="k">if</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span
+        class="n">has</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
+            <span class="n">record_list</span> <span class="o">=</span> <span class="n">cast</span><span
+        class="p">(</span><span class="n">Set</span><span class="p">,</span> <span class="nb">super</span><span
+        class="p">()</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">key</span><span
+        class="p">))</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">record_list</span> <span class="o">=</span> <span class="n">Set</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
-        <span class="n">record_list</span> <span class="o">=</span> <span class="n">record_list</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">record_list</span> <span class="o">=</span> <span class="n">Set</span><span
+        class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span
+        class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+        <span class="n">record_list</span> <span class="o">=</span> <span class="n">record_list</span><span
+        class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
 
-        <span class="n">new_content</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">RepeatedKeysDictionary</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">record_list</span><span class="p">)</span><span class="o">.</span><span class="n">content</span>
-        <span class="n">new_op_log</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">op_log</span> <span class="o">+</span> <span class="p">[(</span><span class="s1">&#39;set&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)]</span>
+        <span class="n">new_content</span> <span class="o">=</span> <span class="nb">super</span><span
+        class="p">(</span><span class="n">RepeatedKeysDictionary</span><span class="p">,</span> <span
+        class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">set_at</span><span
+        class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">record_list</span><span
+        class="p">)</span><span class="o">.</span><span class="n">content</span>
+        <span class="n">new_op_log</span> <span class="o">=</span> <span class="bp">self</span><span
+        class="o">.</span><span class="n">op_log</span> <span class="o">+</span> <span class="p">[(</span><span
+        class="s1">&#39;set&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span
+        class="n">value</span><span class="p">)]</span>
 
         <span class="k">return</span> <span class="n">RepeatedKeysDictionary</span><span class="p">(</span>
-            <span class="n">content</span><span class="o">=</span><span class="n">new_content</span><span class="p">,</span>
-            <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span>
+            <span class="n">content</span><span class="o">=</span><span class="n">new_content</span><span
+        class="p">,</span>
+            <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span
+        class="o">.</span><span class="n">transaction</span><span class="p">,</span>
             <span class="n">op_log</span><span class="o">=</span><span class="n">new_op_log</span>
         <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="RepeatedKeysDictionary.remove_at">
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.RepeatedKeysDictionary.remove_at">[docs]</a>
-    <span class="k">def</span> <span class="nf">remove_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RepeatedKeysDictionary</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">remove_at</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span
+        class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RepeatedKeysDictionary</span><span
+        class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Registers an intent to remove a key and its associated values from the dictionary.</span>
 
 <span class="sd">        :param key: The string key of the item to be removed.</span>
 <span class="sd">        :return: A new instance of Dictionary reflecting the removal.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
-            <span class="n">new_content</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">RepeatedKeysDictionary</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">key</span><span class="p">)</span><span class="o">.</span><span class="n">content</span>
-            <span class="n">new_op_log</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">op_log</span> <span class="o">+</span> <span class="p">[(</span><span class="s1">&#39;remove&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="kc">None</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span
+        class="n">has</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
+            <span class="n">new_content</span> <span class="o">=</span> <span class="nb">super</span><span
+        class="p">(</span><span class="n">RepeatedKeysDictionary</span><span class="p">,</span> <span
+        class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">remove_at</span><span
+        class="p">(</span><span class="n">key</span><span class="p">)</span><span class="o">.</span><span class="n">content</span>
+            <span class="n">new_op_log</span> <span class="o">=</span> <span class="bp">self</span><span
+        class="o">.</span><span class="n">op_log</span> <span class="o">+</span> <span class="p">[(</span><span
+        class="s1">&#39;remove&#39;</span><span class="p">,</span> <span class="n">key</span><span
+        class="p">,</span> <span class="kc">None</span><span class="p">)]</span>
             <span class="k">return</span> <span class="n">RepeatedKeysDictionary</span><span class="p">(</span>
                 <span class="n">content</span><span class="o">=</span><span class="n">new_content</span><span class="p">,</span>
-                <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span>
+                <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span
+        class="o">.</span><span class="n">transaction</span><span class="p">,</span>
                 <span class="n">op_log</span><span class="o">=</span><span class="n">new_op_log</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
@@ -435,8 +659,13 @@
 
 
 <div class="viewcode-block" id="RepeatedKeysDictionary.remove_record_at">
-<a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.RepeatedKeysDictionary.remove_record_at">[docs]</a>
-    <span class="k">def</span> <span class="nf">remove_record_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">record</span><span class="p">:</span> <span class="n">Atom</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RepeatedKeysDictionary</span><span class="p">:</span>
+<a class="viewcode-back"
+   href="../../api/data_structures.html#proto_db.dictionaries.RepeatedKeysDictionary.remove_record_at">[docs]</a>
+    <span class="k">def</span> <span class="nf">remove_record_at</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span
+        class="nb">str</span><span class="p">,</span> <span class="n">record</span><span class="p">:</span> <span
+        class="n">Atom</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RepeatedKeysDictionary</span><span
+        class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Registers an intent to remove a specific record from the set associated with a given key.</span>
 
@@ -444,77 +673,115 @@
 <span class="sd">        :param record: The specific record to be removed from the set.</span>
 <span class="sd">        :return: Returns an updated dictionary object with the intended removal logged.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
-            <span class="n">record_set</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Set</span><span class="p">,</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">key</span><span class="p">))</span>
-            <span class="n">record_hash</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">record_set</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">record_hash</span><span class="p">):</span>
-                <span class="n">record_set</span> <span class="o">=</span> <span class="n">record_set</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">record_hash</span><span class="p">)</span>
-                <span class="n">new_content</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">RepeatedKeysDictionary</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">record_set</span><span class="p">)</span><span class="o">.</span><span class="n">content</span>
-                <span class="n">new_op_log</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">op_log</span> <span class="o">+</span> <span class="p">[(</span><span class="s1">&#39;remove_record&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">record</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span
+        class="n">has</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
+            <span class="n">record_set</span> <span class="o">=</span> <span class="n">cast</span><span
+        class="p">(</span><span class="n">Set</span><span class="p">,</span> <span class="nb">super</span><span
+        class="p">()</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">key</span><span
+        class="p">))</span>
+            <span class="n">record_hash</span> <span class="o">=</span> <span class="n">record</span><span
+        class="o">.</span><span class="n">hash</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">record_set</span><span class="o">.</span><span
+        class="n">has</span><span class="p">(</span><span class="n">record_hash</span><span class="p">):</span>
+                <span class="n">record_set</span> <span class="o">=</span> <span class="n">record_set</span><span
+        class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span
+        class="n">record_hash</span><span class="p">)</span>
+                <span class="n">new_content</span> <span class="o">=</span> <span class="nb">super</span><span
+        class="p">(</span><span class="n">RepeatedKeysDictionary</span><span class="p">,</span> <span
+        class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">set_at</span><span
+        class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">record_set</span><span
+        class="p">)</span><span class="o">.</span><span class="n">content</span>
+                <span class="n">new_op_log</span> <span class="o">=</span> <span class="bp">self</span><span
+        class="o">.</span><span class="n">op_log</span> <span class="o">+</span> <span class="p">[(</span><span
+        class="s1">&#39;remove_record&#39;</span><span class="p">,</span> <span class="n">key</span><span
+        class="p">,</span> <span class="n">record</span><span class="p">)]</span>
 
                 <span class="k">return</span> <span class="n">RepeatedKeysDictionary</span><span class="p">(</span>
-                    <span class="n">content</span><span class="o">=</span><span class="n">new_content</span><span class="p">,</span>
-                    <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span>
+                    <span class="n">content</span><span class="o">=</span><span class="n">new_content</span><span
+        class="p">,</span>
+                    <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span
+        class="o">.</span><span class="n">transaction</span><span class="p">,</span>
                     <span class="n">op_log</span><span class="o">=</span><span class="n">new_op_log</span>
                 <span class="p">)</span>
 
         <span class="k">return</span> <span class="bp">self</span></div>
 
 
-    <span class="k">def</span> <span class="nf">_rebase_on_concurrent_update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">current_db_object</span><span class="p">:</span> <span class="n">Atom</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atom</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">_rebase_on_concurrent_update</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">current_db_object</span><span class="p">:</span> <span
+        class="n">Atom</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atom</span><span
+        class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Re-applies the operations from this transaction on top of the current</span>
 <span class="sd">        database state for this object, allowing for conflict-free merges.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">current_db_object</span><span class="p">,</span> <span class="n">RepeatedKeysDictionary</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span
+        class="n">current_db_object</span><span class="p">,</span> <span class="n">RepeatedKeysDictionary</span><span
+        class="p">):</span>
             <span class="k">raise</span> <span class="n">ProtoNotSupportedException</span><span class="p">(</span>
                 <span class="s2">&quot;Cannot rebase onto a different object type.&quot;</span>
             <span class="p">)</span>
 
-        <span class="n">rebased_dict</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">RepeatedKeysDictionary</span><span class="p">,</span> <span class="n">current_db_object</span><span class="p">)</span>
-        <span class="n">rebased_dict</span><span class="o">.</span><span class="n">op_log</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">rebased_dict</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span
+        class="n">RepeatedKeysDictionary</span><span class="p">,</span> <span class="n">current_db_object</span><span
+        class="p">)</span>
+        <span class="n">rebased_dict</span><span class="o">.</span><span class="n">op_log</span> <span
+        class="o">=</span> <span class="p">[]</span>
 
-        <span class="k">for</span> <span class="n">op_type</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">op_log</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">op_type</span> <span class="o">==</span> <span class="s1">&#39;set&#39;</span><span class="p">:</span>
-                <span class="n">rebased_dict</span> <span class="o">=</span> <span class="n">rebased_dict</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
-            <span class="k">elif</span> <span class="n">op_type</span> <span class="o">==</span> <span class="s1">&#39;remove&#39;</span><span class="p">:</span>
-                <span class="n">rebased_dict</span> <span class="o">=</span> <span class="n">rebased_dict</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
-            <span class="k">elif</span> <span class="n">op_type</span> <span class="o">==</span> <span class="s1">&#39;remove_record&#39;</span><span class="p">:</span>
-                <span class="n">rebased_dict</span> <span class="o">=</span> <span class="n">rebased_dict</span><span class="o">.</span><span class="n">remove_record_at</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">op_type</span><span class="p">,</span> <span
+        class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span
+        class="bp">self</span><span class="o">.</span><span class="n">op_log</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">op_type</span> <span class="o">==</span> <span class="s1">&#39;set&#39;</span><span
+        class="p">:</span>
+                <span class="n">rebased_dict</span> <span class="o">=</span> <span class="n">rebased_dict</span><span
+        class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">key</span><span
+        class="p">,</span> <span class="n">value</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">op_type</span> <span class="o">==</span> <span class="s1">&#39;remove&#39;</span><span
+        class="p">:</span>
+                <span class="n">rebased_dict</span> <span class="o">=</span> <span class="n">rebased_dict</span><span
+        class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">key</span><span
+        class="p">)</span>
+            <span class="k">elif</span> <span class="n">op_type</span> <span class="o">==</span> <span class="s1">&#39;remove_record&#39;</span><span
+        class="p">:</span>
+                <span class="n">rebased_dict</span> <span class="o">=</span> <span class="n">rebased_dict</span><span
+        class="o">.</span><span class="n">remove_record_at</span><span class="p">(</span><span class="n">key</span><span
+        class="p">,</span> <span class="n">value</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="n">ProtoNotSupportedException</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Unknown operation &#39;</span><span class="si">{</span><span class="n">op_type</span><span class="si">}</span><span class="s2">&#39; during rebase.&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;Unknown operation &#39;</span><span
+        class="si">{</span><span class="n">op_type</span><span class="si">}</span><span class="s2">&#39; during rebase.&quot;</span>
                 <span class="p">)</span>
 
         <span class="k">return</span> <span class="n">rebased_dict</span></div>
 
-</pre></div>
+</pre>
+                        </div>
 
-           </div>
-          </div>
-          <footer>
+                    </div>
+                </div>
+                <footer>
 
-  <hr/>
+                    <hr/>
 
-  <div role="contentinfo">
-    <p>&#169; Copyright 2023, ProtoBase Team.</p>
-  </div>
+                    <div role="contentinfo">
+                        <p>&#169; Copyright 2023, ProtoBase Team.</p>
+                    </div>
 
-  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
-    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
-    provided by <a href="https://readthedocs.org">Read the Docs</a>.
-   
+                    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+                    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+                    provided by <a href="https://readthedocs.org">Read the Docs</a>.
 
-</footer>
+
+                </footer>
+            </div>
         </div>
-      </div>
     </section>
-  </div>
-  <script>
-      jQuery(function () {
-          SphinxRtdTheme.Navigation.enable(true);
-      });
-  </script> 
+</div>
+<script>
+    jQuery(function () {
+        SphinxRtdTheme.Navigation.enable(true);
+    });
+</script>
 
 </body>
 </html>

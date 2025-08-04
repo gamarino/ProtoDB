@@ -1,18 +1,10 @@
-import unittest
-from unittest.mock import Mock, MagicMock, patch, call
-from uuid import uuid4
 import io
-import struct
-import socket
-import threading
-import time
-from typing import List, Tuple
+import unittest
+from unittest.mock import Mock, MagicMock, patch
+from uuid import uuid4
 
-from ..cloud_file_storage import CloudFileStorage, CloudBlockProvider, S3Client, MockS3Client, CloudStorageError
-from ..cluster_file_storage import ClusterFileStorage, ClusterNetworkManager
-from ..standalone_file_storage import StandaloneFileStorage, WALState, AtomPointer
-from ..common import BlockProvider
-from ..exceptions import ProtoValidationException, ProtoUnexpectedException
+from ..cloud_file_storage import CloudFileStorage, CloudBlockProvider, S3Client
+from ..standalone_file_storage import AtomPointer
 
 
 class TestCloudFileStorage(unittest.TestCase):
@@ -161,8 +153,7 @@ class TestCloudFileStorage(unittest.TestCase):
         """
         # Mock the executor pool shutdown and _flush_wal
         with patch.object(self.storage.executor_pool, 'shutdown') as mock_shutdown, \
-             patch.object(self.storage, '_flush_wal') as mock_flush:
-
+                patch.object(self.storage, '_flush_wal') as mock_flush:
             # Call the method
             self.storage.close()
 
@@ -195,8 +186,7 @@ class TestCloudBlockProvider(unittest.TestCase):
 
         # Patch the os.path.exists and os.makedirs functions
         with patch('os.path.exists', return_value=True), \
-             patch('os.makedirs'):
-
+                patch('os.makedirs'):
             # Create an instance of CloudBlockProvider with the mock
             self.provider = CloudBlockProvider(
                 s3_client=self.mock_s3_client,
@@ -207,8 +197,7 @@ class TestCloudBlockProvider(unittest.TestCase):
 
             # Mock the _load_cache_metadata and _load_config methods
             with patch.object(self.provider, '_load_cache_metadata'), \
-                 patch.object(self.provider, '_load_config'):
-
+                    patch.object(self.provider, '_load_config'):
                 # Initialize the provider
                 pass
 

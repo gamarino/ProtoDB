@@ -1,9 +1,10 @@
-import pytest
-import time
-from ..fsm import FSM, ProtoValidationException
-
 # Mock logger import
 import logging
+import time
+
+import pytest
+
+from ..fsm import FSM, ProtoValidationException
 
 _logger = logging.getLogger(__name__)
 

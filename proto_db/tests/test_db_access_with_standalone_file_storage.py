@@ -1,15 +1,14 @@
-import unittest
 import os
+import unittest
 from tempfile import TemporaryDirectory
 
-from ..db_access import ObjectSpace, Database, ObjectTransaction
-from ..standalone_file_storage import StandaloneFileStorage
+from ..db_access import ObjectSpace
 from ..file_block_provider import FileBlockProvider
 from ..lists import List
-
-
+from ..standalone_file_storage import StandaloneFileStorage
 
 TEST_SIZE = 100_000
+
 
 class TestDBAccess(unittest.TestCase):
 
@@ -78,4 +77,3 @@ class TestDBAccess(unittest.TestCase):
         for i in range(0, TEST_SIZE):
             self.assertTrue(check_list.get_at(i) == i, f'Element {i} check failed')
         tr.commit()
-

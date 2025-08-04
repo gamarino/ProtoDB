@@ -1,6 +1,6 @@
 import unittest
-import uuid
-from ..common import Atom, QueryPlan, DBCollections
+
+from ..common import Atom
 from ..lists import List, ListQueryPlan  # Importamos las clases que queremos probar
 
 

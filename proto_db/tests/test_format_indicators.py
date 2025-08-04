@@ -1,12 +1,14 @@
-import unittest
-from unittest.mock import Mock, MagicMock, patch
-from uuid import uuid4
 import io
 import json
 import struct
+import unittest
+from unittest.mock import Mock, MagicMock
+from uuid import uuid4
+
 import msgpack
+
 from ..standalone_file_storage import StandaloneFileStorage, AtomPointer, ProtoValidationException, \
-    FORMAT_JSON_UTF8, FORMAT_MSGPACK, FORMAT_RAW_BINARY
+    FORMAT_JSON_UTF8, FORMAT_MSGPACK
 
 
 class TestFormatIndicators(unittest.TestCase):

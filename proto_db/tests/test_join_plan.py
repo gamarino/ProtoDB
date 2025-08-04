@@ -1,9 +1,9 @@
 import unittest
 from unittest.mock import MagicMock
 
-from proto_db.db_access import ObjectTransaction, ObjectSpace, Database
-from proto_db.memory_storage import MemoryStorage
 from proto_db.common import AtomPointer, DBObject
+from proto_db.db_access import ObjectSpace
+from proto_db.memory_storage import MemoryStorage
 from proto_db.queries import JoinPlan, ListPlan, FromPlan
 
 
@@ -60,7 +60,8 @@ class TestJoinPlan(unittest.TestCase):
 
         # Create FromPlans with aliases
         self.employees_from = FromPlan(alias='employee', based_on=self.employees_plan, transaction=self.transaction)
-        self.departments_from = FromPlan(alias='department', based_on=self.departments_plan, transaction=self.transaction)
+        self.departments_from = FromPlan(alias='department', based_on=self.departments_plan,
+                                         transaction=self.transaction)
         self.projects_from = FromPlan(alias='project', based_on=self.projects_plan, transaction=self.transaction)
 
     def test_inner_join(self):

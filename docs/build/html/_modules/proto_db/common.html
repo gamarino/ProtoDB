@@ -1,89 +1,99 @@
-
-
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" data-content_root="../../">
+<html class="writer-html5" data-content_root="../../" lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>proto_db.common &mdash; ProtoBase 0.1.0 documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=80d5e7a1" />
-      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>proto_db.common &mdash; ProtoBase 0.1.0 documentation</title>
+    <link href="../../_static/pygments.css?v=80d5e7a1" rel="stylesheet" type="text/css"/>
+    <link href="../../_static/css/theme.css?v=e59714d7" rel="stylesheet" type="text/css"/>
 
-  
-      <script src="../../_static/jquery.js?v=5d32c60e"></script>
-      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../../_static/documentation_options.js?v=01f34227"></script>
-      <script src="../../_static/doctools.js?v=9bcbadda"></script>
-      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+
+    <script src="../../_static/jquery.js?v=5d32c60e"></script>
+    <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+    <script src="../../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/js/theme.js"></script>
-    <link rel="index" title="Index" href="../../genindex.html" />
-    <link rel="search" title="Search" href="../../search.html" /> 
+    <link href="../../genindex.html" rel="index" title="Index"/>
+    <link href="../../search.html" rel="search" title="Search"/>
 </head>
 
-<body class="wy-body-for-nav"> 
-  <div class="wy-grid-for-nav">
-    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
-      <div class="wy-side-scroll">
-        <div class="wy-side-nav-search" >
+<body class="wy-body-for-nav">
+<div class="wy-grid-for-nav">
+    <nav class="wy-nav-side" data-toggle="wy-nav-shift">
+        <div class="wy-side-scroll">
+            <div class="wy-side-nav-search">
 
-          
-          
-          <a href="../../index.html" class="icon icon-home">
-            ProtoBase
-          </a>
-<div role="search">
-  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
-    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
-    <input type="hidden" name="check_keywords" value="yes" />
-    <input type="hidden" name="area" value="default" />
-  </form>
-</div>
-        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
-</ul>
 
+                <a class="icon icon-home" href="../../index.html">
+                    ProtoBase
+                </a>
+                <div role="search">
+                    <form action="../../search.html" class="wy-form" id="rtd-search-form" method="get">
+                        <input aria-label="Search docs" name="q" placeholder="Search docs" type="text"/>
+                        <input name="check_keywords" type="hidden" value="yes"/>
+                        <input name="area" type="hidden" value="default"/>
+                    </form>
+                </div>
+            </div>
+            <div aria-label="Navigation menu" class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation">
+                <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a>
+                    </li>
+                    <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a>
+                    </li>
+                    <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a>
+                    </li>
+                    <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a>
+                    </li>
+                    <li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a>
+                    </li>
+                    <li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced
+                        Usage</a></li>
+                    <li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a>
+                    </li>
+                </ul>
+
+            </div>
         </div>
-      </div>
     </nav>
 
-    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
-          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="../../index.html">ProtoBase</a>
-      </nav>
+    <section class="wy-nav-content-wrap" data-toggle="wy-nav-shift">
+        <nav aria-label="Mobile navigation menu" class="wy-nav-top">
+            <i class="fa fa-bars" data-toggle="wy-nav-top"></i>
+            <a href="../../index.html">ProtoBase</a>
+        </nav>
 
-      <div class="wy-nav-content">
-        <div class="rst-content">
-          <div role="navigation" aria-label="Page navigation">
-  <ul class="wy-breadcrumbs">
-      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
-          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
-      <li class="breadcrumb-item active">proto_db.common</li>
-      <li class="wy-breadcrumbs-aside">
-      </li>
-  </ul>
-  <hr/>
-</div>
-          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
-           <div itemprop="articleBody">
-             
-  <h1>Source code for proto_db.common</h1><div class="highlight"><pre>
+        <div class="wy-nav-content">
+            <div class="rst-content">
+                <div aria-label="Page navigation" role="navigation">
+                    <ul class="wy-breadcrumbs">
+                        <li><a aria-label="Home" class="icon icon-home" href="../../index.html"></a></li>
+                        <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+                        <li class="breadcrumb-item active">proto_db.common</li>
+                        <li class="wy-breadcrumbs-aside">
+                        </li>
+                    </ul>
+                    <hr/>
+                </div>
+                <div class="document" itemscope="itemscope" itemtype="http://schema.org/Article" role="main">
+                    <div itemprop="articleBody">
+
+                        <h1>Source code for proto_db.common</h1>
+                        <div class="highlight"><pre>
 <span></span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">Basic definitions</span>
 <span class="sd">&quot;&quot;&quot;</span>
 <span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">annotations</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">cast</span><span class="p">,</span> <span class="n">BinaryIO</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span
+                                class="n">cast</span><span class="p">,</span> <span class="n">BinaryIO</span>
 
 <span class="kn">from</span> <span class="nn">concurrent.futures</span> <span class="kn">import</span> <span class="n">Future</span>
 <span class="kn">import</span> <span class="nn">uuid</span>
-<span class="kn">from</span> <span class="nn">abc</span> <span class="kn">import</span> <span class="n">ABC</span><span class="p">,</span> <span class="n">abstractmethod</span><span class="p">,</span> <span class="n">ABCMeta</span>
+<span class="kn">from</span> <span class="nn">abc</span> <span class="kn">import</span> <span class="n">ABC</span><span
+                                class="p">,</span> <span class="n">abstractmethod</span><span class="p">,</span> <span
+                                class="n">ABCMeta</span>
 <span class="kn">import</span> <span class="nn">io</span>
 <span class="kn">import</span> <span class="nn">configparser</span>
 <span class="kn">import</span> <span class="nn">datetime</span>
@@ -92,50 +102,80 @@
 
 
 <span class="c1"># Constants for storage size units</span>
-<span class="n">KB</span><span class="p">:</span> <span class="nb">int</span>  <span class="o">=</span> <span class="mi">1024</span>
-<span class="n">MB</span><span class="p">:</span> <span class="nb">int</span>  <span class="o">=</span> <span class="n">KB</span> <span class="o">*</span> <span class="n">KB</span>
-<span class="n">GB</span><span class="p">:</span> <span class="nb">int</span>  <span class="o">=</span> <span class="n">KB</span> <span class="o">*</span> <span class="n">MB</span>
-<span class="n">PB</span><span class="p">:</span> <span class="nb">int</span>  <span class="o">=</span> <span class="n">KB</span> <span class="o">*</span> <span class="n">GB</span>
+<span class="n">KB</span><span class="p">:</span> <span class="nb">int</span>  <span class="o">=</span> <span
+                                class="mi">1024</span>
+<span class="n">MB</span><span class="p">:</span> <span class="nb">int</span>  <span class="o">=</span> <span class="n">KB</span> <span
+                                class="o">*</span> <span class="n">KB</span>
+<span class="n">GB</span><span class="p">:</span> <span class="nb">int</span>  <span class="o">=</span> <span class="n">KB</span> <span
+                                class="o">*</span> <span class="n">MB</span>
+<span class="n">PB</span><span class="p">:</span> <span class="nb">int</span>  <span class="o">=</span> <span class="n">KB</span> <span
+                                class="o">*</span> <span class="n">GB</span>
 
 
 <div class="viewcode-block" id="AtomPointer">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.AtomPointer">[docs]</a>
-<span class="k">class</span> <span class="nc">AtomPointer</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">AtomPointer</span><span class="p">(</span><span
+        class="nb">object</span><span class="p">):</span>
 <div class="viewcode-block" id="AtomPointer.__init__">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.AtomPointer.__init__">[docs]</a>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">transaction_id</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span class="n">offset</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span> <span class="o">=</span> <span class="n">transaction_id</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">offset</span> <span class="o">=</span> <span class="n">offset</span></div>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span> <span class="n">transaction_id</span><span class="p">:</span> <span
+        class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span
+        class="n">offset</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span> <span
+        class="o">=</span> <span class="n">transaction_id</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">offset</span> <span class="o">=</span> <span
+        class="n">offset</span></div>
 
 
-    <span class="k">def</span> <span class="nf">hash</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span><span class="o">.</span><span class="n">int</span> <span class="o">^</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset</span></div>
+    <span class="k">def</span> <span class="nf">hash</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">transaction_id</span><span class="o">.</span><span class="n">int</span> <span class="o">^</span> <span
+        class="bp">self</span><span class="o">.</span><span class="n">offset</span></div>
 
 
 
-<span class="n">atom_class_registry</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">()</span>
+<span class="n">atom_class_registry</span> <span class="o">=</span> <span class="nb">dict</span><span
+                                class="p">()</span>
 
 
-<span class="k">class</span> <span class="nc">AtomMetaclass</span><span class="p">(</span><span class="nb">type</span><span class="p">):</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">bases</span><span class="p">,</span> <span class="n">class_dict</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">AtomMetaclass</span><span class="p">(</span><span
+                                class="nb">type</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">cls</span><span
+                                class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">bases</span><span
+                                class="p">,</span> <span class="n">class_dict</span><span class="p">):</span>
         <span class="n">class_name</span> <span class="o">=</span> <span class="n">name</span>
-        <span class="k">if</span> <span class="n">class_name</span> <span class="o">!=</span> <span class="s1">&#39;Atom&#39;</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">class_name</span> <span class="ow">in</span> <span class="n">atom_class_registry</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">class_name</span> <span class="o">!=</span> <span class="s1">&#39;Atom&#39;</span><span
+                                class="p">:</span>
+            <span class="k">if</span> <span class="n">class_name</span> <span class="ow">in</span> <span class="n">atom_class_registry</span><span
+                                class="p">:</span>
                 <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
-                    <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Class repeated in atom class registry (</span><span class="si">{</span><span class="n">class_name</span><span class="si">}</span><span class="s1">). Please check it&#39;</span><span class="p">)</span>
-            <span class="n">atom_class_registry</span><span class="p">[</span><span class="n">class_name</span><span class="p">]</span> <span class="o">=</span> <span class="bp">cls</span>
+                    <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Class repeated in atom class registry (</span><span
+                                class="si">{</span><span class="n">class_name</span><span class="si">}</span><span
+                                class="s1">). Please check it&#39;</span><span class="p">)</span>
+            <span class="n">atom_class_registry</span><span class="p">[</span><span class="n">class_name</span><span
+                                class="p">]</span> <span class="o">=</span> <span class="bp">cls</span>
 
         <span class="c1"># Llamar al __init__ de la metaclase base</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">bases</span><span class="p">,</span> <span class="n">class_dict</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span
+                                class="fm">__init__</span><span class="p">(</span><span class="n">name</span><span
+                                class="p">,</span> <span class="n">bases</span><span class="p">,</span> <span class="n">class_dict</span><span
+                                class="p">)</span>
 
 
-<span class="k">class</span> <span class="nc">AbstractSharedStorage</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">AbstractSharedStorage</span><span class="p">(</span><span
+                                class="n">ABC</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    ABC to solve forward type definitions</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">push_atom</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">atom</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="n">AtomPointer</span><span class="p">]:</span>
+    <span class="k">def</span> <span class="nf">push_atom</span><span class="p">(</span><span
+                                class="bp">self</span><span class="p">,</span> <span class="n">atom</span><span
+                                class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span
+                                class="n">Future</span><span class="p">[</span><span class="n">AtomPointer</span><span
+                                class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Pushes an atom to the underlying system.</span>
 
@@ -148,7 +188,11 @@
 <span class="sd">        &quot;&quot;&quot;</span>
 
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">get_atom</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="n">Atom</span><span class="p">]:</span>
+    <span class="k">def</span> <span class="nf">get_atom</span><span class="p">(</span><span class="bp">self</span><span
+                                class="p">,</span> <span class="n">atom_pointer</span><span class="p">:</span> <span
+                                class="n">AtomPointer</span><span class="p">)</span> <span class="o">-&gt;</span> <span
+                                class="n">Future</span><span class="p">[</span><span class="n">Atom</span><span
+                                class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Fetches an atom using the given AtomPointer and returns a Future that resolves</span>
 <span class="sd">        to the atom. This method provides an interface for retrieving atoms, which can</span>
@@ -165,7 +209,11 @@
 <span class="sd">        &quot;&quot;&quot;</span>
 
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">get_bytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]:</span>
+    <span class="k">def</span> <span class="nf">get_bytes</span><span class="p">(</span><span
+                                class="bp">self</span><span class="p">,</span> <span class="n">atom_pointer</span><span
+                                class="p">:</span> <span class="n">AtomPointer</span><span class="p">)</span> <span
+                                class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span
+                                class="nb">bytes</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Retrieves the byte data associated with the given atom pointer.</span>
 
@@ -182,7 +230,11 @@
 <span class="sd">        &quot;&quot;&quot;</span>
 
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">push_bytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="n">AtomPointer</span><span class="p">]:</span>
+    <span class="k">def</span> <span class="nf">push_bytes</span><span class="p">(</span><span
+                                class="bp">self</span><span class="p">,</span> <span class="n">data</span><span
+                                class="p">:</span> <span class="nb">bytes</span><span class="p">)</span> <span
+                                class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span
+                                class="n">AtomPointer</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Pushes a sequence of bytes to the underlying data structure or processing unit.</span>
 
@@ -196,28 +248,38 @@
 <span class="sd">        &quot;&quot;&quot;</span>
 
 
-<span class="k">class</span> <span class="nc">AbstractObjectSpace</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">AbstractObjectSpace</span><span class="p">(</span><span
+                                class="n">ABC</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    ABC to solve forward type definitions</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">storage_provider</span><span class="p">:</span> <span class="n">AbstractSharedStorage</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">storage_provider</span><span class="p">:</span> <span class="n">AbstractSharedStorage</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">storage_provider</span> <span class="o">=</span> <span class="n">storage_provider</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span
+                                class="p">,</span> <span class="n">storage_provider</span><span class="p">:</span> <span
+                                class="n">AbstractSharedStorage</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">storage_provider</span> <span
+                                class="o">=</span> <span class="n">storage_provider</span>
 
 
-<span class="k">class</span> <span class="nc">AbstractDatabase</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">AbstractDatabase</span><span class="p">(</span><span
+                                class="n">ABC</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    ABC to solve forward type definitions</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">object_space</span><span class="p">:</span> <span class="n">AbstractObjectSpace</span>
     <span class="n">database_name</span><span class="p">:</span> <span class="nb">str</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">object_space</span><span class="p">:</span> <span class="n">AbstractObjectSpace</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">object_space</span> <span class="o">=</span> <span class="n">object_space</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span
+                                class="p">,</span> <span class="n">object_space</span><span class="p">:</span> <span
+                                class="n">AbstractObjectSpace</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">object_space</span> <span class="o">=</span> <span
+                                class="n">object_space</span>
 
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">get_literal</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">literal</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">get_literal</span><span class="p">(</span><span
+                                class="bp">self</span><span class="p">,</span> <span class="n">literal</span><span
+                                class="p">:</span> <span class="nb">str</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 
 <span class="sd">        :param literal:</span>
@@ -225,12 +287,17 @@
 <span class="sd">        &quot;&quot;&quot;</span>
 
 
-<span class="k">class</span> <span class="nc">AbstractTransaction</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">AbstractTransaction</span><span class="p">(</span><span
+                                class="n">ABC</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    ABC to solve forward type definition</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">read_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">class_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atom</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">read_object</span><span class="p">(</span><span
+                                class="bp">self</span><span class="p">,</span> <span class="n">class_name</span><span
+                                class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">atom_pointer</span><span
+                                class="p">:</span> <span class="n">AtomPointer</span><span class="p">)</span> <span
+                                class="o">-&gt;</span> <span class="n">Atom</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Get an unloaded Atom based on atom_pointer, of a given Atom class.</span>
 <span class="sd">        Just with the right class and atom_pointer, no data retrieved from</span>
@@ -247,7 +314,10 @@
 
 
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">get_literal</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">string</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Literal</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">get_literal</span><span class="p">(</span><span
+                                class="bp">self</span><span class="p">,</span> <span class="n">string</span><span
+                                class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span
+                                class="n">Literal</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 
 <span class="sd">        :param string:</span>
@@ -255,7 +325,10 @@
 <span class="sd">        &quot;&quot;&quot;</span>
 
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">get_mutable</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span><span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atom</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">get_mutable</span><span class="p">(</span><span
+                                class="bp">self</span><span class="p">,</span> <span class="n">key</span><span
+                                class="p">:</span><span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span
+                                class="n">Atom</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Retrieve a mutable object based on the provided key.</span>
 
@@ -269,7 +342,10 @@
 <span class="sd">        &quot;&quot;&quot;</span>
 
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">set_mutable</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span><span class="nb">int</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span><span class="n">Atom</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">set_mutable</span><span class="p">(</span><span
+                                class="bp">self</span><span class="p">,</span> <span class="n">key</span><span
+                                class="p">:</span><span class="nb">int</span><span class="p">,</span> <span class="n">value</span><span
+                                class="p">:</span><span class="n">Atom</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Sets the mutable value for the specified key.</span>
 
@@ -287,7 +363,10 @@
 <span class="sd">        &quot;&quot;&quot;</span>
 
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">set_locked_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mutable_index</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">current_atom</span><span class="p">:</span> <span class="n">Atom</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">set_locked_object</span><span class="p">(</span><span
+                                class="bp">self</span><span class="p">,</span> <span class="n">mutable_index</span><span
+                                class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">current_atom</span><span
+                                class="p">:</span> <span class="n">Atom</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Sets the locked object in the system. This method is abstract and should</span>
 <span class="sd">        be implemented by subclasses to provide specific behavior for locking</span>
@@ -304,11 +383,15 @@
 <span class="sd">        &quot;&quot;&quot;</span>
 
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">get_mutable</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj_id</span><span class="p">,</span> <span class="n">obj_type</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">get_mutable</span><span class="p">(</span><span
+                                class="bp">self</span><span class="p">,</span> <span class="n">obj_id</span><span
+                                class="p">,</span> <span class="n">obj_type</span><span class="p">):</span>
         <span class="k">pass</span>
 
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">set_mutable</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">,</span> <span class="n">obj_type</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">set_mutable</span><span class="p">(</span><span
+                                class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span
+                                class="p">,</span> <span class="n">obj_type</span><span class="p">):</span>
         <span class="k">pass</span>
 
 
@@ -317,7 +400,11 @@
 <span class="sd">    A mixin class for objects that can handle concurrent modifications</span>
 <span class="sd">    by rebasing their changes on top of a more recent version of the object.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">def</span> <span class="nf">_rebase_on_concurrent_update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">current_db_object</span><span class="p">:</span> <span class="s1">&#39;Atom&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;Atom&#39;</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">_rebase_on_concurrent_update</span><span class="p">(</span><span
+                                class="bp">self</span><span class="p">,</span> <span
+                                class="n">current_db_object</span><span class="p">:</span> <span class="s1">&#39;Atom&#39;</span><span
+                                class="p">)</span> <span class="o">-&gt;</span> <span
+                                class="s1">&#39;Atom&#39;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        This method is called on the new object (from the current transaction)</span>
 <span class="sd">        when a concurrent modification is detected on the original object.</span>
@@ -330,17 +417,22 @@
 <span class="sd">                 into the current_db_object.</span>
 <span class="sd">        :raises: ProtoNotSupportedException if the merge is not possible.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;This object does not implement concurrent merge logic.&quot;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span
+                                class="s2">&quot;This object does not implement concurrent merge logic.&quot;</span><span
+                                class="p">)</span>
 
 
 <span class="c1"># Metaclase combinada: Combina AtomMetaclass y ABCMeta</span>
-<span class="k">class</span> <span class="nc">CombinedMeta</span><span class="p">(</span><span class="n">ABCMeta</span><span class="p">,</span> <span class="n">AtomMetaclass</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">CombinedMeta</span><span class="p">(</span><span
+                                class="n">ABCMeta</span><span class="p">,</span> <span
+                                class="n">AtomMetaclass</span><span class="p">):</span>
     <span class="k">pass</span>
 
 
 <div class="viewcode-block" id="Atom">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.Atom">[docs]</a>
-<span class="k">class</span> <span class="nc">Atom</span><span class="p">(</span><span class="n">metaclass</span><span class="o">=</span><span class="n">CombinedMeta</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">Atom</span><span class="p">(</span><span class="n">metaclass</span><span
+        class="o">=</span><span class="n">CombinedMeta</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents a self-contained unit of data (Atom) that interacts with a database</span>
 <span class="sd">    through an associated transaction mechanism. Atoms can be saved, loaded, and</span>
@@ -367,43 +459,88 @@
     <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span>
     <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span>
     <span class="n">_loaded</span><span class="p">:</span> <span class="nb">bool</span>
-    <span class="n">_saved</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">_saved</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span
+        class="kc">False</span>
 
 <div class="viewcode-block" id="Atom.__init__">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.Atom.__init__">[docs]</a>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span> <span class="o">=</span> <span class="n">transaction</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span> <span class="o">=</span> <span class="n">atom_pointer</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_loaded</span> <span class="o">=</span> <span class="kc">False</span></div>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span> <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span
+        class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">atom_pointer</span><span
+        class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span
+        class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span
+        class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span> <span class="o">=</span> <span
+        class="n">transaction</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span> <span class="o">=</span> <span
+        class="n">atom_pointer</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_loaded</span> <span
+        class="o">=</span> <span class="kc">False</span></div>
 
 
-    <span class="k">def</span> <span class="nf">_load</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">_load</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">):</span>
         <span class="c1"># Use direct attribute access to avoid recursion through __getattr__</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;_loaded&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span
+        class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;_loaded&#39;</span><span
+        class="p">,</span> <span class="kc">False</span><span class="p">):</span>
             <span class="c1"># Use direct dictionary access to avoid triggering __getattr__</span>
-            <span class="k">if</span> <span class="s1">&#39;transaction&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;transaction&#39;</span><span class="p">]:</span>
-                <span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;transaction&#39;</span><span class="p">]</span>
-                <span class="k">if</span> <span class="s1">&#39;atom_pointer&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]</span> <span class="ow">and</span> \
-                   <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">:</span>
-                    <span class="n">atom_pointer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]</span>
-                    <span class="n">loaded_atom</span> <span class="o">=</span> <span class="n">transaction</span><span class="o">.</span><span class="n">database</span><span class="o">.</span><span class="n">object_space</span><span class="o">.</span><span class="n">storage_provider</span><span class="o">.</span><span class="n">get_atom</span><span class="p">(</span>
-                        <span class="n">atom_pointer</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
-                    <span class="n">loaded_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_json_to_dict</span><span class="p">(</span><span class="n">loaded_atom</span><span class="p">)</span>
-                    <span class="k">for</span> <span class="n">attribute_name</span><span class="p">,</span> <span class="n">attribute_value</span> <span class="ow">in</span> <span class="n">loaded_dict</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="s1">&#39;transaction&#39;</span> <span class="ow">in</span> <span
+        class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">and</span> <span
+        class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span
+        class="s1">&#39;transaction&#39;</span><span class="p">]:</span>
+                <span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span
+        class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;transaction&#39;</span><span
+        class="p">]</span>
+                <span class="k">if</span> <span class="s1">&#39;atom_pointer&#39;</span> <span
+        class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span> <span
+        class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span
+        class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]</span> <span
+        class="ow">and</span> \
+                   <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span
+        class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]</span><span class="o">.</span><span
+        class="n">transaction_id</span><span class="p">:</span>
+                    <span class="n">atom_pointer</span> <span class="o">=</span> <span class="bp">self</span><span
+        class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span
+        class="p">]</span>
+                    <span class="n">loaded_atom</span> <span class="o">=</span> <span class="n">transaction</span><span
+        class="o">.</span><span class="n">database</span><span class="o">.</span><span
+        class="n">object_space</span><span class="o">.</span><span class="n">storage_provider</span><span
+        class="o">.</span><span class="n">get_atom</span><span class="p">(</span>
+                        <span class="n">atom_pointer</span><span class="p">)</span><span class="o">.</span><span
+        class="n">result</span><span class="p">()</span>
+                    <span class="n">loaded_dict</span> <span class="o">=</span> <span class="bp">self</span><span
+        class="o">.</span><span class="n">_json_to_dict</span><span class="p">(</span><span class="n">loaded_atom</span><span
+        class="p">)</span>
+                    <span class="k">for</span> <span class="n">attribute_name</span><span class="p">,</span> <span
+        class="n">attribute_value</span> <span class="ow">in</span> <span class="n">loaded_dict</span><span
+        class="o">.</span><span class="n">items</span><span class="p">():</span>
                         <span class="c1"># Use object.__setattr__ to bypass potential recursion in __setattr__</span>
-                        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">attribute_name</span><span class="p">,</span> <span class="n">attribute_value</span><span class="p">)</span>
-                        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attribute_value</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
-                            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">attribute_value</span><span class="p">,</span> <span class="s1">&#39;transaction&#39;</span><span class="p">,</span> <span class="n">transaction</span><span class="p">)</span>
-                            <span class="n">attribute_value</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">after_load</span><span class="p">()</span>
+                        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span
+        class="p">(</span><span class="bp">self</span><span class="p">,</span> <span
+        class="n">attribute_name</span><span class="p">,</span> <span class="n">attribute_value</span><span
+        class="p">)</span>
+                        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span
+        class="n">attribute_value</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
+                            <span class="nb">object</span><span class="o">.</span><span
+        class="fm">__setattr__</span><span class="p">(</span><span class="n">attribute_value</span><span
+        class="p">,</span> <span class="s1">&#39;transaction&#39;</span><span class="p">,</span> <span class="n">transaction</span><span
+        class="p">)</span>
+                            <span class="n">attribute_value</span><span class="o">.</span><span
+        class="n">_load</span><span class="p">()</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">after_load</span><span
+        class="p">()</span>
 
             <span class="c1"># Use object.__setattr__ to bypass potential recursion in __setattr__</span>
-            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;_loaded&#39;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span
+        class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;_loaded&#39;</span><span
+        class="p">,</span> <span class="kc">True</span><span class="p">)</span>
 
 <div class="viewcode-block" id="Atom.after_load">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.Atom.after_load">[docs]</a>
-    <span class="k">def</span> <span class="nf">after_load</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">after_load</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Perform any additional operations after the object is loaded in memory from storage.</span>
 <span class="sd">        Loading will restore all fields whose name do not start with &#39;_&#39;, or are callable.</span>
@@ -422,191 +559,385 @@
         <span class="k">pass</span></div>
 
 
-    <span class="k">def</span> <span class="fm">__eq__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span> <span class="ow">and</span> \
+    <span class="k">def</span> <span class="fm">__eq__</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other</span><span
+        class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">atom_pointer</span> <span class="ow">and</span> \
                <span class="n">other</span><span class="o">.</span><span class="n">atom_pointer</span> <span class="ow">and</span> \
-               <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">atom_pointer</span><span class="p">:</span>
+               <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span> <span class="o">==</span> <span
+        class="n">other</span><span class="o">.</span><span class="n">atom_pointer</span><span class="p">:</span>
                 <span class="k">return</span> <span class="kc">True</span>
-            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span> <span class="ow">and</span> <span class="n">other</span><span class="o">.</span><span class="n">atom_pointer</span><span class="p">:</span>
-                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">transaction_id</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">transaction_id</span> <span class="ow">and</span> \
-                       <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span>
+            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">atom_pointer</span> <span class="ow">and</span> <span class="n">other</span><span
+        class="o">.</span><span class="n">atom_pointer</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span><span
+        class="o">.</span><span class="n">transaction_id</span> <span class="o">==</span> <span
+        class="n">other</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span
+        class="n">transaction_id</span> <span class="ow">and</span> \
+                       <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span><span
+        class="o">.</span><span class="n">offset</span> <span class="o">==</span> <span class="n">other</span><span
+        class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">return</span> <span class="bp">self</span> <span class="ow">is</span> <span class="n">other</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">False</span>
 
-    <span class="k">def</span> <span class="nf">_push_to_storage</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">json_value</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">database</span><span class="o">.</span><span class="n">object_space</span><span class="o">.</span><span class="n">storage_provider</span><span class="o">.</span><span class="n">push_atom</span><span class="p">(</span><span class="n">json_value</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+    <span class="k">def</span> <span class="nf">_push_to_storage</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">json_value</span><span class="p">:</span> <span
+        class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span
+        class="n">AtomPointer</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">transaction</span><span class="o">.</span><span class="n">database</span><span class="o">.</span><span
+        class="n">object_space</span><span class="o">.</span><span class="n">storage_provider</span><span
+        class="o">.</span><span class="n">push_atom</span><span class="p">(</span><span class="n">json_value</span><span
+        class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
 
-    <span class="k">def</span> <span class="nf">_json_to_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">json_data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">_json_to_dict</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span> <span class="n">json_data</span><span class="p">:</span> <span class="nb">dict</span><span
+        class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
         <span class="n">data</span> <span class="o">=</span> <span class="p">{}</span>
 
-        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">json_data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="s1">&#39;className&#39;</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span>
-                <span class="n">class_name</span> <span class="o">=</span> <span class="n">value</span><span class="p">[</span><span class="s1">&#39;className&#39;</span><span class="p">]</span>
-                <span class="k">if</span> <span class="n">class_name</span> <span class="o">==</span> <span class="s1">&#39;datetime.datetime&#39;</span><span class="p">:</span>
-                    <span class="n">value</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">fromisoformat</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;iso&#39;</span><span class="p">])</span>
-                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span class="s1">&#39;datetime.date&#39;</span><span class="p">:</span>
-                    <span class="n">value</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="o">.</span><span class="n">fromisoformat</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;iso&#39;</span><span class="p">])</span>
-                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span class="s1">&#39;datetime.timedelta&#39;</span><span class="p">:</span>
-                    <span class="n">value</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">timedelta</span><span class="p">(</span><span class="n">microseconds</span><span class="o">=</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;microseconds&#39;</span><span class="p">])</span>
-                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span class="s1">&#39;int&#39;</span><span class="p">:</span>
-                    <span class="n">value</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;value&#39;</span><span class="p">])</span>
-                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span class="s1">&#39;float&#39;</span><span class="p">:</span>
-                    <span class="n">value</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;value&#39;</span><span class="p">])</span>
-                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span class="s1">&#39;bool&#39;</span><span class="p">:</span>
-                    <span class="n">value</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;value&#39;</span><span class="p">])</span>
-                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span class="s1">&#39;None&#39;</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span
+        class="n">value</span> <span class="ow">in</span> <span class="n">json_data</span><span class="o">.</span><span
+        class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span
+        class="n">value</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span
+        class="ow">and</span> <span class="s1">&#39;className&#39;</span> <span class="ow">in</span> <span class="n">value</span><span
+        class="p">:</span>
+                <span class="n">class_name</span> <span class="o">=</span> <span class="n">value</span><span
+        class="p">[</span><span class="s1">&#39;className&#39;</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">class_name</span> <span class="o">==</span> <span class="s1">&#39;datetime.datetime&#39;</span><span
+        class="p">:</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="n">datetime</span><span
+        class="o">.</span><span class="n">datetime</span><span class="o">.</span><span
+        class="n">fromisoformat</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span
+        class="s1">&#39;iso&#39;</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span
+        class="s1">&#39;datetime.date&#39;</span><span class="p">:</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="n">datetime</span><span
+        class="o">.</span><span class="n">date</span><span class="o">.</span><span class="n">fromisoformat</span><span
+        class="p">(</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;iso&#39;</span><span
+        class="p">])</span>
+                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span
+        class="s1">&#39;datetime.timedelta&#39;</span><span class="p">:</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="n">datetime</span><span
+        class="o">.</span><span class="n">timedelta</span><span class="p">(</span><span
+        class="n">microseconds</span><span class="o">=</span><span class="n">value</span><span class="p">[</span><span
+        class="s1">&#39;microseconds&#39;</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span
+        class="s1">&#39;int&#39;</span><span class="p">:</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="nb">int</span><span
+        class="p">(</span><span class="n">value</span><span class="p">[</span><span
+        class="s1">&#39;value&#39;</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span
+        class="s1">&#39;float&#39;</span><span class="p">:</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="nb">float</span><span
+        class="p">(</span><span class="n">value</span><span class="p">[</span><span
+        class="s1">&#39;value&#39;</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span
+        class="s1">&#39;bool&#39;</span><span class="p">:</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="nb">bool</span><span
+        class="p">(</span><span class="n">value</span><span class="p">[</span><span
+        class="s1">&#39;value&#39;</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span
+        class="s1">&#39;None&#39;</span><span class="p">:</span>
                     <span class="n">value</span> <span class="o">=</span> <span class="kc">None</span>
-                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span class="s1">&#39;Literal&#39;</span><span class="p">:</span>
-                    <span class="k">if</span> <span class="s1">&#39;transaction_id&#39;</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span>
-                        <span class="n">value</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">(</span>
-                            <span class="n">atom_pointer</span><span class="o">=</span><span class="n">AtomPointer</span><span class="p">(</span>
-                                <span class="n">transaction_id</span><span class="o">=</span><span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;transaction_id&#39;</span><span class="p">]),</span>
-                                <span class="n">offset</span><span class="o">=</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;offset&#39;</span><span class="p">]</span>
+                <span class="k">elif</span> <span class="n">class_name</span> <span class="o">==</span> <span
+        class="s1">&#39;Literal&#39;</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="s1">&#39;transaction_id&#39;</span> <span
+        class="ow">in</span> <span class="n">value</span><span class="p">:</span>
+                        <span class="n">value</span> <span class="o">=</span> <span class="n">Literal</span><span
+        class="p">(</span>
+                            <span class="n">atom_pointer</span><span class="o">=</span><span
+        class="n">AtomPointer</span><span class="p">(</span>
+                                <span class="n">transaction_id</span><span class="o">=</span><span class="n">uuid</span><span
+        class="o">.</span><span class="n">UUID</span><span class="p">(</span><span class="n">value</span><span
+        class="p">[</span><span class="s1">&#39;transaction_id&#39;</span><span class="p">]),</span>
+                                <span class="n">offset</span><span class="o">=</span><span class="n">value</span><span
+        class="p">[</span><span class="s1">&#39;offset&#39;</span><span class="p">]</span>
                             <span class="p">),</span>
-                            <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+                            <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span
+        class="o">.</span><span class="n">transaction</span>
                         <span class="p">)</span>
                         <span class="n">value</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
                     <span class="k">else</span><span class="p">:</span>
-                        <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">get_literal</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;string&#39;</span><span class="p">])</span>
-                <span class="k">elif</span> <span class="n">class_name</span> <span class="ow">in</span> <span class="n">atom_class_registry</span><span class="p">:</span>
-                    <span class="n">atom_pointer</span> <span class="o">=</span> <span class="n">AtomPointer</span><span class="p">(</span>
-                        <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">(</span><span class="nb">hex</span><span class="o">=</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;transaction_id&#39;</span><span class="p">]),</span>
-                        <span class="n">value</span><span class="p">[</span><span class="s1">&#39;offset&#39;</span><span class="p">]</span>
+                        <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span
+        class="o">.</span><span class="n">transaction</span><span class="o">.</span><span
+        class="n">get_literal</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span
+        class="s1">&#39;string&#39;</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">class_name</span> <span class="ow">in</span> <span
+        class="n">atom_class_registry</span><span class="p">:</span>
+                    <span class="n">atom_pointer</span> <span class="o">=</span> <span class="n">AtomPointer</span><span
+        class="p">(</span>
+                        <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span
+        class="p">(</span><span class="nb">hex</span><span class="o">=</span><span class="n">value</span><span
+        class="p">[</span><span class="s1">&#39;transaction_id&#39;</span><span class="p">]),</span>
+                        <span class="n">value</span><span class="p">[</span><span
+        class="s1">&#39;offset&#39;</span><span class="p">]</span>
                     <span class="p">)</span>
-                    <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">read_object</span><span class="p">(</span><span class="n">class_name</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="p">)</span>
-                    <span class="n">value</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span
+        class="o">.</span><span class="n">transaction</span><span class="o">.</span><span
+        class="n">read_object</span><span class="p">(</span><span class="n">class_name</span><span
+        class="p">,</span> <span class="n">atom_pointer</span><span class="p">)</span>
+                    <span class="n">value</span><span class="o">.</span><span class="n">_load</span><span
+        class="p">()</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
-                        <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;It is not possible to load Atom of class </span><span class="si">{</span><span class="n">class_name</span><span class="si">}</span><span class="s1">!&#39;</span>
+                        <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;It is not possible to load Atom of class </span><span
+        class="si">{</span><span class="n">class_name</span><span class="si">}</span><span class="s1">!&#39;</span>
                     <span class="p">)</span>
-            <span class="n">data</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+            <span class="n">data</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span
+        class="o">=</span> <span class="n">value</span>
 
         <span class="k">return</span> <span class="n">data</span>
 
-    <span class="k">def</span> <span class="nf">_dict_to_json</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">_dict_to_json</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">dict</span><span
+        class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
         <span class="n">json_value</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">db_access</span>
+        <span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span
+        class="n">db_access</span>
 
-        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
-                <span class="k">if</span> <span class="ow">not</span> <span class="n">value</span><span class="o">.</span><span class="n">transaction</span><span class="p">:</span>
-                    <span class="n">value</span><span class="o">.</span><span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
-                <span class="n">value</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
-                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-                    <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
-                    <span class="s1">&#39;transaction_id&#39;</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span>
-                    <span class="s1">&#39;offset&#39;</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span
+        class="n">value</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span
+        class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span
+        class="n">value</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">value</span><span
+        class="o">.</span><span class="n">transaction</span><span class="p">:</span>
+                    <span class="n">value</span><span class="o">.</span><span class="n">transaction</span> <span
+        class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+                <span class="n">value</span><span class="o">.</span><span class="n">_save</span><span
+        class="p">()</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span
+        class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span
+        class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span
+        class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+                    <span class="s1">&#39;transaction_id&#39;</span><span class="p">:</span> <span
+        class="n">value</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span
+        class="n">transaction_id</span><span class="p">,</span>
+                    <span class="s1">&#39;offset&#39;</span><span class="p">:</span> <span class="n">value</span><span
+        class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span><span
+        class="p">,</span>
                 <span class="p">}</span>
-            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
-                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
-            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">):</span>
-                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-                    <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="s1">&#39;datetime.datetime&#39;</span><span class="p">,</span>
-                    <span class="s1">&#39;iso&#39;</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(),</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span
+        class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span
+        class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span
+        class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span
+        class="n">datetime</span><span class="p">):</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span
+        class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="s1">&#39;datetime.datetime&#39;</span><span
+        class="p">,</span>
+                    <span class="s1">&#39;iso&#39;</span><span class="p">:</span> <span class="n">value</span><span
+        class="o">.</span><span class="n">isoformat</span><span class="p">(),</span>
                 <span class="p">}</span>
-            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="p">):</span>
-                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-                    <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="s1">&#39;datetime.date&#39;</span><span class="p">,</span>
-                    <span class="s1">&#39;iso&#39;</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">isoformat</span><span class="p">,</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span
+        class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span
+        class="n">date</span><span class="p">):</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span
+        class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="s1">&#39;datetime.date&#39;</span><span
+        class="p">,</span>
+                    <span class="s1">&#39;iso&#39;</span><span class="p">:</span> <span class="n">value</span><span
+        class="o">.</span><span class="n">isoformat</span><span class="p">,</span>
                 <span class="p">}</span>
-            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">timedelta</span><span class="p">):</span>
-                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-                    <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="s1">&#39;datetime.timedelta&#39;</span><span class="p">,</span>
-                    <span class="s1">&#39;microseconds&#39;</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">microseconds</span><span class="p">,</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span
+        class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span
+        class="n">timedelta</span><span class="p">):</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span
+        class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="s1">&#39;datetime.timedelta&#39;</span><span
+        class="p">,</span>
+                    <span class="s1">&#39;microseconds&#39;</span><span class="p">:</span> <span
+        class="n">value</span><span class="o">.</span><span class="n">microseconds</span><span class="p">,</span>
                 <span class="p">}</span>
-            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
-                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
-            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">float</span><span class="p">):</span>
-                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
-            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
-                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
-            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">):</span>
-                <span class="n">bytes_atom</span> <span class="o">=</span> <span class="n">db_access</span><span class="o">.</span><span class="n">BytesAtom</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
-                <span class="n">bytes_atom</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
-                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-                    <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="s1">&#39;BytesAtom&#39;</span><span class="p">,</span>
-                    <span class="s1">&#39;transaction_id&#39;</span><span class="p">:</span> <span class="n">bytes_atom</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span>
-                    <span class="s1">&#39;offset&#39;</span><span class="p">:</span> <span class="n">bytes_atom</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span
+        class="n">value</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span
+        class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span
+        class="n">value</span><span class="p">,</span> <span class="nb">float</span><span class="p">):</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span
+        class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span
+        class="n">value</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span
+        class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span
+        class="n">value</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">):</span>
+                <span class="n">bytes_atom</span> <span class="o">=</span> <span class="n">db_access</span><span
+        class="o">.</span><span class="n">BytesAtom</span><span class="p">(</span><span class="n">content</span><span
+        class="o">=</span><span class="n">value</span><span class="p">)</span>
+                <span class="n">bytes_atom</span><span class="o">.</span><span class="n">_save</span><span
+        class="p">()</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span
+        class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="s1">&#39;BytesAtom&#39;</span><span
+        class="p">,</span>
+                    <span class="s1">&#39;transaction_id&#39;</span><span class="p">:</span> <span
+        class="n">bytes_atom</span><span class="o">.</span><span class="n">atom_pointer</span><span
+        class="o">.</span><span class="n">transaction_id</span><span class="p">,</span>
+                    <span class="s1">&#39;offset&#39;</span><span class="p">:</span> <span
+        class="n">bytes_atom</span><span class="o">.</span><span class="n">atom_pointer</span><span
+        class="o">.</span><span class="n">offset</span><span class="p">,</span>
                 <span class="p">}</span>
-            <span class="k">elif</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">elif</span> <span class="n">value</span> <span class="ow">is</span> <span
+        class="kc">None</span><span class="p">:</span>
                 <span class="c1"># There is no need to store None values, it is the default for newly created atoms</span>
                 <span class="k">continue</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span
+        class="p">]</span> <span class="o">=</span> <span class="n">value</span>
 
         <span class="k">return</span> <span class="n">json_value</span>
 
-    <span class="k">def</span> <span class="nf">_save</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">_save</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">):</span>
         <span class="c1"># Use direct attribute access to avoid recursion</span>
-        <span class="k">if</span> <span class="s1">&#39;atom_pointer&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]:</span>
-            <span class="k">if</span> <span class="s1">&#39;_saved&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;_saved&#39;</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="s1">&#39;atom_pointer&#39;</span> <span class="ow">not</span> <span
+        class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span> <span
+        class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span
+        class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]:</span>
+            <span class="k">if</span> <span class="s1">&#39;_saved&#39;</span> <span class="ow">not</span> <span
+        class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span> <span
+        class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span
+        class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;_saved&#39;</span><span
+        class="p">]:</span>
                 <span class="c1"># It&#39;s a new object</span>
 
-                <span class="k">if</span> <span class="s1">&#39;transaction&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;transaction&#39;</span><span class="p">]:</span>
+                <span class="k">if</span> <span class="s1">&#39;transaction&#39;</span> <span class="ow">in</span> <span
+        class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">and</span> <span
+        class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span
+        class="s1">&#39;transaction&#39;</span><span class="p">]:</span>
                     <span class="c1"># Push the object tree downhill, avoiding recursion loops</span>
                     <span class="c1"># converting attributes strs to Literals</span>
-                    <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;_saved&#39;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+                    <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span
+        class="p">(</span><span class="bp">self</span><span class="p">,</span> <span
+        class="s1">&#39;_saved&#39;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
 
-                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">Literal</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">Literal</span><span class="p">):</span>
                         <span class="n">json_value</span> <span class="o">=</span> <span class="p">{</span>
-                            <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="s1">&#39;Literal&#39;</span><span class="p">,</span>
-                            <span class="s1">&#39;string&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">string</span>
+                            <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="s1">&#39;Literal&#39;</span><span
+        class="p">,</span>
+                            <span class="s1">&#39;string&#39;</span><span class="p">:</span> <span
+        class="bp">self</span><span class="o">.</span><span class="n">string</span>
                         <span class="p">}</span>
                     <span class="k">else</span><span class="p">:</span>
-                        <span class="n">json_value</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">}</span>
+                        <span class="n">json_value</span> <span class="o">=</span> <span class="p">{</span><span
+        class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="nb">type</span><span
+        class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span
+        class="p">}</span>
 
-                        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-                            <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="ow">or</span> <span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;_&#39;</span><span class="p">):</span>
+                        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span
+        class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span
+        class="o">.</span><span class="n">items</span><span class="p">():</span>
+                            <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span
+        class="n">value</span><span class="p">)</span> <span class="ow">or</span> <span class="n">name</span><span
+        class="o">.</span><span class="n">startswith</span><span class="p">(</span><span
+        class="s1">&#39;_&#39;</span><span class="p">):</span>
                                 <span class="k">continue</span>
 
-                            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">Atom</span><span class="p">)</span> <span class="ow">and</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">,</span> <span class="s1">&#39;transaction&#39;</span><span class="p">):</span>
+                            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">Atom</span><span class="p">)</span> <span
+        class="ow">and</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span><span
+        class="s1">&#39;atom_pointer&#39;</span><span class="p">,</span> <span
+        class="s1">&#39;transaction&#39;</span><span class="p">):</span>
                                 <span class="k">continue</span>
 
-                            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
-                                <span class="k">if</span> <span class="s1">&#39;transaction&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">value</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">value</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;transaction&#39;</span><span class="p">]:</span>
+                            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span
+        class="n">value</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
+                                <span class="k">if</span> <span class="s1">&#39;transaction&#39;</span> <span
+        class="ow">not</span> <span class="ow">in</span> <span class="n">value</span><span class="o">.</span><span
+        class="vm">__dict__</span> <span class="ow">or</span> <span class="ow">not</span> <span
+        class="n">value</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span
+        class="s1">&#39;transaction&#39;</span><span class="p">]:</span>
                                     <span class="c1"># it is a newly created atom</span>
                                     <span class="c1"># it should not happen, but try to solve the misbehaviour</span>
                                     <span class="c1"># capture it for this transaction</span>
-                                    <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s1">&#39;transaction&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;transaction&#39;</span><span class="p">])</span>
-                                    <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s1">&#39;_saved&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
-                                <span class="k">if</span> <span class="s1">&#39;_saved&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">value</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">value</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;_saved&#39;</span><span class="p">]:</span>
-                                    <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s1">&#39;transaction&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;transaction&#39;</span><span class="p">])</span>
-                                <span class="n">value</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+                                    <span class="nb">object</span><span class="o">.</span><span
+        class="fm">__setattr__</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span
+        class="s1">&#39;transaction&#39;</span><span class="p">,</span> <span class="bp">self</span><span
+        class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span
+        class="s1">&#39;transaction&#39;</span><span class="p">])</span>
+                                    <span class="nb">object</span><span class="o">.</span><span
+        class="fm">__setattr__</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span
+        class="s1">&#39;_saved&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+                                <span class="k">if</span> <span class="s1">&#39;_saved&#39;</span> <span
+        class="ow">not</span> <span class="ow">in</span> <span class="n">value</span><span class="o">.</span><span
+        class="vm">__dict__</span> <span class="ow">or</span> <span class="ow">not</span> <span
+        class="n">value</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span
+        class="s1">&#39;_saved&#39;</span><span class="p">]:</span>
+                                    <span class="nb">object</span><span class="o">.</span><span
+        class="fm">__setattr__</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span
+        class="s1">&#39;transaction&#39;</span><span class="p">,</span> <span class="bp">self</span><span
+        class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span
+        class="s1">&#39;transaction&#39;</span><span class="p">])</span>
+                                <span class="n">value</span><span class="o">.</span><span class="n">_save</span><span
+        class="p">()</span>
 
-                                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-                                    <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
-                                    <span class="s1">&#39;transaction_id&#39;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">),</span>
-                                    <span class="s1">&#39;offset&#39;</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">offset</span>
+                                <span class="n">json_value</span><span class="p">[</span><span
+        class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                                    <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span
+        class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span
+        class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+                                    <span class="s1">&#39;transaction_id&#39;</span><span class="p">:</span> <span
+        class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span
+        class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]</span><span
+        class="o">.</span><span class="n">transaction_id</span><span class="p">),</span>
+                                    <span class="s1">&#39;offset&#39;</span><span class="p">:</span> <span class="n">value</span><span
+        class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span
+        class="p">]</span><span class="o">.</span><span class="n">offset</span>
                                 <span class="p">}</span>
                             <span class="k">else</span><span class="p">:</span>
-                                <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+                                <span class="n">json_value</span><span class="p">[</span><span
+        class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
 
-                        <span class="n">json_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dict_to_json</span><span class="p">(</span><span class="n">json_value</span><span class="p">)</span>
+                        <span class="n">json_value</span> <span class="o">=</span> <span class="bp">self</span><span
+        class="o">.</span><span class="n">_dict_to_json</span><span class="p">(</span><span
+        class="n">json_value</span><span class="p">)</span>
 
                     <span class="c1"># At this point all attributes has been flushed to storage if they are newly created</span>
                     <span class="c1"># All attributes has valid AtomPointer values (either old or new)</span>
-                    <span class="n">pointer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_push_to_storage</span><span class="p">(</span><span class="n">json_value</span><span class="p">)</span>
-                    <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;atom_pointer&#39;</span><span class="p">,</span> <span class="n">AtomPointer</span><span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">))</span>
+                    <span class="n">pointer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">_push_to_storage</span><span class="p">(</span><span class="n">json_value</span><span
+        class="p">)</span>
+                    <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span
+        class="p">(</span><span class="bp">self</span><span class="p">,</span> <span
+        class="s1">&#39;atom_pointer&#39;</span><span class="p">,</span> <span class="n">AtomPointer</span><span
+        class="p">(</span><span class="n">pointer</span><span class="o">.</span><span
+        class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span
+        class="o">.</span><span class="n">offset</span><span class="p">))</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
                         <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;An DBObject can only be saved within a given transaction!&#39;</span>
                     <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">hash</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>
+    <span class="k">def</span> <span class="nf">hash</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">atom_pointer</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>
 
-    <span class="k">def</span> <span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">):</span>
-            <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__getitem__</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+    <span class="k">def</span> <span class="fm">__getitem__</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">:</span> <span
+        class="nb">str</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">):</span>
+            <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span
+        class="fm">__getitem__</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span></div>
 
 
 
-<span class="k">class</span> <span class="nc">RootObject</span><span class="p">(</span><span class="n">Atom</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">RootObject</span><span class="p">(</span><span class="n">Atom</span><span
+                                class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents the root object in a data structure.</span>
 
@@ -623,24 +954,42 @@
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">object_root</span><span class="p">:</span> <span class="n">Atom</span>
     <span class="n">literal_root</span><span class="p">:</span> <span class="n">Atom</span>
-    <span class="n">created_at</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span>
+    <span class="n">created_at</span><span class="p">:</span> <span class="n">datetime</span><span
+                                class="o">.</span><span class="n">datetime</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
-                 <span class="n">object_root</span><span class="p">:</span> <span class="n">Atom</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-                 <span class="n">literal_root</span><span class="p">:</span> <span class="n">Atom</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-                 <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span
+                                class="p">,</span>
+                 <span class="n">object_root</span><span class="p">:</span> <span class="n">Atom</span> <span class="o">=</span> <span
+                                class="kc">None</span><span class="p">,</span>
+                 <span class="n">literal_root</span><span class="p">:</span> <span class="n">Atom</span> <span
+                                class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">transaction</span><span class="p">:</span> <span
+                                class="n">AbstractTransaction</span> <span class="o">=</span> <span
+                                class="kc">None</span><span class="p">,</span>
+                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span
+                                class="o">=</span> <span class="kc">None</span><span class="p">,</span>
                  <span class="o">**</span><span class="n">kwargs</span>
                  <span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">object_root</span> <span class="o">=</span> <span class="n">object_root</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">literal_root</span> <span class="o">=</span> <span class="n">literal_root</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">created_at</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span
+                                class="fm">__init__</span><span class="p">(</span><span
+                                class="n">transaction</span><span class="o">=</span><span
+                                class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span
+                                class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span
+                                class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">object_root</span> <span class="o">=</span> <span
+                                class="n">object_root</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">literal_root</span> <span class="o">=</span> <span
+                                class="n">literal_root</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">created_at</span> <span
+                                class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span
+                                class="n">datetime</span><span class="o">.</span><span class="n">now</span><span
+                                class="p">()</span>
 
 
 <div class="viewcode-block" id="DBObject">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.DBObject">[docs]</a>
-<span class="k">class</span> <span class="nc">DBObject</span><span class="p">(</span><span class="n">Atom</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">DBObject</span><span class="p">(</span><span class="n">Atom</span><span
+        class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents a database object that provides dynamic attribute loading and immutability.</span>
 
@@ -658,57 +1007,99 @@
 
 <div class="viewcode-block" id="DBObject.__init__">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.DBObject.__init__">[docs]</a>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
-                 <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span>
+                 <span class="n">transaction</span><span class="p">:</span> <span
+        class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span
+        class="p">,</span>
+                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span
+        class="o">=</span> <span class="kc">None</span><span class="p">,</span>
                  <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_loaded</span> <span class="o">=</span> <span class="kc">False</span></div>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span
+        class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span
+        class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span
+        class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span
+        class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_loaded</span> <span
+        class="o">=</span> <span class="kc">False</span></div>
 
 
-    <span class="k">def</span> <span class="fm">__getattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-        <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;_loaded&#39;</span><span class="p">:</span>  <span class="c1"># Prevent recursion when checking _loaded</span>
+    <span class="k">def</span> <span class="fm">__getattr__</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span
+        class="nb">str</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;_loaded&#39;</span><span
+        class="p">:</span>  <span class="c1"># Prevent recursion when checking _loaded</span>
             <span class="k">return</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
-        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span
+        class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
+        class="vm">__dict__</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
         <span class="k">return</span> <span class="kc">None</span>
 
-    <span class="k">def</span> <span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__setattr__</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span
+        class="n">value</span><span class="p">):</span>
         <span class="c1"># Special case for _loaded to prevent recursion</span>
-        <span class="k">if</span> <span class="n">key</span> <span class="o">==</span> <span class="s1">&#39;_loaded&#39;</span><span class="p">:</span>
-            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="o">==</span> <span class="s1">&#39;_loaded&#39;</span><span
+        class="p">:</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span
+        class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span
+        class="p">,</span> <span class="n">value</span><span class="p">)</span>
             <span class="k">return</span>
 
         <span class="c1"># Special case for transaction and atom_pointer during initialization</span>
-        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">(</span><span class="s1">&#39;transaction&#39;</span><span class="p">,</span> <span class="s1">&#39;atom_pointer&#39;</span><span class="p">):</span>
-            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">(</span><span
+        class="s1">&#39;transaction&#39;</span><span class="p">,</span> <span
+        class="s1">&#39;atom_pointer&#39;</span><span class="p">):</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span
+        class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span
+        class="p">,</span> <span class="n">value</span><span class="p">)</span>
             <span class="k">return</span>
 
         <span class="c1"># For other attributes, ensure the object is loaded first</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">key</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;_&#39;</span><span class="p">):</span>  <span class="c1"># Skip internal attributes to prevent recursion</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">key</span><span class="o">.</span><span
+        class="n">startswith</span><span class="p">(</span><span class="s1">&#39;_&#39;</span><span class="p">):</span>  <span
+        class="c1"># Skip internal attributes to prevent recursion</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
 
-        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">:</span>
-            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span
+        class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">:</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span
+        class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span
+        class="p">,</span> <span class="n">value</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
-                <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;ProtoBase DBObjects are inmutable! Your are trying to set attribute </span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s1">&#39;</span>
+                <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;ProtoBase DBObjects are inmutable! Your are trying to set attribute </span><span
+        class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s1">&#39;</span>
             <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">_setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span><span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span><span class="n">DBObject</span><span class="p">:</span>
-        <span class="n">new_object</span> <span class="o">=</span> <span class="n">DBObject</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">attr_name</span><span class="p">,</span> <span class="n">attr_value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="k">if</span> <span class="n">attr_name</span> <span class="o">!=</span> <span class="s1">&#39;_loaded&#39;</span><span class="p">:</span>  <span class="c1"># Skip _loaded flag to avoid recursion</span>
-                <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">new_object</span><span class="p">,</span> <span class="n">attr_name</span><span class="p">,</span> <span class="n">attr_value</span><span class="p">)</span>
-        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">new_object</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_setattr</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span> <span class="n">name</span><span class="p">:</span><span class="nb">str</span><span
+        class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span
+        class="p">)</span> <span class="o">-&gt;</span><span class="n">DBObject</span><span class="p">:</span>
+        <span class="n">new_object</span> <span class="o">=</span> <span class="n">DBObject</span><span
+        class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span
+        class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">attr_name</span><span class="p">,</span> <span
+        class="n">attr_value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span
+        class="vm">__dict__</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">attr_name</span> <span class="o">!=</span> <span class="s1">&#39;_loaded&#39;</span><span
+        class="p">:</span>  <span class="c1"># Skip _loaded flag to avoid recursion</span>
+                <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span
+        class="p">(</span><span class="n">new_object</span><span class="p">,</span> <span
+        class="n">attr_name</span><span class="p">,</span> <span class="n">attr_value</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span
+        class="p">(</span><span class="n">new_object</span><span class="p">,</span> <span class="n">name</span><span
+        class="p">,</span> <span class="n">value</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">new_object</span></div>
 
 
 
 <div class="viewcode-block" id="MutableObject">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.MutableObject">[docs]</a>
-<span class="k">class</span> <span class="nc">MutableObject</span><span class="p">(</span><span class="n">Atom</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">MutableObject</span><span class="p">(</span><span
+        class="n">Atom</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents a mutable object and is used within the context</span>
 <span class="sd">    of a transaction. The purpose of this class is to provide a means for interacting with</span>
@@ -726,77 +1117,135 @@
 <span class="sd">        provided during initialization or generated if not supplied.</span>
 <span class="sd">    :type hash_key: int</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">hash_key</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">hash_key</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span
+        class="mi">0</span>
 
 <div class="viewcode-block" id="MutableObject.__init__">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.MutableObject.__init__">[docs]</a>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
-                 <span class="n">hash_key</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
-                 <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span>
+                 <span class="n">hash_key</span><span class="p">:</span> <span class="nb">int</span> <span
+        class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+                 <span class="n">transaction</span><span class="p">:</span> <span
+        class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span
+        class="p">,</span>
+                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span
+        class="o">=</span> <span class="kc">None</span><span class="p">,</span>
                  <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span
+        class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span
+        class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span
+        class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span
+        class="n">kwargs</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">hash_key</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">hash_key</span> <span class="o">=</span> <span class="n">hash_key</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">hash_key</span> <span class="o">=</span> <span
+        class="n">hash_key</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">hash_key</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="o">.</span><span class="n">int</span></div>
+            <span class="bp">self</span><span class="o">.</span><span class="n">hash_key</span> <span class="o">=</span> <span
+        class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span
+        class="o">.</span><span class="n">int</span></div>
 
 
-    <span class="k">def</span> <span class="fm">__getattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__getattr__</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span
+        class="nb">str</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">transaction</span><span class="p">:</span>
             <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
                 <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;You can&#39;t access a mutable object out of the scope of a transaction!&quot;</span>
             <span class="p">)</span>
 
-        <span class="n">current_object</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">get_mutable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hash_key</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">current_object</span><span class="o">.</span><span class="fm">__getattr__</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="n">current_object</span> <span class="o">=</span> <span class="bp">self</span><span
+        class="o">.</span><span class="n">transaction</span><span class="o">.</span><span
+        class="n">get_mutable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span
+        class="n">hash_key</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">current_object</span><span class="o">.</span><span class="fm">__getattr__</span><span
+        class="p">(</span><span class="n">name</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="fm">__setitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+    <span class="k">def</span> <span class="fm">__setitem__</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span
+        class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="fm">__setattr__</span><span
+        class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">value</span><span
+        class="p">)</span>
 
 
-    <span class="k">def</span> <span class="fm">__delitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">def</span> <span class="fm">__delitem__</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span
+        class="nb">str</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="fm">__setattr__</span><span
+        class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span
+        class="p">)</span>
 
 
-    <span class="k">def</span> <span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__setattr__</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span
+        class="n">value</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">transaction</span><span class="p">:</span>
             <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
                 <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;You can&#39;t access a mutable object out of the scope of a transaction!&quot;</span>
             <span class="p">)</span>
 
-        <span class="n">current_object</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">DBObject</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">get_mutable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hash_key</span><span class="p">))</span>
-        <span class="n">new_object</span> <span class="o">=</span> <span class="n">current_object</span><span class="o">.</span><span class="n">_setattr</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">set_mutable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hash_key</span><span class="p">,</span> <span class="n">new_object</span><span class="p">)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">:</span>
+        <span class="n">current_object</span> <span class="o">=</span> <span class="n">cast</span><span
+        class="p">(</span><span class="n">DBObject</span><span class="p">,</span> <span class="bp">self</span><span
+        class="o">.</span><span class="n">transaction</span><span class="o">.</span><span
+        class="n">get_mutable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span
+        class="n">hash_key</span><span class="p">))</span>
+        <span class="n">new_object</span> <span class="o">=</span> <span class="n">current_object</span><span class="o">.</span><span
+        class="n">_setattr</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span
+        class="n">value</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span
+        class="o">.</span><span class="n">set_mutable</span><span class="p">(</span><span class="bp">self</span><span
+        class="o">.</span><span class="n">hash_key</span><span class="p">,</span> <span class="n">new_object</span><span
+        class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">atom_pointer</span> <span class="ow">and</span> <span class="bp">self</span><span
+        class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span
+        class="n">transaction_id</span><span class="p">:</span>
             <span class="c1"># Object is stored in DB and it is going to be modified.</span>
             <span class="c1"># It should be added to the set of objects to be checked if were modified</span>
             <span class="c1"># by other transaction simoultaneously with this transaction</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">set_locked_object</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hash_key</span><span class="p">,</span> <span class="n">current_object</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span
+        class="o">.</span><span class="n">set_locked_object</span><span class="p">(</span><span
+        class="bp">self</span><span class="o">.</span><span class="n">hash_key</span><span class="p">,</span> <span
+        class="n">current_object</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">__hasattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">__hasattr__</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span
+        class="nb">str</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">transaction</span><span class="p">:</span>
             <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
                 <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;You can&#39;t access a mutable object out of the scope of a transaction!&quot;</span>
             <span class="p">)</span>
 
-        <span class="n">current_object</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">get_mutable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hash_key</span><span class="p">)</span>
-        <span class="k">return</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">current_object</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+        <span class="n">current_object</span> <span class="o">=</span> <span class="bp">self</span><span
+        class="o">.</span><span class="n">transaction</span><span class="o">.</span><span
+        class="n">get_mutable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span
+        class="n">hash_key</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">current_object</span><span
+        class="p">,</span> <span class="n">name</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">_load</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">_load</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">):</span>
         <span class="k">pass</span>
 
-    <span class="k">def</span> <span class="nf">_save</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">_save</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">):</span>
         <span class="k">pass</span>
 
-    <span class="k">def</span> <span class="nf">hash</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span></div>
+    <span class="k">def</span> <span class="nf">hash</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">hash</span><span class="p">()</span></div>
 
 
 
 <div class="viewcode-block" id="DBCollections">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.DBCollections">[docs]</a>
-<span class="k">class</span> <span class="nc">DBCollections</span><span class="p">(</span><span class="n">Atom</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">DBCollections</span><span class="p">(</span><span
+        class="n">Atom</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    DBCollections provides an abstraction layer for database collections.</span>
 
@@ -807,21 +1256,32 @@
 <span class="sd">    :ivar count: The total number of items in the collection.</span>
 <span class="sd">    :type count: int</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span
+        class="mi">0</span>
 
 <div class="viewcode-block" id="DBCollections.__init__">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.DBCollections.__init__">[docs]</a>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
-                 <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span>
+                 <span class="n">transaction</span><span class="p">:</span> <span
+        class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span
+        class="p">,</span>
+                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span
+        class="o">=</span> <span class="kc">None</span><span class="p">,</span>
                  <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span
+        class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span
+        class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span
+        class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span
+        class="n">kwargs</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="DBCollections.as_iterable">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.DBCollections.as_iterable">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">as_iterable</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">object</span><span class="p">]:</span>
+    <span class="k">def</span> <span class="nf">as_iterable</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span
+        class="p">[</span><span class="nb">object</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 
 <span class="sd">        :return:</span>
@@ -831,7 +1291,8 @@
 <div class="viewcode-block" id="DBCollections.as_query_plan">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.DBCollections.as_query_plan">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">as_query_plan</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">as_query_plan</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Get a query plan based on this collection</span>
 <span class="sd">        :return:</span>
@@ -842,7 +1303,8 @@
 
 <div class="viewcode-block" id="QueryPlan">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.common.QueryPlan">[docs]</a>
-<span class="k">class</span> <span class="nc">QueryPlan</span><span class="p">(</span><span class="n">Atom</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">QueryPlan</span><span class="p">(</span><span class="n">Atom</span><span
+        class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Maintains the structure and logic for a query execution plan.</span>
 
@@ -859,19 +1321,30 @@
 
 <div class="viewcode-block" id="QueryPlan.__init__">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.common.QueryPlan.__init__">[docs]</a>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
-                 <span class="n">based_on</span><span class="p">:</span> <span class="n">QueryPlan</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-                 <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span>
+                 <span class="n">based_on</span><span class="p">:</span> <span class="n">QueryPlan</span> <span
+        class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">transaction</span><span class="p">:</span> <span
+        class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span
+        class="p">,</span>
+                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span
+        class="o">=</span> <span class="kc">None</span><span class="p">,</span>
                  <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="o">=</span> <span class="n">based_on</span></div>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span
+        class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span
+        class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span
+        class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span
+        class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span
+        class="o">=</span> <span class="n">based_on</span></div>
 
 
 <div class="viewcode-block" id="QueryPlan.execute">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.common.QueryPlan.execute">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 
 <span class="sd">        :return:</span>
@@ -881,7 +1354,10 @@
 <div class="viewcode-block" id="QueryPlan.optimize">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.common.QueryPlan.optimize">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">full_plan</span><span class="p">:</span> <span class="n">QueryPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span> <span class="n">full_plan</span><span class="p">:</span> <span
+        class="n">QueryPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span
+        class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 
 <span class="sd">        :return:</span>
@@ -892,7 +1368,8 @@
 
 <div class="viewcode-block" id="Literal">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.Literal">[docs]</a>
-<span class="k">class</span> <span class="nc">Literal</span><span class="p">(</span><span class="n">Atom</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">Literal</span><span class="p">(</span><span class="n">Atom</span><span
+        class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents a Literal, which is an extension of the Atom type.</span>
 
@@ -910,35 +1387,63 @@
 
 <div class="viewcode-block" id="Literal.__init__">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.Literal.__init__">[docs]</a>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
-                 <span class="n">literal</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-                 <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span>
+                 <span class="n">literal</span><span class="p">:</span> <span class="nb">str</span> <span
+        class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">transaction</span><span class="p">:</span> <span
+        class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span
+        class="p">,</span>
+                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span
+        class="o">=</span> <span class="kc">None</span><span class="p">,</span>
                  <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">string</span> <span class="o">=</span> <span class="n">literal</span> <span class="ow">or</span> <span class="s1">&#39;&#39;</span></div>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span
+        class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span
+        class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span
+        class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span
+        class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">string</span> <span class="o">=</span> <span
+        class="n">literal</span> <span class="ow">or</span> <span class="s1">&#39;&#39;</span></div>
 
 
-    <span class="k">def</span> <span class="fm">__eq__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Literal</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="n">Literal</span><span class="p">):</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">string</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">string</span>
+    <span class="k">def</span> <span class="fm">__eq__</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span> <span class="n">other</span><span class="p">:</span> <span class="nb">str</span> <span
+        class="o">|</span> <span class="n">Literal</span><span class="p">)</span> <span class="o">-&gt;</span> <span
+        class="nb">bool</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other</span><span
+        class="p">,</span> <span class="n">Literal</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">string</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span
+        class="n">string</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">string</span> <span class="o">==</span> <span class="n">other</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">string</span> <span class="o">==</span> <span class="n">other</span>
 
-    <span class="k">def</span> <span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">string</span>
 
-    <span class="k">def</span> <span class="fm">__add__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Literal</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Literal</span><span class="p">:</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="n">Literal</span><span class="p">):</span>
-            <span class="k">return</span> <span class="n">Literal</span><span class="p">(</span><span class="n">literal</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">string</span> <span class="o">+</span> <span class="n">other</span><span class="o">.</span><span class="n">string</span><span class="p">)</span>
+    <span class="k">def</span> <span class="fm">__add__</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span> <span class="n">other</span><span class="p">:</span> <span class="nb">str</span> <span
+        class="o">|</span> <span class="n">Literal</span><span class="p">)</span> <span class="o">-&gt;</span> <span
+        class="n">Literal</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other</span><span
+        class="p">,</span> <span class="n">Literal</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">Literal</span><span class="p">(</span><span
+        class="n">literal</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span
+        class="n">string</span> <span class="o">+</span> <span class="n">other</span><span class="o">.</span><span
+        class="n">string</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">Literal</span><span class="p">(</span><span class="n">literal</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">string</span> <span class="o">+</span> <span class="n">other</span><span class="p">)</span></div>
+            <span class="k">return</span> <span class="n">Literal</span><span class="p">(</span><span
+        class="n">literal</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span
+        class="n">string</span> <span class="o">+</span> <span class="n">other</span><span class="p">)</span></div>
 
 
 
 <div class="viewcode-block" id="BlockProvider">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider">[docs]</a>
-<span class="k">class</span> <span class="nc">BlockProvider</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">BlockProvider</span><span class="p">(</span><span
+        class="n">ABC</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    An abstract base class that defines the interface for a block-based storage provider.</span>
 
@@ -952,7 +1457,9 @@
 <div class="viewcode-block" id="BlockProvider.get_config_data">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider.get_config_data">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">get_config_data</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">configparser</span><span class="o">.</span><span class="n">ConfigParser</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">get_config_data</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span
+        class="n">configparser</span><span class="o">.</span><span class="n">ConfigParser</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Get config data</span>
 <span class="sd">        :return:</span>
@@ -962,7 +1469,10 @@
 <div class="viewcode-block" id="BlockProvider.get_new_wal">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider.get_new_wal">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">get_new_wal</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+    <span class="k">def</span> <span class="nf">get_new_wal</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span
+        class="p">[</span><span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span
+        class="nb">int</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Get a WAL to use.</span>
 <span class="sd">        It could be an old one, or a new one.</span>
@@ -974,7 +1484,11 @@
 <div class="viewcode-block" id="BlockProvider.get_reader">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider.get_reader">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">get_reader</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wal_id</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span class="n">position</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BinaryIO</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">get_reader</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">wal_id</span><span class="p">:</span> <span
+        class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span
+        class="n">position</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span
+        class="o">-&gt;</span> <span class="n">BinaryIO</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Get a streamer initialized at position in WAL file</span>
 <span class="sd">        wal_id</span>
@@ -988,7 +1502,9 @@
 <div class="viewcode-block" id="BlockProvider.get_writer_wal">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider.get_writer_wal">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">get_writer_wal</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">get_writer_wal</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">uuid</span><span
+        class="o">.</span><span class="n">UUID</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Provides an abstract method that should be implemented by subclasses to retrieve the</span>
 <span class="sd">        unique identifier (UUID) of the writer&#39;s Write-Ahead Log (WAL). This UUID is used to</span>
@@ -1003,7 +1519,11 @@
 <div class="viewcode-block" id="BlockProvider.write_streamer">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider.write_streamer">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">write_streamer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wal_id</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">io</span><span class="o">.</span><span class="n">FileIO</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">write_streamer</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">wal_id</span><span class="p">:</span> <span
+        class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">)</span> <span
+        class="o">-&gt;</span> <span class="n">io</span><span class="o">.</span><span class="n">FileIO</span><span
+        class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        This abstract method must be implemented to handle the writing of a streaming</span>
 <span class="sd">        process for a given WAL (Write-Ahead Log) identifier. It is responsible for</span>
@@ -1023,7 +1543,8 @@
 <div class="viewcode-block" id="BlockProvider.get_current_root_object">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider.get_current_root_object">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">get_current_root_object</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">get_current_root_object</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Read current root object from storage</span>
 <span class="sd">        :return: the current root object</span>
@@ -1033,7 +1554,9 @@
 <div class="viewcode-block" id="BlockProvider.update_root_object">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider.update_root_object">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">update_root_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_root</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">update_root_object</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">new_root</span><span class="p">:</span> <span
+        class="n">AtomPointer</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Updates or create the root object in storage</span>
 <span class="sd">        On newly created databases, this is the first</span>
@@ -1047,7 +1570,10 @@
 <div class="viewcode-block" id="BlockProvider.close_wal">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider.close_wal">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">close_wal</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">transaction_id</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">close_wal</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">transaction_id</span><span
+        class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span
+        class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Close a previous WAL. Flush any pending data. Make all changes durable</span>
 <span class="sd">        :return:</span>
@@ -1057,7 +1583,8 @@
 <div class="viewcode-block" id="BlockProvider.close">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.BlockProvider.close">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Close the operation of the block provider. Flush any pending data to WAL. Make all changes durable</span>
 <span class="sd">        No further operations are allowed</span>
@@ -1069,7 +1596,8 @@
 
 <div class="viewcode-block" id="SharedStorage">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.SharedStorage">[docs]</a>
-<span class="k">class</span> <span class="nc">SharedStorage</span><span class="p">(</span><span class="n">AbstractSharedStorage</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">SharedStorage</span><span class="p">(</span><span class="n">AbstractSharedStorage</span><span
+        class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    A SharedStorage defines the minimun set of functionality required to implement a storage interface</span>
 <span class="sd">    A SharedStorage object represents the current use instance of a permanent storage.</span>
@@ -1084,7 +1612,9 @@
 <div class="viewcode-block" id="SharedStorage.read_current_root">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.SharedStorage.read_current_root">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">read_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">read_current_root</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span
+        class="n">AtomPointer</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Read the current root object</span>
 <span class="sd">        :return:</span>
@@ -1094,7 +1624,8 @@
 <div class="viewcode-block" id="SharedStorage.read_lock_current_root">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.SharedStorage.read_lock_current_root">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">read_lock_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">read_lock_current_root</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Read the current root object</span>
 <span class="sd">        :return:</span>
@@ -1104,7 +1635,9 @@
 <div class="viewcode-block" id="SharedStorage.set_current_root">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.SharedStorage.set_current_root">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">set_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_root_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">set_current_root</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">new_root_pointer</span><span
+        class="p">:</span> <span class="n">AtomPointer</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Set the current root object</span>
 <span class="sd">        :return:</span>
@@ -1114,7 +1647,8 @@
 <div class="viewcode-block" id="SharedStorage.unlock_current_root">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.SharedStorage.unlock_current_root">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">unlock_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">unlock_current_root</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Unlock the current root by performing necessary operations based</span>
 <span class="sd">        on the implementation. This method typically interacts with the state or</span>
@@ -1126,7 +1660,8 @@
 <div class="viewcode-block" id="SharedStorage.flush_wal">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.SharedStorage.flush_wal">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">flush_wal</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">flush_wal</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Function to be called periodically (eg 2 minutes) to ensure no pending writes to WAL</span>
 <span class="sd">        Additionally it is assumed that previously set_current_root, so new objects created</span>
@@ -1140,40 +1675,42 @@
 <div class="viewcode-block" id="SharedStorage.close">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.SharedStorage.close">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Ends all operations, make all changes stable</span>
 <span class="sd">        :return:</span>
 <span class="sd">        &quot;&quot;&quot;</span></div>
 </div>
 
-</pre></div>
+</pre>
+                        </div>
 
-           </div>
-          </div>
-          <footer>
+                    </div>
+                </div>
+                <footer>
 
-  <hr/>
+                    <hr/>
 
-  <div role="contentinfo">
-    <p>&#169; Copyright 2023, ProtoBase Team.</p>
-  </div>
+                    <div role="contentinfo">
+                        <p>&#169; Copyright 2023, ProtoBase Team.</p>
+                    </div>
 
-  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
-    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
-    provided by <a href="https://readthedocs.org">Read the Docs</a>.
-   
+                    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+                    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+                    provided by <a href="https://readthedocs.org">Read the Docs</a>.
 
-</footer>
+
+                </footer>
+            </div>
         </div>
-      </div>
     </section>
-  </div>
-  <script>
-      jQuery(function () {
-          SphinxRtdTheme.Navigation.enable(true);
-      });
-  </script> 
+</div>
+<script>
+    jQuery(function () {
+        SphinxRtdTheme.Navigation.enable(true);
+    });
+</script>
 
 </body>
 </html>

@@ -3,84 +3,84 @@ const themeVersionSelector = true;
 const themeLanguageSelector = true;
 
 if (themeFlyoutDisplay === "attached") {
-  function renderLanguages(config) {
-    if (!config.projects.translations.length) {
-      return "";
-    }
+    function renderLanguages(config) {
+        if (!config.projects.translations.length) {
+            return "";
+        }
 
-    // Insert the current language to the options on the selector
-    let languages = config.projects.translations.concat(config.projects.current);
-    languages = languages.sort((a, b) => a.language.name.localeCompare(b.language.name));
+        // Insert the current language to the options on the selector
+        let languages = config.projects.translations.concat(config.projects.current);
+        languages = languages.sort((a, b) => a.language.name.localeCompare(b.language.name));
 
-    const languagesHTML = `
+        const languagesHTML = `
       <dl>
         <dt>Languages</dt>
         ${languages
-          .map(
-            (translation) => `
+            .map(
+                (translation) => `
         <dd ${translation.slug == config.projects.current.slug ? 'class="rtd-current-item"' : ""}>
           <a href="${translation.urls.documentation}">${translation.language.code}</a>
         </dd>
         `,
-          )
-          .join("\n")}
+            )
+            .join("\n")}
       </dl>
     `;
-    return languagesHTML;
-  }
-
-  function renderVersions(config) {
-    if (!config.versions.active.length) {
-      return "";
+        return languagesHTML;
     }
-    const versionsHTML = `
+
+    function renderVersions(config) {
+        if (!config.versions.active.length) {
+            return "";
+        }
+        const versionsHTML = `
       <dl>
         <dt>Versions</dt>
         ${config.versions.active
-          .map(
-            (version) => `
+            .map(
+                (version) => `
         <dd ${version.slug === config.versions.current.slug ? 'class="rtd-current-item"' : ""}>
           <a href="${version.urls.documentation}">${version.slug}</a>
         </dd>
         `,
-          )
-          .join("\n")}
+            )
+            .join("\n")}
       </dl>
     `;
-    return versionsHTML;
-  }
-
-  function renderDownloads(config) {
-    if (!Object.keys(config.versions.current.downloads).length) {
-      return "";
+        return versionsHTML;
     }
-    const downloadsNameDisplay = {
-      pdf: "PDF",
-      epub: "Epub",
-      htmlzip: "HTML",
-    };
 
-    const downloadsHTML = `
+    function renderDownloads(config) {
+        if (!Object.keys(config.versions.current.downloads).length) {
+            return "";
+        }
+        const downloadsNameDisplay = {
+            pdf: "PDF",
+            epub: "Epub",
+            htmlzip: "HTML",
+        };
+
+        const downloadsHTML = `
       <dl>
         <dt>Downloads</dt>
         ${Object.entries(config.versions.current.downloads)
-          .map(
-            ([name, url]) => `
+            .map(
+                ([name, url]) => `
           <dd>
             <a href="${url}">${downloadsNameDisplay[name]}</a>
           </dd>
         `,
-          )
-          .join("\n")}
+            )
+            .join("\n")}
       </dl>
     `;
-    return downloadsHTML;
-  }
+        return downloadsHTML;
+    }
 
-  document.addEventListener("readthedocs-addons-data-ready", function (event) {
-    const config = event.detail.data();
+    document.addEventListener("readthedocs-addons-data-ready", function (event) {
+        const config = event.detail.data();
 
-    const flyout = `
+        const flyout = `
       <div class="rst-versions" data-toggle="rst-versions" role="note">
         <span class="rst-current-version" data-toggle="rst-current-version">
           <span class="fa fa-book"> Read the Docs</span>
@@ -126,103 +126,102 @@ if (themeFlyoutDisplay === "attached") {
         </div>
     `;
 
-    // Inject the generated flyout into the body HTML element.
-    document.body.insertAdjacentHTML("beforeend", flyout);
+        // Inject the generated flyout into the body HTML element.
+        document.body.insertAdjacentHTML("beforeend", flyout);
 
-    // Trigger the Read the Docs Addons Search modal when clicking on the "Search docs" input from inside the flyout.
-    document
-      .querySelector("#flyout-search-form")
-      .addEventListener("focusin", () => {
-        const event = new CustomEvent("readthedocs-search-show");
-        document.dispatchEvent(event);
-      });
-  })
+        // Trigger the Read the Docs Addons Search modal when clicking on the "Search docs" input from inside the flyout.
+        document
+            .querySelector("#flyout-search-form")
+            .addEventListener("focusin", () => {
+                const event = new CustomEvent("readthedocs-search-show");
+                document.dispatchEvent(event);
+            });
+    })
 }
 
 if (themeLanguageSelector || themeVersionSelector) {
-  function onSelectorSwitch(event) {
-    const option = event.target.selectedIndex;
-    const item = event.target.options[option];
-    window.location.href = item.dataset.url;
-  }
+    function onSelectorSwitch(event) {
+        const option = event.target.selectedIndex;
+        const item = event.target.options[option];
+        window.location.href = item.dataset.url;
+    }
 
-  document.addEventListener("readthedocs-addons-data-ready", function (event) {
-    const config = event.detail.data();
+    document.addEventListener("readthedocs-addons-data-ready", function (event) {
+        const config = event.detail.data();
 
-    const versionSwitch = document.querySelector(
-      "div.switch-menus > div.version-switch",
-    );
-    if (themeVersionSelector) {
-      let versions = config.versions.active;
-      if (config.versions.current.hidden || config.versions.current.type === "external") {
-        versions.unshift(config.versions.current);
-      }
-      const versionSelect = `
+        const versionSwitch = document.querySelector(
+            "div.switch-menus > div.version-switch",
+        );
+        if (themeVersionSelector) {
+            let versions = config.versions.active;
+            if (config.versions.current.hidden || config.versions.current.type === "external") {
+                versions.unshift(config.versions.current);
+            }
+            const versionSelect = `
     <select>
       ${versions
-        .map(
-          (version) => `
+                .map(
+                    (version) => `
         <option
   value="${version.slug}"
   ${config.versions.current.slug === version.slug ? 'selected="selected"' : ""}
               data-url="${version.urls.documentation}">
               ${version.slug}
           </option>`,
-        )
-        .join("\n")}
+                )
+                .join("\n")}
     </select>
   `;
 
-      versionSwitch.innerHTML = versionSelect;
-      versionSwitch.firstElementChild.addEventListener("change", onSelectorSwitch);
-    }
+            versionSwitch.innerHTML = versionSelect;
+            versionSwitch.firstElementChild.addEventListener("change", onSelectorSwitch);
+        }
 
-    const languageSwitch = document.querySelector(
-      "div.switch-menus > div.language-switch",
-    );
-
-    if (themeLanguageSelector) {
-      if (config.projects.translations.length) {
-        // Add the current language to the options on the selector
-        let languages = config.projects.translations.concat(
-          config.projects.current,
-        );
-        languages = languages.sort((a, b) =>
-          a.language.name.localeCompare(b.language.name),
+        const languageSwitch = document.querySelector(
+            "div.switch-menus > div.language-switch",
         );
 
-        const languageSelect = `
+        if (themeLanguageSelector) {
+            if (config.projects.translations.length) {
+                // Add the current language to the options on the selector
+                let languages = config.projects.translations.concat(
+                    config.projects.current,
+                );
+                languages = languages.sort((a, b) =>
+                    a.language.name.localeCompare(b.language.name),
+                );
+
+                const languageSelect = `
       <select>
         ${languages
-          .map(
-            (language) => `
+                    .map(
+                        (language) => `
               <option
                   value="${language.language.code}"
                   ${config.projects.current.slug === language.slug ? 'selected="selected"' : ""}
                   data-url="${language.urls.documentation}">
                   ${language.language.name}
               </option>`,
-          )
-          .join("\n")}
+                    )
+                    .join("\n")}
        </select>
     `;
 
-        languageSwitch.innerHTML = languageSelect;
-        languageSwitch.firstElementChild.addEventListener("change", onSelectorSwitch);
-      }
-      else {
-        languageSwitch.remove();
-      }
-    }
-  });
+                languageSwitch.innerHTML = languageSelect;
+                languageSwitch.firstElementChild.addEventListener("change", onSelectorSwitch);
+            } else {
+                languageSwitch.remove();
+            }
+        }
+    });
 }
 
 document.addEventListener("readthedocs-addons-data-ready", function (event) {
-  // Trigger the Read the Docs Addons Search modal when clicking on "Search docs" input from the topnav.
-  document
-    .querySelector("[role='search'] input")
-    .addEventListener("focusin", () => {
-      const event = new CustomEvent("readthedocs-search-show");
-      document.dispatchEvent(event);
-    });
+    // Trigger the Read the Docs Addons Search modal when clicking on "Search docs" input from the topnav.
+    document
+        .querySelector("[role='search'] input")
+        .addEventListener("focusin", () => {
+            const event = new CustomEvent("readthedocs-search-show");
+            document.dispatchEvent(event);
+        });
 });

@@ -2,22 +2,22 @@
 Basic definitions
 """
 from __future__ import annotations
-from typing import cast, BinaryIO
 
-from concurrent.futures import Future
-import uuid
-from abc import ABC, abstractmethod, ABCMeta
-import io
 import configparser
 import datetime
+import io
+import uuid
+from abc import ABC, abstractmethod, ABCMeta
+from concurrent.futures import Future
+from typing import cast, BinaryIO
 
 from .exceptions import ProtoValidationException, ProtoCorruptionException
 
 # Constants for storage size units
-KB: int  = 1024
-MB: int  = KB * KB
-GB: int  = KB * MB
-PB: int  = KB * GB
+KB: int = 1024
+MB: int = KB * KB
+GB: int = KB * MB
+PB: int = KB * GB
 
 
 class AtomPointer(object):
@@ -157,7 +157,6 @@ class AbstractTransaction(ABC):
         :return:
         """
 
-
     @abstractmethod
     def get_literal(self, string: str) -> Literal:
         """
@@ -167,7 +166,7 @@ class AbstractTransaction(ABC):
         """
 
     @abstractmethod
-    def get_mutable(self, key:int) -> Atom:
+    def get_mutable(self, key: int) -> Atom:
         """
         Retrieve a mutable object based on the provided key.
 
@@ -181,7 +180,7 @@ class AbstractTransaction(ABC):
         """
 
     @abstractmethod
-    def set_mutable(self, key:int, value:Atom):
+    def set_mutable(self, key: int, value: Atom):
         """
         Sets the mutable value for the specified key.
 
@@ -229,6 +228,7 @@ class ConcurrentOptimized:
     A mixin class for objects that can handle concurrent modifications
     by rebasing their changes on top of a more recent version of the object.
     """
+
     def _rebase_on_concurrent_update(self, current_db_object: 'Atom') -> 'Atom':
         """
         This method is called on the new object (from the current transaction)
@@ -291,7 +291,7 @@ class Atom(metaclass=CombinedMeta):
             if 'transaction' in self.__dict__ and self.__dict__['transaction']:
                 transaction = self.__dict__['transaction']
                 if 'atom_pointer' in self.__dict__ and self.__dict__['atom_pointer'] and \
-                   self.__dict__['atom_pointer'].transaction_id:
+                        self.__dict__['atom_pointer'].transaction_id:
                     atom_pointer = self.__dict__['atom_pointer']
                     loaded_atom = transaction.storage.get_atom(
                         atom_pointer).result()
@@ -327,12 +327,12 @@ class Atom(metaclass=CombinedMeta):
     def __eq__(self, other):
         if isinstance(other, Atom):
             if self.atom_pointer and \
-               other.atom_pointer and \
-               self.atom_pointer == other.atom_pointer:
+                    other.atom_pointer and \
+                    self.atom_pointer == other.atom_pointer:
                 return True
             elif self.atom_pointer and other.atom_pointer:
                 return self.atom_pointer.transaction_id == other.atom_pointer.transaction_id and \
-                       self.atom_pointer.offset == other.atom_pointer.offset
+                    self.atom_pointer.offset == other.atom_pointer.offset
             else:
                 return self is other
         else:
@@ -614,7 +614,7 @@ class DBObject(Atom):
                 message=f'ProtoBase DBObjects are inmutable! Your are trying to set attribute {key}'
             )
 
-    def _setattr(self, name:str, value: object) ->DBObject:
+    def _setattr(self, name: str, value: object) -> DBObject:
         new_object = DBObject(transaction=self.transaction)
         for attr_name, attr_value in self.__dict__.items():
             if attr_name != '_loaded':  # Skip _loaded flag to avoid recursion
@@ -671,10 +671,8 @@ class MutableObject(Atom):
     def __setitem__(self, name: str, value):
         self.__setattr__(name, value)
 
-
     def __delitem__(self, name: str):
         self.__setattr__(name, None)
-
 
     def __setattr__(self, key, value):
         if not self.transaction:
@@ -833,6 +831,7 @@ class BlockProvider(ABC):
     specifications of the abstract methods.
 
     """
+
     @abstractmethod
     def get_config_data(self) -> configparser.ConfigParser:
         """

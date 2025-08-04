@@ -1,17 +1,14 @@
-import unittest
-from unittest.mock import MagicMock, patch
 import os
-import tempfile
 import shutil
-import uuid
-import threading
+import tempfile
 import time
+import unittest
+import uuid
+from unittest.mock import MagicMock, patch
 
 from ..cloud_file_storage import (
-    CloudFileStorage, CloudBlockProvider, MockGoogleCloudClient, 
-    CloudStorageError, GoogleCloudClient
+    CloudFileStorage, CloudBlockProvider, MockGoogleCloudClient
 )
-from ..cluster_file_storage import ClusterNetworkManager
 from ..common import AtomPointer
 
 
@@ -26,14 +23,14 @@ class TestCloudFileStorageWithGCS(unittest.TestCase):
         """
         # Create a temporary directory for the cache
         self.temp_dir = tempfile.mkdtemp()
-        
+
         # Create a mock GoogleCloudClient
         self.gcs_client = MockGoogleCloudClient(
             bucket="test-bucket",
             prefix="test-prefix",
             project_id="test-project"
         )
-        
+
         # Create a CloudBlockProvider with the mock client
         self.block_provider = CloudBlockProvider(
             cloud_client=self.gcs_client,
@@ -41,7 +38,7 @@ class TestCloudFileStorageWithGCS(unittest.TestCase):
             cache_size=1024 * 1024,  # 1MB cache
             object_size=1024  # 1KB objects
         )
-        
+
         # Mock the ClusterNetworkManager
         self.mock_network_manager = MagicMock()
         self.mock_network_manager.start = MagicMock()
@@ -49,7 +46,7 @@ class TestCloudFileStorageWithGCS(unittest.TestCase):
         self.mock_network_manager.request_vote = MagicMock(return_value=(True, 1))
         self.mock_network_manager.request_page = MagicMock()
         self.mock_network_manager.broadcast_root_update = MagicMock()
-        
+
         # Patch the ClusterNetworkManager constructor
         with patch('proto_db.cluster_file_storage.ClusterNetworkManager', return_value=self.mock_network_manager):
             # Create an instance of CloudFileStorage with the mocks
@@ -71,7 +68,7 @@ class TestCloudFileStorageWithGCS(unittest.TestCase):
         # Close the storage
         if hasattr(self, 'storage'):
             self.storage.close()
-        
+
         # Remove the temporary directory
         shutil.rmtree(self.temp_dir)
 
@@ -93,15 +90,15 @@ class TestCloudFileStorageWithGCS(unittest.TestCase):
         """
         # Create test data
         test_data = b"test data for Google Cloud Storage"
-        
+
         # Push the data
         future = self.storage.push_bytes(test_data)
         transaction_id, offset = future.result()
-        
+
         # Verify the result
         self.assertIsInstance(transaction_id, uuid.UUID)
         self.assertEqual(offset, 0)
-        
+
         # Verify the data was stored in memory
         with self.storage._lock:
             self.assertIn((transaction_id, offset), self.storage.in_memory_segments)
@@ -115,18 +112,18 @@ class TestCloudFileStorageWithGCS(unittest.TestCase):
         """
         # Create test data
         test_data = b"test data for Google Cloud Storage"
-        
+
         # Push the data
         future = self.storage.push_bytes(test_data)
         transaction_id, offset = future.result()
-        
+
         # Create a pointer
         pointer = AtomPointer(transaction_id, offset)
-        
+
         # Get the data
         future = self.storage.get_bytes(pointer)
         retrieved_data = future.result()
-        
+
         # Verify the data
         self.assertEqual(retrieved_data, test_data)
 
@@ -136,18 +133,18 @@ class TestCloudFileStorageWithGCS(unittest.TestCase):
         """
         # Create test data
         test_data = b"test data for Google Cloud Storage"
-        
+
         # Push the data
         future = self.storage.push_bytes(test_data)
         transaction_id, offset = future.result()
-        
+
         # Flush the WAL
         future = self.storage.flush_wal()
         result = future.result()
-        
+
         # Verify the result
         self.assertTrue(result)
-        
+
         # Verify the data was uploaded to Google Cloud Storage
         # This is hard to test directly, but we can verify that the in-memory segment was removed
         time.sleep(0.2)  # Give the uploader thread time to process
@@ -160,16 +157,16 @@ class TestCloudFileStorageWithGCS(unittest.TestCase):
         """
         # Create a mock root pointer
         mock_pointer = AtomPointer(uuid.uuid4(), 1234)
-        
+
         # Mock the get_current_root_object method
         self.block_provider.get_current_root_object = MagicMock(return_value=mock_pointer)
-        
+
         # Call the method
         result = self.storage.read_current_root()
-        
+
         # Verify the result
         self.assertEqual(result, mock_pointer)
-        
+
         # Verify the method was called
         self.block_provider.get_current_root_object.assert_called_once()
 
@@ -179,13 +176,13 @@ class TestCloudFileStorageWithGCS(unittest.TestCase):
         """
         # Create a mock root pointer
         mock_pointer = AtomPointer(uuid.uuid4(), 1234)
-        
+
         # Call the method
         self.storage.set_current_root(mock_pointer)
-        
+
         # Verify the method was called
         self.block_provider.update_root_object.assert_called_once_with(mock_pointer)
-        
+
         # Verify the broadcast was called
         self.mock_network_manager.broadcast_root_update.assert_called_once_with(
             mock_pointer.transaction_id,
@@ -200,13 +197,13 @@ class TestCloudFileStorageWithGCS(unittest.TestCase):
         with patch.object(self.storage.executor_pool, 'shutdown') as mock_shutdown:
             # Call the method
             self.storage.close()
-            
+
             # Verify the state and that the mocks were called correctly
             self.assertEqual(self.storage.state, 'Closed')
             mock_shutdown.assert_called_once()
             self.block_provider.close.assert_called_once()
             self.mock_network_manager.stop.assert_called_once()
-            
+
             # Verify the uploader thread was stopped
             self.assertFalse(self.storage.uploader_running)
 

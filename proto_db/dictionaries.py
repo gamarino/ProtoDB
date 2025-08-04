@@ -1,14 +1,12 @@
 from __future__ import annotations
+
+import logging
 from typing import cast
 
-from .exceptions import ProtoCorruptionException, ProtoNotSupportedException
 from .common import Atom, DBCollections, QueryPlan, Literal, AbstractTransaction, AtomPointer, ConcurrentOptimized
+from .exceptions import ProtoNotSupportedException
 from .lists import List
 from .sets import Set
-
-import uuid
-import logging
-
 
 _logger = logging.getLogger(__name__)
 
@@ -35,6 +33,7 @@ class DictionaryItem(Atom):
             if isinstance(self.key, Literal):
                 self.key = self.key.string
             self._loaded = True
+
 
 class Dictionary(DBCollections, ConcurrentOptimized):
     """
@@ -276,6 +275,7 @@ class RepeatedKeysDictionary(Dictionary):
     associated records. Duplicate values in the list associated with a key
     are allowed.
     """
+
     def __init__(
             self,
             content: List = None,

@@ -1,25 +1,22 @@
 from __future__ import annotations
-import concurrent.futures
+
+import base64
 import io
 import json
+import logging
 import os
-import socket
 import threading
 import time
 import uuid
-import logging
-import base64
-import hashlib
-from typing import Dict, List, Optional, Tuple, Any, Set, BinaryIO
+from typing import List, Optional, Tuple
 
 from . import common
-from .common import MB, GB, Future, BlockProvider, AtomPointer
-from .exceptions import ProtoUnexpectedException, ProtoValidationException
-from .fsm import FSM
-from .standalone_file_storage import StandaloneFileStorage, WALState, WALWriteOperation
-from .cluster_file_storage import ClusterFileStorage, ClusterNetworkManager, MSG_TYPE_PAGE_RESPONSE
-from .cloud_file_storage import CloudFileStorage, CloudBlockProvider, CloudStorageClient, S3Client, GoogleCloudClient
+from .cloud_file_storage import CloudFileStorage, CloudBlockProvider
+from .cluster_file_storage import MSG_TYPE_PAGE_RESPONSE
+from .common import MB, AtomPointer
+from .exceptions import ProtoUnexpectedException
 from .file_block_provider import FileBlockProvider
+from .standalone_file_storage import StandaloneFileStorage
 
 _logger = logging.getLogger(__name__)
 
@@ -148,7 +145,8 @@ class CloudClusterFileStorage(CloudFileStorage):
         self.s3_page_cache = self.page_cache
         self.s3_key_to_pointer = self.cloud_key_to_pointer
 
-        _logger.info(f"Initialized CloudClusterFileStorage for server {self.server_id} with cloud page cache at {self.page_cache_dir}")
+        _logger.info(
+            f"Initialized CloudClusterFileStorage for server {self.server_id} with cloud page cache at {self.page_cache_dir}")
 
     def _load_cache_mappings(self):
         """
@@ -301,7 +299,7 @@ class CloudClusterFileStorage(CloudFileStorage):
 
         # Broadcast the update to all servers
         servers_updated = self.network_manager.broadcast_root_update(
-            root_pointer.transaction_id, 
+            root_pointer.transaction_id,
             root_pointer.offset
         )
 
@@ -347,7 +345,8 @@ class CloudClusterFileStorage(CloudFileStorage):
             try:
                 # First check if it's in the local file system cache
                 with self.block_provider.cache_lock:
-                    if cloud_key in self.block_provider.cache_metadata and self.block_provider.cache_metadata[cloud_key].is_cached:
+                    if cloud_key in self.block_provider.cache_metadata and self.block_provider.cache_metadata[
+                        cloud_key].is_cached:
                         cache_meta = self.block_provider.cache_metadata[cloud_key]
                         f = open(cache_meta.cache_path, 'rb')
                         f.seek(offset)
@@ -472,12 +471,13 @@ class CloudClusterFileStorage(CloudFileStorage):
                     }
 
                     self.network_manager._send_message(addr[0], addr[1], response)
-                    _logger.debug(f"Sent page response from cloud cache for request {request_id} to {addr[0]}:{addr[1]}")
+                    _logger.debug(
+                        f"Sent page response from cloud cache for request {request_id} to {addr[0]}:{addr[1]}")
 
                     # Send the event to the FSM
                     self.network_manager.fsm.send_event({
-                        'name': 'PageRequest', 
-                        'request_id': request_id, 
+                        'name': 'PageRequest',
+                        'request_id': request_id,
                         'requester_id': requester_id,
                         'wal_id': wal_id_str,
                         'offset': offset

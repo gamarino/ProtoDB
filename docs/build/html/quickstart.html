@@ -1,359 +1,514 @@
-
-
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" data-content_root="./">
+<html class="writer-html5" data-content_root="./" lang="en">
 <head>
-  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1" name="viewport"/>
 
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Quickstart &mdash; ProtoBase 0.1.0 documentation</title>
-      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
-      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Quickstart &mdash; ProtoBase 0.1.0 documentation</title>
+    <link href="_static/pygments.css?v=80d5e7a1" rel="stylesheet" type="text/css"/>
+    <link href="_static/css/theme.css?v=e59714d7" rel="stylesheet" type="text/css"/>
 
-  
-      <script src="_static/jquery.js?v=5d32c60e"></script>
-      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=01f34227"></script>
-      <script src="_static/doctools.js?v=9bcbadda"></script>
-      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+
+    <script src="_static/jquery.js?v=5d32c60e"></script>
+    <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+    <script src="_static/documentation_options.js?v=01f34227"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="_static/js/theme.js"></script>
-    <link rel="index" title="Index" href="genindex.html" />
-    <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Architecture" href="architecture.html" />
-    <link rel="prev" title="Installation" href="installation.html" /> 
+    <link href="genindex.html" rel="index" title="Index"/>
+    <link href="search.html" rel="search" title="Search"/>
+    <link href="architecture.html" rel="next" title="Architecture"/>
+    <link href="installation.html" rel="prev" title="Installation"/>
 </head>
 
-<body class="wy-body-for-nav"> 
-  <div class="wy-grid-for-nav">
-    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
-      <div class="wy-side-scroll">
-        <div class="wy-side-nav-search" >
+<body class="wy-body-for-nav">
+<div class="wy-grid-for-nav">
+    <nav class="wy-nav-side" data-toggle="wy-nav-shift">
+        <div class="wy-side-scroll">
+            <div class="wy-side-nav-search">
 
-          
-          
-          <a href="index.html" class="icon icon-home">
-            ProtoBase
-          </a>
-<div role="search">
-  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
-    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
-    <input type="hidden" name="check_keywords" value="yes" />
-    <input type="hidden" name="area" value="default" />
-  </form>
-</div>
-        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
-<ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="introduction.html">Introduction</a></li>
-<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Quickstart</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#creating-a-database">Creating a Database</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#working-with-transactions">Working with Transactions</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#working-with-dictionaries">Working with Dictionaries</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#working-with-lists">Working with Lists</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#working-with-sets">Working with Sets</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#using-queries">Using Queries</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#next-steps">Next Steps</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="advanced_usage.html">Advanced Usage</a></li>
-<li class="toctree-l1"><a class="reference internal" href="development.html">Development</a></li>
-</ul>
 
+                <a class="icon icon-home" href="index.html">
+                    ProtoBase
+                </a>
+                <div role="search">
+                    <form action="search.html" class="wy-form" id="rtd-search-form" method="get">
+                        <input aria-label="Search docs" name="q" placeholder="Search docs" type="text"/>
+                        <input name="check_keywords" type="hidden" value="yes"/>
+                        <input name="area" type="hidden" value="default"/>
+                    </form>
+                </div>
+            </div>
+            <div aria-label="Navigation menu" class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation">
+                <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+                <ul class="current">
+                    <li class="toctree-l1"><a class="reference internal" href="introduction.html">Introduction</a></li>
+                    <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+                    <li class="toctree-l1 current"><a class="current reference internal" href="#">Quickstart</a>
+                        <ul>
+                            <li class="toctree-l2"><a class="reference internal" href="#creating-a-database">Creating a
+                                Database</a></li>
+                            <li class="toctree-l2"><a class="reference internal" href="#working-with-transactions">Working
+                                with Transactions</a></li>
+                            <li class="toctree-l2"><a class="reference internal" href="#working-with-dictionaries">Working
+                                with Dictionaries</a></li>
+                            <li class="toctree-l2"><a class="reference internal" href="#working-with-lists">Working with
+                                Lists</a></li>
+                            <li class="toctree-l2"><a class="reference internal" href="#working-with-sets">Working with
+                                Sets</a></li>
+                            <li class="toctree-l2"><a class="reference internal" href="#using-queries">Using Queries</a>
+                            </li>
+                            <li class="toctree-l2"><a class="reference internal" href="#next-steps">Next Steps</a></li>
+                        </ul>
+                    </li>
+                    <li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+                    <li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
+                    <li class="toctree-l1"><a class="reference internal" href="advanced_usage.html">Advanced Usage</a>
+                    </li>
+                    <li class="toctree-l1"><a class="reference internal" href="development.html">Development</a></li>
+                </ul>
+
+            </div>
         </div>
-      </div>
     </nav>
 
-    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
-          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="index.html">ProtoBase</a>
-      </nav>
+    <section class="wy-nav-content-wrap" data-toggle="wy-nav-shift">
+        <nav aria-label="Mobile navigation menu" class="wy-nav-top">
+            <i class="fa fa-bars" data-toggle="wy-nav-top"></i>
+            <a href="index.html">ProtoBase</a>
+        </nav>
 
-      <div class="wy-nav-content">
-        <div class="rst-content">
-          <div role="navigation" aria-label="Page navigation">
-  <ul class="wy-breadcrumbs">
-      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">Quickstart</li>
-      <li class="wy-breadcrumbs-aside">
-            <a href="_sources/quickstart.rst.txt" rel="nofollow"> View page source</a>
-      </li>
-  </ul>
-  <hr/>
-</div>
-          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
-           <div itemprop="articleBody">
-             
-  <section id="quickstart">
-<h1>Quickstart<a class="headerlink" href="#quickstart" title="Link to this heading"></a></h1>
-<p>This guide will help you get started with ProtoBase by walking through some basic examples.</p>
-<section id="creating-a-database">
-<h2>Creating a Database<a class="headerlink" href="#creating-a-database" title="Link to this heading"></a></h2>
-<p>The first step is to create a storage instance, an object space, and a database:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">proto_db</span>
+        <div class="wy-nav-content">
+            <div class="rst-content">
+                <div aria-label="Page navigation" role="navigation">
+                    <ul class="wy-breadcrumbs">
+                        <li><a aria-label="Home" class="icon icon-home" href="index.html"></a></li>
+                        <li class="breadcrumb-item active">Quickstart</li>
+                        <li class="wy-breadcrumbs-aside">
+                            <a href="_sources/quickstart.rst.txt" rel="nofollow"> View page source</a>
+                        </li>
+                    </ul>
+                    <hr/>
+                </div>
+                <div class="document" itemscope="itemscope" itemtype="http://schema.org/Article" role="main">
+                    <div itemprop="articleBody">
+
+                        <section id="quickstart">
+                            <h1>Quickstart<a class="headerlink" href="#quickstart" title="Link to this heading"></a>
+                            </h1>
+                            <p>This guide will help you get started with ProtoBase by walking through some basic
+                                examples.</p>
+                            <section id="creating-a-database">
+                                <h2>Creating a Database<a class="headerlink" href="#creating-a-database"
+                                                          title="Link to this heading"></a></h2>
+                                <p>The first step is to create a storage instance, an object space, and a database:</p>
+                                <div class="highlight-python notranslate">
+                                    <div class="highlight"><pre><span></span><span class="kn">import</span> <span
+                                            class="nn">proto_db</span>
 
 <span class="c1"># Create a memory storage (for testing and development)</span>
-<span class="n">storage</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">MemoryStorage</span><span class="p">()</span>
+<span class="n">storage</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span
+                                                class="n">MemoryStorage</span><span class="p">()</span>
 
 <span class="c1"># Create an object space</span>
-<span class="n">space</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">ObjectSpace</span><span class="p">(</span><span class="n">storage</span><span class="p">)</span>
+<span class="n">space</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span
+                                                class="n">ObjectSpace</span><span class="p">(</span><span class="n">storage</span><span
+                                                class="p">)</span>
 
 <span class="c1"># Get a database (creates it if it doesn&#39;t exist)</span>
-<span class="n">db</span> <span class="o">=</span> <span class="n">space</span><span class="o">.</span><span class="n">get_database</span><span class="p">(</span><span class="s2">&quot;my_database&quot;</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>For production use, you might want to use a file-based storage instead:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">proto_db</span>
+<span class="n">db</span> <span class="o">=</span> <span class="n">space</span><span class="o">.</span><span class="n">get_database</span><span
+                                                class="p">(</span><span class="s2">&quot;my_database&quot;</span><span
+                                                class="p">)</span>
+</pre>
+                                    </div>
+                                </div>
+                                <p>For production use, you might want to use a file-based storage instead:</p>
+                                <div class="highlight-python notranslate">
+                                    <div class="highlight"><pre><span></span><span class="kn">import</span> <span
+                                            class="nn">proto_db</span>
 <span class="kn">import</span> <span class="nn">os</span>
 
 <span class="c1"># Create a directory for the database files</span>
-<span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="s2">&quot;my_db_files&quot;</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span
+                                                class="s2">&quot;my_db_files&quot;</span><span class="p">,</span> <span
+                                                class="n">exist_ok</span><span class="o">=</span><span
+                                                class="kc">True</span><span class="p">)</span>
 
 <span class="c1"># Create a file block provider</span>
-<span class="n">block_provider</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">FileBlockProvider</span><span class="p">(</span><span class="s2">&quot;my_db_files&quot;</span><span class="p">)</span>
+<span class="n">block_provider</span> <span class="o">=</span> <span class="n">proto_db</span><span
+                                                class="o">.</span><span class="n">FileBlockProvider</span><span
+                                                class="p">(</span><span class="s2">&quot;my_db_files&quot;</span><span
+                                                class="p">)</span>
 
 <span class="c1"># Create a file storage</span>
-<span class="n">storage</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">StandaloneFileStorage</span><span class="p">(</span><span class="n">block_provider</span><span class="p">)</span>
+<span class="n">storage</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span
+                                                class="n">StandaloneFileStorage</span><span class="p">(</span><span
+                                                class="n">block_provider</span><span class="p">)</span>
 
 <span class="c1"># Create an object space and database as before</span>
-<span class="n">space</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">ObjectSpace</span><span class="p">(</span><span class="n">storage</span><span class="p">)</span>
-<span class="n">db</span> <span class="o">=</span> <span class="n">space</span><span class="o">.</span><span class="n">get_database</span><span class="p">(</span><span class="s2">&quot;my_database&quot;</span><span class="p">)</span>
-</pre></div>
-</div>
-</section>
-<section id="working-with-transactions">
-<h2>Working with Transactions<a class="headerlink" href="#working-with-transactions" title="Link to this heading"></a></h2>
-<p>All operations in ProtoBase are performed within transactions:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create a transaction</span>
-<span class="n">tr</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span class="p">()</span>
+<span class="n">space</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span
+                                                class="n">ObjectSpace</span><span class="p">(</span><span class="n">storage</span><span
+                                                class="p">)</span>
+<span class="n">db</span> <span class="o">=</span> <span class="n">space</span><span class="o">.</span><span class="n">get_database</span><span
+                                                class="p">(</span><span class="s2">&quot;my_database&quot;</span><span
+                                                class="p">)</span>
+</pre>
+                                    </div>
+                                </div>
+                            </section>
+                            <section id="working-with-transactions">
+                                <h2>Working with Transactions<a class="headerlink" href="#working-with-transactions"
+                                                                title="Link to this heading"></a></h2>
+                                <p>All operations in ProtoBase are performed within transactions:</p>
+                                <div class="highlight-python notranslate">
+                                    <div class="highlight"><pre><span></span><span
+                                            class="c1"># Create a transaction</span>
+<span class="n">tr</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span
+                                                class="p">()</span>
 
 <span class="c1"># Perform operations...</span>
 
 <span class="c1"># Commit the transaction</span>
 <span class="n">tr</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
-</pre></div>
-</div>
-<p>If you need to abort a transaction, you can simply let it go out of scope without committing it.</p>
-</section>
-<section id="working-with-dictionaries">
-<h2>Working with Dictionaries<a class="headerlink" href="#working-with-dictionaries" title="Link to this heading"></a></h2>
-<p>Dictionaries are one of the basic data structures in ProtoBase:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create a transaction</span>
-<span class="n">tr</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span class="p">()</span>
+</pre>
+                                    </div>
+                                </div>
+                                <p>If you need to abort a transaction, you can simply let it go out of scope without
+                                    committing it.</p>
+                            </section>
+                            <section id="working-with-dictionaries">
+                                <h2>Working with Dictionaries<a class="headerlink" href="#working-with-dictionaries"
+                                                                title="Link to this heading"></a></h2>
+                                <p>Dictionaries are one of the basic data structures in ProtoBase:</p>
+                                <div class="highlight-python notranslate">
+                                    <div class="highlight"><pre><span></span><span
+                                            class="c1"># Create a transaction</span>
+<span class="n">tr</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span
+                                                class="p">()</span>
 
 <span class="c1"># Create a dictionary</span>
-<span class="n">d</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">Dictionary</span><span class="p">()</span>
+<span class="n">d</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span
+                                                class="n">Dictionary</span><span class="p">()</span>
 
 <span class="c1"># Add some key-value pairs</span>
-<span class="n">d</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;John Doe&quot;</span>
-<span class="n">d</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">30</span>
-<span class="n">d</span><span class="p">[</span><span class="s2">&quot;email&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;john.doe@example.com&quot;</span>
+<span class="n">d</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span> <span
+                                                class="o">=</span> <span class="s2">&quot;John Doe&quot;</span>
+<span class="n">d</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span
+                                                class="o">=</span> <span class="mi">30</span>
+<span class="n">d</span><span class="p">[</span><span class="s2">&quot;email&quot;</span><span class="p">]</span> <span
+                                                class="o">=</span> <span
+                                                class="s2">&quot;john.doe@example.com&quot;</span>
 
 <span class="c1"># Store the dictionary as a root object</span>
-<span class="n">tr</span><span class="o">.</span><span class="n">set_root_object</span><span class="p">(</span><span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>
+<span class="n">tr</span><span class="o">.</span><span class="n">set_root_object</span><span class="p">(</span><span
+                                                class="s2">&quot;user&quot;</span><span class="p">,</span> <span
+                                                class="n">d</span><span class="p">)</span>
 
 <span class="c1"># Commit the transaction</span>
 <span class="n">tr</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
 
 <span class="c1"># Create a new transaction</span>
-<span class="n">tr2</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span class="p">()</span>
+<span class="n">tr2</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span
+                                                class="p">()</span>
 
 <span class="c1"># Retrieve the dictionary</span>
-<span class="n">user</span> <span class="o">=</span> <span class="n">tr2</span><span class="o">.</span><span class="n">get_root_object</span><span class="p">(</span><span class="s2">&quot;user&quot;</span><span class="p">)</span>
+<span class="n">user</span> <span class="o">=</span> <span class="n">tr2</span><span class="o">.</span><span class="n">get_root_object</span><span
+                                                class="p">(</span><span class="s2">&quot;user&quot;</span><span
+                                                class="p">)</span>
 
 <span class="c1"># Access values</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">user</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">])</span>  <span class="c1"># Output: John Doe</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">user</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">])</span>   <span class="c1"># Output: 30</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">user</span><span class="p">[</span><span
+                                                class="s2">&quot;name&quot;</span><span class="p">])</span>  <span
+                                                class="c1"># Output: John Doe</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">user</span><span class="p">[</span><span
+                                                class="s2">&quot;age&quot;</span><span class="p">])</span>   <span
+                                                class="c1"># Output: 30</span>
 
 <span class="c1"># Modify values</span>
-<span class="n">user</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">31</span>
+<span class="n">user</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span
+                                                class="o">=</span> <span class="mi">31</span>
 
 <span class="c1"># Commit the changes</span>
 <span class="n">tr2</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
-</pre></div>
-</div>
-</section>
-<section id="working-with-lists">
-<h2>Working with Lists<a class="headerlink" href="#working-with-lists" title="Link to this heading"></a></h2>
-<p>Lists are another basic data structure:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create a transaction</span>
-<span class="n">tr</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span class="p">()</span>
+</pre>
+                                    </div>
+                                </div>
+                            </section>
+                            <section id="working-with-lists">
+                                <h2>Working with Lists<a class="headerlink" href="#working-with-lists"
+                                                         title="Link to this heading"></a></h2>
+                                <p>Lists are another basic data structure:</p>
+                                <div class="highlight-python notranslate">
+                                    <div class="highlight"><pre><span></span><span
+                                            class="c1"># Create a transaction</span>
+<span class="n">tr</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span
+                                                class="p">()</span>
 
 <span class="c1"># Create a list</span>
-<span class="n">l</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">List</span><span class="p">()</span>
+<span class="n">l</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span
+                                                class="n">List</span><span class="p">()</span>
 
 <span class="c1"># Add some items</span>
-<span class="n">l</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;apple&quot;</span><span class="p">)</span>
-<span class="n">l</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;banana&quot;</span><span class="p">)</span>
-<span class="n">l</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;cherry&quot;</span><span class="p">)</span>
+<span class="n">l</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;apple&quot;</span><span
+                                                class="p">)</span>
+<span class="n">l</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;banana&quot;</span><span
+                                                class="p">)</span>
+<span class="n">l</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;cherry&quot;</span><span
+                                                class="p">)</span>
 
 <span class="c1"># Store the list as a root object</span>
-<span class="n">tr</span><span class="o">.</span><span class="n">set_root_object</span><span class="p">(</span><span class="s2">&quot;fruits&quot;</span><span class="p">,</span> <span class="n">l</span><span class="p">)</span>
+<span class="n">tr</span><span class="o">.</span><span class="n">set_root_object</span><span class="p">(</span><span
+                                                class="s2">&quot;fruits&quot;</span><span class="p">,</span> <span
+                                                class="n">l</span><span class="p">)</span>
 
 <span class="c1"># Commit the transaction</span>
 <span class="n">tr</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
 
 <span class="c1"># Create a new transaction</span>
-<span class="n">tr2</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span class="p">()</span>
+<span class="n">tr2</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span
+                                                class="p">()</span>
 
 <span class="c1"># Retrieve the list</span>
-<span class="n">fruits</span> <span class="o">=</span> <span class="n">tr2</span><span class="o">.</span><span class="n">get_root_object</span><span class="p">(</span><span class="s2">&quot;fruits&quot;</span><span class="p">)</span>
+<span class="n">fruits</span> <span class="o">=</span> <span class="n">tr2</span><span class="o">.</span><span
+                                                class="n">get_root_object</span><span class="p">(</span><span
+                                                class="s2">&quot;fruits&quot;</span><span class="p">)</span>
 
 <span class="c1"># Access items</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">fruits</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>  <span class="c1"># Output: apple</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">fruits</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>  <span class="c1"># Output: banana</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">fruits</span><span class="p">[</span><span
+                                                class="mi">0</span><span class="p">])</span>  <span class="c1"># Output: apple</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">fruits</span><span class="p">[</span><span
+                                                class="mi">1</span><span class="p">])</span>  <span class="c1"># Output: banana</span>
 
 <span class="c1"># Modify the list</span>
-<span class="n">fruits</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;date&quot;</span><span class="p">)</span>
-<span class="n">fruits</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;apricot&quot;</span>
+<span class="n">fruits</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span
+                                                class="s2">&quot;date&quot;</span><span class="p">)</span>
+<span class="n">fruits</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span
+                                                class="o">=</span> <span class="s2">&quot;apricot&quot;</span>
 
 <span class="c1"># Commit the changes</span>
 <span class="n">tr2</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
-</pre></div>
-</div>
-</section>
-<section id="working-with-sets">
-<h2>Working with Sets<a class="headerlink" href="#working-with-sets" title="Link to this heading"></a></h2>
-<p>Sets are useful for storing unique items:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create a transaction</span>
-<span class="n">tr</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span class="p">()</span>
+</pre>
+                                    </div>
+                                </div>
+                            </section>
+                            <section id="working-with-sets">
+                                <h2>Working with Sets<a class="headerlink" href="#working-with-sets"
+                                                        title="Link to this heading"></a></h2>
+                                <p>Sets are useful for storing unique items:</p>
+                                <div class="highlight-python notranslate">
+                                    <div class="highlight"><pre><span></span><span
+                                            class="c1"># Create a transaction</span>
+<span class="n">tr</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span
+                                                class="p">()</span>
 
 <span class="c1"># Create a set</span>
-<span class="n">s</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">Set</span><span class="p">()</span>
+<span class="n">s</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span
+                                                class="n">Set</span><span class="p">()</span>
 
 <span class="c1"># Add some items</span>
-<span class="n">s</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;red&quot;</span><span class="p">)</span>
-<span class="n">s</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;green&quot;</span><span class="p">)</span>
-<span class="n">s</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;blue&quot;</span><span class="p">)</span>
+<span class="n">s</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;red&quot;</span><span
+                                                class="p">)</span>
+<span class="n">s</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;green&quot;</span><span
+                                                class="p">)</span>
+<span class="n">s</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;blue&quot;</span><span
+                                                class="p">)</span>
 
 <span class="c1"># Store the set as a root object</span>
-<span class="n">tr</span><span class="o">.</span><span class="n">set_root_object</span><span class="p">(</span><span class="s2">&quot;colors&quot;</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span>
+<span class="n">tr</span><span class="o">.</span><span class="n">set_root_object</span><span class="p">(</span><span
+                                                class="s2">&quot;colors&quot;</span><span class="p">,</span> <span
+                                                class="n">s</span><span class="p">)</span>
 
 <span class="c1"># Commit the transaction</span>
 <span class="n">tr</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
 
 <span class="c1"># Create a new transaction</span>
-<span class="n">tr2</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span class="p">()</span>
+<span class="n">tr2</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span
+                                                class="p">()</span>
 
 <span class="c1"># Retrieve the set</span>
-<span class="n">colors</span> <span class="o">=</span> <span class="n">tr2</span><span class="o">.</span><span class="n">get_root_object</span><span class="p">(</span><span class="s2">&quot;colors&quot;</span><span class="p">)</span>
+<span class="n">colors</span> <span class="o">=</span> <span class="n">tr2</span><span class="o">.</span><span
+                                                class="n">get_root_object</span><span class="p">(</span><span
+                                                class="s2">&quot;colors&quot;</span><span class="p">)</span>
 
 <span class="c1"># Check membership</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;red&quot;</span> <span class="ow">in</span> <span class="n">colors</span><span class="p">)</span>  <span class="c1"># Output: True</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;yellow&quot;</span> <span class="ow">in</span> <span class="n">colors</span><span class="p">)</span>  <span class="c1"># Output: False</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;red&quot;</span> <span class="ow">in</span> <span
+                                                class="n">colors</span><span class="p">)</span>  <span class="c1"># Output: True</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;yellow&quot;</span> <span
+                                                class="ow">in</span> <span class="n">colors</span><span
+                                                class="p">)</span>  <span class="c1"># Output: False</span>
 
 <span class="c1"># Add and remove items</span>
-<span class="n">colors</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;yellow&quot;</span><span class="p">)</span>
-<span class="n">colors</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="s2">&quot;red&quot;</span><span class="p">)</span>
+<span class="n">colors</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;yellow&quot;</span><span
+                                                class="p">)</span>
+<span class="n">colors</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span
+                                                class="s2">&quot;red&quot;</span><span class="p">)</span>
 
 <span class="c1"># Commit the changes</span>
 <span class="n">tr2</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
-</pre></div>
-</div>
-</section>
-<section id="using-queries">
-<h2>Using Queries<a class="headerlink" href="#using-queries" title="Link to this heading"></a></h2>
-<p>ProtoBase provides a powerful query system:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create a transaction</span>
-<span class="n">tr</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span class="p">()</span>
+</pre>
+                                    </div>
+                                </div>
+                            </section>
+                            <section id="using-queries">
+                                <h2>Using Queries<a class="headerlink" href="#using-queries"
+                                                    title="Link to this heading"></a></h2>
+                                <p>ProtoBase provides a powerful query system:</p>
+                                <div class="highlight-python notranslate">
+                                    <div class="highlight"><pre><span></span><span
+                                            class="c1"># Create a transaction</span>
+<span class="n">tr</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span
+                                                class="p">()</span>
 
 <span class="c1"># Create a list of dictionaries</span>
-<span class="n">users</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">List</span><span class="p">()</span>
+<span class="n">users</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span
+                                                class="n">List</span><span class="p">()</span>
 
 <span class="c1"># Add some users</span>
-<span class="n">user1</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">Dictionary</span><span class="p">()</span>
-<span class="n">user1</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;John&quot;</span>
-<span class="n">user1</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">30</span>
-<span class="n">user1</span><span class="p">[</span><span class="s2">&quot;city&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;New York&quot;</span>
-<span class="n">users</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">user1</span><span class="p">)</span>
+<span class="n">user1</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span
+                                                class="n">Dictionary</span><span class="p">()</span>
+<span class="n">user1</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span
+                                                class="p">]</span> <span class="o">=</span> <span class="s2">&quot;John&quot;</span>
+<span class="n">user1</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span
+                                                class="p">]</span> <span class="o">=</span> <span class="mi">30</span>
+<span class="n">user1</span><span class="p">[</span><span class="s2">&quot;city&quot;</span><span
+                                                class="p">]</span> <span class="o">=</span> <span class="s2">&quot;New York&quot;</span>
+<span class="n">users</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span
+                                                class="n">user1</span><span class="p">)</span>
 
-<span class="n">user2</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">Dictionary</span><span class="p">()</span>
-<span class="n">user2</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;Jane&quot;</span>
-<span class="n">user2</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">25</span>
-<span class="n">user2</span><span class="p">[</span><span class="s2">&quot;city&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;Boston&quot;</span>
-<span class="n">users</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">user2</span><span class="p">)</span>
+<span class="n">user2</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span
+                                                class="n">Dictionary</span><span class="p">()</span>
+<span class="n">user2</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span
+                                                class="p">]</span> <span class="o">=</span> <span class="s2">&quot;Jane&quot;</span>
+<span class="n">user2</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span
+                                                class="p">]</span> <span class="o">=</span> <span class="mi">25</span>
+<span class="n">user2</span><span class="p">[</span><span class="s2">&quot;city&quot;</span><span
+                                                class="p">]</span> <span class="o">=</span> <span class="s2">&quot;Boston&quot;</span>
+<span class="n">users</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span
+                                                class="n">user2</span><span class="p">)</span>
 
-<span class="n">user3</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">Dictionary</span><span class="p">()</span>
-<span class="n">user3</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;Bob&quot;</span>
-<span class="n">user3</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">35</span>
-<span class="n">user3</span><span class="p">[</span><span class="s2">&quot;city&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;New York&quot;</span>
-<span class="n">users</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">user3</span><span class="p">)</span>
+<span class="n">user3</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span
+                                                class="n">Dictionary</span><span class="p">()</span>
+<span class="n">user3</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span
+                                                class="p">]</span> <span class="o">=</span> <span class="s2">&quot;Bob&quot;</span>
+<span class="n">user3</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span
+                                                class="p">]</span> <span class="o">=</span> <span class="mi">35</span>
+<span class="n">user3</span><span class="p">[</span><span class="s2">&quot;city&quot;</span><span
+                                                class="p">]</span> <span class="o">=</span> <span class="s2">&quot;New York&quot;</span>
+<span class="n">users</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span
+                                                class="n">user3</span><span class="p">)</span>
 
 <span class="c1"># Store the list as a root object</span>
-<span class="n">tr</span><span class="o">.</span><span class="n">set_root_object</span><span class="p">(</span><span class="s2">&quot;users&quot;</span><span class="p">,</span> <span class="n">users</span><span class="p">)</span>
+<span class="n">tr</span><span class="o">.</span><span class="n">set_root_object</span><span class="p">(</span><span
+                                                class="s2">&quot;users&quot;</span><span class="p">,</span> <span
+                                                class="n">users</span><span class="p">)</span>
 
 <span class="c1"># Commit the transaction</span>
 <span class="n">tr</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
 
 <span class="c1"># Create a new transaction</span>
-<span class="n">tr2</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span class="p">()</span>
+<span class="n">tr2</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span
+                                                class="p">()</span>
 
 <span class="c1"># Retrieve the list</span>
-<span class="n">users</span> <span class="o">=</span> <span class="n">tr2</span><span class="o">.</span><span class="n">get_root_object</span><span class="p">(</span><span class="s2">&quot;users&quot;</span><span class="p">)</span>
+<span class="n">users</span> <span class="o">=</span> <span class="n">tr2</span><span class="o">.</span><span class="n">get_root_object</span><span
+                                                class="p">(</span><span class="s2">&quot;users&quot;</span><span
+                                                class="p">)</span>
 
 <span class="c1"># Create a query plan</span>
-<span class="n">from_plan</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">FromPlan</span><span class="p">(</span><span class="n">users</span><span class="p">)</span>
+<span class="n">from_plan</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span
+                                                class="n">FromPlan</span><span class="p">(</span><span
+                                                class="n">users</span><span class="p">)</span>
 
 <span class="c1"># Filter users from New York</span>
-<span class="n">where_plan</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">WherePlan</span><span class="p">(</span>
-    <span class="nb">filter</span><span class="o">=</span><span class="k">lambda</span> <span class="n">user</span><span class="p">:</span> <span class="n">user</span><span class="p">[</span><span class="s2">&quot;city&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;New York&quot;</span><span class="p">,</span>
+<span class="n">where_plan</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span
+                                                class="n">WherePlan</span><span class="p">(</span>
+    <span class="nb">filter</span><span class="o">=</span><span class="k">lambda</span> <span class="n">user</span><span
+                                                class="p">:</span> <span class="n">user</span><span
+                                                class="p">[</span><span class="s2">&quot;city&quot;</span><span
+                                                class="p">]</span> <span class="o">==</span> <span class="s2">&quot;New York&quot;</span><span
+                                                class="p">,</span>
     <span class="n">based_on</span><span class="o">=</span><span class="n">from_plan</span>
 <span class="p">)</span>
 
 <span class="c1"># Execute the query</span>
-<span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">where_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">user</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">])</span>  <span class="c1"># Output: John, Bob</span>
+<span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">where_plan</span><span
+                                                class="o">.</span><span class="n">execute</span><span
+                                                class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">user</span><span class="p">[</span><span
+                                                class="s2">&quot;name&quot;</span><span class="p">])</span>  <span
+                                                class="c1"># Output: John, Bob</span>
 
 <span class="c1"># Group users by city</span>
-<span class="n">group_plan</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">GroupByPlan</span><span class="p">(</span>
-    <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">user</span><span class="p">:</span> <span class="n">user</span><span class="p">[</span><span class="s2">&quot;city&quot;</span><span class="p">],</span>
+<span class="n">group_plan</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span
+                                                class="n">GroupByPlan</span><span class="p">(</span>
+    <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">user</span><span
+                                                class="p">:</span> <span class="n">user</span><span
+                                                class="p">[</span><span class="s2">&quot;city&quot;</span><span
+                                                class="p">],</span>
     <span class="n">based_on</span><span class="o">=</span><span class="n">from_plan</span>
 <span class="p">)</span>
 
 <span class="c1"># Execute the group query</span>
-<span class="k">for</span> <span class="n">city</span><span class="p">,</span> <span class="n">users_in_city</span> <span class="ow">in</span> <span class="n">group_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">city</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">users_in_city</span><span class="p">)</span><span class="si">}</span><span class="s2"> users&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">city</span><span class="p">,</span> <span
+                                                class="n">users_in_city</span> <span class="ow">in</span> <span
+                                                class="n">group_plan</span><span class="o">.</span><span class="n">execute</span><span
+                                                class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span
+                                                class="si">{</span><span class="n">city</span><span
+                                                class="si">}</span><span class="s2">: </span><span
+                                                class="si">{</span><span class="nb">len</span><span
+                                                class="p">(</span><span class="n">users_in_city</span><span
+                                                class="p">)</span><span class="si">}</span><span
+                                                class="s2"> users&quot;</span><span class="p">)</span>
     <span class="c1"># Output: New York: 2 users, Boston: 1 user</span>
-</pre></div>
-</div>
-</section>
-<section id="next-steps">
-<h2>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading"></a></h2>
-<p>This quickstart guide covered the basics of using ProtoBase. For more detailed information, see the <a class="reference internal" href="api/index.html"><span class="doc">API Reference</span></a> documentation.</p>
-</section>
-</section>
+</pre>
+                                    </div>
+                                </div>
+                            </section>
+                            <section id="next-steps">
+                                <h2>Next Steps<a class="headerlink" href="#next-steps"
+                                                 title="Link to this heading"></a></h2>
+                                <p>This quickstart guide covered the basics of using ProtoBase. For more detailed
+                                    information, see the <a class="reference internal" href="api/index.html"><span
+                                            class="doc">API Reference</span></a> documentation.</p>
+                            </section>
+                        </section>
 
 
-           </div>
-          </div>
-          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="installation.html" class="btn btn-neutral float-left" title="Installation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="architecture.html" class="btn btn-neutral float-right" title="Architecture" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
-    </div>
+                    </div>
+                </div>
+                <footer>
+                    <div aria-label="Footer" class="rst-footer-buttons" role="navigation">
+                        <a accesskey="p" class="btn btn-neutral float-left" href="installation.html"
+                           rel="prev" title="Installation"><span aria-hidden="true" class="fa fa-arrow-circle-left"></span>
+                            Previous</a>
+                        <a accesskey="n" class="btn btn-neutral float-right" href="architecture.html"
+                           rel="next" title="Architecture">Next <span aria-hidden="true"
+                                                               class="fa fa-arrow-circle-right"></span></a>
+                    </div>
 
-  <hr/>
+                    <hr/>
 
-  <div role="contentinfo">
-    <p>&#169; Copyright 2023, ProtoBase Team.</p>
-  </div>
+                    <div role="contentinfo">
+                        <p>&#169; Copyright 2023, ProtoBase Team.</p>
+                    </div>
 
-  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
-    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
-    provided by <a href="https://readthedocs.org">Read the Docs</a>.
-   
+                    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+                    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+                    provided by <a href="https://readthedocs.org">Read the Docs</a>.
 
-</footer>
+
+                </footer>
+            </div>
         </div>
-      </div>
     </section>
-  </div>
-  <script>
-      jQuery(function () {
-          SphinxRtdTheme.Navigation.enable(true);
-      });
-  </script> 
+</div>
+<script>
+    jQuery(function () {
+        SphinxRtdTheme.Navigation.enable(true);
+    });
+</script>
 
 </body>
 </html>

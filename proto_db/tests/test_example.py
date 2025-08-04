@@ -1,5 +1,7 @@
 import unittest
+
 from ..common import Atom, Literal
+
 
 class TestExample(unittest.TestCase):
     """Example test to demonstrate testing in ProtoBase."""
@@ -32,6 +34,7 @@ class TestExample(unittest.TestCase):
 
         # Test that _loaded is initially False
         self.assertFalse(atom1._loaded)
+
 
 if __name__ == '__main__':
     unittest.main()

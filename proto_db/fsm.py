@@ -1,18 +1,15 @@
 from __future__ import annotations
-import concurrent.futures
+
+import logging
 import os
 import time
-
 from threading import Lock
 
-from .common import MB, GB, Future
+from .common import Future
 from .exceptions import ProtoValidationException
 from .hybrid_executor import HybridExecutor
-import logging
-
 
 _logger = logging.getLogger(__name__)
-
 
 # Executor for FSM machines
 # Determines the number of worker threads for asynchronous execution
@@ -159,7 +156,8 @@ class FSM:
                 _logger.warning("Received event without a name, ignoring")
                 return
 
-            saved_state = self._state if hasattr(self, '_state') else None  # Save the current state in case rollback is necessary
+            saved_state = self._state if hasattr(self,
+                                                 '_state') else None  # Save the current state in case rollback is necessary
             try:
                 # Special handling for 'Initializing' event for test compatibility
                 if event_name == 'Initializing' and hasattr(self, '_state') and self._state == 'Initializing':
@@ -178,7 +176,8 @@ class FSM:
 
                 # Determine the appropriate state for this event
                 state = self._state \
-                    if hasattr(self, '_state') and self._state and event_name in self._fsm_definition.get(self._state, {}) else 'all'
+                    if hasattr(self, '_state') and self._state and event_name in self._fsm_definition.get(self._state,
+                                                                                                          {}) else 'all'
 
                 # If the event is defined in the relevant state, process it
                 if state and event_name in self._fsm_definition.get(state, {}):
@@ -186,7 +185,8 @@ class FSM:
                     # Execute the handler for the event
                     self._fsm_definition[state][event_name](event)
                 else:
-                    _logger.debug(f"No handler found for event '{event_name}' in state '{getattr(self, '_state', 'None')}'")
+                    _logger.debug(
+                        f"No handler found for event '{event_name}' in state '{getattr(self, '_state', 'None')}'")
 
                 # Event was successfully processed; preserve the new state
                 saved_state = getattr(self, '_state', None)

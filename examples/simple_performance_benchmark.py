@@ -7,22 +7,19 @@ using standard benchmarks for object databases. It follows a simple pattern
 that ensures compatibility with the ProtoBase API.
 """
 
+import argparse
 import os
+import random
 import sys
 import time
 import uuid
-import random
-import argparse
 from datetime import datetime
 
 # Add the parent directory to the path to import proto_db
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from proto_db import ObjectSpace, DBObject
-from proto_db.standalone_file_storage import StandaloneFileStorage
-from proto_db.file_block_provider import FileBlockProvider
 from proto_db.memory_storage import MemoryStorage
-from proto_db.queries import WherePlan, Expression
 
 
 class BenchmarkItem(DBObject):
@@ -445,7 +442,8 @@ def run_all_benchmarks(count=10, query_count=5):
     print(f"Read {count} items: {read_time:.4f} seconds ({(read_time / count) * 1000:.4f} ms per item)")
     print(f"Update {count} items: {update_time:.4f} seconds ({(update_time / count) * 1000:.4f} ms per item)")
     print(f"Delete {count} items: {delete_time:.4f} seconds ({(delete_time / count) * 1000:.4f} ms per item)")
-    print(f"Execute {query_count} queries: {query_time:.4f} seconds ({(query_time / query_count) * 1000:.4f} ms per query)")
+    print(
+        f"Execute {query_count} queries: {query_time:.4f} seconds ({(query_time / query_count) * 1000:.4f} ms per query)")
 
 
 def main():

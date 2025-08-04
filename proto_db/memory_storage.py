@@ -1,9 +1,10 @@
-from . import common
-from .common import Future, Atom, AtomPointer
-from .db_access import BytesAtom
-from .exceptions import ProtoCorruptionException
 import uuid
 from threading import Lock  # Import threading lock to ensure thread safety
+
+from . import common
+from .common import Future, AtomPointer
+from .db_access import BytesAtom
+from .exceptions import ProtoCorruptionException
 
 
 class MemoryStorage(common.SharedStorage):
@@ -127,7 +128,7 @@ class MemoryStorage(common.SharedStorage):
         with self.lock:  # Ensure thread-safety for operations on `atoms`.
             # Check if the atom exists in the dictionary.
             if atom_pointer.offset in self.atoms:
-                data:bytes = self.atoms[atom_pointer.offset]
+                data: bytes = self.atoms[atom_pointer.offset]
 
                 # Create and return a Future with the retrieved atom.
                 result = Future()

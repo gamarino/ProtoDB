@@ -1,10 +1,10 @@
+import io
+import struct
 import unittest
 from unittest.mock import Mock, MagicMock, patch
 from uuid import uuid4
-import io
-import struct
-from ..standalone_file_storage import StandaloneFileStorage, WALState, AtomPointer, ProtoValidationException, \
-    ProtoUnexpectedException
+
+from ..standalone_file_storage import StandaloneFileStorage, WALState, AtomPointer, ProtoValidationException
 
 
 class TestStandaloneFileStorage(unittest.TestCase):
@@ -65,7 +65,8 @@ class TestStandaloneFileStorage(unittest.TestCase):
         data = bytes(b"Prueba")  # 2048 bytes (excede buffer de 1024).
         transaction_id, offset = self.storage.push_bytes(data).result()
 
-        self.assertEqual(offset, 2049 + len("Prueba") + 8 + 1)  # 2049 (previous offset) + data length + 8 (header) + 1 (format indicator)
+        self.assertEqual(offset, 2049 + len(
+            "Prueba") + 8 + 1)  # 2049 (previous offset) + data length + 8 (header) + 1 (format indicator)
 
     def test_push_bytes_exceeding_blob_max_size(self):
         """

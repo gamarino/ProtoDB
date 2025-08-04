@@ -1,85 +1,99 @@
-
-
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" data-content_root="../../">
+<html class="writer-html5" data-content_root="../../" lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>proto_db.file_block_provider &mdash; ProtoBase 0.1.0 documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=80d5e7a1" />
-      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>proto_db.file_block_provider &mdash; ProtoBase 0.1.0 documentation</title>
+    <link href="../../_static/pygments.css?v=80d5e7a1" rel="stylesheet" type="text/css"/>
+    <link href="../../_static/css/theme.css?v=e59714d7" rel="stylesheet" type="text/css"/>
 
-  
-      <script src="../../_static/jquery.js?v=5d32c60e"></script>
-      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../../_static/documentation_options.js?v=01f34227"></script>
-      <script src="../../_static/doctools.js?v=9bcbadda"></script>
-      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+
+    <script src="../../_static/jquery.js?v=5d32c60e"></script>
+    <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+    <script src="../../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/js/theme.js"></script>
-    <link rel="index" title="Index" href="../../genindex.html" />
-    <link rel="search" title="Search" href="../../search.html" /> 
+    <link href="../../genindex.html" rel="index" title="Index"/>
+    <link href="../../search.html" rel="search" title="Search"/>
 </head>
 
-<body class="wy-body-for-nav"> 
-  <div class="wy-grid-for-nav">
-    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
-      <div class="wy-side-scroll">
-        <div class="wy-side-nav-search" >
+<body class="wy-body-for-nav">
+<div class="wy-grid-for-nav">
+    <nav class="wy-nav-side" data-toggle="wy-nav-shift">
+        <div class="wy-side-scroll">
+            <div class="wy-side-nav-search">
 
-          
-          
-          <a href="../../index.html" class="icon icon-home">
-            ProtoBase
-          </a>
-<div role="search">
-  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
-    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
-    <input type="hidden" name="check_keywords" value="yes" />
-    <input type="hidden" name="area" value="default" />
-  </form>
-</div>
-        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
-</ul>
 
+                <a class="icon icon-home" href="../../index.html">
+                    ProtoBase
+                </a>
+                <div role="search">
+                    <form action="../../search.html" class="wy-form" id="rtd-search-form" method="get">
+                        <input aria-label="Search docs" name="q" placeholder="Search docs" type="text"/>
+                        <input name="check_keywords" type="hidden" value="yes"/>
+                        <input name="area" type="hidden" value="default"/>
+                    </form>
+                </div>
+            </div>
+            <div aria-label="Navigation menu" class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation">
+                <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a>
+                    </li>
+                    <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a>
+                    </li>
+                    <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a>
+                    </li>
+                    <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a>
+                    </li>
+                    <li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a>
+                    </li>
+                    <li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced
+                        Usage</a></li>
+                    <li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a>
+                    </li>
+                </ul>
+
+            </div>
         </div>
-      </div>
     </nav>
 
-    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
-          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="../../index.html">ProtoBase</a>
-      </nav>
+    <section class="wy-nav-content-wrap" data-toggle="wy-nav-shift">
+        <nav aria-label="Mobile navigation menu" class="wy-nav-top">
+            <i class="fa fa-bars" data-toggle="wy-nav-top"></i>
+            <a href="../../index.html">ProtoBase</a>
+        </nav>
 
-      <div class="wy-nav-content">
-        <div class="rst-content">
-          <div role="navigation" aria-label="Page navigation">
-  <ul class="wy-breadcrumbs">
-      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
-          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
-      <li class="breadcrumb-item active">proto_db.file_block_provider</li>
-      <li class="wy-breadcrumbs-aside">
-      </li>
-  </ul>
-  <hr/>
-</div>
-          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
-           <div itemprop="articleBody">
-             
-  <h1>Source code for proto_db.file_block_provider</h1><div class="highlight"><pre>
-<span></span><span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">common</span><span class="p">,</span> <span class="n">ProtoValidationException</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">BinaryIO</span>
-<span class="kn">from</span> <span class="nn">io</span> <span class="kn">import</span> <span class="n">BytesIO</span><span class="p">,</span> <span class="n">SEEK_SET</span><span class="p">,</span> <span class="n">SEEK_CUR</span><span class="p">,</span> <span class="n">SEEK_END</span>
+        <div class="wy-nav-content">
+            <div class="rst-content">
+                <div aria-label="Page navigation" role="navigation">
+                    <ul class="wy-breadcrumbs">
+                        <li><a aria-label="Home" class="icon icon-home" href="../../index.html"></a></li>
+                        <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+                        <li class="breadcrumb-item active">proto_db.file_block_provider</li>
+                        <li class="wy-breadcrumbs-aside">
+                        </li>
+                    </ul>
+                    <hr/>
+                </div>
+                <div class="document" itemscope="itemscope" itemtype="http://schema.org/Article" role="main">
+                    <div itemprop="articleBody">
 
-<span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="n">MB</span><span class="p">,</span> <span class="n">RootObject</span><span class="p">,</span> <span class="n">AtomPointer</span>
+                        <h1>Source code for proto_db.file_block_provider</h1>
+                        <div class="highlight"><pre>
+<span></span><span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">common</span><span
+                                class="p">,</span> <span class="n">ProtoValidationException</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span
+                                class="n">BinaryIO</span>
+<span class="kn">from</span> <span class="nn">io</span> <span class="kn">import</span> <span
+                                class="n">BytesIO</span><span class="p">,</span> <span class="n">SEEK_SET</span><span
+                                class="p">,</span> <span class="n">SEEK_CUR</span><span class="p">,</span> <span
+                                class="n">SEEK_END</span>
+
+<span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span
+                                class="n">MB</span><span class="p">,</span> <span class="n">RootObject</span><span
+                                class="p">,</span> <span class="n">AtomPointer</span>
 <span class="kn">from</span> <span class="nn">.exceptions</span> <span class="kn">import</span> <span class="n">ProtoUnexpectedException</span>
 <span class="kn">import</span> <span class="nn">psutil</span>
 <span class="kn">import</span> <span class="nn">uuid</span>
@@ -87,13 +101,17 @@
 <span class="kn">import</span> <span class="nn">os</span>
 <span class="kn">import</span> <span class="nn">collections</span>
 <span class="kn">import</span> <span class="nn">json</span>
-<span class="kn">from</span> <span class="nn">threading</span> <span class="kn">import</span> <span class="n">Lock</span>
+<span class="kn">from</span> <span class="nn">threading</span> <span class="kn">import</span> <span
+                                class="n">Lock</span>
 <span class="kn">import</span> <span class="nn">logging</span>
 
-<span class="n">_logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+<span class="n">_logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span
+                                class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span
+                                class="p">)</span>
 
 
-<span class="n">DEFAULT_PAGE_SIZE</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">*</span> <span class="n">MB</span>
+<span class="n">DEFAULT_PAGE_SIZE</span> <span class="o">=</span> <span class="mi">1</span> <span
+                                class="o">*</span> <span class="n">MB</span>
 
 
 <span class="k">class</span> <span class="nc">FileReaderFactory</span><span class="p">:</span>
@@ -103,46 +121,88 @@
 <span class="sd">    Readers are reused to minimize resource usage and optimize performance.</span>
 <span class="sd">    Thread-safe due to the use of a Lock.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">available_readers</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="n">BinaryIO</span><span class="p">]]</span>
+    <span class="n">available_readers</span><span class="p">:</span> <span class="nb">dict</span><span
+                                class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span
+                                class="p">[</span><span class="n">BinaryIO</span><span class="p">]]</span>
     <span class="n">path</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">_lock</span><span class="p">:</span> <span class="n">Lock</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span
+                                class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span
+                                class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Initialize the factory with the directory path containing the files to read.</span>
 
 <span class="sd">        :param path: Path to the directory containing target files.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">path</span> <span class="o">=</span> <span class="n">path</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">available_readers</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span> <span class="o">=</span> <span class="n">Lock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">path</span> <span class="o">=</span> <span
+                                class="n">path</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">available_readers</span> <span
+                                class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span> <span class="o">=</span> <span
+                                class="n">Lock</span><span class="p">()</span>
 
-    <span class="k">def</span> <span class="nf">get_reader</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">file_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BinaryIO</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">get_reader</span><span class="p">(</span><span
+                                class="bp">self</span><span class="p">,</span> <span class="n">file_name</span><span
+                                class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span
+                                class="n">BinaryIO</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Fetch a file reader for the given file name. Reuse a reader if available.</span>
 
 <span class="sd">        :param file_name: Name of the file to read.</span>
 <span class="sd">        :return: An open BinaryIO object in binary reading mode.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span
+                                class="n">_lock</span><span class="p">:</span>
             <span class="c1"># Reuse an available reader if possible</span>
-            <span class="k">if</span> <span class="n">file_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">available_readers</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">available_readers</span><span class="p">[</span><span class="n">file_name</span><span class="p">]:</span>
-                <span class="n">reader</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">available_readers</span><span class="p">[</span><span class="n">file_name</span><span class="p">]</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-                <span class="n">reader</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>  <span class="c1"># Ensure the reader&#39;s position is reset</span>
+            <span class="k">if</span> <span class="n">file_name</span> <span class="ow">in</span> <span
+                                class="bp">self</span><span class="o">.</span><span
+                                class="n">available_readers</span> <span class="ow">and</span> <span
+                                class="bp">self</span><span class="o">.</span><span
+                                class="n">available_readers</span><span class="p">[</span><span
+                                class="n">file_name</span><span class="p">]:</span>
+                <span class="n">reader</span> <span class="o">=</span> <span class="bp">self</span><span
+                                class="o">.</span><span class="n">available_readers</span><span class="p">[</span><span
+                                class="n">file_name</span><span class="p">]</span><span class="o">.</span><span
+                                class="n">pop</span><span class="p">(</span><span class="mi">0</span><span
+                                class="p">)</span>
+                <span class="n">reader</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span
+                                class="mi">0</span><span class="p">)</span>  <span class="c1"># Ensure the reader&#39;s position is reset</span>
                 <span class="k">return</span> <span class="n">reader</span>
 
         <span class="k">try</span><span class="p">:</span>
             <span class="c1"># Create a new reader if no reusable ones exist</span>
-            <span class="n">reader</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">,</span> <span class="n">file_name</span><span class="p">),</span> <span class="s1">&#39;rb&#39;</span><span class="p">)</span>
+            <span class="n">reader</span> <span class="o">=</span> <span class="nb">open</span><span
+                                class="p">(</span><span class="n">os</span><span class="o">.</span><span
+                                class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span
+                                class="bp">self</span><span class="o">.</span><span class="n">path</span><span
+                                class="p">,</span> <span class="n">file_name</span><span class="p">),</span> <span
+                                class="s1">&#39;rb&#39;</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">reader</span>
         <span class="k">except</span> <span class="ne">FileNotFoundError</span><span class="p">:</span>
-            <span class="n">_logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;File not found: </span><span class="si">{</span><span class="n">file_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-            <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;WAL File not found: </span><span class="si">{</span><span class="n">file_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">_logger</span><span class="o">.</span><span class="n">error</span><span
+                                class="p">(</span><span class="sa">f</span><span
+                                class="s2">&quot;File not found: </span><span class="si">{</span><span class="n">file_name</span><span
+                                class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span><span
+                                class="n">message</span><span class="o">=</span><span class="sa">f</span><span
+                                class="s2">&quot;WAL File not found: </span><span class="si">{</span><span class="n">file_name</span><span
+                                class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">PermissionError</span><span class="p">:</span>
-            <span class="n">_logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Permission denied when accessing: </span><span class="si">{</span><span class="n">file_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-            <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Permission denied reading WAL File: </span><span class="si">{</span><span class="n">file_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">_logger</span><span class="o">.</span><span class="n">error</span><span
+                                class="p">(</span><span class="sa">f</span><span class="s2">&quot;Permission denied when accessing: </span><span
+                                class="si">{</span><span class="n">file_name</span><span class="si">}</span><span
+                                class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span><span
+                                class="n">message</span><span class="o">=</span><span class="sa">f</span><span
+                                class="s2">&quot;Permission denied reading WAL File: </span><span
+                                class="si">{</span><span class="n">file_name</span><span class="si">}</span><span
+                                class="s2">&quot;</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">return_reader</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reader</span><span class="p">:</span> <span class="n">BinaryIO</span><span class="p">,</span> <span class="n">file_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">return_reader</span><span class="p">(</span><span class="bp">self</span><span
+                                class="p">,</span> <span class="n">reader</span><span class="p">:</span> <span
+                                class="n">BinaryIO</span><span class="p">,</span> <span class="n">file_name</span><span
+                                class="p">:</span> <span class="nb">str</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Return a file reader to the pool for reuse.</span>
 
@@ -150,21 +210,42 @@
 <span class="sd">        :param file_name: File name associated with the reader.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
-                <span class="k">if</span> <span class="n">file_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">available_readers</span><span class="p">:</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">available_readers</span><span class="p">[</span><span class="n">file_name</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">reader</span><span class="p">)</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span
+                                class="p">:</span>
+                <span class="k">if</span> <span class="n">file_name</span> <span class="ow">in</span> <span class="bp">self</span><span
+                                class="o">.</span><span class="n">available_readers</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">available_readers</span><span
+                                class="p">[</span><span class="n">file_name</span><span class="p">]</span><span
+                                class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">reader</span><span
+                                class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">available_readers</span><span class="p">[</span><span class="n">file_name</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">reader</span><span class="p">]</span>
-        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="n">_logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
-            <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Unexpected exception returning reader for </span><span class="si">{</span><span class="n">file_name</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">available_readers</span><span
+                                class="p">[</span><span class="n">file_name</span><span class="p">]</span> <span
+                                class="o">=</span> <span class="p">[</span><span class="n">reader</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span
+                                class="n">e</span><span class="p">:</span>
+            <span class="n">_logger</span><span class="o">.</span><span class="n">exception</span><span
+                                class="p">(</span><span class="n">e</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span><span
+                                class="n">message</span><span class="o">=</span><span class="sa">f</span><span
+                                class="s1">&#39;Unexpected exception returning reader for </span><span
+                                class="si">{</span><span class="n">file_name</span><span class="si">}</span><span
+                                class="s1">&#39;</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
-            <span class="k">for</span> <span class="n">readers</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">available_readers</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
-                <span class="k">for</span> <span class="n">reader</span> <span class="ow">in</span> <span class="n">readers</span><span class="p">:</span>
-                    <span class="n">reader</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">available_readers</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span
+                                class="p">):</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span
+                                class="n">_lock</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">readers</span> <span class="ow">in</span> <span
+                                class="bp">self</span><span class="o">.</span><span
+                                class="n">available_readers</span><span class="o">.</span><span
+                                class="n">values</span><span class="p">():</span>
+                <span class="k">for</span> <span class="n">reader</span> <span class="ow">in</span> <span class="n">readers</span><span
+                                class="p">:</span>
+                    <span class="n">reader</span><span class="o">.</span><span class="n">close</span><span
+                                class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">available_readers</span> <span
+                                class="o">=</span> <span class="p">{}</span>
 
 
 <span class="k">class</span> <span class="nc">PageCache</span><span class="p">:</span>
@@ -176,7 +257,11 @@
 <span class="sd">    when the cache is full.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">capacity</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">page_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">reader_factory</span><span class="p">:</span> <span class="n">FileReaderFactory</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span
+                                class="p">,</span> <span class="n">capacity</span><span class="p">:</span> <span
+                                class="nb">int</span><span class="p">,</span> <span class="n">page_size</span><span
+                                class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">reader_factory</span><span
+                                class="p">:</span> <span class="n">FileReaderFactory</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Initialize the cache with a given capacity and page size.</span>
 
@@ -184,13 +269,26 @@
 <span class="sd">        :param page_size: The size of each page in bytes.</span>
 <span class="sd">        :param reader_factory: An instance of FileReaderFactory for disk reads.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">capacity</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">capacity</span><span class="p">)</span>  <span class="c1"># Ensure a valid capacity</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">cache</span> <span class="o">=</span> <span class="n">collections</span><span class="o">.</span><span class="n">OrderedDict</span><span class="p">()</span>  <span class="c1"># Preserves insertion order for LRU eviction</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span> <span class="o">=</span> <span class="n">page_size</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">reader_factory</span> <span class="o">=</span> <span class="n">reader_factory</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span> <span class="o">=</span> <span class="n">Lock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">capacity</span> <span
+                                class="o">=</span> <span class="nb">max</span><span class="p">(</span><span
+                                class="mi">1</span><span class="p">,</span> <span class="n">capacity</span><span
+                                class="p">)</span>  <span class="c1"># Ensure a valid capacity</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cache</span> <span class="o">=</span> <span
+                                class="n">collections</span><span class="o">.</span><span
+                                class="n">OrderedDict</span><span class="p">()</span>  <span class="c1"># Preserves insertion order for LRU eviction</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span> <span
+                                class="o">=</span> <span class="n">page_size</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reader_factory</span> <span
+                                class="o">=</span> <span class="n">reader_factory</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span> <span class="o">=</span> <span
+                                class="n">Lock</span><span class="p">()</span>
 
-    <span class="k">def</span> <span class="nf">read_page</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wal_id</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span class="n">page_number</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">read_page</span><span class="p">(</span><span
+                                class="bp">self</span><span class="p">,</span> <span class="n">wal_id</span><span
+                                class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span
+                                class="p">,</span> <span class="n">page_number</span><span class="p">:</span> <span
+                                class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span
+                                class="nb">bytes</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Read a page from memory or disk if not cached.</span>
 
@@ -198,30 +296,61 @@
 <span class="sd">        :param page_number: Page number (starting at 0).</span>
 <span class="sd">        :return: Raw binary content of the requested page.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">page_key</span> <span class="o">=</span> <span class="p">(</span><span class="n">wal_id</span><span class="p">,</span> <span class="n">page_number</span><span class="p">)</span>
+        <span class="n">page_key</span> <span class="o">=</span> <span class="p">(</span><span
+                                class="n">wal_id</span><span class="p">,</span> <span class="n">page_number</span><span
+                                class="p">)</span>
 
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span
+                                class="n">_lock</span><span class="p">:</span>
             <span class="c1"># Check if the page is in cache</span>
-            <span class="k">if</span> <span class="n">page_key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span class="p">:</span>
-                <span class="n">_logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Cache hit for page: </span><span class="si">{</span><span class="n">page_key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span class="o">.</span><span class="n">move_to_end</span><span class="p">(</span><span class="n">page_key</span><span class="p">)</span>  <span class="c1"># Make it the most recently used</span>
-                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span class="p">[</span><span class="n">page_key</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">page_key</span> <span class="ow">in</span> <span
+                                class="bp">self</span><span class="o">.</span><span class="n">cache</span><span
+                                class="p">:</span>
+                <span class="n">_logger</span><span class="o">.</span><span class="n">debug</span><span
+                                class="p">(</span><span class="sa">f</span><span
+                                class="s2">&quot;Cache hit for page: </span><span class="si">{</span><span class="n">page_key</span><span
+                                class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span class="o">.</span><span
+                                class="n">move_to_end</span><span class="p">(</span><span class="n">page_key</span><span
+                                class="p">)</span>  <span class="c1"># Make it the most recently used</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
+                                class="n">cache</span><span class="p">[</span><span class="n">page_key</span><span
+                                class="p">]</span>
 
         <span class="c1"># Cache miss: Read from disk</span>
-        <span class="n">page_content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_page_from_disk</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">wal_id</span><span class="p">),</span> <span class="n">page_number</span><span class="p">)</span>
+        <span class="n">page_content</span> <span class="o">=</span> <span class="bp">self</span><span
+                                class="o">.</span><span class="n">_read_page_from_disk</span><span
+                                class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">wal_id</span><span
+                                class="p">),</span> <span class="n">page_number</span><span class="p">)</span>
 
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span
+                                class="n">_lock</span><span class="p">:</span>
             <span class="c1"># Remove the LRU if the cache is full</span>
-            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">capacity</span><span class="p">:</span>
-                <span class="n">evicted_key</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span class="o">.</span><span class="n">popitem</span><span class="p">(</span><span class="n">last</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-                <span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Evicting page: </span><span class="si">{</span><span class="n">evicted_key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span
+                                class="bp">self</span><span class="o">.</span><span class="n">cache</span><span
+                                class="p">)</span> <span class="o">&gt;=</span> <span class="bp">self</span><span
+                                class="o">.</span><span class="n">capacity</span><span class="p">:</span>
+                <span class="n">evicted_key</span><span class="p">,</span> <span class="n">_</span> <span
+                                class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span
+                                class="o">.</span><span class="n">popitem</span><span class="p">(</span><span class="n">last</span><span
+                                class="o">=</span><span class="kc">False</span><span class="p">)</span>
+                <span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span
+                                class="p">(</span><span class="sa">f</span><span class="s2">&quot;Evicting page: </span><span
+                                class="si">{</span><span class="n">evicted_key</span><span class="si">}</span><span
+                                class="s2">&quot;</span><span class="p">)</span>
 
             <span class="c1"># Cache the new page</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span class="p">[</span><span class="n">page_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">page_content</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span
+                                class="p">[</span><span class="n">page_key</span><span class="p">]</span> <span
+                                class="o">=</span> <span class="n">page_content</span>
 
         <span class="k">return</span> <span class="n">page_content</span>
 
-    <span class="k">def</span> <span class="nf">_read_page_from_disk</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">file</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">page_number</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">_read_page_from_disk</span><span class="p">(</span><span
+                                class="bp">self</span><span class="p">,</span> <span class="n">file</span><span
+                                class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">page_number</span><span
+                                class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span
+                                class="nb">bytes</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Read a specific page from disk using the file reader factory.</span>
 
@@ -231,89 +360,179 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">reader</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">reader</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reader_factory</span><span class="o">.</span><span class="n">get_reader</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
-            <span class="n">reader</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="n">page_number</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">)</span>
-            <span class="n">data</span> <span class="o">=</span> <span class="n">reader</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">)</span>
+            <span class="n">reader</span> <span class="o">=</span> <span class="bp">self</span><span
+                                class="o">.</span><span class="n">reader_factory</span><span class="o">.</span><span
+                                class="n">get_reader</span><span class="p">(</span><span class="n">file</span><span
+                                class="p">)</span>
+            <span class="n">reader</span><span class="o">.</span><span class="n">seek</span><span
+                                class="p">(</span><span class="n">page_number</span> <span class="o">*</span> <span
+                                class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span
+                                class="p">)</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">reader</span><span
+                                class="o">.</span><span class="n">read</span><span class="p">(</span><span class="bp">self</span><span
+                                class="o">.</span><span class="n">page_size</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">data</span>
-        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="n">_logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to read page </span><span class="si">{</span><span class="n">page_number</span><span class="si">}</span><span class="s2"> from file </span><span class="si">{</span><span class="n">file</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span
+                                class="n">e</span><span class="p">:</span>
+            <span class="n">_logger</span><span class="o">.</span><span class="n">error</span><span
+                                class="p">(</span><span class="sa">f</span><span
+                                class="s2">&quot;Failed to read page </span><span class="si">{</span><span class="n">page_number</span><span
+                                class="si">}</span><span class="s2"> from file </span><span class="si">{</span><span
+                                class="n">file</span><span class="si">}</span><span class="s2">: </span><span
+                                class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span
+                                class="p">)</span>
             <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span>
-                <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Unexpected error reading WAL </span><span class="si">{</span><span class="n">file</span><span class="si">}</span><span class="s2">, page </span><span class="si">{</span><span class="n">page_number</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Unexpected error reading WAL </span><span
+                                class="si">{</span><span class="n">file</span><span class="si">}</span><span class="s2">, page </span><span
+                                class="si">{</span><span class="n">page_number</span><span class="si">}</span><span
+                                class="s2">&quot;</span>
             <span class="p">)</span>
         <span class="k">finally</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">reader</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">reader_factory</span><span class="o">.</span><span class="n">return_reader</span><span class="p">(</span><span class="n">reader</span><span class="p">,</span> <span class="n">file</span><span class="p">)</span>  <span class="c1"># Return the reader for reuse</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">reader_factory</span><span
+                                class="o">.</span><span class="n">return_reader</span><span class="p">(</span><span
+                                class="n">reader</span><span class="p">,</span> <span class="n">file</span><span
+                                class="p">)</span>  <span class="c1"># Return the reader for reuse</span>
 
 
-<span class="k">class</span> <span class="nc">ReadStreamer</span><span class="p">(</span><span class="n">BytesIO</span><span class="p">):</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wal_id</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span class="n">offset</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">page_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">page_cache</span><span class="p">:</span> <span class="n">PageCache</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">wal_id</span> <span class="o">=</span> <span class="n">wal_id</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span> <span class="o">=</span> <span class="n">page_size</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">page_cache</span> <span class="o">=</span> <span class="n">page_cache</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">initial_offset</span> <span class="o">=</span> <span class="n">offset</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_offset</span> <span class="o">=</span> <span class="n">offset</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_page</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="k">class</span> <span class="nc">ReadStreamer</span><span class="p">(</span><span
+                                class="n">BytesIO</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span
+                                class="p">,</span> <span class="n">wal_id</span><span class="p">:</span> <span
+                                class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span
+                                class="n">offset</span><span class="p">:</span> <span class="nb">int</span><span
+                                class="p">,</span> <span class="n">page_size</span><span class="p">:</span> <span
+                                class="nb">int</span><span class="p">,</span> <span class="n">page_cache</span><span
+                                class="p">:</span> <span class="n">PageCache</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span
+                                class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wal_id</span> <span class="o">=</span> <span
+                                class="n">wal_id</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span> <span
+                                class="o">=</span> <span class="n">page_size</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">page_cache</span> <span
+                                class="o">=</span> <span class="n">page_cache</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">initial_offset</span> <span
+                                class="o">=</span> <span class="n">offset</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_offset</span> <span
+                                class="o">=</span> <span class="n">offset</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_page</span> <span class="o">=</span> <span
+                                class="kc">None</span>
 
-    <span class="k">def</span> <span class="nf">tell</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_offset</span>
+    <span class="k">def</span> <span class="nf">tell</span><span class="p">(</span><span class="bp">self</span><span
+                                class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
+                                class="n">current_offset</span>
 
-    <span class="k">def</span> <span class="nf">seek</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">offset</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">whence</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">SEEK_SET</span><span class="p">):</span>
-        <span class="k">if</span> <span class="n">whence</span> <span class="o">==</span> <span class="n">SEEK_CUR</span><span class="p">:</span>
-            <span class="n">offset</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_offset</span>
-        <span class="k">elif</span> <span class="n">whence</span> <span class="o">==</span> <span class="n">SEEK_END</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">seek</span><span class="p">(</span><span class="bp">self</span><span
+                                class="p">,</span> <span class="n">offset</span><span class="p">:</span> <span
+                                class="nb">int</span><span class="p">,</span> <span class="n">whence</span><span
+                                class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">SEEK_SET</span><span
+                                class="p">):</span>
+        <span class="k">if</span> <span class="n">whence</span> <span class="o">==</span> <span
+                                class="n">SEEK_CUR</span><span class="p">:</span>
+            <span class="n">offset</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span
+                                class="n">current_offset</span>
+        <span class="k">elif</span> <span class="n">whence</span> <span class="o">==</span> <span
+                                class="n">SEEK_END</span><span class="p">:</span>
             <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
                 <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;In readers, seek method end relative is not supported!&#39;</span>
             <span class="p">)</span>
 
-        <span class="k">if</span> <span class="n">offset</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">current_offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial_offset</span>
+        <span class="k">if</span> <span class="n">offset</span> <span class="o">&lt;</span> <span
+                                class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">current_offset</span> <span
+                                class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial_offset</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">current_offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial_offset</span> <span class="o">+</span> <span class="n">offset</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">current_offset</span> <span
+                                class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial_offset</span> <span
+                                class="o">+</span> <span class="n">offset</span>
 
-    <span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
-        <span class="n">count</span> <span class="o">=</span> <span class="n">count</span> <span class="ow">or</span> <span class="mi">0</span>
-        <span class="n">page_number</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tell</span><span class="p">()</span> <span class="o">//</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span>
-        <span class="n">page_offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tell</span><span class="p">()</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span>
+    <span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span
+                                class="p">,</span> <span class="n">count</span><span class="p">:</span> <span
+                                class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span
+                                class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="n">count</span> <span class="o">=</span> <span class="n">count</span> <span
+                                class="ow">or</span> <span class="mi">0</span>
+        <span class="n">page_number</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span
+                                class="n">tell</span><span class="p">()</span> <span class="o">//</span> <span
+                                class="bp">self</span><span class="o">.</span><span class="n">page_size</span>
+        <span class="n">page_offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span
+                                class="n">tell</span><span class="p">()</span> <span class="o">%</span> <span
+                                class="bp">self</span><span class="o">.</span><span class="n">page_size</span>
 
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_page</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">current_page</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_cache</span><span class="o">.</span><span class="n">read_page</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wal_id</span><span class="p">,</span> <span class="n">page_number</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span
+                                class="n">current_page</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">current_page</span> <span
+                                class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_cache</span><span
+                                class="o">.</span><span class="n">read_page</span><span class="p">(</span><span
+                                class="bp">self</span><span class="o">.</span><span class="n">wal_id</span><span
+                                class="p">,</span> <span class="n">page_number</span><span class="p">)</span>
 
-        <span class="k">if</span> <span class="n">page_offset</span> <span class="o">+</span> <span class="n">count</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">:</span>
-            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_page</span><span class="p">[</span><span class="n">page_offset</span><span class="p">:</span><span class="n">page_offset</span> <span class="o">+</span> <span class="n">count</span><span class="p">]</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">current_offset</span> <span class="o">+=</span> <span class="n">count</span>
+        <span class="k">if</span> <span class="n">page_offset</span> <span class="o">+</span> <span
+                                class="n">count</span> <span class="o">&lt;</span> <span class="bp">self</span><span
+                                class="o">.</span><span class="n">page_size</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span
+                                class="o">.</span><span class="n">current_page</span><span class="p">[</span><span
+                                class="n">page_offset</span><span class="p">:</span><span
+                                class="n">page_offset</span> <span class="o">+</span> <span class="n">count</span><span
+                                class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">current_offset</span> <span
+                                class="o">+=</span> <span class="n">count</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">value</span><span class="p">:</span> <span class="nb">bytes</span> <span class="o">=</span> <span class="nb">bytes</span><span class="p">()</span>
+            <span class="n">value</span><span class="p">:</span> <span class="nb">bytes</span> <span class="o">=</span> <span
+                                class="nb">bytes</span><span class="p">()</span>
 
             <span class="n">already_read</span> <span class="o">=</span> <span class="mi">0</span>
-            <span class="k">while</span> <span class="n">already_read</span> <span class="o">&lt;</span> <span class="n">count</span><span class="p">:</span>
-                <span class="k">if</span> <span class="n">page_offset</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">:</span>
+            <span class="k">while</span> <span class="n">already_read</span> <span class="o">&lt;</span> <span
+                                class="n">count</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">page_offset</span> <span class="o">&gt;=</span> <span
+                                class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span
+                                class="p">:</span>
                     <span class="n">page_number</span> <span class="o">+=</span> <span class="mi">1</span>
                     <span class="n">page_offset</span> <span class="o">=</span> <span class="mi">0</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">current_page</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_cache</span><span class="o">.</span><span class="n">read_page</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wal_id</span><span class="p">,</span> <span class="n">page_number</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">current_page</span> <span
+                                class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_cache</span><span
+                                class="o">.</span><span class="n">read_page</span><span class="p">(</span><span
+                                class="bp">self</span><span class="o">.</span><span class="n">wal_id</span><span
+                                class="p">,</span> <span class="n">page_number</span><span class="p">)</span>
 
-                <span class="n">fragment_size</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">page_size</span> <span class="o">-</span> <span class="n">page_offset</span><span class="p">,</span> <span class="n">count</span> <span class="o">-</span> <span class="n">already_read</span><span class="p">)</span>
-                <span class="n">fragment</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_page</span><span class="p">[</span><span class="n">page_offset</span><span class="p">:</span><span class="n">page_offset</span> <span class="o">+</span> <span class="n">fragment_size</span><span class="p">]</span>
+                <span class="n">fragment_size</span> <span class="o">=</span> <span class="nb">min</span><span
+                                class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">page_size</span> <span
+                                class="o">-</span> <span class="n">page_offset</span><span class="p">,</span> <span
+                                class="n">count</span> <span class="o">-</span> <span class="n">already_read</span><span
+                                class="p">)</span>
+                <span class="n">fragment</span> <span class="o">=</span> <span class="bp">self</span><span
+                                class="o">.</span><span class="n">current_page</span><span class="p">[</span><span
+                                class="n">page_offset</span><span class="p">:</span><span
+                                class="n">page_offset</span> <span class="o">+</span> <span
+                                class="n">fragment_size</span><span class="p">]</span>
                 <span class="n">value</span> <span class="o">+=</span> <span class="n">fragment</span>
 
                 <span class="n">page_offset</span> <span class="o">+=</span> <span class="n">fragment_size</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">current_offset</span> <span class="o">+=</span> <span class="n">fragment_size</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">current_offset</span> <span
+                                class="o">+=</span> <span class="n">fragment_size</span>
                 <span class="n">already_read</span> <span class="o">+=</span> <span class="n">fragment_size</span>
 
         <span class="k">return</span> <span class="n">value</span>
 
-    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span
+                                class="p">):</span>
         <span class="c1"># At closing, nothing to do, it will be</span>
         <span class="c1"># collected for further usage</span>
         <span class="k">pass</span>
 
-    <span class="k">def</span> <span class="fm">__exit__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_val</span><span class="p">,</span> <span class="n">exc_tb</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__exit__</span><span class="p">(</span><span class="bp">self</span><span
+                                class="p">,</span> <span class="n">exc_type</span><span class="p">,</span> <span
+                                class="n">exc_val</span><span class="p">,</span> <span class="n">exc_tb</span><span
+                                class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
 
 
 <div class="viewcode-block" id="FileBlockProvider">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider">[docs]</a>
-<span class="k">class</span> <span class="nc">FileBlockProvider</span><span class="p">(</span><span class="n">common</span><span class="o">.</span><span class="n">BlockProvider</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">FileBlockProvider</span><span class="p">(</span><span
+        class="n">common</span><span class="o">.</span><span class="n">BlockProvider</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Shared File Block Provider.</span>
 
@@ -374,15 +593,23 @@
 <span class="sd">    All code implemented within this class is thread-safe.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="n">current_wal</span><span class="p">:</span> <span class="n">BinaryIO</span> <span class="o">|</span> <span class="kc">None</span>
-    <span class="n">current_wal_id</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span>
+    <span class="n">current_wal</span><span class="p">:</span> <span class="n">BinaryIO</span> <span class="o">|</span> <span
+        class="kc">None</span>
+    <span class="n">current_wal_id</span><span class="p">:</span> <span class="n">uuid</span><span
+        class="o">.</span><span class="n">UUID</span>
     <span class="n">page_size</span><span class="p">:</span> <span class="nb">int</span>
     <span class="n">page_cache</span><span class="p">:</span> <span class="n">PageCache</span>
     <span class="n">streamer_factory</span><span class="p">:</span> <span class="n">FileReaderFactory</span>
 
 <div class="viewcode-block" id="FileBlockProvider.__init__">
-<a class="viewcode-back" href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider.__init__">[docs]</a>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">space_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">maximun_cache_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">page_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">DEFAULT_PAGE_SIZE</span><span class="p">):</span>
+<a class="viewcode-back"
+   href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider.__init__">[docs]</a>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">,</span> <span class="n">space_path</span><span class="p">:</span> <span class="nb">str</span> <span
+        class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span
+        class="n">maximun_cache_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span
+        class="mi">0</span><span class="p">,</span> <span class="n">page_size</span><span class="p">:</span> <span
+        class="nb">int</span> <span class="o">=</span> <span class="n">DEFAULT_PAGE_SIZE</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Constructor for the FileBlockProvider class.</span>
 
@@ -391,68 +618,137 @@
 <span class="sd">                                   of 50% of physical memory will be used</span>
 <span class="sd">        :param page_size: page_size to use. if not given, then DEFAULT_PAGE_SIZE</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">space_path</span> <span class="o">=</span> <span class="n">space_path</span> <span class="ow">or</span> <span class="s1">&#39;.&#39;</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">maximun_cache_size</span><span class="p">:</span>
-            <span class="n">total_memory</span> <span class="o">=</span> <span class="n">psutil</span><span class="o">.</span><span class="n">virtual_memory</span><span class="p">()</span><span class="o">.</span><span class="n">total</span>
-            <span class="n">maximun_cache_size</span> <span class="o">=</span> <span class="mi">50</span> <span class="o">*</span> <span class="n">total_memory</span> <span class="o">/</span> <span class="mi">100</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">space_path</span> <span
+        class="o">=</span> <span class="n">space_path</span> <span class="ow">or</span> <span
+        class="s1">&#39;.&#39;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">maximun_cache_size</span><span
+        class="p">:</span>
+            <span class="n">total_memory</span> <span class="o">=</span> <span class="n">psutil</span><span
+        class="o">.</span><span class="n">virtual_memory</span><span class="p">()</span><span class="o">.</span><span
+        class="n">total</span>
+            <span class="n">maximun_cache_size</span> <span class="o">=</span> <span class="mi">50</span> <span
+        class="o">*</span> <span class="n">total_memory</span> <span class="o">/</span> <span class="mi">100</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">maximun_cache_size</span> <span class="o">=</span> <span class="n">maximun_cache_size</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span> <span class="o">=</span> <span class="n">page_size</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">maximun_cache_size</span> <span
+        class="o">=</span> <span class="n">maximun_cache_size</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span> <span
+        class="o">=</span> <span class="n">page_size</span>
 
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">):</span>
-            <span class="n">os</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span
+        class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span
+        class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">):</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span
+        class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">)</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">config_data</span> <span class="o">=</span> <span class="n">configparser</span><span class="o">.</span><span class="n">ConfigParser</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config_data</span> <span class="o">=</span> <span
+        class="n">configparser</span><span class="o">.</span><span class="n">ConfigParser</span><span
+        class="p">()</span>
 
         <span class="k">try</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">config_data</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">,</span> <span class="s1">&#39;space.config&#39;</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">config_data</span><span
+        class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">os</span><span
+        class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span
+        class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">,</span> <span
+        class="s1">&#39;space.config&#39;</span><span class="p">))</span>
         <span class="k">except</span><span class="p">:</span>
             <span class="k">pass</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">reader_factory</span> <span class="o">=</span> <span class="n">FileReaderFactory</span><span class="p">(</span><span class="n">space_path</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">page_cache</span> <span class="o">=</span> <span class="n">PageCache</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">maximun_cache_size</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">reader_factory</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reader_factory</span> <span
+        class="o">=</span> <span class="n">FileReaderFactory</span><span class="p">(</span><span
+        class="n">space_path</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">page_cache</span> <span
+        class="o">=</span> <span class="n">PageCache</span><span class="p">(</span><span class="bp">self</span><span
+        class="o">.</span><span class="n">maximun_cache_size</span> <span class="o">/</span> <span
+        class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span> <span
+        class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span> <span
+        class="bp">self</span><span class="o">.</span><span class="n">reader_factory</span><span
+        class="p">)</span></div>
 
 
 <div class="viewcode-block" id="FileBlockProvider.get_config_data">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider.get_config_data">[docs]</a>
-    <span class="k">def</span> <span class="nf">get_config_data</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">config_data</span></div>
+    <span class="k">def</span> <span class="nf">get_config_data</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">config_data</span></div>
 
 
 <div class="viewcode-block" id="FileBlockProvider.get_new_wal">
-<a class="viewcode-back" href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider.get_new_wal">[docs]</a>
-    <span class="k">def</span> <span class="nf">get_new_wal</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<a class="viewcode-back"
+   href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider.get_new_wal">[docs]</a>
+    <span class="k">def</span> <span class="nf">get_new_wal</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span
+        class="p">[</span><span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span
+        class="nb">int</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Get a WAL to use.</span>
 <span class="sd">        It could be an old one, or a new one.</span>
 
 <span class="sd">        :return: a tuple with the id of the WAL and the next offset to use</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">available_wals</span> <span class="o">=</span> <span class="p">[</span><span class="n">file</span> <span class="k">for</span> <span class="n">file</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">)</span>
-                          <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">,</span> <span class="n">file</span><span class="p">))</span> <span class="ow">and</span> \
-                             <span class="nb">len</span><span class="p">(</span><span class="n">file</span><span class="p">)</span> <span class="o">==</span> <span class="mi">32</span><span class="p">]</span>
+        <span class="n">available_wals</span> <span class="o">=</span> <span class="p">[</span><span
+        class="n">file</span> <span class="k">for</span> <span class="n">file</span> <span class="ow">in</span> <span
+        class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span
+        class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">)</span>
+                          <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span
+        class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span
+        class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span
+        class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">,</span> <span
+        class="n">file</span><span class="p">))</span> <span class="ow">and</span> \
+                             <span class="nb">len</span><span class="p">(</span><span class="n">file</span><span
+        class="p">)</span> <span class="o">==</span> <span class="mi">32</span><span class="p">]</span>
 
-        <span class="n">wals_with_size</span> <span class="o">=</span> <span class="p">[(</span><span class="n">file</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">,</span> <span class="n">file</span><span class="p">)))</span> <span class="k">for</span> <span class="n">file</span> <span class="ow">in</span> <span class="n">available_wals</span><span class="p">]</span>
+        <span class="n">wals_with_size</span> <span class="o">=</span> <span class="p">[(</span><span
+        class="n">file</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span
+        class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">os</span><span
+        class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span
+        class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">,</span> <span
+        class="n">file</span><span class="p">)))</span> <span class="k">for</span> <span class="n">file</span> <span
+        class="ow">in</span> <span class="n">available_wals</span><span class="p">]</span>
 
-        <span class="k">for</span> <span class="n">file</span><span class="p">,</span> <span class="n">size</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">wals_with_size</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">file</span><span class="p">,</span> <span class="n">size</span> <span
+        class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">wals_with_size</span><span
+        class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span
+        class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span
+        class="mi">1</span><span class="p">]):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span> <span
+        class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span
+        class="p">(</span><span class="n">file</span><span class="p">)</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">current_wal</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">,</span> <span class="n">file</span><span class="p">),</span><span class="s1">&#39;ab+&#39;</span><span class="p">)</span>
-                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span><span class="p">,</span> <span class="n">size</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">current_wal</span> <span
+        class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span
+        class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span
+        class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">,</span> <span
+        class="n">file</span><span class="p">),</span><span class="s1">&#39;ab+&#39;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span><span
+        class="p">,</span> <span class="n">size</span>
             <span class="k">except</span> <span class="ne">PermissionError</span><span class="p">:</span>
                 <span class="k">continue</span>
             <span class="k">except</span> <span class="ne">BlockingIOError</span><span class="p">:</span>
                 <span class="k">continue</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span><span class="p">)),</span> <span class="s1">&#39;ab+&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span> <span
+        class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span
+        class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal</span> <span class="o">=</span> <span
+        class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span
+        class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span
+        class="o">.</span><span class="n">space_path</span><span class="p">,</span> <span class="nb">str</span><span
+        class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span><span
+        class="p">)),</span> <span class="s1">&#39;ab+&#39;</span><span class="p">)</span>
 
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span><span class="p">,</span> <span class="mi">0</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">current_wal_id</span><span class="p">,</span> <span class="mi">0</span></div>
 
 
 <div class="viewcode-block" id="FileBlockProvider.get_reader">
-<a class="viewcode-back" href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider.get_reader">[docs]</a>
-    <span class="k">def</span> <span class="nf">get_reader</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wal_id</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span class="n">position</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BinaryIO</span><span class="p">:</span>
+<a class="viewcode-back"
+   href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider.get_reader">[docs]</a>
+    <span class="k">def</span> <span class="nf">get_reader</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">wal_id</span><span class="p">:</span> <span
+        class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span
+        class="n">position</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span
+        class="o">-&gt;</span> <span class="n">BinaryIO</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Get a streamer initialized at position in WAL file</span>
 
@@ -460,61 +756,97 @@
 <span class="sd">        :param position:</span>
 <span class="sd">        :return:</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="n">ReadStreamer</span><span class="p">(</span><span class="n">wal_id</span><span class="p">,</span> <span class="n">position</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_cache</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="n">ReadStreamer</span><span class="p">(</span><span
+        class="n">wal_id</span><span class="p">,</span> <span class="n">position</span><span class="p">,</span> <span
+        class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span> <span
+        class="bp">self</span><span class="o">.</span><span class="n">page_cache</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="FileBlockProvider.get_writer_wal">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider.get_writer_wal">[docs]</a>
-    <span class="k">def</span> <span class="nf">get_writer_wal</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">get_writer_wal</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">uuid</span><span
+        class="o">.</span><span class="n">UUID</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 
 <span class="sd">        :return:</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">current_wal_id</span></div>
 
 
 <div class="viewcode-block" id="FileBlockProvider.write_streamer">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider.write_streamer">[docs]</a>
-    <span class="k">def</span> <span class="nf">write_streamer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wal_id</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BinaryIO</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">write_streamer</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">wal_id</span><span class="p">:</span> <span
+        class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">)</span> <span
+        class="o">-&gt;</span> <span class="n">BinaryIO</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 
 <span class="sd">        :return:</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
+        class="n">current_wal</span></div>
 
 
 <div class="viewcode-block" id="FileBlockProvider.get_current_root_object">
-<a class="viewcode-back" href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider.get_current_root_object">[docs]</a>
-    <span class="k">def</span> <span class="nf">get_current_root_object</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
+<a class="viewcode-back"
+   href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider.get_current_root_object">[docs]</a>
+    <span class="k">def</span> <span class="nf">get_current_root_object</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Read current root object from storage</span>
 <span class="sd">        :return: the current root object</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">,</span> <span class="s1">&#39;space_root&#39;</span><span class="p">),</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">root_file</span><span class="p">:</span>
-                <span class="n">root_dict</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">root_file</span><span class="p">)</span>
-                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">root_dict</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span
+        class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span
+        class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span
+        class="p">,</span> <span class="s1">&#39;space_root&#39;</span><span class="p">),</span> <span class="s1">&#39;r&#39;</span><span
+        class="p">)</span> <span class="k">as</span> <span class="n">root_file</span><span class="p">:</span>
+                <span class="n">root_dict</span> <span class="o">=</span> <span class="n">json</span><span
+        class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">root_file</span><span
+        class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span
+        class="n">root_dict</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
                     <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span>
-                        <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Reading root object, a dictionary was excpected, got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">root_dict</span><span class="p">)</span><span class="si">}</span><span class="s1"> instead&#39;</span>
+                        <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Reading root object, a dictionary was excpected, got </span><span
+        class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">root_dict</span><span
+        class="p">)</span><span class="si">}</span><span class="s1"> instead&#39;</span>
                     <span class="p">)</span>
-                <span class="k">if</span> <span class="ow">not</span> <span class="s1">&#39;className&#39;</span> <span class="ow">in</span> <span class="n">root_dict</span> <span class="ow">or</span> \
-                   <span class="ow">not</span> <span class="s1">&#39;transaction_id&#39;</span> <span class="ow">in</span> <span class="n">root_dict</span> <span class="ow">or</span> \
-                   <span class="ow">not</span> <span class="s1">&#39;offset&#39;</span> <span class="ow">in</span> <span class="n">root_dict</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="s1">&#39;className&#39;</span> <span
+        class="ow">in</span> <span class="n">root_dict</span> <span class="ow">or</span> \
+                   <span class="ow">not</span> <span class="s1">&#39;transaction_id&#39;</span> <span
+        class="ow">in</span> <span class="n">root_dict</span> <span class="ow">or</span> \
+                   <span class="ow">not</span> <span class="s1">&#39;offset&#39;</span> <span class="ow">in</span> <span
+        class="n">root_dict</span><span class="p">:</span>
                     <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span>
                         <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Invalid format for root object!&#39;</span>
                     <span class="p">)</span>
-                <span class="n">root_pointer</span> <span class="o">=</span> <span class="n">AtomPointer</span><span class="p">(</span><span class="n">transaction_id</span><span class="o">=</span><span class="n">root_dict</span><span class="p">[</span><span class="s1">&#39;transaction_id&#39;</span><span class="p">],</span> <span class="n">offset</span><span class="o">=</span><span class="n">root_dict</span><span class="p">[</span><span class="s1">&#39;offset&#39;</span><span class="p">])</span>
+                <span class="n">root_pointer</span> <span class="o">=</span> <span class="n">AtomPointer</span><span
+        class="p">(</span><span class="n">transaction_id</span><span class="o">=</span><span
+        class="n">root_dict</span><span class="p">[</span><span class="s1">&#39;transaction_id&#39;</span><span
+        class="p">],</span> <span class="n">offset</span><span class="o">=</span><span class="n">root_dict</span><span
+        class="p">[</span><span class="s1">&#39;offset&#39;</span><span class="p">])</span>
             <span class="k">return</span> <span class="n">root_pointer</span>
         <span class="k">except</span> <span class="ne">FileNotFoundError</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
-        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="n">_logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
-            <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Unexpected exception </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s1"> reading root&#39;</span><span class="p">)</span></div>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span
+        class="n">e</span><span class="p">:</span>
+            <span class="n">_logger</span><span class="o">.</span><span class="n">exception</span><span
+        class="p">(</span><span class="n">e</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span><span
+        class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Unexpected exception </span><span
+        class="si">{</span><span class="n">e</span><span class="si">}</span><span
+        class="s1"> reading root&#39;</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="FileBlockProvider.update_root_object">
-<a class="viewcode-back" href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider.update_root_object">[docs]</a>
-    <span class="k">def</span> <span class="nf">update_root_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_root</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">):</span>
+<a class="viewcode-back"
+   href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider.update_root_object">[docs]</a>
+    <span class="k">def</span> <span class="nf">update_root_object</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">new_root</span><span class="p">:</span> <span
+        class="n">AtomPointer</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Updates or create the root object in storage</span>
 <span class="sd">        On newly created databases, this is the first</span>
@@ -524,72 +856,99 @@
 <span class="sd">        :return:</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">root_file</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">,</span> <span class="s1">&#39;space_root&#39;</span><span class="p">),</span> <span class="s1">&#39;w&#39;</span><span class="p">)</span>
+            <span class="n">root_file</span> <span class="o">=</span> <span class="nb">open</span><span
+        class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span
+        class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span
+        class="o">.</span><span class="n">space_path</span><span class="p">,</span> <span class="s1">&#39;space_root&#39;</span><span
+        class="p">),</span> <span class="s1">&#39;w&#39;</span><span class="p">)</span>
             <span class="n">new_root_dict</span> <span class="o">=</span> <span class="p">{</span>
-                <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="s1">&#39;RootObject&#39;</span><span class="p">,</span>
-                <span class="s1">&#39;transaction_id&#39;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">new_root</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">),</span>
-                <span class="s1">&#39;offset&#39;</span><span class="p">:</span> <span class="n">new_root</span><span class="o">.</span><span class="n">offset</span>
+                <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="s1">&#39;RootObject&#39;</span><span
+        class="p">,</span>
+                <span class="s1">&#39;transaction_id&#39;</span><span class="p">:</span> <span
+        class="nb">str</span><span class="p">(</span><span class="n">new_root</span><span class="o">.</span><span
+        class="n">transaction_id</span><span class="p">),</span>
+                <span class="s1">&#39;offset&#39;</span><span class="p">:</span> <span class="n">new_root</span><span
+        class="o">.</span><span class="n">offset</span>
             <span class="p">}</span>
-            <span class="n">root_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">new_root_dict</span><span class="p">))</span>
-            <span class="n">root_file</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
-        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="n">_logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
-            <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Unexpected exception </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s1"> reading root&#39;</span><span class="p">)</span></div>
+            <span class="n">root_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span
+        class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span
+        class="n">new_root_dict</span><span class="p">))</span>
+            <span class="n">root_file</span><span class="o">.</span><span class="n">close</span><span
+        class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span
+        class="n">e</span><span class="p">:</span>
+            <span class="n">_logger</span><span class="o">.</span><span class="n">exception</span><span
+        class="p">(</span><span class="n">e</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span><span
+        class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Unexpected exception </span><span
+        class="si">{</span><span class="n">e</span><span class="si">}</span><span
+        class="s1"> reading root&#39;</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="FileBlockProvider.close_wal">
-<a class="viewcode-back" href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider.close_wal">[docs]</a>
-    <span class="k">def</span> <span class="nf">close_wal</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">transaction_id</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">):</span>
+<a class="viewcode-back"
+   href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider.close_wal">[docs]</a>
+    <span class="k">def</span> <span class="nf">close_wal</span><span class="p">(</span><span
+        class="bp">self</span><span class="p">,</span> <span class="n">transaction_id</span><span
+        class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span
+        class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Close a previous WAL. Flush any pending data. Make all changes durable</span>
 <span class="sd">        :return:</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal</span> <span class="o">=</span> <span class="kc">None</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal</span><span
+        class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal</span> <span class="o">=</span> <span
+        class="kc">None</span></div>
 
 
 <div class="viewcode-block" id="FileBlockProvider.close">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider.close">[docs]</a>
-    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span
+        class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Close the operation of the block provider. Flush any pending data to WAL. Make all changes durable</span>
 <span class="sd">        No further operations are allowed</span>
 <span class="sd">        :return:</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">reader_factory</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal</span><span
+        class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal</span> <span class="o">=</span> <span
+        class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reader_factory</span><span
+        class="o">.</span><span class="n">close</span><span class="p">()</span></div>
 </div>
 
 
 
-</pre></div>
+</pre>
+                        </div>
 
-           </div>
-          </div>
-          <footer>
+                    </div>
+                </div>
+                <footer>
 
-  <hr/>
+                    <hr/>
 
-  <div role="contentinfo">
-    <p>&#169; Copyright 2023, ProtoBase Team.</p>
-  </div>
+                    <div role="contentinfo">
+                        <p>&#169; Copyright 2023, ProtoBase Team.</p>
+                    </div>
 
-  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
-    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
-    provided by <a href="https://readthedocs.org">Read the Docs</a>.
-   
+                    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+                    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+                    provided by <a href="https://readthedocs.org">Read the Docs</a>.
 
-</footer>
+
+                </footer>
+            </div>
         </div>
-      </div>
     </section>
-  </div>
-  <script>
-      jQuery(function () {
-          SphinxRtdTheme.Navigation.enable(true);
-      });
-  </script> 
+</div>
+<script>
+    jQuery(function () {
+        SphinxRtdTheme.Navigation.enable(true);
+    });
+</script>
 
 </body>
 </html>

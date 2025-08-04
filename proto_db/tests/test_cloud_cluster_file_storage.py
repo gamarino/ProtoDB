@@ -1,11 +1,11 @@
+import os
+import shutil
+import tempfile
 import unittest
 import uuid
-import os
-import tempfile
-import shutil
 from unittest.mock import MagicMock, patch
 
-from ..cloud_cluster_file_storage import CloudClusterFileStorage, CloudClusterStorageError
+from ..cloud_cluster_file_storage import CloudClusterFileStorage
 from ..cloud_file_storage import CloudBlockProvider, MockS3Client
 
 
@@ -174,7 +174,7 @@ class TestCloudClusterFileStorage(unittest.TestCase):
         """
         # Mock the parent's close method and the s3_page_cache close method
         with patch.object(self.storage.__class__.__bases__[0], 'close') as mock_close, \
-             patch.object(self.storage.s3_page_cache, 'close') as mock_cache_close:
+                patch.object(self.storage.s3_page_cache, 'close') as mock_cache_close:
             # Call the method
             self.storage.close()
 
@@ -201,8 +201,7 @@ class TestCloudClusterFileStorage(unittest.TestCase):
             # Mock the block provider's _get_object_key and _get_object_offset methods
             s3_key = "test-s3-key"
             with patch.object(self.block_provider, '_get_object_key', return_value=s3_key), \
-                 patch.object(self.block_provider, '_get_object_offset', return_value=0):
-
+                    patch.object(self.block_provider, '_get_object_offset', return_value=0):
                 # First call should get data from S3 and cache it
                 reader1 = self.storage.get_reader(wal_id, position)
                 data1 = reader1.read()

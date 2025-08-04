@@ -1,17 +1,23 @@
 # ProtoBase Examples
 
-This directory contains example applications that demonstrate the capabilities of ProtoBase, a transactional, object-oriented database system implemented in Python.
+This directory contains example applications that demonstrate the capabilities of ProtoBase, a transactional,
+object-oriented database system implemented in Python.
 
-> **Note**: These examples are provided for illustrative purposes to demonstrate the intended usage of ProtoBase. Depending on your specific version of ProtoBase, you may need to make adjustments to the code to run the examples successfully.
+> **Note**: These examples are provided for illustrative purposes to demonstrate the intended usage of ProtoBase.
+> Depending on your specific version of ProtoBase, you may need to make adjustments to the code to run the examples
+> successfully.
 
 ## Task Manager Example
 
-The Task Manager example demonstrates a simple but powerful task management application built with ProtoBase. It showcases key features including:
+The Task Manager example demonstrates a simple but powerful task management application built with ProtoBase. It
+showcases key features including:
 
 - **Transactional Operations**: All database operations are performed within transactions that ensure data consistency.
-- **Object-Oriented Data Modeling**: Using `DBObject` to represent data as Python objects, making the code more intuitive and readable.
+- **Object-Oriented Data Modeling**: Using `DBObject` to represent data as Python objects, making the code more
+  intuitive and readable.
 - **Rich Data Structures**: Employing ProtoBase's `Dictionary` to organize and store `Task` objects.
-- **Powerful Query Capabilities**: Filtering and sorting tasks by their object attributes using ProtoBase's query system.
+- **Powerful Query Capabilities**: Filtering and sorting tasks by their object attributes using ProtoBase's query
+  system.
 - **Persistence**: Storing tasks in a file-based database that persists between application runs.
 
 ### Running the Example
@@ -27,6 +33,7 @@ python task_manager.py
 ```
 
 The example will:
+
 1. Create a new database (or load an existing one)
 2. Add sample tasks with different priorities and due dates
 3. Update a task's status
@@ -55,7 +62,8 @@ Each method demonstrates ProtoBase's transaction model:
 
 #### Object-Oriented Modeling with `DBObject`
 
-ProtoBase allows you to model your data using Python classes that inherit from `DBObject`. This makes data manipulation more intuitive and your code easier to read and maintain.
+ProtoBase allows you to model your data using Python classes that inherit from `DBObject`. This makes data manipulation
+more intuitive and your code easier to read and maintain.
 
 ```python
 # Define a Task class that inherits from DBObject
@@ -124,11 +132,14 @@ You can extend this example in several ways:
 1. **Add More Query Types**: Implement more complex queries using JoinPlan, GroupByPlan, or other query plans.
 2. **Use Different Storage Backends**: Modify the example to use ClusterFileStorage or CloudFileStorage.
 3. **Add User Interface**: Build a simple CLI or web interface on top of the TaskManager class.
-4. **Implement Task Dependencies**: Extend the data model to support task dependencies, for example by adding a `tr.new_list()` to a `Task` object.
+4. **Implement Task Dependencies**: Extend the data model to support task dependencies, for example by adding a
+   `tr.new_list()` to a `Task` object.
 
 ## Simple Example
 
-The Simple Example (`simple_example.py`) provides a minimal demonstration of ProtoBase's core functionality, showing how to store and retrieve different data structures within transactions. This example is ideal for getting started with ProtoBase and understanding its basic concepts.
+The Simple Example (`simple_example.py`) provides a minimal demonstration of ProtoBase's core functionality, showing how
+to store and retrieve different data structures within transactions. This example is ideal for getting started with
+ProtoBase and understanding its basic concepts.
 
 ### Running the Example
 
@@ -144,7 +155,8 @@ python simple_example.py
 
 ## Performance Benchmarks
 
-The performance benchmark scripts demonstrate how to measure the performance of ProtoBase using standard benchmarks for object databases. They measure:
+The performance benchmark scripts demonstrate how to measure the performance of ProtoBase using standard benchmarks for
+object databases. They measure:
 
 1. **Insert performance**: Adding objects to the database
 2. **Read performance**: Retrieving objects from the database
@@ -254,7 +266,8 @@ print(f"Average time per item: {(elapsed_time / count) * 1000:.4f} ms")
 You can extend these benchmarks in several ways:
 
 1. **Add More Operations**: Implement benchmarks for other operations like bulk operations or transactions.
-2. **Use Different Storage Backends**: Modify the benchmarks to use different storage backends like ClusterFileStorage or CloudFileStorage.
+2. **Use Different Storage Backends**: Modify the benchmarks to use different storage backends like ClusterFileStorage
+   or CloudFileStorage.
 3. **Add More Complex Data Models**: Extend the data model to include more complex relationships between objects.
 4. **Implement Concurrent Benchmarks**: Add benchmarks for concurrent operations to test performance under load.
 
@@ -267,6 +280,7 @@ Comprehensive performance testing with significant data volumes reveals the foll
 The following metrics were observed in tests with varying dataset sizes:
 
 #### Small Dataset (1,000 items)
+
 - **Insert**: ~500 items/second
 - **Read**: ~25,000 items/second
 - **Update**: ~300 items/second
@@ -274,6 +288,7 @@ The following metrics were observed in tests with varying dataset sizes:
 - **Query**: ~1 query/second (with each query processing ~50 items)
 
 #### Medium Dataset (10,000 items)
+
 - **Insert**: ~4,000 items/second
 - **Read**: ~20,500 items/second
 - **Update**: ~375 items/second
@@ -281,45 +296,53 @@ The following metrics were observed in tests with varying dataset sizes:
 
 ### Scaling Characteristics
 
-1. **Read Operations**: ProtoBase excels at read operations, which scale well with increasing dataset size. The binary search algorithm used in dictionary lookups provides efficient O(log n) performance.
+1. **Read Operations**: ProtoBase excels at read operations, which scale well with increasing dataset size. The binary
+   search algorithm used in dictionary lookups provides efficient O(log n) performance.
 
-2. **Insert Operations**: Insert performance improves with larger batches, showing good scaling characteristics. This is likely due to amortized costs of transaction management.
+2. **Insert Operations**: Insert performance improves with larger batches, showing good scaling characteristics. This is
+   likely due to amortized costs of transaction management.
 
-3. **Update Operations**: Updates maintain consistent performance across dataset sizes, with a slight improvement in larger datasets.
+3. **Update Operations**: Updates maintain consistent performance across dataset sizes, with a slight improvement in
+   larger datasets.
 
-4. **Delete Operations**: Delete operations encounter challenges with larger datasets, particularly when removing multiple items in sequence. This suggests potential optimization opportunities in the dictionary's remove_at implementation.
+4. **Delete Operations**: Delete operations encounter challenges with larger datasets, particularly when removing
+   multiple items in sequence. This suggests potential optimization opportunities in the dictionary's remove_at
+   implementation.
 
-5. **Query Operations**: Query performance is the main bottleneck for large datasets. The current implementation performs full scans of the dictionary for each query, resulting in O(n) complexity that doesn't scale well.
+5. **Query Operations**: Query performance is the main bottleneck for large datasets. The current implementation
+   performs full scans of the dictionary for each query, resulting in O(n) complexity that doesn't scale well.
 
 ### Storage Considerations
 
-1. **In-Memory Storage**: Provides the best performance for all operations and is recommended for applications with moderate data volumes or where persistence isn't critical.
+1. **In-Memory Storage**: Provides the best performance for all operations and is recommended for applications with
+   moderate data volumes or where persistence isn't critical.
 
-2. **File-Based Storage**: Requires proper serialization of custom objects. Performance is significantly lower than in-memory storage but provides persistence.
+2. **File-Based Storage**: Requires proper serialization of custom objects. Performance is significantly lower than
+   in-memory storage but provides persistence.
 
 ### Comparison with Other Systems
 
 When compared to other object storage systems:
 
 1. **Relational Databases (e.g., SQLite, PostgreSQL)**:
-   - ProtoBase offers superior read performance for direct key lookups
-   - SQL databases excel at complex queries and joins, which ProtoBase struggles with
-   - SQL databases provide better indexing options for query optimization
+    - ProtoBase offers superior read performance for direct key lookups
+    - SQL databases excel at complex queries and joins, which ProtoBase struggles with
+    - SQL databases provide better indexing options for query optimization
 
 2. **Document Stores (e.g., MongoDB)**:
-   - Similar performance characteristics for basic CRUD operations
-   - Document stores typically offer better query performance on large datasets
-   - ProtoBase provides stronger transactional guarantees
+    - Similar performance characteristics for basic CRUD operations
+    - Document stores typically offer better query performance on large datasets
+    - ProtoBase provides stronger transactional guarantees
 
 3. **Key-Value Stores (e.g., Redis)**:
-   - Redis offers faster raw performance for simple operations
-   - ProtoBase provides richer object modeling capabilities
-   - ProtoBase's transaction model offers stronger consistency guarantees
+    - Redis offers faster raw performance for simple operations
+    - ProtoBase provides richer object modeling capabilities
+    - ProtoBase's transaction model offers stronger consistency guarantees
 
 4. **Object-Relational Mappers (e.g., SQLAlchemy)**:
-   - ProtoBase eliminates the object-relational impedance mismatch
-   - ORMs typically offer more mature query optimization
-   - ProtoBase provides a more natural Python object model
+    - ProtoBase eliminates the object-relational impedance mismatch
+    - ORMs typically offer more mature query optimization
+    - ProtoBase provides a more natural Python object model
 
 ### Recommended Usage Scenarios
 
@@ -327,10 +350,12 @@ Based on performance characteristics, ProtoBase is well-suited for:
 
 1. **Read-Heavy Applications**: Applications that perform frequent reads but infrequent writes
 2. **Small to Medium Datasets**: Applications with data volumes in the thousands to tens of thousands of objects
-3. **Object-Oriented Domain Models**: Systems where the object model is complex and maintaining object relationships is important
+3. **Object-Oriented Domain Models**: Systems where the object model is complex and maintaining object relationships is
+   important
 4. **Transactional Integrity Requirements**: Applications requiring ACID guarantees for data operations
 
 For applications with very large datasets or complex query requirements, consider:
+
 1. Using ProtoBase with a more optimized query strategy
 2. Implementing custom indexes for frequently queried attributes
 3. Partitioning data to reduce the size of individual collections

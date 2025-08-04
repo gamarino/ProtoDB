@@ -1,21 +1,20 @@
 from __future__ import annotations
 
+import datetime
+import hashlib
+from threading import Lock
+from threading import RLock
 from typing import cast
 
 from . import ProtoCorruptionException
-from .exceptions import ProtoValidationException, ProtoLockingException
 from .common import Atom, \
     AbstractObjectSpace, AbstractDatabase, AbstractTransaction, \
     SharedStorage, RootObject, Literal, atom_class_registry, AtomPointer, ConcurrentOptimized
-
-from .hash_dictionaries import HashDictionary
 from .dictionaries import Dictionary
+from .exceptions import ProtoValidationException, ProtoLockingException
+from .hash_dictionaries import HashDictionary
 from .lists import List
 from .sets import Set
-import datetime
-from threading import Lock
-import hashlib
-from threading import RLock
 
 
 class ObjectSpace(AbstractObjectSpace):
@@ -43,7 +42,7 @@ class ObjectSpace(AbstractObjectSpace):
                 object_root=Dictionary(),
                 literal_root=Dictionary()
             )
-        databases = {key:value for key, value in current_root.object_root.as_iterable()}
+        databases = {key: value for key, value in current_root.object_root.as_iterable()}
         read_tr.abort()
         return databases
 
@@ -207,7 +206,6 @@ class ObjectSpace(AbstractObjectSpace):
 
         print("Seliendo de update de literales\n")
 
-
     def close(self):
         with self._lock:
             if self.state != 'Running':
@@ -318,7 +316,7 @@ class Database(AbstractDatabase):
 
         return new_db
 
-    def get_state_at(self, when: datetime.datetime, snapshot_name:str) -> Database:
+    def get_state_at(self, when: datetime.datetime, snapshot_name: str) -> Database:
         # TODO
         # First, locate root at the given time, through a binary search on space history
         #        (using RootObject created_at field). Space history is a reverse time ordered list
@@ -392,9 +390,9 @@ class ObjectTransaction(AbstractTransaction):
 
     def __init__(self,
                  database: Database,
-                 object_space = None,
+                 object_space=None,
                  db_root: Dictionary = None,
-                 storage = None,
+                 storage=None,
                  enclosing_transaction: ObjectTransaction = None):
         super().__init__()
         self.lock = RLock()
@@ -410,7 +408,7 @@ class ObjectTransaction(AbstractTransaction):
         self.transaction_root = db_root
         self.initial_transaction_root = self.transaction_root
         self.storage = storage if storage else \
-                       database.object_space.storage if database else None
+            database.object_space.storage if database else None
         self.new_roots = Dictionary()
         self.read_lock_objects = HashDictionary()
         self.new_mutable_objects = HashDictionary()
@@ -420,7 +418,7 @@ class ObjectTransaction(AbstractTransaction):
             self.initial_mutable_objects = cast(HashDictionary, self.transaction_root.get_at('_mutable_root'))
         self.mutable_objects = HashDictionary()
         self.literals = self.database.object_space.get_space_root().literal_root if self.database else \
-                        self.new_dictionary()
+            self.new_dictionary()
 
     def __enter(self):
         return self
@@ -542,10 +540,11 @@ class ObjectTransaction(AbstractTransaction):
                         ) from e
 
                 raise ProtoLockingException(f"Concurrent transaction detected on object '{name}' "
-                                                 f"that does not support automatic merging.")
+                                            f"that does not support automatic merging.")
 
     def _update_created_literals(self, transaction: ObjectTransaction, literal_root: Dictionary) -> Dictionary:
-        literal_update_tr = ObjectTransaction(transaction.database, object_space=transaction.object_space, storage=self.storage)
+        literal_update_tr = ObjectTransaction(transaction.database, object_space=transaction.object_space,
+                                              storage=self.storage)
         space_root = transaction.object_space.get_space_root()
         current_literal_root = space_root.literal_root
         if self.new_literals.count > 0:
@@ -660,7 +659,7 @@ class ObjectTransaction(AbstractTransaction):
         hash_int = int(hash_obj.hexdigest(), 16)
         return hash_int
 
-    def get_mutable(self, key:int):
+    def get_mutable(self, key: int):
         with self.lock:
             if self.new_mutable_objects.has(key):
                 return self.new_mutable_objects.get_at(key)
@@ -672,14 +671,14 @@ class ObjectTransaction(AbstractTransaction):
                 message=f'Mutable with index {key} not found!'
             )
 
-    def set_mutable(self, key:int, value:Atom):
+    def set_mutable(self, key: int, value: Atom):
         with self.lock:
             if self.initial_mutable_objects.has(key):
                 self.modified_mutable_objects.set_at(key, value)
             else:
                 self.new_mutable_objects.set_at(key, value)
 
-    def new_hash_dictionary(self) -> HashDictionary :
+    def new_hash_dictionary(self) -> HashDictionary:
         """
         Return a new HashDictionary conected to this transaction
         :return:
@@ -707,6 +706,7 @@ class ObjectTransaction(AbstractTransaction):
         :return:
         """
         return Set(transaction=self)
+
 
 class RootContextManager:
     def __init__(self, object_transaction: ObjectTransaction):
@@ -761,7 +761,7 @@ class BytesAtom(Atom):
         self.content = content
 
     def __str__(self) -> str:
-        return f'BytesAtom with {len(self.content) if self.content else 0 } byte(s)'
+        return f'BytesAtom with {len(self.content) if self.content else 0} byte(s)'
 
     def __eq__(self, other: BytesAtom) -> bool:
         if isinstance(other, BytesAtom):
@@ -795,7 +795,7 @@ class BytesAtom(Atom):
         if not self._loaded:
             if self.transaction:
                 if self.atom_pointer.transaction_id and \
-                   self.atom_pointer.offset:
+                        self.atom_pointer.offset:
                     loaded_content = self.transaction.database.object_space.storage_provider.get_bytes(
                         self.atom_pointer).result()
                     self.content = loaded_content

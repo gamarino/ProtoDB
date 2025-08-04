@@ -15,14 +15,14 @@ The benchmark supports both in-memory and file-based storage and tests with
 different dataset sizes to establish scaling characteristics.
 """
 
+import argparse
+import json
 import os
+import random
 import sys
 import time
-import uuid
-import random
-import argparse
 import traceback
-import json
+import uuid
 from datetime import datetime
 
 # Add the parent directory to the path to import proto_db
@@ -32,7 +32,6 @@ from proto_db import ObjectSpace, DBObject
 from proto_db.standalone_file_storage import StandaloneFileStorage
 from proto_db.file_block_provider import FileBlockProvider
 from proto_db.memory_storage import MemoryStorage
-from proto_db.queries import WherePlan, Expression
 
 
 class BenchmarkItem(DBObject):
@@ -425,11 +424,16 @@ def run_all_benchmarks(database, item_count=1000, query_count=50):
     print("\n" + "=" * 50)
     print("BENCHMARK SUMMARY")
     print("=" * 50)
-    print(f"Insert {item_count} items: {insert_time:.4f} seconds ({(insert_time / item_count) * 1000:.4f} ms per item, {item_count / insert_time:.2f} items/sec)")
-    print(f"Read {item_count} items: {read_time:.4f} seconds ({(read_time / item_count) * 1000:.4f} ms per item, {item_count / read_time:.2f} items/sec)")
-    print(f"Update {item_count} items: {update_time:.4f} seconds ({(update_time / item_count) * 1000:.4f} ms per item, {item_count / update_time:.2f} items/sec)")
-    print(f"Delete {item_count} items: {delete_time:.4f} seconds ({(delete_time / item_count) * 1000:.4f} ms per item, {item_count / delete_time:.2f} items/sec)")
-    print(f"Execute {query_count} queries: {query_time:.4f} seconds ({(query_time / query_count) * 1000:.4f} ms per query, {query_count / query_time:.2f} queries/sec)")
+    print(
+        f"Insert {item_count} items: {insert_time:.4f} seconds ({(insert_time / item_count) * 1000:.4f} ms per item, {item_count / insert_time:.2f} items/sec)")
+    print(
+        f"Read {item_count} items: {read_time:.4f} seconds ({(read_time / item_count) * 1000:.4f} ms per item, {item_count / read_time:.2f} items/sec)")
+    print(
+        f"Update {item_count} items: {update_time:.4f} seconds ({(update_time / item_count) * 1000:.4f} ms per item, {item_count / update_time:.2f} items/sec)")
+    print(
+        f"Delete {item_count} items: {delete_time:.4f} seconds ({(delete_time / item_count) * 1000:.4f} ms per item, {item_count / delete_time:.2f} items/sec)")
+    print(
+        f"Execute {query_count} queries: {query_time:.4f} seconds ({(query_time / query_count) * 1000:.4f} ms per query, {query_count / query_time:.2f} queries/sec)")
 
     return results
 

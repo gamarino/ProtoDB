@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from .exceptions import ProtoCorruptionException
-from .common import Atom, DBCollections, QueryPlan, Literal, AbstractTransaction, AtomPointer
-
-import uuid
 import logging
+import uuid
 
+from .common import Atom, DBCollections, QueryPlan, AbstractTransaction, AtomPointer
+from .exceptions import ProtoCorruptionException
 
 _logger = logging.getLogger(__name__)
 
@@ -104,7 +103,6 @@ class HashDictionary(DBCollections):
                 self.value._save()
             super()._save()
             self._saved = True
-
 
     def as_iterable(self):
         """
@@ -226,7 +224,7 @@ class HashDictionary(DBCollections):
             value=self.value,
             previous=self.previous.next,
             next=self.next,
-            transaction = self.transaction
+            transaction=self.transaction
         )
 
         # Promote the left child as the new root.
@@ -235,7 +233,7 @@ class HashDictionary(DBCollections):
             value=self.previous.value,
             previous=self.previous.previous,
             next=new_right,
-            transaction = self.transaction
+            transaction=self.transaction
         )
 
     def _left_rotation(self) -> HashDictionary:
@@ -255,7 +253,7 @@ class HashDictionary(DBCollections):
             value=self.value,
             previous=self.previous,
             next=self.next.previous,
-            transaction = self.transaction
+            transaction=self.transaction
         )
 
         # Promote the right child as the new root.
@@ -264,7 +262,7 @@ class HashDictionary(DBCollections):
             value=self.next.value,
             previous=new_left,
             next=self.next.next,
-            transaction = self.transaction
+            transaction=self.transaction
         )
 
     def _rebalance(self) -> HashDictionary:
@@ -287,7 +285,7 @@ class HashDictionary(DBCollections):
                     value=node.value,
                     previous=node.previous._rebalance(),
                     next=node.next,
-                    transaction = self.transaction
+                    transaction=self.transaction
                 )
             else:
                 break
@@ -300,7 +298,7 @@ class HashDictionary(DBCollections):
                     value=node.value,
                     previous=node.previous,
                     next=node.next._rebalance(),
-                    transaction = self.transaction
+                    transaction=self.transaction
                 )
             else:
                 break
@@ -316,7 +314,7 @@ class HashDictionary(DBCollections):
                     value=node.value,
                     previous=node.previous._left_rotation(),
                     next=node.next,
-                    transaction = self.transaction
+                    transaction=self.transaction
                 )
             return node._right_rotation()
 
@@ -327,7 +325,7 @@ class HashDictionary(DBCollections):
                     value=node.value,
                     previous=node.previous,
                     next=node.next._right_rotation(),
-                    transaction = self.transaction
+                    transaction=self.transaction
                 )
             return node._left_rotation()
 
@@ -354,7 +352,7 @@ class HashDictionary(DBCollections):
                 value=value,
                 previous=None,
                 next=None,
-                transaction = self.transaction
+                transaction=self.transaction
             )
 
         cmp = key - self.key
@@ -367,7 +365,7 @@ class HashDictionary(DBCollections):
                     value=self.value,
                     previous=self.previous,
                     next=self.next.set_at(key, value),
-                    transaction = self.transaction
+                    transaction=self.transaction
                 )
             else:
                 new_node = HashDictionary(
@@ -379,9 +377,9 @@ class HashDictionary(DBCollections):
                         value=value,
                         previous=None,
                         next=None,
-                        transaction = self.transaction
+                        transaction=self.transaction
                     ),
-                    transaction = self.transaction
+                    transaction=self.transaction
                 )
         elif cmp < 0:
             # Insert into the left subtree.
@@ -392,7 +390,7 @@ class HashDictionary(DBCollections):
                     value=self.value,
                     previous=self.previous.set_at(key, value),
                     next=self.next,
-                    transaction = self.transaction
+                    transaction=self.transaction
                 )
             else:
                 new_node = HashDictionary(
@@ -406,7 +404,7 @@ class HashDictionary(DBCollections):
                         transaction=self.transaction
                     ),
                     next=self.next,
-                    transaction = self.transaction
+                    transaction=self.transaction
                 )
         else:
             # Replace the value of the current node.
@@ -415,11 +413,10 @@ class HashDictionary(DBCollections):
                 value=value,
                 previous=self.previous,
                 next=self.next,
-                transaction = self.transaction
+                transaction=self.transaction
             )
 
         return new_node._rebalance()
-
 
     def remove_at(self, key: int) -> HashDictionary:
         self._load()
@@ -439,7 +436,7 @@ class HashDictionary(DBCollections):
                     value=self.value,
                     previous=self.previous,
                     next=new_next if new_next.key is not None else None,
-                    transaction = self.transaction
+                    transaction=self.transaction
                 )
             else:
                 if self.previous:
@@ -455,7 +452,7 @@ class HashDictionary(DBCollections):
                     value=self.value,
                     previous=new_previous if new_previous.key is not None else None,
                     next=self.next,
-                    transaction = self.transaction
+                    transaction=self.transaction
                 )
             else:
                 if self.next:
@@ -472,7 +469,7 @@ class HashDictionary(DBCollections):
                     value=next_first.value,
                     previous=self.previous,
                     next=new_next if new_next.key is not None else None,
-                    transaction = self.transaction
+                    transaction=self.transaction
                 )
             elif self.previous:
                 self.previous._load()
@@ -483,7 +480,7 @@ class HashDictionary(DBCollections):
                     value=previous_last.value,
                     previous=new_previous if new_previous.key is not None else None,
                     next=self.next,
-                    transaction = self.transaction
+                    transaction=self.transaction
                 )
             else:
                 return None
@@ -531,7 +528,7 @@ class HashDictionary(DBCollections):
             message=f'get_first traversal has found an inconsistency!'
         )
 
-    def _get_last(self) -> HashDictionary| None:
+    def _get_last(self) -> HashDictionary | None:
         """
         Retrieve the last node's value in the sequence of the linked list-like structure. The method traverses
         the linked nodes until it finds the last node by checking the absence of a `next` reference.

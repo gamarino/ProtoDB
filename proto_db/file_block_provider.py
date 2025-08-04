@@ -1,20 +1,20 @@
-from . import common, ProtoValidationException
-from typing import BinaryIO
-from io import BytesIO, SEEK_SET, SEEK_CUR, SEEK_END
-
-from .common import MB, RootObject, AtomPointer
-from .exceptions import ProtoUnexpectedException
-import psutil
-import uuid
-import configparser
-import os
 import collections
+import configparser
 import json
-from threading import Lock
 import logging
+import os
+import uuid
+from io import BytesIO, SEEK_SET, SEEK_CUR, SEEK_END
+from threading import Lock
+from typing import BinaryIO
+
+import psutil
+
+from . import common, ProtoValidationException
+from .common import MB, AtomPointer
+from .exceptions import ProtoUnexpectedException
 
 _logger = logging.getLogger(__name__)
-
 
 DEFAULT_PAGE_SIZE = 1 * MB
 
@@ -343,14 +343,14 @@ class FileBlockProvider(common.BlockProvider):
         """
         available_wals = [file for file in os.listdir(self.space_path)
                           if os.path.isfile(os.path.join(self.space_path, file)) and \
-                             len(file) == 32]
+                          len(file) == 32]
 
         wals_with_size = [(file, os.path.getsize(os.path.join(self.space_path, file))) for file in available_wals]
 
         for file, size in sorted(wals_with_size, key=lambda x: x[1]):
             self.current_wal_id = uuid.UUID(file)
             try:
-                self.current_wal = open(os.path.join(self.space_path, file),'ab+')
+                self.current_wal = open(os.path.join(self.space_path, file), 'ab+')
                 return self.current_wal_id, size
             except PermissionError:
                 continue
@@ -399,8 +399,8 @@ class FileBlockProvider(common.BlockProvider):
                         message=f'Reading root object, a dictionary was excpected, got {type(root_dict)} instead'
                     )
                 if not 'className' in root_dict or \
-                   not 'transaction_id' in root_dict or \
-                   not 'offset' in root_dict:
+                        not 'transaction_id' in root_dict or \
+                        not 'offset' in root_dict:
                     raise ProtoUnexpectedException(
                         message=f'Invalid format for root object!'
                     )
@@ -451,5 +451,3 @@ class FileBlockProvider(common.BlockProvider):
         self.current_wal.close()
         self.current_wal = None
         self.reader_factory.close()
-
-

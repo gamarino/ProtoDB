@@ -1,11 +1,11 @@
 import unittest
-import uuid
 
-from ..db_access import ObjectSpace, Database, ObjectTransaction
-from ..memory_storage import MemoryStorage
+from ..db_access import ObjectSpace
 from ..lists import List
+from ..memory_storage import MemoryStorage
 
 TEST_SIZE = 100_000
+
 
 class TestDBAccess(unittest.TestCase):
 
@@ -44,4 +44,3 @@ class TestDBAccess(unittest.TestCase):
         for i in range(0, TEST_SIZE):
             self.assertTrue(check_list.get_at(i) == i, f'Element {i} check failed')
         tr.commit()
-

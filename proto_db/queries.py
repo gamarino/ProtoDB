@@ -1,28 +1,20 @@
-
 from __future__ import annotations
 
-import uuid
-from selectors import SelectSelector
+import os
+from abc import ABC, abstractmethod
 from typing import cast
 
-from abc import ABC, abstractmethod
-from collections import defaultdict
-
-from . import DBCollections
-from .exceptions import ProtoUnexpectedException, ProtoValidationException, ProtoCorruptionException
 from .common import Atom, QueryPlan, AtomPointer, DBObject
 from .db_access import ObjectTransaction
-from .lists import List
 from .dictionaries import RepeatedKeysDictionary, Dictionary, DictionaryItem
-from .sets import Set
-import os
-import concurrent.futures
+from .exceptions import ProtoValidationException
 from .hybrid_executor import HybridExecutor
-
+from .sets import Set
 
 # Executor for async operations
 max_workers = (os.cpu_count() or 1) * 5
 executor_pool = HybridExecutor(base_num_workers=max_workers // 5, sync_multiplier=5)
+
 
 class Expression(ABC):
     """
@@ -260,6 +252,7 @@ class Operator(ABC):
             content of the returned value depend on the specific implementation
             in the subclass.
         """
+
 
 class Equal(Operator):
     parameter_count: int = 2
@@ -805,7 +798,8 @@ class FromPlan(IndexedQueryPlan):
                 f'{alias}.{field_name}': indexes
                 for field_name, indexes in indexes.items()
             }
-        super().__init__(indexes=indexes, based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
+        super().__init__(indexes=indexes, based_on=based_on, transaction=transaction, atom_pointer=atom_pointer,
+                         **kwargs)
         self.alias = alias
 
     def execute(self) -> list:
@@ -962,8 +956,8 @@ class WherePlan(QueryPlan):
             # selective than other operations.
             if isinstance(term, Term) and term.operation in ['==', 'eq']:
                 # A check on an indexed field would ideally have a cost of 0.
-                return 1 
-            return 10 # Represents a higher cost for other operations.
+                return 1
+            return 10  # Represents a higher cost for other operations.
 
         # Sort the terms, placing the lowest-cost terms first.
         sorted_terms = sorted(and_expression.terms, key=get_term_cost)
@@ -989,6 +983,7 @@ class AgreggatorFunction(ABC):
         :return: The result of the aggregation.
         """
 
+
 class SumAgreggator(AgreggatorFunction):
     """
     Sum aggregator function for computing the sum of a list of numeric values.
@@ -1007,6 +1002,7 @@ class SumAgreggator(AgreggatorFunction):
         for value in values:
             total_sum += value
         return total_sum
+
 
 class AvgAggregator(AgreggatorFunction):
     def compute(self, values: list):
@@ -1033,6 +1029,7 @@ class MinAgreggator(AgreggatorFunction):
                 minimun = value
         return minimun
 
+
 class MaxAggregator(AgreggatorFunction):
     """
     An aggregator that finds the maximum value in a list of values.
@@ -1041,6 +1038,7 @@ class MaxAggregator(AgreggatorFunction):
     updating the maximum value whenever a larger value is found.
     It returns the overall maximum value. If the list is empty, it returns None.
     """
+
     def compute(self, values: list):
         """
         Computes the maximum value from a list of values.
@@ -1068,7 +1066,7 @@ class SelectPlan(QueryPlan):
     data in a query pipeline.
     """
 
-    def __init__(self, fields: dict, based_on: QueryPlan = None, transaction: 'ObjectTransaction' = None, 
+    def __init__(self, fields: dict, based_on: QueryPlan = None, transaction: 'ObjectTransaction' = None,
                  atom_pointer: AtomPointer = None, **kwargs):
         """
         Initialize a SelectPlan with field mappings and a base query plan.
@@ -1145,12 +1143,14 @@ class SelectPlan(QueryPlan):
             transaction=self.transaction
         )
 
+
 class CountPlan(QueryPlan):
     """
     A query plan that counts the results from a sub-plan.
     This plan is optimized to use index counts whenever possible,
     avoiding full data iteration.
     """
+
     def __init__(self, based_on: 'QueryPlan', transaction: 'ObjectTransaction'):
         """
         Initializes the CountPlan.
@@ -1201,6 +1201,7 @@ class CountResultPlan(QueryPlan):
     A terminal plan that simply holds and returns a pre-calculated count.
     This is the result of an optimized CountPlan.
     """
+
     def __init__(self, count_value: int, transaction: 'ObjectTransaction'):
         super().__init__(based_on=None, transaction=transaction)
         self.count_value = count_value

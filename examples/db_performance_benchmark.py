@@ -14,13 +14,13 @@ using standard benchmarks for object databases. It measures:
 The benchmark supports both in-memory and file-based storage.
 """
 
+import argparse
 import os
+import random
 import sys
 import time
-import uuid
-import random
-import argparse
 import traceback
+import uuid
 from datetime import datetime
 
 # Add the parent directory to the path to import proto_db
@@ -30,7 +30,6 @@ from proto_db import ObjectSpace, DBObject
 from proto_db.standalone_file_storage import StandaloneFileStorage
 from proto_db.file_block_provider import FileBlockProvider
 from proto_db.memory_storage import MemoryStorage
-from proto_db.queries import WherePlan, Expression
 
 
 class BenchmarkItem(DBObject):
@@ -375,7 +374,8 @@ def run_all_benchmarks(database, item_count=10, query_count=5):
     print(f"Read {item_count} items: {read_time:.4f} seconds ({(read_time / item_count) * 1000:.4f} ms per item)")
     print(f"Update {item_count} items: {update_time:.4f} seconds ({(update_time / item_count) * 1000:.4f} ms per item)")
     print(f"Delete {item_count} items: {delete_time:.4f} seconds ({(delete_time / item_count) * 1000:.4f} ms per item)")
-    print(f"Execute {query_count} queries: {query_time:.4f} seconds ({(query_time / query_count) * 1000:.4f} ms per query)")
+    print(
+        f"Execute {query_count} queries: {query_time:.4f} seconds ({(query_time / query_count) * 1000:.4f} ms per query)")
 
 
 def main():
@@ -424,23 +424,28 @@ def main():
         # Run selected benchmark
         if args.benchmark == 'insert':
             insert_time = benchmark_insert(database, args.count)
-            print(f"\nInsert {args.count} items: {insert_time:.4f} seconds ({(insert_time / args.count) * 1000:.4f} ms per item)")
+            print(
+                f"\nInsert {args.count} items: {insert_time:.4f} seconds ({(insert_time / args.count) * 1000:.4f} ms per item)")
         elif args.benchmark == 'read':
             ensure_items_exist(database, args.count)
             read_time = benchmark_read(database, args.count)
-            print(f"\nRead {args.count} items: {read_time:.4f} seconds ({(read_time / args.count) * 1000:.4f} ms per item)")
+            print(
+                f"\nRead {args.count} items: {read_time:.4f} seconds ({(read_time / args.count) * 1000:.4f} ms per item)")
         elif args.benchmark == 'update':
             ensure_items_exist(database, args.count)
             update_time = benchmark_update(database, args.count)
-            print(f"\nUpdate {args.count} items: {update_time:.4f} seconds ({(update_time / args.count) * 1000:.4f} ms per item)")
+            print(
+                f"\nUpdate {args.count} items: {update_time:.4f} seconds ({(update_time / args.count) * 1000:.4f} ms per item)")
         elif args.benchmark == 'delete':
             ensure_items_exist(database, args.count)
             delete_time = benchmark_delete(database, args.count)
-            print(f"\nDelete {args.count} items: {delete_time:.4f} seconds ({(delete_time / args.count) * 1000:.4f} ms per item)")
+            print(
+                f"\nDelete {args.count} items: {delete_time:.4f} seconds ({(delete_time / args.count) * 1000:.4f} ms per item)")
         elif args.benchmark == 'query':
             ensure_items_exist(database, max(args.count, 20))  # Ensure enough items for meaningful queries
             query_time = benchmark_query(database, args.queries)
-            print(f"\nExecute {args.queries} queries: {query_time:.4f} seconds ({(query_time / args.queries) * 1000:.4f} ms per query)")
+            print(
+                f"\nExecute {args.queries} queries: {query_time:.4f} seconds ({(query_time / args.queries) * 1000:.4f} ms per query)")
         elif args.benchmark == 'all':
             run_all_benchmarks(database, item_count=args.count, query_count=args.queries)
 
