@@ -41,7 +41,7 @@ class AtomMetaclass(type):
                     message=f'Class repeated in atom class registry ({class_name}). Please check it')
             atom_class_registry[class_name] = cls
 
-        # Llamar al __init__ de la metaclase base
+        # Call the __init__ method of the base metaclass
         super().__init__(name, bases, class_dict)
 
 
@@ -145,24 +145,29 @@ class AbstractTransaction(ABC):
     def read_object(self, class_name: str, atom_pointer: AtomPointer) -> Atom:
         """
         Get an unloaded Atom based on atom_pointer, of a given Atom class.
-        Just with the right class and atom_pointer, no data retrieved from
-        the database.
-        If the same Atom was already read in this transaction, get the same
-        object as before, in order to ensure all references within this
-        transaction receive exactly the same object. With this strategy
-        any comparison could use object memory addresses to check for identity
 
-        :param class_name:
-        :param atom_pointer:
-        :return:
+        This method creates an Atom instance with the specified class and pointer,
+        but does not load data from the database. If the same Atom was already read 
+        in this transaction, it returns the same object instance to ensure all references 
+        within this transaction receive exactly the same object. With this strategy,
+        any comparison can use object memory addresses to check for identity.
+
+        :param class_name: The name of the Atom class to instantiate.
+        :param atom_pointer: The pointer to the atom's location in storage.
+        :return: An unloaded Atom instance of the specified class.
         """
 
     @abstractmethod
     def get_literal(self, string: str) -> Literal:
         """
+        Retrieves or creates a Literal object for the given string.
 
-        :param string:
-        :return:
+        This method ensures that string literals are properly managed within the
+        transaction context. It may return an existing Literal if the string has
+        already been processed in this transaction, or create a new one if needed.
+
+        :param string: The string value to be represented as a Literal.
+        :return: A Literal object representing the provided string.
         """
 
     @abstractmethod
@@ -245,7 +250,7 @@ class ConcurrentOptimized:
         raise NotImplementedError("This object does not implement concurrent merge logic.")
 
 
-# Metaclase combinada: Combina AtomMetaclass y ABCMeta
+# Combined metaclass: Combines AtomMetaclass and ABCMeta
 class CombinedMeta(ABCMeta, AtomMetaclass):
     pass
 
@@ -611,7 +616,7 @@ class DBObject(Atom):
             object.__setattr__(self, key, value)
         else:
             raise ProtoValidationException(
-                message=f'ProtoBase DBObjects are inmutable! Your are trying to set attribute {key}'
+                message=f'ProtoBase DBObjects are immutable! You are trying to set attribute {key}'
             )
 
     def _setattr(self, name: str, value: object) -> DBObject:
@@ -686,7 +691,7 @@ class MutableObject(Atom):
         if self.atom_pointer and self.atom_pointer.transaction_id:
             # Object is stored in DB and it is going to be modified.
             # It should be added to the set of objects to be checked if were modified
-            # by other transaction simoultaneously with this transaction
+            # by other transaction simultaneously with this transaction
             self.transaction.set_locked_object(self.hash_key, current_object)
 
     def __hasattr__(self, name: str):
@@ -730,15 +735,24 @@ class DBCollections(Atom):
     @abstractmethod
     def as_iterable(self) -> list[object]:
         """
+        Returns an iterable representation of the collection's items.
 
-        :return:
+        This method provides a way to iterate through all items in the collection.
+        Implementations should define how the collection's data is traversed and yielded.
+
+        :return: An iterable of the collection's items.
         """
 
     @abstractmethod
     def as_query_plan(self) -> QueryPlan:
         """
-        Get a query plan based on this collection
-        :return:
+        Creates a query plan based on this collection.
+
+        This method generates a QueryPlan object that can be used to execute
+        queries against the collection's data. Implementations should define
+        how the collection's specific structure is translated into a query plan.
+
+        :return: A QueryPlan object for this collection.
         """
 
 
@@ -768,15 +782,26 @@ class QueryPlan(Atom):
     @abstractmethod
     def execute(self) -> list:
         """
+        Executes the query plan and returns the results.
 
-        :return:
+        This method processes the query plan and retrieves the data according to
+        the plan's specifications. Implementations should define the specific
+        execution logic based on the query plan type.
+
+        :return: A list of results from executing the query plan.
         """
 
     @abstractmethod
     def optimize(self, full_plan: QueryPlan) -> QueryPlan:
         """
+        Optimizes the query plan for better performance.
 
-        :return:
+        This method analyzes the current query plan and the full plan context to
+        create a more efficient execution strategy. Implementations should define
+        specific optimization techniques based on the query plan type.
+
+        :param full_plan: The complete query plan to be optimized.
+        :return: The optimized query plan.
         """
 
 
@@ -835,8 +860,13 @@ class BlockProvider(ABC):
     @abstractmethod
     def get_config_data(self) -> configparser.ConfigParser:
         """
-        Get config data
-        :return:
+        Retrieves the configuration data for the block provider.
+
+        This method returns a ConfigParser object containing the configuration
+        settings needed for the block provider's operation. Implementations should
+        define how configuration data is loaded and structured.
+
+        :return: A ConfigParser object containing the configuration data.
         """
 
     @abstractmethod
@@ -851,12 +881,15 @@ class BlockProvider(ABC):
     @abstractmethod
     def get_reader(self, wal_id: uuid.UUID, position: int) -> BinaryIO:
         """
-        Get a streamer initialized at position in WAL file
-        wal_id
+        Gets a binary reader initialized at the specified position in the WAL file.
 
-        :param wal_id:
-        :param position:
-        :return:
+        This method creates and returns a binary I/O stream positioned at the given
+        offset within the specified Write-Ahead Log (WAL) file. This allows for
+        reading data from a specific location in the WAL.
+
+        :param wal_id: The unique identifier of the WAL file to read from.
+        :param position: The byte offset position within the WAL file to start reading from.
+        :return: A binary I/O stream positioned at the specified location in the WAL file.
         """
 
     @abstractmethod

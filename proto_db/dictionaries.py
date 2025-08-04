@@ -94,12 +94,12 @@ class Dictionary(DBCollections, ConcurrentOptimized):
 
     def get_at(self, key: str) -> object | None:
         """
-        Gets the element at a given key exists in the dictionary.
+        Gets the element associated with the given key in the dictionary.
 
         Uses binary search to find the key efficiently.
 
         :param key: The string key to be searched.
-        :return: The value storea at key or None if not found
+        :return: The value stored at key or None if not found
         """
         self._load()
         self.content._load()
@@ -290,7 +290,7 @@ class RepeatedKeysDictionary(Dictionary):
         Gets the elements at a given key, as a Set, if exists in the dictionary.
 
         :param key: The string key to be searched.
-        :return: The value storea at key or None if not found
+        :return: The value stored at key or None if not found
         """
         return super().get_at(key)
 

@@ -17,17 +17,19 @@ class ListQueryPlan(QueryPlan):
 
     def execute(self) -> DBCollections:
         """
+        Executes the query plan and returns the results as a collection.
 
-        :return:
+        :return: An iterable collection of items from the list.
         """
         for item in self.base.as_iterable():
             yield item
 
     def optimize(self, full_plan: QueryPlan) -> QueryPlan:
         """
+        Optimizes the query plan for better performance.
 
-        :param full_plan:
-        :return:
+        :param full_plan: The complete query plan to be optimized.
+        :return: The optimized query plan.
         """
         return self
 
@@ -101,27 +103,34 @@ class List(Atom):
 
     def as_iterable(self) -> list[tuple[int, object]]:
         """
-        Get an iterable list of the list items
+        Returns an iterable representation of the list items.
 
-        :return:
+        This method traverses the list structure in-order and yields each item,
+        allowing for iteration over the list's contents.
+
+        :return: An iterable of the list items.
         """
 
         # Get an iterable of the List items
         def scan(node: List) -> list:
             node._load()
             if node.previous:
-                yield from scan(node.previous)  # Subárbol izquierdo (recursión/yield)
+                yield from scan(node.previous)  # Left subtree (recursion/yield)
             if not node.empty:
-                yield node.value  # Nodo actual
+                yield node.value  # Current node
             if node.next:
-                yield from scan(node.next)  # Subárbol derecho (recursión/yield)
+                yield from scan(node.next)  # Right subtree (recursion/yield)
 
         return scan(self)
 
     def as_query_plan(self) -> QueryPlan:
         """
-        Get a QueryPlan out of the List
-        :return:
+        Creates a query plan based on this list.
+
+        This method generates a ListQueryPlan object that can be used to execute
+        queries against the list's data.
+
+        :return: A QueryPlan object for this list.
         """
         return ListQueryPlan(base=self)
 
@@ -515,9 +524,14 @@ class List(Atom):
 
     def remove_at(self, offset: int) -> List:
         """
-        Removes the element at the specified index.
-        :param offset:
-        :return:
+        Removes the element at the specified index from the list.
+
+        This method removes the element at the given offset and rebalances the list
+        structure if necessary. If the offset is negative, it is treated as counting
+        from the end of the list. If the offset is out of bounds, the list remains unchanged.
+
+        :param offset: The index of the element to remove. Negative indices count from the end.
+        :return: A new List instance with the element removed, or the original list if no changes were made.
         """
         self._load()
 
@@ -640,11 +654,14 @@ class List(Atom):
 
     def remove_last(self) -> List:
         """
-        Removes the last element from the list. If the list is empty, the operation
-        returns the current list instance. Otherwise, it modifies the list by removing
-        the last element, re-balancing the structure if required.
+        Removes the last element from the list.
 
-        :return:
+        If the list is empty, the operation returns the current list instance. 
+        Otherwise, it modifies the list by removing the last element, re-balancing 
+        the structure if required.
+
+        :return: A new list instance with the last element removed, or the original
+                list if it was empty.
         """
         self._load()
 
