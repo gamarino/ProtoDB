@@ -4,7 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] Tests actualizados" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[PROPOSAL] next steps by AI">
+      <change afterPath="$PROJECT_DIR$/commercial_positioning.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/next_steps_proposal.md" beforeDir="false" afterPath="$PROJECT_DIR$/next_steps_proposal.md" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -231,14 +234,6 @@
   </component>
   <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
-    <task id="LOCAL-00001" summary="[WIP] dictionaries with comments">
-      <option name="closed" value="true" />
-      <created>1735662570025</created>
-      <option name="number" value="00001" />
-      <option name="presentableId" value="LOCAL-00001" />
-      <option name="project" value="LOCAL" />
-      <updated>1735662570025</updated>
-    </task>
     <task id="LOCAL-00002" summary="[WIP] standalone_file_storage.py, file_block_provider: clean up to abstract classes">
       <option name="closed" value="true" />
       <created>1735678420637</created>
@@ -297,7 +292,7 @@
       <workItem from="1753706608123" duration="1007000" />
       <workItem from="1753971491417" duration="12098000" />
       <workItem from="1754077196604" duration="39026000" />
-      <workItem from="1754229840756" duration="36465000" />
+      <workItem from="1754229840756" duration="37227000" />
     </task>
     <task id="LOCAL-00007" summary="[WIP] standalone_file_storage.py : push_to_wal with bytes, not bytearray">
       <option name="closed" value="true" />
@@ -643,14 +638,21 @@
       <option name="project" value="LOCAL" />
       <updated>1754281280581</updated>
     </task>
-    <option name="localTasksCounter" value="50" />
+    <task id="LOCAL-00050" summary="[PROPOSAL] next steps by AI">
+      <option name="closed" value="true" />
+      <created>1754281811663</created>
+      <option name="number" value="00050" />
+      <option name="presentableId" value="LOCAL-00050" />
+      <option name="project" value="LOCAL" />
+      <updated>1754281811663</updated>
+    </task>
+    <option name="localTasksCounter" value="51" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[ADD] README]" />
     <MESSAGE value="[IMP] hybrid_executor.py" />
     <MESSAGE value="[FIX] use hybrid_executor in the package" />
     <MESSAGE value="[IMP] implement all necessary to submit to pypy" />
@@ -675,7 +677,8 @@
     <MESSAGE value="[FIX] Reformatted code" />
     <MESSAGE value="[FIX] Updated comments" />
     <MESSAGE value="[FIX] Tests actualizados" />
-    <option name="LAST_COMMIT_MESSAGE" value="[FIX] Tests actualizados" />
+    <MESSAGE value="[PROPOSAL] next steps by AI" />
+    <option name="LAST_COMMIT_MESSAGE" value="[PROPOSAL] next steps by AI" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
