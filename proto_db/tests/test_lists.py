@@ -136,3 +136,70 @@ class TestList(unittest.TestCase):
 
         results = list(query_plan.execute())
         self.assertTrue(len(results) > 0, "Query execution debería devolver resultados.")
+
+    def test_set_at(self):
+        """Prueba la funcionalidad de set_at para modificar valores en posiciones específicas."""
+        test_list = List(empty=True)
+        for i in range(5):
+            test_list = test_list.insert_at(i, f"Element {i}")
+
+        # Modificar un elemento existente
+        modified_list = test_list.set_at(2, "Modified Element")
+        self.assertEqual(modified_list.get_at(2), "Modified Element", "El elemento en la posición 2 debería haber sido modificado.")
+        self.assertEqual(modified_list.count, 5, "La cantidad de elementos no debería cambiar después de set_at.")
+
+        # Intentar modificar un elemento fuera de rango
+        with self.assertRaises(IndexError):
+            test_list.set_at(10, "Out of Range")
+
+    def test_extend(self):
+        """Prueba la funcionalidad de extend para combinar dos listas."""
+        list1 = List(empty=True)
+        for i in range(3):
+            list1 = list1.insert_at(i, f"List1-{i}")
+
+        list2 = List(empty=True)
+        for i in range(2):
+            list2 = list2.insert_at(i, f"List2-{i}")
+
+        extended_list = list1.extend(list2)
+
+        # Verificar que la lista extendida tiene todos los elementos
+        self.assertEqual(extended_list.count, 5, "La lista extendida debería tener la suma de elementos de ambas listas.")
+        self.assertEqual(extended_list.get_at(0), "List1-0")
+        self.assertEqual(extended_list.get_at(3), "List2-0")
+        self.assertEqual(extended_list.get_at(4), "List2-1")
+
+    def test_head(self):
+        """Prueba la funcionalidad de head para obtener los primeros n elementos."""
+        test_list = List(empty=True)
+        for i in range(10):
+            test_list = test_list.insert_at(i, f"Element {i}")
+
+        head_list = test_list.head(5)
+
+        # Verificar que head devuelve los primeros 5 elementos
+        self.assertEqual(head_list.count, 5, "La lista head debería tener exactamente 5 elementos.")
+        for i in range(5):
+            self.assertEqual(head_list.get_at(i), f"Element {i}")
+
+        # Probar con un límite mayor que la longitud de la lista
+        full_head = test_list.head(20)
+        self.assertEqual(full_head.count, 10, "Si el límite es mayor que la longitud, debería devolver toda la lista.")
+
+    def test_tail(self):
+        """Prueba la funcionalidad de tail para obtener los últimos n elementos."""
+        test_list = List(empty=True)
+        for i in range(10):
+            test_list = test_list.insert_at(i, f"Element {i}")
+
+        tail_list = test_list.tail(5)
+
+        # Verificar que tail devuelve los últimos 5 elementos
+        self.assertEqual(tail_list.count, 5, "La lista tail debería tener exactamente 5 elementos.")
+        for i in range(5):
+            self.assertEqual(tail_list.get_at(i), f"Element {i+5}")
+
+        # Probar con un límite mayor que la longitud de la lista
+        full_tail = test_list.tail(0)
+        self.assertEqual(full_tail.count, 10, "Si el límite es 0, debería devolver toda la lista.")

@@ -1,6 +1,6 @@
 import unittest
 
-from ..dictionaries import Dictionary, Atom  # Sustituye 'your_module' por el nombre del módulo correcto
+from ..dictionaries import Dictionary, RepeatedKeysDictionary, Atom  # Sustituye 'your_module' por el nombre del módulo correcto
 
 
 class TestDictionary(unittest.TestCase):
@@ -133,3 +133,107 @@ class TestDictionary(unittest.TestCase):
 
         # This test demonstrates the expected behavior when handling concurrent modifications
         # by applying operations in the correct order.
+
+
+class TestRepeatedKeysDictionary(unittest.TestCase):
+    """Test cases for the RepeatedKeysDictionary class."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.empty_dict = RepeatedKeysDictionary()
+        self.atom_a = Atom(value="value_a")
+        self.atom_b = Atom(value="value_b")
+        self.atom_c = Atom(value="value_c")
+        self.atom_d = Atom(value="value_d")
+
+    def test_set_at_with_new_key(self):
+        """Test setting a value for a new key."""
+        updated_dict = self.empty_dict.set_at("key1", self.atom_a)
+        result = list(updated_dict.get_at("key1"))
+        self.assertEqual(len(result), 1, "Should have one value for the key.")
+        self.assertEqual(result[0], self.atom_a, "Should store the correct value.")
+
+    def test_set_at_with_existing_key(self):
+        """Test setting multiple values for the same key."""
+        dict_with_one = self.empty_dict.set_at("key1", self.atom_a)
+        dict_with_two = dict_with_one.set_at("key1", self.atom_b)
+
+        result = list(dict_with_two.get_at("key1"))
+        self.assertEqual(len(result), 2, "Should have two values for the key.")
+        self.assertIn(self.atom_a, result, "Should contain the first value.")
+        self.assertIn(self.atom_b, result, "Should contain the second value.")
+
+    def test_get_at_nonexistent_key(self):
+        """Test getting a value for a nonexistent key."""
+        result = list(self.empty_dict.get_at("nonexistent"))
+        self.assertEqual(len(result), 0, "Should return an empty list for nonexistent key.")
+
+    def test_remove_at(self):
+        """Test removing all values for a key."""
+        dict_with_values = self.empty_dict.set_at("key1", self.atom_a).set_at("key1", self.atom_b)
+        dict_after_remove = dict_with_values.remove_at("key1")
+
+        result = list(dict_after_remove.get_at("key1"))
+        self.assertEqual(len(result), 0, "Should have no values after removal.")
+
+    def test_remove_record_at(self):
+        """Test removing a specific record for a key."""
+        dict_with_values = (self.empty_dict
+                           .set_at("key1", self.atom_a)
+                           .set_at("key1", self.atom_b)
+                           .set_at("key1", self.atom_c))
+
+        # Remove one specific record
+        dict_after_remove = dict_with_values.remove_record_at("key1", self.atom_b)
+
+        result = list(dict_after_remove.get_at("key1"))
+        self.assertEqual(len(result), 2, "Should have two values after removing one.")
+        self.assertIn(self.atom_a, result, "Should still contain the first value.")
+        self.assertIn(self.atom_c, result, "Should still contain the third value.")
+        self.assertNotIn(self.atom_b, result, "Should not contain the removed value.")
+
+    def test_remove_nonexistent_record(self):
+        """Test removing a record that doesn't exist."""
+        dict_with_values = self.empty_dict.set_at("key1", self.atom_a)
+
+        # Try to remove a record that doesn't exist
+        dict_after_remove = dict_with_values.remove_record_at("key1", self.atom_b)
+
+        result = list(dict_after_remove.get_at("key1"))
+        self.assertEqual(len(result), 1, "Should still have one value.")
+        self.assertEqual(result[0], self.atom_a, "Should still contain the original value.")
+
+    def test_concurrent_optimized(self):
+        """Test concurrent optimization with repeated keys."""
+        # Create a base dictionary with repeated keys
+        base_dict = RepeatedKeysDictionary()
+        base_dict = base_dict.set_at("key1", self.atom_a)
+        base_dict = base_dict.set_at("key1", self.atom_b)
+        base_dict = base_dict.set_at("key2", self.atom_c)
+
+        # Simulate concurrent modifications
+        concurrent_dict = RepeatedKeysDictionary()
+        concurrent_dict = concurrent_dict.set_at("key1", self.atom_a)
+        concurrent_dict = concurrent_dict.set_at("key1", self.atom_b)
+        concurrent_dict = concurrent_dict.set_at("key2", self.atom_c)
+        concurrent_dict = concurrent_dict.set_at("key3", self.atom_d)  # Add a new key
+        concurrent_dict = concurrent_dict.remove_record_at("key1", self.atom_a)  # Remove one record
+
+        # Create local modifications
+        local_dict = base_dict.set_at("key1", self.atom_c)  # Add another value to key1
+        local_dict = local_dict.remove_at("key2")  # Remove key2
+
+        # Manually simulate rebasing
+        rebased_dict = concurrent_dict
+        rebased_dict = rebased_dict.set_at("key1", self.atom_c)  # Add atom_c from local_dict
+        rebased_dict = rebased_dict.remove_at("key2")  # Remove key2 from local_dict
+
+        # Verify the rebased dictionary
+        key1_values = list(rebased_dict.get_at("key1"))
+        self.assertEqual(len(key1_values), 2, "Should have two values for key1.")
+        self.assertIn(self.atom_b, key1_values, "Should contain atom_b.")
+        self.assertIn(self.atom_c, key1_values, "Should contain atom_c.")
+        self.assertNotIn(self.atom_a, key1_values, "Should not contain atom_a (removed).")
+
+        self.assertFalse(rebased_dict.has("key2"), "key2 should be removed.")
+        self.assertTrue(rebased_dict.has("key3"), "key3 should be present.")

@@ -4,11 +4,17 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] improved literal management">
-      <change beforePath="$PROJECT_DIR$/examples/benchmark_results.json" beforeDir="false" afterPath="$PROJECT_DIR$/examples/benchmark_results.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/dictionaries.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/hash_dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/hash_dictionaries.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/lists.py" afterDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] Updated comments">
+      <change afterPath="$PROJECT_DIR$/benchmark_data_small/53942bd8-4733-495f-baa8-ebc9640694fe" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/memory_medium_insert_results.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/memory_medium_read_results.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/memory_medium_update_results.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/memory_small_results.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test_coverage_improvements.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_dictionaries.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_hash_dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_hash_dictionaries.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_lists.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -301,7 +307,7 @@
       <workItem from="1753706608123" duration="1007000" />
       <workItem from="1753971491417" duration="12098000" />
       <workItem from="1754077196604" duration="39026000" />
-      <workItem from="1754229840756" duration="35095000" />
+      <workItem from="1754229840756" duration="35985000" />
     </task>
     <task id="LOCAL-00007" summary="[WIP] standalone_file_storage.py : push_to_wal with bytes, not bytearray">
       <option name="closed" value="true" />
@@ -615,15 +621,37 @@
       <option name="project" value="LOCAL" />
       <updated>1754277689503</updated>
     </task>
-    <option name="localTasksCounter" value="46" />
+    <task id="LOCAL-00046" summary="[FIX] improved literal management">
+      <option name="closed" value="true" />
+      <created>1754280390476</created>
+      <option name="number" value="00046" />
+      <option name="presentableId" value="LOCAL-00046" />
+      <option name="project" value="LOCAL" />
+      <updated>1754280390476</updated>
+    </task>
+    <task id="LOCAL-00047" summary="[FIX] Reformatted code">
+      <option name="closed" value="true" />
+      <created>1754280554141</created>
+      <option name="number" value="00047" />
+      <option name="presentableId" value="LOCAL-00047" />
+      <option name="project" value="LOCAL" />
+      <updated>1754280554141</updated>
+    </task>
+    <task id="LOCAL-00048" summary="[FIX] Updated comments">
+      <option name="closed" value="true" />
+      <created>1754280956615</created>
+      <option name="number" value="00048" />
+      <option name="presentableId" value="LOCAL-00048" />
+      <option name="project" value="LOCAL" />
+      <updated>1754280956615</updated>
+    </task>
+    <option name="localTasksCounter" value="49" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[WIP] after_load en Atom, no guardar None attributes" />
-    <MESSAGE value="[WIP] fsm: máquina de estados básica" />
     <MESSAGE value="[WIP] mejoras varias por AI Junie" />
     <MESSAGE value="[ADD] README]" />
     <MESSAGE value="[IMP] hybrid_executor.py" />
@@ -647,7 +675,9 @@
     <MESSAGE value="[IMP] First implementation of performance analysis (Fully automated by Junie AI)" />
     <MESSAGE value="[ADD] Chat IA evolución proto" />
     <MESSAGE value="[FIX] improved literal management" />
-    <option name="LAST_COMMIT_MESSAGE" value="[FIX] improved literal management" />
+    <MESSAGE value="[FIX] Reformatted code" />
+    <MESSAGE value="[FIX] Updated comments" />
+    <option name="LAST_COMMIT_MESSAGE" value="[FIX] Updated comments" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -659,32 +689,32 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/tests/test_db_access_with_standalone_file_storage.py</url>
-          <line>71</line>
+          <line>70</line>
           <option name="timeStamp" value="154" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/common.py</url>
-          <line>740</line>
+          <line>747</line>
           <option name="timeStamp" value="157" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/queries.py</url>
-          <line>239</line>
+          <line>231</line>
           <option name="timeStamp" value="188" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/common.py</url>
-          <line>523</line>
+          <line>528</line>
           <option name="timeStamp" value="208" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/common.py</url>
-          <line>515</line>
+          <line>520</line>
           <option name="timeStamp" value="211" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/common.py</url>
-          <line>495</line>
+          <line>500</line>
           <option name="timeStamp" value="229" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
@@ -705,18 +735,18 @@
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <condition expression="isinstance(key, Literal)" language="Python" />
           <url>file://$PROJECT_DIR$/proto_db/dictionaries.py</url>
-          <line>119</line>
+          <line>118</line>
           <option name="timeStamp" value="246" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <condition expression="isinstance(key, Literal)" language="Python" />
           <url>file://$PROJECT_DIR$/proto_db/dictionaries.py</url>
-          <line>137</line>
+          <line>136</line>
           <option name="timeStamp" value="247" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/db_access.py</url>
-          <line>403</line>
+          <line>401</line>
           <option name="timeStamp" value="255" />
         </line-breakpoint>
       </breakpoints>

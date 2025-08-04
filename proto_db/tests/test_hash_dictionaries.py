@@ -84,29 +84,79 @@ class TestHashDictionary(unittest.TestCase):
         self.assertEqual(len(result), 3, "Should include all inserted keys in the iterable.")
         self.assertIn((10, self.atom_a), result, "Should include the correct key-value pair.")
 
-    # --- Test Dictionary methods ---
-    def test_dictionary_methods(self):
-        # Crear un diccionario vacío
-        dictionary = Dictionary()
+    # --- Test merge method ---
+    def test_merge(self):
+        """Test merging two HashDictionary instances."""
+        # Create two dictionaries with different keys
+        dict1 = self.empty_dictionary.set_at(10, self.atom_a).set_at(20, self.atom_b)
+        dict2 = self.empty_dictionary.set_at(30, self.atom_c).set_at(40, Atom())
 
-        # Agregar valores
-        dictionary1 = dictionary.set_at("key1", self.atom_a)
-        dictionary2 = dictionary1.set_at("key2", self.atom_b)
-        self.assertIs(
-            dictionary2.get_at("key1"),
-            self.atom_a,
-            "Should return the correct value for key 'key1'."
-        )
-        self.assertIs(
-            dictionary2.get_at("key2"),
-            self.atom_b,
-            "Should return the correct value for key 'key2'."
-        )
+        # Merge dict2 into dict1
+        merged_dict = dict1.merge(dict2)
 
-        # Comprobar si tiene claves
-        self.assertTrue(dictionary2.has("key1"), "Should confirm the presence of 'key1'.")
-        self.assertFalse(dictionary2.has("keyX"), "Should confirm 'keyX' is not present.")
+        # Verify all keys from both dictionaries are present
+        self.assertEqual(merged_dict.count, 4, "Merged dictionary should have all keys from both dictionaries.")
+        self.assertEqual(merged_dict.get_at(10), self.atom_a, "Key from dict1 should be preserved.")
+        self.assertEqual(merged_dict.get_at(20), self.atom_b, "Key from dict1 should be preserved.")
+        self.assertEqual(merged_dict.get_at(30), self.atom_c, "Key from dict2 should be added.")
+        self.assertIsNotNone(merged_dict.get_at(40), "Key from dict2 should be added.")
 
-        # Eliminar una clave
-        dictionary3 = dictionary2.remove_at("key1")
-        self.assertFalse(dictionary3.has("key1"), "Should confirm 'key1' is removed.")
+        # Test merging with overlapping keys (the value from the second dictionary should take precedence)
+        dict3 = self.empty_dictionary.set_at(10, Atom(value="new_value"))
+        merged_with_overlap = dict1.merge(dict3)
+        self.assertEqual(merged_with_overlap.get_at(10).value, "new_value", 
+                         "Value from the second dictionary should override the first.")
+
+    # --- Test _get_first method ---
+    def test_get_first(self):
+        """Test getting the first (smallest) key-value pair."""
+        # Create a dictionary with multiple keys
+        test_dict = (self.empty_dictionary
+                    .set_at(30, self.atom_a)
+                    .set_at(10, self.atom_b)
+                    .set_at(20, self.atom_c))
+
+        # Get the first (smallest) key-value pair
+        first_key, first_value = test_dict._get_first()
+
+        # Verify the smallest key is returned
+        self.assertEqual(first_key, 10, "The smallest key should be returned.")
+        self.assertEqual(first_value, self.atom_b, "The value associated with the smallest key should be returned.")
+
+        # Test with an empty dictionary
+        empty_result = self.empty_dictionary._get_first()
+        self.assertIsNone(empty_result, "Empty dictionary should return None.")
+
+    # --- Test _get_last method ---
+    def test_get_last(self):
+        """Test getting the last (largest) key-value pair."""
+        # Create a dictionary with multiple keys
+        test_dict = (self.empty_dictionary
+                    .set_at(30, self.atom_a)
+                    .set_at(10, self.atom_b)
+                    .set_at(20, self.atom_c))
+
+        # Get the last (largest) key-value pair
+        last_key, last_value = test_dict._get_last()
+
+        # Verify the largest key is returned
+        self.assertEqual(last_key, 30, "The largest key should be returned.")
+        self.assertEqual(last_value, self.atom_a, "The value associated with the largest key should be returned.")
+
+        # Test with an empty dictionary
+        empty_result = self.empty_dictionary._get_last()
+        self.assertIsNone(empty_result, "Empty dictionary should return None.")
+
+    # --- Test has method ---
+    def test_has(self):
+        """Test checking if a key exists in the dictionary."""
+        # Create a dictionary with some keys
+        test_dict = self.empty_dictionary.set_at(10, self.atom_a).set_at(20, self.atom_b)
+
+        # Check for existing keys
+        self.assertTrue(test_dict.has(10), "Should return True for an existing key.")
+        self.assertTrue(test_dict.has(20), "Should return True for an existing key.")
+
+        # Check for non-existing keys
+        self.assertFalse(test_dict.has(30), "Should return False for a non-existing key.")
+        self.assertFalse(self.empty_dictionary.has(10), "Empty dictionary should return False for any key.")

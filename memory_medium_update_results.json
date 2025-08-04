@@ -1,0 +1,18 @@
+{
+  "config": {
+    "storage": "memory",
+    "dataset_size": "medium",
+    "item_count": 10000,
+    "query_count": 100,
+    "benchmark": "update",
+    "timestamp": "2025-08-02T01:08:10.119611"
+  },
+  "benchmarks": {
+    "update": {
+      "total_time": 26.68599009513855,
+      "items": 10000,
+      "time_per_item_ms": 2.668599009513855,
+      "items_per_second": 374.7284610519931
+    }
+  }
+}
