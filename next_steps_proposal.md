@@ -71,6 +71,15 @@ This document outlines a strategic plan to enhance the commercial profile of Pro
 
 **Expected Outcome:** Expanded ecosystem, increased community contributions, and organic growth through word-of-mouth.
 
+Se ha mejorado la documentación y las pruebas del proyecto. Para la construcción de un sistema de permisos, se ha decidido mantener `proto_db` fuera de la lógica de la aplicación.
+
+Para lograr esto, se optimizarán las búsquedas para implementar un sistema de autorizaciones basado en filtros. Se implementará un conjunto de facilidades de indexado para todas las colecciones, con el objetivo de alcanzar un rendimiento comparable al de las bases de datos relacionales más comunes.
+
+Se implementarán índices múltiples, basados en la fusión de conjuntos de resultados, lo que permitirá expandir las capacidades para manejar:
+- Datos en 2D y 3D.
+- Datos vectoriales con consultas de proximidad (por ejemplo, `x` entre 3 y 5, `y` entre 1 y 2, y `z` = 4).
+- Consultas exactas que devuelvan conjuntos de objetos.
+
 ## Implementation Timeline
 
 ### Phase 1 (Months 1-3)
