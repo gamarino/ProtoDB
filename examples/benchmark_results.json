@@ -1,0 +1,42 @@
+{
+  "config": {
+    "storage": "memory",
+    "dataset_size": "small",
+    "item_count": 1000,
+    "query_count": 50,
+    "benchmark": "all",
+    "timestamp": "2025-08-04T00:16:03.222629"
+  },
+  "benchmarks": {
+    "insert": {
+      "total_time": 2.384758472442627,
+      "items": 1000,
+      "time_per_item_ms": 2.384758472442627,
+      "items_per_second": 419.3296770115818
+    },
+    "read": {
+      "total_time": 0.13202905654907227,
+      "items": 1000,
+      "time_per_item_ms": 0.13202905654907227,
+      "items_per_second": 7574.090326308757
+    },
+    "update": {
+      "total_time": 1.8118066787719727,
+      "items": 1000,
+      "time_per_item_ms": 1.8118066787719727,
+      "items_per_second": 551.9352653439779
+    },
+    "query": {
+      "total_time": 19.885390043258667,
+      "queries": 50,
+      "time_per_query_ms": 397.70780086517334,
+      "queries_per_second": 2.514408814271685
+    },
+    "delete": {
+      "total_time": 0.3513484001159668,
+      "items": 1000,
+      "time_per_item_ms": 0.3513484001159668,
+      "items_per_second": 2846.1777531075645
+    }
+  }
+}

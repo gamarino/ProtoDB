@@ -115,7 +115,7 @@ def benchmark_read(database, count=1000):
     items_dict = tr.get_root_object('items')
 
     # Get all item IDs
-    all_ids = [item[0] for item in items_dict.as_iterable()]
+    all_ids = [item_name for item_name, item_data in items_dict.as_iterable()]
 
     if len(all_ids) < count:
         print(f"Warning: Only {len(all_ids)} items available in database")
@@ -141,7 +141,7 @@ def benchmark_read(database, count=1000):
     # Calculate elapsed time
     elapsed_time = time.time() - start_time
     print(f"Read completed in {elapsed_time:.4f} seconds")
-    print(f"Average time per item: {(elapsed_time / count) * 1000:.4f} ms")
+    print(f"Average time per item: {(elapsed_time / count if count > 0 else 0) * 1000:.4f} ms")
     print(f"Items per second: {count / elapsed_time:.2f}")
 
     return elapsed_time
@@ -165,7 +165,7 @@ def benchmark_update(database, count=1000):
     items_dict = tr.get_root_object('items')
 
     # Get all item IDs
-    all_ids = [item[0] for item in items_dict.as_iterable()]
+    all_ids = [item_name for item_name, itema_data in items_dict.as_iterable()]
 
     if len(all_ids) < count:
         print(f"Warning: Only {len(all_ids)} items available in database")
@@ -212,7 +212,7 @@ def benchmark_update(database, count=1000):
     # Calculate elapsed time
     elapsed_time = time.time() - start_time
     print(f"Update completed in {elapsed_time:.4f} seconds")
-    print(f"Average time per item: {(elapsed_time / count) * 1000:.4f} ms")
+    print(f"Average time per item: {(elapsed_time / count if count else 0) * 1000:.4f} ms")
     print(f"Items per second: {count / elapsed_time:.2f}")
 
     return elapsed_time
@@ -236,7 +236,7 @@ def benchmark_delete(database, count=1000):
     items_dict = tr.get_root_object('items')
 
     # Get all item IDs
-    all_ids = [item[0] for item in items_dict.as_iterable()]
+    all_ids = [item_name for item_name, itema_data in items_dict.as_iterable()]
 
     if len(all_ids) < count:
         print(f"Warning: Only {len(all_ids)} items available in database")
@@ -269,7 +269,7 @@ def benchmark_delete(database, count=1000):
     # Calculate elapsed time
     elapsed_time = time.time() - start_time
     print(f"Delete completed in {elapsed_time:.4f} seconds")
-    print(f"Average time per item: {(elapsed_time / count) * 1000:.4f} ms")
+    print(f"Average time per item: {(elapsed_time / count if count else 0) * 1000:.4f} ms")
     print(f"Items per second: {count / elapsed_time:.2f}")
 
     return elapsed_time
@@ -340,7 +340,7 @@ def ensure_items_exist(database, min_count):
     try:
         # Try to get the items dictionary
         items_dict = tr.get_root_object('items')
-        current_count = len(list(item[0] for item in items_dict.as_iterable()))
+        current_count = len(list(item_name for item_name, item_data in items_dict.as_iterable()))
         tr.commit()
     except Exception:
         # If 'items' doesn't exist, create it in a new transaction
@@ -440,7 +440,7 @@ def main():
     parser = argparse.ArgumentParser(description='ProtoBase Comprehensive Performance Benchmark')
     parser.add_argument('--storage', choices=['memory', 'file'], default='memory',
                         help='Storage type (memory or file)')
-    parser.add_argument('--size', choices=['small', 'medium', 'large'], default='medium',
+    parser.add_argument('--size', choices=['small', 'medium', 'large'], default='small',
                         help='Dataset size: small (1,000), medium (10,000), or large (100,000)')
     parser.add_argument('--benchmark', choices=['insert', 'read', 'update', 'delete', 'query', 'all'],
                         default='all', help='Which benchmark to run')

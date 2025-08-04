@@ -77,6 +77,11 @@ class List(Atom):
         else:
             self.height = 0
 
+    def _load(self):
+        if not self._loaded:
+            super()._load()
+            self._loaded = True
+
     def _save(self):
         if not self._saved:
             if self.previous:
@@ -140,7 +145,11 @@ class List(Atom):
         while node is not None:
             node._load()
 
-            node_offset = node.previous.count if node.previous else 0
+            if node.previous:
+                node.previous._load()
+                node_offset = node.previous.count
+            else:
+                node_offset = 0
 
             if offset == node_offset:
                 if isinstance(node.value, Atom):
@@ -164,10 +173,14 @@ class List(Atom):
         if not self:
             return 0
         if self.next and self.previous:
+            self.next._load()
+            self.previous._load()
             return self.next.height - self.previous.height
         elif self.previous:
+            self.previous._load()
             return -self.previous.height
         elif self.next:
+            self.next._load()
             return self.next.height
         else:
             return 0
@@ -183,6 +196,7 @@ class List(Atom):
             return self  # Cannot perform a right rotation without a left child.
 
         # Create a new right subtree with the current node.
+        self.previous._load()
         new_right = List(
             value=self.value,
             empty=False,
@@ -211,6 +225,7 @@ class List(Atom):
             return self  # Cannot perform a left rotation without a right child.
 
         # Create a new left subtree with the current node.
+        self.next._load()
         new_left = List(
             value=self.value,
             empty=False,
@@ -240,23 +255,31 @@ class List(Atom):
         # Rebalance child subtrees first (post-order traversal)
         node = self
 
-        while node.previous and not -1 <= node.previous._balance() <= 1:
-            node = List(
-                value=node.value,
-                empty=False,
-                previous=node.previous._rebalance(),
-                next=node.next,
-                transaction = self.transaction
-            )
+        while node.previous:
+            node.previous._load()
+            if not -1 <= node.previous._balance() <= 1:
+                node = List(
+                    value=node.value,
+                    empty=False,
+                    previous=node.previous._rebalance(),
+                    next=node.next,
+                    transaction = self.transaction
+                )
+            else:
+                break
 
-        while node.next and not -1 <= node.next._balance() <= 1:
-            node = List(
-                value=node.value,
-                empty=False,
-                previous=node.previous,
-                next=node.next._rebalance(),
-                transaction = self.transaction
-            )
+        while node.next:
+            node.next._load()
+            if not -1 <= node.next._balance() <= 1:
+                node = List(
+                    value=node.value,
+                    empty=False,
+                    previous=node.previous,
+                    next=node.next._rebalance(),
+                    transaction = self.transaction
+                )
+            else:
+                break
 
         # Calculate balance factor for the current node
         balance = node._balance()
@@ -331,11 +354,12 @@ class List(Atom):
         if cmp > 0:
             # Insert into the right subtree.
             if self.next:
+                self.next._load()
                 new_node = List(
                     value=self.value,
                     empty=False,
                     previous=self.previous,
-                    next=self.next.set_at(cmp - 1, value),
+                    next=self.next.set_at(offset - node_offset - 1, value),
                     transaction = self.transaction
                 )
             else:
@@ -353,10 +377,11 @@ class List(Atom):
         elif cmp < 0:
             # Insert into the left subtree.
             if self.previous:
+                self.previous._load()
                 new_node = List(
                     value=self.value,
                     empty=False,
-                    previous=self.previous.set_at(cmp, value),
+                    previous=self.previous.set_at(offset, value),
                     next=self.next,
                     transaction = self.transaction
                 )
@@ -421,6 +446,7 @@ class List(Atom):
         if cmp > 0:
             # Insert into the right subtree.
             if self.next:
+                self.next._load()
                 new_node = List(
                     value=self.value,
                     empty=False,
@@ -445,6 +471,7 @@ class List(Atom):
         elif cmp < 0:
             # Insert into the left subtree.
             if self.previous:
+                self.previous._load()
                 new_node = List(
                     value=self.value,
                     empty=False,
@@ -511,40 +538,37 @@ class List(Atom):
         if cmp > 0:
             # Remove from the right subtree.
             if self.next:
+                self.next._load()
                 new_node = List(
                     value=self.value,
                     empty=False,
                     previous=self.previous,
-                    next=self.next.remove_at(cmp - 1),
+                    next=self.next.remove_at(offset - node_offset - 1),
                     transaction = self.transaction
                 )
             else:
-                new_node = List(transaction=self.transaction)
+                if self.previous:
+                    self.previous._load()
+                return self.previous
         elif cmp < 0:
             # Remove from the left subtree.
             if self.previous:
+                self.previous._load()
                 new_node = List(
                     value=self.value,
                     empty=False,
-                    previous=self.previous.remove_at(cmp),
+                    previous=self.previous.remove_at(offset),
                     next=self.next,
                     transaction = self.transaction
                 )
             else:
-                new_node = List(transaction=self.transaction)
+                if self.next:
+                    self.next._load()
+                return self.next
         else:
             # Remove this node
-            if self.previous:
-                last_value = self.previous.get_at(-1)
-                new_previous = self.previous.remove_last()
-                new_node = List(
-                    value=last_value,
-                    empty=False,
-                    previous=new_previous if not new_previous.empty else None,
-                    next=self.next,
-                    transaction = self.transaction
-                )
-            elif self.next:
+            if self.next:
+                self.next._load()
                 first_value = self.next.get_at(0)
                 new_next = self.next.remove_first()
                 new_node = List(
@@ -553,8 +577,19 @@ class List(Atom):
                     next=new_next if not new_next.empty else None,
                     transaction = self.transaction
                 )
+            elif self.previous:
+                self.previous._load()
+                last_value = self.previous.get_at(-1)
+                new_previous = self.previous.remove_last()
+                new_node = List(
+                    value=last_value,
+                    empty=False,
+                    previous=new_previous if not new_previous.empty else None,
+                    next=self.next,
+                    transaction=self.transaction
+                )
             else:
-                return List(transaction = self.transaction)
+                return None
 
         return new_node._rebalance()
 
@@ -579,6 +614,7 @@ class List(Atom):
         if node_offset > 0:
             # Remove from the left subtree.
             if self.previous:
+                self.previous._load()
                 previous_removed = self.previous.remove_first()
                 new_node = List(
                     value=self.value,
@@ -615,6 +651,7 @@ class List(Atom):
             return self
 
         if self.next:
+            self.next._load()
             # Remove from the right subtree
             next_removed = self.next.remove_last()
             new_node = List(
@@ -653,6 +690,7 @@ class List(Atom):
             return items
 
         if self.next:
+            self.next._load()
             # Extend the right subtree.
             new_node = self.next.extend(items)
         else:

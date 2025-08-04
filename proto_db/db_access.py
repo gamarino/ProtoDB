@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import cast
 
+from . import ProtoCorruptionException
 from .exceptions import ProtoValidationException, ProtoLockingException
 from .common import Atom, \
     AbstractObjectSpace, AbstractDatabase, AbstractTransaction, \
@@ -29,7 +30,7 @@ class ObjectSpace(AbstractObjectSpace):
         self._lock = Lock()
 
     def _read_db_catalog(self) -> dict[str:Dictionary]:
-        read_tr = ObjectTransaction(None, storage=self.storage)
+        read_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
         root_pointer = self.storage.read_current_root()
         space_history: List = List(
             transaction=read_tr,
@@ -117,7 +118,7 @@ class ObjectSpace(AbstractObjectSpace):
         return self.storage.unlock_current_root()
 
     def get_space_history(self, lock=False) -> List:
-        read_tr = ObjectTransaction(None, storage=self.storage)
+        read_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
 
         if lock:
             root_pointer = self.storage.read_lock_current_root()
@@ -133,7 +134,7 @@ class ObjectSpace(AbstractObjectSpace):
         return space_history
 
     def get_space_root(self, lock=False) -> RootObject:
-        read_tr = ObjectTransaction(None, storage=self.storage)
+        read_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
 
         space_history = self.get_space_history(lock)
 
@@ -149,7 +150,7 @@ class ObjectSpace(AbstractObjectSpace):
         return space_root
 
     def set_space_root(self, new_space_root: RootObject):
-        update_tr = ObjectTransaction(None, storage=self.storage)
+        update_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
 
         space_history = self.get_space_history()
 
@@ -162,11 +163,15 @@ class ObjectSpace(AbstractObjectSpace):
     def get_literals(self, literals: Dictionary) -> dict[str, Literal]:
         read_tr = ObjectTransaction(None, storage=self.storage)
 
+        print("Entrando a update de literales\n")
+
         with self._lock:
             root = self.get_space_root(lock=False)
             literal_catalog: Dictionary = cast(Dictionary, root.literal_root)
             new_literals = list()
             for literal_string, literal in literals.as_iterable():
+                if literal.atom_pointer:
+                    continue
                 if literal_catalog.has(literal_string):
                     existing_literal = literal_catalog.get_at(literal_string)
                     literal.atom_pointer = existing_literal.atom_pointer
@@ -199,6 +204,8 @@ class ObjectSpace(AbstractObjectSpace):
                     self.set_space_root(root)
 
                 self.storage.unlock_current_root()
+
+        print("Seliendo de update de literales\n")
 
 
     def close(self):
@@ -239,11 +246,7 @@ class Database(AbstractDatabase):
         read_tr = ObjectTransaction(self)
         space_root = self.object_space.get_space_root(lock)
         if space_root.object_root:
-            db_catalog = Dictionary(
-                atom_pointer = space_root.object_root.atom_pointer,
-                transaction=read_tr
-            )
-            db_catalog._load()
+            db_catalog = space_root.object_root
         else:
             db_catalog = Dictionary(transaction=read_tr)
 
@@ -389,12 +392,18 @@ class ObjectTransaction(AbstractTransaction):
 
     def __init__(self,
                  database: Database,
+                 object_space = None,
                  db_root: Dictionary = None,
                  storage = None,
                  enclosing_transaction: ObjectTransaction = None):
         super().__init__()
         self.lock = RLock()
         self.new_literals = Dictionary(transaction=self)
+        self.object_space = object_space if object_space else database.object_space if database else None
+        if not self.object_space:
+            raise ProtoCorruptionException(
+                message="Invalid ObjectSpace"
+            )
         self.database = database
         self.enclosing_transaction = enclosing_transaction
 
@@ -474,14 +483,13 @@ class ObjectTransaction(AbstractTransaction):
             value._save()
 
         # Ensure all new literals are created
-        self._update_created_literals(self.new_literals)
+        self._update_created_literals(self, self.new_literals)
 
         with self.lock:
             if self.transaction_root:
-                self.new_roots = self.transaction_root.set_at(name, value)
+                self.new_roots = self.new_roots.set_at(name, value)
             else:
                 self.new_roots = Dictionary(transaction=self)
-                self.transaction_root = self.new_roots
                 self.new_roots = self.new_roots.set_at(name, value)
 
     def set_locked_object(self, mutable_index: int, current_atom: Atom):
@@ -514,7 +522,7 @@ class ObjectTransaction(AbstractTransaction):
             current_object_pointer = current_root.object_root.get_at(name, as_pointer=True)
             if original_object_pointer != current_object_pointer:
                 # CONCURRENT MODIFICATION DETECTED
-                new_object = self.new_roots.get(name)
+                new_object = self.new_roots.get_at(name)
 
                 # Check if the object supports automatic merging
                 if new_object and isinstance(new_object, ConcurrentOptimized):
@@ -524,7 +532,7 @@ class ObjectTransaction(AbstractTransaction):
                         # Attempt to rebase our changes on top of the concurrent version
                         rebased_object = new_object._rebase_on_concurrent_update(current_db_object)
                         # If successful, replace the object in our transaction with the merged one
-                        self.new_roots[name] = rebased_object
+                        self.new_roots = self.new_roots.set_at(name, rebased_object)
                         # And continue to the next locked object
                         continue
                     except Exception as e:
@@ -536,15 +544,22 @@ class ObjectTransaction(AbstractTransaction):
                 raise ProtoLockingException(f"Concurrent transaction detected on object '{name}' "
                                                  f"that does not support automatic merging.")
 
-    def _update_created_literals(self, current_literal_root: Dictionary) -> Dictionary:
-        literal_update_tr = ObjectTransaction(self.database, storage=self.storage)
-        current_literal_root = self.database.read_db_root()
+    def _update_created_literals(self, transaction: ObjectTransaction, literal_root: Dictionary) -> Dictionary:
+        literal_update_tr = ObjectTransaction(transaction.database, object_space=transaction.object_space, storage=self.storage)
+        space_root = transaction.object_space.get_space_root()
+        current_literal_root = space_root.literal_root
         if self.new_literals.count > 0:
             for key, value in self.new_literals.as_iterable():
+                if value.atom_pointer:
+                    continue
                 if not current_literal_root.has(key):
                     value._save()
                     current_literal_root = current_literal_root.set_at(key, value)
+                elif not value.atom_pointer:
+                    new_literal = current_literal_root.get_at(key)
+                    value.atom_pointer = new_literal.atom_pointer
 
+        self.new_literals = Dictionary(transaction=self)
         return current_literal_root
 
     def _update_mutable_indexes(self, current_db_root: Dictionary) -> Dictionary:

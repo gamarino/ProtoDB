@@ -276,14 +276,13 @@ class Atom(metaclass=CombinedMeta):
     """
     atom_pointer: AtomPointer
     transaction: AbstractTransaction
-    _loaded: bool
+    _loaded: bool = False
     _saved: bool = False
 
     def __init__(self, transaction: AbstractTransaction = None, atom_pointer: AtomPointer = None, **kwargs):
         super().__init__()
         self.transaction = transaction
         self.atom_pointer = atom_pointer
-        self._loaded = False
 
     def _load(self):
         # Use direct attribute access to avoid recursion through __getattr__
@@ -302,11 +301,10 @@ class Atom(metaclass=CombinedMeta):
                         object.__setattr__(self, attribute_name, attribute_value)
                         if isinstance(attribute_value, Atom):
                             object.__setattr__(attribute_value, 'transaction', transaction)
-                            attribute_value._load()
-                    self.after_load()
 
             # Use object.__setattr__ to bypass potential recursion in __setattr__
             object.__setattr__(self, '_loaded', True)
+            self.after_load()
 
     def after_load(self):
         """
@@ -381,7 +379,7 @@ class Atom(metaclass=CombinedMeta):
                         value['offset']
                     )
                     value = self.transaction.read_object(class_name, atom_pointer)
-                    value._load()
+                    # value._load()
                 else:
                     raise ProtoValidationException(
                         message=f'It is not possible to load Atom of class {class_name}!'
@@ -444,6 +442,7 @@ class Atom(metaclass=CombinedMeta):
         return json_value
 
     def _save(self):
+        self._load()
         # Use direct attribute access to avoid recursion
         if 'atom_pointer' not in self.__dict__ or not self.__dict__['atom_pointer']:
             if '_saved' not in self.__dict__ or not self.__dict__['_saved']:
@@ -489,7 +488,10 @@ class Atom(metaclass=CombinedMeta):
                             elif isinstance(value, str):
                                 literal = self.transaction.get_literal(value)
                                 if not literal.atom_pointer:
-                                    self.transaction._update_created_literals(self.transaction.new_literals)
+                                    self.transaction._update_created_literals(
+                                        self.transaction,
+                                        self.transaction.new_literals
+                                    )
                                 if not literal.atom_pointer:
                                     raise ProtoCorruptionException(
                                         message="Corruption saving string as literal!"
@@ -566,7 +568,7 @@ class DBObject(Atom):
     enforces immutability by restricting direct attribute modifications. Instead, any modifications
     result in the creation of a new instance with updated attributes.
 
-    If you try not access a not existing attribute, DBObjects will thow no error, instead a None
+    If you try to access a not existing attribute, DBObjects will throw no error, instead a None
     value will be returned.
 
     :ivar _loaded: Indicates whether the object's attributes have been fully loaded.
@@ -619,6 +621,11 @@ class DBObject(Atom):
                 object.__setattr__(new_object, attr_name, attr_value)
         object.__setattr__(new_object, name, value)
         return new_object
+
+    def _load(self):
+        if not self._loaded:
+            super()._load()
+            self._loaded = True
 
 
 class MutableObject(Atom):

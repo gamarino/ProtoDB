@@ -83,7 +83,13 @@ class HashDictionary(DBCollections):
         else:
             self.height = 0
 
+    def _load(self):
+        if not self._loaded:
+            super()._load()
+            self._loaded = True
+
     def _save(self):
+        self._load()
         if not self._saved:
             if self.previous:
                 self.previous.transaction = self.transaction
@@ -95,6 +101,8 @@ class HashDictionary(DBCollections):
                 self.value.transaction = self.transaction
                 self.value._save()
             super()._save()
+            self._saved = True
+
 
     def as_iterable(self):
         """
@@ -187,10 +195,14 @@ class HashDictionary(DBCollections):
         if not self:
             return 0
         if self.next and self.previous:
+            self.next._load()
+            self.previous._load()
             return self.next.height - self.previous.height
         elif self.previous:
+            self.previous._load()
             return -self.previous.height
         elif self.next:
+            self.next._load()
             return self.next.height
         else:
             return 0
@@ -206,6 +218,7 @@ class HashDictionary(DBCollections):
             return self  # Cannot perform a right rotation without a left child.
 
         # Create a new right subtree with the current node.
+        self.previous._load()
         new_right = HashDictionary(
             key=self.key,
             value=self.value,
@@ -234,6 +247,7 @@ class HashDictionary(DBCollections):
             return self  # Cannot perform a left rotation without a right child.
 
         # Create a new left subtree with the current node.
+        self.next._load()
         new_left = HashDictionary(
             key=self.key,
             value=self.value,
@@ -263,23 +277,31 @@ class HashDictionary(DBCollections):
         # Rebalance child subtrees first (post-order traversal)
         node = self
 
-        while node.previous and not -1 <= node.previous._balance() <= 1:
-            node = HashDictionary(
-                key=node.key,
-                value=node.value,
-                previous=node.previous._rebalance(),
-                next=node.next,
-                transaction = self.transaction
-            )
+        while node.previous:
+            node.previous._load()
+            if not -1 <= node.previous._balance() <= 1:
+                node = HashDictionary(
+                    key=node.key,
+                    value=node.value,
+                    previous=node.previous._rebalance(),
+                    next=node.next,
+                    transaction = self.transaction
+                )
+            else:
+                break
 
-        while node.next and not -1 <= node.next._balance() <= 1:
-            node = HashDictionary(
-                key=node.key,
-                value=node.value,
-                previous=node.previous,
-                next=node.next._rebalance(),
-                transaction = self.transaction
-            )
+        while node.next:
+            node.next._load()
+            if not -1 <= node.next._balance() <= 1:
+                node = HashDictionary(
+                    key=node.key,
+                    value=node.value,
+                    previous=node.previous,
+                    next=node.next._rebalance(),
+                    transaction = self.transaction
+                )
+            else:
+                break
 
         # Calculate balance factor for the current node
         balance = node._balance()
@@ -337,6 +359,7 @@ class HashDictionary(DBCollections):
         if cmp > 0:
             # Insert into the right subtree.
             if self.next:
+                self.next._load()
                 new_node = HashDictionary(
                     key=self.key,
                     value=self.value,
@@ -361,6 +384,7 @@ class HashDictionary(DBCollections):
         elif cmp < 0:
             # Insert into the left subtree.
             if self.previous:
+                self.previous._load()
                 new_node = HashDictionary(
                     key=self.key,
                     value=self.value,
@@ -406,6 +430,7 @@ class HashDictionary(DBCollections):
         if cmp > 0:
             # Remove from the right subtree.
             if self.next:
+                self.next._load()
                 new_next = self.next.remove_at(key)
                 new_node = HashDictionary(
                     key=self.key,
@@ -415,10 +440,13 @@ class HashDictionary(DBCollections):
                     transaction = self.transaction
                 )
             else:
-                return HashDictionary(transaction=self.transaction)
+                if self.previous:
+                    self.previous._load()
+                return self.previous
         elif cmp < 0:
             # Remove from the left subtree.
             if self.previous:
+                self.previous._load()
                 new_previous = self.previous.remove_at(key)
                 new_node = HashDictionary(
                     key=self.key,
@@ -428,10 +456,13 @@ class HashDictionary(DBCollections):
                     transaction = self.transaction
                 )
             else:
-                return HashDictionary(transaction=self.transaction)
+                if self.next:
+                    self.next._load()
+                return self.next
         else:
             # Remove the value of the current node.
             if self.next:
+                self.next._load()
                 next_first = self.next._get_first()
                 new_next = self.next.remove_at(next_first.key)
                 new_node = HashDictionary(
@@ -442,6 +473,7 @@ class HashDictionary(DBCollections):
                     transaction = self.transaction
                 )
             elif self.previous:
+                self.previous._load()
                 previous_last = self.previous._get_last()
                 new_previous = self.previous.remove_at(previous_last.key)
                 new_node = HashDictionary(

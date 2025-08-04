@@ -15,7 +15,7 @@ _logger = logging.getLogger(__name__)
 
 class DictionaryItem(Atom):
     # Represents a key-value pair in a Dictionary, both durable and transaction-safe.
-    key: string
+    key: str
     value: object
 
     def __init__(
@@ -29,6 +29,12 @@ class DictionaryItem(Atom):
         self.key = key  # Wrap the key as a Literal for durability.
         self.value = value  # Assign the value to the dictionary item.
 
+    def _load(self):
+        if not self._loaded:
+            super()._load()
+            if isinstance(self.key, Literal):
+                self.key = self.key.string
+            self._loaded = True
 
 class Dictionary(DBCollections, ConcurrentOptimized):
     """
@@ -40,7 +46,7 @@ class Dictionary(DBCollections, ConcurrentOptimized):
     """
 
     content: List  # Internal storage for dictionary items as a list.
-    op_log: list
+    _op_log: list
 
     def __init__(
             self,
@@ -52,13 +58,21 @@ class Dictionary(DBCollections, ConcurrentOptimized):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
         self.content = content if content else List(transaction=transaction)  # Initialize content or create a new List.
         self.count = self.content.count  # Number of items in the dictionary.
-        self.op_log = op_log if op_log is not None else []
+        self._op_log = op_log if op_log is not None else []
+
+    def _load(self):
+        if not self._loaded:
+            super()._load()
+            self.content._load()
+            self._loaded = True
 
     def _save(self):
+        self._load()
         if not self._saved:
             self.content.transaction = self.transaction
             self.content._save()
             super()._save()
+            self._saved = True
 
     def as_iterable(self) -> list[tuple[str, object]]:
         """
@@ -89,6 +103,7 @@ class Dictionary(DBCollections, ConcurrentOptimized):
         :return: The value storea at key or None if not found
         """
         self._load()
+        self.content._load()
 
         left = 0
         right = self.content.count - 1
@@ -154,7 +169,7 @@ class Dictionary(DBCollections, ConcurrentOptimized):
                 )
             )
 
-        new_op_log = self.op_log + [('set', key, value)]
+        new_op_log = self._op_log + [('set', key, value)]
 
         return Dictionary(
             content=new_content,
@@ -184,7 +199,7 @@ class Dictionary(DBCollections, ConcurrentOptimized):
             if item and str(item.key) == key:
                 # It's a replacement of an existing value
                 new_content = self.content.remove_at(center)
-                new_op_log = self.op_log + [('remove', key, None)]
+                new_op_log = self._op_log + [('remove', key, None)]
                 return Dictionary(
                     content=new_content,
                     transaction=self.transaction,
@@ -234,9 +249,9 @@ class Dictionary(DBCollections, ConcurrentOptimized):
             )
 
         rebased_dict = cast(Dictionary, current_db_object)
-        rebased_dict.op_log = []
+        rebased_dict._op_log = []
 
-        for op_type, key, value in self.op_log:
+        for op_type, key, value in self._op_log:
             if op_type == 'set':
                 rebased_dict = rebased_dict.set_at(key, value)
             elif op_type == 'remove':
@@ -294,7 +309,7 @@ class RepeatedKeysDictionary(Dictionary):
         record_list = record_list.add(value)
 
         new_content = super(RepeatedKeysDictionary, self).set_at(key, record_list).content
-        new_op_log = self.op_log + [('set', key, value)]
+        new_op_log = self._op_log + [('set', key, value)]
 
         return RepeatedKeysDictionary(
             content=new_content,
@@ -311,7 +326,7 @@ class RepeatedKeysDictionary(Dictionary):
         """
         if super().has(key):
             new_content = super(RepeatedKeysDictionary, self).remove_at(key).content
-            new_op_log = self.op_log + [('remove', key, None)]
+            new_op_log = self._op_log + [('remove', key, None)]
             return RepeatedKeysDictionary(
                 content=new_content,
                 transaction=self.transaction,
@@ -334,7 +349,7 @@ class RepeatedKeysDictionary(Dictionary):
             if record_set.has(record_hash):
                 record_set = record_set.remove_at(record_hash)
                 new_content = super(RepeatedKeysDictionary, self).set_at(key, record_set).content
-                new_op_log = self.op_log + [('remove_record', key, record)]
+                new_op_log = self._op_log + [('remove_record', key, record)]
 
                 return RepeatedKeysDictionary(
                     content=new_content,
@@ -355,9 +370,9 @@ class RepeatedKeysDictionary(Dictionary):
             )
 
         rebased_dict = cast(RepeatedKeysDictionary, current_db_object)
-        rebased_dict.op_log = []
+        rebased_dict._op_log = []
 
-        for op_type, key, value in self.op_log:
+        for op_type, key, value in self._op_log:
             if op_type == 'set':
                 rebased_dict = rebased_dict.set_at(key, value)
             elif op_type == 'remove':
