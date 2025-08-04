@@ -117,7 +117,7 @@ class Dictionary(DBCollections, ConcurrentOptimized):
                     item.value._load()
                 return item.value
 
-            if str(item.key) >= key:
+            if item and str(item.key) >= key:
                 right = center - 1
             else:
                 left = center + 1
@@ -155,7 +155,7 @@ class Dictionary(DBCollections, ConcurrentOptimized):
                     )
                 )
                 break
-            if str(item.key) > key:
+            if item and str(item.key) > key:
                 right = center - 1
             else:
                 left = center + 1
@@ -199,6 +199,9 @@ class Dictionary(DBCollections, ConcurrentOptimized):
             if item and str(item.key) == key:
                 # It's a replacement of an existing value
                 new_content = self.content.remove_at(center)
+                if new_content is None:
+                    # If the content is None, create an empty dictionary
+                    new_content = List(transaction=self.transaction)
                 new_op_log = self._op_log + [('remove', key, None)]
                 return Dictionary(
                     content=new_content,
@@ -206,7 +209,7 @@ class Dictionary(DBCollections, ConcurrentOptimized):
                     op_log=new_op_log
                 )
 
-            if str(item.key) > key:
+            if item and str(item.key) > key:
                 right = center - 1
             else:
                 left = center + 1
@@ -235,7 +238,7 @@ class Dictionary(DBCollections, ConcurrentOptimized):
             if item and str(item.key) == key:
                 return True
 
-            if str(item.key) > key:
+            if item and str(item.key) > key:
                 right = center - 1
             else:
                 left = center + 1
@@ -325,7 +328,12 @@ class RepeatedKeysDictionary(Dictionary):
         :return: A new instance of Dictionary reflecting the removal.
         """
         if super().has(key):
-            new_content = super(RepeatedKeysDictionary, self).remove_at(key).content
+            result = super(RepeatedKeysDictionary, self).remove_at(key)
+            if result is None:
+                # If the result is None, create an empty dictionary
+                new_content = List(transaction=self.transaction)
+            else:
+                new_content = result.content
             new_op_log = self._op_log + [('remove', key, None)]
             return RepeatedKeysDictionary(
                 content=new_content,
@@ -347,8 +355,18 @@ class RepeatedKeysDictionary(Dictionary):
             record_set = cast(Set, super().get_at(key))
             record_hash = record.hash()
             if record_set.has(record_hash):
-                record_set = record_set.remove_at(record_hash)
-                new_content = super(RepeatedKeysDictionary, self).set_at(key, record_set).content
+                result = record_set.remove_at(record_hash)
+                if result is None:
+                    # If the result is None, create an empty set
+                    record_set = Set(transaction=self.transaction)
+                else:
+                    record_set = result
+                result = super(RepeatedKeysDictionary, self).set_at(key, record_set)
+                if result is None:
+                    # If the result is None, create an empty dictionary
+                    new_content = List(transaction=self.transaction)
+                else:
+                    new_content = result.content
                 new_op_log = self._op_log + [('remove_record', key, record)]
 
                 return RepeatedKeysDictionary(

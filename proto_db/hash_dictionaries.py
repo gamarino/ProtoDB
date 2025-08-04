@@ -66,8 +66,10 @@ class HashDictionary(DBCollections):
         if key is not None:
             count = 1
             if self.previous:
+                self.previous._load()
                 count += self.previous.count
             if self.next:
+                self.next._load()
                 count += self.next.count
             self.count = count
         else:
@@ -484,8 +486,7 @@ class HashDictionary(DBCollections):
                     transaction = self.transaction
                 )
             else:
-                # It was the only node, return an empty HashDictionary.
-                return HashDictionary(transaction=self.transaction)
+                return None
 
         return new_node._rebalance()
 
@@ -520,7 +521,7 @@ class HashDictionary(DBCollections):
 
         node = self
         while node:
-            self._load()
+            node._load()
 
             if not node.previous:
                 return node
@@ -554,4 +555,3 @@ class HashDictionary(DBCollections):
         raise ProtoCorruptionException(
             message=f'get_last traversal has found an inconsistency!'
         )
-

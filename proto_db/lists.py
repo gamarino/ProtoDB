@@ -60,8 +60,10 @@ class List(Atom):
         if not empty:
             count = 1
             if self.previous:
+                self.previous._load()
                 count += self.previous.count
             if self.next:
+                self.next._load()
                 count += self.next.count
             self.count = count
         else:
