@@ -171,6 +171,7 @@ There are several benchmark scripts available, each with a different level of co
 - **simple_performance_benchmark.py**: A comprehensive benchmark that tests all operations with a simple implementation
 - **db_performance_benchmark.py**: A more advanced benchmark with additional features
 - **performance_benchmark.py**: The most comprehensive benchmark with a class-based implementation
+- **indexed_benchmark.py**: Benchmarks index-aware query performance (AND + BETWEEN) vs linear scan and Python list baseline
 
 ### Running the Benchmarks
 
@@ -194,6 +195,9 @@ python db_performance_benchmark.py --storage file --benchmark all --count 10 --q
 
 # Run the performance benchmark with specific parameters
 python performance_benchmark.py --storage memory --benchmark query --count 10 --queries 5
+
+# Run the indexed benchmark (in-memory)
+python indexed_benchmark.py --items 5000 --queries 50 --out examples/benchmark_results_indexed.json
 ```
 
 ### Key Concepts Demonstrated

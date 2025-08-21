@@ -74,6 +74,8 @@ integrity.
 
 ## Performance Benchmarks
 
+See also docs/performance.md for the indexed benchmark harness and how to run it end-to-end using secondary indexes.
+
 ProtoBase has been benchmarked to evaluate its performance characteristics. The following results were obtained using
 the in-memory storage backend with a small dataset (1,000 items):
 
