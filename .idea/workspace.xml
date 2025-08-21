@@ -4,13 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[ADD] HNSWVectorIndex was successfully implemented for handling vector fields in proto_db, including functionality for KNN and near[] queries, with fallback to ExactVectorIndex and support for incremental updates and persistent storage. All associated unit tests passed, and documentation was updated accordingly. No errors or issues were reported during the implementation phase.">
-      <change afterPath="$PROJECT_DIR$/examples/benchmark_results_vectors.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/examples/vector_ann_benchmark.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/benchmark_results.json" beforeDir="false" afterPath="$PROJECT_DIR$/benchmark_results.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/performance.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/performance.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/examples/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/benchmark_results_indexed.json" beforeDir="false" afterPath="$PROJECT_DIR$/examples/benchmark_results_indexed.json" afterDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[ADD] A vector ANN benchmark script was created to measure and compare the performance of HNSW against ExactVectorIndex and optional NumPy and scikit-learn baselines, successfully producing JSON output with timings. All existing tests remained unaffected and passed. No errors were encountered during execution, confirming the accuracy of the benchmarking tool.">
+      <change beforePath="$PROJECT_DIR$/examples/vector_ann_benchmark.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/vector_ann_benchmark.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/vector_index.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/vector_index.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -267,23 +263,7 @@
       <workItem from="1754229840756" duration="39038000" />
       <workItem from="1755786676387" duration="1012000" />
       <workItem from="1755787730573" duration="225000" />
-      <workItem from="1755787975213" duration="12046000" />
-    </task>
-    <task id="LOCAL-00014" summary="[WIP] queries: WherePlan after JoinPlan, optimized to prefiltered Joins">
-      <option name="closed" value="true" />
-      <created>1736123202336</created>
-      <option name="number" value="00014" />
-      <option name="presentableId" value="LOCAL-00014" />
-      <option name="project" value="LOCAL" />
-      <updated>1736123202336</updated>
-    </task>
-    <task id="LOCAL-00015" summary="[WIP] dependencias circulares, test básicos arreglados">
-      <option name="closed" value="true" />
-      <created>1736352454770</created>
-      <option name="number" value="00015" />
-      <option name="presentableId" value="LOCAL-00015" />
-      <option name="project" value="LOCAL" />
-      <updated>1736352454770</updated>
+      <workItem from="1755787975213" duration="14292000" />
     </task>
     <task id="LOCAL-00016" summary="[WIP] after_load en Atom, no guardar None attributes">
       <option name="closed" value="true" />
@@ -661,14 +641,29 @@
       <option name="project" value="LOCAL" />
       <updated>1755806061722</updated>
     </task>
-    <option name="localTasksCounter" value="63" />
+    <task id="LOCAL-00063" summary="[ADD] A vector ANN benchmark script was created to measure and compare the performance of HNSW against ExactVectorIndex and optional NumPy and scikit-learn baselines, successfully producing JSON output with timings. All existing tests remained unaffected and passed. No errors were encountered during execution, confirming the accuracy of the benchmarking tool.">
+      <option name="closed" value="true" />
+      <created>1755806841067</created>
+      <option name="number" value="00063" />
+      <option name="presentableId" value="LOCAL-00063" />
+      <option name="project" value="LOCAL" />
+      <updated>1755806841067</updated>
+    </task>
+    <task id="LOCAL-00064" summary="[ADD] A vector ANN benchmark script was created to measure and compare the performance of HNSW against ExactVectorIndex and optional NumPy and scikit-learn baselines, successfully producing JSON output with timings. All existing tests remained unaffected and passed. No errors were encountered during execution, confirming the accuracy of the benchmarking tool.">
+      <option name="closed" value="true" />
+      <created>1755807035532</created>
+      <option name="number" value="00064" />
+      <option name="presentableId" value="LOCAL-00064" />
+      <option name="project" value="LOCAL" />
+      <updated>1755807035532</updated>
+    </task>
+    <option name="localTasksCounter" value="65" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[FIX] README.md, pyproject.toml: update to current status" />
     <MESSAGE value="[IMP] examples" />
     <MESSAGE value="[FIX] simple_example.py: in proper proto_db style" />
     <MESSAGE value="[FIX] task_manager.py: in proper proto_db style" />
@@ -693,7 +688,8 @@
     <MESSAGE value="[UPD] commercial_positioning.md" />
     <MESSAGE value="[FIX] __init__.py : dependency errors" />
     <MESSAGE value="[ADD] HNSWVectorIndex was successfully implemented for handling vector fields in proto_db, including functionality for KNN and near[] queries, with fallback to ExactVectorIndex and support for incremental updates and persistent storage. All associated unit tests passed, and documentation was updated accordingly. No errors or issues were reported during the implementation phase." />
-    <option name="LAST_COMMIT_MESSAGE" value="[ADD] HNSWVectorIndex was successfully implemented for handling vector fields in proto_db, including functionality for KNN and near[] queries, with fallback to ExactVectorIndex and support for incremental updates and persistent storage. All associated unit tests passed, and documentation was updated accordingly. No errors or issues were reported during the implementation phase." />
+    <MESSAGE value="[ADD] A vector ANN benchmark script was created to measure and compare the performance of HNSW against ExactVectorIndex and optional NumPy and scikit-learn baselines, successfully producing JSON output with timings. All existing tests remained unaffected and passed. No errors were encountered during execution, confirming the accuracy of the benchmarking tool." />
+    <option name="LAST_COMMIT_MESSAGE" value="[ADD] A vector ANN benchmark script was created to measure and compare the performance of HNSW against ExactVectorIndex and optional NumPy and scikit-learn baselines, successfully producing JSON output with timings. All existing tests remained unaffected and passed. No errors were encountered during execution, confirming the accuracy of the benchmarking tool." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

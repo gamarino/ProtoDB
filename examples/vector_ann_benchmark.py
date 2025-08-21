@@ -78,40 +78,72 @@ def bench_build_hnsw(vecs: List[Vector], ids: List[str], metric: str, M: int, ef
     return idx, time.time() - t0
 
 
-def bench_knn_queries(idx, queries: List[Vector], k: int, metric: str, label: str) -> dict:
-    # Return latency statistics
+def _latency_stats(latencies: List[float]) -> tuple[float, float, float]:
+    if not latencies:
+        return (None, None, None)  # type: ignore
+    import math
+    ms = [t * 1000.0 for t in latencies]
+    ms_sorted = sorted(ms)
+    p50 = ms_sorted[int(0.50 * (len(ms_sorted) - 1))]
+    p95 = ms_sorted[int(0.95 * (len(ms_sorted) - 1))]
+    avg = sum(ms) / len(ms)
+    # std of ms
+    mean = avg
+    var = sum((x - mean) ** 2 for x in ms) / len(ms)
+    std = math.sqrt(var)
+    return avg, p50, p95, std  # type: ignore
+
+
+def bench_knn_queries(idx, queries: List[Vector], k: int, metric: str, label: str, warmup: int = 5) -> dict:
+    # Warm-up
+    for q in queries[:warmup]:
+        try:
+            _ = idx.search(q, k=k, metric=metric)
+        except Exception:
+            pass
+    # Batch if supported
     times = []
-    for q in queries:
-        t0 = time.time()
-        _ = idx.search(q, k=k, metric=metric)
+    t0 = time.time()
+    if hasattr(idx, 'search_batch'):
+        _ = idx.search_batch(queries, k=k, metric=metric)
         times.append(time.time() - t0)
-    if not times:
-        return {"label": label, "avg_ms": None, "p95_ms": None}
-    times_ms = [t * 1000.0 for t in times]
-    times_ms.sort()
-    p95 = times_ms[int(0.95 * (len(times_ms) - 1))]
-    return {"label": label, "avg_ms": sum(times_ms)/len(times_ms), "p95_ms": p95}
+    else:
+        for q in queries:
+            t1 = time.time()
+            _ = idx.search(q, k=k, metric=metric)
+            times.append(time.time() - t1)
+    total = sum(times)
+    avg, p50, p95, std = _latency_stats(times if len(times) > 1 else [total/len(queries) if queries else 0.0])
+    qps = (len(queries) / total) if total > 0 else None
+    return {"label": label, "avg_ms": avg, "p50_ms": p50, "p95_ms": p95, "std_ms": std, "qps": qps}
 
 
 def bench_numpy_bruteforce(vecs: List[Vector], queries: List[Vector], k: int) -> dict:
     if np is None:
-        return {"label": "numpy_bruteforce", "avg_ms": None, "p95_ms": None}
+        return {"label": "numpy_bruteforce", "avg_ms": None, "p50_ms": None, "p95_ms": None, "std_ms": None, "qps": None}
     # Prepare matrix
     A = np.array([list(v.data) for v in vecs], dtype=np.float32)  # (n, d)
     Q = np.array([list(q.data) for q in queries], dtype=np.float32)
-    times = []
-    for i in range(Q.shape[0]):
-        q = Q[i]
-        t0 = time.time()
-        # cosine similarity: since normalized, dot product is cosine
-        sims = A @ q  # (n,)
-        # top-k selection; use argpartition for efficiency
-        _ = np.argpartition(-sims, k-1)[:k]
-        times.append(time.time() - t0)
-    times_ms = [t * 1000.0 for t in times]
-    times_ms.sort()
-    p95 = times_ms[int(0.95 * (len(times_ms) - 1))] if times_ms else None
-    return {"label": "numpy_bruteforce", "avg_ms": (sum(times_ms)/len(times_ms) if times_ms else None), "p95_ms": p95}
+    # Warm-up
+    if Q.shape[0] > 0:
+        _ = A @ Q[0]
+    t0 = time.time()
+    # Batch compute all similarities
+    sims = Q @ A.T  # (m, n)
+    # Extract top-k per row (measure as one batched operation)
+    if k < sims.shape[1]:
+        idx = np.argpartition(-sims, k-1, axis=1)[:, :k]
+        # stable sort within top-k indexes
+        row_indices = np.arange(sims.shape[0])[:, None]
+        top_vals = sims[row_indices, idx]
+        order = np.argsort(-top_vals, axis=1)
+        _ = idx[row_indices, order]
+    else:
+        _ = np.argsort(-sims, axis=1)
+    total = time.time() - t0
+    avg, p50, p95, std = _latency_stats([total])
+    qps = (len(queries) / total) if total > 0 else None
+    return {"label": "numpy_bruteforce", "avg_ms": avg, "p50_ms": p50, "p95_ms": p95, "std_ms": std, "qps": qps}
 
 
 def bench_sklearn(vecs: List[Vector], queries: List[Vector], k: int) -> dict:
@@ -150,14 +182,18 @@ def run_benchmark(n: int, dim: int, n_queries: int, k: int, metric: str,
     # Exact index
     exact_idx, exact_build = bench_build_exact(vecs, ids, metric)
     results["build_seconds_exact"] = exact_build
-    results.setdefault("queries", []).append(bench_knn_queries(exact_idx, queries, k, metric, "exact_index"))
+    exact_stats = bench_knn_queries(exact_idx, queries, k, metric, "exact_index")
+    results.setdefault("queries", []).append(exact_stats)
 
     # HNSW (if available)
+    hnsw_stats = None
+    hnsw_idx = None
     if _HNSW_AVAILABLE:
         hnsw_idx, hnsw_build = bench_build_hnsw(vecs, ids, metric, M, efC, efS)
         results["build_seconds_hnsw"] = hnsw_build
         if hnsw_idx is not None:
-            results["queries"].append(bench_knn_queries(hnsw_idx, queries, k, metric, "hnsw_index"))
+            hnsw_stats = bench_knn_queries(hnsw_idx, queries, k, metric, "hnsw_index")
+            results["queries"].append(hnsw_stats)
 
     # NumPy brute force (if available)
     results["queries"].append(bench_numpy_bruteforce(vecs, queries, k))
@@ -165,10 +201,34 @@ def run_benchmark(n: int, dim: int, n_queries: int, k: int, metric: str,
     # scikit-learn baseline (optional)
     results["queries"].append(bench_sklearn(vecs, queries, k))
 
+    # Recall@k if HNSW present: compare against exact
+    try:
+        # Compute exact top-k ids using batch if available
+        if hasattr(exact_idx, 'search_batch'):
+            exact_res = exact_idx.search_batch(queries, k=k, metric=metric)
+        else:
+            exact_res = [exact_idx.search(q, k=k, metric=metric) for q in queries]
+        if hnsw_idx is not None:
+            if hasattr(hnsw_idx, 'search_batch'):
+                hnsw_res = hnsw_idx.search_batch(queries, k=k, metric=metric)
+            else:
+                hnsw_res = [hnsw_idx.search(q, k=k, metric=metric) for q in queries]
+            # compute recall
+            recs = []
+            for a, b in zip(exact_res, hnsw_res):
+                a_ids = {i for (i, _) in a}
+                b_ids = {i for (i, _) in b}
+                denom = max(1, len(a_ids))
+                recs.append(len(a_ids & b_ids) / denom)
+            recall = sum(recs) / len(recs) if recs else None
+            results.setdefault("metrics", {})["recall_at_k"] = recall
+    except Exception:
+        pass
+
     # Derive speedups if both hnsw and exact are present
     try:
-        exact_avg = next(q for q in results["queries"] if q["label"] == "exact_index")["avg_ms"]
-        hnsw_avg = next((q for q in results["queries"] if q["label"] == "hnsw_index"), {}).get("avg_ms")
+        exact_avg = exact_stats.get("avg_ms") if exact_stats else None
+        hnsw_avg = hnsw_stats.get("avg_ms") if hnsw_stats else None
         if exact_avg and hnsw_avg:
             results["speedups"] = {"hnsw_vs_exact": exact_avg / hnsw_avg if hnsw_avg > 0 else None}
     except Exception:
@@ -187,8 +247,13 @@ def main():
     p.add_argument('--M', type=int, default=16, help='HNSW M parameter')
     p.add_argument('--efC', type=int, default=200, help='HNSW efConstruction')
     p.add_argument('--efS', type=int, default=64, help='HNSW efSearch')
+    p.add_argument('--threads', type=int, default=1, help='Set OMP/MKL thread count for consistency')
     p.add_argument('--out', type=str, default='examples/benchmark_results_vectors.json')
     args = p.parse_args()
+
+    # Control threads to avoid oversubscription
+    os.environ['OMP_NUM_THREADS'] = str(args.threads)
+    os.environ['MKL_NUM_THREADS'] = str(args.threads)
 
     res = run_benchmark(n=args.n, dim=args.dim, n_queries=args.queries, k=args.k,
                         metric=args.metric, M=args.M, efC=args.efC, efS=args.efS)
