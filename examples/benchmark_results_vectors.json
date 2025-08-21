@@ -1,0 +1,46 @@
+{
+  "config": {
+    "n": 1000,
+    "dim": 16,
+    "n_queries": 10,
+    "k": 5,
+    "metric": "cosine",
+    "hnsw_params": {
+      "M": 16,
+      "efConstruction": 200,
+      "efSearch": 64
+    },
+    "env": {
+      "numpy": false,
+      "hnswlib": true,
+      "sklearn": false
+    }
+  },
+  "build_seconds_exact": 0.00026297569274902344,
+  "queries": [
+    {
+      "label": "exact_index",
+      "avg_ms": 6.702184677124023,
+      "p95_ms": 8.741617202758789
+    },
+    {
+      "label": "hnsw_index",
+      "avg_ms": 5.56485652923584,
+      "p95_ms": 6.195068359375
+    },
+    {
+      "label": "numpy_bruteforce",
+      "avg_ms": null,
+      "p95_ms": null
+    },
+    {
+      "label": "sklearn_nn",
+      "avg_ms": null,
+      "p95_ms": null
+    }
+  ],
+  "build_seconds_hnsw": 0.00017070770263671875,
+  "speedups": {
+    "hnsw_vs_exact": 1.2043769038632088
+  }
+}

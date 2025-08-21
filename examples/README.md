@@ -172,6 +172,7 @@ There are several benchmark scripts available, each with a different level of co
 - **db_performance_benchmark.py**: A more advanced benchmark with additional features
 - **performance_benchmark.py**: The most comprehensive benchmark with a class-based implementation
 - **indexed_benchmark.py**: Benchmarks index-aware query performance (AND + BETWEEN) vs linear scan and Python list baseline
+- **vector_ann_benchmark.py**: Benchmarks vector similarity search (Exact vs HNSW, plus optional NumPy and scikit-learn baselines)
 
 ### Running the Benchmarks
 
