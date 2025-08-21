@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[ADD] The performance suite was updated to use new indexes, enabling a benchmark to evaluate proto_db with indexed collections against a Python baseline. A new benchmark script was created, executed successfully, and documentation was updated accordingly." />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[ADD] The Sphinx documentation was successfully updated to reflect new features, including range operators, UnnestPlan, CollectionFieldPlan, index-aware WHERE optimizations, and the indexed benchmark. New pages were created and existing content modified as needed. All changes were documented and submitted for review." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -250,15 +250,7 @@
       <workItem from="1754229840756" duration="39038000" />
       <workItem from="1755786676387" duration="1012000" />
       <workItem from="1755787730573" duration="225000" />
-      <workItem from="1755787975213" duration="4391000" />
-    </task>
-    <task id="LOCAL-00009" summary="[WIP] queries">
-      <option name="closed" value="true" />
-      <created>1735923639918</created>
-      <option name="number" value="00009" />
-      <option name="presentableId" value="LOCAL-00009" />
-      <option name="project" value="LOCAL" />
-      <updated>1735923639918</updated>
+      <workItem from="1755787975213" duration="4735000" />
     </task>
     <task id="LOCAL-00010" summary="[WIP] queries">
       <option name="closed" value="true" />
@@ -644,14 +636,21 @@
       <option name="project" value="LOCAL" />
       <updated>1755792365792</updated>
     </task>
-    <option name="localTasksCounter" value="58" />
+    <task id="LOCAL-00058" summary="[ADD] The Sphinx documentation was successfully updated to reflect new features, including range operators, UnnestPlan, CollectionFieldPlan, index-aware WHERE optimizations, and the indexed benchmark. New pages were created and existing content modified as needed. All changes were documented and submitted for review.">
+      <option name="closed" value="true" />
+      <created>1755792710870</created>
+      <option name="number" value="00058" />
+      <option name="presentableId" value="LOCAL-00058" />
+      <option name="project" value="LOCAL" />
+      <updated>1755792710870</updated>
+    </task>
+    <option name="localTasksCounter" value="59" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[IMP] queries.py: add count optimization" />
     <MESSAGE value="[IMP] ConcurrentOptimized object, which can integrated modifications on objects by concurrent non conflicting transactions" />
     <MESSAGE value="[IMP] ConcurrentOptimized Dictionaries" />
     <MESSAGE value="[IMP] Multiformat storage implamentation" />
@@ -676,7 +675,8 @@
     <MESSAGE value="[ADD] Range operators `between[]`, `between()`, `between(]`, and `between[)` were implemented with parsing, evaluation, and index-based optimization. All tests passed successfully, confirming correct functionality and backward compatibility. The solution is now ready for submission." />
     <MESSAGE value="[ADD] Se implementó la optimización de la cláusula `where` con intersección progresiva de condiciones AND ordenadas por selectividad utilizando índices. Todas las pruebas objetivo fueron exitosas, aunque hubo un error con el descubrimiento completo por un módulo externo faltante. Sin índices, se conserva el filtrado linear habitual." />
     <MESSAGE value="[ADD] The performance suite was updated to use new indexes, enabling a benchmark to evaluate proto_db with indexed collections against a Python baseline. A new benchmark script was created, executed successfully, and documentation was updated accordingly." />
-    <option name="LAST_COMMIT_MESSAGE" value="[ADD] The performance suite was updated to use new indexes, enabling a benchmark to evaluate proto_db with indexed collections against a Python baseline. A new benchmark script was created, executed successfully, and documentation was updated accordingly." />
+    <MESSAGE value="[ADD] The Sphinx documentation was successfully updated to reflect new features, including range operators, UnnestPlan, CollectionFieldPlan, index-aware WHERE optimizations, and the indexed benchmark. New pages were created and existing content modified as needed. All changes were documented and submitted for review." />
+    <option name="LAST_COMMIT_MESSAGE" value="[ADD] The Sphinx documentation was successfully updated to reflect new features, including range operators, UnnestPlan, CollectionFieldPlan, index-aware WHERE optimizations, and the indexed benchmark. New pages were created and existing content modified as needed. All changes were documented and submitted for review." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

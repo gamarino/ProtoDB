@@ -258,6 +258,8 @@ class Operator(ABC):
             return Between(include_lower=False, include_upper=True)
         elif string == 'between[)':
             return Between(include_lower=True, include_upper=False)
+        elif string == 'near[]':
+            return Near(metric='cosine')
         else:
             raise ProtoValidationException(
                 message=f'Unknown operator: {string}!'
@@ -404,6 +406,49 @@ class Between(Operator):
             return True
         except Exception:
             # Non-comparable types -> no match
+            return False
+
+
+class Near(Operator):
+    """
+    Similarity threshold operator for vector fields.
+    Usage in Expression.compile: ['field', 'near[]', query_vector, threshold]
+    - value is treated as a tuple (query_vector, threshold)
+    - metric defaults to cosine
+    """
+    parameter_count: int = 3
+
+    def __init__(self, metric: str = 'cosine'):
+        self.metric = metric
+
+    def match(self, source, value=None) -> bool:
+        try:
+            if not isinstance(value, tuple) or len(value) < 2:
+                return False
+            query_vec, threshold = value[0], value[1]
+            # Accept both plain lists and Vector objects
+            from .vectors import Vector, cosine_similarity, l2_distance
+            # Extract raw data for source
+            src = source
+            if isinstance(src, Vector):
+                src_iter = src.data
+            else:
+                src_iter = list(src)
+            if self.metric == 'cosine':
+                score = cosine_similarity(src_iter, query_vec.data if isinstance(query_vec, Vector) else query_vec)
+                return score >= float(threshold)
+            elif self.metric == 'l2':
+                # For l2, interpret threshold as max distance
+                # Near should be distance <= threshold
+                # Use -distance as score if needed elsewhere
+                # Compute distance
+                # Reuse cosine helpers module for l2
+                from .vectors import l2_distance as _l2
+                dist = _l2(src_iter, query_vec.data if isinstance(query_vec, Vector) else query_vec)
+                return dist <= float(threshold)
+            else:
+                return False
+        except Exception:
             return False
 
 

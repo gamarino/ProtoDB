@@ -12,6 +12,7 @@ This section provides detailed API documentation for ProtoBase.
    data_structures
    indexes
    queries
+   vectors
    exceptions
    fsm
 
