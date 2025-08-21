@@ -4,11 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[UPD] commercial_positioning.md">
-      <change beforePath="$PROJECT_DIR$/.idea/ProtoBase.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/ProtoBase.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] __init__.py : dependency errors">
+      <change afterPath="$PROJECT_DIR$/benchmark_results.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/source/api/vectors.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/vectors.rst" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/vector_index.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/vector_index.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -265,15 +265,7 @@
       <workItem from="1754229840756" duration="39038000" />
       <workItem from="1755786676387" duration="1012000" />
       <workItem from="1755787730573" duration="225000" />
-      <workItem from="1755787975213" duration="8025000" />
-    </task>
-    <task id="LOCAL-00012" summary="[WIP] queries: indexed queries optiminizations on WherePlan">
-      <option name="closed" value="true" />
-      <created>1736080451335</created>
-      <option name="number" value="00012" />
-      <option name="presentableId" value="LOCAL-00012" />
-      <option name="project" value="LOCAL" />
-      <updated>1736080451335</updated>
+      <workItem from="1755787975213" duration="11266000" />
     </task>
     <task id="LOCAL-00013" summary="[WIP] queries: WherePlan after JoinPlan, optimized to prefiltered Joins">
       <option name="closed" value="true" />
@@ -659,14 +651,21 @@
       <option name="project" value="LOCAL" />
       <updated>1755794248206</updated>
     </task>
-    <option name="localTasksCounter" value="61" />
+    <task id="LOCAL-00061" summary="[FIX] __init__.py : dependency errors">
+      <option name="closed" value="true" />
+      <created>1755802960398</created>
+      <option name="number" value="00061" />
+      <option name="presentableId" value="LOCAL-00061" />
+      <option name="project" value="LOCAL" />
+      <updated>1755802960398</updated>
+    </task>
+    <option name="localTasksCounter" value="62" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[IMP] Multiformat storage implamentation" />
     <MESSAGE value="[FIX] README.md" />
     <MESSAGE value="[FIX] README.md, pyproject.toml: update to current status" />
     <MESSAGE value="[IMP] examples" />
@@ -691,7 +690,8 @@
     <MESSAGE value="[ADD] The Sphinx documentation was successfully updated to reflect new features, including range operators, UnnestPlan, CollectionFieldPlan, index-aware WHERE optimizations, and the indexed benchmark. New pages were created and existing content modified as needed. All changes were documented and submitted for review." />
     <MESSAGE value="[ADD] A new `Vector` type and an `ExactVectorIndex` interface with basic operators for similarity search were successfully implemented in `proto_db`. The `near[]` operator was integrated, allowing for linear fallback evaluations, and all tests passed successfully. Documentation was updated accordingly, leaving future enhancements like ANN and persistence for subsequent phases." />
     <MESSAGE value="[UPD] commercial_positioning.md" />
-    <option name="LAST_COMMIT_MESSAGE" value="[UPD] commercial_positioning.md" />
+    <MESSAGE value="[FIX] __init__.py : dependency errors" />
+    <option name="LAST_COMMIT_MESSAGE" value="[FIX] __init__.py : dependency errors" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -707,29 +707,9 @@
           <option name="timeStamp" value="154" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/proto_db/common.py</url>
-          <line>747</line>
-          <option name="timeStamp" value="157" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/queries.py</url>
           <line>263</line>
           <option name="timeStamp" value="188" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/proto_db/common.py</url>
-          <line>528</line>
-          <option name="timeStamp" value="208" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/proto_db/common.py</url>
-          <line>520</line>
-          <option name="timeStamp" value="211" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/proto_db/common.py</url>
-          <line>500</line>
-          <option name="timeStamp" value="229" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/examples/simple_example.py</url>
@@ -762,6 +742,10 @@
           <url>file://$PROJECT_DIR$/proto_db/db_access.py</url>
           <line>401</line>
           <option name="timeStamp" value="255" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/proto_db/vectors.py</url>
+          <option name="timeStamp" value="256" />
         </line-breakpoint>
       </breakpoints>
       <default-breakpoints>

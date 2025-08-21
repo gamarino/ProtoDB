@@ -29,6 +29,14 @@ Vector Indexes
 .. autoclass:: proto_db.vector_index.ExactVectorIndex
    :members:
 
+.. autoclass:: proto_db.vector_index.HNSWVectorIndex
+   :members:
+
+Notes on backends
+-----------------
+- HNSWVectorIndex requires the optional 'hnswlib' (and numpy) dependency. If it is not available, it transparently falls back to the exact implementation.
+- HNSW supports parameters M, efConstruction and efSearch. Use save(path_prefix)/load(path_prefix) to persist and reload the index and its metadata (id mapping, metric, params).
+
 Operators
 ---------
 
