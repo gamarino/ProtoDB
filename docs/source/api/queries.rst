@@ -5,6 +5,14 @@ Query System
 
 This module provides the query system of ProtoBase, which allows for complex data manipulation and retrieval.
 
+New in this release
+-------------------
+
+- Range operators between[]/()/[)/(] with proper bound inclusivity via the Between operator.
+- Collection-oriented plans: UnnestPlan and CollectionFieldPlan.
+- Index-aware filtering optimization in WherePlan for AND conjunctions using progressive intersection ordered by selectivity.
+- Range pushdown over indexes via IndexedRangeSearchPlan.
+
 Query Plans
 ----------
 
@@ -116,6 +124,33 @@ ListPlan
 
 ``ListPlan`` is a simple plan that wraps a list. It provides an iterator over the list and can be used as the basis for other query plans.
 
+UnnestPlan
+~~~~~~~~~~
+
+.. autoclass:: UnnestPlan
+   :members:
+   :special-members: __init__
+
+``UnnestPlan`` flattens an iterable found in each input record (by dotted path or callable). It emits one row per element. If an element_alias is provided, the element is attached to the original record under that key; otherwise the element replaces the record.
+
+CollectionFieldPlan
+~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: CollectionFieldPlan
+   :members:
+   :special-members: __init__
+
+``CollectionFieldPlan`` evaluates a per-record subplan and assigns the collected results (as a list) to the given field name, preserving the original record.
+
+IndexedRangeSearchPlan
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: IndexedRangeSearchPlan
+   :members:
+   :special-members: __init__
+
+This plan iterates only the index buckets whose keys fall within a specified range, respecting inclusive/exclusive bounds. It is produced by WherePlan.optimize when a Between operator applies to an indexed field.
+
 Optimized Counting
 ----------------
 
@@ -149,6 +184,27 @@ OrMerge.count()
 ~~~~~~~~~~~~
 
 The ``OrMerge`` class optimizes counting for the union of sub-queries. It uses a set to efficiently combine IDs and get the final count of unique results.
+
+Range Operators (Between)
+-------------------------
+
+.. autoclass:: Between
+   :members:
+   :special-members: __init__
+
+The ``Between`` operator supports configurable bound inclusivity. Four canonical spellings are supported by the operator factory:
+
+- ``between[]``: inclusive lower and upper bounds
+- ``between()``: exclusive lower and upper bounds
+- ``between(]``: exclusive lower, inclusive upper
+- ``between[)``: inclusive lower, exclusive upper
+
+Each ``Term`` using ``Between`` expects a value tuple ``(lo, hi)``. Example compiled expression: ``['age', 'between()', 10, 20]``.
+
+Index-aware AND optimization
+----------------------------
+
+When the filter is an ``AndExpression`` and the underlying plan exposes secondary indexes for the referenced fields, ``WherePlan.execute`` builds per-term candidate sets from the indexes, sorts them by selectivity (size) ascending, and performs a progressive intersection with early exit. Non-indexable residual predicates are applied only to the reduced set. This can drastically reduce the work on large datasets.
 
 Usage Examples
 -------------
