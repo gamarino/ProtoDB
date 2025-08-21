@@ -1021,15 +1021,122 @@ class WherePlan(QueryPlan):
         """
         Execute the filtering logic over the input records.
 
-        Each record is checked against the `filter` expression. Only records
-        that match the filter are yielded.
+        Optimized path:
+        - If the filter is an AndExpression and the underlying plan exposes indexes
+          (IndexedQueryPlan), build candidate sets for indexable terms (==, in, contains,
+          between, <, <=, >, >=) using the index, sort by selectivity (len), and intersect
+          progressively. Then apply residual filtering on the reduced set only.
+        - Otherwise, fallback to linear scan.
 
         :return: A generator yielding filtered records.
         :rtype: list
         """
 
-        for record in self.based_on.execute():
-            if self.filter.match(record):
+        # Attempt index-aware evaluation for AND conditions
+        from .queries import Between as _Between
+        from .queries import Equal as _Equal, In as _In, Contains as _Contains
+        from .queries import Greater as _Greater, GreaterOrEqual as _GreaterOrEqual
+        from .queries import Lower as _Lower, LowerOrEqual as _LowerOrEqual
+        base = self.based_on
+        flt = self.filter
+
+        def build_candidate_set(term: Term):
+            # Only terms with target attribute present in indexes are eligible
+            try:
+                field = term.target_attribute
+                # Ensure we have an IndexedQueryPlan and an index for the field
+                from .queries import IndexedQueryPlan as _IQP
+                if not isinstance(base, _IQP) or field not in getattr(base, 'indexes', {}):
+                    return None
+                op = term.operation
+                # Equality
+                if isinstance(op, _Equal):
+                    idx_dict = base.indexes[field]
+                    item = idx_dict.get_at(term.value)
+                    if not item:
+                        return set()
+                    # item is a Set; turn into Python set of records
+                    return set(item.as_iterable())
+                # IN operator: union of equalities
+                if isinstance(op, _In):
+                    result = set()
+                    try:
+                        for v in term.value:
+                            idx_dict = base.indexes[field]
+                            it = idx_dict.get_at(v)
+                            if it:
+                                result.update(it.as_iterable())
+                    except Exception:
+                        return None
+                    return result
+                # CONTAINS: treat as equality on elements if index was built for contained elements
+                if isinstance(op, _Contains):
+                    idx_dict = base.indexes[field]
+                    it = idx_dict.get_at(term.value)
+                    if it:
+                        return set(it.as_iterable())
+                    return set()
+                # BETWEEN (range)
+                if isinstance(op, _Between):
+                    try:
+                        lo, hi = term.value
+                    except Exception:
+                        return None
+                    if lo is None or hi is None:
+                        return None
+                    # Use indexed range helper to avoid scanning all
+                    return set(base.get_range(field, lo, hi, op.include_lower, op.include_upper))
+                # Greater/Less family as ranges
+                if isinstance(op, _Greater):
+                    return set(base.get_greater_than(field, term.value))
+                if isinstance(op, _GreaterOrEqual):
+                    return set(base.get_greater_or_equal_than(field, term.value))
+                if isinstance(op, _Lower):
+                    return set(base.get_lower_than(field, term.value))
+                if isinstance(op, _LowerOrEqual):
+                    return set(base.get_lower_or_equal_than(field, term.value))
+                return None
+            except Exception:
+                return None
+
+        # Only attempt when filter is a conjunction of terms
+        if isinstance(flt, AndExpression):
+            candidate_sets: list[set] = []
+            residual = []  # keep full filter for safety; residual list reserved for future split
+            for t in flt.terms:
+                if isinstance(t, Term):
+                    cand = build_candidate_set(t)
+                    if cand is None:
+                        residual.append(t)
+                    else:
+                        candidate_sets.append(cand)
+                else:
+                    residual.append(t)
+
+            if candidate_sets:
+                # Order by selectivity (ascending size)
+                candidate_sets.sort(key=lambda s: len(s))
+                # Progressive intersection with early exit
+                current = candidate_sets[0]
+                for s in candidate_sets[1:]:
+                    if not current:
+                        break
+                    current = current.intersection(s)
+                if not current:
+                    return  # empty generator
+                # Apply residual/full filter on reduced set only
+                for rec in current:
+                    try:
+                        if self.filter.match(rec):
+                            yield rec
+                    except Exception:
+                        # Be conservative: if matching fails, skip
+                        pass
+                return
+
+        # Fallback: linear scan
+        for record in base.execute():
+            if flt.match(record):
                 yield record
 
     def optimize(self, full_plan: 'QueryPlan') -> 'QueryPlan':

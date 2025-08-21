@@ -4,15 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] additional files for new query features">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/dictionaries.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/lists.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/sets.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/sets.py" afterDir="false" />
-    </list>
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[ADD] Range operators `between[]`, `between()`, `between(]`, and `between[)` were implemented with parsing, evaluation, and index-based optimization. All tests passed successfully, confirming correct functionality and backward compatibility. The solution is now ready for submission." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -237,22 +229,6 @@
   </component>
   <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
-    <task id="LOCAL-00005" summary="[WIP] db_access con standalone_file_storage. Test pasado, 100_000 records en 46s">
-      <option name="closed" value="true" />
-      <created>1735784866575</created>
-      <option name="number" value="00005" />
-      <option name="presentableId" value="LOCAL-00005" />
-      <option name="project" value="LOCAL" />
-      <updated>1735784866576</updated>
-    </task>
-    <task id="LOCAL-00006" summary="[WIP] transacciones anidadas, listas con head, tail y split optimo, factorización de acceso a los roots, manejo flexible de database y transacciones con bloques with">
-      <option name="closed" value="true" />
-      <created>1735866366408</created>
-      <option name="number" value="00006" />
-      <option name="presentableId" value="LOCAL-00006" />
-      <option name="project" value="LOCAL" />
-      <updated>1735866366408</updated>
-    </task>
     <task active="true" id="Default" summary="Default task">
       <changelist id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[WIP] transacciones anidadas, listas con head, tail y split optimo, factorización de acceso a los roots, manejo flexible de database y transacciones con bloques with" />
       <created>1735915379904</created>
@@ -274,7 +250,7 @@
       <workItem from="1754229840756" duration="39038000" />
       <workItem from="1755786676387" duration="1012000" />
       <workItem from="1755787730573" duration="225000" />
-      <workItem from="1755787975213" duration="2485000" />
+      <workItem from="1755787975213" duration="3153000" />
     </task>
     <task id="LOCAL-00007" summary="[WIP] standalone_file_storage.py : push_to_wal with bytes, not bytearray">
       <option name="closed" value="true" />
@@ -652,15 +628,29 @@
       <option name="project" value="LOCAL" />
       <updated>1755790181665</updated>
     </task>
-    <option name="localTasksCounter" value="54" />
+    <task id="LOCAL-00054" summary="[ADD] Implemented persistent internal secondary indexes for List, Dictionary, and Set, updating relevant methods and iterators to use these indexes. The new indexes.py module includes IndexDefinition and an immutable IndexRegistry, ensuring stable identifiers and lazy index loading. Completed testing confirmed proper functionality and index integrity.">
+      <option name="closed" value="true" />
+      <created>1755790479657</created>
+      <option name="number" value="00054" />
+      <option name="presentableId" value="LOCAL-00054" />
+      <option name="project" value="LOCAL" />
+      <updated>1755790479657</updated>
+    </task>
+    <task id="LOCAL-00055" summary="[ADD] Range operators `between[]`, `between()`, `between(]`, and `between[)` were implemented with parsing, evaluation, and index-based optimization. All tests passed successfully, confirming correct functionality and backward compatibility. The solution is now ready for submission.">
+      <option name="closed" value="true" />
+      <created>1755791128577</created>
+      <option name="number" value="00055" />
+      <option name="presentableId" value="LOCAL-00055" />
+      <option name="project" value="LOCAL" />
+      <updated>1755791128577</updated>
+    </task>
+    <option name="localTasksCounter" value="56" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[IMP] documentation in sphinx generated" />
-    <MESSAGE value="[FIX] cloud_file_storage: prevent deadlocks in test" />
     <MESSAGE value="[IMP] cloud_cluster_file_storage: implments a local cache to maximize throughput of s3 reads" />
     <MESSAGE value="[IMP] queries.py: add further optimizations" />
     <MESSAGE value="[IMP] queries.py: add count optimization" />
@@ -684,7 +674,9 @@
     <MESSAGE value="[PROPOSAL] commercial positioning" />
     <MESSAGE value="[FIX] test files cleanup" />
     <MESSAGE value="[FIX] additional files for new query features" />
-    <option name="LAST_COMMIT_MESSAGE" value="[FIX] additional files for new query features" />
+    <MESSAGE value="[ADD] Implemented persistent internal secondary indexes for List, Dictionary, and Set, updating relevant methods and iterators to use these indexes. The new indexes.py module includes IndexDefinition and an immutable IndexRegistry, ensuring stable identifiers and lazy index loading. Completed testing confirmed proper functionality and index integrity." />
+    <MESSAGE value="[ADD] Range operators `between[]`, `between()`, `between(]`, and `between[)` were implemented with parsing, evaluation, and index-based optimization. All tests passed successfully, confirming correct functionality and backward compatibility. The solution is now ready for submission." />
+    <option name="LAST_COMMIT_MESSAGE" value="[ADD] Range operators `between[]`, `between()`, `between(]`, and `between[)` were implemented with parsing, evaluation, and index-based optimization. All tests passed successfully, confirming correct functionality and backward compatibility. The solution is now ready for submission." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -706,7 +698,7 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/queries.py</url>
-          <line>243</line>
+          <line>261</line>
           <option name="timeStamp" value="188" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
