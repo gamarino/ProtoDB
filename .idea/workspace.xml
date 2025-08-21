@@ -4,7 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[ADD] The Sphinx documentation was successfully updated to reflect new features, including range operators, UnnestPlan, CollectionFieldPlan, index-aware WHERE optimizations, and the indexed benchmark. New pages were created and existing content modified as needed. All changes were documented and submitted for review." />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[ADD] A new `Vector` type and an `ExactVectorIndex` interface with basic operators for similarity search were successfully implemented in `proto_db`. The `near[]` operator was integrated, allowing for linear fallback evaluations, and all tests passed successfully. Documentation was updated accordingly, leaving future enhancements like ANN and persistence for subsequent phases.">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/commercial_positioning.md" beforeDir="false" afterPath="$PROJECT_DIR$/commercial_positioning.md" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -250,15 +253,7 @@
       <workItem from="1754229840756" duration="39038000" />
       <workItem from="1755786676387" duration="1012000" />
       <workItem from="1755787730573" duration="225000" />
-      <workItem from="1755787975213" duration="4735000" />
-    </task>
-    <task id="LOCAL-00010" summary="[WIP] queries">
-      <option name="closed" value="true" />
-      <created>1735937066733</created>
-      <option name="number" value="00010" />
-      <option name="presentableId" value="LOCAL-00010" />
-      <option name="project" value="LOCAL" />
-      <updated>1735937066733</updated>
+      <workItem from="1755787975213" duration="6101000" />
     </task>
     <task id="LOCAL-00011" summary="[WIP] queries, IndexedQueryPlan">
       <option name="closed" value="true" />
@@ -644,14 +639,21 @@
       <option name="project" value="LOCAL" />
       <updated>1755792710870</updated>
     </task>
-    <option name="localTasksCounter" value="59" />
+    <task id="LOCAL-00059" summary="[ADD] A new `Vector` type and an `ExactVectorIndex` interface with basic operators for similarity search were successfully implemented in `proto_db`. The `near[]` operator was integrated, allowing for linear fallback evaluations, and all tests passed successfully. Documentation was updated accordingly, leaving future enhancements like ANN and persistence for subsequent phases.">
+      <option name="closed" value="true" />
+      <created>1755793455714</created>
+      <option name="number" value="00059" />
+      <option name="presentableId" value="LOCAL-00059" />
+      <option name="project" value="LOCAL" />
+      <updated>1755793455714</updated>
+    </task>
+    <option name="localTasksCounter" value="60" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[IMP] ConcurrentOptimized object, which can integrated modifications on objects by concurrent non conflicting transactions" />
     <MESSAGE value="[IMP] ConcurrentOptimized Dictionaries" />
     <MESSAGE value="[IMP] Multiformat storage implamentation" />
     <MESSAGE value="[FIX] README.md" />
@@ -676,7 +678,8 @@
     <MESSAGE value="[ADD] Se implementó la optimización de la cláusula `where` con intersección progresiva de condiciones AND ordenadas por selectividad utilizando índices. Todas las pruebas objetivo fueron exitosas, aunque hubo un error con el descubrimiento completo por un módulo externo faltante. Sin índices, se conserva el filtrado linear habitual." />
     <MESSAGE value="[ADD] The performance suite was updated to use new indexes, enabling a benchmark to evaluate proto_db with indexed collections against a Python baseline. A new benchmark script was created, executed successfully, and documentation was updated accordingly." />
     <MESSAGE value="[ADD] The Sphinx documentation was successfully updated to reflect new features, including range operators, UnnestPlan, CollectionFieldPlan, index-aware WHERE optimizations, and the indexed benchmark. New pages were created and existing content modified as needed. All changes were documented and submitted for review." />
-    <option name="LAST_COMMIT_MESSAGE" value="[ADD] The Sphinx documentation was successfully updated to reflect new features, including range operators, UnnestPlan, CollectionFieldPlan, index-aware WHERE optimizations, and the indexed benchmark. New pages were created and existing content modified as needed. All changes were documented and submitted for review." />
+    <MESSAGE value="[ADD] A new `Vector` type and an `ExactVectorIndex` interface with basic operators for similarity search were successfully implemented in `proto_db`. The `near[]` operator was integrated, allowing for linear fallback evaluations, and all tests passed successfully. Documentation was updated accordingly, leaving future enhancements like ANN and persistence for subsequent phases." />
+    <option name="LAST_COMMIT_MESSAGE" value="[ADD] A new `Vector` type and an `ExactVectorIndex` interface with basic operators for similarity search were successfully implemented in `proto_db`. The `near[]` operator was integrated, allowing for linear fallback evaluations, and all tests passed successfully. Documentation was updated accordingly, leaving future enhancements like ANN and persistence for subsequent phases." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -698,7 +701,7 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/queries.py</url>
-          <line>261</line>
+          <line>263</line>
           <option name="timeStamp" value="188" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
