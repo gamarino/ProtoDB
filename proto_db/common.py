@@ -804,6 +804,13 @@ class QueryPlan(Atom):
         :return: The optimized query plan.
         """
 
+    def count(self) -> int:
+        """
+        Default count implementation: iterate through execute() and count the results.
+        Subclasses can override for more efficient counting.
+        """
+        return sum(1 for _ in self.execute())
+
 
 class Literal(Atom):
     """

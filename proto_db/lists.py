@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .common import Atom, QueryPlan, DBCollections, AbstractTransaction, AtomPointer
+from .indexes import IndexRegistry, IndexDefinition
 
 
 class ListQueryPlan(QueryPlan):
@@ -35,6 +36,8 @@ class ListQueryPlan(QueryPlan):
 
 
 class List(Atom):
+    _indexes: IndexRegistry | None = None
+    _index_defs: tuple[IndexDefinition, ...] | None = None
     empty: bool  # Indicator to represent empty lists
     value: object | None  # The value associated with this position; None is a valid value.
     height: int  # The height of the current subtree rooted at this node.
@@ -100,6 +103,33 @@ class List(Atom):
                 self.value._save()
 
             super()._save()
+
+    def _stable_id_for(self, value: object) -> int:
+        if isinstance(value, Atom):
+            try:
+                return value.hash()
+            except Exception:
+                pass
+        return hash(value)
+
+    def set_index_defs(self, defs: 'tuple[IndexDefinition, ...] | list[IndexDefinition]'):
+        self._index_defs = tuple(defs)
+        # Build lazily when needed
+        if not self._indexes and self._index_defs:
+            reg = IndexRegistry().with_defs(self._index_defs)
+            for v in self.as_iterable():
+                reg = reg.with_add(self._stable_id_for(v), v)
+            self._indexes = reg
+
+    def _attach_indexes(self, target: 'List', new_indexes: IndexRegistry | None) -> 'List':
+        try:
+            object.__setattr__(target, '_index_defs', self._index_defs)
+            object.__setattr__(target, '_indexes', new_indexes or self._indexes)
+        except Exception:
+            # Fallback just in case immutability constraints bite
+            target._index_defs = self._index_defs
+            target._indexes = new_indexes or self._indexes
+        return target
 
     def as_iterable(self) -> list[tuple[int, object]]:
         """
@@ -418,7 +448,18 @@ class List(Atom):
                 transaction=self.transaction
             )
 
-        return new_node._rebalance()
+        result = new_node._rebalance()
+        new_indexes = self._indexes
+        if self._index_defs:
+            if not new_indexes:
+                new_indexes = IndexRegistry().with_defs(self._index_defs)
+            elif not getattr(new_indexes, 'defs', ()):  # ensure defs attached
+                new_indexes = new_indexes.with_defs(self._index_defs)
+            if cmp == 0 and not self.empty:
+                new_indexes = new_indexes.with_replace(self._stable_id_for(self.value), self.value, value)
+            else:
+                new_indexes = new_indexes.with_add(self._stable_id_for(value), value)
+        return self._attach_indexes(result, new_indexes)
 
     def insert_at(self, offset: int, value: object) -> List:
         """

@@ -61,19 +61,30 @@ class Expression(ABC):
                 second_operand, local_index = collect_expression(local_index)
                 return OrExpression([first_operand, second_operand]), local_index
             else:
-                # It should be a plain term
-                term_def = expression[local_index]
-                local_index += 1
-                if len(term_def) < 2:
-                    raise ProtoValidationException(
-                        message=f'Invalid term definition: {term_def}. It should contain at least two operands!'
-                    )
-                operand = Operator.get_operator(expression[1])
-                if len(expression) != operand.parameter_count + 1:
-                    raise ProtoValidationException(
-                        message=f'Operand {operand} expect at list {operand.parameter_count} parameters!'
-                    )
-                return Term(expression[0], operand, expression[2]), local_index
+                # Support nested sub-expressions and plain terms.
+                current = expression[local_index]
+                # If current token is a nested expression (list), compile it recursively
+                if isinstance(current, list):
+                    compiled = Expression.compile(current)
+                    local_index += 1
+                    return compiled, local_index
+                # Otherwise, it should be a plain term in prefix stream: [attr, op, value?]
+                try:
+                    attr = expression[local_index]
+                    op_token = expression[local_index + 1]
+                except Exception:
+                    raise ProtoValidationException(message=f'Invalid term at position {local_index}: {expression}')
+                operand = Operator.get_operator(op_token)
+                if operand.parameter_count == 1:
+                    local_index += 2
+                    return Term(attr, operand, None), local_index
+                else:
+                    try:
+                        value = expression[local_index + 2]
+                    except Exception:
+                        raise ProtoValidationException(message=f'Operand {op_token} expects binary term [attr, op, value]')
+                    local_index += 3
+                    return Term(attr, operand, value), local_index
 
         default_and_expression = list()
         while index < len(expression):
@@ -98,7 +109,8 @@ class Expression(ABC):
                 new_operands.append(operand.filter_by_alias(alias))
             return AndExpression(new_operands)
         elif isinstance(self, OrExpression):
-            return TrueTerm
+            # OR cannot be safely pushed down by alias without full context; return neutral TrueTerm
+            return TrueTerm()
         elif isinstance(self, NotExpression):
             return NotExpression(self.negated_expression.filter_by_alias(alias))
         else:
@@ -321,7 +333,7 @@ class NotTrue(Operator):
     parameter_count: int = 1
 
     def match(self, source, value=None):
-        return not bool(value)
+        return not bool(source)
 
 
 class IsNone(Operator):
@@ -349,10 +361,23 @@ class Term(Expression):
         self.value = value
 
     def match(self, record):
-        return self.operation.match(
-            getattr(record.value, self.target_attribute),
-            self.value
-        )
+        # Support dotted-paths and dict/DBObject records
+        def resolve(obj, path: str):
+            parts = path.split('.') if isinstance(path, str) else [path]
+            cur = obj
+            for p in parts:
+                if cur is None:
+                    return None
+                if isinstance(cur, dict):
+                    cur = cur.get(p)
+                else:
+                    try:
+                        cur = getattr(cur, p)
+                    except Exception:
+                        return None
+            return cur
+        source_value = resolve(record, self.target_attribute)
+        return self.operation.match(source_value, self.value)
 
 
 class TrueTerm(Expression):
@@ -527,7 +552,7 @@ class IndexedQueryPlan(QueryPlan):
 
     def yield_from_index(self, field_name: str, index: int) -> list:
         while index < self.indexes[field_name].count:
-            item = cast(DictionaryItem, self.indexes.get_at(index))
+            item = cast(DictionaryItem, self.indexes[field_name].get_at(index))
             index += 1
             value_set = cast(Set, item.value)
             for record in value_set.as_iterable():
@@ -562,7 +587,7 @@ class IndexedQueryPlan(QueryPlan):
     def yield_up_to_index(self, field_name: str, index_up_to: int) -> list:
         index = 0
         while index < self.indexes[field_name].count and index < index_up_to:
-            item = cast(DictionaryItem, self.indexes.get_at(index))
+            item = cast(DictionaryItem, self.indexes[field_name].get_at(index))
             index += 1
             value_set = cast(Set, item.value)
             for record in value_set.as_iterable():
@@ -644,22 +669,22 @@ class IndexedSearchPlan(IndexedQueryPlan):
 
     def count(self) -> int:
         """
-        Provides a fast count of results by leveraging the underlying index count.
-        This avoids iterating over the actual data.
-
-        Returns:
-            The number of items that match the search criteria.
+        Fast count leveraging indexes when possible.
+        - For equality over an indexed field, return the set count directly.
+        - Otherwise, fallback to executing and counting.
         """
-        # This assumes the underlying plan is an IndexedQueryPlan, which it should be.
-        if self.operator in ['==', 'eq']:
-            # The `get_equal_than` method returns a list-like object from the index
-            # that already knows its own count.
-            return self.based_on.get_equal_than(self.field_to_scan, self.value).count
-
-        # For other operators like '>', '<', etc., we might still need to iterate,
-        # but only on the index, which is still faster than a full table scan.
-        # A simple implementation would be:
-        return len(list(self.execute()))
+        try:
+            if isinstance(self.operator, Equal) and self.field_to_scan in self.indexes:
+                index = cast(Dictionary, self.indexes[self.field_to_scan])
+                item = cast(DictionaryItem, index.get_at(self.value))
+                if not item:
+                    return 0
+                value_set = cast(Set, item.value)
+                return value_set.count
+        except Exception:
+            # On any unexpected shape, fallback to generic count
+            pass
+        return sum(1 for _ in self.execute())
 
 
 class AndMerge(QueryPlan):
@@ -752,7 +777,7 @@ class OrMerge(QueryPlan):
 
     def execute(self) -> list:
         for query in self.or_queries:
-            for record in query:
+            for record in query.execute():
                 yield record
 
     def optimize(self, full_plan: QueryPlan) -> QueryPlan:
@@ -765,17 +790,26 @@ class OrMerge(QueryPlan):
     def count(self) -> int:
         """
         Calculates the count of the union of sub-queries.
-        It uses a set to efficiently combine IDs and get the final count
-        of unique results.
+        Prefer fast path with keys_iterator() when available; otherwise fall back to
+        executing the plans and counting unique results.
         """
-        # Optimize sub-queries and get their ID iterators
-        optimized_queries = [q.optimize(self) for q in self.or_queries]
-        id_iterators = [q.keys_iterator() for q in optimized_queries]
+        if not self.or_queries:
+            return 0
 
-        # Union all IDs using a set to handle duplicates automatically
+        optimized_queries = [q.optimize(self) for q in self.or_queries]
+
         all_ids = set()
-        for iterator in id_iterators:
-            all_ids.update(iterator)
+        for q in optimized_queries:
+            if hasattr(q, 'keys_iterator'):
+                try:
+                    for k in q.keys_iterator():
+                        all_ids.add(k)
+                    continue
+                except Exception:
+                    # Fallback to execute
+                    pass
+            for rec in q.execute():
+                all_ids.add(rec)
 
         return len(all_ids)
 
@@ -1057,6 +1091,116 @@ class MaxAggregator(AgreggatorFunction):
         return max_value
 
 
+class UnnestPlan(QueryPlan):
+    """
+    Plan that flattens a collection from each input record.
+    - source_path: dotted path string or callable(record) -> iterable
+    - element_alias: if provided, the element is attached to the original record under this key; otherwise the element replaces the record.
+    """
+    def __init__(self, source_path, element_alias: str | None = None, based_on: QueryPlan = None,
+                 transaction: ObjectTransaction = None, atom_pointer: AtomPointer = None, **kwargs):
+        super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
+        self.source_path = source_path
+        self.element_alias = element_alias
+
+    def _resolve_path(self, record, path: str):
+        parts = path.split('.') if isinstance(path, str) else [path]
+        cur = record
+        for p in parts:
+            if cur is None:
+                return None
+            if isinstance(cur, dict):
+                cur = cur.get(p)
+            else:
+                try:
+                    cur = getattr(cur, p)
+                except Exception:
+                    return None
+        return cur
+
+    def execute(self):
+        if not self.based_on:
+            return
+        for record in self.based_on.execute():
+            # determine the collection
+            collection = None
+            if callable(self.source_path):
+                try:
+                    collection = self.source_path(record)
+                except Exception:
+                    collection = None
+            elif isinstance(self.source_path, str):
+                collection = self._resolve_path(record, self.source_path)
+            # check iterability (avoid strings/bytes)
+            if collection is None:
+                continue
+            if isinstance(collection, (str, bytes)):
+                continue
+            try:
+                iterator = iter(collection)
+            except TypeError:
+                continue
+            for elem in iterator:
+                if self.element_alias:
+                    if isinstance(record, dict):
+                        out = dict(record)
+                        out[self.element_alias] = elem
+                        yield out
+                    else:
+                        # assume DBObject-like
+                        try:
+                            yield record._setattr(self.element_alias, elem)
+                        except Exception:
+                            yield {**(dict(record) if hasattr(record, 'items') else {}), self.element_alias: elem}
+                else:
+                    yield elem
+
+    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
+        if self.based_on:
+            self.based_on = self.based_on.optimize(full_plan)
+        return self
+
+
+class CollectionFieldPlan(QueryPlan):
+    """
+    For each left record, executes a subplan built from it and attaches the collected results as a list under field_name.
+    """
+    def __init__(self, field_name: str, subplan_builder, based_on: QueryPlan = None,
+                 transaction: ObjectTransaction = None, atom_pointer: AtomPointer = None, **kwargs):
+        super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
+        self.field_name = field_name
+        self.subplan_builder = subplan_builder
+
+    def execute(self):
+        if not self.based_on:
+            return
+        for left in self.based_on.execute():
+            subplan = self.subplan_builder(left)
+            if subplan is None:
+                results = []
+            else:
+                subplan = subplan.optimize(self)
+                results = list(subplan.execute())
+            if isinstance(left, dict):
+                out = dict(left)
+                out[self.field_name] = results
+                yield out
+            else:
+                try:
+                    yield left._setattr(self.field_name, results)
+                except Exception:
+                    out = {}
+                    if hasattr(left, 'items'):
+                        out.update(dict(left))
+                    out[self.field_name] = results
+                    yield out
+
+    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
+        if self.based_on:
+            self.based_on = self.based_on.optimize(full_plan)
+        return self
+
+
 class SelectPlan(QueryPlan):
     """
     A query plan that selects and transforms fields from records produced by another query plan.
@@ -1188,12 +1332,29 @@ class CountPlan(QueryPlan):
         optimized_based_on = self.based_on.optimize(full_plan)
 
         # Duck-typing: Check if the optimized underlying plan has a fast `count` method.
+        # Only delegate if the method is overridden (not the default QueryPlan.count).
         if hasattr(optimized_based_on, 'count'):
-            # Delegate counting to the specialized method of the sub-plan.
-            return CountResultPlan(count_value=optimized_based_on.count(), transaction=self.transaction)
+            try:
+                # Special-case: don't delegate for plain ListPlan (no fast path expected)
+                from .queries import ListPlan as _ListPlan
+                if isinstance(optimized_based_on, _ListPlan):
+                    raise Exception('Use default path for ListPlan')
+                # Otherwise, delegate if a count method is present
+                return CountResultPlan(count_value=optimized_based_on.count(), transaction=self.transaction)
+            except Exception:
+                # Fall through to default behavior
+                pass
 
         self.based_on = optimized_based_on
         return self
+
+
+class ArrayAgg(AgreggatorFunction):
+    """
+    Aggregator that collects values into a list (array aggregation).
+    """
+    def compute(self, values: list) -> list:
+        return list(values)
 
 
 class CountResultPlan(QueryPlan):
