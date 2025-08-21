@@ -4,9 +4,14 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[PROPOSAL] next steps by AI">
-      <change afterPath="$PROJECT_DIR$/commercial_positioning.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/next_steps_proposal.md" beforeDir="false" afterPath="$PROJECT_DIR$/next_steps_proposal.md" afterDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] additional files for new query features">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/dictionaries.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/lists.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/sets.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/sets.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -29,13 +34,10 @@
     &quot;assignee&quot;: &quot;gamarino&quot;
   }
 }</component>
-  <component name="GithubDefaultAccount">
-    <option name="defaultAccountId" value="1354360d-bedc-4660-a2e4-030db6594fc2" />
-  </component>
   <component name="GithubPullRequestsUISettings">{
   &quot;selectedUrlAndAccountId&quot;: {
     &quot;url&quot;: &quot;https://github.com/gamarino/ProtoDB.git&quot;,
-    &quot;accountId&quot;: &quot;1354360d-bedc-4660-a2e4-030db6594fc2&quot;
+    &quot;accountId&quot;: &quot;a8b46b95-a24b-45dc-859a-c51f501ec026&quot;
   }
 }</component>
   <component name="ProjectColorInfo">{
@@ -77,7 +79,8 @@
     "node.js.selected.package.eslint": "(autodetect)",
     "node.js.selected.package.tslint": "(autodetect)",
     "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "ml.llm.LLMConfigurable",
+    "settings.editor.selected.configurable": "junie.allowlist",
+    "to.speed.mode.migration.done": "true",
     "vue.rearranger.settings.migration": "true"
   },
   "keyToStringList": {
@@ -227,37 +230,13 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-js-predefined-d6986cc7102b-09060db00ec0-JavaScript-PY-251.26927.90" />
-        <option value="bundled-python-sdk-41e8cd69c857-64d779b69b7a-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-251.26927.90" />
+        <option value="bundled-js-predefined-d6986cc7102b-e03c56caf84a-JavaScript-PY-252.23892.515" />
+        <option value="bundled-python-sdk-7e47963ff851-f0eec537fc84-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-252.23892.515" />
       </set>
     </attachedChunks>
   </component>
   <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
-    <task id="LOCAL-00002" summary="[WIP] standalone_file_storage.py, file_block_provider: clean up to abstract classes">
-      <option name="closed" value="true" />
-      <created>1735678420637</created>
-      <option name="number" value="00002" />
-      <option name="presentableId" value="LOCAL-00002" />
-      <option name="project" value="LOCAL" />
-      <updated>1735678420637</updated>
-    </task>
-    <task id="LOCAL-00003" summary="[WIP]">
-      <option name="closed" value="true" />
-      <created>1735681379574</created>
-      <option name="number" value="00003" />
-      <option name="presentableId" value="LOCAL-00003" />
-      <option name="project" value="LOCAL" />
-      <updated>1735681379574</updated>
-    </task>
-    <task id="LOCAL-00004" summary="[WIP]">
-      <option name="closed" value="true" />
-      <created>1735767527031</created>
-      <option name="number" value="00004" />
-      <option name="presentableId" value="LOCAL-00004" />
-      <option name="project" value="LOCAL" />
-      <updated>1735767527031</updated>
-    </task>
     <task id="LOCAL-00005" summary="[WIP] db_access con standalone_file_storage. Test pasado, 100_000 records en 46s">
       <option name="closed" value="true" />
       <created>1735784866575</created>
@@ -292,7 +271,10 @@
       <workItem from="1753706608123" duration="1007000" />
       <workItem from="1753971491417" duration="12098000" />
       <workItem from="1754077196604" duration="39026000" />
-      <workItem from="1754229840756" duration="37227000" />
+      <workItem from="1754229840756" duration="39038000" />
+      <workItem from="1755786676387" duration="1012000" />
+      <workItem from="1755787730573" duration="225000" />
+      <workItem from="1755787975213" duration="2485000" />
     </task>
     <task id="LOCAL-00007" summary="[WIP] standalone_file_storage.py : push_to_wal with bytes, not bytearray">
       <option name="closed" value="true" />
@@ -646,16 +628,37 @@
       <option name="project" value="LOCAL" />
       <updated>1754281811663</updated>
     </task>
-    <option name="localTasksCounter" value="51" />
+    <task id="LOCAL-00051" summary="[PROPOSAL] commercial positioning">
+      <option name="closed" value="true" />
+      <created>1754282542856</created>
+      <option name="number" value="00051" />
+      <option name="presentableId" value="LOCAL-00051" />
+      <option name="project" value="LOCAL" />
+      <updated>1754282542857</updated>
+    </task>
+    <task id="LOCAL-00052" summary="[FIX] test files cleanup">
+      <option name="closed" value="true" />
+      <created>1754282790699</created>
+      <option name="number" value="00052" />
+      <option name="presentableId" value="LOCAL-00052" />
+      <option name="project" value="LOCAL" />
+      <updated>1754282790699</updated>
+    </task>
+    <task id="LOCAL-00053" summary="[FIX] additional files for new query features">
+      <option name="closed" value="true" />
+      <created>1755790181665</created>
+      <option name="number" value="00053" />
+      <option name="presentableId" value="LOCAL-00053" />
+      <option name="project" value="LOCAL" />
+      <updated>1755790181665</updated>
+    </task>
+    <option name="localTasksCounter" value="54" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[IMP] hybrid_executor.py" />
-    <MESSAGE value="[FIX] use hybrid_executor in the package" />
-    <MESSAGE value="[IMP] implement all necessary to submit to pypy" />
     <MESSAGE value="[IMP] documentation in sphinx generated" />
     <MESSAGE value="[FIX] cloud_file_storage: prevent deadlocks in test" />
     <MESSAGE value="[IMP] cloud_cluster_file_storage: implments a local cache to maximize throughput of s3 reads" />
@@ -678,7 +681,10 @@
     <MESSAGE value="[FIX] Updated comments" />
     <MESSAGE value="[FIX] Tests actualizados" />
     <MESSAGE value="[PROPOSAL] next steps by AI" />
-    <option name="LAST_COMMIT_MESSAGE" value="[PROPOSAL] next steps by AI" />
+    <MESSAGE value="[PROPOSAL] commercial positioning" />
+    <MESSAGE value="[FIX] test files cleanup" />
+    <MESSAGE value="[FIX] additional files for new query features" />
+    <option name="LAST_COMMIT_MESSAGE" value="[FIX] additional files for new query features" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -700,7 +706,7 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/queries.py</url>
-          <line>231</line>
+          <line>243</line>
           <option name="timeStamp" value="188" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
@@ -736,13 +742,13 @@
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <condition expression="isinstance(key, Literal)" language="Python" />
           <url>file://$PROJECT_DIR$/proto_db/dictionaries.py</url>
-          <line>118</line>
+          <line>136</line>
           <option name="timeStamp" value="246" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <condition expression="isinstance(key, Literal)" language="Python" />
           <url>file://$PROJECT_DIR$/proto_db/dictionaries.py</url>
-          <line>136</line>
+          <line>154</line>
           <option name="timeStamp" value="247" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">

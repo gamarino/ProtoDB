@@ -78,13 +78,23 @@ class Expression(ABC):
                 if operand.parameter_count == 1:
                     local_index += 2
                     return Term(attr, operand, None), local_index
-                else:
+                elif operand.parameter_count == 2:
                     try:
                         value = expression[local_index + 2]
                     except Exception:
                         raise ProtoValidationException(message=f'Operand {op_token} expects binary term [attr, op, value]')
                     local_index += 3
                     return Term(attr, operand, value), local_index
+                elif operand.parameter_count == 3:
+                    try:
+                        lo = expression[local_index + 2]
+                        hi = expression[local_index + 3]
+                    except Exception:
+                        raise ProtoValidationException(message=f'Operand {op_token} expects ternary term [attr, op, lo, hi]')
+                    local_index += 4
+                    return Term(attr, operand, (lo, hi)), local_index
+                else:
+                    raise ProtoValidationException(message=f'Unsupported parameter_count={operand.parameter_count} for operator {op_token}')
 
         default_and_expression = list()
         while index < len(expression):
@@ -240,6 +250,14 @@ class Operator(ABC):
             return IsNone()
         elif string == '?!N':
             return NotNone()
+        elif string == 'between[]':
+            return Between(include_lower=True, include_upper=True)
+        elif string == 'between()':
+            return Between(include_lower=False, include_upper=False)
+        elif string == 'between(]':
+            return Between(include_lower=False, include_upper=True)
+        elif string == 'between[)':
+            return Between(include_lower=True, include_upper=False)
         else:
             raise ProtoValidationException(
                 message=f'Unknown operator: {string}!'
@@ -348,6 +366,45 @@ class NotNone(Operator):
 
     def match(self, source, value=None):
         return source is not None
+
+
+class Between(Operator):
+    """
+    Range comparison operator with configurable bound inclusivity.
+    `value` must be a tuple (lo, hi).
+    """
+    parameter_count: int = 3
+
+    def __init__(self, include_lower: bool, include_upper: bool):
+        self.include_lower = include_lower
+        self.include_upper = include_upper
+
+    def match(self, source, value=None):
+        try:
+            lo, hi = value if isinstance(value, tuple) else (None, None)
+            if lo is None or hi is None:
+                return False
+            # If lo > hi, consider empty set (no match)
+            if lo > hi:
+                return False
+            # Lower bound
+            if self.include_lower:
+                if source < lo:
+                    return False
+            else:
+                if source <= lo:
+                    return False
+            # Upper bound
+            if self.include_upper:
+                if source > hi:
+                    return False
+            else:
+                if source >= hi:
+                    return False
+            return True
+        except Exception:
+            # Non-comparable types -> no match
+            return False
 
 
 class Term(Expression):
@@ -604,6 +661,39 @@ class IndexedQueryPlan(QueryPlan):
         index = self.position_at(field_name, value)
         return self.yield_up_to_index(field_name, index)
 
+    def get_range(self, field_name: str, lo: object, hi: object, include_lower: bool, include_upper: bool):
+        """
+        Iterate records whose indexed key is within [lo, hi] with bound inclusivity flags.
+        """
+        self._load()
+        if field_name not in self.indexes:
+            raise ProtoValidationException(message=f'No index on field {field_name}!')
+        # Find start position
+        start = self.position_at(field_name, lo)
+        # Adjust for exclusive lower if exact match
+        if start < self.indexes[field_name].count:
+            item = cast(DictionaryItem, self.indexes[field_name].get_at(start))
+            if item and item.key == lo and not include_lower:
+                start += 1
+        # Iterate until passing upper bound
+        idx = start
+        while idx < self.indexes[field_name].count:
+            item = cast(DictionaryItem, self.indexes[field_name].get_at(idx))
+            if item is None:
+                break
+            key = item.key
+            # Stop based on upper bound
+            if include_upper:
+                if key > hi:
+                    break
+            else:
+                if key >= hi:
+                    break
+            value_set = cast(Set, item.value)
+            for record in value_set.as_iterable():
+                yield record
+            idx += 1
+
 
 class IndexedSearchPlan(IndexedQueryPlan):
     field_to_scan: str
@@ -761,6 +851,49 @@ class AndMerge(QueryPlan):
                 return 0
 
         return len(base_ids)
+
+
+class IndexedRangeSearchPlan(IndexedQueryPlan):
+    field_to_scan: str
+    include_lower: bool
+    include_upper: bool
+    lo: object
+    hi: object
+
+    def __init__(self, field_to_scan: str, lo, hi, include_lower: bool, include_upper: bool,
+                 indexes: Dictionary = None, based_on: QueryPlan = None,
+                 atom_pointer: AtomPointer = None, transaction: ObjectTransaction = None, **kwargs):
+        super().__init__(indexes=indexes, based_on=based_on, atom_pointer=atom_pointer, transaction=transaction, **kwargs)
+        self.field_to_scan = field_to_scan
+        self.lo = lo
+        self.hi = hi
+        self.include_lower = include_lower
+        self.include_upper = include_upper
+
+    def execute(self):
+        # If no indexes available, fallback to scanning based_on
+        if not isinstance(self.based_on, IndexedQueryPlan) or self.field_to_scan not in self.indexes:
+            # Fallback should not normally happen if optimizer set this, but guard anyway
+            for rec in self.based_on.execute():
+                yield rec
+            return
+        # Use index range
+        yield from self.get_range(self.field_to_scan, self.lo, self.hi, self.include_lower, self.include_upper)
+
+    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
+        return IndexedRangeSearchPlan(
+            field_to_scan=self.field_to_scan,
+            lo=self.lo,
+            hi=self.hi,
+            include_lower=self.include_lower,
+            include_upper=self.include_upper,
+            indexes=self.indexes,
+            based_on=self.based_on.optimize(full_plan),
+            transaction=self.transaction
+        )
+
+    def count(self) -> int:
+        return sum(1 for _ in self.execute())
 
 
 class OrMerge(QueryPlan):
@@ -958,6 +1091,23 @@ class WherePlan(QueryPlan):
                         based_on=optimized_based_on,
                         transaction=self.transaction
                     )
+        # Range pushdown for Between operators
+        from .queries import Between as _Between
+        if isinstance(current_filter, Term) and isinstance(current_filter.operation, _Between):
+            if isinstance(optimized_based_on, IndexedQueryPlan):
+                if current_filter.target_attribute in optimized_based_on.indexes:
+                    lo, hi = current_filter.value if isinstance(current_filter.value, tuple) else (None, None)
+                    if lo is not None and hi is not None:
+                        return IndexedRangeSearchPlan(
+                            field_to_scan=current_filter.target_attribute,
+                            lo=lo,
+                            hi=hi,
+                            include_lower=current_filter.operation.include_lower,
+                            include_upper=current_filter.operation.include_upper,
+                            indexes=optimized_based_on.indexes,
+                            based_on=optimized_based_on,
+                            transaction=self.transaction
+                        )
 
         # If no specific optimization could be applied, return a `WherePlan`
         # with the optimized base and the (potentially reordered) filter.
