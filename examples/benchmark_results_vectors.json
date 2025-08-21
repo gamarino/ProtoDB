@@ -1,9 +1,9 @@
 {
   "config": {
-    "n": 1000,
-    "dim": 16,
-    "n_queries": 10,
-    "k": 5,
+    "n": 20000,
+    "dim": 128,
+    "n_queries": 100,
+    "k": 10,
     "metric": "cosine",
     "hnsw_params": {
       "M": 16,
@@ -11,36 +11,37 @@
       "efSearch": 64
     },
     "env": {
-      "numpy": false,
+      "numpy": true,
       "hnswlib": true,
-      "sklearn": false
+      "sklearn": true
     }
   },
-  "build_seconds_exact": 0.00026297569274902344,
+  "build_seconds_exact": 0.0037386417388916016,
   "queries": [
     {
       "label": "exact_index",
-      "avg_ms": 6.702184677124023,
-      "p95_ms": 8.741617202758789
+      "avg_ms": 647.3266172409058,
+      "p95_ms": 868.7694072723389
     },
     {
       "label": "hnsw_index",
-      "avg_ms": 5.56485652923584,
-      "p95_ms": 6.195068359375
+      "avg_ms": 622.9457402229309,
+      "p95_ms": 962.5203609466553
     },
     {
       "label": "numpy_bruteforce",
-      "avg_ms": null,
-      "p95_ms": null
+      "avg_ms": 0.5481815338134766,
+      "p95_ms": 1.5003681182861328
     },
     {
       "label": "sklearn_nn",
-      "avg_ms": null,
-      "p95_ms": null
+      "avg_ms": 12.800776958465576,
+      "p95_ms": 17.051219940185547,
+      "build_s": 0.11681461334228516
     }
   ],
-  "build_seconds_hnsw": 0.00017070770263671875,
+  "build_seconds_hnsw": 0.004489898681640625,
   "speedups": {
-    "hnsw_vs_exact": 1.2043769038632088
+    "hnsw_vs_exact": 1.0391380427599517
   }
 }

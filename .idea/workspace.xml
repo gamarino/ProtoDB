@@ -4,11 +4,13 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] __init__.py : dependency errors">
-      <change afterPath="$PROJECT_DIR$/benchmark_results.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/api/vectors.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/vectors.rst" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/vector_index.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/vector_index.py" afterDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[ADD] HNSWVectorIndex was successfully implemented for handling vector fields in proto_db, including functionality for KNN and near[] queries, with fallback to ExactVectorIndex and support for incremental updates and persistent storage. All associated unit tests passed, and documentation was updated accordingly. No errors or issues were reported during the implementation phase.">
+      <change afterPath="$PROJECT_DIR$/examples/benchmark_results_vectors.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/examples/vector_ann_benchmark.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/benchmark_results.json" beforeDir="false" afterPath="$PROJECT_DIR$/benchmark_results.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/performance.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/performance.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/examples/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/benchmark_results_indexed.json" beforeDir="false" afterPath="$PROJECT_DIR$/examples/benchmark_results_indexed.json" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -265,15 +267,7 @@
       <workItem from="1754229840756" duration="39038000" />
       <workItem from="1755786676387" duration="1012000" />
       <workItem from="1755787730573" duration="225000" />
-      <workItem from="1755787975213" duration="11266000" />
-    </task>
-    <task id="LOCAL-00013" summary="[WIP] queries: WherePlan after JoinPlan, optimized to prefiltered Joins">
-      <option name="closed" value="true" />
-      <created>1736121790150</created>
-      <option name="number" value="00013" />
-      <option name="presentableId" value="LOCAL-00013" />
-      <option name="project" value="LOCAL" />
-      <updated>1736121790150</updated>
+      <workItem from="1755787975213" duration="12046000" />
     </task>
     <task id="LOCAL-00014" summary="[WIP] queries: WherePlan after JoinPlan, optimized to prefiltered Joins">
       <option name="closed" value="true" />
@@ -659,14 +653,21 @@
       <option name="project" value="LOCAL" />
       <updated>1755802960398</updated>
     </task>
-    <option name="localTasksCounter" value="62" />
+    <task id="LOCAL-00062" summary="[ADD] HNSWVectorIndex was successfully implemented for handling vector fields in proto_db, including functionality for KNN and near[] queries, with fallback to ExactVectorIndex and support for incremental updates and persistent storage. All associated unit tests passed, and documentation was updated accordingly. No errors or issues were reported during the implementation phase.">
+      <option name="closed" value="true" />
+      <created>1755806061722</created>
+      <option name="number" value="00062" />
+      <option name="presentableId" value="LOCAL-00062" />
+      <option name="project" value="LOCAL" />
+      <updated>1755806061722</updated>
+    </task>
+    <option name="localTasksCounter" value="63" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[FIX] README.md" />
     <MESSAGE value="[FIX] README.md, pyproject.toml: update to current status" />
     <MESSAGE value="[IMP] examples" />
     <MESSAGE value="[FIX] simple_example.py: in proper proto_db style" />
@@ -691,7 +692,8 @@
     <MESSAGE value="[ADD] A new `Vector` type and an `ExactVectorIndex` interface with basic operators for similarity search were successfully implemented in `proto_db`. The `near[]` operator was integrated, allowing for linear fallback evaluations, and all tests passed successfully. Documentation was updated accordingly, leaving future enhancements like ANN and persistence for subsequent phases." />
     <MESSAGE value="[UPD] commercial_positioning.md" />
     <MESSAGE value="[FIX] __init__.py : dependency errors" />
-    <option name="LAST_COMMIT_MESSAGE" value="[FIX] __init__.py : dependency errors" />
+    <MESSAGE value="[ADD] HNSWVectorIndex was successfully implemented for handling vector fields in proto_db, including functionality for KNN and near[] queries, with fallback to ExactVectorIndex and support for incremental updates and persistent storage. All associated unit tests passed, and documentation was updated accordingly. No errors or issues were reported during the implementation phase." />
+    <option name="LAST_COMMIT_MESSAGE" value="[ADD] HNSWVectorIndex was successfully implemented for handling vector fields in proto_db, including functionality for KNN and near[] queries, with fallback to ExactVectorIndex and support for incremental updates and persistent storage. All associated unit tests passed, and documentation was updated accordingly. No errors or issues were reported during the implementation phase." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
