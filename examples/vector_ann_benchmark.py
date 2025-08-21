@@ -25,7 +25,7 @@ from typing import List, Tuple
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from proto_db.vectors import Vector
-from proto_db.vector_index import ExactVectorIndex
+from proto_db.vector_index import ExactVectorIndex, IVFFlatIndex
 
 # Optional backends
 try:
@@ -75,6 +75,13 @@ def bench_build_hnsw(vecs: List[Vector], ids: List[str], metric: str, M: int, ef
     idx = HNSWVectorIndex(metric=metric, M=M, efConstruction=efC, efSearch=efS)
     t0 = time.time()
     idx.build(vecs, ids, metric=metric, params={'M': M, 'efConstruction': efC, 'efSearch': efS})
+    return idx, time.time() - t0
+
+
+def bench_build_ivf(vecs: List[Vector], ids: List[str], metric: str, nlist: int, nprobe: int, page_size: int, min_fill: float):
+    idx = IVFFlatIndex(metric=metric, nlist=nlist, nprobe=nprobe, page_size=page_size, min_fill=min_fill)
+    t0 = time.time()
+    idx.build(vecs, ids, metric=metric, params={'nlist': nlist, 'nprobe': nprobe, 'page_size': page_size, 'min_fill': min_fill})
     return idx, time.time() - t0
 
 
@@ -166,13 +173,15 @@ def bench_sklearn(vecs: List[Vector], queries: List[Vector], k: int) -> dict:
 
 
 def run_benchmark(n: int, dim: int, n_queries: int, k: int, metric: str,
-                  M: int, efC: int, efS: int) -> dict:
+                  M: int, efC: int, efS: int,
+                  ivf_nlist: int = 256, ivf_nprobe: int = 8, ivf_page_size: int = 1024, ivf_min_fill: float = 0.5) -> dict:
     vecs, ids = make_dataset(n, dim)
     # pick queries randomly
     queries = random.sample(vecs, min(n_queries, len(vecs)))
 
     results = {"config": {"n": n, "dim": dim, "n_queries": n_queries, "k": k, "metric": metric,
                             "hnsw_params": {"M": M, "efConstruction": efC, "efSearch": efS},
+                            "ivf_params": {"nlist": ivf_nlist, "nprobe": ivf_nprobe, "page_size": ivf_page_size, "min_fill": ivf_min_fill},
                             "env": {
                                 "numpy": bool(np is not None),
                                 "hnswlib": _HNSW_AVAILABLE,
@@ -195,25 +204,31 @@ def run_benchmark(n: int, dim: int, n_queries: int, k: int, metric: str,
             hnsw_stats = bench_knn_queries(hnsw_idx, queries, k, metric, "hnsw_index")
             results["queries"].append(hnsw_stats)
 
+    # IVF-Flat
+    ivf_idx, ivf_build = bench_build_ivf(vecs, ids, metric, ivf_nlist, ivf_nprobe, ivf_page_size, ivf_min_fill)
+    results["build_seconds_ivf"] = ivf_build
+    ivf_stats = bench_knn_queries(ivf_idx, queries, k, metric, "ivf_flat_index")
+    results["queries"].append(ivf_stats)
+
     # NumPy brute force (if available)
     results["queries"].append(bench_numpy_bruteforce(vecs, queries, k))
 
     # scikit-learn baseline (optional)
     results["queries"].append(bench_sklearn(vecs, queries, k))
 
-    # Recall@k if HNSW present: compare against exact
+    # Recall@k if ANN present: compare against exact for HNSW and IVF
     try:
         # Compute exact top-k ids using batch if available
         if hasattr(exact_idx, 'search_batch'):
             exact_res = exact_idx.search_batch(queries, k=k, metric=metric)
         else:
             exact_res = [exact_idx.search(q, k=k, metric=metric) for q in queries]
+        # HNSW recall
         if hnsw_idx is not None:
             if hasattr(hnsw_idx, 'search_batch'):
                 hnsw_res = hnsw_idx.search_batch(queries, k=k, metric=metric)
             else:
                 hnsw_res = [hnsw_idx.search(q, k=k, metric=metric) for q in queries]
-            # compute recall
             recs = []
             for a, b in zip(exact_res, hnsw_res):
                 a_ids = {i for (i, _) in a}
@@ -221,16 +236,35 @@ def run_benchmark(n: int, dim: int, n_queries: int, k: int, metric: str,
                 denom = max(1, len(a_ids))
                 recs.append(len(a_ids & b_ids) / denom)
             recall = sum(recs) / len(recs) if recs else None
-            results.setdefault("metrics", {})["recall_at_k"] = recall
+            results.setdefault("metrics", {})["recall_at_k_hnsw"] = recall
+        # IVF recall
+        if ivf_idx is not None:
+            ivf_res = [ivf_idx.search(q, k=k, metric=metric) for q in queries]
+            recs2 = []
+            for a, b in zip(exact_res, ivf_res):
+                a_ids = {i for (i, _) in a}
+                b_ids = {i for (i, _) in b}
+                denom = max(1, len(a_ids))
+                recs2.append(len(a_ids & b_ids) / denom)
+            recall2 = sum(recs2) / len(recs2) if recs2 else None
+            results.setdefault("metrics", {})["recall_at_k_ivf"] = recall2
     except Exception:
         pass
 
-    # Derive speedups if both hnsw and exact are present
+    # Derive speedups
     try:
         exact_avg = exact_stats.get("avg_ms") if exact_stats else None
         hnsw_avg = hnsw_stats.get("avg_ms") if hnsw_stats else None
+        ivf_avg = ivf_stats.get("avg_ms") if ivf_stats else None
+        sp = {}
         if exact_avg and hnsw_avg:
-            results["speedups"] = {"hnsw_vs_exact": exact_avg / hnsw_avg if hnsw_avg > 0 else None}
+            sp["hnsw_vs_exact"] = (exact_avg / hnsw_avg) if hnsw_avg > 0 else None
+        if exact_avg and ivf_avg:
+            sp["ivf_vs_exact"] = (exact_avg / ivf_avg) if ivf_avg > 0 else None
+        if hnsw_avg and ivf_avg:
+            sp["hnsw_vs_ivf"] = (hnsw_avg / ivf_avg) if ivf_avg > 0 else None
+        if sp:
+            results["speedups"] = sp
     except Exception:
         pass
 
@@ -249,6 +283,11 @@ def main():
     p.add_argument('--efS', type=int, default=64, help='HNSW efSearch')
     p.add_argument('--threads', type=int, default=1, help='Set OMP/MKL thread count for consistency')
     p.add_argument('--out', type=str, default='examples/benchmark_results_vectors.json')
+    # IVF-Flat params
+    p.add_argument('--ivf_nlist', type=int, default=256)
+    p.add_argument('--ivf_nprobe', type=int, default=8)
+    p.add_argument('--ivf_page_size', type=int, default=1024)
+    p.add_argument('--ivf_min_fill', type=float, default=0.5)
     args = p.parse_args()
 
     # Control threads to avoid oversubscription
@@ -256,7 +295,8 @@ def main():
     os.environ['MKL_NUM_THREADS'] = str(args.threads)
 
     res = run_benchmark(n=args.n, dim=args.dim, n_queries=args.queries, k=args.k,
-                        metric=args.metric, M=args.M, efC=args.efC, efS=args.efS)
+                        metric=args.metric, M=args.M, efC=args.efC, efS=args.efS,
+                        ivf_nlist=args.ivf_nlist, ivf_nprobe=args.ivf_nprobe, ivf_page_size=args.ivf_page_size, ivf_min_fill=args.ivf_min_fill)
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     with open(args.out, 'w', encoding='utf-8') as f:
         json.dump(res, f, indent=2)

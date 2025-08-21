@@ -75,7 +75,7 @@ This document describes the updated performance suite that exercises ProtoBase w
 - Range operators and index-aware query planning were added to the query engine.
 - Core collections now support immutable secondary indexes (IndexRegistry in lists/sets/dictionaries for internal maintenance).
 - A new benchmark script demonstrates indexed query performance vs linear scan and vs a Python list baseline.
-- A new vector ANN benchmark script evaluates HNSW vs exact and other optional baselines.
+- A new vector ANN benchmark script evaluates HNSW and IVF-Flat vs exact and other optional baselines.
 
 ## Running the indexed benchmark
 
@@ -116,7 +116,7 @@ Notes:
 - On very small datasets, index overhead can dominate and perform worse than a linear scan. For larger `--items` (e.g., 50k–500k), the indexed path should outperform the linear scan significantly.
 - The competitor baseline here is a Python list comprehension, serving as a simple, dependency‑free baseline. You can extend the benchmark to compare with sqlite3 or another store if desired.
 
-## Running the vector ANN benchmark (HNSW vs exact)
+## Running the vector ANN benchmark (HNSW vs exact vs IVF-Flat)
 
 From the repository root:
 
@@ -131,11 +131,13 @@ Parameters:
 - `--k`: top-k to retrieve.
 - `--metric`: cosine or l2 (default cosine). For cosine, vectors are normalized.
 - HNSW params: `--M`, `--efC` (efConstruction), `--efS` (efSearch).
+- IVF-Flat params: `--ivf_nlist`, `--ivf_nprobe`, `--ivf_page_size`, `--ivf_min_fill`.
 
 The script outputs JSON with:
-- build_seconds_exact and (if available) build_seconds_hnsw
-- queries: list with avg_ms and p95_ms for exact_index, hnsw_index (if available), numpy_bruteforce (if numpy installed), and sklearn_nn (if scikit-learn installed)
-- speedups: hnsw_vs_exact when both are present
+- build_seconds_exact and (if available) build_seconds_hnsw; build_seconds_ivf
+- queries: list with avg_ms/p50_ms/p95_ms/std_ms for exact_index, hnsw_index (if available), ivf_flat_index, numpy_bruteforce (if numpy installed), and sklearn_nn (if scikit-learn installed)
+- metrics: recall_at_k_hnsw and recall_at_k_ivf vs exact (when present)
+- speedups: hnsw_vs_exact, ivf_vs_exact, and hnsw_vs_ivf when present
 
 Example output (with numpy, hnswlib available):
 
