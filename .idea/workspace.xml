@@ -4,9 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[ADD] A new `Vector` type and an `ExactVectorIndex` interface with basic operators for similarity search were successfully implemented in `proto_db`. The `near[]` operator was integrated, allowing for linear fallback evaluations, and all tests passed successfully. Documentation was updated accordingly, leaving future enhancements like ANN and persistence for subsequent phases.">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[UPD] commercial_positioning.md">
+      <change beforePath="$PROJECT_DIR$/.idea/ProtoBase.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/ProtoBase.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/commercial_positioning.md" beforeDir="false" afterPath="$PROJECT_DIR$/commercial_positioning.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/__init__.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -57,7 +59,7 @@
     "Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor": "Run",
     "Python tests.Python tests in test_file_block_provider.py.executor": "Debug",
     "Python tests.Python tests in test_standalone_file_storage.py.executor": "Debug",
-    "Python.comprehensive_benchmark.executor": "Debug",
+    "Python.comprehensive_benchmark.executor": "Run",
     "Python.db_performance_benchmark.executor": "Run",
     "Python.minimal_benchmark.executor": "Run",
     "Python.performance_benchmark.executor": "Run",
@@ -65,6 +67,7 @@
     "Python.simple_performance_benchmark.executor": "Run",
     "Python.task_manager.executor": "Debug",
     "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
     "RunOnceActivity.git.unshallow": "true",
     "com.google.cloudcode.ide_session_index": "20250803_0001",
     "git-widget-placeholder": "master",
@@ -74,7 +77,7 @@
     "node.js.selected.package.eslint": "(autodetect)",
     "node.js.selected.package.tslint": "(autodetect)",
     "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "junie.allowlist",
+    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable",
     "to.speed.mode.migration.done": "true",
     "vue.rearranger.settings.migration": "true"
   },
@@ -106,8 +109,9 @@
         <env name="PYTHONUNBUFFERED" value="1" />
       </envs>
       <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/examples" />
-      <option name="IS_MODULE_SDK" value="true" />
+      <option name="SDK_NAME" value="Python 3.12 (cm-18.0)" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="false" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
@@ -212,6 +216,14 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
+    <list>
+      <item itemvalue="Makefile Target.Makefile (2)" />
+      <item itemvalue="Python.comprehensive_benchmark" />
+      <item itemvalue="Python.db_performance_benchmark" />
+      <item itemvalue="Python.minimal_benchmark" />
+      <item itemvalue="Python.performance_benchmark" />
+      <item itemvalue="Python.simple_example" />
+    </list>
     <recent_temporary>
       <list>
         <item itemvalue="Python.comprehensive_benchmark" />
@@ -253,15 +265,7 @@
       <workItem from="1754229840756" duration="39038000" />
       <workItem from="1755786676387" duration="1012000" />
       <workItem from="1755787730573" duration="225000" />
-      <workItem from="1755787975213" duration="6101000" />
-    </task>
-    <task id="LOCAL-00011" summary="[WIP] queries, IndexedQueryPlan">
-      <option name="closed" value="true" />
-      <created>1736002131939</created>
-      <option name="number" value="00011" />
-      <option name="presentableId" value="LOCAL-00011" />
-      <option name="project" value="LOCAL" />
-      <updated>1736002131940</updated>
+      <workItem from="1755787975213" duration="8025000" />
     </task>
     <task id="LOCAL-00012" summary="[WIP] queries: indexed queries optiminizations on WherePlan">
       <option name="closed" value="true" />
@@ -647,14 +651,21 @@
       <option name="project" value="LOCAL" />
       <updated>1755793455714</updated>
     </task>
-    <option name="localTasksCounter" value="60" />
+    <task id="LOCAL-00060" summary="[UPD] commercial_positioning.md">
+      <option name="closed" value="true" />
+      <created>1755794248206</created>
+      <option name="number" value="00060" />
+      <option name="presentableId" value="LOCAL-00060" />
+      <option name="project" value="LOCAL" />
+      <updated>1755794248206</updated>
+    </task>
+    <option name="localTasksCounter" value="61" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[IMP] ConcurrentOptimized Dictionaries" />
     <MESSAGE value="[IMP] Multiformat storage implamentation" />
     <MESSAGE value="[FIX] README.md" />
     <MESSAGE value="[FIX] README.md, pyproject.toml: update to current status" />
@@ -679,7 +690,8 @@
     <MESSAGE value="[ADD] The performance suite was updated to use new indexes, enabling a benchmark to evaluate proto_db with indexed collections against a Python baseline. A new benchmark script was created, executed successfully, and documentation was updated accordingly." />
     <MESSAGE value="[ADD] The Sphinx documentation was successfully updated to reflect new features, including range operators, UnnestPlan, CollectionFieldPlan, index-aware WHERE optimizations, and the indexed benchmark. New pages were created and existing content modified as needed. All changes were documented and submitted for review." />
     <MESSAGE value="[ADD] A new `Vector` type and an `ExactVectorIndex` interface with basic operators for similarity search were successfully implemented in `proto_db`. The `near[]` operator was integrated, allowing for linear fallback evaluations, and all tests passed successfully. Documentation was updated accordingly, leaving future enhancements like ANN and persistence for subsequent phases." />
-    <option name="LAST_COMMIT_MESSAGE" value="[ADD] A new `Vector` type and an `ExactVectorIndex` interface with basic operators for similarity search were successfully implemented in `proto_db`. The `near[]` operator was integrated, allowing for linear fallback evaluations, and all tests passed successfully. Documentation was updated accordingly, leaving future enhancements like ANN and persistence for subsequent phases." />
+    <MESSAGE value="[UPD] commercial_positioning.md" />
+    <option name="LAST_COMMIT_MESSAGE" value="[UPD] commercial_positioning.md" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -762,13 +774,13 @@
     </breakpoint-manager>
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/ProtoBase$minimal_benchmark.coverage" NAME="minimal_benchmark Coverage Results" MODIFIED="1754260411492" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
-    <SUITE FILE_PATH="coverage/ProtoBase$comprehensive_benchmark.coverage" NAME="comprehensive_benchmark Coverage Results" MODIFIED="1754280156775" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
-    <SUITE FILE_PATH="coverage/ProtoBase$simple_example.coverage" NAME="simple_example Coverage Results" MODIFIED="1754267859053" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
-    <SUITE FILE_PATH="coverage/ProtoBase$simple_performance_benchmark.coverage" NAME="simple_performance_benchmark Coverage Results" MODIFIED="1754260319108" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/ProtoBase$task_manager.coverage" NAME="task_manager Coverage Results" MODIFIED="1754259207052" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/ProtoBase$.coverage" NAME=" Coverage Results" MODIFIED="1736352327720" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/ProtoBase$performance_benchmark.coverage" NAME="performance_benchmark Coverage Results" MODIFIED="1754260400708" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$db_performance_benchmark.coverage" NAME="db_performance_benchmark Coverage Results" MODIFIED="1754260420768" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
-    <SUITE FILE_PATH="coverage/ProtoBase$.coverage" NAME=" Coverage Results" MODIFIED="1736352327720" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/ProtoBase$task_manager.coverage" NAME="task_manager Coverage Results" MODIFIED="1754259207052" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/ProtoBase$minimal_benchmark.coverage" NAME="minimal_benchmark Coverage Results" MODIFIED="1754260411492" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/ProtoBase$simple_performance_benchmark.coverage" NAME="simple_performance_benchmark Coverage Results" MODIFIED="1754260319108" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/ProtoBase$simple_example.coverage" NAME="simple_example Coverage Results" MODIFIED="1754267859053" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/ProtoBase$comprehensive_benchmark.coverage" NAME="comprehensive_benchmark Coverage Results" MODIFIED="1755802519494" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>
