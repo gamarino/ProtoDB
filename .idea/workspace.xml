@@ -4,9 +4,13 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[ADD] A vector ANN benchmark script was created to measure and compare the performance of HNSW against ExactVectorIndex and optional NumPy and scikit-learn baselines, successfully producing JSON output with timings. All existing tests remained unaffected and passed. No errors were encountered during execution, confirming the accuracy of the benchmarking tool.">
-      <change beforePath="$PROJECT_DIR$/examples/vector_ann_benchmark.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/vector_ann_benchmark.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/vector_index.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/vector_index.py" afterDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[ADD]IVF-Flat performance comparison has been integrated into the vector benchmark suite, enabling comparisons against Exact and HNSW indices. The updated benchmark includes IVF metrics and can be executed with specific parameters to generate detailed results.">
+      <change afterPath="$PROJECT_DIR$/proto_db/linq.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/proto_db/tests/test_ivf_flat_index.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/proto_db/tests/test_linq_groupby.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/proto_db/tests/test_linq_like.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/__init__.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -47,44 +51,44 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
-    "Makefile Target.Makefile (1).executor": "Run",
-    "Makefile Target.Makefile (3).executor": "Run",
-    "Makefile Target.Makefile.executor": "Run",
-    "Python tests.Python tests in test_db_access.py.executor": "Run",
-    "Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor": "Run",
-    "Python tests.Python tests in test_file_block_provider.py.executor": "Debug",
-    "Python tests.Python tests in test_standalone_file_storage.py.executor": "Debug",
-    "Python.comprehensive_benchmark.executor": "Run",
-    "Python.db_performance_benchmark.executor": "Run",
-    "Python.minimal_benchmark.executor": "Run",
-    "Python.performance_benchmark.executor": "Run",
-    "Python.simple_example.executor": "Debug",
-    "Python.simple_performance_benchmark.executor": "Run",
-    "Python.task_manager.executor": "Debug",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "com.google.cloudcode.ide_session_index": "20250803_0001",
-    "git-widget-placeholder": "master",
-    "junie.onboarding.icon.badge.shown": "true",
-    "last_opened_file_path": "/home/gamarino/odoo/ProtoBase",
-    "node.js.detected.package.eslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable",
-    "to.speed.mode.migration.done": "true",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ASKED_MARK_IGNORED_FILES_AS_EXCLUDED&quot;: &quot;true&quot;,
+    &quot;Makefile Target.Makefile (1).executor&quot;: &quot;Run&quot;,
+    &quot;Makefile Target.Makefile (3).executor&quot;: &quot;Run&quot;,
+    &quot;Makefile Target.Makefile.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in test_db_access.py.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in test_file_block_provider.py.executor&quot;: &quot;Debug&quot;,
+    &quot;Python tests.Python tests in test_standalone_file_storage.py.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.comprehensive_benchmark.executor&quot;: &quot;Run&quot;,
+    &quot;Python.db_performance_benchmark.executor&quot;: &quot;Run&quot;,
+    &quot;Python.minimal_benchmark.executor&quot;: &quot;Run&quot;,
+    &quot;Python.performance_benchmark.executor&quot;: &quot;Run&quot;,
+    &quot;Python.simple_example.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.simple_performance_benchmark.executor&quot;: &quot;Run&quot;,
+    &quot;Python.task_manager.executor&quot;: &quot;Debug&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;com.google.cloudcode.ide_session_index&quot;: &quot;20250803_0001&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/gamarino/odoo/ProtoBase&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;,
+    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   },
-  "keyToStringList": {
-    "com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File": [
-      "Requirements"
+  &quot;keyToStringList&quot;: {
+    &quot;com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File&quot;: [
+      &quot;Requirements&quot;
     ]
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/proto_db/tests" />
@@ -235,8 +239,8 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-js-predefined-d6986cc7102b-e03c56caf84a-JavaScript-PY-252.23892.515" />
-        <option value="bundled-python-sdk-7e47963ff851-f0eec537fc84-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-252.23892.515" />
+        <option value="bundled-js-predefined-d6986cc7102b-b598e85cdad2-JavaScript-PY-252.25557.178" />
+        <option value="bundled-python-sdk-ce6832f46686-7b97d883f26b-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-252.25557.178" />
       </set>
     </attachedChunks>
   </component>
@@ -263,23 +267,9 @@
       <workItem from="1754229840756" duration="39038000" />
       <workItem from="1755786676387" duration="1012000" />
       <workItem from="1755787730573" duration="225000" />
-      <workItem from="1755787975213" duration="14292000" />
-    </task>
-    <task id="LOCAL-00016" summary="[WIP] after_load en Atom, no guardar None attributes">
-      <option name="closed" value="true" />
-      <created>1736522933544</created>
-      <option name="number" value="00016" />
-      <option name="presentableId" value="LOCAL-00016" />
-      <option name="project" value="LOCAL" />
-      <updated>1736522933544</updated>
-    </task>
-    <task id="LOCAL-00017" summary="[WIP] fsm: máquina de estados básica">
-      <option name="closed" value="true" />
-      <created>1736641863501</created>
-      <option name="number" value="00017" />
-      <option name="presentableId" value="LOCAL-00017" />
-      <option name="project" value="LOCAL" />
-      <updated>1736641863501</updated>
+      <workItem from="1755787975213" duration="18352000" />
+      <workItem from="1756137442174" duration="124000" />
+      <workItem from="1756995586860" duration="2312000" />
     </task>
     <task id="LOCAL-00018" summary="[WIP] mejoras varias por AI Junie">
       <option name="closed" value="true" />
@@ -657,15 +647,29 @@
       <option name="project" value="LOCAL" />
       <updated>1755807035532</updated>
     </task>
-    <option name="localTasksCounter" value="65" />
+    <task id="LOCAL-00065" summary="[ADD] An IVF-Flat vector index backend (IVFFlatIndex) was implemented in `vector_index.py`, enabling copy-on-write updates without tombstones and multiprobe search. All unit tests passed, ensuring functionality and integration with existing vector features.">
+      <option name="closed" value="true" />
+      <created>1755809696416</created>
+      <option name="number" value="00065" />
+      <option name="presentableId" value="LOCAL-00065" />
+      <option name="project" value="LOCAL" />
+      <updated>1755809696416</updated>
+    </task>
+    <task id="LOCAL-00066" summary="[ADD]IVF-Flat performance comparison has been integrated into the vector benchmark suite, enabling comparisons against Exact and HNSW indices. The updated benchmark includes IVF metrics and can be executed with specific parameters to generate detailed results.">
+      <option name="closed" value="true" />
+      <created>1755810743155</created>
+      <option name="number" value="00066" />
+      <option name="presentableId" value="LOCAL-00066" />
+      <option name="project" value="LOCAL" />
+      <updated>1755810743156</updated>
+    </task>
+    <option name="localTasksCounter" value="67" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[IMP] examples" />
-    <MESSAGE value="[FIX] simple_example.py: in proper proto_db style" />
     <MESSAGE value="[FIX] task_manager.py: in proper proto_db style" />
     <MESSAGE value="[WIP] simple_example.py: TODO: list with errors" />
     <MESSAGE value="[FIX] errors in commit logic" />
@@ -689,7 +693,9 @@
     <MESSAGE value="[FIX] __init__.py : dependency errors" />
     <MESSAGE value="[ADD] HNSWVectorIndex was successfully implemented for handling vector fields in proto_db, including functionality for KNN and near[] queries, with fallback to ExactVectorIndex and support for incremental updates and persistent storage. All associated unit tests passed, and documentation was updated accordingly. No errors or issues were reported during the implementation phase." />
     <MESSAGE value="[ADD] A vector ANN benchmark script was created to measure and compare the performance of HNSW against ExactVectorIndex and optional NumPy and scikit-learn baselines, successfully producing JSON output with timings. All existing tests remained unaffected and passed. No errors were encountered during execution, confirming the accuracy of the benchmarking tool." />
-    <option name="LAST_COMMIT_MESSAGE" value="[ADD] A vector ANN benchmark script was created to measure and compare the performance of HNSW against ExactVectorIndex and optional NumPy and scikit-learn baselines, successfully producing JSON output with timings. All existing tests remained unaffected and passed. No errors were encountered during execution, confirming the accuracy of the benchmarking tool." />
+    <MESSAGE value="[ADD] An IVF-Flat vector index backend (IVFFlatIndex) was implemented in `vector_index.py`, enabling copy-on-write updates without tombstones and multiprobe search. All unit tests passed, ensuring functionality and integration with existing vector features." />
+    <MESSAGE value="[ADD]IVF-Flat performance comparison has been integrated into the vector benchmark suite, enabling comparisons against Exact and HNSW indices. The updated benchmark includes IVF metrics and can be executed with specific parameters to generate detailed results." />
+    <option name="LAST_COMMIT_MESSAGE" value="[ADD]IVF-Flat performance comparison has been integrated into the vector benchmark suite, enabling comparisons against Exact and HNSW indices. The updated benchmark includes IVF metrics and can be executed with specific parameters to generate detailed results." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

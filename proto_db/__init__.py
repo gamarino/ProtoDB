@@ -22,6 +22,8 @@ from .file_block_provider import FileBlockProvider
 from .memory_storage import MemoryStorage
 from .queries import FromPlan, WherePlan, ListPlan, SelectPlan
 from .standalone_file_storage import StandaloneFileStorage
+# LINQ-like API (Phase 1)
+from .linq import Queryable, Policy, Grouping, F, from_collection
 from .cloud_file_storage import CloudFileStorage, CloudBlockProvider, S3Client
 from .cluster_file_storage import ClusterFileStorage
 from .standalone_file_storage import StandaloneFileStorage
