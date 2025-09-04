@@ -1,0 +1,15 @@
+{
+  "config": {
+    "n_items": 5000,
+    "n_queries": 50
+  },
+  "timings_seconds": {
+    "python_list_baseline": 0.025550365447998047,
+    "protodb_linear_where": 0.24172282218933105,
+    "protodb_indexed_where": 0.42900824546813965
+  },
+  "speedups": {
+    "indexed_over_linear": 0.5634456324389752,
+    "indexed_over_python": 0.059556816722991276
+  }
+}
