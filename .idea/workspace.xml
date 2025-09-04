@@ -4,9 +4,63 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[IMP] linq operators doc">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/examples/README.md" afterDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[IMP] Performance measurement scripts for LINQ queries were added in the `examples/` directory, including `linq_performance.py`. The execution and results can now be saved to a JSON file, demonstrating the performance of LINQ operations over various data structures. All changes were successfully implemented without errors.">
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/api/core.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/api/core.doctree" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/api/data_structures.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/api/data_structures.doctree" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/api/index.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/api/index.doctree" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/api/queries.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/api/queries.doctree" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/api/storage.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/api/storage.doctree" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/environment.pickle" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/environment.pickle" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/quickstart.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/quickstart.doctree" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/index.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/cloud_cluster_file_storage.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/cloud_cluster_file_storage.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/cluster_file_storage.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/cluster_file_storage.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/common.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/common.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/dictionaries.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/dictionaries.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/exceptions.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/exceptions.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/lists.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/lists.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/memory_storage.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/memory_storage.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/queries.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/queries.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/sets.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/sets.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_sources/api/index.rst.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_sources/api/index.rst.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_sources/api/queries.rst.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_sources/api/queries.rst.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_sources/quickstart.rst.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_sources/quickstart.rst.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_static/_sphinx_javascript_frameworks_compat.js" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_static/_sphinx_javascript_frameworks_compat.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_static/basic.css" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_static/basic.css" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_static/css/fonts/fontawesome-webfont.svg" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_static/css/fonts/fontawesome-webfont.svg" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_static/doctools.js" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_static/doctools.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_static/js/versions.js" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_static/js/versions.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_static/language_data.js" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_static/language_data.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_static/pygments.css" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_static/pygments.css" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_static/searchtools.js" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_static/searchtools.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_static/sphinx_highlight.js" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_static/sphinx_highlight.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/advanced_usage.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/advanced_usage.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/core.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/core.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/data_structures.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/data_structures.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/exceptions.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/exceptions.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/fsm.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/fsm.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/index.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/queries.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/queries.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/storage.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/storage.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/architecture.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/architecture.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/development.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/development.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/genindex.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/genindex.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/index.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/installation.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/installation.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/introduction.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/introduction.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/objects.inv" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/objects.inv" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/py-modindex.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/py-modindex.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/quickstart.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/quickstart.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/search.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/search.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/searchindex.js" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/searchindex.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/source/api/core.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/core.rst" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/source/api/exceptions.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/exceptions.rst" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/source/api/fsm.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/fsm.rst" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/source/api/index.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/index.rst" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/source/api/queries.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/queries.rst" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/source/index.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/index.rst" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/source/introduction.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/introduction.rst" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/source/quickstart.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/quickstart.rst" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -265,15 +319,7 @@
       <workItem from="1755787730573" duration="225000" />
       <workItem from="1755787975213" duration="18352000" />
       <workItem from="1756137442174" duration="124000" />
-      <workItem from="1756995586860" duration="6972000" />
-    </task>
-    <task id="LOCAL-00021" summary="[FIX] use hybrid_executor in the package">
-      <option name="closed" value="true" />
-      <created>1745012016658</created>
-      <option name="number" value="00021" />
-      <option name="presentableId" value="LOCAL-00021" />
-      <option name="project" value="LOCAL" />
-      <updated>1745012016658</updated>
+      <workItem from="1756995586860" duration="7679000" />
     </task>
     <task id="LOCAL-00022" summary="[IMP] implement all necessary to submit to pypy">
       <option name="closed" value="true" />
@@ -659,14 +705,21 @@
       <option name="project" value="LOCAL" />
       <updated>1757018459194</updated>
     </task>
-    <option name="localTasksCounter" value="70" />
+    <task id="LOCAL-00070" summary="[IMP] Performance measurement scripts for LINQ queries were added in the `examples/` directory, including `linq_performance.py`. The execution and results can now be saved to a JSON file, demonstrating the performance of LINQ operations over various data structures. All changes were successfully implemented without errors.">
+      <option name="closed" value="true" />
+      <created>1757018904372</created>
+      <option name="number" value="00070" />
+      <option name="presentableId" value="LOCAL-00070" />
+      <option name="project" value="LOCAL" />
+      <updated>1757018904372</updated>
+    </task>
+    <option name="localTasksCounter" value="71" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[IMP] First implementation of performance analysis (Fully automated by Junie AI)" />
     <MESSAGE value="[ADD] Chat IA evolución proto" />
     <MESSAGE value="[FIX] improved literal management" />
     <MESSAGE value="[FIX] Reformatted code" />
@@ -691,7 +744,8 @@
     <MESSAGE value="[IMP] linq alike functions" />
     <MESSAGE value="[IMP] linq between operator" />
     <MESSAGE value="[IMP] linq operators doc" />
-    <option name="LAST_COMMIT_MESSAGE" value="[IMP] linq operators doc" />
+    <MESSAGE value="[IMP] Performance measurement scripts for LINQ queries were added in the `examples/` directory, including `linq_performance.py`. The execution and results can now be saved to a JSON file, demonstrating the performance of LINQ operations over various data structures. All changes were successfully implemented without errors." />
+    <option name="LAST_COMMIT_MESSAGE" value="[IMP] Performance measurement scripts for LINQ queries were added in the `examples/` directory, including `linq_performance.py`. The execution and results can now be saved to a JSON file, demonstrating the performance of LINQ operations over various data structures. All changes were successfully implemented without errors." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

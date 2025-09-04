@@ -18,7 +18,7 @@ ProtoBase is a powerful database system implemented in Python, providing various
    development
 
 Indices and tables
-==================
+===================
 
 * :ref:`genindex`
 * :ref:`modindex`

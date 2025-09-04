@@ -1,13 +1,13 @@
 Introduction
-===========
+============
 
 What is ProtoBase?
------------------
+-------------------
 
 ProtoBase is a powerful database system implemented in Python, designed to provide flexible storage options and rich data structures. It offers a unique combination of features that make it suitable for a wide range of applications, from simple data storage to complex distributed systems.
 
 Key Features
------------
+------------
 
 * **Multiple Storage Options**: Choose from in-memory storage, file-based storage, distributed cluster storage, or cloud-based storage.
 * **Rich Data Structures**: Built-in support for dictionaries, lists, sets, and hash dictionaries.

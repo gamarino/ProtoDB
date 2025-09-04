@@ -1,5 +1,5 @@
 Exceptions
-=========
+==========
 
 .. module:: proto_db.exceptions
 

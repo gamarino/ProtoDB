@@ -18,7 +18,7 @@ This section provides detailed API documentation for ProtoBase.
    fsm
 
 Core Components
--------------
+-----------------
 
 The core components of ProtoBase include the base classes and interfaces that form the foundation of the system.
 
@@ -28,7 +28,7 @@ The core components of ProtoBase include the base classes and interfaces that fo
    core
 
 Storage Layer
------------
+-------------
 
 The storage layer is responsible for persisting data to disk, memory, or cloud storage.
 
@@ -38,7 +38,7 @@ The storage layer is responsible for persisting data to disk, memory, or cloud s
    storage
 
 Data Structures
--------------
+---------------
 
 ProtoBase provides several data structures built on top of the core components.
 
@@ -48,7 +48,7 @@ ProtoBase provides several data structures built on top of the core components.
    data_structures
 
 Query System
-----------
+------------
 
 The query system allows for complex data manipulation and retrieval.
 
@@ -58,7 +58,7 @@ The query system allows for complex data manipulation and retrieval.
    queries
 
 Exceptions
----------
+----------
 
 ProtoBase defines several exception classes for different error scenarios.
 
@@ -68,7 +68,7 @@ ProtoBase defines several exception classes for different error scenarios.
    exceptions
 
 Finite State Machine
-------------------
+---------------------
 
 The FSM module provides a finite state machine implementation.
 
