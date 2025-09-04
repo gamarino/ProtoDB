@@ -4,6 +4,8 @@ import time
 import warnings
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Iterator, Generic, TypeVar, Optional, Dict, List, Set as TSet, Tuple
+import inspect
+import ast
 
 # ProtoBase query infrastructure
 from .common import QueryPlan, DBCollections
@@ -40,22 +42,34 @@ class Grouping(Generic[K, U]):
 
 # Minimal DSL Expression for in-memory fallback and composition
 class _Pred:
-    def __init__(self, fn: Callable[[Any], bool]):
+    def __init__(self, fn: Callable[[Any], bool], pb_tokens: Optional[list] = None):
         self.fn = fn
+        self.pb_tokens = pb_tokens  # Optional Expression.compile token stream
     def __call__(self, x):
         return self.fn(x)
     def __and__(self, other: ' _Pred | Callable[[Any], bool]') -> '_Pred':
         other_fn = other.fn if isinstance(other, _Pred) else other
-        return _Pred(lambda x: self.fn(x) and bool(other_fn(x)))
+        # Merge pb tokens into And expression if available
+        tokens = None
+        if isinstance(other, _Pred) and self.pb_tokens is not None and other.pb_tokens is not None:
+            tokens = ['&', self.pb_tokens, other.pb_tokens]
+        return _Pred(lambda x: self.fn(x) and bool(other_fn(x)), tokens)
     def __or__(self, other: ' _Pred | Callable[[Any], bool]') -> '_Pred':
         other_fn = other.fn if isinstance(other, _Pred) else other
-        return _Pred(lambda x: self.fn(x) or bool(other_fn(x)))
+        tokens = None
+        if isinstance(other, _Pred) and self.pb_tokens is not None and other.pb_tokens is not None:
+            tokens = ['|', self.pb_tokens, other.pb_tokens]
+        return _Pred(lambda x: self.fn(x) or bool(other_fn(x)), tokens)
     def __invert__(self) -> '_Pred':
-        return _Pred(lambda x: not self.fn(x))
+        tokens = None
+        if self.pb_tokens is not None:
+            tokens = ['!', self.pb_tokens]
+        return _Pred(lambda x: not self.fn(x), tokens)
 
 class _Field:
     def __init__(self, path: Tuple[str, ...] = ()):  # empty is root
         self._path = path
+        self._pending_between: Optional[tuple[Any, Any, tuple[bool,bool]]] = None
 
     def __getattr__(self, item: str) -> '_Field':
         return _Field(self._path + (item,))
@@ -99,6 +113,67 @@ class _Field:
     def in_(self, seq: Iterable[Any]):
         s = set(seq)
         return _Pred(lambda x: self._resolve(x) in s)
+
+    # Between DSL
+    def between(self, lo: Any, hi: Any, inclusive: tuple[bool,bool] = (True, True)) -> _Pred:
+        if lo is None or hi is None:
+            return _Pred(lambda x: False)
+        l_inc, r_inc = inclusive
+        # Local predicate behavior (None field -> False)
+        def _pred(x):
+            v = self._resolve(x)
+            if v is None:
+                return False
+            if lo > hi:
+                # validation: empty by default
+                return False
+            if l_inc:
+                if v < lo:
+                    return False
+            else:
+                if v <= lo:
+                    return False
+            if r_inc:
+                if v > hi:
+                    return False
+            else:
+                if v >= hi:
+                    return False
+            return True
+        # Build PB tokens for pushdown
+        bounds_token = 'between[]' if l_inc and r_inc else (
+            'between()' if (not l_inc and not r_inc) else (
+                'between[)' if (l_inc and not r_inc) else 'between(]'
+            )
+        )
+        attr = '.'.join(self._path)
+        pb_tokens = [attr, bounds_token, lo, hi]
+        return _Pred(_pred, pb_tokens)
+
+    def between_closed(self, lo: Any, hi: Any) -> _Pred:
+        return self.between(lo, hi, inclusive=(True, True))
+
+    def between_open(self, lo: Any, hi: Any) -> _Pred:
+        return self.between(lo, hi, inclusive=(False, False))
+
+    def between_left_open(self, lo: Any, hi: Any) -> _Pred:
+        return self.between(lo, hi, inclusive=(False, True))
+
+    def between_right_open(self, lo: Any, hi: Any) -> _Pred:
+        return self.between(lo, hi, inclusive=(True, False))
+
+    def range(self, lo: Any, hi: Any, bounds: str = "[]") -> _Pred:
+        bounds = bounds.strip()
+        mapping = {
+            "[]": (True, True),
+            "()": (False, False),
+            "(]": (False, True),
+            "[)": (True, False),
+        }
+        inc = mapping.get(bounds)
+        if inc is None:
+            raise ValueError("bounds must be one of '[]','()','(]','[)'")
+        return self.between(lo, hi, inclusive=inc)
 
     def contains(self, sub: Any):
         return _Pred(lambda x: (self._resolve(x) or "").__contains__(sub))
@@ -225,6 +300,102 @@ def _to_callable(expr_or_fn: Optional[Callable[[T], Any] | Any]) -> Optional[Cal
     return lambda _: expr_or_fn
 
 
+def _field_path_from_ast(node: ast.AST) -> Optional[Tuple[str,...]]:
+    # Supports x.attr or x['attr'] chains
+    parts: list[str] = []
+    cur = node
+    while True:
+        if isinstance(cur, ast.Attribute):
+            parts.append(cur.attr)
+            cur = cur.value
+            continue
+        if isinstance(cur, ast.Subscript):
+            try:
+                # Python 3.11: slice in cur.slice
+                s = cur.slice
+                if isinstance(s, ast.Constant) and isinstance(s.value, str):
+                    parts.append(s.value)
+                elif isinstance(s, ast.Index) and isinstance(s.value, ast.Constant) and isinstance(s.value.value, str):
+                    parts.append(s.value.value)
+                else:
+                    return None
+            except Exception:
+                return None
+            cur = cur.value
+            continue
+        if isinstance(cur, ast.Name):
+            # Reached the parameter name
+            break
+        return None
+    if not parts:
+        return None
+    parts.reverse()
+    return tuple(parts)
+
+
+def _translate_lambda_between(fn: Callable) -> Optional[list]:
+    try:
+        src = inspect.getsource(fn)
+    except Exception:
+        return None
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return None
+    # Find the Lambda node or a FunctionDef with a return
+    lam: Optional[ast.Lambda] = None
+    class _Find(ast.NodeVisitor):
+        def visit_Lambda(self, node: ast.Lambda):
+            nonlocal lam
+            lam = node
+    _Find().visit(tree)
+    expr_node: Optional[ast.AST] = lam.body if lam else None
+    if expr_node is None:
+        # Try function def
+        class _FindRet(ast.NodeVisitor):
+            def __init__(self):
+                self.ret = None
+            def visit_Return(self, node: ast.Return):
+                self.ret = node.value
+        fr = _FindRet()
+        fr.visit(tree)
+        expr_node = fr.ret
+    if not isinstance(expr_node, ast.Compare):
+        return None
+    # Pattern: lo <= center <= hi or lo < center < hi
+    if len(expr_node.ops) != 2 or len(expr_node.comparators) != 2:
+        return None
+    lo_node = expr_node.left
+    center = expr_node.comparators[0]
+    hi_node = expr_node.comparators[1]
+    # Ensure center is a field access on the lambda arg
+    path = _field_path_from_ast(center)
+    if not path:
+        return None
+    # Extract constants for lo/hi
+    def _const_val(n):
+        if isinstance(n, ast.Constant):
+            return n.value
+        return None
+    lo = _const_val(lo_node)
+    hi = _const_val(hi_node)
+    if lo is None or hi is None:
+        return None
+    # Determine inclusivity
+    left_op = expr_node.ops[0]
+    right_op = expr_node.ops[1]
+    l_inc = isinstance(left_op, ast.LtE)
+    r_inc = isinstance(right_op, ast.LtE)
+    if not (isinstance(left_op, (ast.Lt, ast.LtE)) and isinstance(right_op, (ast.Lt, ast.LtE))):
+        return None
+    bounds_token = 'between[]' if l_inc and r_inc else (
+        'between()' if (not l_inc and not r_inc) else (
+            'between[)' if (l_inc and not r_inc) else 'between(]'
+        )
+    )
+    return ['.'.join(path), bounds_token, lo, hi]
+
+
 class FunctionExpression(PBExpression):
     """Adapter Expression that delegates to a Python callable predicate.
     Allows WherePlan to accept our DSL/lambda predicates without building a token tree.
@@ -324,6 +495,18 @@ class Queryable(Generic[T]):
             for (name, args, kwargs) in ops_in_order:
                 if name == 'where':
                     arg0 = args[0]
+                    # Prefer PB Expression tokens if available for pushdown/index usage
+                    if isinstance(arg0, _Pred) and arg0.pb_tokens is not None:
+                        current_plan = WherePlan(filter_spec=arg0.pb_tokens, based_on=current_plan)
+                        plan_prefix_len += 1
+                        continue
+                    # Try translating lambda chained comparisons to Between
+                    if callable(arg0):
+                        lam_tokens = _translate_lambda_between(arg0)
+                        if lam_tokens is not None:
+                            current_plan = WherePlan(filter_spec=lam_tokens, based_on=current_plan)
+                            plan_prefix_len += 1
+                            continue
                     pred = _to_callable(arg0)
                     if pred is None:
                         plan_prefix_len += 1
@@ -386,9 +569,20 @@ class Queryable(Generic[T]):
                 is_supported = isinstance(arg0, _Pred)
                 if not is_supported:
                     if self._policy.on_unsupported == 'error':
-                        raise ValueError('Unsupported where predicate; use F DSL (e.g., F.field == 1) or set on_unsupported("warn"|"fallback")')
+                        # Try to translate lambda chained compare to between
+                        if callable(arg0):
+                            tokens = _translate_lambda_between(arg0)
+                            if tokens is not None:
+                                # Evaluate via tokens locally as well after plan prefix
+                                # For local execution maintain predicate function
+                                pass
+                            else:
+                                raise ValueError('Unsupported where predicate; use F DSL (e.g., F.field == 1) or set on_unsupported("warn"|"fallback")')
+                        else:
+                            raise ValueError('Unsupported where predicate; use F DSL (e.g., F.field == 1) or set on_unsupported("warn"|"fallback")')
                     elif self._policy.on_unsupported == 'warn':
                         warnings.warn('Falling back to local Python evaluation for where()', RuntimeWarning)
+                    # If lambda is a between pattern, we can still evaluate locally using the callable
                 pred = _to_callable(arg0)
                 if pred is None:
                     continue

@@ -4,13 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[ADD]IVF-Flat performance comparison has been integrated into the vector benchmark suite, enabling comparisons against Exact and HNSW indices. The updated benchmark includes IVF metrics and can be executed with specific parameters to generate detailed results.">
-      <change afterPath="$PROJECT_DIR$/proto_db/linq.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/proto_db/tests/test_ivf_flat_index.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/proto_db/tests/test_linq_groupby.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/proto_db/tests/test_linq_like.py" afterDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[IMP] linq alike functions">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/linq.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/linq.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -269,15 +265,7 @@
       <workItem from="1755787730573" duration="225000" />
       <workItem from="1755787975213" duration="18352000" />
       <workItem from="1756137442174" duration="124000" />
-      <workItem from="1756995586860" duration="2312000" />
-    </task>
-    <task id="LOCAL-00018" summary="[WIP] mejoras varias por AI Junie">
-      <option name="closed" value="true" />
-      <created>1744990117163</created>
-      <option name="number" value="00018" />
-      <option name="presentableId" value="LOCAL-00018" />
-      <option name="project" value="LOCAL" />
-      <updated>1744990117163</updated>
+      <workItem from="1756995586860" duration="6230000" />
     </task>
     <task id="LOCAL-00019" summary="[ADD] README]">
       <option name="closed" value="true" />
@@ -663,14 +651,21 @@
       <option name="project" value="LOCAL" />
       <updated>1755810743156</updated>
     </task>
-    <option name="localTasksCounter" value="67" />
+    <task id="LOCAL-00067" summary="[IMP] linq alike functions">
+      <option name="closed" value="true" />
+      <created>1757001841883</created>
+      <option name="number" value="00067" />
+      <option name="presentableId" value="LOCAL-00067" />
+      <option name="project" value="LOCAL" />
+      <updated>1757001841883</updated>
+    </task>
+    <option name="localTasksCounter" value="68" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[FIX] task_manager.py: in proper proto_db style" />
     <MESSAGE value="[WIP] simple_example.py: TODO: list with errors" />
     <MESSAGE value="[FIX] errors in commit logic" />
     <MESSAGE value="[IMP] First implementation of performance analysis (Fully automated by Junie AI)" />
@@ -695,7 +690,8 @@
     <MESSAGE value="[ADD] A vector ANN benchmark script was created to measure and compare the performance of HNSW against ExactVectorIndex and optional NumPy and scikit-learn baselines, successfully producing JSON output with timings. All existing tests remained unaffected and passed. No errors were encountered during execution, confirming the accuracy of the benchmarking tool." />
     <MESSAGE value="[ADD] An IVF-Flat vector index backend (IVFFlatIndex) was implemented in `vector_index.py`, enabling copy-on-write updates without tombstones and multiprobe search. All unit tests passed, ensuring functionality and integration with existing vector features." />
     <MESSAGE value="[ADD]IVF-Flat performance comparison has been integrated into the vector benchmark suite, enabling comparisons against Exact and HNSW indices. The updated benchmark includes IVF metrics and can be executed with specific parameters to generate detailed results." />
-    <option name="LAST_COMMIT_MESSAGE" value="[ADD]IVF-Flat performance comparison has been integrated into the vector benchmark suite, enabling comparisons against Exact and HNSW indices. The updated benchmark includes IVF metrics and can be executed with specific parameters to generate detailed results." />
+    <MESSAGE value="[IMP] linq alike functions" />
+    <option name="LAST_COMMIT_MESSAGE" value="[IMP] linq alike functions" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
