@@ -1,12 +1,12 @@
 Query System
-===========
+=============
 
 .. module:: proto_db.queries
 
 This module provides the query system of ProtoBase, which allows for complex data manipulation and retrieval.
 
 New in this release
--------------------
+---------------------
 
 - Range operators between[]/()/[)/(] with proper bound inclusivity via the Between operator.
 - Collection-oriented plans: UnnestPlan and CollectionFieldPlan.
@@ -14,7 +14,7 @@ New in this release
 - Range pushdown over indexes via IndexedRangeSearchPlan.
 
 Query Plans
-----------
+-----------
 
 QueryPlan
 ~~~~~~~~
@@ -152,7 +152,7 @@ IndexedRangeSearchPlan
 This plan iterates only the index buckets whose keys fall within a specified range, respecting inclusive/exclusive bounds. It is produced by WherePlan.optimize when a Between operator applies to an indexed field.
 
 Optimized Counting
-----------------
+-------------------
 
 Several query plan classes implement optimized counting methods to improve performance when only the count of results is needed, not the actual data. These optimizations avoid iterating through all records when possible.
 
@@ -202,12 +202,12 @@ The ``Between`` operator supports configurable bound inclusivity. Four canonical
 Each ``Term`` using ``Between`` expects a value tuple ``(lo, hi)``. Example compiled expression: ``['age', 'between()', 10, 20]``.
 
 Index-aware AND optimization
-----------------------------
+--------------------------------
 
 When the filter is an ``AndExpression`` and the underlying plan exposes secondary indexes for the referenced fields, ``WherePlan.execute`` builds per-term candidate sets from the indexes, sorts them by selectivity (size) ascending, and performs a progressive intersection with early exit. Non-indexable residual predicates are applied only to the reduced set. This can drastically reduce the work on large datasets.
 
 Usage Examples
--------------
+----------------
 
 Basic Query
 ~~~~~~~~~~

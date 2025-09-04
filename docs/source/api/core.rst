@@ -42,7 +42,7 @@ DBObject
 The ``DBObject`` class is the base class for all database objects. It provides methods for serialization and deserialization.
 
 MutableObject
-------------
+--------------
 
 .. autoclass:: MutableObject
    :members:
@@ -109,7 +109,7 @@ Database
 A ``Database`` is a container for a single database. It manages the lifecycle of transactions, provides access to the root object, and ensures proper isolation between transactions.
 
 ObjectTransaction
-----------------
+------------------
 
 .. autoclass:: ObjectTransaction
    :members:

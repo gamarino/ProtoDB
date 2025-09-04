@@ -1,0 +1,253 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Secondary Indexes &mdash; ProtoBase 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Query System" href="queries.html" />
+    <link rel="prev" title="Data Structures" href="data_structures.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            ProtoBase
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../introduction.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="core.html">Core Components</a></li>
+<li class="toctree-l2"><a class="reference internal" href="storage.html">Storage Layer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data_structures.html">Data Structures</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Secondary Indexes</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#concepts">Concepts</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#indexdefinition">IndexDefinition</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#indexregistry">IndexRegistry</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#using-indexes-with-collections">Using indexes with collections</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#example">Example</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html">Query System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="vectors.html">Vector Support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="linq.html">LINQ-like API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="exceptions.html">Exceptions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fsm.html">Finite State Machine</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#core-components">Core Components</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#storage-layer">Storage Layer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#data-structures">Data Structures</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#query-system">Query System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#exceptions">Exceptions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#finite-state-machine">Finite State Machine</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../development.html">Development</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">ProtoBase</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">API Reference</a></li>
+      <li class="breadcrumb-item active">Secondary Indexes</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/indexes.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-proto_db.indexes">
+<span id="secondary-indexes"></span><h1>Secondary Indexes<a class="headerlink" href="#module-proto_db.indexes" title="Link to this heading"></a></h1>
+<p>ProtoBase provides a lightweight, immutable secondary index infrastructure that collections can leverage to accelerate queries and lookups.</p>
+<section id="concepts">
+<h2>Concepts<a class="headerlink" href="#concepts" title="Link to this heading"></a></h2>
+<section id="indexdefinition">
+<h3>IndexDefinition<a class="headerlink" href="#indexdefinition" title="Link to this heading"></a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.indexes.IndexDefinition">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.indexes.</span></span><span class="sig-name descname"><span class="pre">IndexDefinition</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">extractor</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/indexes.html#IndexDefinition"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.indexes.IndexDefinition" title="Link to this definition"></a></dt>
+<dd><p>Defines a secondary index.
+- name: index name
+- extractor: callable(item) -&gt;</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>a single key value (applies to this index name), or</p></li>
+<li><p>an iterable of key values (applies to this index name), or</p></li>
+<li><p>an iterable of (index_name, key_value) tuples to feed multiple indexes</p></li>
+</ul>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>name</strong> (<em>str</em>)</p></li>
+<li><p><strong>extractor</strong> (<em>Callable</em><em>[</em><em>[</em><em>Any</em><em>]</em><em>, </em><em>Any</em><em>]</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.indexes.IndexDefinition.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">extractor</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#proto_db.indexes.IndexDefinition.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>name</strong> (<em>str</em>)</p></li>
+<li><p><strong>extractor</strong> (<em>Callable</em><em>[</em><em>[</em><em>Any</em><em>]</em><em>, </em><em>Any</em><em>]</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>Defines an index name and an extractor callable that maps an item to one or more index keys. The extractor may return:</p>
+<ul class="simple">
+<li><p>a single key value (applies to this index name),</p></li>
+<li><p>an iterable of key values (applies to this index name), or</p></li>
+<li><p>an iterable of <code class="docutils literal notranslate"><span class="pre">(index_name,</span> <span class="pre">key_value)</span></code> tuples to feed multiple indexes.</p></li>
+</ul>
+</section>
+<section id="indexregistry">
+<h3>IndexRegistry<a class="headerlink" href="#indexregistry" title="Link to this heading"></a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.indexes.IndexRegistry">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.indexes.</span></span><span class="sig-name descname"><span class="pre">IndexRegistry</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">defs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/indexes.html#IndexRegistry"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.indexes.IndexRegistry" title="Link to this definition"></a></dt>
+<dd><p>Immutable registry of secondary indexes.
+data: dict[index_name -&gt; dict[key_value -&gt; frozenset[obj_id]]]
+defs: tuple[IndexDefinition, …]</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>Dict</em><em>[</em><em>str</em><em>, </em><em>Dict</em><em>[</em><em>Any</em><em>, </em><em>FrozenSet</em><em>[</em><em>Any</em><em>]</em><em>]</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>defs</strong> (<em>Tuple</em><em>[</em><a class="reference internal" href="#proto_db.indexes.IndexDefinition" title="proto_db.indexes.IndexDefinition"><em>IndexDefinition</em></a><em>, </em><em>...</em><em>] </em><em>| </em><em>None</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.indexes.IndexRegistry.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">defs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/indexes.html#IndexRegistry.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.indexes.IndexRegistry.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>Dict</em><em>[</em><em>str</em><em>, </em><em>Dict</em><em>[</em><em>Any</em><em>, </em><em>FrozenSet</em><em>[</em><em>Any</em><em>]</em><em>]</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>defs</strong> (<em>Tuple</em><em>[</em><a class="reference internal" href="#proto_db.indexes.IndexDefinition" title="proto_db.indexes.IndexDefinition"><em>IndexDefinition</em></a><em>, </em><em>...</em><em>] </em><em>| </em><em>None</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>An immutable registry maintaining a mapping <code class="docutils literal notranslate"><span class="pre">index_name</span> <span class="pre">-&gt;</span> <span class="pre">{key_value</span> <span class="pre">-&gt;</span> <span class="pre">frozenset(obj_id)}</span></code>. All updates (add/remove/replace) return a new registry, allowing structural sharing and safe reuse across versions of a collection.</p>
+</section>
+</section>
+<section id="using-indexes-with-collections">
+<h2>Using indexes with collections<a class="headerlink" href="#using-indexes-with-collections" title="Link to this heading"></a></h2>
+<p>The built-in collections can maintain internal secondary indexes using <code class="docutils literal notranslate"><span class="pre">IndexRegistry</span></code>:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">List</span></code>: call <code class="docutils literal notranslate"><span class="pre">set_index_defs(defs)</span></code> to configure index definitions. Each element gets a stable id (Atom.hash() if Atom, otherwise a derived stable hash).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Dictionary</span></code> and <code class="docutils literal notranslate"><span class="pre">RepeatedKeysDictionary</span></code>: call <code class="docutils literal notranslate"><span class="pre">set_index_defs(defs)</span></code>; the natural object id is the dictionary key.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Set</span></code>: call <code class="docutils literal notranslate"><span class="pre">set_index_defs(defs)</span></code>; the natural object id is the element hash.</p></li>
+</ul>
+<p>Mutating operations return new collection instances with indexes updated functionally (<code class="docutils literal notranslate"><span class="pre">with_add</span></code>, <code class="docutils literal notranslate"><span class="pre">with_remove</span></code>, <code class="docutils literal notranslate"><span class="pre">with_replace</span></code>), avoiding recomputation.</p>
+</section>
+<section id="example">
+<h2>Example<a class="headerlink" href="#example" title="Link to this heading"></a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.indexes</span><span class="w"> </span><span class="kn">import</span> <span class="n">IndexDefinition</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.lists</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
+
+<span class="c1"># Index list items by a field &#39;status&#39;</span>
+<span class="n">defs</span> <span class="o">=</span> <span class="p">(</span><span class="n">IndexDefinition</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s1">&#39;status&#39;</span><span class="p">,</span> <span class="n">extractor</span><span class="o">=</span><span class="k">lambda</span> <span class="n">row</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;status&#39;</span><span class="p">)),)</span>
+
+<span class="n">lst</span> <span class="o">=</span> <span class="n">List</span><span class="p">()</span>
+<span class="n">lst</span><span class="o">.</span><span class="n">set_index_defs</span><span class="p">(</span><span class="n">defs</span><span class="p">)</span>
+
+<span class="c1"># After appending items via List API, the internal indexes are kept consistent</span>
+<span class="c1"># and can be reused by index-aware query plans.</span>
+</pre></div>
+</div>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="data_structures.html" class="btn btn-neutral float-left" title="Data Structures" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="queries.html" class="btn btn-neutral float-right" title="Query System" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

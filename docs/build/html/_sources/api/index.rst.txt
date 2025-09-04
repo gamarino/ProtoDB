@@ -10,7 +10,10 @@ This section provides detailed API documentation for ProtoBase.
    core
    storage
    data_structures
+   indexes
    queries
+   vectors
+   linq
    exceptions
    fsm
 

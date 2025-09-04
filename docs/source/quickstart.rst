@@ -4,7 +4,7 @@ Quickstart
 This guide will help you get started with ProtoBase by walking through some basic examples.
 
 Creating a Database
-------------------
+--------------------
 
 The first step is to create a storage instance, an object space, and a database:
 
@@ -42,7 +42,7 @@ For production use, you might want to use a file-based storage instead:
     db = space.get_database("my_database")
 
 Working with Transactions
-------------------------
+---------------------------
 
 All operations in ProtoBase are performed within transactions:
 
@@ -59,7 +59,7 @@ All operations in ProtoBase are performed within transactions:
 If you need to abort a transaction, you can simply let it go out of scope without committing it.
 
 Working with Dictionaries
-------------------------
+--------------------------
 
 Dictionaries are one of the basic data structures in ProtoBase:
 
@@ -135,7 +135,7 @@ Between and lambda chained comparisons:
 See :doc:`api/linq` for complete API details.
 
 Working with Lists
------------------
+------------------
 
 Lists are another basic data structure:
 

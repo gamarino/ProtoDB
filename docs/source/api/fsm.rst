@@ -1,5 +1,5 @@
 Finite State Machine
-==================
+====================
 
 .. module:: proto_db.fsm
 

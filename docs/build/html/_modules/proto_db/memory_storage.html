@@ -1,104 +1,92 @@
+
+
 <!DOCTYPE html>
-<html class="writer-html5" data-content_root="../../" lang="en">
+<html class="writer-html5" lang="en" data-content_root="../../">
 <head>
-    <meta charset="utf-8"/>
-    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-    <title>proto_db.memory_storage &mdash; ProtoBase 0.1.0 documentation</title>
-    <link href="../../_static/pygments.css?v=80d5e7a1" rel="stylesheet" type="text/css"/>
-    <link href="../../_static/css/theme.css?v=e59714d7" rel="stylesheet" type="text/css"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>proto_db.memory_storage &mdash; ProtoBase 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
 
-
-    <script src="../../_static/jquery.js?v=5d32c60e"></script>
-    <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-    <script src="../../_static/documentation_options.js?v=01f34227"></script>
-    <script src="../../_static/doctools.js?v=9bcbadda"></script>
-    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/js/theme.js"></script>
-    <link href="../../genindex.html" rel="index" title="Index"/>
-    <link href="../../search.html" rel="search" title="Search"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
 </head>
 
-<body class="wy-body-for-nav">
-<div class="wy-grid-for-nav">
-    <nav class="wy-nav-side" data-toggle="wy-nav-shift">
-        <div class="wy-side-scroll">
-            <div class="wy-side-nav-search">
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
 
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            ProtoBase
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
+</ul>
 
-                <a class="icon icon-home" href="../../index.html">
-                    ProtoBase
-                </a>
-                <div role="search">
-                    <form action="../../search.html" class="wy-form" id="rtd-search-form" method="get">
-                        <input aria-label="Search docs" name="q" placeholder="Search docs" type="text"/>
-                        <input name="check_keywords" type="hidden" value="yes"/>
-                        <input name="area" type="hidden" value="default"/>
-                    </form>
-                </div>
-            </div>
-            <div aria-label="Navigation menu" class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation">
-                <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
-                <ul>
-                    <li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a>
-                    </li>
-                    <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a>
-                    </li>
-                    <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a>
-                    </li>
-                    <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a>
-                    </li>
-                    <li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a>
-                    </li>
-                    <li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced
-                        Usage</a></li>
-                    <li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a>
-                    </li>
-                </ul>
-
-            </div>
         </div>
+      </div>
     </nav>
 
-    <section class="wy-nav-content-wrap" data-toggle="wy-nav-shift">
-        <nav aria-label="Mobile navigation menu" class="wy-nav-top">
-            <i class="fa fa-bars" data-toggle="wy-nav-top"></i>
-            <a href="../../index.html">ProtoBase</a>
-        </nav>
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">ProtoBase</a>
+      </nav>
 
-        <div class="wy-nav-content">
-            <div class="rst-content">
-                <div aria-label="Page navigation" role="navigation">
-                    <ul class="wy-breadcrumbs">
-                        <li><a aria-label="Home" class="icon icon-home" href="../../index.html"></a></li>
-                        <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
-                        <li class="breadcrumb-item active">proto_db.memory_storage</li>
-                        <li class="wy-breadcrumbs-aside">
-                        </li>
-                    </ul>
-                    <hr/>
-                </div>
-                <div class="document" itemscope="itemscope" itemtype="http://schema.org/Article" role="main">
-                    <div itemprop="articleBody">
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">proto_db.memory_storage</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for proto_db.memory_storage</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">threading</span><span class="w"> </span><span class="kn">import</span> <span class="n">Lock</span>  <span class="c1"># Import threading lock to ensure thread safety</span>
 
-                        <h1>Source code for proto_db.memory_storage</h1>
-                        <div class="highlight"><pre>
-<span></span><span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">common</span>
-<span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span
-                                class="n">Future</span><span class="p">,</span> <span class="n">Atom</span><span
-                                class="p">,</span> <span class="n">AtomPointer</span>
-<span class="kn">from</span> <span class="nn">.db_access</span> <span class="kn">import</span> <span
-                                class="n">BytesAtom</span>
-<span class="kn">from</span> <span class="nn">.exceptions</span> <span class="kn">import</span> <span class="n">ProtoCorruptionException</span>
-<span class="kn">import</span> <span class="nn">uuid</span>
-<span class="kn">from</span> <span class="nn">threading</span> <span class="kn">import</span> <span
-                                class="n">Lock</span>  <span
-                                class="c1"># Import threading lock to ensure thread safety</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">common</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="n">Future</span><span class="p">,</span> <span class="n">AtomPointer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.db_access</span><span class="w"> </span><span class="kn">import</span> <span class="n">BytesAtom</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProtoCorruptionException</span>
 
 
 <div class="viewcode-block" id="MemoryStorage">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.memory_storage.MemoryStorage">[docs]</a>
-<span class="k">class</span> <span class="nc">MemoryStorage</span><span class="p">(</span><span
-        class="n">common</span><span class="o">.</span><span class="n">SharedStorage</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MemoryStorage</span><span class="p">(</span><span class="n">common</span><span class="o">.</span><span class="n">SharedStorage</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    A simple in-memory implementation of a storage system.</span>
 <span class="sd">    This acts as a lightweight and temporary alternative to persistent storage,</span>
@@ -107,80 +95,58 @@
 
 <div class="viewcode-block" id="MemoryStorage.__init__">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.memory_storage.MemoryStorage.__init__">[docs]</a>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span
-        class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Initializes the in-memory storage. It sets up:</span>
 <span class="sd">        - A unique transaction ID for all operations during this session.</span>
 <span class="sd">        - An empty atom dictionary for storing atoms against their offsets.</span>
 <span class="sd">        - A lock to make the memory storage thread-safe.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span> <span
-        class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span
-        class="p">()</span>  <span class="c1"># A unique transaction ID for this storage session.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">atoms</span> <span class="o">=</span> <span
-        class="nb">dict</span><span class="p">()</span>  <span class="c1"># Dictionary to store atoms in memory.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_root_history_pointer</span> <span
-        class="o">=</span> <span class="kc">None</span>  <span
-        class="c1"># A container for the current root object.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">lock</span> <span class="o">=</span> <span
-        class="n">Lock</span><span class="p">()</span>  <span
-        class="c1"># Thread lock to ensure safe concurrent access.</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span>  <span class="c1"># A unique transaction ID for this storage session.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">atoms</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">()</span>  <span class="c1"># Dictionary to store atoms in memory.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_root_history_pointer</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># A container for the current root object.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lock</span> <span class="o">=</span> <span class="n">Lock</span><span class="p">()</span>  <span class="c1"># Thread lock to ensure safe concurrent access.</span></div>
 
 
 <div class="viewcode-block" id="MemoryStorage.read_current_root">
-<a class="viewcode-back"
-   href="../../api/storage.html#proto_db.memory_storage.MemoryStorage.read_current_root">[docs]</a>
-    <span class="k">def</span> <span class="nf">read_current_root</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span
-        class="n">AtomPointer</span><span class="p">:</span>
+<a class="viewcode-back" href="../../api/storage.html#proto_db.memory_storage.MemoryStorage.read_current_root">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">read_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Retrieve the current root object of the storage.</span>
 <span class="sd">        :return: The `RootObject`, if it exists.</span>
 <span class="sd">        :raises:</span>
 <span class="sd">            ProtoValidationException: If no root object has been set yet.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span
-        class="p">:</span>  <span class="c1"># Ensure thread-safety when accessing `current_root`.</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>  <span class="c1"># Ensure thread-safety when accessing `current_root`.</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_root_history_pointer</span></div>
 
 
 <div class="viewcode-block" id="MemoryStorage.read_lock_current_root">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.memory_storage.MemoryStorage.read_lock_current_root">[docs]</a>
-    <span class="k">def</span> <span class="nf">read_lock_current_root</span><span class="p">(</span><span class="bp">self</span><span
-        class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_current_root</span><span
-        class="p">()</span></div>
+    <span class="k">def</span><span class="w"> </span><span class="nf">read_lock_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_current_root</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="MemoryStorage.set_current_root">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.memory_storage.MemoryStorage.set_current_root">[docs]</a>
-    <span class="k">def</span> <span class="nf">set_current_root</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">,</span> <span class="n">new_root_history_pointer</span><span
-        class="p">:</span> <span class="n">AtomPointer</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_root_history_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Set a new root history object for the storage, replacing any existing one.</span>
 <span class="sd">        :param new_root_history_pointer: The pointer to the new `RootObject` to be set.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span
-        class="p">:</span>  <span class="c1"># Ensure thread-safety when modifying `current_root`.</span>
-            <span class="bp">self</span><span class="o">.</span><span
-        class="n">current_root_history_pointer</span> <span class="o">=</span> <span
-        class="n">new_root_history_pointer</span></div>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>  <span class="c1"># Ensure thread-safety when modifying `current_root`.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">current_root_history_pointer</span> <span class="o">=</span> <span class="n">new_root_history_pointer</span></div>
 
 
 <div class="viewcode-block" id="MemoryStorage.unlock_current_root">
-<a class="viewcode-back"
-   href="../../api/storage.html#proto_db.memory_storage.MemoryStorage.unlock_current_root">[docs]</a>
-    <span class="k">def</span> <span class="nf">unlock_current_root</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">):</span>
+<a class="viewcode-back" href="../../api/storage.html#proto_db.memory_storage.MemoryStorage.unlock_current_root">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">unlock_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">pass</span></div>
 
 
 <div class="viewcode-block" id="MemoryStorage.flush_wal">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.memory_storage.MemoryStorage.flush_wal">[docs]</a>
-    <span class="k">def</span> <span class="nf">flush_wal</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">flush_wal</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        No data to be flushed for memory storage</span>
 <span class="sd">        :return:</span>
@@ -190,10 +156,7 @@
 
 <div class="viewcode-block" id="MemoryStorage.push_atom">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.memory_storage.MemoryStorage.push_atom">[docs]</a>
-    <span class="k">def</span> <span class="nf">push_atom</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">,</span> <span class="n">atom</span><span class="p">:</span> <span
-        class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span
-        class="p">[</span><span class="n">AtomPointer</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">push_atom</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">atom</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="n">AtomPointer</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Save an atom in the in-memory storage. Each atom gets a unique offset and is tied</span>
 <span class="sd">        to the current transaction ID.</span>
@@ -202,44 +165,31 @@
 <span class="sd">        :raises:</span>
 <span class="sd">            ProtoCorruptionException: If an atom with the same offset already exists.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span
-        class="p">:</span>  <span class="c1"># Ensure thread-safety for operations on `atoms`.</span>
-            <span class="n">offset</span> <span class="o">=</span> <span class="n">uuid</span><span
-        class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="o">.</span><span class="n">int</span>
-            <span class="n">atom_pointer</span> <span class="o">=</span> <span class="n">AtomPointer</span><span
-        class="p">(</span>
-                <span class="n">transaction_id</span><span class="o">=</span><span class="bp">self</span><span
-        class="o">.</span><span class="n">transaction_id</span><span class="p">,</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>  <span class="c1"># Ensure thread-safety for operations on `atoms`.</span>
+            <span class="n">offset</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="o">.</span><span class="n">int</span>
+            <span class="n">atom_pointer</span> <span class="o">=</span> <span class="n">AtomPointer</span><span class="p">(</span>
+                <span class="n">transaction_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span>
                 <span class="n">offset</span><span class="o">=</span><span class="n">offset</span>
             <span class="p">)</span>
 
             <span class="c1"># Check if the offset already exists in the atoms dictionary.</span>
-            <span class="k">if</span> <span class="n">offset</span> <span class="ow">in</span> <span
-        class="bp">self</span><span class="o">.</span><span class="n">atoms</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">offset</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">atoms</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="n">ProtoCorruptionException</span><span class="p">(</span>
-                    <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;You are trying to push an already existing atom: </span><span
-        class="si">{</span><span class="n">atom</span><span class="si">}</span><span class="s1">&#39;</span>
+                    <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;You are trying to push an already existing atom: </span><span class="si">{</span><span class="n">atom</span><span class="si">}</span><span class="s1">&#39;</span>
                 <span class="p">)</span>
 
             <span class="c1"># Add the atom to the storage.</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">atoms</span><span
-        class="p">[</span><span class="n">offset</span><span class="p">]</span> <span class="o">=</span> <span
-        class="n">atom</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">atoms</span><span class="p">[</span><span class="n">offset</span><span class="p">]</span> <span class="o">=</span> <span class="n">atom</span>
 
             <span class="c1"># Create and return a Future with the atom&#39;s pointer.</span>
-            <span class="n">result</span> <span class="o">=</span> <span class="n">Future</span><span
-        class="p">()</span>
-            <span class="n">result</span><span class="o">.</span><span class="n">set_result</span><span
-        class="p">(</span><span class="n">atom_pointer</span><span class="p">)</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">Future</span><span class="p">()</span>
+            <span class="n">result</span><span class="o">.</span><span class="n">set_result</span><span class="p">(</span><span class="n">atom_pointer</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">result</span></div>
 
 
 <div class="viewcode-block" id="MemoryStorage.get_atom">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.memory_storage.MemoryStorage.get_atom">[docs]</a>
-    <span class="k">def</span> <span class="nf">get_atom</span><span class="p">(</span><span class="bp">self</span><span
-        class="p">,</span> <span class="n">atom_pointer</span><span class="p">:</span> <span
-        class="n">AtomPointer</span><span class="p">)</span> <span class="o">-&gt;</span> <span
-        class="n">Future</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_atom</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Retrieve an atom from the storage using its atom pointer.</span>
 <span class="sd">        :param atom_pointer: The `AtomPointer` associated with the atom.</span>
@@ -247,36 +197,25 @@
 <span class="sd">        :raises:</span>
 <span class="sd">            ProtoCorruptionException: If the atom does not exist in the storage.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span
-        class="p">:</span>  <span class="c1"># Ensure thread-safety for operations on `atoms`.</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>  <span class="c1"># Ensure thread-safety for operations on `atoms`.</span>
             <span class="c1"># Check if the atom exists in the dictionary.</span>
-            <span class="k">if</span> <span class="n">atom_pointer</span><span class="o">.</span><span
-        class="n">offset</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">atoms</span><span class="p">:</span>
-                <span class="n">atom</span> <span class="o">=</span> <span class="bp">self</span><span
-        class="o">.</span><span class="n">atoms</span><span class="p">[</span><span class="n">atom_pointer</span><span
-        class="o">.</span><span class="n">offset</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">atoms</span><span class="p">:</span>
+                <span class="n">atom</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">atoms</span><span class="p">[</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">]</span>
 
                 <span class="c1"># Create and return a Future with the retrieved atom.</span>
-                <span class="n">result</span> <span class="o">=</span> <span class="n">Future</span><span
-        class="p">()</span>
-                <span class="n">result</span><span class="o">.</span><span class="n">set_result</span><span
-        class="p">(</span><span class="n">atom</span><span class="p">)</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="n">Future</span><span class="p">()</span>
+                <span class="n">result</span><span class="o">.</span><span class="n">set_result</span><span class="p">(</span><span class="n">atom</span><span class="p">)</span>
                 <span class="k">return</span> <span class="n">result</span>
 
             <span class="c1"># Raise an error if the atom does not exist.</span>
             <span class="k">raise</span> <span class="n">ProtoCorruptionException</span><span class="p">(</span>
-                <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Atom at </span><span
-        class="si">{</span><span class="n">atom_pointer</span><span class="si">}</span><span class="s1"> does not exist&#39;</span>
+                <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Atom at </span><span class="si">{</span><span class="n">atom_pointer</span><span class="si">}</span><span class="s1"> does not exist&#39;</span>
             <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="MemoryStorage.get_bytes">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.memory_storage.MemoryStorage.get_bytes">[docs]</a>
-    <span class="k">def</span> <span class="nf">get_bytes</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="p">:</span> <span
-        class="n">AtomPointer</span><span class="p">)</span> <span class="o">-&gt;</span> <span
-        class="n">Future</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_bytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Retrieves the byte data associated with the given atom pointer.</span>
 
@@ -291,37 +230,25 @@
 <span class="sd">                 the atom pointer.</span>
 <span class="sd">        :rtype: Future[bytes]</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span
-        class="p">:</span>  <span class="c1"># Ensure thread-safety for operations on `atoms`.</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>  <span class="c1"># Ensure thread-safety for operations on `atoms`.</span>
             <span class="c1"># Check if the atom exists in the dictionary.</span>
-            <span class="k">if</span> <span class="n">atom_pointer</span><span class="o">.</span><span
-        class="n">offset</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">atoms</span><span class="p">:</span>
-                <span class="n">data</span><span class="p">:</span><span class="nb">bytes</span> <span
-        class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">atoms</span><span
-        class="p">[</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span><span
-        class="p">]</span>
+            <span class="k">if</span> <span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">atoms</span><span class="p">:</span>
+                <span class="n">data</span><span class="p">:</span> <span class="nb">bytes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">atoms</span><span class="p">[</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">]</span>
 
                 <span class="c1"># Create and return a Future with the retrieved atom.</span>
-                <span class="n">result</span> <span class="o">=</span> <span class="n">Future</span><span
-        class="p">()</span>
-                <span class="n">result</span><span class="o">.</span><span class="n">set_result</span><span
-        class="p">(</span><span class="n">data</span><span class="p">)</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="n">Future</span><span class="p">()</span>
+                <span class="n">result</span><span class="o">.</span><span class="n">set_result</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
                 <span class="k">return</span> <span class="n">result</span>
 
             <span class="c1"># Raise an error if the atom does not exist.</span>
             <span class="k">raise</span> <span class="n">ProtoCorruptionException</span><span class="p">(</span>
-                <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Atom at </span><span
-        class="si">{</span><span class="n">atom_pointer</span><span class="si">}</span><span class="s1"> does not exist&#39;</span>
+                <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Atom at </span><span class="si">{</span><span class="n">atom_pointer</span><span class="si">}</span><span class="s1"> does not exist&#39;</span>
             <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="MemoryStorage.push_bytes">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.memory_storage.MemoryStorage.push_bytes">[docs]</a>
-    <span class="k">def</span> <span class="nf">push_bytes</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span
-        class="nb">bytes</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span
-        class="p">[</span><span class="n">AtomPointer</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">push_bytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="n">AtomPointer</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Pushes a sequence of bytes to the underlying data structure or processing unit.</span>
 
@@ -333,47 +260,28 @@
 <span class="sd">        :type data: bytes</span>
 <span class="sd">        :return: None</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">atom</span> <span class="o">=</span> <span class="n">BytesAtom</span><span
-        class="p">(</span><span class="n">content</span><span class="o">=</span><span class="n">data</span><span
-        class="p">)</span>
+        <span class="n">atom</span> <span class="o">=</span> <span class="n">BytesAtom</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="n">data</span><span class="p">)</span>
 
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span
-        class="p">:</span>  <span class="c1"># Ensure thread-safety for operations on `atoms`.</span>
-            <span class="n">atom</span><span class="o">.</span><span class="n">atom_pointer</span><span
-        class="o">.</span><span class="n">transaction_id</span> <span class="o">=</span> <span
-        class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span>  <span class="c1"># Associate atom with the current transaction ID.</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>  <span class="c1"># Ensure thread-safety for operations on `atoms`.</span>
+            <span class="n">atom</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">transaction_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span>  <span class="c1"># Associate atom with the current transaction ID.</span>
 
-            <span class="n">atom</span><span class="o">.</span><span class="n">atom_pointer</span><span
-        class="o">.</span><span class="n">offset</span> <span class="o">=</span> <span class="n">uuid</span><span
-        class="o">.</span><span class="n">uuid4</span><span class="p">()</span>
+            <span class="n">atom</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span>
             <span class="c1"># Check if the offset already exists in the atoms dictionary.</span>
-            <span class="k">while</span> <span class="n">atom</span><span class="o">.</span><span
-        class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span> <span
-        class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">atoms</span><span
-        class="p">:</span>
-                <span class="n">atom</span><span class="o">.</span><span class="n">atom_pointer</span><span
-        class="o">.</span><span class="n">offset</span> <span class="o">=</span> <span class="n">uuid</span><span
-        class="o">.</span><span class="n">uuid4</span><span class="p">()</span>
+            <span class="k">while</span> <span class="n">atom</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">atoms</span><span class="p">:</span>
+                <span class="n">atom</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span>
 
             <span class="c1"># Add the atom to the storage.</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">atoms</span><span
-        class="p">[</span><span class="n">atom</span><span class="o">.</span><span class="n">atom_pointer</span><span
-        class="o">.</span><span class="n">offset</span><span class="p">]</span> <span class="o">=</span> <span
-        class="n">atom</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">atoms</span><span class="p">[</span><span class="n">atom</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">]</span> <span class="o">=</span> <span class="n">atom</span>
 
             <span class="c1"># Create and return a Future with the atom&#39;s pointer.</span>
-            <span class="n">result</span> <span class="o">=</span> <span class="n">Future</span><span
-        class="p">()</span>
-            <span class="n">result</span><span class="o">.</span><span class="n">set_result</span><span
-        class="p">(</span><span class="n">atom</span><span class="o">.</span><span class="n">atom_pointer</span><span
-        class="p">)</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">Future</span><span class="p">()</span>
+            <span class="n">result</span><span class="o">.</span><span class="n">set_result</span><span class="p">(</span><span class="n">atom</span><span class="o">.</span><span class="n">atom_pointer</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">result</span></div>
 
 
 <div class="viewcode-block" id="MemoryStorage.close">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.memory_storage.MemoryStorage.close">[docs]</a>
-    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span
-        class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Close the storage operation. This flushes any pending data and marks</span>
 <span class="sd">        the storage as closed. Further operations should not be allowed.</span>
@@ -381,34 +289,33 @@
 <span class="sd">        &quot;&quot;&quot;</span></div>
 </div>
 
-</pre>
-                        </div>
+</pre></div>
 
-                    </div>
-                </div>
-                <footer>
+           </div>
+          </div>
+          <footer>
 
-                    <hr/>
+  <hr/>
 
-                    <div role="contentinfo">
-                        <p>&#169; Copyright 2023, ProtoBase Team.</p>
-                    </div>
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+  </div>
 
-                    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
-                    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
-                    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
 
-
-                </footer>
-            </div>
+</footer>
         </div>
+      </div>
     </section>
-</div>
-<script>
-    jQuery(function () {
-        SphinxRtdTheme.Navigation.enable(true);
-    });
-</script>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
 
 </body>
 </html>
