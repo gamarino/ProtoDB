@@ -5,62 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[IMP] Performance measurement scripts for LINQ queries were added in the `examples/` directory, including `linq_performance.py`. The execution and results can now be saved to a JSON file, demonstrating the performance of LINQ operations over various data structures. All changes were successfully implemented without errors.">
-      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/api/core.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/api/core.doctree" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/api/data_structures.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/api/data_structures.doctree" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/api/index.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/api/index.doctree" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/api/queries.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/api/queries.doctree" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/api/storage.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/api/storage.doctree" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/environment.pickle" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/environment.pickle" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/quickstart.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/quickstart.doctree" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/index.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/cloud_cluster_file_storage.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/cloud_cluster_file_storage.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/cluster_file_storage.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/cluster_file_storage.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/common.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/common.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/dictionaries.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/dictionaries.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/exceptions.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/exceptions.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/lists.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/lists.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/memory_storage.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/memory_storage.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/queries.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/queries.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/sets.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_modules/proto_db/sets.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_sources/api/index.rst.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_sources/api/index.rst.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_sources/api/queries.rst.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_sources/api/queries.rst.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_sources/quickstart.rst.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_sources/quickstart.rst.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_static/_sphinx_javascript_frameworks_compat.js" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_static/_sphinx_javascript_frameworks_compat.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_static/basic.css" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_static/basic.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_static/css/fonts/fontawesome-webfont.svg" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_static/css/fonts/fontawesome-webfont.svg" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_static/doctools.js" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_static/doctools.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_static/js/versions.js" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_static/js/versions.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_static/language_data.js" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_static/language_data.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_static/pygments.css" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_static/pygments.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_static/searchtools.js" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_static/searchtools.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_static/sphinx_highlight.js" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_static/sphinx_highlight.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/advanced_usage.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/advanced_usage.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/api/core.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/core.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/api/data_structures.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/data_structures.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/api/exceptions.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/exceptions.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/api/fsm.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/fsm.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/api/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/index.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/api/queries.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/queries.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/api/storage.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/storage.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/architecture.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/architecture.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/development.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/development.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/genindex.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/genindex.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/index.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/installation.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/installation.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/introduction.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/introduction.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/objects.inv" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/objects.inv" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/py-modindex.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/py-modindex.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/quickstart.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/quickstart.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/search.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/search.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/searchindex.js" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/searchindex.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/api/core.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/core.rst" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/api/exceptions.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/exceptions.rst" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/api/fsm.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/fsm.rst" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/api/index.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/index.rst" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/api/queries.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/queries.rst" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/index.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/index.rst" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/introduction.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/introduction.rst" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/quickstart.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/quickstart.rst" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/next_steps_proposal.md" beforeDir="false" afterPath="$PROJECT_DIR$/next_steps_proposal.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -101,51 +46,52 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ASKED_MARK_IGNORED_FILES_AS_EXCLUDED&quot;: &quot;true&quot;,
-    &quot;Makefile Target.Makefile (1).executor&quot;: &quot;Run&quot;,
-    &quot;Makefile Target.Makefile (3).executor&quot;: &quot;Run&quot;,
-    &quot;Makefile Target.Makefile.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests in test_db_access.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests in test_file_block_provider.py.executor&quot;: &quot;Debug&quot;,
-    &quot;Python tests.Python tests in test_standalone_file_storage.py.executor&quot;: &quot;Debug&quot;,
-    &quot;Python.comprehensive_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.db_performance_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.minimal_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.performance_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.simple_example.executor&quot;: &quot;Debug&quot;,
-    &quot;Python.simple_performance_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.task_manager.executor&quot;: &quot;Debug&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;com.google.cloudcode.ide_session_index&quot;: &quot;20250803_0001&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/home/gamarino/odoo/ProtoBase&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;,
-    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
+    "Makefile Target.Makefile (1).executor": "Run",
+    "Makefile Target.Makefile (3).executor": "Run",
+    "Makefile Target.Makefile.executor": "Run",
+    "Python tests.Python tests in test_db_access.py.executor": "Run",
+    "Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor": "Run",
+    "Python tests.Python tests in test_file_block_provider.py.executor": "Debug",
+    "Python tests.Python tests in test_standalone_file_storage.py.executor": "Debug",
+    "Python.comprehensive_benchmark.executor": "Run",
+    "Python.db_performance_benchmark.executor": "Run",
+    "Python.indexed_benchmark.executor": "Run",
+    "Python.minimal_benchmark.executor": "Run",
+    "Python.performance_benchmark.executor": "Run",
+    "Python.simple_example.executor": "Debug",
+    "Python.simple_performance_benchmark.executor": "Run",
+    "Python.task_manager.executor": "Debug",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "com.google.cloudcode.ide_session_index": "20250803_0001",
+    "git-widget-placeholder": "master",
+    "junie.onboarding.icon.badge.shown": "true",
+    "last_opened_file_path": "/home/gamarino/odoo/ProtoBase",
+    "node.js.detected.package.eslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable",
+    "to.speed.mode.migration.done": "true",
+    "vue.rearranger.settings.migration": "true"
   },
-  &quot;keyToStringList&quot;: {
-    &quot;com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File&quot;: [
-      &quot;Requirements&quot;
+  "keyToStringList": {
+    "com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File": [
+      "Requirements"
     ]
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/proto_db/tests" />
       <recent name="$PROJECT_DIR$/proto_db" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.comprehensive_benchmark">
+  <component name="RunManager" selected="Python.indexed_benchmark">
     <configuration name="Makefile (2)" type="MAKEFILE_TARGET_RUN_CONFIGURATION" factoryName="Makefile">
       <makefile filename="$PROJECT_DIR$/docs/Makefile" target="" workingDirectory="$PROJECT_DIR$/docs/source" arguments="">
         <envs />
@@ -199,6 +145,29 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
+    <configuration name="indexed_benchmark" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="ProtoBase" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/examples" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/examples/indexed_benchmark.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
     <configuration name="minimal_benchmark" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="ProtoBase" />
       <option name="ENV_FILES" value="" />
@@ -214,29 +183,6 @@
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/examples/minimal_benchmark.py" />
-      <option name="PARAMETERS" value="" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <method v="2" />
-    </configuration>
-    <configuration name="performance_benchmark" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
-      <module name="ProtoBase" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/examples" />
-      <option name="IS_MODULE_SDK" value="true" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/examples/performance_benchmark.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -270,19 +216,19 @@
     </configuration>
     <list>
       <item itemvalue="Makefile Target.Makefile (2)" />
+      <item itemvalue="Python.indexed_benchmark" />
       <item itemvalue="Python.comprehensive_benchmark" />
       <item itemvalue="Python.db_performance_benchmark" />
       <item itemvalue="Python.minimal_benchmark" />
-      <item itemvalue="Python.performance_benchmark" />
       <item itemvalue="Python.simple_example" />
     </list>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.indexed_benchmark" />
         <item itemvalue="Python.comprehensive_benchmark" />
         <item itemvalue="Python.simple_example" />
         <item itemvalue="Python.db_performance_benchmark" />
         <item itemvalue="Python.minimal_benchmark" />
-        <item itemvalue="Python.performance_benchmark" />
       </list>
     </recent_temporary>
   </component>
@@ -319,23 +265,7 @@
       <workItem from="1755787730573" duration="225000" />
       <workItem from="1755787975213" duration="18352000" />
       <workItem from="1756137442174" duration="124000" />
-      <workItem from="1756995586860" duration="7679000" />
-    </task>
-    <task id="LOCAL-00022" summary="[IMP] implement all necessary to submit to pypy">
-      <option name="closed" value="true" />
-      <created>1753542417147</created>
-      <option name="number" value="00022" />
-      <option name="presentableId" value="LOCAL-00022" />
-      <option name="project" value="LOCAL" />
-      <updated>1753542417147</updated>
-    </task>
-    <task id="LOCAL-00023" summary="[IMP] documentation in sphinx generated">
-      <option name="closed" value="true" />
-      <created>1753569513485</created>
-      <option name="number" value="00023" />
-      <option name="presentableId" value="LOCAL-00023" />
-      <option name="project" value="LOCAL" />
-      <updated>1753569513485</updated>
+      <workItem from="1756995586860" duration="8110000" />
     </task>
     <task id="LOCAL-00024" summary="[IMP] documentation in sphinx generated">
       <option name="closed" value="true" />
@@ -713,7 +643,23 @@
       <option name="project" value="LOCAL" />
       <updated>1757018904372</updated>
     </task>
-    <option name="localTasksCounter" value="71" />
+    <task id="LOCAL-00071" summary="[IMP] Performance measurement scripts for LINQ queries were added in the `examples/` directory, including `linq_performance.py`. The execution and results can now be saved to a JSON file, demonstrating the performance of LINQ operations over various data structures. All changes were successfully implemented without errors.">
+      <option name="closed" value="true" />
+      <created>1757019608911</created>
+      <option name="number" value="00071" />
+      <option name="presentableId" value="LOCAL-00071" />
+      <option name="project" value="LOCAL" />
+      <updated>1757019608911</updated>
+    </task>
+    <task id="LOCAL-00072" summary="[IMP] Performance measurement scripts for LINQ queries were added in the `examples/` directory, including `linq_performance.py`. The execution and results can now be saved to a JSON file, demonstrating the performance of LINQ operations over various data structures. All changes were successfully implemented without errors.">
+      <option name="closed" value="true" />
+      <created>1757019634369</created>
+      <option name="number" value="00072" />
+      <option name="presentableId" value="LOCAL-00072" />
+      <option name="project" value="LOCAL" />
+      <updated>1757019634369</updated>
+    </task>
+    <option name="localTasksCounter" value="73" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -815,6 +761,7 @@
     <SUITE FILE_PATH="coverage/ProtoBase$task_manager.coverage" NAME="task_manager Coverage Results" MODIFIED="1754259207052" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$.coverage" NAME=" Coverage Results" MODIFIED="1736352327720" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/ProtoBase$performance_benchmark.coverage" NAME="performance_benchmark Coverage Results" MODIFIED="1754260400708" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/ProtoBase$indexed_benchmark.coverage" NAME="indexed_benchmark Coverage Results" MODIFIED="1757019769656" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$db_performance_benchmark.coverage" NAME="db_performance_benchmark Coverage Results" MODIFIED="1754260420768" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$minimal_benchmark.coverage" NAME="minimal_benchmark Coverage Results" MODIFIED="1754260411492" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$simple_performance_benchmark.coverage" NAME="simple_performance_benchmark Coverage Results" MODIFIED="1754260319108" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
