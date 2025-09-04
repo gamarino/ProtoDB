@@ -98,6 +98,42 @@ Dictionaries are one of the basic data structures in ProtoBase:
     # Commit the changes
     tr2.commit()
 
+LINQ-like Queries (Phase 1)
+---------------------------
+
+ProtoBase includes a lazy, composable LINQ-like API that works over Python iterables as well as ProtoBase collections and QueryPlans. It supports filtering, projection, ordering, distinct, paging, grouping with aggregates, and a Between operator.
+
+Basic example:
+
+.. code-block:: python
+
+    from proto_db.linq import from_collection, F
+
+    users = [
+        {"id": 1, "first_name": "Alice", "last_name": "Zeus", "age": 30, "country": "ES", "status": "active", "email": "a@example.com", "last_login": 5},
+        {"id": 2, "first_name": "Bob", "last_name": "Young", "age": 17, "country": "AR", "status": "inactive", "email": "b@example.com", "last_login": 10},
+    ]
+
+    q = (from_collection(users)
+         .where((F.age >= 18) & F.country.in_(["ES", "AR"]))
+         .order_by(F.last_login, ascending=False)
+         .select({"id": F["id"], "name": F.first_name + " " + F.last_name})
+         .take(20))
+
+    print(q.to_list())
+
+Between and lambda chained comparisons:
+
+.. code-block:: python
+
+    # Inclusive by default
+    from_collection(users).where(F.age.between(18, 30)).to_list()
+
+    # Lambda range recognized as between
+    from_collection(users).where(lambda x: 18 <= x["age"] <= 30).count()
+
+See :doc:`api/linq` for complete API details.
+
 Working with Lists
 -----------------
 

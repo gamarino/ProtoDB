@@ -127,6 +127,58 @@ ProtoBase is optimized for use cases that require:
 For applications requiring extreme write throughput or handling very large datasets (100M+ records), specialized
 database systems may be more appropriate.
 
+## LINQ-like Queries (Phase 1)
+
+ProtoBase includes a lazy, composable LINQ-like API that works over Python iterables as well as ProtoBase collections and QueryPlans. It supports filtering, projection, ordering, distinct, paging, grouping with aggregates, and a Between operator with inclusive/exclusive bounds. When running over ProtoBase collections with indexes, supported predicates are pushed down to the query planner (WherePlan/SelectPlan) and can leverage indexes.
+
+Quick example:
+
+```python
+from proto_db.linq import from_collection, F
+
+users = [
+    {"id": 1, "first_name": "Alice", "last_name": "Zeus", "age": 30, "country": "ES", "status": "active", "email": "a@example.com", "last_login": 5},
+    {"id": 2, "first_name": "Bob", "last_name": "Young", "age": 17, "country": "AR", "status": "inactive", "email": "b@example.com", "last_login": 10},
+    {"id": 3, "first_name": "Carol", "last_name": "Xavier", "age": 25, "country": "US", "status": "active", "email": "c@example.com", "last_login": 2},
+    {"id": 4, "first_name": "Dan", "last_name": "White", "age": 22, "country": "AR", "status": "active", "email": "d@example.com", "last_login": 7},
+]
+
+q = (from_collection(users)
+     .where((F.age >= 18) & F.country.in_(["ES", "AR"]))
+     .order_by(F.last_login, ascending=False)
+     .select({"id": lambda x: x["id"], "name": F.first_name + " " + F.last_name})
+     .take(20))
+
+res = q.to_list()
+```
+
+Between and chained comparisons:
+
+```python
+# Inclusive by default
+from_collection(rows).where(F.value.between(10, 20)).to_list()
+
+# Lambda automatically translated to a range
+from_collection(rows).where(lambda x: 10 <= x["value"] <= 20).count()
+```
+
+Policies allow controlling fallback behavior when expressions cannot be translated for pushdown:
+
+```python
+from proto_db.linq import Policy
+
+# Error on unsupported
+q = from_collection(items).with_policy(Policy(on_unsupported="error"))
+
+# Warn and fallback (local evaluation up to safety limits)
+q = (from_collection(items)
+     .on_unsupported("warn")
+     .where(lambda x: custom_python_check(x))
+     .take(100))
+```
+
+See the Sphinx docs (API > LINQ-like API) for the full surface and details about explain(), grouping and aggregation.
+
 ## Installation
 
 ProtoBase requires Python 3.11 or higher. You can install it directly from PyPI:
