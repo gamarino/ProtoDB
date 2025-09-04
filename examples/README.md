@@ -135,6 +135,27 @@ You can extend this example in several ways:
 4. **Implement Task Dependencies**: Extend the data model to support task dependencies, for example by adding a
    `tr.new_list()` to a `Task` object.
 
+## LINQ-like Examples
+
+The following examples demonstrate the LINQ-like (Phase 1) query API over Python collections. Each script can be run directly with Python.
+
+- linq_basic.py: Filter, projection, ordering with then_by, distinct, pagination, and explain().
+- linq_between.py: Range filtering with F.between()/range() and lambda chained comparisons; includes datetime example.
+- linq_groupby.py: Grouping with aggregates (count, sum, average) and ordering.
+- linq_policies.py: Policy usage for unsupported expressions (error vs warn/fallback) and DSL alternative.
+- linq_performance.py: Performance measurements for typical LINQ pipelines (filter+order+take, distinct, count, between, group_by) comparing Python list vs ProtoBase ListPlan source; optional JSON output.
+
+Run examples:
+
+```bash
+cd examples
+python linq_basic.py
+python linq_between.py
+python linq_groupby.py
+python linq_policies.py
+python linq_performance.py --size 50000 --runs 5 --out examples/benchmark_results_linq.json
+```
+
 ## Simple Example
 
 The Simple Example (`simple_example.py`) provides a minimal demonstration of ProtoBase's core functionality, showing how
