@@ -4,22 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] The performance suite was rerun with updated benchmark results saved in JSON files. Unit tests for the parallel module passed without issues. Documentation remained accurate and no updates were needed.">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/cloud_cluster_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/cloud_cluster_file_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/cloud_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/cloud_file_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/db_access.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/dictionaries.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/file_block_provider.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/file_block_provider.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/hash_dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/hash_dictionaries.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/lists.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/memory_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/memory_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/sets.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/sets.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/standalone_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/standalone_file_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_cloud_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_cloud_file_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/vectors.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/vectors.py" afterDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] Several errors in test suite">
+      <change beforePath="$PROJECT_DIR$/benchmark_results.json" beforeDir="false" afterPath="$PROJECT_DIR$/benchmark_results.json" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -287,15 +273,7 @@
       <workItem from="1757647544978" duration="4378000" />
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
-      <workItem from="1757675249603" duration="6767000" />
-    </task>
-    <task id="LOCAL-00031" summary="[IMP] Multiformat storage implamentation">
-      <option name="closed" value="true" />
-      <created>1753738074023</created>
-      <option name="number" value="00031" />
-      <option name="presentableId" value="LOCAL-00031" />
-      <option name="project" value="LOCAL" />
-      <updated>1753738074023</updated>
+      <workItem from="1757675249603" duration="7227000" />
     </task>
     <task id="LOCAL-00032" summary="[FIX] README.md">
       <option name="closed" value="true" />
@@ -681,14 +659,21 @@
       <option name="project" value="LOCAL" />
       <updated>1757655143116</updated>
     </task>
-    <option name="localTasksCounter" value="80" />
+    <task id="LOCAL-00080" summary="[FIX] Several errors in test suite">
+      <option name="closed" value="true" />
+      <created>1757682258445</created>
+      <option name="number" value="00080" />
+      <option name="presentableId" value="LOCAL-00080" />
+      <option name="project" value="LOCAL" />
+      <updated>1757682258446</updated>
+    </task>
+    <option name="localTasksCounter" value="81" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[PROPOSAL] next steps by AI" />
     <MESSAGE value="[PROPOSAL] commercial positioning" />
     <MESSAGE value="[FIX] test files cleanup" />
     <MESSAGE value="[FIX] additional files for new query features" />
@@ -713,7 +698,8 @@
     <MESSAGE value="[IMP]  Implemented adaptive chunking and work-stealing for parallel scans as an optional feature without changing default behavior. Added configuration, metrics, graceful shutdown, and comprehensive tests ensuring correctness, performance, and backward compatibility. Provided new user documentation, API references, ADR, and a changelog entry." />
     <MESSAGE value="[FIX] Translated commercial_positioning.md to professional English preserving structure and tone. Updated multiple sections with accurate English content and verified related unit tests passed. No code changes occurred, and repository integrity remained intact." />
     <MESSAGE value="[FIX] The performance suite was rerun with updated benchmark results saved in JSON files. Unit tests for the parallel module passed without issues. Documentation remained accurate and no updates were needed." />
-    <option name="LAST_COMMIT_MESSAGE" value="[FIX] The performance suite was rerun with updated benchmark results saved in JSON files. Unit tests for the parallel module passed without issues. Documentation remained accurate and no updates were needed." />
+    <MESSAGE value="[FIX] Several errors in test suite" />
+    <option name="LAST_COMMIT_MESSAGE" value="[FIX] Several errors in test suite" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -783,7 +769,7 @@
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/ProtoBase$task_manager.coverage" NAME="task_manager Coverage Results" MODIFIED="1754259207052" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$.coverage" NAME=" Coverage Results" MODIFIED="1736352327720" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/ProtoBase$run_tests.coverage" NAME="run_tests Coverage Results" MODIFIED="1757676863032" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/ProtoBase$run_tests.coverage" NAME="run_tests Coverage Results" MODIFIED="1757682167480" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/ProtoBase$performance_benchmark.coverage" NAME="performance_benchmark Coverage Results" MODIFIED="1754260400708" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$indexed_benchmark.coverage" NAME="indexed_benchmark Coverage Results" MODIFIED="1757019769656" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$db_performance_benchmark.coverage" NAME="db_performance_benchmark Coverage Results" MODIFIED="1754260420768" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />

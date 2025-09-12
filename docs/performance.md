@@ -180,3 +180,35 @@ This mirrors the selectivity-ordered progressive intersection strategy that the 
 
 - To test the range operator pushdown inside the query engine end‑to‑end, integrate an IndexedQueryPlan where `.indexes` is a field->RepeatedKeysDictionary mapping and use a WherePlan with `Between` over that field. Some of the example code in the engine assumes Python `dict`‑like checks for index existence; ensure you use a mapping compatible with those parts, or adapt the benchmark as done here.
 - If you already maintain IndexRegistry inside your collections, you can expose a thin adapter that presents the required field->value->set view to the query engine, enabling direct reuse.
+
+
+---
+
+# Comprehensive benchmark (CRUD + queries)
+
+This repository also includes a comprehensive end-to-end benchmark that measures insert, read, update, delete, and query throughput over a realistic object model. Use it to get a quick performance snapshot on your machine.
+
+Run (from repo root):
+
+```bash
+python examples/comprehensive_benchmark.py --storage memory --size small --benchmark all --output benchmark_results.json
+```
+
+Latest recorded run
+- Date: 2025-09-12
+- Storage: memory
+- Dataset: small (item_count=1000, query_count=50)
+- Command: `python examples/comprehensive_benchmark.py --storage memory --size small --benchmark all --output benchmark_results.json`
+
+Results (from benchmark_results.json):
+- insert: total_time=3.5555 s; time_per_item=3.5555 ms; items_per_second=281.26
+- read: total_time=0.1555 s; time_per_item=0.1555 ms; items_per_second=6429.15
+- update: total_time=2.9889 s; time_per_item=2.9889 ms; items_per_second=334.57
+- delete: total_time=0.4149 s; time_per_item=0.4149 ms; items_per_second=2410.42
+- query (50 queries): total_time=23.2793 s; time_per_query=465.5861 ms; queries_per_second=2.148
+
+Notes
+- Numbers will vary by CPU, Python build, and background load; treat them as order-of-magnitude. For fair comparisons, pin CPU governor and repeat several times.
+- For file-based storage, use `--storage file` and optionally tune filesystem and WAL directory placement.
+- For larger datasets, pass `--size medium` (10k items) or `--size large` (100k items). The script automatically scales query count.
+- The script writes JSON results to `--output`; you can post-process these in notebooks or dashboards.

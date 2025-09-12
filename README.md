@@ -134,3 +134,22 @@ See docs/performance.md for guidance, caveats on small datasets, and how to inte
 ## License
 
 MIT License. See LICENSE for details.
+
+
+
+## Latest performance snapshot (2025-09-12)
+
+A recent run of the comprehensive benchmark on in-memory storage with a small dataset (1000 items, 50 queries) produced the following results:
+- insert: total_time=3.5555 s; time_per_item=3.5555 ms; items_per_second=281.26
+- read: total_time=0.1555 s; time_per_item=0.1555 ms; items_per_second=6429.15
+- update: total_time=2.9889 s; time_per_item=2.9889 ms; items_per_second=334.57
+- delete: total_time=0.4149 s; time_per_item=0.4149 ms; items_per_second=2410.42
+- query (50 queries): total_time=23.2793 s; time_per_query=465.5861 ms; queries_per_second=2.148
+
+Reproduce locally:
+
+```bash
+python examples/comprehensive_benchmark.py --storage memory --size small --benchmark all --output benchmark_results.json
+```
+
+See docs/performance.md for details and caveats. The raw JSON for the latest run is in benchmark_results.json at the repository root.
