@@ -241,3 +241,22 @@ During this process:
 - The query system can be used to retrieve and manipulate data
 
 This architecture provides a flexible and powerful foundation for building database applications.
+
+
+
+Atom-level Cache Layer
+----------------------
+
+ProtoBase integrates an optional, in-memory cache layer keyed by ``AtomPointer`` to accelerate reads across
+transactions:
+
+- ``AtomBytesCache`` stores the raw payload bytes (post WAL headers) as memoryviews.
+- ``AtomObjectCache`` stores fully deserialized atom objects (e.g., Python dicts).
+- Keys: ``(transaction_id, offset)`` for bytes; ``(transaction_id, offset, schema_epoch)`` for objects.
+- Replacement: 2Q (probation + protected LRU) to reduce scan pollution, with limits by bytes and entries.
+- Concurrency: single-flight ensures at most one deserialize per key.
+- Observability: hit/miss, evictions, and latency buckets exposed via ``AtomCacheBundle``.
+
+The read path first checks the object cache, then the bytes cache, and finally falls back to reading from the
+underlying block provider if needed. Caches leverage the immutability of atoms, so they require no invalidation on
+writes; bump ``schema_epoch`` to isolate entries across decoder changes.

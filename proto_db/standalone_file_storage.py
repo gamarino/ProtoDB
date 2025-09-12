@@ -6,6 +6,7 @@ import logging
 import os
 import struct
 import uuid
+import time
 from abc import ABC
 from threading import Lock
 from unittest.mock import Mock, MagicMock
@@ -17,6 +18,7 @@ from .common import Future, BlockProvider, AtomPointer
 from .common import MB, GB
 from .exceptions import ProtoUnexpectedException, ProtoValidationException
 from .hybrid_executor import HybridExecutor
+from .atom_cache import AtomCacheBundle
 
 # Format indicators for data serialization
 FORMAT_RAW_BINARY = 0x00  # Raw binary data (no serialization)
@@ -88,7 +90,16 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
                  block_provider: BlockProvider,
                  buffer_size: int = BUFFER_SIZE,
                  blob_max_size: int = BLOB_MAX_SIZE,
-                 max_workers: int = DEFAULT_MAX_WORKERS):
+                 max_workers: int = DEFAULT_MAX_WORKERS,
+                 enable_atom_object_cache: bool = True,
+                 enable_atom_bytes_cache: bool = True,
+                 object_cache_max_entries: int = 50000,
+                 object_cache_max_bytes: int = 256 * MB,
+                 bytes_cache_max_entries: int = 20000,
+                 bytes_cache_max_bytes: int = 128 * MB,
+                 cache_stripes: int = 64,
+                 cache_probation_ratio: float = 0.5,
+                 schema_epoch: int | None = None):
         """
         Constructor for the StandaloneFileStorage class.
 
@@ -116,6 +127,19 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
         self.in_memory_segments = {}
 
         self._get_new_wal()
+
+        # Atom-level caches
+        self._atom_caches = AtomCacheBundle(
+            enable_object_cache=enable_atom_object_cache,
+            enable_bytes_cache=enable_atom_bytes_cache,
+            object_max_entries=object_cache_max_entries,
+            object_max_bytes=object_cache_max_bytes,
+            bytes_max_entries=bytes_cache_max_entries,
+            bytes_max_bytes=bytes_cache_max_bytes,
+            stripes=cache_stripes,
+            probation_ratio=cache_probation_ratio,
+            schema_epoch=schema_epoch,
+        )
 
     def read_current_root(self) -> AtomPointer:
         """
@@ -397,66 +421,102 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
 
     def get_atom(self, pointer: AtomPointer) -> Future[dict]:
         """
-        Retrieves an Atom from the underlying storage asynchronously.
-
-        This method supports both the legacy format (without format indicator) and 
-        the new format with format indicators (JSON UTF-8 or MessagePack).
-
-        Args:
-            pointer: An AtomPointer indicating the location of the atom
-
-        Returns:
-            Future[dict]: A Future that resolves to the atom data
-
-        Raises:
-            ProtoValidationException: If pointer is not an AtomPointer or if storage is closed
+        Retrieves an Atom from the underlying storage asynchronously with a two-tier atom cache (object and bytes).
         """
         if self.state != 'Running':
             raise ProtoValidationException(message="Storage is not in 'Running' state.")
         if not isinstance(pointer, AtomPointer):
             raise ProtoValidationException(message="Pointer must be an instance of AtomPointer.")
 
+        # Fast path: object cache
+        caches = self._atom_caches
+        if caches and caches.obj_cache:
+            t0 = time.time()
+            obj = caches.obj_cache.get(pointer.transaction_id, pointer.offset, caches.schema_epoch)
+            caches.record_latency("object_cache_ms", (time.time() - t0) * 1000.0)
+            if obj is not None:
+                f = Future()
+                f.set_result(obj)
+                return f
+
         def task_read_atom():
-            with self._lock:
-                if (pointer.transaction_id, pointer.offset) in self.in_memory_segments:
-                    # It is already in memory
-                    streamer = io.BytesIO(self.in_memory_segments[(pointer.transaction_id, pointer.offset)])
-                else:
-                    # It should be found in block provider
-                    streamer = self.block_provider.get_reader(pointer.transaction_id, pointer.offset)
+            key = (pointer.transaction_id, pointer.offset, caches.schema_epoch if caches else None)
+            # Single-flight: only one thread does the load+deserialize
+            leader_event = caches.singleflight.begin(key) if caches else None
+            if leader_event is None and caches:
+                # Follower: wait for leader to finish and then try caches again
+                caches.singleflight.wait(key)
+                if caches.obj_cache:
+                    t0 = time.time()
+                    obj2 = caches.obj_cache.get(pointer.transaction_id, pointer.offset, caches.schema_epoch)
+                    caches.record_latency("object_cache_ms", (time.time() - t0) * 1000.0)
+                    if obj2 is not None:
+                        caches.obj_cache._stats.singleflight_dedup += 1
+                        return obj2
+                if caches.bytes_cache:
+                    t0 = time.time()
+                    raw2 = caches.bytes_cache.get(pointer.transaction_id, pointer.offset)
+                    caches.record_latency("bytes_cache_ms", (time.time() - t0) * 1000.0)
+                    if raw2 is not None:
+                        # Deserialize
+                        tds0 = time.time()
+                        mv = raw2
+                        # Peek first byte for format when coming from bytes cache: we expect length+indicator already stripped,
+                        # but bytes cache stores the raw payload (we will cache only payload below). Here, for safety, just try JSON then MsgPack.
+                        try:
+                            atom_data = json.loads(mv.tobytes().decode('UTF-8'))
+                        except Exception:
+                            atom_data = msgpack.unpackb(mv)
+                        caches.record_latency("deserialize_ms", (time.time() - tds0) * 1000.0)
+                        if caches.obj_cache:
+                            caches.obj_cache.put(pointer.transaction_id, pointer.offset, atom_data, caches.schema_epoch)
+                        return atom_data
+                # If here, leader probably failed; continue to load from storage
 
-            # Read the atom from the storage getting just the needed amount of data. No extra reads
-            with streamer as wal_stream:
-                # Read the size header (8 bytes)
-                len_data = wal_stream.read(8)
-                size = struct.unpack('Q', len_data)[0]
-
-                # Try to read the format indicator (1 byte)
-                format_indicator_bytes = wal_stream.read(1)
-                format_indicator = format_indicator_bytes[0] if format_indicator_bytes else None
-
-                # Check if it's a valid format indicator
-                if format_indicator in (FORMAT_JSON_UTF8, FORMAT_MSGPACK):
-                    # New format with indicator
-                    data = wal_stream.read(size)
-
-                    if format_indicator == FORMAT_JSON_UTF8:
-                        # JSON UTF-8 format
-                        atom_data = json.loads(data.decode('UTF-8'))
-                    else:  # FORMAT_MSGPACK
-                        # MessagePack format
-                        atom_data = msgpack.unpackb(data)
-                else:
-                    # Legacy format (no indicator) - assume JSON UTF-8
-                    # We need to put back the byte we read as format indicator
-                    if format_indicator_bytes:
-                        data = format_indicator_bytes + wal_stream.read(size - 1)
+            # Leader path or no single-flight available
+            try:
+                with self._lock:
+                    if (pointer.transaction_id, pointer.offset) in self.in_memory_segments:
+                        streamer = io.BytesIO(self.in_memory_segments[(pointer.transaction_id, pointer.offset)])
                     else:
+                        streamer = self.block_provider.get_reader(pointer.transaction_id, pointer.offset)
+
+                with streamer as wal_stream:
+                    len_data = wal_stream.read(8)
+                    size = struct.unpack('Q', len_data)[0]
+                    format_indicator_bytes = wal_stream.read(1)
+                    format_indicator = format_indicator_bytes[0] if format_indicator_bytes else None
+                    if format_indicator in (FORMAT_JSON_UTF8, FORMAT_MSGPACK):
                         data = wal_stream.read(size)
+                        # Populate bytes cache with payload only
+                        if caches and caches.bytes_cache:
+                            caches.bytes_cache.put(pointer.transaction_id, pointer.offset, data)
+                        tds0 = time.time()
+                        if format_indicator == FORMAT_JSON_UTF8:
+                            atom_data = json.loads(data.decode('UTF-8'))
+                        else:
+                            atom_data = msgpack.unpackb(data)
+                        if caches:
+                            caches.record_latency("deserialize_ms", (time.time() - tds0) * 1000.0)
+                    else:
+                        # Legacy format: treat as JSON without indicator; data may include the probed byte
+                        if format_indicator_bytes:
+                            data = format_indicator_bytes + wal_stream.read(size - 1)
+                        else:
+                            data = wal_stream.read(size)
+                        if caches and caches.bytes_cache:
+                            caches.bytes_cache.put(pointer.transaction_id, pointer.offset, data)
+                        tds0 = time.time()
+                        atom_data = json.loads(data.decode('UTF-8'))
+                        if caches:
+                            caches.record_latency("deserialize_ms", (time.time() - tds0) * 1000.0)
 
-                    atom_data = json.loads(data.decode('UTF-8'))
-
+                if caches and caches.obj_cache:
+                    caches.obj_cache.put(pointer.transaction_id, pointer.offset, atom_data, caches.schema_epoch)
                 return atom_data
+            finally:
+                if caches and leader_event is not None:
+                    caches.singleflight.done(key)
 
         return self.executor_pool.submit(task_read_atom)
 
@@ -518,24 +578,24 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
 
     def get_bytes(self, pointer: AtomPointer) -> Future[bytes]:
         """
-        Retrieves raw bytes from the underlying storage asynchronously.
-
-        This method supports both the legacy format (without format indicator) and 
-        the new format with format indicators.
-
-        Args:
-            pointer: An AtomPointer indicating the location of the data
-
-        Returns:
-            Future[bytes]: A Future that resolves to the raw bytes
-
-        Raises:
-            ProtoValidationException: If pointer is not an AtomPointer or if storage is closed
+        Retrieves raw bytes from the underlying storage asynchronously, using AtomBytesCache when enabled.
         """
         if self.state != 'Running':
             raise ProtoValidationException(message="Storage is not in 'Running' state.")
         if not isinstance(pointer, AtomPointer):
             raise ProtoValidationException(message="Pointer must be an instance of AtomPointer.")
+
+        # Fast path: bytes cache
+        caches = self._atom_caches
+        if caches and caches.bytes_cache:
+            t0 = time.time()
+            raw = caches.bytes_cache.get(pointer.transaction_id, pointer.offset)
+            caches.record_latency("bytes_cache_ms", (time.time() - t0) * 1000.0)
+            if raw is not None:
+                f = Future()
+                # return a copy of memoryview's bytes to conform to return type bytes
+                f.set_result(bytes(raw))
+                return f
 
         def task_read_bytes():
             with self._lock:
@@ -546,28 +606,21 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
                     # It should be found in block provider
                     streamer = self.block_provider.get_reader(pointer.transaction_id, pointer.offset)
 
-            # Read the atom from the storage getting just the needed amount of data. No extra reads
             with streamer as wal_stream:
-                # Read the size header (8 bytes)
                 len_data = wal_stream.read(8)
                 size = struct.unpack('Q', len_data)[0]
-
-                # Try to read the format indicator (1 byte)
                 format_indicator_bytes = wal_stream.read(1)
                 format_indicator = format_indicator_bytes[0] if format_indicator_bytes else None
-
-                # Check if it's a valid format indicator
                 if format_indicator in (FORMAT_RAW_BINARY, FORMAT_JSON_UTF8, FORMAT_MSGPACK):
-                    # New format with indicator
                     data = wal_stream.read(size)
                 else:
-                    # Legacy format (no indicator)
-                    # We need to put back the byte we read as format indicator
                     if format_indicator_bytes:
                         data = format_indicator_bytes + wal_stream.read(size - 1)
                     else:
                         data = wal_stream.read(size)
 
+            if caches and caches.bytes_cache:
+                caches.bytes_cache.put(pointer.transaction_id, pointer.offset, data)
             return data
 
         return self.executor_pool.submit(task_read_bytes)

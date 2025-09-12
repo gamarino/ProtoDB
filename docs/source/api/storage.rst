@@ -25,6 +25,19 @@ Standalone File Storage
 
 ``StandaloneFileStorage`` is a file-based storage implementation. It stores Atoms in files on disk, uses Write-Ahead Logging (WAL) for durability, and provides persistence across process restarts.
 
+Atom-level caches
+^^^^^^^^^^^^^^^^^
+
+``StandaloneFileStorage`` exposes optional, in-memory atom caches configurable via its constructor:
+
+- ``enable_atom_object_cache``, ``enable_atom_bytes_cache``
+- ``object_cache_max_entries``, ``object_cache_max_bytes``
+- ``bytes_cache_max_entries``, ``bytes_cache_max_bytes``
+- ``cache_stripes``, ``cache_probation_ratio``, ``schema_epoch``
+
+When enabled, reads consult the object cache first, then the bytes cache, before touching the page/block provider.
+The caches are keyed by ``AtomPointer`` and leverage atom immutability for coherent reuse across transactions.
+
 Data Serialization Formats
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 

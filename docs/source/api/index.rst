@@ -16,6 +16,7 @@ This section provides detailed API documentation for ProtoBase.
    linq
    exceptions
    fsm
+   atom_cache
 
 Core Components
 -----------------

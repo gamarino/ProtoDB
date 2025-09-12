@@ -281,6 +281,34 @@ Use Cases
 Performance Optimization
 ----------------------
 
+Atom-level Caching
+~~~~~~~~~~~~~~~~~~
+
+For read-heavy workloads with object reuse across transactions, enable the atom caches in your storage:
+
+.. code-block:: python
+
+    from proto_db.file_block_provider import FileBlockProvider
+    from proto_db.standalone_file_storage import StandaloneFileStorage
+
+    provider = FileBlockProvider('data_dir')
+    storage = StandaloneFileStorage(
+        provider,
+        enable_atom_object_cache=True,
+        enable_atom_bytes_cache=True,
+        object_cache_max_entries=50_000,
+        object_cache_max_bytes=256*1024*1024,
+        bytes_cache_max_entries=20_000,
+        bytes_cache_max_bytes=128*1024*1024,
+        cache_stripes=64,
+        cache_probation_ratio=0.5,
+        schema_epoch=None,
+    )
+
+This layer checks an object cache, then a bytes cache, before reading from the page/block provider. Because atoms are
+immutable, cached entries remain valid without invalidation. Use ``schema_epoch`` to quickly isolate entries after
+serializer changes.
+
 Here are some tips for optimizing the performance of ProtoBase:
 
 Batch Operations

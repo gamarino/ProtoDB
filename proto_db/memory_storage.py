@@ -4,6 +4,7 @@ from threading import Lock  # Import threading lock to ensure thread safety
 from . import common
 from .common import Future, AtomPointer
 from .db_access import BytesAtom
+from .atom_cache import AtomCacheBundle
 from .exceptions import ProtoCorruptionException
 
 
@@ -14,7 +15,16 @@ class MemoryStorage(common.SharedStorage):
     ideal for testing and simulation purposes.
     """
 
-    def __init__(self):
+    def __init__(self,
+                 enable_atom_object_cache: bool = True,
+                 enable_atom_bytes_cache: bool = True,
+                 object_cache_max_entries: int = 50000,
+                 object_cache_max_bytes: int = 256 * 1024 * 1024,
+                 bytes_cache_max_entries: int = 20000,
+                 bytes_cache_max_bytes: int = 128 * 1024 * 1024,
+                 cache_stripes: int = 64,
+                 cache_probation_ratio: float = 0.5,
+                 schema_epoch: int | None = None):
         """
         Initializes the in-memory storage. It sets up:
         - A unique transaction ID for all operations during this session.
@@ -25,6 +35,17 @@ class MemoryStorage(common.SharedStorage):
         self.atoms = dict()  # Dictionary to store atoms in memory.
         self.current_root_history_pointer = None  # A container for the current root object.
         self.lock = Lock()  # Thread lock to ensure safe concurrent access.
+        self._atom_caches = AtomCacheBundle(
+            enable_object_cache=enable_atom_object_cache,
+            enable_bytes_cache=enable_atom_bytes_cache,
+            object_max_entries=object_cache_max_entries,
+            object_max_bytes=object_cache_max_bytes,
+            bytes_max_entries=bytes_cache_max_entries,
+            bytes_max_bytes=bytes_cache_max_bytes,
+            stripes=cache_stripes,
+            probation_ratio=cache_probation_ratio,
+            schema_epoch=schema_epoch,
+        )
 
     def read_current_root(self) -> AtomPointer:
         """

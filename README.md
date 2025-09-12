@@ -51,6 +51,8 @@ integrity.
 
 ## Key Features
 
+New in 2025: Atom-level caches for faster reads across transactions. See docs (API > Atom-level Caches).
+
 - **Transactional Operations**: All database operations are performed within transactions that can be committed or
   aborted.
 - **Object-Oriented Data Modeling**: Define your data models as Python classes inheriting from `DBObject` for a more
