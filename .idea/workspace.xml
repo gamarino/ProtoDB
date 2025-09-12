@@ -4,13 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[IMP]  Atom-level in-memory caches (AtomObjectCache and AtomBytesCache) were successfully implemented with a 2Q replacement policy, integrated into the atom read path, and tested. The implementation ensures high hit rates and improved read performance without introducing regressions or deadlocks. Metrics for cache efficiency are also exposed for monitoring.">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/api/index.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/index.rst" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/api/vectors.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/vectors.rst" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/vectors.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/vectors.py" afterDir="false" />
-    </list>
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[IMP]  Atom-level in-memory caches (AtomObjectCache and AtomBytesCache) were successfully implemented with a 2Q replacement policy, integrated into the atom read path, and tested. The implementation ensures high hit rates and improved read performance without introducing regressions or deadlocks. Metrics for cache efficiency are also exposed for monitoring." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -274,6 +268,7 @@
       <workItem from="1756137442174" duration="124000" />
       <workItem from="1756995586860" duration="20360000" />
       <workItem from="1757647544978" duration="4378000" />
+      <workItem from="1757652737831" duration="634000" />
     </task>
     <task id="LOCAL-00027" summary="[IMP] queries.py: add further optimizations">
       <option name="closed" value="true" />

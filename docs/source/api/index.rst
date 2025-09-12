@@ -18,6 +18,7 @@ This section provides detailed API documentation for ProtoBase.
    exceptions
    fsm
    atom_cache
+   parallel
 
 Core Components
 -----------------

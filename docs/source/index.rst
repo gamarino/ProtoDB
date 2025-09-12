@@ -15,6 +15,7 @@ ProtoBase is a powerful database system implemented in Python, providing various
    architecture
    api/index
    advanced_usage
+   parallel_scans
    development
 
 Indices and tables
