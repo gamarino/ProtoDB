@@ -1,140 +1,42 @@
 # ProtoBase
 
 [![PyPI version](https://img.shields.io/pypi/v/proto_db.svg)](https://pypi.org/project/proto_db/)
-[![License](https://img.shields.io/github/license/yourusername/ProtoBase.svg)](LICENSE)
 [![Python Version](https://img.shields.io/pypi/pyversions/proto_db.svg)](https://pypi.org/project/proto_db/)
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](https://github.com/yourusername/ProtoBase)
-[![Code Coverage](https://img.shields.io/badge/coverage-80%25-yellowgreen.svg)](https://github.com/yourusername/ProtoBase)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-ProtoBase is a transactional, object-oriented database system implemented in Python. It provides a flexible and
-extensible foundation for building database applications with support for various storage backends, rich data
-structures, and a powerful query system.
+ProtoBase is an embedded, transactional, object‑oriented database for Python. It unifies structured data and vectors under a Pythonic, LINQ‑like query API with immutable secondary indexes, range‑aware optimization, and optional vector similarity search. New in 2025, ProtoBase adds an atom‑level caching layer that reduces tail latency for hot reads and an optional parallel scanning module with adaptive chunking and a lightweight work‑stealing scheduler. Defaults preserve current behavior; new features are opt‑in and dependency‑free.
 
 ## Why ProtoBase?
 
-ProtoBase fills a unique niche in the database ecosystem by offering:
-
-- **Lightweight Transactional Object Model**: Get the power of a transactional database without the overhead of a full
-  DBMS server. ProtoBase runs within your Python application, making it perfect for embedded use cases.
-
-- **Flexible Storage Options**: Choose from in-memory storage for testing, file-based storage for single-node
-  applications, distributed storage for high availability, or cloud storage for scalability. Switch between them with
-  minimal code changes.
-
-- **Rich Data Structures**: Unlike simple key-value stores, ProtoBase provides native support for complex data
-  structures like dictionaries, lists, and sets that maintain their semantics across transactions.
-
-- **Pythonic Interface**: Work with a natural, Pythonic API that integrates seamlessly with your application code. Model
-  your data as native Python classes inheriting from `DBObject`—no SQL, no complex ORM mapping, just Python objects all
-  the way down.
-
-- **Extensibility**: Easily extend ProtoBase with custom data types, storage backends, or query capabilities to meet
-  your specific needs.
-
-When you need more than SQLite but less than PostgreSQL, when you want transaction safety but don't want to manage a
-server, when you need complex data structures but don't want to serialize/deserialize manually - ProtoBase is your
-solution.
-
-## Overview
-
-ProtoBase is designed as a modular database system with the following key components:
-
-- **Core Abstractions**: Atoms as the basic unit of data, with support for transactions and persistence.
-- **Object-Oriented Data Modeling**: `DBObject` for representing data as Python objects.
-- **Storage Backends**: Both in-memory and file-based storage implementations.
-- **Data Structures**: Dictionaries, lists, sets, and other collections with transaction support.
-- **Query System**: A comprehensive query system with filtering, joining, grouping, and more.
-
-The system is built around the concept of "atoms"—self-contained units of data that can be saved, loaded, and
-manipulated within transactions. All operations are performed within transactions, ensuring data consistency and
-integrity.
+- Lightweight, in‑process engine: no external server to deploy or operate.
+- Transactional object model: copy‑on‑write with transactional rebase keeps data and indexes consistent.
+- Rich, Pythonic API: compose queries fluently (where/select/order_by/group_by) and call explain() to inspect plans.
+- Hybrid capabilities: structured filters plus vector search in the same engine.
+- Extensible and testable: clean abstractions, thorough unit tests, and clear docs.
 
 ## Key Features
 
-New in 2025: Atom-level caches for faster reads across transactions. See docs (API > Atom-level Caches).
-Optional Arrow/Parquet bridge (pyarrow) for low-overhead export/import. See docs (API > Arrow / Parquet Bridge).
+- Transactions and persistence over multiple storage backends:
+  - MemoryStorage (in‑memory)
+  - StandaloneFileStorage (file‑based with WAL)
+  - Cluster/Cloud storage variants (S3/GCS‑compatible) under a unified API
+- LINQ‑like query API with pushdown and explain()
+- Immutable secondary indexes; range operators with inclusive/exclusive bounds
+- Vector search: exact and ANN (IVF‑Flat; optional HNSW when available)
+- Atom‑level caches (new in 2025):
+  - AtomObjectCache (deserialized objects) and AtomBytesCache (raw bytes)
+  - 2Q policy and single‑flight to cut repeated reads/deserializations
+- Parallel scans (optional, new in 2025):
+  - Adaptive chunking with EMA and clamped bounds
+  - Work‑stealing scheduler with per‑worker local deques and metrics hooks
+  - Backward‑compatible fallback to a simple thread‑pool/sequential mode
+- Rich built‑ins: Dictionary, List, Set, HashDictionary
 
-- **Transactional Operations**: All database operations are performed within transactions that can be committed or
-  aborted.
-- **Object-Oriented Data Modeling**: Define your data models as Python classes inheriting from `DBObject` for a more
-  intuitive and readable codebase.
-- **Multiple Storage Backends**:
-    - `MemoryStorage`: In-memory storage for testing or ephemeral data.
-    - `StandaloneFileStorage`: File-based storage with Write-Ahead Logging (WAL).
-    - `ClusterFileStorage`: Distributed storage for high availability and horizontal scaling.
-    - `CloudFileStorage`: Cloud-based storage using S3-compatible object storage services.
-- **Rich Data Structures**:
-    - `Dictionary`: Key-value mapping with string keys.
-    - `List`: Ordered collection of items.
-    - `Set`: Unordered collection of unique items.
-    - `HashDictionary`: Dictionary with hash-based lookups.
-- **Powerful Query System**:
-    - Filtering with complex expressions.
-    - Joining multiple data sources.
-    - Grouping and aggregation.
-    - Sorting and pagination.
-- **Extensible Architecture**: Easy to add new storage backends, data structures, and query capabilities.
+See docs for details: API reference, user guides, performance notes, and an ADR for the parallel module.
 
-## Performance Benchmarks
+## Quick Examples
 
-See also docs/performance.md for the indexed benchmark harness and how to run it end-to-end using secondary indexes.
-
-ProtoBase has been benchmarked to evaluate its performance characteristics. The following results were obtained using
-the in-memory storage backend with a small dataset (1,000 items):
-
-| Operation | Items/Second | Time per Item (ms) |
-|-----------|--------------|--------------------|
-| Insert    | 419.33       | 2.38               |
-| Read      | 7,574.09     | 0.13               |
-| Update    | 551.94       | 1.81               |
-| Delete    | 2,846.18     | 0.35               |
-| Query     | 2.51 (qps)   | 397.71 (per query) |
-
-### Performance Analysis
-
-- **Read Performance**: ProtoBase excels at read operations, achieving over 7,500 items per second, making it suitable
-  for read-heavy workloads.
-- **Delete Performance**: Delete operations are also very efficient at nearly 3,000 items per second.
-- **Insert and Update**: These operations are moderately fast, with insert achieving around 420 items per second and
-  update around 550 items per second.
-- **Query Performance**: Complex queries are more resource-intensive, achieving about 2.5 queries per second for the
-  test dataset.
-
-### Comparison with Other Platforms
-
-When compared to other database solutions:
-
-1. **vs. SQLite**: ProtoBase offers comparable read performance to SQLite in memory mode but with the added benefits of
-   a rich object model and native Python integration. SQLite may perform better for complex queries due to its mature
-   query optimizer.
-
-2. **vs. Redis**: Redis typically offers higher throughput for simple operations (100K+ ops/sec) but lacks ProtoBase's
-   rich data structures and transactional model. ProtoBase is better suited for complex object relationships and when
-   full transaction support is required.
-
-3. **vs. MongoDB**: MongoDB offers better scaling for large datasets and distributed operations. ProtoBase provides a
-   more lightweight solution with tighter Python integration, making it ideal for embedded use cases and applications
-   that don't require MongoDB's scale.
-
-4. **vs. Pickle/JSON**: Compared to simple file serialization methods like Pickle or JSON, ProtoBase offers
-   significantly better performance for partial updates and queries, as it doesn't need to load and save the entire
-   dataset for each operation.
-
-ProtoBase is optimized for use cases that require:
-
-- A lightweight embedded database
-- Rich object model with native Python integration
-- Transactional safety
-- Good read performance
-
-For applications requiring extreme write throughput or handling very large datasets (100M+ records), specialized
-database systems may be more appropriate.
-
-## LINQ-like Queries (Phase 1)
-
-ProtoBase includes a lazy, composable LINQ-like API that works over Python iterables as well as ProtoBase collections and QueryPlans. It supports filtering, projection, ordering, distinct, paging, grouping with aggregates, and a Between operator with inclusive/exclusive bounds. When running over ProtoBase collections with indexes, supported predicates are pushed down to the query planner (WherePlan/SelectPlan) and can leverage indexes.
-
-Quick example:
+LINQ‑style filtering and projection:
 
 ```python
 from proto_db.linq import from_collection, F
@@ -142,8 +44,6 @@ from proto_db.linq import from_collection, F
 users = [
     {"id": 1, "first_name": "Alice", "last_name": "Zeus", "age": 30, "country": "ES", "status": "active", "email": "a@example.com", "last_login": 5},
     {"id": 2, "first_name": "Bob", "last_name": "Young", "age": 17, "country": "AR", "status": "inactive", "email": "b@example.com", "last_login": 10},
-    {"id": 3, "first_name": "Carol", "last_name": "Xavier", "age": 25, "country": "US", "status": "active", "email": "c@example.com", "last_login": 2},
-    {"id": 4, "first_name": "Dan", "last_name": "White", "age": 22, "country": "AR", "status": "active", "email": "d@example.com", "last_login": 7},
 ]
 
 q = (from_collection(users)
@@ -155,33 +55,82 @@ q = (from_collection(users)
 res = q.to_list()
 ```
 
-Between and chained comparisons:
+Optional parallel scan with adaptive chunking and work‑stealing:
 
 ```python
-# Inclusive by default
-from_collection(rows).where(F.value.between(10, 20)).to_list()
+from proto_db.parallel import parallel_scan, ParallelConfig
 
-# Lambda automatically translated to a range
-from_collection(rows).where(lambda x: 10 <= x["value"] <= 20).count()
+data = list(range(100000))
+
+def fetch(off, cnt):
+    return data[off:off+cnt]
+
+def process(x):
+    return x*2 if x % 2 == 0 else None
+
+cfg = ParallelConfig(max_workers=4, scheduler='work_stealing')
+results = parallel_scan(len(data), fetch, process, config=cfg)
 ```
-
-Policies allow controlling fallback behavior when expressions cannot be translated for pushdown:
-
-```python
-from proto_db.linq import Policy
-
-# Error on unsupported
-q = from_collection(items).with_policy(Policy(on_unsupported="error"))
-
-# Warn and fallback (local evaluation up to safety limits)
-q = (from_collection(items)
-     .on_unsupported("warn")
-     .where(lambda x: custom_python_check(x))
-     .take(100))
-```
-
-See the Sphinx docs (API > LINQ-like API) for the full surface and details about explain(), grouping and aggregation.
 
 ## Installation
 
-ProtoBase requires Python 3.11 or higher. You can install it directly from PyPI:
+ProtoBase requires Python 3.11 or higher. Install from PyPI:
+
+```bash
+pip install proto_db
+```
+
+Optional features like Arrow/Parquet bridging use pyarrow if you already have it installed; ProtoBase does not force any heavy dependencies.
+
+## Documentation
+
+- Sphinx docs (docs/source): introduction, quickstart, API reference
+- Parallel Scans guide: docs/source/parallel_scans.rst
+- API reference for the parallel module: docs/source/api/parallel.rst
+- Performance suite: docs/performance.md
+- ADR: docs/adr_work_stealing.md
+
+To build the docs locally:
+
+```bash
+cd docs && make html
+```
+
+Open docs/_build/html/index.html in your browser.
+
+## Testing
+
+Run the full test suite:
+
+```bash
+python -m unittest discover proto_db/tests
+```
+
+Or run a specific file:
+
+```bash
+python -m unittest proto_db.tests.test_parallel
+```
+
+## Benchmarks
+
+Indexed queries and vector ANN microbenchmarks are provided:
+
+```bash
+# Indexed benchmark (secondary indexes)
+python examples/indexed_benchmark.py --items 50000 --queries 200 --out examples/benchmark_results_indexed.json
+
+# Vector ANN benchmark (exact vs IVF‑Flat vs optional HNSW)
+python examples/vector_ann_benchmark.py --n 20000 --dim 64 --queries 50 --k 10 --out examples/benchmark_results_vectors.json
+```
+
+See docs/performance.md for guidance, caveats on small datasets, and how to interpret results.
+
+## Compatibility
+
+- Works on standard CPython today; design is GIL‑agnostic and scales on free‑threaded Python builds without code changes.
+- No third‑party runtime dependency is required for core features.
+
+## License
+
+MIT License. See LICENSE for details.
