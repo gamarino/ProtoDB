@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-ProtoBase is an embedded, transactional, object-oriented database for Python that delivers a unified engine for structured and vector data—featuring a LINQ-like query API, immutable secondary indexes, range-aware optimization, and integrated vector similarity search. New in 2025, ProtoBase introduces an atom-level caching layer (AtomObjectCache + AtomBytesCache) that reduces P95/P99 latencies for hot reads across transactions by avoiding unnecessary page reads and repeated deserializations.
+ProtoBase is an embedded, transactional, object-oriented database for Python that delivers a unified engine for structured and vector data—featuring a LINQ-like query API, immutable secondary indexes, range-aware optimization, and integrated vector similarity search. New in 2025, ProtoBase introduces an atom-level caching layer (AtomObjectCache + AtomBytesCache) that reduces P95/P99 latencies for hot reads across transactions by avoiding unnecessary page reads and repeated deserializations. In addition, ProtoBase now includes optional adaptive parallel scans with a lightweight work-stealing scheduler, delivering higher throughput and lower tail latency on mixed-cost workloads—designed to be GIL-agnostic today and ready to benefit from Python’s free-threaded (no-GIL) builds without code changes.
 
 Outcome: lower total cost of ownership, faster time-to-market, and a cohesive developer experience for AI-enabled products—particularly Retrieval Augmented Generation (RAG) and semantic search—while preserving transactional consistency. With the atom-level cache, ProtoBase further improves developer ergonomics and cost by cutting I/O and network egress, and by delivering a predictable, low-latency read path for embedded AI workloads.
 
@@ -45,7 +45,7 @@ Outcome: lower total cost of ownership, faster time-to-market, and a cohesive de
 - SQLite/DuckDB: excellent embedded engines; lack native transactional vector search and Python object semantics; no atom-level cache awareness for Python object graphs.
 - Redis/MongoDB: strong services but higher operational footprint for embedded hybrid (vector + metadata) use cases; external cache increases complexity.
 - Vector DBs (FAISS, Chroma, pgvector): best-in-class similarity, but typically require separate systems for metadata and transactions.
-- ProtoBase unifies: transactions + rich data structures + secondary and vector indexes + range-aware queries, all embedded in Python, ahora con cache a nivel de átomo para latencias predecibles en lecturas calientes.
+- ProtoBase unifies: transactions + rich data structures + secondary and vector indexes + range-aware queries, all embedded in Python, now with atom-level caching for predictable latency on hot reads.
 
 ## Key Differentiators
 
@@ -56,7 +56,8 @@ Outcome: lower total cost of ownership, faster time-to-market, and a cohesive de
 5) Integrated vector search (exact + ANN) composable with structured filters.
 6) Transactional consistency across data and all indexes via copy-on-write and rebase.
 7) Embedded simplicity with unified persistence (memory, file, cluster, cloud).
-8) Atom-level caching (nuevo 2025): objeto y bytes caches con política 2Q y single-flight; mejora P95/P99 en lecturas calientes y reduce I/O/egress.
+8) Atom-level caching (new in 2025): object and bytes caches with a 2Q policy and single-flight; improves P95/P99 on hot reads and reduces I/O/egress.
+9) Adaptive parallel scans (new in 2025): work-stealing scheduler with per-worker local deques, adaptive chunking (EMA with min/max bounds), and per-worker metrics. Backward compatible via the traditional pool; GIL-agnostic design ready to benefit from Python’s no-GIL builds when available.
 
 ## Core Use Cases
 
@@ -67,15 +68,15 @@ Outcome: lower total cost of ownership, faster time-to-market, and a cohesive de
 
 ## Technical Capabilities
 
-### Nuevo posicionamiento y potencial
+### New positioning and potential
 
-- Tesis: el mayor costo de las apps AI-embebidas no es el almacenamiento en sí, sino la latencia tail y la complejidad operativa de múltiples servicios. El cache a nivel de átomo reduce ambos.
-- Potencial:
-  - SaaS B2B y productos con RAG/semantic search: mejoras de 2–3x en P95/P99 de lecturas repetitivas sin agregar Redis.
-  - Edge/IoT y on-device: menor huella, menos I/O y energía, consistentemente predecible.
-  - Plataformas developer-first (SDK/OEM): adopción simple vía librería Python con defaults seguros.
-- Ventaja competitiva: combinación única de LINQ Pythonic + índices inmutables + búsqueda vectorial + cache atómico embebido.
-- Riesgos/mitigaciones: cambios de formato resueltos con schema_epoch; límites de memoria y 2Q evitan polución por escaneos.
+- Thesis: the highest cost in embedded-AI applications is not storage itself but tail latency and the operational complexity of multiple services. The atom-level cache reduces both.
+- Potential:
+  - SaaS B2B and products with RAG/semantic search: 2–3x improvements in P95/P99 for repetitive reads without adding Redis.
+  - Edge/IoT and on-device: smaller footprint, less I/O and energy, consistently predictable.
+  - Developer-first platforms (SDK/OEM): simple adoption via a Python library with safe defaults.
+- Competitive advantage: unique combination of Pythonic LINQ + immutable indexes + vector search + embedded atom-level cache.
+- Risks/mitigations: format changes handled with schema_epoch; memory limits and 2Q prevent scan pollution.
 
 - LINQ-like Querying
   - Lazy pipelines; `where`, `select`, `select_many`, `order_by/then_by`, `distinct`, `take/skip`, `group_by` with aggregates.
@@ -94,16 +95,30 @@ Outcome: lower total cost of ownership, faster time-to-market, and a cohesive de
   - Exact, IVF-Flat, and (optionally) HNSW; recall and latency benchmarks available.
   - Hybrid: combine top-k vector results with indexed structured filters.
 
-- Caching y Lecturas en Clúster
-  - Cache de páginas físicas leídas: si un objeto solicitado reside en una página ya en memoria, se evita la lectura desde storage.
-  - Cache a nivel de átomo (nuevo): dos niveles opcionales en memoria antes del page cache — AtomObjectCache (objetos deserializados) y AtomBytesCache (bytes crudos). Clave por AtomPointer (transaction_id, offset) y, opcionalmente, schema_epoch para el object cache. Política 2Q para evitar polución por escaneos y single-flight para deduplicar deserializaciones concurrentes. Resultados: mayor hit ratio entre transacciones y menor latencia aún cuando la página no esté en cache.
-  - Lectura consciente de clúster: antes de ir a storage (archivo o S3), los nodos consultan a sus pares; si alguno posee la página, se realiza una transferencia interservidor, típicamente más rápida que I/O de disco u objeto.
-  - Localidad transaccional: los objetos modificados en una misma transacción se agrupan en páginas contiguas, aumentando la probabilidad de aciertos de cache y reduciendo misses de lectura.
-  - Beneficios prácticos: menor latencia P95/P99 en lecturas calientes, ahorro de I/O y ancho de banda en nubes (S3/GCS), mejor throughput bajo contención de lectura.
+- Caching and Cluster-Aware Reads
+  - Read page cache: if a requested object resides in a page already in memory, the storage read is avoided.
+  - Atom-level cache (new): two optional in-memory layers ahead of the page cache — AtomObjectCache (deserialized objects) and AtomBytesCache (raw bytes). Keyed by AtomPointer (transaction_id, offset) and, optionally, schema_epoch for the object cache. 2Q policy to avoid scan pollution and single-flight to deduplicate concurrent deserializations. Results: higher hit ratio across transactions and lower latency even when the page is not in cache.
+  - Cluster-aware reading: before hitting storage (file or S3), nodes query their peers; if one has the page, an inter-server transfer is performed, typically faster than disk or object I/O.
+  - Transactional locality: objects modified in the same transaction are grouped into contiguous pages, increasing the probability of cache hits and reducing read misses.
+  - Practical benefits: lower P95/P99 latency on hot reads, I/O and bandwidth savings in clouds (S3/GCS), and better throughput under read contention.
 
 - Transactions and Persistence
   - Copy-on-write and rebase ensure data/index consistency.
   - Pluggable storage backends (local to cloud) under a single API.
+
+### Parallel Scans and No-GIL Readiness
+
+- Optional work-stealing scheduler with per-worker local deques and top-of-queue stealing to balance load under skew.
+- Per-worker adaptive chunking (target 0.5–2 ms per chunk, EMA with configurable alpha) with min/max bounds and an in-flight cap per worker to protect tail latency.
+- Simple configuration surface (parallel.*):
+  - parallel.max_workers (defaults to number of cores or min(cores, 8))
+  - parallel.scheduler ("work_stealing" | "thread_pool")
+  - parallel.initial_chunk_size, min/max_chunk_size
+  - parallel.target_ms_low/high, parallel.chunk_ema_alpha
+  - parallel.max_inflight_chunks_per_worker
+- Metrics and observability: chunks/records processed, p50/p95/p99 chunk service times, steals attempted/successful, queue depths, etc., via a Python callback.
+- Semantics intact and backward compatibility: if you select "thread_pool" with a fixed chunk size, behavior is identical to before.
+- Ready for Python without the GIL: a GIL-agnostic design that already improves throughput on current CPython and scales better on free-threaded builds with no code changes.
 
 ## Business Benefits
 
@@ -111,11 +126,11 @@ Outcome: lower total cost of ownership, faster time-to-market, and a cohesive de
 - Faster time-to-market: one engine for structured + vector + transactions.
 - Lower risk: explainable plans; consistent indexes; deterministic behavior.
 - Portability: local dev to edge to cloud without rearchitecture.
-- Better SLOs with less infra: el cache de átomos evita lecturas repetidas y deserializaciones redundantes, mejorando P95/P99 en entornos de alto QPS sin agregar Redis o CDNs.
+- Better SLOs with less infra: the atom cache avoids repeated reads and redundant deserializations, improving P95/P99 in high-QPS environments without adding Redis or CDNs.
 
 ## Market Message
 
-“ProtoBase is the embedded, LINQ-style database for Python that unifies semantic search, range filters, and transactional indexes in a single engine. Now with atom-level caching for sub-millisecond hot reads and predictable latency. Build modern AI experiences with the simplicity of a library and the power of a database.”
+“ProtoBase is the embedded, LINQ-style database for Python that unifies semantic search, range filters, and transactional indexes in a single engine. Now with atom-level caching for sub-millisecond hot reads and adaptive parallel scans (work-stealing) for higher throughput and lower tail latency—built to run great on CPython today and ready for Python’s no-GIL future. Build modern AI experiences with the simplicity of a library and the power of a database.”
 
 ## Packaging and Pricing (Indicative)
 
@@ -131,29 +146,29 @@ Outcome: lower total cost of ownership, faster time-to-market, and a cohesive de
 
 ## Go-to-Market (Developer-First)
 
-- Content: “Explain your query” + “Cache heatmaps” series (antes/después del cache de átomos; ratios de hit; P95/P99), notebooks reproducibles y script de benchmark incluido.
-- Integrations: FastAPI con endpoints de search híbrido y métricas de cache; pipelines ML con validación de calidad (recall/latencia).
+- Content: “Explain your query” + “Cache heatmaps” series (before/after the atom cache; hit ratios; P95/P99), reproducible notebooks, and an included benchmark script.
+- Integrations: FastAPI with hybrid search endpoints and cache metrics; ML pipelines with quality validation (recall/latency).
 - Community: contribution guide, “good first issue” labels, public roadmap.
-- Storytelling: “Menos servicios, mismas SLOs” — comparativas: ProtoBase embebido vs stack Redis + vector DB + doc store.
+- Storytelling: “Fewer services, same SLOs” — comparisons: embedded ProtoBase vs a stack of Redis + vector DB + document store.
 
 ## Roadmap (High-Level)
 
 - 1–3 Months
   - LINQ parity for core operators; robust explain; range/index recipes.
   - Vector API polishing (KNN, thresholds, ordering by similarity).
-  - Atom cache: métricas básicas y docs; ejemplo FastAPI con métricas expuestas.
-  - Tuning guides and comparative benchmarks (ANN params, range ops, cache hit ratio vs memoria).
+  - Atom cache: basic metrics and docs; FastAPI example with exposed metrics.
+  - Tuning guides and comparative benchmarks (ANN params, range ops, cache hit ratio vs memory).
 
 - 3–6 Months
   - Basic joins (inner/left) with filter pushdown; lightweight index stats.
   - Index snapshot/restore and background rebuild.
-  - Observability para el optimizador y la capa de cache (per-operator y per-layer).
+  - Observability for the optimizer and the cache layer (per-operator and per-layer).
 
 - 6–12 Months
   - Hybrid relevance (BM25 + vector) and reranking recipes.
   - Sharding/partitioning strategies for large vector workloads.
   - Enterprise controls (audit, compliance, encryption at rest/in use).
-  - Cache: opción TinyLFU/W-TinyLFU y precarga asíncrona de hijos inmediatos.
+  - Cache: TinyLFU/W-TinyLFU option and asynchronous preloading of immediate children.
 
 ## Conclusion
 
