@@ -6,7 +6,20 @@
   <component name="ChangeListManager">
     <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] The performance suite was rerun with updated benchmark results saved in JSON files. Unit tests for the parallel module passed without issues. Documentation remained accurate and no updates were needed.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/cloud_cluster_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/cloud_cluster_file_storage.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/cloud_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/cloud_file_storage.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/db_access.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/dictionaries.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/file_block_provider.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/file_block_provider.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/hash_dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/hash_dictionaries.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/lists.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/memory_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/memory_storage.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/sets.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/sets.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/standalone_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/standalone_file_storage.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_cloud_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_cloud_file_storage.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/vectors.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/vectors.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -50,52 +63,53 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ASKED_MARK_IGNORED_FILES_AS_EXCLUDED&quot;: &quot;true&quot;,
-    &quot;Makefile Target.Makefile (1).executor&quot;: &quot;Run&quot;,
-    &quot;Makefile Target.Makefile (3).executor&quot;: &quot;Run&quot;,
-    &quot;Makefile Target.Makefile.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests in test_db_access.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests in test_file_block_provider.py.executor&quot;: &quot;Debug&quot;,
-    &quot;Python tests.Python tests in test_standalone_file_storage.py.executor&quot;: &quot;Debug&quot;,
-    &quot;Python.comprehensive_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.db_performance_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.indexed_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.minimal_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.performance_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.simple_example.executor&quot;: &quot;Debug&quot;,
-    &quot;Python.simple_performance_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.task_manager.executor&quot;: &quot;Debug&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;com.google.cloudcode.ide_session_index&quot;: &quot;20250803_0001&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/home/gamarino/odoo/ltf-18.0&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;,
-    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
+    "Makefile Target.Makefile (1).executor": "Run",
+    "Makefile Target.Makefile (3).executor": "Run",
+    "Makefile Target.Makefile.executor": "Run",
+    "Python tests.Python tests in test_db_access.py.executor": "Run",
+    "Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor": "Run",
+    "Python tests.Python tests in test_file_block_provider.py.executor": "Debug",
+    "Python tests.Python tests in test_standalone_file_storage.py.executor": "Debug",
+    "Python.comprehensive_benchmark.executor": "Run",
+    "Python.db_performance_benchmark.executor": "Run",
+    "Python.indexed_benchmark.executor": "Run",
+    "Python.minimal_benchmark.executor": "Run",
+    "Python.performance_benchmark.executor": "Run",
+    "Python.run_tests.executor": "Run",
+    "Python.simple_example.executor": "Debug",
+    "Python.simple_performance_benchmark.executor": "Run",
+    "Python.task_manager.executor": "Debug",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "com.google.cloudcode.ide_session_index": "20250803_0001",
+    "git-widget-placeholder": "master",
+    "junie.onboarding.icon.badge.shown": "true",
+    "last_opened_file_path": "/home/gamarino/odoo/ltf-18.0",
+    "node.js.detected.package.eslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable",
+    "to.speed.mode.migration.done": "true",
+    "vue.rearranger.settings.migration": "true"
   },
-  &quot;keyToStringList&quot;: {
-    &quot;com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File&quot;: [
-      &quot;Requirements&quot;
+  "keyToStringList": {
+    "com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File": [
+      "Requirements"
     ]
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/proto_db/tests" />
       <recent name="$PROJECT_DIR$/proto_db" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.indexed_benchmark">
+  <component name="RunManager" selected="Python.run_tests">
     <configuration name="Makefile (2)" type="MAKEFILE_TARGET_RUN_CONFIGURATION" factoryName="Makefile">
       <makefile filename="$PROJECT_DIR$/docs/Makefile" target="" workingDirectory="$PROJECT_DIR$/docs/source" arguments="">
         <envs />
@@ -172,7 +186,7 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="minimal_benchmark" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+    <configuration name="run_tests" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="ProtoBase" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -181,12 +195,12 @@
         <env name="PYTHONUNBUFFERED" value="1" />
       </envs>
       <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/examples" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/examples/minimal_benchmark.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/run_tests.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -220,19 +234,19 @@
     </configuration>
     <list>
       <item itemvalue="Makefile Target.Makefile (2)" />
+      <item itemvalue="Python.run_tests" />
       <item itemvalue="Python.indexed_benchmark" />
       <item itemvalue="Python.comprehensive_benchmark" />
       <item itemvalue="Python.db_performance_benchmark" />
-      <item itemvalue="Python.minimal_benchmark" />
       <item itemvalue="Python.simple_example" />
     </list>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.run_tests" />
         <item itemvalue="Python.indexed_benchmark" />
         <item itemvalue="Python.comprehensive_benchmark" />
         <item itemvalue="Python.simple_example" />
         <item itemvalue="Python.db_performance_benchmark" />
-        <item itemvalue="Python.minimal_benchmark" />
       </list>
     </recent_temporary>
   </component>
@@ -271,15 +285,9 @@
       <workItem from="1756137442174" duration="124000" />
       <workItem from="1756995586860" duration="20360000" />
       <workItem from="1757647544978" duration="4378000" />
-      <workItem from="1757652737831" duration="2075000" />
-    </task>
-    <task id="LOCAL-00030" summary="[IMP] ConcurrentOptimized Dictionaries">
-      <option name="closed" value="true" />
-      <created>1753718893335</created>
-      <option name="number" value="00030" />
-      <option name="presentableId" value="LOCAL-00030" />
-      <option name="project" value="LOCAL" />
-      <updated>1753718893335</updated>
+      <workItem from="1757652737831" duration="2406000" />
+      <workItem from="1757675175377" duration="49000" />
+      <workItem from="1757675249603" duration="6767000" />
     </task>
     <task id="LOCAL-00031" summary="[IMP] Multiformat storage implamentation">
       <option name="closed" value="true" />
@@ -665,7 +673,15 @@
       <option name="project" value="LOCAL" />
       <updated>1757654138377</updated>
     </task>
-    <option name="localTasksCounter" value="79" />
+    <task id="LOCAL-00079" summary="[FIX] The performance suite was rerun with updated benchmark results saved in JSON files. Unit tests for the parallel module passed without issues. Documentation remained accurate and no updates were needed.">
+      <option name="closed" value="true" />
+      <created>1757655143116</created>
+      <option name="number" value="00079" />
+      <option name="presentableId" value="LOCAL-00079" />
+      <option name="project" value="LOCAL" />
+      <updated>1757655143116</updated>
+    </task>
+    <option name="localTasksCounter" value="80" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -704,7 +720,7 @@
       <breakpoints>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/file_block_provider.py</url>
-          <line>411</line>
+          <line>401</line>
           <option name="timeStamp" value="112" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
@@ -746,12 +762,13 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/db_access.py</url>
-          <line>401</line>
+          <line>416</line>
           <option name="timeStamp" value="255" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/proto_db/vectors.py</url>
-          <option name="timeStamp" value="256" />
+          <url>file://$PROJECT_DIR$/proto_db/tests/test_dictionaries.py</url>
+          <line>11</line>
+          <option name="timeStamp" value="257" />
         </line-breakpoint>
       </breakpoints>
       <default-breakpoints>
@@ -766,6 +783,7 @@
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/ProtoBase$task_manager.coverage" NAME="task_manager Coverage Results" MODIFIED="1754259207052" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$.coverage" NAME=" Coverage Results" MODIFIED="1736352327720" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/ProtoBase$run_tests.coverage" NAME="run_tests Coverage Results" MODIFIED="1757676863032" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/ProtoBase$performance_benchmark.coverage" NAME="performance_benchmark Coverage Results" MODIFIED="1754260400708" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$indexed_benchmark.coverage" NAME="indexed_benchmark Coverage Results" MODIFIED="1757019769656" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$db_performance_benchmark.coverage" NAME="db_performance_benchmark Coverage Results" MODIFIED="1754260420768" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />

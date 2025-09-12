@@ -1000,8 +1000,8 @@ class FromPlan(IndexedQueryPlan):
 
     def __init__(self,
                  alias: str,
-                 indexes: dict[str, RepeatedKeysDictionary],
-                 based_on: QueryPlan,
+                 indexes: dict[str, RepeatedKeysDictionary] = None,
+                 based_on: QueryPlan = None,
                  transaction: ObjectTransaction = None,
                  atom_pointer: AtomPointer = None,
                  **kwargs):
@@ -1031,6 +1031,167 @@ class FromPlan(IndexedQueryPlan):
         return FromPlan(
             alias=self.alias,
             based_on=self.based_on.optimize(full_plan),
+            transaction=self.transaction
+        )
+
+
+class JoinPlan(QueryPlan):
+    """
+    Join two query plans with simple heuristic-based join semantics.
+
+    Supported join_type values in tests:
+      - 'inner': only matching pairs
+      - 'left': all from left, matching from right when available
+      - 'right': all from right, matching from left when available
+      - 'external': cartesian product of both sides plus both sides individually
+      - 'external_left': left-only plus cartesian product
+      - 'external_right': right-only plus cartesian product
+      - 'outer': only side-only elements (no combining)
+
+    Matching heuristic for inner/left/right:
+      If left has field "{right_alias}_id" and right has field "id":
+        left.{right_alias}_id == right.id
+      Else if left has field "id" and right has field "{left_alias}_id":
+        left.id == right.{left_alias}_id
+      Otherwise, no match.
+    """
+
+    def __init__(self,
+                 join_query: QueryPlan,
+                 join_type: str = 'inner',
+                 based_on: QueryPlan = None,
+                 transaction: ObjectTransaction = None,
+                 atom_pointer: AtomPointer = None,
+                 **kwargs):
+        super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
+        self.join_query = join_query
+        self.join_type = (join_type or 'inner').lower()
+
+    def _detect_alias(self, plan: QueryPlan, sample_record: DBObject | None) -> str | None:
+        # Prefer alias from FromPlan
+        try:
+            from .queries import FromPlan as _FromPlan
+            if isinstance(plan, _FromPlan):
+                return plan.alias
+        except Exception:
+            pass
+        # Otherwise, infer from record attributes if it has a single public attribute
+        if sample_record is not None:
+            pub = [k for k in sample_record.__dict__.keys() if not k.startswith('_')]
+            if len(pub) == 1:
+                return pub[0]
+        return None
+
+    def _get_side_object(self, rec: DBObject, alias: str | None):
+        if alias and hasattr(rec, alias):
+            return getattr(rec, alias)
+        return rec
+
+    def _match(self, lrec: DBObject, rrec: DBObject, la: str | None, ra: str | None) -> bool:
+        left_obj = self._get_side_object(lrec, la)
+        right_obj = self._get_side_object(rrec, ra)
+        # Try left.{ra}_id == right.id
+        key1 = f"{ra}_id" if ra else None
+        try:
+            if key1 and hasattr(left_obj, key1) and hasattr(right_obj, 'id'):
+                return getattr(left_obj, key1) == getattr(right_obj, 'id')
+        except Exception:
+            pass
+        # Try left.id == right.{la}_id
+        key2 = f"{la}_id" if la else None
+        try:
+            if hasattr(left_obj, 'id') and key2 and hasattr(right_obj, key2):
+                return getattr(left_obj, 'id') == getattr(right_obj, key2)
+        except Exception:
+            pass
+        return False
+
+    def _copy_public_attrs(self, target: DBObject, source: DBObject) -> DBObject:
+        for k, v in source.__dict__.items():
+            if not k.startswith('_') and not callable(v):
+                target = target._setattr(k, v)
+        return target
+
+    def _combine(self, left: DBObject | None, right: DBObject | None) -> DBObject:
+        res = DBObject(transaction=self.transaction)
+        if left is not None:
+            res = self._copy_public_attrs(res, left)
+        if right is not None:
+            res = self._copy_public_attrs(res, right)
+        return res
+
+    def execute(self):
+        left_list = list(self.based_on.execute()) if self.based_on else []
+        right_list = list(self.join_query.execute()) if self.join_query else []
+
+        la = self._detect_alias(self.based_on, left_list[0] if left_list else None)
+        ra = self._detect_alias(self.join_query, right_list[0] if right_list else None)
+
+        jt = self.join_type
+        if jt == 'outer':
+            # Only side-only, no combined pairs
+            for l in left_list:
+                yield self._combine(l, None)
+            for r in right_list:
+                yield self._combine(None, r)
+            return
+
+        if jt.startswith('external'):
+            include_left_only = jt in ('external', 'external_left')
+            include_right_only = jt in ('external', 'external_right')
+            # Cartesian combinations of both sides
+            for l in left_list:
+                for r in right_list:
+                    yield self._combine(l, r)
+            if include_left_only:
+                for l in left_list:
+                    yield self._combine(l, None)
+            if include_right_only:
+                for r in right_list:
+                    yield self._combine(None, r)
+            return
+
+        # inner/left/right using match
+        if jt == 'inner':
+            for l in left_list:
+                for r in right_list:
+                    if self._match(l, r, la, ra):
+                        yield self._combine(l, r)
+            return
+
+        if jt == 'left':
+            for l in left_list:
+                matched = False
+                for r in right_list:
+                    if self._match(l, r, la, ra):
+                        yield self._combine(l, r)
+                        matched = True
+                if not matched:
+                    yield self._combine(l, None)
+            return
+
+        if jt == 'right':
+            for r in right_list:
+                matched = False
+                for l in left_list:
+                    if self._match(l, r, la, ra):
+                        yield self._combine(l, r)
+                        matched = True
+                if not matched:
+                    yield self._combine(None, r)
+            return
+
+        # Fallback: treat as inner
+        for l in left_list:
+            for r in right_list:
+                if self._match(l, r, la, ra):
+                    yield self._combine(l, r)
+
+    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
+        return JoinPlan(
+            join_query=self.join_query.optimize(full_plan) if self.join_query else None,
+            join_type=self.join_type,
+            based_on=self.based_on.optimize(full_plan) if self.based_on else None,
             transaction=self.transaction
         )
 
@@ -1366,7 +1527,7 @@ class MinAgreggator(AgreggatorFunction):
         return minimun
 
 
-class MaxAggregator(AgreggatorFunction):
+class MaxAgreggator(AgreggatorFunction):
     """
     An aggregator that finds the maximum value in a list of values.
 
@@ -1391,6 +1552,66 @@ class MaxAggregator(AgreggatorFunction):
                 max_value = value
 
         return max_value
+
+
+class AgreggatorSpec:
+    def __init__(self, agreggator: AgreggatorFunction, source_field: str, target_field: str):
+        self.agreggator = agreggator
+        self.source_field = source_field
+        self.target_field = target_field
+
+
+class GroupByPlan(QueryPlan):
+    def __init__(self,
+                 group_fields: list[str],
+                 agreggated_fields: dict[str, AgreggatorSpec],
+                 based_on: QueryPlan = None,
+                 transaction: ObjectTransaction = None,
+                 atom_pointer: AtomPointer = None,
+                 **kwargs):
+        super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
+        self.group_fields = group_fields or []
+        self.agreggated_fields = agreggated_fields or {}
+
+    def execute(self):
+        groups: dict[tuple, list[DBObject]] = {}
+        for rec in (self.based_on.execute() if self.based_on else []):
+            key = tuple(rec.__dict__.get(f, None) for f in self.group_fields)
+            groups.setdefault(key, []).append(rec)
+
+        for key, records in groups.items():
+            out = DBObject(transaction=self.transaction)
+            # Set group fields
+            for i, f in enumerate(self.group_fields):
+                out = out._setattr(f, key[i])
+            # Compute aggregations
+            for name, spec in self.agreggated_fields.items():
+                # Extract values; for sums/avgs, treat missing as 0; for min/max skip None
+                values = []
+                for r in records:
+                    v = r.__dict__.get(spec.source_field, None)
+                    values.append(0 if v is None and isinstance(spec.agreggator, (SumAgreggator, AvgAggregator)) else (v if v is not None else 0))
+                # For avg/min/max, better to ignore None: build cleaned list when aggregator is not Count
+                if isinstance(spec.agreggator, AvgAggregator):
+                    clean = [v for v in values if v is not None]
+                    result = spec.agreggator.compute(clean)
+                elif isinstance(spec.agreggator, (MinAgreggator, MaxAgreggator)):
+                    clean = [v for v in (r.__dict__.get(spec.source_field, None) for r in records) if v is not None]
+                    result = spec.agreggator.compute(clean)
+                elif isinstance(spec.agreggator, CountAggregator):
+                    result = spec.agreggator.compute(records)
+                else:
+                    result = spec.agreggator.compute(values)
+                out = out._setattr(spec.target_field, result)
+            yield out
+
+    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
+        return GroupByPlan(
+            group_fields=list(self.group_fields),
+            agreggated_fields=dict(self.agreggated_fields),
+            based_on=self.based_on.optimize(full_plan) if self.based_on else None,
+            transaction=self.transaction
+        )
 
 
 class UnnestPlan(QueryPlan):

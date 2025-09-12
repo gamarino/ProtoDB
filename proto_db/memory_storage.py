@@ -55,6 +55,9 @@ class MemoryStorage(common.SharedStorage):
             ProtoValidationException: If no root object has been set yet.
         """
         with self.lock:  # Ensure thread-safety when accessing `current_root`.
+            if self.current_root_history_pointer is None:
+                from .exceptions import ProtoValidationException
+                raise ProtoValidationException(message='Root object is not set')
             return self.current_root_history_pointer
 
     def read_lock_current_root(self) -> AtomPointer:
@@ -80,21 +83,40 @@ class MemoryStorage(common.SharedStorage):
 
     def push_atom(self, atom: dict) -> Future[AtomPointer]:
         """
-        Save an atom in the in-memory storage. Each atom gets a unique offset and is tied
-        to the current transaction ID.
-        :param atom: The `Atom` object to be stored.
+        Save an atom in the in-memory storage.
+        - If the atom has no pointer or its offset is None, assign a new pointer.
+        - If the atom already has an offset that exists in storage, raise ProtoCorruptionException.
+        :param atom: The `Atom` (or dict-like) object to be stored.
         :return: A `Future` containing the corresponding `AtomPointer` of the stored atom.
         :raises:
             ProtoCorruptionException: If an atom with the same offset already exists.
         """
         with self.lock:  # Ensure thread-safety for operations on `atoms`.
-            offset = uuid.uuid4().int
-            atom_pointer = AtomPointer(
-                transaction_id=self.transaction_id,
-                offset=offset
-            )
+            # Try to access an existing AtomPointer if the object looks like an Atom
+            ap = getattr(atom, 'atom_pointer', None)
 
-            # Check if the offset already exists in the atoms dictionary.
+            # Assign new offset if none present
+            if ap is None or getattr(ap, 'offset', None) is None:
+                offset = uuid.uuid4().int
+                atom_pointer = AtomPointer(transaction_id=self.transaction_id, offset=offset)
+                # If the object supports setting atom_pointer, set it
+                try:
+                    setattr(atom, 'atom_pointer', atom_pointer)
+                except Exception:
+                    # Ignore if not settable (e.g., plain dict). We'll store using local pointer.
+                    pass
+            else:
+                # Use existing offset
+                offset = ap.offset
+                # Ensure transaction_id is set
+                tx_id = getattr(ap, 'transaction_id', None) or self.transaction_id
+                atom_pointer = AtomPointer(transaction_id=tx_id, offset=offset)
+                try:
+                    setattr(atom, 'atom_pointer', atom_pointer)
+                except Exception:
+                    pass
+
+            # Check for duplicates
             if offset in self.atoms:
                 raise ProtoCorruptionException(
                     message=f'You are trying to push an already existing atom: {atom}'

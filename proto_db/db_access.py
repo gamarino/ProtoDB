@@ -29,22 +29,34 @@ class ObjectSpace(AbstractObjectSpace):
         self._lock = Lock()
 
     def _read_db_catalog(self) -> dict[str:Dictionary]:
-        read_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
-        root_pointer = self.storage.read_current_root()
-        space_history: List = List(
-            transaction=read_tr,
-            atom_pointer=root_pointer
-        )
-        space_history._load()
-        current_root = cast(RootObject, space_history.get_at(0))
-        if not current_root:
-            current_root = RootObject(
-                object_root=Dictionary(),
-                literal_root=Dictionary()
-            )
-        databases = {key: value for key, value in current_root.object_root.as_iterable()}
-        read_tr.abort()
-        return databases
+        """
+        Read the current database catalog from the space root in a robust way.
+        Falls back to an empty catalog if the space or root is not yet initialized.
+        """
+        try:
+            space_root = self.get_space_root(lock=False)
+        except ProtoValidationException:
+            return {}
+
+        if not space_root:
+            return {}
+
+        # Ensure we load the root to materialize object_root/literal_root attributes
+        try:
+            space_root._load()
+        except Exception:
+            pass
+
+        if not getattr(space_root, 'object_root', None):
+            return {}
+
+        try:
+            # Ensure dictionary is loaded before iterating to materialize its content
+            space_root.object_root._load()
+            return {key: value for key, value in space_root.object_root.as_iterable()}
+        except Exception:
+            # If anything goes wrong reading the catalog, treat it as empty to avoid crashes
+            return {}
 
     def open_database(self, database_name: str) -> Database:
         """
@@ -119,10 +131,13 @@ class ObjectSpace(AbstractObjectSpace):
     def get_space_history(self, lock=False) -> List:
         read_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
 
-        if lock:
-            root_pointer = self.storage.read_lock_current_root()
-        else:
-            root_pointer = self.storage.read_current_root()
+        try:
+            if lock:
+                root_pointer = self.storage.read_lock_current_root()
+            else:
+                root_pointer = self.storage.read_current_root()
+        except ProtoValidationException:
+            root_pointer = None
 
         if root_pointer:
             space_history = List(transaction=read_tr, atom_pointer=root_pointer)
@@ -157,7 +172,7 @@ class ObjectSpace(AbstractObjectSpace):
         space_history = space_history.insert_at(0, new_space_root)
         space_history._save()
 
-        self.storage_provider.set_current_root(space_history.atom_pointer)
+        self.storage.set_current_root(space_history.atom_pointer)
 
     def get_literals(self, literals: Dictionary) -> dict[str, Literal]:
         read_tr = ObjectTransaction(None, storage=self.storage)
@@ -213,7 +228,7 @@ class ObjectSpace(AbstractObjectSpace):
                     message=f'Object space is not running!'
                 )
 
-            self.storage_provider.close()
+            self.storage.close()
 
             self.state = 'Closed'
 

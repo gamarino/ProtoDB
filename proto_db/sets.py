@@ -75,6 +75,10 @@ class Set(Atom):
         for hash_value, item in self.content.as_iterable():
             yield item
 
+    def __iter__(self):
+        # Allow Python iteration protocols (e.g., list(set_obj))
+        return iter(self.as_iterable())
+
     def as_query_plan(self) -> QueryPlan:
         """
         Converts the `Set` into a `QueryPlan` object for integration with larger query

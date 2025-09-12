@@ -435,7 +435,7 @@ class HashDictionary(DBCollections):
                     key=self.key,
                     value=self.value,
                     previous=self.previous,
-                    next=new_next if new_next.key is not None else None,
+                    next=new_next if (new_next and new_next.key is not None) else None,
                     transaction=self.transaction
                 )
             else:
@@ -450,7 +450,7 @@ class HashDictionary(DBCollections):
                 new_node = HashDictionary(
                     key=self.key,
                     value=self.value,
-                    previous=new_previous if new_previous.key is not None else None,
+                    previous=new_previous if (new_previous and new_previous.key is not None) else None,
                     next=self.next,
                     transaction=self.transaction
                 )
@@ -462,23 +462,27 @@ class HashDictionary(DBCollections):
             # Remove the value of the current node.
             if self.next:
                 self.next._load()
-                next_first = self.next._get_first()
-                new_next = self.next.remove_at(next_first.key)
+                next_first = self.next._get_first()  # (key, value)
+                next_key, next_value = next_first if next_first is not None else (None, None)
+                new_next = self.next.remove_at(next_key) if next_key is not None else None
                 new_node = HashDictionary(
-                    key=next_first.key,
-                    value=next_first.value,
+                    key=next_key,
+                    value=next_value,
                     previous=self.previous,
-                    next=new_next if new_next.key is not None else None,
+                    next=new_next if (new_next and new_next.key is not None) else None,
                     transaction=self.transaction
                 )
             elif self.previous:
                 self.previous._load()
                 previous_last = self.previous._get_last()
-                new_previous = self.previous.remove_at(previous_last.key)
+                if previous_last is None:
+                    return self.next  # nothing on the left
+                previous_last_key, previous_last_value = previous_last
+                new_previous = self.previous.remove_at(previous_last_key)
                 new_node = HashDictionary(
-                    key=previous_last.key,
-                    value=previous_last.value,
-                    previous=new_previous if new_previous.key is not None else None,
+                    key=previous_last_key,
+                    value=previous_last_value,
+                    previous=(new_previous if (new_previous and new_previous.key is not None) else None),
                     next=self.next,
                     transaction=self.transaction
                 )
@@ -498,57 +502,32 @@ class HashDictionary(DBCollections):
             new_dictionary = new_dictionary.set_at(item_hash, value)
         return new_dictionary
 
-    def _get_first(self) -> HashDictionary | None:
+    def _get_first(self) -> tuple[int, Atom] | None:
         """
-        Fetches the first value in a series of linked nodes. This function traverses
-        linked nodes starting from the current node (`self`) and moves to the leftmost
-        node. The value of this leftmost node is returned unless the key attribute of
-        the current node is None, in which case None is immediately returned. If the
-        chain of nodes has no leftmost node with a valid value, None is returned as
-        well.
-
-        :return: The value of the first node in the linked chain or None if no such
-                 value is found.
-        :rtype: Atom or None
+        Return the smallest (key, value) pair in the dictionary, or None if empty.
         """
         self._load()
-
         if self.key is None:
-            return self
-
+            return None
         node = self
         while node:
             node._load()
-
             if not node.previous:
-                return node
-            node = node.previous  # Traverse to the left subtree.
+                return (node.key, node.value)
+            node = node.previous
+        raise ProtoCorruptionException(message='get_first traversal has found an inconsistency!')
 
-        raise ProtoCorruptionException(
-            message=f'get_first traversal has found an inconsistency!'
-        )
-
-    def _get_last(self) -> HashDictionary | None:
+    def _get_last(self) -> tuple[int, Atom] | None:
         """
-        Retrieve the last node's value in the sequence of the linked list-like structure. The method traverses
-        the linked nodes until it finds the last node by checking the absence of a `next` reference.
-
-        :return: The value of the last node if present, otherwise None.
-        :rtype: Atom | None
+        Return the largest (key, value) pair in the dictionary, or None if empty.
         """
         self._load()
-
         if self.key is None:
-            return self
-
+            return None
         node = self
         while node:
             node._load()
-
             if not node.next:
-                return node
-            node = node.next  # Traverse to the right subtree.
-
-        raise ProtoCorruptionException(
-            message=f'get_last traversal has found an inconsistency!'
-        )
+                return (node.key, node.value)
+            node = node.next
+        raise ProtoCorruptionException(message='get_last traversal has found an inconsistency!')

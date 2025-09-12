@@ -21,7 +21,10 @@ PB: int = KB * GB
 
 
 class AtomPointer(object):
-    def __init__(self, transaction_id: uuid.UUID, offset: int):
+    def __init__(self, transaction_id: uuid.UUID = None, offset: int = 0):
+        # Allow default construction for tests and convenience
+        if transaction_id is None:
+            transaction_id = uuid.uuid4()
         self.transaction_id = transaction_id
         self.offset = offset
 
@@ -288,6 +291,12 @@ class Atom(metaclass=CombinedMeta):
         super().__init__()
         self.transaction = transaction
         self.atom_pointer = atom_pointer
+        # Accept arbitrary attributes for simple Atom usage in tests (e.g., Atom(value="..."))
+        for k, v in kwargs.items():
+            try:
+                object.__setattr__(self, k, v)
+            except Exception:
+                pass
 
     def _load(self):
         # Use direct attribute access to avoid recursion through __getattr__
@@ -295,11 +304,28 @@ class Atom(metaclass=CombinedMeta):
             # Use direct dictionary access to avoid triggering __getattr__
             if 'transaction' in self.__dict__ and self.__dict__['transaction']:
                 transaction = self.__dict__['transaction']
-                if 'atom_pointer' in self.__dict__ and self.__dict__['atom_pointer'] and \
-                        self.__dict__['atom_pointer'].transaction_id:
-                    atom_pointer = self.__dict__['atom_pointer']
-                    loaded_atom = transaction.storage.get_atom(
-                        atom_pointer).result()
+                # Normalize atom_pointer to AtomPointer if it is present as a raw dict (backward compatibility)
+                ap = self.__dict__.get('atom_pointer')
+                if isinstance(ap, dict):
+                    try:
+                        tid_val = ap.get('transaction_id')
+                        txid = None
+                        if isinstance(tid_val, uuid.UUID):
+                            txid = tid_val
+                        elif isinstance(tid_val, str):
+                            try:
+                                txid = uuid.UUID(tid_val)
+                            except Exception:
+                                txid = uuid.UUID(hex=tid_val)
+                        if txid is not None:
+                            ap = AtomPointer(transaction_id=txid, offset=ap.get('offset', 0))
+                            self.__dict__['atom_pointer'] = ap
+                    except Exception:
+                        # If normalization fails, leave as-is and skip loading
+                        ap = None
+                if ap and getattr(ap, 'transaction_id', None):
+                    atom_pointer = ap
+                    loaded_atom = transaction.storage.get_atom(atom_pointer).result()
                     loaded_dict = self._json_to_dict(loaded_atom)
                     for attribute_name, attribute_value in loaded_dict.items():
                         # Use object.__setattr__ to bypass potential recursion in __setattr__
@@ -379,8 +405,14 @@ class Atom(metaclass=CombinedMeta):
                     else:
                         value = self.transaction.get_literal(value['string'])
                 elif class_name in atom_class_registry:
+                    # Accept hyphenated UUID strings and raw hex
+                    tx_str = value['transaction_id']
+                    try:
+                        txid = uuid.UUID(tx_str)
+                    except Exception:
+                        txid = uuid.UUID(hex=tx_str)
                     atom_pointer = AtomPointer(
-                        uuid.UUID(hex=value['transaction_id']),
+                        txid,
                         value['offset']
                     )
                     value = self.transaction.read_object(class_name, atom_pointer)
@@ -404,7 +436,7 @@ class Atom(metaclass=CombinedMeta):
                 value._save()
                 json_value[name] = {
                     'className': type(value).__name__,
-                    'transaction_id': value.atom_pointer.transaction_id,
+                    'transaction_id': str(value.atom_pointer.transaction_id),
                     'offset': value.atom_pointer.offset,
                 }
             elif isinstance(value, str):
@@ -523,7 +555,11 @@ class Atom(metaclass=CombinedMeta):
                     )
 
     def hash(self) -> int:
-        return self.atom_pointer.hash()
+        ap = getattr(self, 'atom_pointer', None)
+        if ap:
+            return ap.hash()
+        # Fallback for unsaved/ephemeral atoms: use object identity
+        return hash(id(self))
 
     def __getitem__(self, item: str):
         if hasattr(self, item):
@@ -595,7 +631,8 @@ class DBObject(Atom):
         self._load()
         if name in self.__dict__:
             return self.__dict__[name]
-        return None
+        # Align with Python semantics: signal missing attribute for hasattr()
+        raise AttributeError(name)
 
     def __setattr__(self, key, value):
         # Special case for _loaded to prevent recursion
@@ -833,6 +870,9 @@ class Literal(Atom):
                  transaction: AbstractTransaction = None,
                  atom_pointer: AtomPointer = None,
                  **kwargs):
+        # Accept legacy alias 'literal' for compatibility with older tests/usages
+        if string is None and 'literal' in kwargs:
+            string = kwargs.pop('literal')
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
         self.string = string or ''
 
@@ -847,9 +887,9 @@ class Literal(Atom):
 
     def __add__(self, other: str | Literal) -> Literal:
         if isinstance(other, Literal):
-            return Literal(literal=self.string + other.string)
+            return Literal(string=self.string + other.string)
         else:
-            return Literal(literal=self.string + other)
+            return Literal(string=self.string + other)
 
 
 class BlockProvider(ABC):

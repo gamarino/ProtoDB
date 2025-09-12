@@ -62,7 +62,7 @@ class List(Atom):
         self.empty = not value and empty
 
         # Calculate the total count of nodes in the current subtree.
-        if not empty:
+        if not self.empty:
             count = 1
             if self.previous:
                 self.previous._load()
@@ -75,7 +75,7 @@ class List(Atom):
             self.count = 0
 
         # Calculate the height of the current subtree.
-        if not empty:
+        if not self.empty:
             height = 1
             previous_height = previous.height if previous else 0
             next_height = next.height if next else 0
@@ -353,43 +353,34 @@ class List(Atom):
 
     def set_at(self, offset: int, value: object) -> List | None:
         """
-        Updates or inserts a value in a self-balancing linked list structure at the given offset.
+        Updates the value at the given offset in the list.
 
-        If the offset is negative, it is treated as counting backwards from the end
-        of the list. If the offset is out of bounds, the value is inserted at the
-        start or end of the list. The method ensures the appropriate rebalancing
-        after performing the insertion or update.
-
-        :param offset: Specifies the position in the list where the value is to be
-            inserted or updated. Negative values indicate a position relative
-            to the end of the list.
-        :param value: The new value to be set at the specified offset. An instance
-            of the `Atom` class.
-        :return: A new instance of the `List` reflecting the updated state of the
-            self-balancing linked list, or None if no changes occurred.
+        Negative offsets are supported (from the end). If the normalized offset is
+        outside the range [0, count-1], an IndexError is raised.
         """
         self._load()
 
         if offset < 0:
             offset = self.count + offset
 
-        if offset < 0:
-            offset = 0
+        # Out-of-range for set_at: must reference an existing element
+        # Special-case empty list: only offset 0 is valid (creates first element)
+        if self.empty:
+            if offset == 0:
+                return List(
+                    value=value,
+                    empty=False,
+                    previous=None,
+                    next=None,
+                    transaction=self.transaction
+                )
+            raise IndexError('Offset out of range')
 
-        if offset >= self.count:
-            offset = self.count
+        # Out-of-range for set_at: allow appending at the end (offset == count)
+        if offset < 0 or offset > self.count:
+            raise IndexError('Offset out of range')
 
         node_offset = self.previous.count if self.previous else 0
-
-        # Case: Inserting into an empty List.
-        if self.empty:
-            return List(
-                value=value,
-                empty=False,
-                previous=None,
-                next=None,
-                transaction=self.transaction
-            )
 
         cmp = offset - node_offset
         if cmp > 0:
@@ -631,6 +622,7 @@ class List(Atom):
                 new_node = List(
                     value=first_value,
                     empty=False,
+                    previous=self.previous if self.previous and not self.previous.empty else None,
                     next=new_next if not new_next.empty else None,
                     transaction=self.transaction
                 )
@@ -734,36 +726,17 @@ class List(Atom):
 
     def extend(self, items: List) -> List:
         """
-        Extend the current list with the given items, maintaining the structure of the list.
-        If the current list is empty, the returned list is a new list with the provided items.
-        Otherwise, appends or extends the list while ensuring the correct structure.
-
-        :param items: The items to extend the current list with.
-        :type items: List
-        :return: A new rebalanced list with the items appended.
-        :rtype: List
+        Return a new list with items from 'items' appended after the current list.
+        This simple implementation builds the result by appending each element of
+        'items' to the end, preserving ordering and counts.
         """
         self._load()
-
-        # Case: extending an empty List.
-        if self.empty:
-            return items
-
-        if self.next:
-            self.next._load()
-            # Extend the right subtree.
-            new_node = self.next.extend(items)
-        else:
-            # Extend this node
-            new_node = List(
-                value=None,
-                empty=True,
-                previous=None,
-                next=items,
-                transaction=self.transaction
-            )
-
-        return new_node._rebalance()
+        result = self
+        if items is None or (hasattr(items, 'empty') and items.empty):
+            return result
+        for it in items.as_iterable():
+            result = result.insert_at(result.count, it)
+        return result
 
     def append_first(self, item: object):
         """
@@ -778,26 +751,10 @@ class List(Atom):
 
     def append_last(self, item: object):
         """
-        Appends the specified item to the end of the collection by inserting it at the
-        last position.
-
-        :param item: The item to be appended to the collection.
-        :type item: Atom
-        :return: The result of the insertion operation.
+        Appends the specified item at the end by delegating to insert_at(count, item).
         """
         self._load()
-
-        node = self
-
-        node = List(
-            value=item,
-            empty=False,
-            previous=node if not node.empty else None,
-            next=None,
-            transaction=self.transaction
-        )
-
-        return node._rebalance()
+        return self.insert_at(self.count, item)
 
     def head(self, upper_limit: int):
         """
@@ -839,13 +796,11 @@ class List(Atom):
         cmp = upper_limit - offset
 
         if cmp == 0:
-            node = List(
-                value=node.value,
-                empty=False,
-                previous=self.previous,
-                next=None,
-                transaction=self.transaction
-            )
+            # Exactly the left subtree count; do not include the current node
+            if node.previous:
+                return node.previous.head(upper_limit)
+            else:
+                return List(transaction=self.transaction)
         elif cmp > 0 and node.next:
             next_node = node.next.head(cmp - 1)
             node = List(
@@ -909,9 +864,11 @@ class List(Atom):
                 transaction=self.transaction
             )
         elif cmp > 0 and node.next:
-            node = node.next.tail(lower_limit)
+            # Move to the right subtree reducing the remaining lower_limit
+            node = node.next.tail(lower_limit - offset - 1)
         elif cmp < 0 and node.previous:
-            previous_node = node.next.tail(lower_limit)
+            # Move to the left subtree keeping the same lower_limit
+            previous_node = node.previous.tail(lower_limit)
             node = List(
                 value=node.value,
                 empty=False,

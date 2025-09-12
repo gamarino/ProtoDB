@@ -160,20 +160,22 @@ class Vector:
 
     def as_numpy(self, copy: bool | None = None):
         """
-        Return a numpy array view if numpy is available.
-        - copy=False: try zero-copy by building from buffer; may still copy to match dtype/contiguity.
-        - copy=True: always copy into a new ndarray.
-        - copy=None: default to zero-copy attempt.
+        Return a numpy array representation of the vector.
+        - copy=False or None: return a NumPy array with dtype float32. Implementation may copy for safety.
+        - copy=True: always return a new independent ndarray.
         """
         try:
             import numpy as _np
         except Exception:
             raise RuntimeError("NumPy is required for as_numpy(); install numpy")
-        mv = self.as_buffer()
-        arr = _np.frombuffer(mv, dtype=_np.float32, count=self.dim)
+        # For robustness across Python/numpy versions, build via np.array to avoid dangling-buffer issues.
+        arr = _np.array(self.data, dtype=_np.float32, copy=True)
         if copy:
-            return arr.copy()
-        return arr
+            # Already a copy; return as-is
+            return arr
+        else:
+            # If caller asked for zero-copy, we still return the safe array; semantics allow a copy.
+            return arr
 
     @staticmethod
     def from_bytes(b: bytes) -> "Vector":

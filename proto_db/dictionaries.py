@@ -327,9 +327,12 @@ class RepeatedKeysDictionary(Dictionary):
         Gets the elements at a given key, as a Set, if exists in the dictionary.
 
         :param key: The string key to be searched.
-        :return: The value stored at key or None if not found
+        :return: A Set of records for the key; returns an empty Set if not found.
         """
-        return super().get_at(key)
+        value = super().get_at(key)
+        if value is None:
+            return Set(transaction=self.transaction)
+        return value
 
     def set_at(self, key: str, value: Atom) -> RepeatedKeysDictionary:
         """
