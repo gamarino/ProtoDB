@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[IMP]  Atom-level in-memory caches (AtomObjectCache and AtomBytesCache) were successfully implemented with a 2Q replacement policy, integrated into the atom read path, and tested. The implementation ensures high hit rates and improved read performance without introducing regressions or deadlocks. Metrics for cache efficiency are also exposed for monitoring." />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] Translated commercial_positioning.md to professional English preserving structure and tone. Updated multiple sections with accurate English content and verified related unit tests passed. No code changes occurred, and repository integrity remained intact." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -268,23 +268,7 @@
       <workItem from="1756137442174" duration="124000" />
       <workItem from="1756995586860" duration="20360000" />
       <workItem from="1757647544978" duration="4378000" />
-      <workItem from="1757652737831" duration="634000" />
-    </task>
-    <task id="LOCAL-00027" summary="[IMP] queries.py: add further optimizations">
-      <option name="closed" value="true" />
-      <created>1753714082489</created>
-      <option name="number" value="00027" />
-      <option name="presentableId" value="LOCAL-00027" />
-      <option name="project" value="LOCAL" />
-      <updated>1753714082490</updated>
-    </task>
-    <task id="LOCAL-00028" summary="[IMP] queries.py: add count optimization">
-      <option name="closed" value="true" />
-      <created>1753715850253</created>
-      <option name="number" value="00028" />
-      <option name="presentableId" value="LOCAL-00028" />
-      <option name="project" value="LOCAL" />
-      <updated>1753715850253</updated>
+      <workItem from="1757652737831" duration="1196000" />
     </task>
     <task id="LOCAL-00029" summary="[IMP] ConcurrentOptimized object, which can integrated modifications on objects by concurrent non conflicting transactions">
       <option name="closed" value="true" />
@@ -662,15 +646,29 @@
       <option name="project" value="LOCAL" />
       <updated>1757649428795</updated>
     </task>
-    <option name="localTasksCounter" value="76" />
+    <task id="LOCAL-00076" summary="[IMP]  Implemented adaptive chunking and work-stealing for parallel scans as an optional feature without changing default behavior. Added configuration, metrics, graceful shutdown, and comprehensive tests ensuring correctness, performance, and backward compatibility. Provided new user documentation, API references, ADR, and a changelog entry.">
+      <option name="closed" value="true" />
+      <created>1757653482224</created>
+      <option name="number" value="00076" />
+      <option name="presentableId" value="LOCAL-00076" />
+      <option name="project" value="LOCAL" />
+      <updated>1757653482225</updated>
+    </task>
+    <task id="LOCAL-00077" summary="[FIX] Translated commercial_positioning.md to professional English preserving structure and tone. Updated multiple sections with accurate English content and verified related unit tests passed. No code changes occurred, and repository integrity remained intact.">
+      <option name="closed" value="true" />
+      <created>1757653932815</created>
+      <option name="number" value="00077" />
+      <option name="presentableId" value="LOCAL-00077" />
+      <option name="project" value="LOCAL" />
+      <updated>1757653932815</updated>
+    </task>
+    <option name="localTasksCounter" value="78" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[FIX] Reformatted code" />
-    <MESSAGE value="[FIX] Updated comments" />
     <MESSAGE value="[FIX] Tests actualizados" />
     <MESSAGE value="[PROPOSAL] next steps by AI" />
     <MESSAGE value="[PROPOSAL] commercial positioning" />
@@ -694,7 +692,9 @@
     <MESSAGE value="[UPD] next_steps_proposal.md" />
     <MESSAGE value="[UPD] commercial_positioning.md" />
     <MESSAGE value="[IMP]  Atom-level in-memory caches (AtomObjectCache and AtomBytesCache) were successfully implemented with a 2Q replacement policy, integrated into the atom read path, and tested. The implementation ensures high hit rates and improved read performance without introducing regressions or deadlocks. Metrics for cache efficiency are also exposed for monitoring." />
-    <option name="LAST_COMMIT_MESSAGE" value="[IMP]  Atom-level in-memory caches (AtomObjectCache and AtomBytesCache) were successfully implemented with a 2Q replacement policy, integrated into the atom read path, and tested. The implementation ensures high hit rates and improved read performance without introducing regressions or deadlocks. Metrics for cache efficiency are also exposed for monitoring." />
+    <MESSAGE value="[IMP]  Implemented adaptive chunking and work-stealing for parallel scans as an optional feature without changing default behavior. Added configuration, metrics, graceful shutdown, and comprehensive tests ensuring correctness, performance, and backward compatibility. Provided new user documentation, API references, ADR, and a changelog entry." />
+    <MESSAGE value="[FIX] Translated commercial_positioning.md to professional English preserving structure and tone. Updated multiple sections with accurate English content and verified related unit tests passed. No code changes occurred, and repository integrity remained intact." />
+    <option name="LAST_COMMIT_MESSAGE" value="[FIX] Translated commercial_positioning.md to professional English preserving structure and tone. Updated multiple sections with accurate English content and verified related unit tests passed. No code changes occurred, and repository integrity remained intact." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
