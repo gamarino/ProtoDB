@@ -49,6 +49,12 @@ class Vector:
     - data: list of float32-like values (stored as Python floats).
     - dim: dimension (validated against data length).
     - normalized: whether data was L2-normalized (for cosine).
+
+    Zero-copy buffers
+    -----------------
+    - from_buffer(buf, dtype='float32', copy='auto'|'true'|'false')
+    - as_buffer() -> memoryview
+    - as_numpy(copy: bool | None = None)
     """
     data: tuple[float, ...]
     dim: int
@@ -92,6 +98,82 @@ class Vector:
         header = struct.pack("<Ib", self.dim, 1 if self.normalized else 0)
         body = b"".join(struct.pack("<d", float(x)) for x in self.data)
         return header + body
+
+    @staticmethod
+    def from_buffer(buf, dtype: str = 'float32', copy: str = 'auto') -> "Vector":
+        """
+        Create a Vector from a buffer (bytes, bytearray, memoryview, or numpy array if available).
+        copy semantics:
+          - 'false': never copy; requires C-contiguous, little-endian float32; otherwise raises.
+          - 'auto': no copy if compatible; else copy once.
+          - 'true': always copy into Python floats.
+        """
+        # numpy path for zero-copy
+        try:
+            import numpy as _np  # local optional
+        except Exception:
+            _np = None
+        if _np is not None and isinstance(buf, _np.ndarray):
+            arr = buf
+            if dtype != 'float32':
+                raise ValueError("Only float32 supported by default")
+            if arr.dtype != _np.float32:
+                if copy in ('true', 'auto'):
+                    arr = arr.astype(_np.float32, copy=True)
+                else:
+                    raise ValueError("copy='false' requires float32 array")
+            if not arr.flags['C_CONTIGUOUS']:
+                if copy in ('true', 'auto'):
+                    arr = _np.ascontiguousarray(arr)
+                else:
+                    raise ValueError("copy='false' requires C-contiguous array")
+            values = arr.tolist() if copy == 'true' else [float(v) for v in arr]
+            return Vector.from_list(values, normalize=False)
+        # generic buffer
+        mv = memoryview(buf)
+        if dtype != 'float32':
+            raise ValueError("Only float32 supported by default")
+        if mv.format not in ('f', '<f'):  # float32
+            if copy == 'false':
+                raise ValueError("copy='false' requires float32 buffer")
+            # attempt single copy: interpret as little-endian 4-byte chunks
+            import struct
+            floats = [struct.unpack('<f', mv[i:i+4])[0] for i in range(0, len(mv), 4)]
+            return Vector.from_list(floats, normalize=False)
+        # zero-copy read via memoryview of float32
+        try:
+            if mv.format in ('f', '<f'):
+                values = list(mv)
+            else:
+                fa = mv.cast('f')
+                values = list(fa)
+            return Vector.from_list(values, normalize=False)
+        finally:
+            mv.release()
+
+    def as_buffer(self) -> memoryview:
+        """Return a read-only memoryview of float32 little-endian values (copy once)."""
+        import array
+        arr = array.array('f', [float(x) for x in self.data])
+        mv = memoryview(arr)
+        return mv
+
+    def as_numpy(self, copy: bool | None = None):
+        """
+        Return a numpy array view if numpy is available.
+        - copy=False: try zero-copy by building from buffer; may still copy to match dtype/contiguity.
+        - copy=True: always copy into a new ndarray.
+        - copy=None: default to zero-copy attempt.
+        """
+        try:
+            import numpy as _np
+        except Exception:
+            raise RuntimeError("NumPy is required for as_numpy(); install numpy")
+        mv = self.as_buffer()
+        arr = _np.frombuffer(mv, dtype=_np.float32, count=self.dim)
+        if copy:
+            return arr.copy()
+        return arr
 
     @staticmethod
     def from_bytes(b: bytes) -> "Vector":

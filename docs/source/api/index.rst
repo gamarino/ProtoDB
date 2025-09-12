@@ -13,6 +13,7 @@ This section provides detailed API documentation for ProtoBase.
    indexes
    queries
    vectors
+   arrow_parquet
    linq
    exceptions
    fsm

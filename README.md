@@ -52,6 +52,7 @@ integrity.
 ## Key Features
 
 New in 2025: Atom-level caches for faster reads across transactions. See docs (API > Atom-level Caches).
+Optional Arrow/Parquet bridge (pyarrow) for low-overhead export/import. See docs (API > Arrow / Parquet Bridge).
 
 - **Transactional Operations**: All database operations are performed within transactions that can be committed or
   aborted.
