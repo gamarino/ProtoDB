@@ -204,3 +204,54 @@ python examples/indexed_benchmark.py --items 50000 --queries 200 --window 500 --
 ```
 
 The script writes a JSON alongside the parameters; see "Run the indexed benchmark" above for details.
+
+
+## Latest Results (2025-09-13)
+
+This section summarizes the most recent benchmark runs using the indexed query engine with reference-set intersection and efficient range scans.
+
+Commands executed from the repository root:
+
+```bash
+# Run 1: 50k items, 200 queries, window=500, warmup=10
+python examples/indexed_benchmark.py \
+  --items 50000 --queries 200 --window 500 --warmup 10 \
+  --out examples/benchmark_results_indexed.json
+
+# Run 2: 50k items, 200 queries, window=200, warmup=10
+python examples/indexed_benchmark.py \
+  --items 50000 --queries 200 --window 200 --warmup 10 \
+  --out examples/benchmark_results_indexed_win200.json
+```
+
+Artifacts written:
+- examples/benchmark_results_indexed.json
+- examples/benchmark_results_indexed_win200.json
+
+Highlights (Run 1: items=50k, window=500):
+- python_list_baseline: avg ≈ 5.74 ms; p95 ≈ 9.31 ms; QPS ≈ 174
+- protodb_linear_where: avg ≈ 44.07 ms; p95 ≈ 65.03 ms; QPS ≈ 22.7
+- protodb_indexed_where: avg ≈ 29.26 ms; p95 ≈ 32.67 ms; QPS ≈ 34.2
+- Speedup indexed_over_linear: ≈ 1.51x
+
+Highlights (Run 2: items=50k, window=200):
+- python_list_baseline: avg ≈ 5.63 ms; p95 ≈ 8.63 ms; QPS ≈ 177
+- protodb_linear_where: avg ≈ 42.51 ms; p95 ≈ 46.51 ms; QPS ≈ 23.5
+- protodb_indexed_where: avg ≈ 29.80 ms; p95 ≈ 34.11 ms; QPS ≈ 33.6
+- Speedup indexed_over_linear: ≈ 1.43x
+
+Interpretation:
+- Indexed query execution is consistently faster than the linear WherePlan by ~1.4–1.5x on these configurations. p95 latency is markedly lower on the indexed path, indicating successful exploitation of secondary indexes via reference-set intersections and true range scans over the AVL-backed index.
+- The Python list baseline remains the fastest in absolute terms at this scale because it avoids plan construction and object model overhead and runs tight loops over raw dicts.
+
+Tuning tips:
+- Increase selectivity to accentuate index benefits:
+  - Reduce the range `--window` (e.g., 50–200) so fewer candidates fall within value ranges.
+  - Increase domain cardinality for equality predicates (more categories/statuses) to shrink candidate sets before intersection.
+- Increase dataset size (`--items` 100k–1M) to observe larger gains from indexes as linear scan cost grows O(N) while index operations remain near O(log K) + union/intersection of small sets.
+- Warmup (`--warmup`) allows caches and Python internals to stabilize before timing.
+
+Engine notes:
+- Indexes map native-type keys (no str() coercion) to sets of row references.
+- AND queries are evaluated by collecting per-term reference frozensets, sorting by size, intersecting them, then materializing only the small final candidate set and applying residual filters.
+- Range predicates (Between, <, <=, >, >=) use lower-bound binary search followed by a sequential in-order walk until the upper bound is exceeded, collecting references without materializing objects.

@@ -1571,7 +1571,7 @@ class WherePlan(QueryPlan):
         if isinstance(flt, AndExpression):
             candidate_sets: list[set] = []
             residual = []  # keep full filter for safety; residual list reserved for future split
-            for t in flt.terms:
+            for t in flt.terms[0].terms:
                 if isinstance(t, Term):
                     cand = build_candidate_set(t)
                     if cand is None:

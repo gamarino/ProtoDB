@@ -1,15 +1,40 @@
 {
   "config": {
     "n_items": 5000,
-    "n_queries": 50
+    "n_queries": 50,
+    "window": 500,
+    "warmup": 5
   },
   "timings_seconds": {
-    "python_list_baseline": 0.025550365447998047,
-    "protodb_linear_where": 0.24172282218933105,
-    "protodb_indexed_where": 0.42900824546813965
+    "python_list_baseline": 0.07963752746582031,
+    "protodb_linear_where": 1.7565488815307617,
+    "protodb_indexed_where": 0.4919736385345459
+  },
+  "latency_ms": {
+    "python_list_baseline": {
+      "avg_ms": 1.576695442199707,
+      "p50_ms": 0.8833408355712891,
+      "p95_ms": 4.941272735595702,
+      "p99_ms": 7.473549842834471,
+      "qps": 627.8447057696453
+    },
+    "protodb_linear_where": {
+      "avg_ms": 35.120625495910645,
+      "p50_ms": 21.67046070098877,
+      "p95_ms": 81.62250518798827,
+      "p99_ms": 98.43610048294063,
+      "qps": 28.464906684764166
+    },
+    "protodb_indexed_where": {
+      "avg_ms": 9.832730293273926,
+      "p50_ms": 8.848428726196289,
+      "p95_ms": 16.565537452697747,
+      "p99_ms": 21.796522140502923,
+      "qps": 101.6314616956637
+    }
   },
   "speedups": {
-    "indexed_over_linear": 0.5634456324389752,
-    "indexed_over_python": 0.059556816722991276
+    "indexed_over_linear": 3.5704126073970905,
+    "indexed_over_python": 0.16187356644359766
   }
 }
