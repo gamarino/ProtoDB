@@ -14,19 +14,19 @@ _logger = logging.getLogger(__name__)
 
 class DictionaryItem(Atom):
     # Represents a key-value pair in a Dictionary, both durable and transaction-safe.
-    key: str
+    key: object
     value: object
 
     def __init__(
             self,
-            key: str = None,  # The key for the dictionary item.
+            key: object = None,  # The key for the dictionary item (native type; no string coercion).
             value: object = None,  # The value associated with the key.
             transaction: AbstractTransaction = None,  # The associated transaction.
             atom_pointer: AtomPointer = None,  # Pointer to the atom for durability/consistency.
             **kwargs):  # Additional keyword arguments.
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        self.key = key  # Wrap the key as a Literal for durability.
-        self.value = value  # Assign the value to the dictionary item.
+        self.key = key
+        self.value = value
 
     def _load(self):
         if not self._loaded:
@@ -34,6 +34,35 @@ class DictionaryItem(Atom):
             if isinstance(self.key, Literal):
                 self.key = self.key.string
             self._loaded = True
+
+    # Provide deterministic ordering across mixed key types for AVL ordering
+    @staticmethod
+    def _order_key(val: object):
+        t = type(val)
+        try:
+            if t is bool:
+                return ("bool", 1 if val else 0)
+            if t in (int, float):
+                return ("number", float(val))
+            if t is str:
+                return ("str", val)
+            if t is bytes:
+                return ("bytes", val)
+            # Fallback: type name + string representation
+            return (t.__name__, str(val))
+        except Exception:
+            return (t.__name__, str(val))
+
+    def __lt__(self, other: "DictionaryItem") -> bool:
+        return self._order_key(self.key) < self._order_key(other.key)
+
+    def __gt__(self, other: "DictionaryItem") -> bool:
+        return self._order_key(self.key) > self._order_key(other.key)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, DictionaryItem):
+            return False
+        return self.key == other.key
 
 
 class Dictionary(DBCollections, ConcurrentOptimized):
@@ -99,31 +128,39 @@ class Dictionary(DBCollections, ConcurrentOptimized):
         else:
             return self.content.as_query_plan()
 
-    def get_at(self, key: str) -> object | None:
+    def get_at(self, key: object) -> object | None:
         """
         Gets the element associated with the given key in the dictionary.
 
-        Uses binary search to find the key efficiently.
+        Uses binary search to find the key efficiently, using native-type key comparisons
+        with a deterministic ordering for mixed types (see DictionaryItem._order_key).
 
-        :param key: The string key to be searched.
+        :param key: The key to be searched.
         :return: The value stored at key or None if not found
         """
         self._load()
         self.content._load()
 
+        def _ok(v):
+            return DictionaryItem._order_key(v)
+
         left = 0
         right = self.content.count - 1
+        target_ok = _ok(key)
 
         while left <= right:
             center = (left + right) // 2
 
             item = cast(DictionaryItem, self.content.get_at(center))
-            if item and str(item.key) == key:
+            if item is None:
+                break
+            item_ok = _ok(item.key)
+            if item_ok == target_ok and item.key == key:
                 if isinstance(item.value, Atom):
                     item.value._load()
                 return item.value
 
-            if item and str(item.key) >= key:
+            if item_ok >= target_ok:
                 right = center - 1
             else:
                 left = center + 1

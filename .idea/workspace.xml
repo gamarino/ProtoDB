@@ -271,15 +271,7 @@
       <workItem from="1757647544978" duration="4378000" />
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
-      <workItem from="1757675249603" duration="29790000" />
-    </task>
-    <task id="LOCAL-00040" summary="[IMP] First implementation of performance analysis (Fully automated by Junie AI)">
-      <option name="closed" value="true" />
-      <created>1754108606474</created>
-      <option name="number" value="00040" />
-      <option name="presentableId" value="LOCAL-00040" />
-      <option name="project" value="LOCAL" />
-      <updated>1754108606474</updated>
+      <workItem from="1757675249603" duration="30342000" />
     </task>
     <task id="LOCAL-00041" summary="[ADD] Chat IA evolución proto">
       <option name="closed" value="true" />
@@ -665,7 +657,15 @@
       <option name="project" value="LOCAL" />
       <updated>1757739628240</updated>
     </task>
-    <option name="localTasksCounter" value="89" />
+    <task id="LOCAL-00089" summary="Implemented a reference-first execution pipeline reducing object materialization by using stable reference hashes for index queries and removing string key conversions. Rewrote AndMerge to intersect reference sets before materializing objects, ensuring efficient AND predicate evaluation. Verified functionality with unit tests and maintained existing AVL-based data structures and immutability.">
+      <option name="closed" value="true" />
+      <created>1757739850475</created>
+      <option name="number" value="00089" />
+      <option name="presentableId" value="LOCAL-00089" />
+      <option name="project" value="LOCAL" />
+      <updated>1757739850475</updated>
+    </task>
+    <option name="localTasksCounter" value="90" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">

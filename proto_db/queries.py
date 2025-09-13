@@ -650,18 +650,26 @@ class IndexedQueryPlan(QueryPlan):
             if idx_dict is None:
                 return 0
 
+            def _ok(v):
+                # use same ordering as DictionaryItem
+                from .dictionaries import DictionaryItem as _DI
+                return _DI._order_key(v)
+
             left = 0
             right = idx_dict.content.count - 1
+            target_ok = _ok(value)
 
-            sval = str(value)
             while left <= right:
                 center = (left + right) // 2
 
                 item = idx_dict.content.get_at(center)
-                if item and str(item.key) == sval:
+                if item is None:
+                    break
+                item_ok = _ok(item.key)
+                if item_ok == target_ok and item.key == value:
                     return center
 
-                if item and str(item.key) > sval:
+                if item_ok > target_ok:
                     right = center - 1
                 else:
                     left = center + 1
@@ -692,7 +700,7 @@ class IndexedQueryPlan(QueryPlan):
         index = self.position_at(field_name, value)
         if index < idx_dict.content.count:
             item = cast(DictionaryItem, idx_dict.content.get_at(index))
-            if item and str(item.key) == str(value):
+            if item and item.key == value:
                 index += 1
         return self.yield_from_index(field_name, index)
 
@@ -751,7 +759,7 @@ class IndexedQueryPlan(QueryPlan):
         # Inclusive: if exact match at position, include it by advancing one
         if index < idx_dict.content.count:
             item = cast(DictionaryItem, idx_dict.content.get_at(index))
-            if item and str(item.key) == str(value):
+            if item and item.key == value:
                 index += 1
         return self.yield_up_to_index(field_name, index)
 
@@ -759,6 +767,7 @@ class IndexedQueryPlan(QueryPlan):
         """
         Iterate records whose indexed key is within [lo, hi] with bound inclusivity flags.
         Uses native-type comparisons; avoids converting keys/values to strings.
+        Performs a binary search to the first matching index, then a sequential scan until hi.
         """
         self._load()
         if not (self.indexes and self.indexes.has(field_name)):
@@ -767,35 +776,48 @@ class IndexedQueryPlan(QueryPlan):
         if idx_dict is None:
             return
 
-        # Sequentially scan ordered dictionary items and stop once upper bound is exceeded.
-        # We avoid position_at() to prevent str-based comparisons.
+        from .dictionaries import DictionaryItem as _DI
+        def _ok(v):
+            return _DI._order_key(v)
+
         count = idx_dict.content.count
-        for i in range(count):
+        # Binary search lower bound position
+        left, right = 0, count - 1
+        target_ok = _ok(lo)
+        pos = 0
+        while left <= right:
+            center = (left + right) // 2
+            item = cast(DictionaryItem, idx_dict.content.get_at(center))
+            if item is None:
+                break
+            iok = _ok(item.key)
+            if iok >= target_ok:
+                right = center - 1
+                pos = center
+            else:
+                left = center + 1
+        # Adjust for exclusivity on lower bound
+        if pos < count:
+            item = cast(DictionaryItem, idx_dict.content.get_at(pos))
+            if item is not None:
+                if not include_lower and item.key == lo:
+                    pos += 1
+
+        # Sequential scan until upper bound
+        i = pos
+        hi_ok = _ok(hi)
+        while i < count:
             item = cast(DictionaryItem, idx_dict.content.get_at(i))
+            i += 1
             if item is None:
                 continue
-            key = item.key
-            # Harmonize bound types to key type when possible to keep native comparisons
-            klo, khi = lo, hi
-            try:
-                if type(key) is str and not isinstance(lo, str):
-                    klo = str(lo)
-                    khi = str(hi)
-                elif type(key) in (int, float) and type(lo) is str:
-                    # try to cast strings to numeric if possible
-                    klo = float(lo) if '.' in lo else int(lo)
-                    khi = float(hi) if isinstance(hi, str) and '.' in hi else (float(hi) if isinstance(hi, str) else hi)
-            except Exception:
-                pass
-
-            # Apply lower bound
-            if key < klo or (key == klo and not include_lower):
-                # Not yet in range
-                continue
-            # Apply upper bound and early stop
-            if key > khi or (key == khi and not include_upper):
+            key_ok = _ok(item.key)
+            # Stop if beyond upper bound (respect inclusivity)
+            if key_ok > hi_ok or (key_ok == hi_ok and not include_upper and item.key == hi):
                 break
-
+            # Skip items below lower bound (in case of edge adjustments)
+            if key_ok < target_ok or (key_ok == target_ok and not include_lower and item.key == lo):
+                continue
             value_set = cast(Set, item.value)
             for record in value_set.as_iterable():
                 yield record
@@ -935,15 +957,18 @@ class IndexedSearchPlan(IndexedQueryPlan):
 
 class AndMerge(QueryPlan):
     and_queries: list[QueryPlan]
+    residual_filters: list[Expression] | None
 
     def __init__(self,
                  and_queries: list[QueryPlan] = None,
                  based_on: QueryPlan = None,
                  transaction: ObjectTransaction = None,
                  atom_pointer: AtomPointer = None,
+                 residual_filters: list[Expression] | None = None,
                  **kwargs):
         super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
         self.and_queries = and_queries
+        self.residual_filters = residual_filters or []
 
     def execute(self) -> list:
         """
@@ -951,6 +976,7 @@ class AndMerge(QueryPlan):
         Each sub-plan is asked for get_references(); if unavailable, we fallback to hashing
         materialized records. After computing the intersection, we materialize only from the
         smallest contributing sub-plan and yield records whose reference is in the intersection.
+        Residual filters (non-indexable terms) are applied at the end to the few remaining records.
         """
         if not self.and_queries:
             return
@@ -1008,9 +1034,20 @@ class AndMerge(QueryPlan):
             except Exception:
                 return hash(rec)
 
+        def _matches_residual(rec) -> bool:
+            if not self.residual_filters:
+                return True
+            try:
+                for expr in self.residual_filters:
+                    if not expr.match(rec):
+                        return False
+                return True
+            except Exception:
+                return False
+
         for rec in base_plan.execute():
             try:
-                if _ref_of(rec) in intersection:
+                if _ref_of(rec) in intersection and _matches_residual(rec):
                     yield rec
             except Exception:
                 continue
@@ -1100,13 +1137,22 @@ class IndexedRangeSearchPlan(IndexedQueryPlan):
     def get_references(self) -> frozenset[int]:
         """
         Return a frozenset of references for all records with field value in [lo, hi]
-        according to inclusivity flags, without materializing objects eagerly.
+        according to inclusivity flags, without materializing full objects.
+        Performs a lower-bound binary search on the index (AVL-backed List) and then
+        scans sequentially until the upper bound is exceeded, collecting AtomPointer hashes.
         """
         refs: set[int] = set()
         try:
             if not (self.indexes and self.indexes.has(self.field_to_scan)):
                 return frozenset()
-            # Reuse get_range to iterate records lazily (already native-typed compare)
+            idx_dict = cast(Dictionary, self.indexes.get_at(self.field_to_scan))
+            if idx_dict is None:
+                return frozenset()
+
+            from .dictionaries import DictionaryItem as _DI
+            def _ok(v):
+                return _DI._order_key(v)
+
             def _ref_of(rec) -> int:
                 try:
                     if isinstance(rec, Atom) and getattr(rec, 'atom_pointer', None):
@@ -1118,8 +1164,42 @@ class IndexedRangeSearchPlan(IndexedQueryPlan):
                 except Exception:
                     return hash(rec)
 
-            for rec in self.get_range(self.field_to_scan, self.lo, self.hi, self.include_lower, self.include_upper):
-                refs.add(_ref_of(rec))
+            count = idx_dict.content.count
+            left, right = 0, count - 1
+            lo_ok = _ok(self.lo)
+            pos = 0
+            while left <= right:
+                center = (left + right) // 2
+                item = cast(DictionaryItem, idx_dict.content.get_at(center))
+                if item is None:
+                    break
+                iok = _ok(item.key)
+                if iok >= lo_ok:
+                    right = center - 1
+                    pos = center
+                else:
+                    left = center + 1
+            # Adjust exclusivity for lower bound
+            if pos < count:
+                it = cast(DictionaryItem, idx_dict.content.get_at(pos))
+                if it is not None and not self.include_lower and it.key == self.lo:
+                    pos += 1
+
+            hi_ok = _ok(self.hi)
+            i = pos
+            while i < count:
+                it = cast(DictionaryItem, idx_dict.content.get_at(i))
+                i += 1
+                if it is None:
+                    continue
+                key_ok = _ok(it.key)
+                if key_ok > hi_ok or (key_ok == hi_ok and not self.include_upper and it.key == self.hi):
+                    break
+                if key_ok < lo_ok or (key_ok == lo_ok and not self.include_lower and it.key == self.lo):
+                    continue
+                value_set = cast(Set, it.value)
+                for rec in value_set.as_iterable():
+                    refs.add(_ref_of(rec))
             return frozenset(refs)
         except Exception:
             return frozenset()
@@ -1535,83 +1615,121 @@ class WherePlan(QueryPlan):
 
     def optimize(self, full_plan: 'QueryPlan') -> 'QueryPlan':
         """
-        Optimizes the current execution plan node.
-
-        This method is a core part of the query optimizer. It applies several
-        strategies to transform the query plan into a more efficient equivalent.
-        The primary optimizations include:
-        1.  Filter Reordering: For AND expressions, reorder predicates to execute
-            the most selective and least expensive ones first.
-        2.  Predicate Pushdown: Attempt to move the filter logic ("predicate")
-            further down the execution tree, closer to the data source. This
-            reduces the volume of data processed in upstream operators (like Joins).
-        3.  Index Utilization: If a predicate can be satisfied using an index,
-            transform this plan node into an `IndexedSearchPlan`.
-
-        Args:
-            full_plan: The root of the entire query plan, providing context if needed.
-
-        Returns:
-            An optimized `QueryPlan`, which may be a different type of node
-            (e.g., `IndexedSearchPlan`) or a reconfigured `WherePlan`.
+        Optimizer rewrite focusing on index-aware AND conjunctions.
+        - For AndExpression: build index sub-plans (IndexedSearchPlan/IndexedRangeSearchPlan)
+          for indexable terms and return a single AndMerge that intersects by references and
+          applies non-indexable terms as residual filters.
+        - Otherwise, keep prior minor optimizations and return self.
         """
-        # First, recursively optimize the source plan upon which this filter operates.
         optimized_based_on = self.based_on.optimize(full_plan)
-
-        # 1. FILTER REORDERING
-        # For composite AND expressions, reorder the terms based on a cost/selectivity
-        # heuristic. This ensures that cheaper and more selective predicates are
-        # evaluated first, potentially short-circuiting the evaluation early.
         current_filter = self.filter
-        if isinstance(current_filter, AndExpression):
-            current_filter = self._reorder_and_expression(current_filter)
 
-        # 2. PREDICATE PUSHDOWN
-        # Attempt to "push" this where clause down to the underlying plan node.
-        # If the underlying node has an `accept_filter` method, it means it can
-        # integrate the filter more efficiently (e.g., a JoinPlan applying it
-        # pre-join, or a FromPlan applying it at the storage access level).
+        # Preserve predicate pushdown when supported by the underlying plan
         if hasattr(optimized_based_on, 'accept_filter'):
-            # The underlying plan will absorb the filter and return a new, optimized plan.
-            # This `WherePlan` node can then be eliminated from the tree.
             return optimized_based_on.accept_filter(current_filter)
 
-        # 3. INDEX UTILIZATION (the original optimization)
-        # Check if the filter is a simple equality term that can be served by an index
-        # on the underlying `IndexedQueryPlan`.
-        if isinstance(current_filter, Term) and isinstance(current_filter.operation, Equal):
-            if isinstance(optimized_based_on, IndexedQueryPlan):
-                # If the target attribute is indexed, replace this `WherePlan`
-                # with a more efficient `IndexedSearchPlan`.
-                if current_filter.target_attribute in optimized_based_on.indexes:
-                    return IndexedSearchPlan(
-                        field_to_scan=current_filter.target_attribute,
-                        operator=current_filter.operation,
-                        value=current_filter.value,
-                        indexes=optimized_based_on.indexes,
-                        based_on=optimized_based_on,
-                        transaction=self.transaction
-                    )
-        # Range pushdown for Between operators
-        from .queries import Between as _Between
-        if isinstance(current_filter, Term) and isinstance(current_filter.operation, _Between):
-            if isinstance(optimized_based_on, IndexedQueryPlan):
-                if current_filter.target_attribute in optimized_based_on.indexes:
-                    lo, hi = current_filter.value if isinstance(current_filter.value, tuple) else (None, None)
-                    if lo is not None and hi is not None:
-                        return IndexedRangeSearchPlan(
-                            field_to_scan=current_filter.target_attribute,
-                            lo=lo,
-                            hi=hi,
-                            include_lower=current_filter.operation.include_lower,
-                            include_upper=current_filter.operation.include_upper,
-                            indexes=optimized_based_on.indexes,
+        # If we can leverage indexes, do it here
+        if isinstance(current_filter, AndExpression) and isinstance(optimized_based_on, IndexedQueryPlan):
+            idxs = getattr(optimized_based_on, 'indexes', None)
+            if idxs:
+                index_plans: list[QueryPlan] = []
+                residuals: list[Expression] = []
+
+                for expr in current_filter.terms:
+                    if not isinstance(expr, Term):
+                        residuals.append(expr)
+                        continue
+                    field = expr.target_attribute
+                    op = expr.operation
+                    # Only terms for which we have an index are candidates
+                    if not idxs.has(field):
+                        residuals.append(expr)
+                        continue
+                    # Equality
+                    if isinstance(op, Equal):
+                        index_plans.append(IndexedSearchPlan(
+                            field_to_scan=field,
+                            operator=op,
+                            value=expr.value,
+                            indexes=idxs,
                             based_on=optimized_based_on,
                             transaction=self.transaction
-                        )
+                        ))
+                        continue
+                    # Range family via IndexedRangeSearchPlan
+                    if isinstance(op, Between):
+                        lo, hi = expr.value if isinstance(expr.value, tuple) else (None, None)
+                        if lo is None or hi is None:
+                            residuals.append(expr)
+                        else:
+                            index_plans.append(IndexedRangeSearchPlan(
+                                field_to_scan=field,
+                                lo=lo,
+                                hi=hi,
+                                include_lower=op.include_lower,
+                                include_upper=op.include_upper,
+                                indexes=idxs,
+                                based_on=optimized_based_on,
+                                transaction=self.transaction
+                            ))
+                        continue
+                    if isinstance(op, Greater):
+                        index_plans.append(IndexedRangeSearchPlan(
+                            field_to_scan=field,
+                            lo=expr.value,
+                            hi=float('inf'),
+                            include_lower=False,
+                            include_upper=True,
+                            indexes=idxs,
+                            based_on=optimized_based_on,
+                            transaction=self.transaction
+                        ))
+                        continue
+                    if isinstance(op, GreaterOrEqual):
+                        index_plans.append(IndexedRangeSearchPlan(
+                            field_to_scan=field,
+                            lo=expr.value,
+                            hi=float('inf'),
+                            include_lower=True,
+                            include_upper=True,
+                            indexes=idxs,
+                            based_on=optimized_based_on,
+                            transaction=self.transaction
+                        ))
+                        continue
+                    if isinstance(op, Lower):
+                        index_plans.append(IndexedRangeSearchPlan(
+                            field_to_scan=field,
+                            lo=float('-inf'),
+                            hi=expr.value,
+                            include_lower=True,
+                            include_upper=False,
+                            indexes=idxs,
+                            based_on=optimized_based_on,
+                            transaction=self.transaction
+                        ))
+                        continue
+                    if isinstance(op, LowerOrEqual):
+                        index_plans.append(IndexedRangeSearchPlan(
+                            field_to_scan=field,
+                            lo=float('-inf'),
+                            hi=expr.value,
+                            include_lower=True,
+                            include_upper=True,
+                            indexes=idxs,
+                            based_on=optimized_based_on,
+                            transaction=self.transaction
+                        ))
+                        continue
+                    # Not indexable operator: residual
+                    residuals.append(expr)
 
-        # If no specific optimization could be applied, return a `WherePlan`
-        # with the optimized base and the (potentially reordered) filter.
+                if index_plans:
+                    return AndMerge(and_queries=index_plans,
+                                    based_on=optimized_based_on,
+                                    transaction=self.transaction,
+                                    residual_filters=residuals)
+        # Default: keep as WherePlan with optimized base
         self.based_on = optimized_based_on
         self.filter = current_filter
         return self
