@@ -44,18 +44,53 @@ def bench(fn, repeat=1):
     return best or 0.0
 
 
-def run_benchmark(n_items=10000, n_queries=50, out_path="examples/benchmark_results_indexed.json"):
+def percentile(xs, p):
+    if not xs:
+        return 0.0
+    xs = sorted(xs)
+    k = (len(xs)-1) * p
+    f = int(k)
+    c = min(f+1, len(xs)-1)
+    if f == c:
+        return xs[f]
+    return xs[f] + (xs[c]-xs[f]) * (k - f)
+
+
+def time_queries(fn, n=50, warmup=5):
+    # Warmup
+    for _ in range(max(0, warmup)):
+        fn()
+    lat = []
+    t0 = time.time()
+    for _ in range(n):
+        t1 = time.time()
+        fn()
+        lat.append((time.time() - t1) * 1000.0)
+    total = time.time() - t0
+    qps = n / total if total > 0 else 0.0
+    stats = {
+        'total_seconds': total,
+        'avg_ms': sum(lat)/len(lat) if lat else 0.0,
+        'p50_ms': percentile(lat, 0.50),
+        'p95_ms': percentile(lat, 0.95),
+        'p99_ms': percentile(lat, 0.99),
+        'qps': qps,
+    }
+    return stats
+
+
+def run_benchmark(n_items=10000, n_queries=50, out_path="examples/benchmark_results_indexed.json", window=500, warmup=5):
     data = build_dataset(n_items)
 
-    # Baseline competitor: pure Python list comprehension (filter by two fields)
-    def py_query():
+    # Baseline competitor: pure Python list comprehension (filter by two fields + range)
+    def py_query_once():
         cat = random.choice(CATEGORIES)
         st = random.choice(STATUSES)
-        lo = random.randint(1, 99500)
-        hi = lo + 500
+        lo = random.randint(1, max(2, 100000 - window - 1))
+        hi = lo + window
         return [r for r in data if (r.get('category') == cat and r.get('status') == st and lo < r.get('value', 0) < hi)]
 
-    py_time = bench(lambda: [py_query() for _ in range(n_queries)], repeat=1)
+    py_stats = time_queries(lambda: py_query_once(), n=n_queries, warmup=warmup)
 
     # ProtoBase setup: use ListPlan over dict rows
     space = ObjectSpace(storage=MemoryStorage())
@@ -65,21 +100,19 @@ def run_benchmark(n_items=10000, n_queries=50, out_path="examples/benchmark_resu
     # Store raw list as a ListPlan base (no need to persist objects for the benchmark)
     base_plan = ListPlan(base_list=data, transaction=tr)
 
-    # Unindexed WherePlan (linear scan)
+    # Unindexed WherePlan (linear scan) using same window as baseline
     def pb_linear_query_once():
         cat = random.choice(CATEGORIES)
         st = random.choice(STATUSES)
-        lo = random.randint(1, 50000)
-        hi = lo + random.randint(100, 10000)
+        lo = random.randint(1, max(2, 100000 - window - 1))
+        hi = lo + window
         flt = Expression.compile(['&', ['category', '==', cat], ['status', '==', st], ['value', 'between()', lo, hi]])
         plan = WherePlan(filter=flt, based_on=base_plan, transaction=tr)
         list(plan.execute())
 
-    pb_linear_time = bench(lambda: [pb_linear_query_once() for _ in range(n_queries)], repeat=1)
+    pb_linear_stats = time_queries(lambda: pb_linear_query_once(), n=n_queries, warmup=warmup)
 
-    # Indexed path: build FromPlan and add indexes for category, status, value
-    # Based_on is base_plan; FromPlan.add_index builds a RepeatedKeysDictionary index mapping value->Set of records
-    # Build records as hashable wrappers exposing attribute 'r'
+    # Indexed path: build indexes for r.category, r.status, r.value over wrapped rows
     class RowWrap:
         __slots__ = ('r', '_h')
         def __init__(self, row: dict):
@@ -98,7 +131,8 @@ def run_benchmark(n_items=10000, n_queries=50, out_path="examples/benchmark_resu
             row = getattr(rec, alias)
             key = None if row is None else row.get(attr)
             if key is not None:
-                rkd = rkd.set_at(str(key), rec)
+                # Use native-type keys; do not convert to strings
+                rkd = rkd.set_at(key, rec)
         idx_map[fld] = rkd
     indexes_dict = Dictionary(transaction=tr)
     for k, v in idx_map.items():
@@ -109,25 +143,29 @@ def run_benchmark(n_items=10000, n_queries=50, out_path="examples/benchmark_resu
     def pb_indexed_query_once():
         cat = random.choice(CATEGORIES)
         st = random.choice(STATUSES)
-        lo = random.randint(1, 99500)
-        hi = lo + 500
-        # Build a WherePlan over the IndexedQueryPlan so the optimizer can use indexes
+        lo = random.randint(1, max(2, 100000 - window - 1))
+        hi = lo + window
         flt = Expression.compile(['&', ['r.category', '==', cat], ['r.status', '==', st], ['r.value', 'between()', lo, hi]])
         plan = WherePlan(filter=flt, based_on=indexed, transaction=tr)
         list(plan.execute())
 
-    pb_indexed_time = bench(lambda: [pb_indexed_query_once() for _ in range(n_queries)], repeat=1)
+    pb_indexed_stats = time_queries(lambda: pb_indexed_query_once(), n=n_queries, warmup=warmup)
 
     results = {
-        "config": {"n_items": n_items, "n_queries": n_queries},
+        "config": {"n_items": n_items, "n_queries": n_queries, "window": window, "warmup": warmup},
         "timings_seconds": {
-            "python_list_baseline": py_time,
-            "protodb_linear_where": pb_linear_time,
-            "protodb_indexed_where": pb_indexed_time,
+            "python_list_baseline": py_stats['total_seconds'],
+            "protodb_linear_where": pb_linear_stats['total_seconds'],
+            "protodb_indexed_where": pb_indexed_stats['total_seconds'],
+        },
+        "latency_ms": {
+            "python_list_baseline": {k: v for k, v in py_stats.items() if k != 'total_seconds'},
+            "protodb_linear_where": {k: v for k, v in pb_linear_stats.items() if k != 'total_seconds'},
+            "protodb_indexed_where": {k: v for k, v in pb_indexed_stats.items() if k != 'total_seconds'},
         },
         "speedups": {
-            "indexed_over_linear": (pb_linear_time / pb_indexed_time) if pb_indexed_time > 0 else None,
-            "indexed_over_python": (py_time / pb_indexed_time) if pb_indexed_time > 0 else None,
+            "indexed_over_linear": (pb_linear_stats['total_seconds'] / pb_indexed_stats['total_seconds']) if pb_indexed_stats['total_seconds'] > 0 else None,
+            "indexed_over_python": (py_stats['total_seconds'] / pb_indexed_stats['total_seconds']) if pb_indexed_stats['total_seconds'] > 0 else None,
         },
     }
 
@@ -142,7 +180,9 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description='Indexed performance benchmark for ProtoBase')
     p.add_argument('--items', type=int, default=5000)
     p.add_argument('--queries', type=int, default=50)
+    p.add_argument('--window', type=int, default=500, help='numeric range window size for value field')
+    p.add_argument('--warmup', type=int, default=5, help='warmup query iterations before timing')
     p.add_argument('--out', type=str, default='examples/benchmark_results_indexed.json')
     args = p.parse_args()
-    res = run_benchmark(n_items=args.items, n_queries=args.queries, out_path=args.out)
+    res = run_benchmark(n_items=args.items, n_queries=args.queries, out_path=args.out, window=args.window, warmup=args.warmup)
     print(json.dumps(res, indent=2))

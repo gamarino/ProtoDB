@@ -6,25 +6,28 @@ This document explains how to run the performance suite with emphasis on indexed
 
 - Equality, IN, and CONTAINS predicates are served via secondary indexes by building candidate sets and intersecting them by selectivity.
 - Range predicates (Between, <, <=, >, >=): the optimizer can push down ranges when using an IndexedRangeSearchPlan; otherwise they are applied as residual filters after intersecting equality-based candidates.
-- Secondary indexes are represented as RepeatedKeysDictionary per field, mapping key -> Set(records) with string-normalized keys.
+- Secondary indexes are represented as RepeatedKeysDictionary per field, mapping key -> Set(records) with native-type keys (no string normalization).
 
 ## Run the indexed benchmark
 
 From the repository root:
 
 ```bash
-python examples/indexed_benchmark.py --items 50000 --queries 200 --out examples/benchmark_results_indexed.json
+python examples/indexed_benchmark.py --items 50000 --queries 200 --window 500 --warmup 10 --out examples/benchmark_results_indexed.json
 ```
 
 Parameters:
 - `--items`: number of synthetic rows to generate.
 - `--queries`: number of random AND+BETWEEN queries to execute.
+- `--window`: numeric range window size for the value field (e.g., 200–2000 for more selectivity).
+- `--warmup`: warmup iterations per query path before timing (JIT/cache effects).
 - `--out`: path to write the JSON results.
 
-The script writes a JSON with timings (seconds) and derived speedups:
-- `python_list_baseline`: list comprehension over a plain list of dicts.
-- `protodb_linear_where`: ProtoBase WherePlan over a ListPlan (no indexes; linear scan).
-- `protodb_indexed_where`: WherePlan over an IndexedQueryPlan with secondary indexes for `category`, `status`, and a numeric `value` range.
+The script writes a JSON with total timings (seconds), per-path latency stats, and derived speedups:
+- `timings_seconds`: total wall-clock per path
+- `latency_ms`: per-query stats per path: `avg_ms`, `p50_ms`, `p95_ms`, `p99_ms`, and `qps`
+- `speedups`: `indexed_over_linear` and `indexed_over_python`
+- Paths: `python_list_baseline` (list of dicts), `protodb_linear_where` (ListPlan, no indexes), `protodb_indexed_where` (WherePlan over IndexedQueryPlan with indexes on `category`, `status`, `value`).
 
 Example output (small dataset):
 
@@ -113,7 +116,7 @@ Notes:
 For the indexed path, the script builds three secondary indexes using RepeatedKeysDictionary:
 - `r.category` -> Set(row)
 - `r.status` -> Set(row)
-- `r.value` -> Set(row), with numeric keys stored as strings
+- `r.value` -> Set(row) (numeric keys stored as native numbers)
 
 Queries are evaluated by:
 1. Fetching the candidate set for category.
@@ -197,7 +200,7 @@ Interpretation and tips:
 Reproduce any run, for example Run C:
 
 ```bash
-python examples/indexed_benchmark.py --items 50000 --queries 200 --out examples/benchmark_results_indexed.json
+python examples/indexed_benchmark.py --items 50000 --queries 200 --window 500 --warmup 10 --out examples/benchmark_results_indexed.json
 ```
 
 The script writes a JSON alongside the parameters; see "Run the indexed benchmark" above for details.

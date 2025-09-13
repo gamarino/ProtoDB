@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="The key bug preventing index usage was fixed by correctly using Dictionary methods and normalizing keys. Performance improved slightly, with indexed queries now faster than linear scans, achieving about 56 queries per second on 50k items. Unit tests passed, and further optimizations are needed to meet the expected performance targets." />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Implemented a reference-first execution pipeline reducing object materialization by using stable reference hashes for index queries and removing string key conversions. Rewrote AndMerge to intersect reference sets before materializing objects, ensuring efficient AND predicate evaluation. Verified functionality with unit tests and maintained existing AVL-based data structures and immutability." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -271,23 +271,7 @@
       <workItem from="1757647544978" duration="4378000" />
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
-      <workItem from="1757675249603" duration="27889000" />
-    </task>
-    <task id="LOCAL-00038" summary="[WIP] simple_example.py: TODO: list with errors">
-      <option name="closed" value="true" />
-      <created>1753997165004</created>
-      <option name="number" value="00038" />
-      <option name="presentableId" value="LOCAL-00038" />
-      <option name="project" value="LOCAL" />
-      <updated>1753997165004</updated>
-    </task>
-    <task id="LOCAL-00039" summary="[FIX] errors in commit logic">
-      <option name="closed" value="true" />
-      <created>1754105801491</created>
-      <option name="number" value="00039" />
-      <option name="presentableId" value="LOCAL-00039" />
-      <option name="project" value="LOCAL" />
-      <updated>1754105801491</updated>
+      <workItem from="1757675249603" duration="29790000" />
     </task>
     <task id="LOCAL-00040" summary="[IMP] First implementation of performance analysis (Fully automated by Junie AI)">
       <option name="closed" value="true" />
@@ -665,15 +649,29 @@
       <option name="project" value="LOCAL" />
       <updated>1757737725535</updated>
     </task>
-    <option name="localTasksCounter" value="87" />
+    <task id="LOCAL-00087" summary="La documentación de performance fue actualizada incluyendo clarificaciones sobre el uso actual de índices y una nueva sección con resultados recientes de benchmarks con interpretaciones y consejos. No se realizaron cambios en el código; solo en la documentación. El README ya enlazaba a la documentación actualizada, por lo que no fue necesario modificarlo.">
+      <option name="closed" value="true" />
+      <created>1757737885334</created>
+      <option name="number" value="00087" />
+      <option name="presentableId" value="LOCAL-00087" />
+      <option name="project" value="LOCAL" />
+      <updated>1757737885334</updated>
+    </task>
+    <task id="LOCAL-00088" summary="Implemented a reference-first execution pipeline reducing object materialization by using stable reference hashes for index queries and removing string key conversions. Rewrote AndMerge to intersect reference sets before materializing objects, ensuring efficient AND predicate evaluation. Verified functionality with unit tests and maintained existing AVL-based data structures and immutability.">
+      <option name="closed" value="true" />
+      <created>1757739628240</created>
+      <option name="number" value="00088" />
+      <option name="presentableId" value="LOCAL-00088" />
+      <option name="project" value="LOCAL" />
+      <updated>1757739628240</updated>
+    </task>
+    <option name="localTasksCounter" value="89" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[ADD] The performance suite was updated to use new indexes, enabling a benchmark to evaluate proto_db with indexed collections against a Python baseline. A new benchmark script was created, executed successfully, and documentation was updated accordingly." />
-    <MESSAGE value="[ADD] The Sphinx documentation was successfully updated to reflect new features, including range operators, UnnestPlan, CollectionFieldPlan, index-aware WHERE optimizations, and the indexed benchmark. New pages were created and existing content modified as needed. All changes were documented and submitted for review." />
     <MESSAGE value="[ADD] A new `Vector` type and an `ExactVectorIndex` interface with basic operators for similarity search were successfully implemented in `proto_db`. The `near[]` operator was integrated, allowing for linear fallback evaluations, and all tests passed successfully. Documentation was updated accordingly, leaving future enhancements like ANN and persistence for subsequent phases." />
     <MESSAGE value="[FIX] __init__.py : dependency errors" />
     <MESSAGE value="[ADD] HNSWVectorIndex was successfully implemented for handling vector fields in proto_db, including functionality for KNN and near[] queries, with fallback to ExactVectorIndex and support for incremental updates and persistent storage. All associated unit tests passed, and documentation was updated accordingly. No errors or issues were reported during the implementation phase." />
@@ -697,7 +695,9 @@
     <MESSAGE value="[FIX] The test suite was run, failures were identified, and targeted fixes were applied to make indexes optional and correct dictionary behaviors. After implementing the fixes, the full test suite of 241 tests passed successfully. Guidance on running the tests with proper discovery was provided." />
     <MESSAGE value="The performance suite was refocused on indexed collections and a runtime bug in IndexedQueryPlan.execute was fixed. Benchmark scripts and documentation were updated to emphasize index-aware evaluation and improve clarity. Unit tests passed and updated benchmark results were saved successfully." />
     <MESSAGE value="The key bug preventing index usage was fixed by correctly using Dictionary methods and normalizing keys. Performance improved slightly, with indexed queries now faster than linear scans, achieving about 56 queries per second on 50k items. Unit tests passed, and further optimizations are needed to meet the expected performance targets." />
-    <option name="LAST_COMMIT_MESSAGE" value="The key bug preventing index usage was fixed by correctly using Dictionary methods and normalizing keys. Performance improved slightly, with indexed queries now faster than linear scans, achieving about 56 queries per second on 50k items. Unit tests passed, and further optimizations are needed to meet the expected performance targets." />
+    <MESSAGE value="La documentación de performance fue actualizada incluyendo clarificaciones sobre el uso actual de índices y una nueva sección con resultados recientes de benchmarks con interpretaciones y consejos. No se realizaron cambios en el código; solo en la documentación. El README ya enlazaba a la documentación actualizada, por lo que no fue necesario modificarlo." />
+    <MESSAGE value="Implemented a reference-first execution pipeline reducing object materialization by using stable reference hashes for index queries and removing string key conversions. Rewrote AndMerge to intersect reference sets before materializing objects, ensuring efficient AND predicate evaluation. Verified functionality with unit tests and maintained existing AVL-based data structures and immutability." />
+    <option name="LAST_COMMIT_MESSAGE" value="Implemented a reference-first execution pipeline reducing object materialization by using stable reference hashes for index queries and removing string key conversions. Rewrote AndMerge to intersect reference sets before materializing objects, ensuring efficient AND predicate evaluation. Verified functionality with unit tests and maintained existing AVL-based data structures and immutability." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
