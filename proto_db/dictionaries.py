@@ -180,19 +180,24 @@ class Dictionary(DBCollections, ConcurrentOptimized):
         """
         self._load()
 
+        def _ok(v):
+            return DictionaryItem._order_key(v)
+
         left = 0
         right = self.content.count - 1
         new_content = self.content
-
         old_value = None
+        target_ok = _ok(key)
 
         while left <= right:
             center = (left + right) // 2
 
             item = cast(DictionaryItem, self.content.get_at(center))
-            if item and str(item.key) == key:  # Check if the key already exists.
+            if item is None:
+                break
+            item_ok = _ok(item.key)
+            if item_ok == target_ok and item.key == key:  # Check if the key already exists.
                 old_value = item.value
-
                 new_content = new_content.set_at(
                     center,
                     DictionaryItem(
@@ -202,7 +207,7 @@ class Dictionary(DBCollections, ConcurrentOptimized):
                     )
                 )
                 break
-            if item and str(item.key) > key:
+            if item_ok >= target_ok:
                 right = center - 1
             else:
                 left = center + 1
@@ -243,15 +248,22 @@ class Dictionary(DBCollections, ConcurrentOptimized):
         """
         self._load()
 
+        def _ok(v):
+            return DictionaryItem._order_key(v)
+
         left = 0
         right = self.content.count - 1
+        target_ok = _ok(key)
 
         while left <= right:
             center = (left + right) // 2
 
             item = cast(DictionaryItem, self.content.get_at(center))
-            if item and str(item.key) == key:
-                # It's a replacement of an existing value
+            if item is None:
+                break
+            item_ok = _ok(item.key)
+            if item_ok == target_ok and item.key == key:
+                # Found existing value to remove
                 new_content = self.content.remove_at(center)
                 if new_content is None:
                     # If the content is None, create an empty dictionary
@@ -267,7 +279,7 @@ class Dictionary(DBCollections, ConcurrentOptimized):
                     indexes=new_indexes
                 )
 
-            if item and str(item.key) > key:
+            if item_ok >= target_ok:
                 right = center - 1
             else:
                 left = center + 1
@@ -279,24 +291,31 @@ class Dictionary(DBCollections, ConcurrentOptimized):
         """
         Checks whether a given key exists in the dictionary.
 
-        Uses binary search to find the key efficiently.
+        Uses binary search to find the key efficiently with native-type comparisons.
 
-        :param key: The string key to be searched.
+        :param key: The key to be searched.
         :return: True if the key is found; otherwise, False.
         """
         self._load()
 
+        def _ok(v):
+            return DictionaryItem._order_key(v)
+
         left = 0
         right = self.content.count - 1
+        target_ok = _ok(key)
 
         while left <= right:
             center = (left + right) // 2
 
             item = cast(DictionaryItem, self.content.get_at(center))
-            if item and str(item.key) == key:
+            if item is None:
+                break
+            item_ok = _ok(item.key)
+            if item_ok == target_ok and item.key == key:
                 return True
 
-            if item and str(item.key) > key:
+            if item_ok >= target_ok:
                 right = center - 1
             else:
                 left = center + 1
