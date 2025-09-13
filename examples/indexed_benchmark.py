@@ -79,7 +79,11 @@ def time_queries(fn, n=50, warmup=5):
     return stats
 
 
-def run_benchmark(n_items=10000, n_queries=50, out_path="examples/benchmark_results_indexed.json", window=500, warmup=5):
+def run_benchmark(n_items=100000, n_queries=50, out_path="examples/benchmark_results_indexed.json", window=100, warmup=10, n_categories=50, n_statuses=20):
+    global CATEGORIES, STATUSES
+    # Generate domains with higher cardinality to increase selectivity for equality predicates
+    CATEGORIES = [f"category{i+1}" for i in range(max(1, n_categories))]
+    STATUSES = [f"status{i+1}" for i in range(max(1, n_statuses))]
     data = build_dataset(n_items)
 
     # Baseline competitor: pure Python list comprehension (filter by two fields + range)
@@ -206,11 +210,13 @@ def run_benchmark(n_items=10000, n_queries=50, out_path="examples/benchmark_resu
 if __name__ == '__main__':
     import argparse
     p = argparse.ArgumentParser(description='Indexed performance benchmark for ProtoBase')
-    p.add_argument('--items', type=int, default=5000)
+    p.add_argument('--items', type=int, default=100000)
     p.add_argument('--queries', type=int, default=50)
-    p.add_argument('--window', type=int, default=500, help='numeric range window size for value field')
-    p.add_argument('--warmup', type=int, default=5, help='warmup query iterations before timing')
+    p.add_argument('--window', type=int, default=100, help='numeric range window size for value field (smaller → higher selectivity)')
+    p.add_argument('--warmup', type=int, default=10, help='warmup query iterations before timing')
+    p.add_argument('--categories', type=int, default=50, help='number of distinct categories (equality domain cardinality)')
+    p.add_argument('--statuses', type=int, default=20, help='number of distinct statuses (equality domain cardinality)')
     p.add_argument('--out', type=str, default='examples/benchmark_results_indexed.json')
     args = p.parse_args()
-    res = run_benchmark(n_items=args.items, n_queries=args.queries, out_path=args.out, window=args.window, warmup=args.warmup)
+    res = run_benchmark(n_items=args.items, n_queries=args.queries, out_path=args.out, window=args.window, warmup=args.warmup, n_categories=args.categories, n_statuses=args.statuses)
     print(json.dumps(res, indent=2))

@@ -13,14 +13,18 @@ This document explains how to run the performance suite with emphasis on indexed
 From the repository root:
 
 ```bash
-python examples/indexed_benchmark.py --items 50000 --queries 200 --window 500 --warmup 10 --out examples/benchmark_results_indexed.json
+python examples/indexed_benchmark.py --items 100000 --queries 200 --window 100 --warmup 10 \
+  --categories 50 --statuses 20 \
+  --out examples/benchmark_results_indexed.json
 ```
 
 Parameters:
 - `--items`: number of synthetic rows to generate.
 - `--queries`: number of random AND+BETWEEN queries to execute.
-- `--window`: numeric range window size for the value field (e.g., 200–2000 for more selectivity).
+- `--window`: numeric range window size for the value field (e.g., 50–200 for higher selectivity).
 - `--warmup`: warmup iterations per query path before timing (JIT/cache effects).
+- `--categories`: number of distinct categories to generate (increase for higher selectivity on equality terms).
+- `--statuses`: number of distinct statuses to generate (increase for higher selectivity on equality terms).
 - `--out`: path to write the JSON results.
 
 The script writes a JSON with total timings (seconds), per-path latency stats, and derived speedups:
