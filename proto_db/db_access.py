@@ -424,6 +424,8 @@ class ObjectTransaction(AbstractTransaction):
         self.initial_transaction_root = self.transaction_root
         self.storage = storage if storage else \
             database.object_space.storage if database else None
+        # Expose atom cache bundle from the underlying storage (if available)
+        self.atom_cache_bundle = getattr(self.storage, '_atom_caches', None)
         self.new_roots = Dictionary()
         self.read_lock_objects = HashDictionary()
         self.new_mutable_objects = HashDictionary()

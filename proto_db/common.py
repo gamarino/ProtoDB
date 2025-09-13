@@ -553,6 +553,46 @@ class Atom(metaclass=CombinedMeta):
                     # All attributes has valid AtomPointer values (either old or new)
                     pointer = self._push_to_storage(json_value)
                     object.__setattr__(self, 'atom_pointer', AtomPointer(pointer.transaction_id, pointer.offset))
+
+                    # Write-through caching: populate caches immediately after persisting
+                    try:
+                        tr = getattr(self, 'transaction', None)
+                        bundle = getattr(tr, 'atom_cache_bundle', None) if tr else None
+                        if bundle:
+                            # Serialize to bytes to estimate size and populate bytes cache
+                            atom_bytes = None
+                            # Prefer a storage-provided serializer if available
+                            storage = getattr(tr, 'storage', None) if tr else None
+                            serializer = getattr(storage, 'serializer', None)
+                            if serializer and hasattr(serializer, 'serialize'):
+                                try:
+                                    atom_bytes = serializer.serialize(json_value)
+                                except Exception:
+                                    atom_bytes = None
+                            if atom_bytes is None:
+                                # Fallback to JSON serialization
+                                import json as _json
+                                atom_bytes = _json.dumps(json_value, separators=(',', ':')).encode('utf-8')
+
+                            # Object cache (store the serialized object dict, as storage.get_atom returns dicts)
+                            if getattr(bundle, 'obj_cache', None):
+                                bundle.obj_cache.put(
+                                    self.atom_pointer.transaction_id,
+                                    self.atom_pointer.offset,
+                                    json_value,
+                                    schema_epoch=getattr(bundle, 'schema_epoch', None),
+                                    size_bytes_est=len(atom_bytes) if atom_bytes is not None else None
+                                )
+                            # Bytes cache (stores serialized bytes)
+                            if getattr(bundle, 'bytes_cache', None) and atom_bytes is not None:
+                                bundle.bytes_cache.put(
+                                    self.atom_pointer.transaction_id,
+                                    self.atom_pointer.offset,
+                                    atom_bytes
+                                )
+                    except Exception:
+                        # Caching must never break persistence; ignore cache errors
+                        pass
                 else:
                     raise ProtoValidationException(
                         message=f'An DBObject can only be saved within a given transaction!'

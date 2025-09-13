@@ -4,10 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Implemented a reference-centric indexed query strategy using efficient AVL range traversal and intersection without premature object materialization. Added deterministic native comparisons for DictionaryItem, removed string coercions, and optimized AndMerge to intersect reference sets before materialization. Passed focused unit tests confirming correctness and performance improvements.">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="The performance documentation was updated with a new section titled &quot;Latest Results (2025-09-13)&quot;. This section includes details of two recent benchmark runs, their commands, artifact paths, key metrics, speedups, and tuning tips. The updates align the documentation with current improvements in the indexed query engine.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/benchmark_results_indexed.json" beforeDir="false" afterPath="$PROJECT_DIR$/examples/benchmark_results_indexed.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/dictionaries.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/db_access.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -63,7 +64,7 @@
     "Python tests.Python tests in test_standalone_file_storage.py.executor": "Debug",
     "Python.comprehensive_benchmark.executor": "Run",
     "Python.db_performance_benchmark.executor": "Run",
-    "Python.indexed_benchmark.executor": "Run",
+    "Python.indexed_benchmark.executor": "Debug",
     "Python.minimal_benchmark.executor": "Run",
     "Python.performance_benchmark.executor": "Run",
     "Python.run_tests.executor": "Run",
@@ -97,7 +98,7 @@
       <recent name="$PROJECT_DIR$/proto_db" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.run_tests">
+  <component name="RunManager" selected="Python.indexed_benchmark">
     <configuration name="Makefile (2)" type="MAKEFILE_TARGET_RUN_CONFIGURATION" factoryName="Makefile">
       <makefile filename="$PROJECT_DIR$/docs/Makefile" target="" workingDirectory="$PROJECT_DIR$/docs/source" arguments="">
         <envs />
@@ -230,8 +231,8 @@
     </list>
     <recent_temporary>
       <list>
-        <item itemvalue="Python.run_tests" />
         <item itemvalue="Python.indexed_benchmark" />
+        <item itemvalue="Python.run_tests" />
         <item itemvalue="Python.comprehensive_benchmark" />
         <item itemvalue="Python.simple_example" />
         <item itemvalue="Python.db_performance_benchmark" />
@@ -275,23 +276,7 @@
       <workItem from="1757647544978" duration="4378000" />
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
-      <workItem from="1757675249603" duration="31608000" />
-    </task>
-    <task id="LOCAL-00042" summary="[ADD] Chat IA evolución proto">
-      <option name="closed" value="true" />
-      <created>1754156540176</created>
-      <option name="number" value="00042" />
-      <option name="presentableId" value="LOCAL-00042" />
-      <option name="project" value="LOCAL" />
-      <updated>1754156540176</updated>
-    </task>
-    <task id="LOCAL-00043" summary="[FIX] improved literal management">
-      <option name="closed" value="true" />
-      <created>1754234779832</created>
-      <option name="number" value="00043" />
-      <option name="presentableId" value="LOCAL-00043" />
-      <option name="project" value="LOCAL" />
-      <updated>1754234779832</updated>
+      <workItem from="1757675249603" duration="35672000" />
     </task>
     <task id="LOCAL-00044" summary="[FIX] improved literal management">
       <option name="closed" value="true" />
@@ -669,15 +654,29 @@
       <option name="project" value="LOCAL" />
       <updated>1757740917876</updated>
     </task>
-    <option name="localTasksCounter" value="91" />
+    <task id="LOCAL-00091" summary="The performance suite was rerun after fixing blockers related to native key comparisons. The indexed benchmark with 50,000 items completed successfully and produced a JSON report with timings and latency metrics. The indexed path was slower than the linear path, meeting the objective to evaluate improvements with results saved at examples/benchmark_results_indexed.json.">
+      <option name="closed" value="true" />
+      <created>1757741459057</created>
+      <option name="number" value="00091" />
+      <option name="presentableId" value="LOCAL-00091" />
+      <option name="project" value="LOCAL" />
+      <updated>1757741459057</updated>
+    </task>
+    <task id="LOCAL-00092" summary="The performance documentation was updated with a new section titled &quot;Latest Results (2025-09-13)&quot;. This section includes details of two recent benchmark runs, their commands, artifact paths, key metrics, speedups, and tuning tips. The updates align the documentation with current improvements in the indexed query engine.">
+      <option name="closed" value="true" />
+      <created>1757744045648</created>
+      <option name="number" value="00092" />
+      <option name="presentableId" value="LOCAL-00092" />
+      <option name="project" value="LOCAL" />
+      <updated>1757744045648</updated>
+    </task>
+    <option name="localTasksCounter" value="93" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[FIX] __init__.py : dependency errors" />
-    <MESSAGE value="[ADD] HNSWVectorIndex was successfully implemented for handling vector fields in proto_db, including functionality for KNN and near[] queries, with fallback to ExactVectorIndex and support for incremental updates and persistent storage. All associated unit tests passed, and documentation was updated accordingly. No errors or issues were reported during the implementation phase." />
     <MESSAGE value="[ADD] A vector ANN benchmark script was created to measure and compare the performance of HNSW against ExactVectorIndex and optional NumPy and scikit-learn baselines, successfully producing JSON output with timings. All existing tests remained unaffected and passed. No errors were encountered during execution, confirming the accuracy of the benchmarking tool." />
     <MESSAGE value="[ADD] An IVF-Flat vector index backend (IVFFlatIndex) was implemented in `vector_index.py`, enabling copy-on-write updates without tombstones and multiprobe search. All unit tests passed, ensuring functionality and integration with existing vector features." />
     <MESSAGE value="[ADD]IVF-Flat performance comparison has been integrated into the vector benchmark suite, enabling comparisons against Exact and HNSW indices. The updated benchmark includes IVF metrics and can be executed with specific parameters to generate detailed results." />
@@ -701,7 +700,9 @@
     <MESSAGE value="La documentación de performance fue actualizada incluyendo clarificaciones sobre el uso actual de índices y una nueva sección con resultados recientes de benchmarks con interpretaciones y consejos. No se realizaron cambios en el código; solo en la documentación. El README ya enlazaba a la documentación actualizada, por lo que no fue necesario modificarlo." />
     <MESSAGE value="Implemented a reference-first execution pipeline reducing object materialization by using stable reference hashes for index queries and removing string key conversions. Rewrote AndMerge to intersect reference sets before materializing objects, ensuring efficient AND predicate evaluation. Verified functionality with unit tests and maintained existing AVL-based data structures and immutability." />
     <MESSAGE value="Implemented a reference-centric indexed query strategy using efficient AVL range traversal and intersection without premature object materialization. Added deterministic native comparisons for DictionaryItem, removed string coercions, and optimized AndMerge to intersect reference sets before materialization. Passed focused unit tests confirming correctness and performance improvements." />
-    <option name="LAST_COMMIT_MESSAGE" value="Implemented a reference-centric indexed query strategy using efficient AVL range traversal and intersection without premature object materialization. Added deterministic native comparisons for DictionaryItem, removed string coercions, and optimized AndMerge to intersect reference sets before materialization. Passed focused unit tests confirming correctness and performance improvements." />
+    <MESSAGE value="The performance suite was rerun after fixing blockers related to native key comparisons. The indexed benchmark with 50,000 items completed successfully and produced a JSON report with timings and latency metrics. The indexed path was slower than the linear path, meeting the objective to evaluate improvements with results saved at examples/benchmark_results_indexed.json." />
+    <MESSAGE value="The performance documentation was updated with a new section titled &quot;Latest Results (2025-09-13)&quot;. This section includes details of two recent benchmark runs, their commands, artifact paths, key metrics, speedups, and tuning tips. The updates align the documentation with current improvements in the indexed query engine." />
+    <option name="LAST_COMMIT_MESSAGE" value="The performance documentation was updated with a new section titled &quot;Latest Results (2025-09-13)&quot;. This section includes details of two recent benchmark runs, their commands, artifact paths, key metrics, speedups, and tuning tips. The updates align the documentation with current improvements in the indexed query engine." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -746,6 +747,11 @@
           <line>11</line>
           <option name="timeStamp" value="257" />
         </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/examples/indexed_benchmark.py</url>
+          <line>140</line>
+          <option name="timeStamp" value="259" />
+        </line-breakpoint>
       </breakpoints>
       <default-breakpoints>
         <breakpoint type="python-exception">
@@ -761,7 +767,7 @@
     <SUITE FILE_PATH="coverage/ProtoBase$.coverage" NAME=" Coverage Results" MODIFIED="1736352327720" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/ProtoBase$run_tests.coverage" NAME="run_tests Coverage Results" MODIFIED="1757682167480" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/ProtoBase$performance_benchmark.coverage" NAME="performance_benchmark Coverage Results" MODIFIED="1754260400708" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
-    <SUITE FILE_PATH="coverage/ProtoBase$indexed_benchmark.coverage" NAME="indexed_benchmark Coverage Results" MODIFIED="1757019769656" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/ProtoBase$indexed_benchmark.coverage" NAME="indexed_benchmark Coverage Results" MODIFIED="1757743159440" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$db_performance_benchmark.coverage" NAME="db_performance_benchmark Coverage Results" MODIFIED="1754260420768" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$minimal_benchmark.coverage" NAME="minimal_benchmark Coverage Results" MODIFIED="1754260411492" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$simple_performance_benchmark.coverage" NAME="simple_performance_benchmark Coverage Results" MODIFIED="1754260319108" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
