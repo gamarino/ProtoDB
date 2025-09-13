@@ -578,8 +578,8 @@ class IndexedQueryPlan(QueryPlan):
         new_index = RepeatedKeysDictionary(transaction=self.transaction)
         for record in self.execute():
             if record.has(field_name):
-                # Keys in Dictionary are compared as strings; normalize key to str
-                key = str(record[field_name])
+                # Use native key types (no string conversion)
+                key = record[field_name]
                 new_index = new_index.set_at(key, record)
 
         return IndexedQueryPlan(
@@ -606,7 +606,7 @@ class IndexedQueryPlan(QueryPlan):
         for field_name, index in self.indexes.as_iterable():
             # index is expected to support remove_record_at(key, record)
             if removed_record[field_name]:
-                key = str(removed_record[field_name])
+                key = removed_record[field_name]
                 new_indexes.set_at(field_name, index.remove_record_at(key, removed_record))
 
         return IndexedQueryPlan(
@@ -633,7 +633,7 @@ class IndexedQueryPlan(QueryPlan):
         for field_name, index in self.indexes.as_iterable():
             index = cast(RepeatedKeysDictionary, index)
             if added_record[field_name]:
-                key = str(added_record[field_name])
+                key = added_record[field_name]
                 new_indexes.set_at(field_name, index.set_at(key, added_record))
 
         return IndexedQueryPlan(
@@ -706,7 +706,12 @@ class IndexedQueryPlan(QueryPlan):
             if idx_dict is None:
                 return []
 
-            value_set = cast(Set, idx_dict.get_at(str(value)))
+            # Native key match without string conversion
+            value_set = None
+            for k, v in idx_dict.as_iterable():
+                if k == value:
+                    value_set = cast(Set, v)
+                    break
             if value_set is None:
                 return []
             for record in value_set.as_iterable():
@@ -753,6 +758,7 @@ class IndexedQueryPlan(QueryPlan):
     def get_range(self, field_name: str, lo: object, hi: object, include_lower: bool, include_upper: bool):
         """
         Iterate records whose indexed key is within [lo, hi] with bound inclusivity flags.
+        Uses native-type comparisons; avoids converting keys/values to strings.
         """
         self._load()
         if not (self.indexes and self.indexes.has(field_name)):
@@ -760,32 +766,39 @@ class IndexedQueryPlan(QueryPlan):
         idx_dict = cast(Dictionary, self.indexes.get_at(field_name))
         if idx_dict is None:
             return
-        # Find start position
-        start = self.position_at(field_name, lo)
-        # Adjust for exclusive lower if exact match
-        if start < idx_dict.content.count:
-            item = cast(DictionaryItem, idx_dict.content.get_at(start))
-            if item and str(item.key) == str(lo) and not include_lower:
-                start += 1
-        # Iterate until passing upper bound
-        idx = start
-        shi = str(hi)
-        while idx < idx_dict.content.count:
-            item = cast(DictionaryItem, idx_dict.content.get_at(idx))
+
+        # Sequentially scan ordered dictionary items and stop once upper bound is exceeded.
+        # We avoid position_at() to prevent str-based comparisons.
+        count = idx_dict.content.count
+        for i in range(count):
+            item = cast(DictionaryItem, idx_dict.content.get_at(i))
             if item is None:
+                continue
+            key = item.key
+            # Harmonize bound types to key type when possible to keep native comparisons
+            klo, khi = lo, hi
+            try:
+                if type(key) is str and not isinstance(lo, str):
+                    klo = str(lo)
+                    khi = str(hi)
+                elif type(key) in (int, float) and type(lo) is str:
+                    # try to cast strings to numeric if possible
+                    klo = float(lo) if '.' in lo else int(lo)
+                    khi = float(hi) if isinstance(hi, str) and '.' in hi else (float(hi) if isinstance(hi, str) else hi)
+            except Exception:
+                pass
+
+            # Apply lower bound
+            if key < klo or (key == klo and not include_lower):
+                # Not yet in range
+                continue
+            # Apply upper bound and early stop
+            if key > khi or (key == khi and not include_upper):
                 break
-            skey = str(item.key)
-            # Stop based on upper bound
-            if include_upper:
-                if skey > shi:
-                    break
-            else:
-                if skey >= shi:
-                    break
+
             value_set = cast(Set, item.value)
             for record in value_set.as_iterable():
                 yield record
-            idx += 1
 
 
 class IndexedSearchPlan(IndexedQueryPlan):
@@ -861,7 +874,12 @@ class IndexedSearchPlan(IndexedQueryPlan):
                 idx_dict = cast(Dictionary, self.indexes.get_at(self.field_to_scan))
                 if idx_dict is None:
                     return 0
-                value_set = cast(Set, idx_dict.get_at(str(self.value)))
+                # Try native-key lookup by scanning keys to avoid string conversion
+                value_set = None
+                for k, v in idx_dict.as_iterable():
+                    if k == self.value:
+                        value_set = cast(Set, v)
+                        break
                 if value_set is None:
                     return 0
                 return value_set.count
@@ -869,6 +887,50 @@ class IndexedSearchPlan(IndexedQueryPlan):
             # On any unexpected shape, fallback to generic count
             pass
         return sum(1 for _ in self.execute())
+
+    def get_references(self) -> frozenset[int]:
+        """
+        Return a frozenset of stable references (preferably AtomPointer.hash()) for records
+        matching this indexed predicate, without materializing full objects.
+        """
+        refs: set[int] = set()
+        try:
+            if not (self.indexes and self.indexes.has(self.field_to_scan)):
+                return frozenset()
+            idx_dict = cast(Dictionary, self.indexes.get_at(self.field_to_scan))
+            if idx_dict is None:
+                return frozenset()
+
+            def _ref_of(rec) -> int:
+                try:
+                    if isinstance(rec, Atom) and hasattr(rec, 'atom_pointer') and rec.atom_pointer:
+                        return rec.atom_pointer.hash()
+                except Exception:
+                    pass
+                try:
+                    return rec.hash()  # custom wrapper may implement
+                except Exception:
+                    return hash(rec)
+
+            # Handle equality natively; others fallback to execute()
+            if isinstance(self.operator, Equal):
+                bucket = None
+                for k, v in idx_dict.as_iterable():
+                    if k == self.value:
+                        bucket = cast(Set, v)
+                        break
+                if bucket is None:
+                    return frozenset()
+                for rec in bucket.as_iterable():
+                    refs.add(_ref_of(rec))
+                return frozenset(refs)
+
+            # Fallback: execute and convert to references (less efficient)
+            for rec in self.execute():
+                refs.add(_ref_of(rec))
+            return frozenset(refs)
+        except Exception:
+            return frozenset()
 
 
 class AndMerge(QueryPlan):
@@ -884,29 +946,74 @@ class AndMerge(QueryPlan):
         self.and_queries = and_queries
 
     def execute(self) -> list:
-        result = set()
+        """
+        Intersect sub-queries by stable references to minimize materialization.
+        Each sub-plan is asked for get_references(); if unavailable, we fallback to hashing
+        materialized records. After computing the intersection, we materialize only from the
+        smallest contributing sub-plan and yield records whose reference is in the intersection.
+        """
+        if not self.and_queries:
+            return
+        # Collect reference sets and keep a plan to materialize from
+        ref_sets: list[tuple[frozenset[int], QueryPlan]] = []
+        for q in self.and_queries:
+            refs: frozenset[int] | None = None
+            if hasattr(q, 'get_references'):
+                try:
+                    refs = cast(frozenset[int], getattr(q, 'get_references')())
+                except Exception:
+                    refs = None
+            if refs is None or len(refs) == 0:
+                # Fallback: derive refs from materialized records (less efficient)
+                hset: set[int] = set()
+                try:
+                    for rec in q.execute():
+                        try:
+                            if isinstance(rec, Atom) and getattr(rec, 'atom_pointer', None):
+                                hset.add(rec.atom_pointer.hash())
+                            else:
+                                try:
+                                    hset.add(rec.hash())
+                                except Exception:
+                                    hset.add(hash(rec))
+                        except Exception:
+                            continue
+                    refs = frozenset(hset)
+                except Exception:
+                    refs = frozenset()
+            ref_sets.append((refs, q))
 
-        accumulators = list()
-        for i in range(0, len(self.and_queries)):
-            accumulators.append(set([record for record in self.and_queries[i].execute()]))
+        # Early exit if any is empty
+        if any(len(rs[0]) == 0 for rs in ref_sets):
+            return
 
-        if len(self.and_queries) == 1:
-            for record in accumulators[0]:
-                yield record
-        else:
-            for record in accumulators[0]:
-                found = True
-                for index in range(1, len(accumulators)):
-                    if record in accumulators[index]:
-                        continue
-                    else:
-                        found = False
-                        break
-                if found:
-                    result.add(record)
+        # Sort by ascending size for efficient intersection
+        ref_sets.sort(key=lambda t: len(t[0]))
+        base_refs, base_plan = ref_sets[0]
+        intersection = set(base_refs)
+        for rs, _ in ref_sets[1:]:
+            intersection.intersection_update(rs)
+            if not intersection:
+                return
 
-            for record in result:
-                yield record
+        # Materialize minimally: iterate the smallest plan and filter by intersection
+        def _ref_of(rec) -> int:
+            try:
+                if isinstance(rec, Atom) and getattr(rec, 'atom_pointer', None):
+                    return rec.atom_pointer.hash()
+            except Exception:
+                pass
+            try:
+                return rec.hash()
+            except Exception:
+                return hash(rec)
+
+        for rec in base_plan.execute():
+            try:
+                if _ref_of(rec) in intersection:
+                    yield rec
+            except Exception:
+                continue
 
     def optimize(self, full_plan: QueryPlan) -> QueryPlan:
         return AndMerge(
@@ -989,6 +1096,33 @@ class IndexedRangeSearchPlan(IndexedQueryPlan):
 
     def count(self) -> int:
         return sum(1 for _ in self.execute())
+
+    def get_references(self) -> frozenset[int]:
+        """
+        Return a frozenset of references for all records with field value in [lo, hi]
+        according to inclusivity flags, without materializing objects eagerly.
+        """
+        refs: set[int] = set()
+        try:
+            if not (self.indexes and self.indexes.has(self.field_to_scan)):
+                return frozenset()
+            # Reuse get_range to iterate records lazily (already native-typed compare)
+            def _ref_of(rec) -> int:
+                try:
+                    if isinstance(rec, Atom) and getattr(rec, 'atom_pointer', None):
+                        return rec.atom_pointer.hash()
+                except Exception:
+                    pass
+                try:
+                    return rec.hash()
+                except Exception:
+                    return hash(rec)
+
+            for rec in self.get_range(self.field_to_scan, self.lo, self.hi, self.include_lower, self.include_upper):
+                refs.add(_ref_of(rec))
+            return frozenset(refs)
+        except Exception:
+            return frozenset()
 
 
 class OrMerge(QueryPlan):
