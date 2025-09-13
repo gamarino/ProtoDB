@@ -576,7 +576,7 @@ class ListPlan(QueryPlan):
         for item in self.base_list:
             yield item
 
-    def optimize(self) -> QueryPlan:
+    def optimize(self, *args, **kwargs) -> QueryPlan:
         return self
 
 
@@ -615,7 +615,7 @@ class IndexedQueryPlan(QueryPlan):
         for rec in self.based_on.execute():
             yield rec
 
-    def optimize(self) -> QueryPlan:
+    def optimize(self, *args, **kwargs) -> QueryPlan:
         return IndexedQueryPlan(
             indexes=self.indexes,
             based_on=self.based_on.optimize() if self.based_on else None,
@@ -936,7 +936,7 @@ class IndexedSearchPlan(IndexedQueryPlan):
         else:
             return []
 
-    def optimize(self) -> QueryPlan:
+    def optimize(self, *args, **kwargs) -> QueryPlan:
         return IndexedSearchPlan(
             field_to_scan=self.field_to_scan,
             operator=self.operator,
@@ -1029,7 +1029,7 @@ class OrMerge(QueryPlan):
             for rec in q.execute():
                 yield rec
 
-    def optimize(self) -> QueryPlan:
+    def optimize(self, *args, **kwargs) -> QueryPlan:
         return OrMerge(
             or_queries=[q.optimize() for q in self.or_queries],
             based_on=self.based_on.optimize() if self.based_on else None,
@@ -1182,7 +1182,7 @@ class AndMerge(QueryPlan):
             except Exception:
                 continue
 
-    def optimize(self) -> QueryPlan:
+    def optimize(self, *args, **kwargs) -> QueryPlan:
         return AndMerge(
             and_queries=self.and_queries,
             based_on=self.based_on.optimize() if self.based_on else None,
@@ -1249,7 +1249,7 @@ class IndexedRangeSearchPlan(IndexedQueryPlan):
                 yield rec
         return
 
-    def optimize(self) -> QueryPlan:
+    def optimize(self, *args, **kwargs) -> QueryPlan:
         return IndexedRangeSearchPlan(
             field_to_scan=self.field_to_scan,
             lo=self.lo,
@@ -1372,7 +1372,7 @@ class FromPlan(IndexedQueryPlan):
                         result = result._setattr(field_name, value)
             yield result
 
-    def optimize(self) -> QueryPlan:
+    def optimize(self, *args, **kwargs) -> QueryPlan:
         return FromPlan(
             alias=self.alias,
             based_on=self.based_on.optimize() if self.based_on else None,
@@ -1532,7 +1532,7 @@ class JoinPlan(QueryPlan):
                 if self._match(l, r, la, ra):
                     yield self._combine(l, r)
 
-    def optimize(self) -> QueryPlan:
+    def optimize(self, *args, **kwargs) -> QueryPlan:
         return JoinPlan(
             join_query=self.join_query.optimize() if self.join_query else None,
             join_type=self.join_type,
@@ -1689,7 +1689,7 @@ class WherePlan(QueryPlan):
             if flt.match(record):
                 yield record
 
-    def optimize(self) -> 'QueryPlan':
+    def optimize(self, *args, **kwargs) -> 'QueryPlan':
         """
         Optimizer rewrite to leverage indexes for:
         - Single Term expressions over an IndexedQueryPlan
@@ -2003,7 +2003,7 @@ class GroupByPlan(QueryPlan):
                 out = out._setattr(spec.target_field, result)
             yield out
 
-    def optimize(self) -> QueryPlan:
+    def optimize(self, *args, **kwargs) -> QueryPlan:
         return GroupByPlan(
             group_fields=list(self.group_fields),
             agreggated_fields=dict(self.agreggated_fields),
@@ -2076,7 +2076,7 @@ class UnnestPlan(QueryPlan):
                 else:
                     yield elem
 
-    def optimize(self) -> QueryPlan:
+    def optimize(self, *args, **kwargs) -> QueryPlan:
         if self.based_on:
             self.based_on = self.based_on.optimize()
         return self
@@ -2116,7 +2116,7 @@ class CollectionFieldPlan(QueryPlan):
                     out[self.field_name] = results
                     yield out
 
-    def optimize(self) -> QueryPlan:
+    def optimize(self, *args, **kwargs) -> QueryPlan:
         if self.based_on:
             self.based_on = self.based_on.optimize()
         return self
@@ -2181,7 +2181,7 @@ class SelectPlan(QueryPlan):
 
             yield result
 
-    def optimize(self) -> 'QueryPlan':
+    def optimize(self, *args, **kwargs) -> 'QueryPlan':
         """
         Optimize this plan and its dependencies.
 
@@ -2235,7 +2235,7 @@ class CountPlan(QueryPlan):
         count = sum(1 for _ in self.based_on.execute())
         return [{'count': count}]
 
-    def optimize(self) -> 'QueryPlan':
+    def optimize(self, *args, **kwargs) -> 'QueryPlan':
         """
         Optimizes the counting process.
 
@@ -2289,5 +2289,5 @@ class CountResultPlan(QueryPlan):
     def execute(self) -> list[dict]:
         return [{'count': self.count_value}]
 
-    def optimize(self) -> 'QueryPlan':
+    def optimize(self, *args, **kwargs) -> 'QueryPlan':
         return self

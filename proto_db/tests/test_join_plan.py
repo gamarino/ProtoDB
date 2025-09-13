@@ -331,7 +331,7 @@ class TestJoinPlan(unittest.TestCase):
         self.departments_from.optimize = MagicMock(return_value=optimized_departments)
 
         # Call optimize on the JoinPlan
-        result = join_plan.optimize(None)
+        result = join_plan.optimize()
 
         # Verify that the result is a JoinPlan with the same join_type and the optimized query plans
         self.assertIsInstance(result, JoinPlan)

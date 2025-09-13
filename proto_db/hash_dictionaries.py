@@ -27,7 +27,7 @@ class HashDictionaryQueryPlan(QueryPlan):
         for item in self.base.as_iterable():
             yield from item
 
-    def optimize(self) -> QueryPlan:
+    def optimize(self, *args, **kwargs) -> QueryPlan:
         """
         Return this plan; no optimization needed for hash dictionary scan.
         """

@@ -233,7 +233,7 @@ class TestWherePlan(unittest.TestCase):
         self.base_plan.optimize = MagicMock(return_value=optimized_base_plan)
 
         # Call optimize on the WherePlan
-        result = where_plan.optimize(None)
+        result = where_plan.optimize()
 
         # Verify that the result is a WherePlan with the same filter and the optimized base plan
         self.assertIsInstance(result, WherePlan)

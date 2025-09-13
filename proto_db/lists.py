@@ -30,7 +30,7 @@ class ListQueryPlan(QueryPlan):
         for item in self.base.as_iterable():
             yield item
 
-    def optimize(self) -> QueryPlan:
+    def optimize(self, *args, **kwargs) -> QueryPlan:
         """
         Optimizes the query plan for better performance.
 

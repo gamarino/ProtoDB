@@ -139,9 +139,9 @@ class TestSelectPlan(unittest.TestCase):
 
         select_plan = SelectPlan(fields={"field": "id"}, based_on=mock_base_plan, transaction=self.transaction)
 
-        result = select_plan.optimize(None)
+        result = select_plan.optimize()
 
-        mock_base_plan.optimize.assert_called_once_with(None)
+        mock_base_plan.optimize.assert_called_once()
         self.assertIsInstance(result, SelectPlan)
         self.assertIs(result.based_on, optimized_mock_plan)
 
@@ -247,7 +247,7 @@ class TestWherePlanOptimizer(unittest.TestCase):
         where_plan = WherePlan(filter=term_filter, based_on=mock_based_on, transaction=self.transaction)
 
         # Execute the optimization.
-        result_plan = where_plan.optimize(full_plan=None)
+        result_plan = where_plan.optimize()
 
         # Verify that the underlying plan's `optimize` was called.
         mock_based_on.optimize.assert_called_once()
@@ -314,10 +314,10 @@ class TestCountPlan(unittest.TestCase):
         count_plan = CountPlan(based_on=mock_base_plan, transaction=self.transaction)
 
         # Optimize the plan
-        optimized_count_plan = count_plan.optimize(None)
+        optimized_count_plan = count_plan.optimize()
 
         # 1. Assert that the base plan's optimization was called.
-        mock_base_plan.optimize.assert_called_once_with(None)
+        mock_base_plan.optimize.assert_called_once()
 
         # 2. Assert that the resulting plan is a CountResultPlan.
         self.assertIsInstance(optimized_count_plan, CountResultPlan,
@@ -351,7 +351,7 @@ class TestCountPlan(unittest.TestCase):
         # Its optimize() method returns another ListPlan.
         count_plan = CountPlan(based_on=self.base_plan, transaction=self.transaction)
 
-        optimized_plan = count_plan.optimize(None)
+        optimized_plan = count_plan.optimize()
 
         # The plan should not have been replaced with a CountResultPlan
         self.assertIsInstance(optimized_plan, CountPlan)

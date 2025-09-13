@@ -314,7 +314,7 @@ class TestGroupByPlan(unittest.TestCase):
         self.base_plan.optimize = MagicMock(return_value=optimized_base_plan)
 
         # Call optimize on the GroupByPlan
-        result = group_plan.optimize(None)
+        result = group_plan.optimize()
 
         # Verify that the result is a GroupByPlan with the same fields and the optimized base plan
         self.assertIsInstance(result, GroupByPlan)
