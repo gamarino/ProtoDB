@@ -543,7 +543,11 @@ class IndexedQueryPlan(QueryPlan):
             self.indexes = indexes
 
     def execute(self) -> list:
-        return super().execute()
+        # Delegate execution to the underlying plan; indexes are only metadata for optimization
+        if self.based_on is None:
+            return []
+        for rec in self.based_on.execute():
+            yield rec
 
     def optimize(self, full_plan: QueryPlan) -> QueryPlan:
         return IndexedQueryPlan(

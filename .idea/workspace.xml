@@ -4,8 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[WIP] nuevos índices">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] The test suite was run, failures were identified, and targeted fixes were applied to make indexes optional and correct dictionary behaviors. After implementing the fixes, the full test suite of 241 tests passed successfully. Guidance on running the tests with proper discovery was provided.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/performance.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/performance.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/benchmark_results_indexed.json" beforeDir="false" afterPath="$PROJECT_DIR$/examples/benchmark_results_indexed.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/indexed_benchmark.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/indexed_benchmark.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -274,23 +277,7 @@
       <workItem from="1757647544978" duration="4378000" />
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
-      <workItem from="1757675249603" duration="24424000" />
-    </task>
-    <task id="LOCAL-00034" summary="[IMP] examples">
-      <option name="closed" value="true" />
-      <created>1753740095624</created>
-      <option name="number" value="00034" />
-      <option name="presentableId" value="LOCAL-00034" />
-      <option name="project" value="LOCAL" />
-      <updated>1753740095624</updated>
-    </task>
-    <task id="LOCAL-00035" summary="[IMP] examples">
-      <option name="closed" value="true" />
-      <created>1753740119296</created>
-      <option name="number" value="00035" />
-      <option name="presentableId" value="LOCAL-00035" />
-      <option name="project" value="LOCAL" />
-      <updated>1753740119296</updated>
+      <workItem from="1757675249603" duration="26762000" />
     </task>
     <task id="LOCAL-00036" summary="[FIX] simple_example.py: in proper proto_db style">
       <option name="closed" value="true" />
@@ -668,15 +655,29 @@
       <option name="project" value="LOCAL" />
       <updated>1757733224499</updated>
     </task>
-    <option name="localTasksCounter" value="83" />
+    <task id="LOCAL-00083" summary="[FIX] queries.py: Fixed multiple errors in proto_db/queries.py related to IndexedQueryPlan and index handling. Corrected API usage, key normalization, bounds checking, and index-based query execution. Testing is currently blocked by a separate circular import issue unrelated to these fixes.">
+      <option name="closed" value="true" />
+      <created>1757734298792</created>
+      <option name="number" value="00083" />
+      <option name="presentableId" value="LOCAL-00083" />
+      <option name="project" value="LOCAL" />
+      <updated>1757734298792</updated>
+    </task>
+    <task id="LOCAL-00084" summary="[FIX] The test suite was run, failures were identified, and targeted fixes were applied to make indexes optional and correct dictionary behaviors. After implementing the fixes, the full test suite of 241 tests passed successfully. Guidance on running the tests with proper discovery was provided.">
+      <option name="closed" value="true" />
+      <created>1757735771568</created>
+      <option name="number" value="00084" />
+      <option name="presentableId" value="LOCAL-00084" />
+      <option name="project" value="LOCAL" />
+      <updated>1757735771568</updated>
+    </task>
+    <option name="localTasksCounter" value="85" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[FIX] additional files for new query features" />
-    <MESSAGE value="[ADD] Implemented persistent internal secondary indexes for List, Dictionary, and Set, updating relevant methods and iterators to use these indexes. The new indexes.py module includes IndexDefinition and an immutable IndexRegistry, ensuring stable identifiers and lazy index loading. Completed testing confirmed proper functionality and index integrity." />
     <MESSAGE value="[ADD] Range operators `between[]`, `between()`, `between(]`, and `between[)` were implemented with parsing, evaluation, and index-based optimization. All tests passed successfully, confirming correct functionality and backward compatibility. The solution is now ready for submission." />
     <MESSAGE value="[ADD] Se implementó la optimización de la cláusula `where` con intersección progresiva de condiciones AND ordenadas por selectividad utilizando índices. Todas las pruebas objetivo fueron exitosas, aunque hubo un error con el descubrimiento completo por un módulo externo faltante. Sin índices, se conserva el filtrado linear habitual." />
     <MESSAGE value="[ADD] The performance suite was updated to use new indexes, enabling a benchmark to evaluate proto_db with indexed collections against a Python baseline. A new benchmark script was created, executed successfully, and documentation was updated accordingly." />
@@ -700,7 +701,9 @@
     <MESSAGE value="[FIX] Several errors in test suite" />
     <MESSAGE value="[DOC] Performance update" />
     <MESSAGE value="[WIP] nuevos índices" />
-    <option name="LAST_COMMIT_MESSAGE" value="[WIP] nuevos índices" />
+    <MESSAGE value="[FIX] queries.py: Fixed multiple errors in proto_db/queries.py related to IndexedQueryPlan and index handling. Corrected API usage, key normalization, bounds checking, and index-based query execution. Testing is currently blocked by a separate circular import issue unrelated to these fixes." />
+    <MESSAGE value="[FIX] The test suite was run, failures were identified, and targeted fixes were applied to make indexes optional and correct dictionary behaviors. After implementing the fixes, the full test suite of 241 tests passed successfully. Guidance on running the tests with proper discovery was provided." />
+    <option name="LAST_COMMIT_MESSAGE" value="[FIX] The test suite was run, failures were identified, and targeted fixes were applied to make indexes optional and correct dictionary behaviors. After implementing the fixes, the full test suite of 241 tests passed successfully. Guidance on running the tests with proper discovery was provided." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

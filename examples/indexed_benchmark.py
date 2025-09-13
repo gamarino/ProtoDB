@@ -51,8 +51,8 @@ def run_benchmark(n_items=10000, n_queries=50, out_path="examples/benchmark_resu
     def py_query():
         cat = random.choice(CATEGORIES)
         st = random.choice(STATUSES)
-        lo = random.randint(1, 50000)
-        hi = lo + random.randint(100, 10000)
+        lo = random.randint(1, 99500)
+        hi = lo + 500
         return [r for r in data if (r.get('category') == cat and r.get('status') == st and lo < r.get('value', 0) < hi)]
 
     py_time = bench(lambda: [py_query() for _ in range(n_queries)], repeat=1)
@@ -111,30 +111,10 @@ def run_benchmark(n_items=10000, n_queries=50, out_path="examples/benchmark_resu
         st = random.choice(STATUSES)
         lo = random.randint(1, 50000)
         hi = lo + random.randint(100, 10000)
-        # Use prebuilt secondary indexes to compute intersection
-        cat_set = set()
-        st_set = set()
-        val_set = set()
-        cat_bucket = idx_map['r.category'].get_at(str(cat))
-        if cat_bucket:
-            cat_set.update(cat_bucket.as_iterable())
-        st_bucket = idx_map['r.status'].get_at(str(st))
-        if st_bucket:
-            st_set.update(st_bucket.as_iterable())
-        # Range over numeric value index
-        for k, bucket in idx_map['r.value'].as_iterable():
-            try:
-                kv = int(k)
-            except Exception:
-                continue
-            if lo < kv < hi:
-                val_set.update(bucket.as_iterable())
-        # Intersect progressively
-        cur = cat_set
-        cur = cur.intersection(st_set) if cur else set()
-        cur = cur.intersection(val_set) if cur else set()
-        # Materialize list as the query result
-        _ = list(cur)
+        # Build a WherePlan over the IndexedQueryPlan so the optimizer can use indexes
+        flt = Expression.compile(['&', ['r.category', '==', cat], ['r.status', '==', st], ['r.value', 'between()', lo, hi]])
+        plan = WherePlan(filter=flt, based_on=indexed, transaction=tr)
+        list(plan.execute())
 
     pb_indexed_time = bench(lambda: [pb_indexed_query_once() for _ in range(n_queries)], repeat=1)
 
