@@ -1,0 +1,18 @@
+# ProtoBase requirements
+#
+# Core ProtoBase has no mandatory third‑party dependencies and runs on standard library (Python >= 3.11).
+# The packages below are OPTIONAL and only needed for specific features.
+# Uncomment the lines you need for your environment.
+#
+# Optional: Arrow/Parquet bridge (proto_db.arrow_bridge)
+# pyarrow>=14.0.0
+# numpy>=1.24.0
+#
+# Optional: Cloud/S3 integration (proto_db.cloud_file_storage)
+# boto3>=1.28.0
+# botocore>=1.31.0
+#
+# Optional: Development tooling (linting, formatting, tests). Not required to use ProtoBase.
+# pytest>=7.0.0
+# mypy>=1.5.0
+# black>=23.0.0
