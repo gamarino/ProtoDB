@@ -1,7 +1,9 @@
 from __future__ import annotations
-
+from typing import cast
+from . import RepeatedKeysDictionary
 from .common import Atom, QueryPlan, DBCollections, AbstractTransaction, AtomPointer
 from .indexes import IndexRegistry, IndexDefinition
+from .queries import IndexedQueryPlan
 
 
 class ListQueryPlan(QueryPlan):
@@ -35,9 +37,7 @@ class ListQueryPlan(QueryPlan):
         return self
 
 
-class List(Atom):
-    _indexes: IndexRegistry | None = None
-    _index_defs: tuple[IndexDefinition, ...] | None = None
+class List(DBCollections):
     empty: bool  # Indicator to represent empty lists
     value: object | None  # The value associated with this position; None is a valid value.
     height: int  # The height of the current subtree rooted at this node.
@@ -50,6 +50,7 @@ class List(Atom):
             empty: bool = True,
             next: List = None,
             previous: List = None,
+            indexes: DBCollections = None,
             transaction: AbstractTransaction = None,
             atom_pointer: AtomPointer = None,
             **kwargs):
@@ -60,6 +61,7 @@ class List(Atom):
         self.next = next
         self.previous = previous
         self.empty = not value and empty
+        self.indexes = indexes or {}
 
         # Calculate the total count of nodes in the current subtree.
         if not self.empty:
@@ -84,6 +86,39 @@ class List(Atom):
         else:
             self.height = 0
 
+    def add_index(self, field_name: str):
+        new_index = RepeatedKeysDictionary(self.transaction)
+        # Regenerate index on creation
+        if not self.empty:
+            for v in self.as_iterable():
+                new_index = new_index.common_add(v)
+
+        new_indexes = self.indexes.set_at(field_name, new_index)
+
+        return List(
+            value = self.value,
+            empty = self.empty,
+            next = self.next,
+            previous = self.previous,
+            indexes = new_indexes,
+            transaction = self.transaction
+        )
+
+    def remove_index(self, field_name: str):
+        if self.indexes and self.indexes.has(field_name):
+            new_indexes = self.indexes.remove_at(field_name)
+
+            return List(
+                value=self.value,
+                empty=self.empty,
+                next=self.next,
+                previous=self.previous,
+                indexes=new_indexes,
+                transaction=self.transaction
+            )
+        else:
+            return self
+
     def _load(self):
         if not self._loaded:
             super()._load()
@@ -103,33 +138,6 @@ class List(Atom):
                 self.value._save()
 
             super()._save()
-
-    def _stable_id_for(self, value: object) -> int:
-        if isinstance(value, Atom):
-            try:
-                return value.hash()
-            except Exception:
-                pass
-        return hash(value)
-
-    def set_index_defs(self, defs: 'tuple[IndexDefinition, ...] | list[IndexDefinition]'):
-        self._index_defs = tuple(defs)
-        # Build lazily when needed
-        if not self._indexes and self._index_defs:
-            reg = IndexRegistry().with_defs(self._index_defs)
-            for v in self.as_iterable():
-                reg = reg.with_add(self._stable_id_for(v), v)
-            self._indexes = reg
-
-    def _attach_indexes(self, target: 'List', new_indexes: IndexRegistry | None) -> 'List':
-        try:
-            object.__setattr__(target, '_index_defs', self._index_defs)
-            object.__setattr__(target, '_indexes', new_indexes or self._indexes)
-        except Exception:
-            # Fallback just in case immutability constraints bite
-            target._index_defs = self._index_defs
-            target._indexes = new_indexes or self._indexes
-        return target
 
     def as_iterable(self) -> list[tuple[int, object]]:
         """
@@ -162,7 +170,10 @@ class List(Atom):
 
         :return: A QueryPlan object for this list.
         """
-        return ListQueryPlan(base=self)
+        if self.indexes:
+            return IndexedQueryPlan(base=self, indexes=cast(RepeatedKeysDictionary, self.indexes))
+        else:
+            return ListQueryPlan(base=self)
 
     def get_at(self, offset: int) -> Atom | None:
         """
@@ -440,17 +451,20 @@ class List(Atom):
             )
 
         result = new_node._rebalance()
-        new_indexes = self._indexes
-        if self._index_defs:
-            if not new_indexes:
-                new_indexes = IndexRegistry().with_defs(self._index_defs)
-            elif not getattr(new_indexes, 'defs', ()):  # ensure defs attached
-                new_indexes = new_indexes.with_defs(self._index_defs)
-            if cmp == 0 and not self.empty:
-                new_indexes = new_indexes.with_replace(self._stable_id_for(self.value), self.value, value)
-            else:
-                new_indexes = new_indexes.with_add(self._stable_id_for(value), value)
-        return self._attach_indexes(result, new_indexes)
+
+        if self.indexes:
+            new_indexes = self.add2indexes(value)
+        else:
+            new_indexes = self.indexes
+
+        return List(
+            value=result.value,
+            empty=result.empty,
+            previous=result.previous,
+            next=result.next,
+            indexes=new_indexes,
+            transaction=self.transaction
+        )
 
     def insert_at(self, offset: int, value: object) -> List:
         """
@@ -552,7 +566,21 @@ class List(Atom):
                 transaction=self.transaction
             )
 
-        return new_node._rebalance()
+        result = new_node._rebalance()
+
+        if self.indexes:
+            new_indexes = self.add2indexes(value)
+        else:
+            new_indexes = self.indexes
+
+        return List(
+            value=result.value,
+            empty=result.empty,
+            previous=result.previous,
+            next=result.next,
+            indexes=new_indexes,
+            transaction=self.transaction
+        )
 
     def remove_at(self, offset: int) -> List:
         """
@@ -581,6 +609,8 @@ class List(Atom):
         # Case: Remove from an empty List.
         if self.empty:
             return self
+
+        current_value = self.get_at(offset)
 
         cmp = offset - node_offset
         if cmp > 0:
@@ -640,7 +670,21 @@ class List(Atom):
             else:
                 return None
 
-        return new_node._rebalance()
+        result = new_node._rebalance()
+
+        if self.indexes:
+            new_indexes = self.remove_from_indexes(current_value)
+        else:
+            new_indexes = self.indexes
+
+        return List(
+            value=result.value,
+            empty=result.empty,
+            previous=result.previous,
+            next=result.next,
+            indexes=new_indexes,
+            transaction=self.transaction
+        )
 
     def remove_first(self) -> List:
         """
@@ -659,6 +703,8 @@ class List(Atom):
         # Case: Removing from an empty List.
         if self.empty:
             return self
+
+        current_value = self.get_at(0)
 
         if node_offset > 0:
             # Remove from the left subtree.
@@ -683,7 +729,21 @@ class List(Atom):
                 transaction=self.transaction
             )
 
-        return new_node._rebalance()
+        result = new_node._rebalance()
+
+        if self.indexes:
+            new_indexes = self.remove_from_indexes(current_value)
+        else:
+            new_indexes = self.indexes
+
+        return List(
+            value=result.value,
+            empty=result.empty,
+            previous=result.previous,
+            next=result.next,
+            indexes=new_indexes,
+            transaction=self.transaction
+        )
 
     def remove_last(self) -> List:
         """
@@ -701,6 +761,8 @@ class List(Atom):
         # Case: Removing from an empty List.
         if self.empty:
             return self
+
+        current_value = self.get_at(-1)
 
         if self.next:
             self.next._load()
@@ -722,7 +784,21 @@ class List(Atom):
                 transaction=self.transaction
             )
 
-        return new_node._rebalance()
+        result = new_node._rebalance()
+
+        if self.indexes:
+            new_indexes = self.remove_from_indexes(current_value)
+        else:
+            new_indexes = self.indexes
+
+        return List(
+            value=result.value,
+            empty=result.empty,
+            previous=result.previous,
+            next=result.next,
+            indexes=new_indexes,
+            transaction=self.transaction
+        )
 
     def extend(self, items: List) -> List:
         """
@@ -734,6 +810,7 @@ class List(Atom):
         result = self
         if items is None or (hasattr(items, 'empty') and items.empty):
             return result
+
         for it in items.as_iterable():
             result = result.insert_at(result.count, it)
         return result

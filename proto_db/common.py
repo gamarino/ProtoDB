@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod, ABCMeta
 from concurrent.futures import Future
 from typing import cast, BinaryIO
 
+from . import Dictionary
 from .exceptions import ProtoValidationException, ProtoCorruptionException
 
 # Constants for storage size units
@@ -762,23 +763,55 @@ class DBCollections(Atom):
     :type count: int
     """
     count: int = 0
+    indexes: Dictionary = None
 
     def __init__(self,
+                 indexes: Dictionary,
                  transaction: AbstractTransaction = None,
                  atom_pointer: AtomPointer = None,
                  **kwargs):
+        self.indexes = indexes
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
 
-    @abstractmethod
-    def as_iterable(self) -> list[object]:
+    def index_add(self, item) -> DBCollections:
         """
-        Returns an iterable representation of the collection's items.
+        When the DBCollection represents an index, add an element to the index.
+        On other collections, no change is made
 
-        This method provides a way to iterate through all items in the collection.
-        Implementations should define how the collection's data is traversed and yielded.
-
-        :return: An iterable of the collection's items.
+        :param item:
+        :return: the new modified collection
         """
+        return self
+
+    def index_remove(self, item) -> DBCollections:
+        """
+        When the DBCollection represents an index, remove an element from the index.
+        On other collections, no change is made
+
+        :param item:
+        :return: the new modified collection
+        """
+        return self
+
+    def add2indexes(self, item):
+        """
+            Add an element to the indexes.
+        :param item:
+        :return:
+        """
+        for index_name, index in self.indexes.as_iterable():
+            if index_name in item:
+                self.indexes[index_name] = self.indexes.get_at(index_name).index_add(item)
+
+    def remove_from_indexes(self, item):
+        """
+            Remove an element from the indexes.
+        :param item:
+        :return:
+        """
+        for index_name, index in self.indexes.as_iterable():
+            if index_name in item:
+                self.indexes[index_name] = self.indexes.get_at(index_name).index_remove(item)
 
     @abstractmethod
     def as_query_plan(self) -> QueryPlan:

@@ -4,8 +4,12 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] Several errors in test suite">
-      <change beforePath="$PROJECT_DIR$/benchmark_results.json" beforeDir="false" afterPath="$PROJECT_DIR$/benchmark_results.json" afterDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[DOC] Performance update">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/dictionaries.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/lists.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/sets.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/sets.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -79,7 +83,7 @@
     "node.js.selected.package.eslint": "(autodetect)",
     "node.js.selected.package.tslint": "(autodetect)",
     "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable",
+    "settings.editor.selected.configurable": "ml.llm.LLMConfigurable",
     "to.speed.mode.migration.done": "true",
     "vue.rearranger.settings.migration": "true"
   },
@@ -273,15 +277,7 @@
       <workItem from="1757647544978" duration="4378000" />
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
-      <workItem from="1757675249603" duration="7227000" />
-    </task>
-    <task id="LOCAL-00032" summary="[FIX] README.md">
-      <option name="closed" value="true" />
-      <created>1753738512819</created>
-      <option name="number" value="00032" />
-      <option name="presentableId" value="LOCAL-00032" />
-      <option name="project" value="LOCAL" />
-      <updated>1753738512819</updated>
+      <workItem from="1757675249603" duration="23208000" />
     </task>
     <task id="LOCAL-00033" summary="[FIX] README.md, pyproject.toml: update to current status">
       <option name="closed" value="true" />
@@ -667,14 +663,21 @@
       <option name="project" value="LOCAL" />
       <updated>1757682258446</updated>
     </task>
-    <option name="localTasksCounter" value="81" />
+    <task id="LOCAL-00081" summary="[DOC] Performance update">
+      <option name="closed" value="true" />
+      <created>1757682552949</created>
+      <option name="number" value="00081" />
+      <option name="presentableId" value="LOCAL-00081" />
+      <option name="project" value="LOCAL" />
+      <updated>1757682552949</updated>
+    </task>
+    <option name="localTasksCounter" value="82" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[PROPOSAL] commercial positioning" />
     <MESSAGE value="[FIX] test files cleanup" />
     <MESSAGE value="[FIX] additional files for new query features" />
     <MESSAGE value="[ADD] Implemented persistent internal secondary indexes for List, Dictionary, and Set, updating relevant methods and iterators to use these indexes. The new indexes.py module includes IndexDefinition and an immutable IndexRegistry, ensuring stable identifiers and lazy index loading. Completed testing confirmed proper functionality and index integrity." />
@@ -699,7 +702,8 @@
     <MESSAGE value="[FIX] Translated commercial_positioning.md to professional English preserving structure and tone. Updated multiple sections with accurate English content and verified related unit tests passed. No code changes occurred, and repository integrity remained intact." />
     <MESSAGE value="[FIX] The performance suite was rerun with updated benchmark results saved in JSON files. Unit tests for the parallel module passed without issues. Documentation remained accurate and no updates were needed." />
     <MESSAGE value="[FIX] Several errors in test suite" />
-    <option name="LAST_COMMIT_MESSAGE" value="[FIX] Several errors in test suite" />
+    <MESSAGE value="[DOC] Performance update" />
+    <option name="LAST_COMMIT_MESSAGE" value="[DOC] Performance update" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -733,18 +737,6 @@
           <url>file://$PROJECT_DIR$/examples/simple_example.py</url>
           <line>84</line>
           <option name="timeStamp" value="239" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <condition expression="isinstance(key, Literal)" language="Python" />
-          <url>file://$PROJECT_DIR$/proto_db/dictionaries.py</url>
-          <line>136</line>
-          <option name="timeStamp" value="246" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <condition expression="isinstance(key, Literal)" language="Python" />
-          <url>file://$PROJECT_DIR$/proto_db/dictionaries.py</url>
-          <line>154</line>
-          <option name="timeStamp" value="247" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/db_access.py</url>

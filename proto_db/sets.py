@@ -1,13 +1,12 @@
 from __future__ import annotations
-
-from .common import Atom, QueryPlan, AbstractTransaction, AtomPointer
+from typing import cast
+from .common import Atom, QueryPlan, AbstractTransaction, AtomPointer, DBCollections, Dictionary
 from .hash_dictionaries import HashDictionary
-from .indexes import IndexRegistry, IndexDefinition
+from .dictionaries import RepeatedKeysDictionary
+from .queries import IndexedQueryPlan
 
 
 class Set(Atom):
-    _indexes: IndexRegistry
-    _index_defs: tuple[IndexDefinition, ...] | None = None
     """
     A custom implementation of a mathematical set, storing unique elements of type `Atom`.
     The internal data structure is backed by a `HashDictionary` which ensures that
@@ -32,35 +31,19 @@ class Set(Atom):
             content: HashDictionary = None,
             transaction: AbstractTransaction = None,
             atom_pointer: AtomPointer = None,
-            index_defs: tuple[IndexDefinition, ...] | None = None,
-            indexes: IndexRegistry | None = None,
+            indexes: DBCollections | None = None,
             **kwargs):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
         self.content = content if content else HashDictionary(
             transaction=transaction)  # Store the underlying hash-based dictionary.
         self.count = self.content.count
-        self._index_defs = index_defs
-        self._indexes = indexes or IndexRegistry()
+        self.indexes = indexes or Dictionary(transaction=transaction)
 
     def _save(self):
         if not self._saved:
             super()._save()
             self.content.transaction = self.transaction
             self.content._save()
-
-    def set_index_defs(self, defs: 'Iterable[IndexDefinition]'):
-        """
-        Configure index definitions. If indexes are empty, build them once lazily.
-        Uses obj_id = item hash (Atom.hash() or Python hash).
-        """
-        self._index_defs = tuple(defs)
-        # Build only if empty
-        if (not self._indexes.defs) and self._index_defs:
-            reg = IndexRegistry().with_defs(self._index_defs)
-            for h, item in self.content.as_iterable():
-                obj_id = h  # HashDictionary provides (hash, item)
-                reg = reg.with_add(obj_id, item)
-            self._indexes = reg
 
     def as_iterable(self) -> list[Atom]:
         """
@@ -88,7 +71,36 @@ class Set(Atom):
         """
         self._load()
 
+        if self.indexes:
+            return IndexedQueryPlan(base=self, indexes=cast(RepeatedKeysDictionary, self.indexes))
         return self.content.as_query_plan()
+
+    def add_index(self, field_name: str):
+        new_index = RepeatedKeysDictionary(self.transaction)
+        # Regenerate index on creation
+        if not self.empty:
+            for v in self.as_iterable():
+                new_index = new_index.common_add(v)
+
+        new_indexes = self.indexes.set_at(field_name, new_index)
+
+        return Set(
+            content=self.content,
+            indexes=new_indexes,
+            transaction=self.transaction
+        )
+
+    def remove_index(self, field_name: str):
+        if self.indexes and self.indexes.has(field_name):
+            new_indexes = self.indexes.remove_at(field_name)
+
+            return Set(
+                content=self.content,
+                indexes=new_indexes,
+                transaction=self.transaction
+            )
+        else:
+            return self
 
     def has(self, key: object) -> bool:
         """
@@ -128,16 +140,14 @@ class Set(Atom):
         self._load()
 
         new_content = self.content.set_at(item_hash, key)
-        new_indexes = self._indexes
-        if self._index_defs:
-            if not new_indexes.defs:
-                # lazily attach defs
-                new_indexes = new_indexes.with_defs(self._index_defs)
-            new_indexes = new_indexes.with_add(item_hash, key)
+        new_indexes = self.indexes
+
+        if self.indexes:
+            new_indexes = self.indexes.add2indexes(key)
+
         return Set(
             content=new_content,
             transaction=self.transaction,
-            index_defs=self._index_defs,
             indexes=new_indexes
         )
 
@@ -157,17 +167,18 @@ class Set(Atom):
         else:
             item_hash = hash(key)  # Use the default Python hash for non-Atom objects.
 
+        if not self.has(key):
+            return self
+
         # Create and return a new `Set` with the updated `HashDictionary`.
         new_content = self.content.remove_at(item_hash)
-        new_indexes = self._indexes
-        if self._index_defs:
-            if not new_indexes.defs:
-                new_indexes = new_indexes.with_defs(self._index_defs)
-            new_indexes = new_indexes.with_remove(item_hash, key)
+        new_indexes = self.indexes
+        if new_indexes:
+            new_indexes = new_indexes.remove_from_indexes(key)
+
         return Set(
             content=new_content,
             transaction=self.transaction,
-            index_defs=self._index_defs,
             indexes=new_indexes
         )
 

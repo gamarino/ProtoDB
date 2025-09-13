@@ -4,9 +4,9 @@ import logging
 from typing import cast
 
 from .common import Atom, DBCollections, QueryPlan, Literal, AbstractTransaction, AtomPointer, ConcurrentOptimized
-from .indexes import IndexRegistry, IndexDefinition
 from .exceptions import ProtoNotSupportedException
 from .lists import List
+from .queries import IndexedQueryPlan
 from .sets import Set
 
 _logger = logging.getLogger(__name__)
@@ -37,8 +37,6 @@ class DictionaryItem(Atom):
 
 
 class Dictionary(DBCollections, ConcurrentOptimized):
-    _indexes: IndexRegistry
-    _index_defs: tuple[IndexDefinition, ...] | None = None
     """
     Represents a durable, transaction-safe dictionary-like mapping between strings and values,
     with support for concurrent modifications.
@@ -56,15 +54,13 @@ class Dictionary(DBCollections, ConcurrentOptimized):
             transaction: AbstractTransaction = None,  # Transaction context for operations.
             atom_pointer: AtomPointer = None,  # Pointer to ensure atomicity and durability.
             op_log: list = None,
-            index_defs: tuple[IndexDefinition, ...] | None = None,
-            indexes: IndexRegistry | None = None,
+            indexes: DBCollections | None = None,
             **kwargs):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
         self.content = content if content else List(transaction=transaction)  # Initialize content or create a new List.
         self.count = self.content.count  # Number of items in the dictionary.
         self._op_log = op_log if op_log is not None else []
-        self._index_defs = index_defs
-        self._indexes = indexes or IndexRegistry()
+        self.indexes = indexes
 
     def _load(self):
         if not self._loaded:
@@ -79,17 +75,6 @@ class Dictionary(DBCollections, ConcurrentOptimized):
             self.content._save()
             super()._save()
             self._saved = True
-
-    def set_index_defs(self, defs: 'Iterable[IndexDefinition]'):
-        """
-        Configure index definitions. If indexes are empty, build once using obj_id=key.
-        """
-        self._index_defs = tuple(defs)
-        if (not self._indexes.defs) and self._index_defs:
-            reg = IndexRegistry().with_defs(self._index_defs)
-            for k, v in self.as_iterable():
-                reg = reg.with_add(k, v)
-            self._indexes = reg
 
     def as_iterable(self) -> list[tuple[str, object]]:
         """
@@ -108,7 +93,11 @@ class Dictionary(DBCollections, ConcurrentOptimized):
         :return: The dictionary's query plan.
         """
         self._load()
-        return self.content.as_query_plan()
+
+        if self.indexes:
+            return IndexedQueryPlan(base=self, indexes=cast(RepeatedKeysDictionary, self.indexes))
+        else:
+            return self.content.as_query_plan()
 
     def get_at(self, key: str) -> object | None:
         """
@@ -158,11 +147,15 @@ class Dictionary(DBCollections, ConcurrentOptimized):
         right = self.content.count - 1
         new_content = self.content
 
+        old_value = None
+
         while left <= right:
             center = (left + right) // 2
 
             item = cast(DictionaryItem, self.content.get_at(center))
             if item and str(item.key) == key:  # Check if the key already exists.
+                old_value = item.value
+
                 new_content = new_content.set_at(
                     center,
                     DictionaryItem(
@@ -188,21 +181,16 @@ class Dictionary(DBCollections, ConcurrentOptimized):
 
         new_op_log = self._op_log + [('set', key, value)]
 
-        new_indexes = self._indexes
-        if self._index_defs:
-            if not new_indexes.defs:
-                new_indexes = new_indexes.with_defs(self._index_defs)
-            # Determine if replace or add
-            if left <= right:  # we broke out due to existing key
-                old_value = cast(DictionaryItem, self.content.get_at(center)).value
-                new_indexes = new_indexes.with_replace(key, old_value, value)
-            else:
-                new_indexes = new_indexes.with_add(key, value)
+        new_indexes = self.indexes
+        if self.indexes:
+            if old_value:
+                new_indexes = self.remove_from_indexes(old_value)
+            new_indexes = self.add2indexes(value)
+
         return Dictionary(
             content=new_content,
             transaction=self.transaction,
             op_log=new_op_log,
-            index_defs=self._index_defs,
             indexes=new_indexes
         )
 
@@ -232,16 +220,13 @@ class Dictionary(DBCollections, ConcurrentOptimized):
                     # If the content is None, create an empty dictionary
                     new_content = List(transaction=self.transaction)
                 new_op_log = self._op_log + [('remove', key, None)]
-                new_indexes = self._indexes
-                if self._index_defs:
-                    if not new_indexes.defs:
-                        new_indexes = new_indexes.with_defs(self._index_defs)
-                    new_indexes = new_indexes.with_remove(key, item.value)
+                new_indexes = self.indexes
+                if self.indexes:
+                    new_indexes = self.remove_from_indexes(item.value)
                 return Dictionary(
                     content=new_content,
                     transaction=self.transaction,
                     op_log=new_op_log,
-                    index_defs=self._index_defs,
                     indexes=new_indexes
                 )
 
@@ -316,11 +301,13 @@ class RepeatedKeysDictionary(Dictionary):
     def __init__(
             self,
             content: List = None,
+            indexes: DBCollections = None,
             transaction: AbstractTransaction = None,
             atom_pointer: AtomPointer = None,
             op_log: list = None,
             **kwargs):
         super().__init__(content=content, transaction=transaction, atom_pointer=atom_pointer, op_log=op_log, **kwargs)
+        self.indexes = indexes if indexes else DBCollections(transaction=transaction)
 
     def get_at(self, key: str) -> Set | None:
         """
@@ -354,16 +341,13 @@ class RepeatedKeysDictionary(Dictionary):
         new_content = super(RepeatedKeysDictionary, self).set_at(key, record_list).content
         new_op_log = self._op_log + [('set', key, value)]
 
-        new_indexes = self._indexes
-        if self._index_defs:
-            if not new_indexes.defs:
-                new_indexes = new_indexes.with_defs(self._index_defs)
-            new_indexes = new_indexes.with_add(key, value)
+        new_indexes = self.indexes
+        if self.indexes:
+            new_indexes = self.add2indexes(value)
         return RepeatedKeysDictionary(
             content=new_content,
             transaction=self.transaction,
             op_log=new_op_log,
-            index_defs=self._index_defs,
             indexes=new_indexes
         )
 
@@ -375,6 +359,11 @@ class RepeatedKeysDictionary(Dictionary):
         :return: A new instance of Dictionary reflecting the removal.
         """
         if super().has(key):
+            value_set = cast(Set, super().get_at(key))
+            new_indexes = self.indexes
+            for value in value_set.get_as_iterable():
+                new_indexes = self.remove_from_indexes(value)
+
             result = super(RepeatedKeysDictionary, self).remove_at(key)
             if result is None:
                 # If the result is None, create an empty dictionary
@@ -382,21 +371,11 @@ class RepeatedKeysDictionary(Dictionary):
             else:
                 new_content = result.content
             new_op_log = self._op_log + [('remove', key, None)]
-            new_indexes = self._indexes
-            if self._index_defs:
-                if not new_indexes.defs:
-                    new_indexes = new_indexes.with_defs(self._index_defs)
-                # Removing a whole key: need to remove all values under that key. We can remove using the set as a whole.
-                # Since IndexRegistry uses extractor over item, we remove per value from the set.
-                record_set = cast(Set, super().get_at(key)) if super().has(key) else None
-                if record_set:
-                    for item in record_set.as_iterable():
-                        new_indexes = new_indexes.with_remove(key, item)
+
             return RepeatedKeysDictionary(
                 content=new_content,
                 transaction=self.transaction,
                 op_log=new_op_log,
-                index_defs=self._index_defs,
                 indexes=new_indexes
             )
         else:
@@ -412,32 +391,21 @@ class RepeatedKeysDictionary(Dictionary):
         """
         if super().has(key):
             record_set = cast(Set, super().get_at(key))
-            record_hash = record.hash()
-            if record_set.has(record_hash):
-                result = record_set.remove_at(record_hash)
-                if result is None:
-                    # If the result is None, create an empty set
-                    record_set = Set(transaction=self.transaction)
-                else:
-                    record_set = result
-                result = super(RepeatedKeysDictionary, self).set_at(key, record_set)
-                if result is None:
-                    # If the result is None, create an empty dictionary
-                    new_content = List(transaction=self.transaction)
-                else:
-                    new_content = result.content
+            new_content = self.content
+            if record_set.has(record):
+                record_set = record_set.remove_at(record)
+                if record_set.count == 0:
+                    new_content = new_content.remove_at(key)
+
                 new_op_log = self._op_log + [('remove_record', key, record)]
 
-                new_indexes = self._indexes
-                if self._index_defs:
-                    if not new_indexes.defs:
-                        new_indexes = new_indexes.with_defs(self._index_defs)
-                    new_indexes = new_indexes.with_remove(key, record)
+                new_indexes = self.indexes
+                if self.indexes:
+                    new_indexes = self.remove_from_indexes(record)
                 return RepeatedKeysDictionary(
                     content=new_content,
                     transaction=self.transaction,
                     op_log=new_op_log,
-                    index_defs=self._index_defs,
                     indexes=new_indexes
                 )
 
