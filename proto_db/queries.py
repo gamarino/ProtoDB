@@ -33,17 +33,8 @@ class Expression(ABC):
     @staticmethod
     def compile(expression: list) -> Expression:
         """
-        Compile a nested list of expressions into an `Expression` object.
-
-        The method parses a structured list, where operators (`!`, `&`, and `|`)
-        and terms are used to build a tree of expressions (e.g., AndExpression,
-        OrExpression, etc.). These compiled objects can then be used to evaluate
-        whether a record satisfies the given conditions.
-
-        :param expression: A nested list representing logical operations and terms.
-        :type expression: list
-        :return: A fully compiled `Expression` instance.
-        :rtype: Expression
+        Compile a nested list of expressions into an `Expression` object, flattening
+        nested AND/OR trees into a canonical shape.
         """
         index = 0
 
@@ -51,17 +42,35 @@ class Expression(ABC):
             if expression[local_index] == '!':
                 local_index += 1
                 following_expression, local_index = collect_expression(local_index)
+                # Build NOT over the (possibly optimized) child
                 return NotExpression(following_expression), local_index
             elif expression[local_index] == '&':
                 local_index += 1
                 first_operand, local_index = collect_expression(local_index)
                 second_operand, local_index = collect_expression(local_index)
-                return AndExpression([first_operand, second_operand]), local_index
+
+                # Flatten AND expressions
+                new_terms: list[Expression] = []
+                for term in (first_operand, second_operand):
+                    if isinstance(term, AndExpression):
+                        new_terms.extend(term.terms)
+                    else:
+                        new_terms.append(term)
+                return AndExpression(new_terms), local_index
+
             elif expression[local_index] == '|':
                 local_index += 1
                 first_operand, local_index = collect_expression(local_index)
                 second_operand, local_index = collect_expression(local_index)
-                return OrExpression([first_operand, second_operand]), local_index
+
+                # Flatten OR expressions
+                new_terms: list[Expression] = []
+                for term in (first_operand, second_operand):
+                    if isinstance(term, OrExpression):
+                        new_terms.extend(term.terms)
+                    else:
+                        new_terms.append(term)
+                return OrExpression(new_terms), local_index
             else:
                 # Support nested sub-expressions and plain terms.
                 current = expression[local_index]
@@ -98,15 +107,70 @@ class Expression(ABC):
                 else:
                     raise ProtoValidationException(message=f'Unsupported parameter_count={operand.parameter_count} for operator {op_token}')
 
-        default_and_expression = list()
+        default_and_expression: list[Expression] = []
         while index < len(expression):
             new_expression, index = collect_expression(index)
             default_and_expression.append(new_expression)
 
-        if len(default_and_expression) >= 2:
-            return AndExpression(default_and_expression)
+        if len(default_and_expression) > 1:
+            # Flatten top-level implicit AND
+            final_terms: list[Expression] = []
+            for expr in default_and_expression:
+                if isinstance(expr, AndExpression):
+                    final_terms.extend(expr.terms)
+                else:
+                    final_terms.append(expr)
+            return AndExpression(final_terms)
+        elif default_and_expression:
+            # Single element: return it (already possibly flattened)
+            single_expr = default_and_expression[0]
+            if isinstance(single_expr, AndExpression):
+                # Ensure no nested AndExpression inside
+                flat_terms: list[Expression] = []
+                for t in single_expr.terms:
+                    if isinstance(t, AndExpression):
+                        flat_terms.extend(t.terms)
+                    else:
+                        flat_terms.append(t)
+                return AndExpression(flat_terms)
+            if isinstance(single_expr, OrExpression):
+                flat_terms: list[Expression] = []
+                for t in single_expr.terms:
+                    if isinstance(t, OrExpression):
+                        flat_terms.extend(t.terms)
+                    else:
+                        flat_terms.append(t)
+                return OrExpression(flat_terms)
+            return single_expr
         else:
-            return default_and_expression[0]
+            # Empty expression: return a neutral TrueTerm
+            return TrueTerm()
+
+    def optimize(self) -> "Expression":
+        """
+        Recursively optimize the expression tree by flattening nested AND/OR nodes.
+        """
+        if isinstance(self, AndExpression):
+            new_terms: list[Expression] = []
+            for term in self.terms:
+                optimized_term = term.optimize() if isinstance(term, Expression) else term
+                if isinstance(optimized_term, AndExpression):
+                    new_terms.extend(optimized_term.terms)
+                else:
+                    new_terms.append(optimized_term)
+            return AndExpression(new_terms)
+        if isinstance(self, OrExpression):
+            new_terms: list[Expression] = []
+            for term in self.terms:
+                optimized_term = term.optimize() if isinstance(term, Expression) else term
+                if isinstance(optimized_term, OrExpression):
+                    new_terms.extend(optimized_term.terms)
+                else:
+                    new_terms.append(optimized_term)
+            return OrExpression(new_terms)
+        if isinstance(self, NotExpression):
+            return NotExpression(self.negated_expression.optimize())
+        return self
 
     def filter_by_alias(self, alias: set[str]):
         if isinstance(self, Term):
@@ -1571,7 +1635,7 @@ class WherePlan(QueryPlan):
         if isinstance(flt, AndExpression):
             candidate_sets: list[set] = []
             residual = []  # keep full filter for safety; residual list reserved for future split
-            for t in flt.terms[0].terms:
+            for t in flt.terms:
                 if isinstance(t, Term):
                     cand = build_candidate_set(t)
                     if cand is None:

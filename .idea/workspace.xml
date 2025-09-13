@@ -4,10 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="The performance documentation was updated with a new section titled &quot;Latest Results (2025-09-13)&quot;. This section includes details of two recent benchmark runs, their commands, artifact paths, key metrics, speedups, and tuning tips. The updates align the documentation with current improvements in the indexed query engine.">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/db_access.py" afterDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Implemented write-through caching in Atom._save to populate caches after persistence. Modified ObjectTransaction to expose the AtomCacheBundle from storage. Added a unit test verifying cache hits on read-after-write scenarios, all tests passed successfully.">
       <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -276,23 +273,7 @@
       <workItem from="1757647544978" duration="4378000" />
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
-      <workItem from="1757675249603" duration="35672000" />
-    </task>
-    <task id="LOCAL-00044" summary="[FIX] improved literal management">
-      <option name="closed" value="true" />
-      <created>1754257286140</created>
-      <option name="number" value="00044" />
-      <option name="presentableId" value="LOCAL-00044" />
-      <option name="project" value="LOCAL" />
-      <updated>1754257286140</updated>
-    </task>
-    <task id="LOCAL-00045" summary="[FIX] improved literal management">
-      <option name="closed" value="true" />
-      <created>1754277689503</created>
-      <option name="number" value="00045" />
-      <option name="presentableId" value="LOCAL-00045" />
-      <option name="project" value="LOCAL" />
-      <updated>1754277689503</updated>
+      <workItem from="1757675249603" duration="36644000" />
     </task>
     <task id="LOCAL-00046" summary="[FIX] improved literal management">
       <option name="closed" value="true" />
@@ -670,14 +651,29 @@
       <option name="project" value="LOCAL" />
       <updated>1757744045648</updated>
     </task>
-    <option name="localTasksCounter" value="93" />
+    <task id="LOCAL-00093" summary="Implemented write-through caching in Atom._save to populate caches after persistence. Modified ObjectTransaction to expose the AtomCacheBundle from storage. Added a unit test verifying cache hits on read-after-write scenarios, all tests passed successfully.">
+      <option name="closed" value="true" />
+      <created>1757775376962</created>
+      <option name="number" value="00093" />
+      <option name="presentableId" value="LOCAL-00093" />
+      <option name="project" value="LOCAL" />
+      <updated>1757775376962</updated>
+    </task>
+    <task id="LOCAL-00094" summary="Implemented write-through caching in Atom._save to populate caches after persistence. Modified ObjectTransaction to expose the AtomCacheBundle from storage. Added a unit test verifying cache hits on read-after-write scenarios, all tests passed successfully.">
+      <option name="closed" value="true" />
+      <created>1757775423159</created>
+      <option name="number" value="00094" />
+      <option name="presentableId" value="LOCAL-00094" />
+      <option name="project" value="LOCAL" />
+      <updated>1757775423159</updated>
+    </task>
+    <option name="localTasksCounter" value="95" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[ADD] A vector ANN benchmark script was created to measure and compare the performance of HNSW against ExactVectorIndex and optional NumPy and scikit-learn baselines, successfully producing JSON output with timings. All existing tests remained unaffected and passed. No errors were encountered during execution, confirming the accuracy of the benchmarking tool." />
     <MESSAGE value="[ADD] An IVF-Flat vector index backend (IVFFlatIndex) was implemented in `vector_index.py`, enabling copy-on-write updates without tombstones and multiprobe search. All unit tests passed, ensuring functionality and integration with existing vector features." />
     <MESSAGE value="[ADD]IVF-Flat performance comparison has been integrated into the vector benchmark suite, enabling comparisons against Exact and HNSW indices. The updated benchmark includes IVF metrics and can be executed with specific parameters to generate detailed results." />
     <MESSAGE value="[IMP] linq alike functions" />
@@ -702,7 +698,8 @@
     <MESSAGE value="Implemented a reference-centric indexed query strategy using efficient AVL range traversal and intersection without premature object materialization. Added deterministic native comparisons for DictionaryItem, removed string coercions, and optimized AndMerge to intersect reference sets before materialization. Passed focused unit tests confirming correctness and performance improvements." />
     <MESSAGE value="The performance suite was rerun after fixing blockers related to native key comparisons. The indexed benchmark with 50,000 items completed successfully and produced a JSON report with timings and latency metrics. The indexed path was slower than the linear path, meeting the objective to evaluate improvements with results saved at examples/benchmark_results_indexed.json." />
     <MESSAGE value="The performance documentation was updated with a new section titled &quot;Latest Results (2025-09-13)&quot;. This section includes details of two recent benchmark runs, their commands, artifact paths, key metrics, speedups, and tuning tips. The updates align the documentation with current improvements in the indexed query engine." />
-    <option name="LAST_COMMIT_MESSAGE" value="The performance documentation was updated with a new section titled &quot;Latest Results (2025-09-13)&quot;. This section includes details of two recent benchmark runs, their commands, artifact paths, key metrics, speedups, and tuning tips. The updates align the documentation with current improvements in the indexed query engine." />
+    <MESSAGE value="Implemented write-through caching in Atom._save to populate caches after persistence. Modified ObjectTransaction to expose the AtomCacheBundle from storage. Added a unit test verifying cache hits on read-after-write scenarios, all tests passed successfully." />
+    <option name="LAST_COMMIT_MESSAGE" value="Implemented write-through caching in Atom._save to populate caches after persistence. Modified ObjectTransaction to expose the AtomCacheBundle from storage. Added a unit test verifying cache hits on read-after-write scenarios, all tests passed successfully." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -719,7 +716,7 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/queries.py</url>
-          <line>265</line>
+          <line>329</line>
           <option name="timeStamp" value="188" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
