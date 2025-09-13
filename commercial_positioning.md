@@ -106,21 +106,37 @@ ProtoBase is no longer “just” a persistent object database—it is a Transac
 
   ## Performance-driven positioning (updated 2025-09-13)
 
-  Recent benchmarks underline ProtoBase’s value proposition for indexed queries and primary-key lookups:
+  Recent benchmarks underline ProtoBase’s value proposition for indexed queries and primary-key lookups. Two representative runs on in-memory data:
 
   - Indexed AND + BETWEEN vs linear scan
-    - On a 20k‑row synthetic dataset, the index‑aware path is ~3.5× faster than a linear WherePlan.
-    - Latency improves across the distribution (lower p50/p95) with higher QPS.
+    - Run A (10k items, 200 queries, window=500, categories=200, statuses=50): indexed_over_linear ≈ 6.72×; indexed_over_python ≈ 1.18×.
+    - Run B (50k items, 100 queries, window=500, categories=500, statuses=100): indexed_over_linear ≈ 16.47×; indexed_over_python ≈ 3.44×.
+    - Latency improves across the distribution (lower p50/p95) with higher QPS as data size grows.
   - Primary‑key lookups
-    - With an ad‑hoc index on id, PK lookups are ~72× faster than a linear WherePlan at this scale.
+    - Run A: indexed_pk_over_linear ≈ 41.62×.
+    - Run B: indexed_pk_over_linear ≈ 164.09×.
     - A native PK map in collections would further reduce overhead and should extend the lead as data grows.
   - Comparison to pure Python lists
-    - At small sizes, a plain Python list comprehension can be competitive due to zero planning overhead. As data volume and selectivity increase, ProtoBase’s index‑aware execution scales better.
+    - At small sizes, a plain Python list comprehension can be competitive due to zero planning overhead; by 50k rows, the indexed path is ~3.4× faster.
 
-  Source: examples/benchmark_results_indexed.json produced by running:
+  Sources / artifacts:
+  - examples/benchmark_results_indexed.json (Run A)
+  - examples/benchmark_results_indexed_win200.json (Run B)
+
+  To reproduce:
 
   ```bash
-  python examples/indexed_benchmark.py --items 20000 --queries 50 --window 100 --warmup 5 --out examples/benchmark_results_indexed.json
+  # Run A
+  python examples/indexed_benchmark.py \
+    --items 10000 --queries 200 --window 500 --warmup 20 \
+    --categories 200 --statuses 50 \
+    --out examples/benchmark_results_indexed.json
+
+  # Run B
+  python examples/indexed_benchmark.py \
+    --items 50000 --queries 100 --window 500 --warmup 20 \
+    --categories 500 --statuses 100 \
+    --out examples/benchmark_results_indexed_win200.json
   ```
 
   Implications for positioning
