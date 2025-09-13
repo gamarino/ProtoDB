@@ -125,7 +125,7 @@ def run_benchmark(n_items=1000, n_queries=50, out_path="examples/benchmark_resul
         target_id = data[random.randrange(n_items)].get('id') if data else None
         flt = Expression.compile(['id', '==', target_id])
         plan = WherePlan(filter=flt, based_on=base_plan, transaction=tr)
-        plan = plan.optimize(plan)
+        plan = plan.optimize()
         list(plan.execute())
 
     pb_linear_stats = time_queries(lambda: pb_linear_query_once(), n=n_queries, warmup=warmup)
@@ -166,14 +166,14 @@ def run_benchmark(n_items=1000, n_queries=50, out_path="examples/benchmark_resul
         hi = lo + window
         flt = Expression.compile(['&', ['r.category', '==', cat], ['r.status', '==', st], ['r.value', 'between()', lo, hi]])
         plan = WherePlan(filter=flt, based_on=indexed, transaction=tr)
-        plan = plan.optimize(plan)
+        plan = plan.optimize()
         list(plan.execute())
 
     def pb_indexed_query_single_item():
         target_id = data[random.randrange(n_items)].get('id') if data else None
         flt = Expression.compile(['r.id', '==', target_id])
         plan = WherePlan(filter=flt, based_on=indexed, transaction=tr)
-        plan = plan.optimize(plan)
+        plan = plan.optimize()
         list(plan.execute())
 
     pb_indexed_stats = time_queries(lambda: pb_indexed_query_once(), n=n_queries, warmup=warmup)

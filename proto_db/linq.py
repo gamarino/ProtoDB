@@ -841,7 +841,7 @@ class Queryable(Generic[T]):
         optimized_node = None
         try:
             if current_plan is not None and plan_prefix_len > 0:
-                optimized_node = current_plan.optimize(current_plan)
+                optimized_node = current_plan.optimize()
         except Exception:
             optimized_node = None
         node_name = optimized_node.__class__.__name__ if optimized_node is not None else None
