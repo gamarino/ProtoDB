@@ -19,7 +19,7 @@
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="LINQ-like API" href="linq.html" />
+    <link rel="next" title="Arrow / Parquet Bridge" href="arrow_parquet.html" />
     <link rel="prev" title="Query System" href="queries.html" /> 
 </head>
 
@@ -47,7 +47,11 @@
 <li class="toctree-l1"><a class="reference internal" href="../introduction.html">Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../storage_cloud.html">Cloud and Cluster Storage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="core.html">Core Components</a></li>
 <li class="toctree-l2"><a class="reference internal" href="storage.html">Storage Layer</a></li>
@@ -71,9 +75,20 @@
 <li class="toctree-l3"><a class="reference internal" href="#notes">Notes</a></li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="#module-0">Vectors</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#id1">Vector</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#id0"><code class="docutils literal notranslate"><span class="pre">Vector</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#id7">Notes</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="arrow_parquet.html">Arrow / Parquet Bridge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="linq.html">LINQ-like API</a></li>
 <li class="toctree-l2"><a class="reference internal" href="exceptions.html">Exceptions</a></li>
 <li class="toctree-l2"><a class="reference internal" href="fsm.html">Finite State Machine</a></li>
+<li class="toctree-l2"><a class="reference internal" href="atom_cache.html">Atom-level Caches</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parallel.html">Parallel (Work-Stealing and Adaptive Chunking)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="index.html#core-components">Core Components</a></li>
 <li class="toctree-l2"><a class="reference internal" href="index.html#storage-layer">Storage Layer</a></li>
 <li class="toctree-l2"><a class="reference internal" href="index.html#data-structures">Data Structures</a></li>
@@ -83,6 +98,7 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../development.html">Development</a></li>
 </ul>
 
@@ -123,15 +139,62 @@
 - data: list of float32-like values (stored as Python floats).
 - dim: dimension (validated against data length).
 - normalized: whether data was L2-normalized (for cosine).</p>
+<section id="zero-copy-buffers">
+<h3>Zero-copy buffers<a class="headerlink" href="#zero-copy-buffers" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p>from_buffer(buf, dtype=’float32’, copy=’auto’|’true’|’false’)</p></li>
+<li><p>as_buffer() -&gt; memoryview</p></li>
+<li><p>as_numpy(copy: bool | None = None)</p></li>
+</ul>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.vectors.Vector.from_buffer">
+<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">from_buffer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">buf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'float32'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">copy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'auto'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/vectors.html#Vector.from_buffer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.vectors.Vector.from_buffer" title="Link to this definition"></a></dt>
+<dd><p>Create a Vector from a buffer (bytes, bytearray, memoryview, or numpy array if available).
+copy semantics:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>‘false’: never copy; requires C-contiguous, little-endian float32; otherwise raises.</p></li>
+<li><p>‘auto’: no copy if compatible; else copy once.</p></li>
+<li><p>‘true’: always copy into Python floats.</p></li>
+</ul>
+</div></blockquote>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>data</strong> (<em>tuple</em><em>[</em><em>float</em><em>, </em><em>...</em><em>]</em>)</p></li>
-<li><p><strong>dim</strong> (<em>int</em>)</p></li>
-<li><p><strong>normalized</strong> (<em>bool</em>)</p></li>
+<li><p><strong>dtype</strong> (<em>str</em>)</p></li>
+<li><p><strong>copy</strong> (<em>str</em>)</p></li>
 </ul>
 </dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#id0" title="proto_db.vectors.Vector"><em>Vector</em></a></p>
+</dd>
 </dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.vectors.Vector.as_buffer">
+<span class="sig-name descname"><span class="pre">as_buffer</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/vectors.html#Vector.as_buffer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.vectors.Vector.as_buffer" title="Link to this definition"></a></dt>
+<dd><p>Return a read-only memoryview of float32 little-endian values (copy once).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>memoryview</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.vectors.Vector.as_numpy">
+<span class="sig-name descname"><span class="pre">as_numpy</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">copy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/vectors.html#Vector.as_numpy"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.vectors.Vector.as_numpy" title="Link to this definition"></a></dt>
+<dd><p>Return a numpy array representation of the vector.
+- copy=False or None: return a NumPy array with dtype float32. Implementation may copy for safety.
+- copy=True: always return a new independent ndarray.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>copy</strong> (<em>bool</em><em> | </em><em>None</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.vectors.Vector.__init__">
 <span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dim</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normalized</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#proto_db.vectors.Vector.__init__" title="Link to this definition"></a></dt>
@@ -149,6 +212,16 @@
 </dl>
 </dd></dl>
 
+</section>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>tuple</em><em>[</em><em>float</em><em>, </em><em>...</em><em>]</em>)</p></li>
+<li><p><strong>dim</strong> (<em>int</em>)</p></li>
+<li><p><strong>normalized</strong> (<em>bool</em>)</p></li>
+</ul>
+</dd>
+</dl>
 </dd></dl>
 
 </section>
@@ -173,7 +246,7 @@ Concrete implementations may be ANN structures (e.g., HNSW) or exact.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>query</strong> (<a class="reference internal" href="#proto_db.vectors.Vector" title="proto_db.vectors.Vector"><em>Vector</em></a><em> | </em><em>Iterable</em><em>[</em><em>float</em><em>]</em>)</p></li>
+<li><p><strong>query</strong> (<a class="reference internal" href="#id0" title="proto_db.vectors.Vector"><em>Vector</em></a><em> | </em><em>Iterable</em><em>[</em><em>float</em><em>]</em>)</p></li>
 <li><p><strong>k</strong> (<em>int</em>)</p></li>
 <li><p><strong>metric</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
 <li><p><strong>params</strong> (<em>dict</em><em> | </em><em>None</em>)</p></li>
@@ -205,7 +278,7 @@ Suitable as a correctness fallback when ANN libs are unavailable.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>query</strong> (<a class="reference internal" href="#proto_db.vectors.Vector" title="proto_db.vectors.Vector"><em>Vector</em></a><em> | </em><em>Iterable</em><em>[</em><em>float</em><em>]</em>)</p></li>
+<li><p><strong>query</strong> (<a class="reference internal" href="#id0" title="proto_db.vectors.Vector"><em>Vector</em></a><em> | </em><em>Iterable</em><em>[</em><em>float</em><em>]</em>)</p></li>
 <li><p><strong>k</strong> (<em>int</em>)</p></li>
 <li><p><strong>metric</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
 <li><p><strong>params</strong> (<em>dict</em><em> | </em><em>None</em>)</p></li>
@@ -243,7 +316,7 @@ Suitable as a correctness fallback when ANN libs are unavailable.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>query</strong> (<a class="reference internal" href="#proto_db.vectors.Vector" title="proto_db.vectors.Vector"><em>Vector</em></a><em> | </em><em>Iterable</em><em>[</em><em>float</em><em>]</em>)</p></li>
+<li><p><strong>query</strong> (<a class="reference internal" href="#id0" title="proto_db.vectors.Vector"><em>Vector</em></a><em> | </em><em>Iterable</em><em>[</em><em>float</em><em>]</em>)</p></li>
 <li><p><strong>k</strong> (<em>int</em>)</p></li>
 <li><p><strong>metric</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
 <li><p><strong>params</strong> (<em>dict</em><em> | </em><em>None</em>)</p></li>
@@ -297,19 +370,124 @@ Suitable as a correctness fallback when ANN libs are unavailable.</p>
 </ul>
 </section>
 </section>
+<section id="module-0">
+<span id="vectors"></span><h1>Vectors<a class="headerlink" href="#module-0" title="Link to this heading"></a></h1>
+<section id="id1">
+<h2>Vector<a class="headerlink" href="#id1" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="id0">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.vectors.</span></span><span class="sig-name descname"><span class="pre">Vector</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dim</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normalized</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/vectors.html#Vector"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id0" title="Link to this definition"></a></dt>
+<dd><p>Simple immutable vector wrapper.
+- data: list of float32-like values (stored as Python floats).
+- dim: dimension (validated against data length).
+- normalized: whether data was L2-normalized (for cosine).</p>
+<section id="id2">
+<h3>Zero-copy buffers<a class="headerlink" href="#id2" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p>from_buffer(buf, dtype=’float32’, copy=’auto’|’true’|’false’)</p></li>
+<li><p>as_buffer() -&gt; memoryview</p></li>
+<li><p>as_numpy(copy: bool | None = None)</p></li>
+</ul>
+<dl class="py method">
+<dt class="sig sig-object py" id="id3">
+<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">from_buffer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">buf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'float32'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">copy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'auto'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/vectors.html#Vector.from_buffer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id3" title="Link to this definition"></a></dt>
+<dd><p>Create a Vector from a buffer (bytes, bytearray, memoryview, or numpy array if available).
+copy semantics:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>‘false’: never copy; requires C-contiguous, little-endian float32; otherwise raises.</p></li>
+<li><p>‘auto’: no copy if compatible; else copy once.</p></li>
+<li><p>‘true’: always copy into Python floats.</p></li>
+</ul>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>dtype</strong> (<em>str</em>)</p></li>
+<li><p><strong>copy</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#id0" title="proto_db.vectors.Vector"><em>Vector</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id4">
+<span class="sig-name descname"><span class="pre">as_buffer</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/vectors.html#Vector.as_buffer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id4" title="Link to this definition"></a></dt>
+<dd><p>Return a read-only memoryview of float32 little-endian values (copy once).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>memoryview</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id5">
+<span class="sig-name descname"><span class="pre">as_numpy</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">copy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/vectors.html#Vector.as_numpy"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id5" title="Link to this definition"></a></dt>
+<dd><p>Return a numpy array representation of the vector.
+- copy=False or None: return a NumPy array with dtype float32. Implementation may copy for safety.
+- copy=True: always return a new independent ndarray.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>copy</strong> (<em>bool</em><em> | </em><em>None</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id6">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dim</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normalized</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#id6" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>tuple</em><em>[</em><em>float</em><em>, </em><em>...</em><em>]</em>)</p></li>
+<li><p><strong>dim</strong> (<em>int</em>)</p></li>
+<li><p><strong>normalized</strong> (<em>bool</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>tuple</em><em>[</em><em>float</em><em>, </em><em>...</em><em>]</em>)</p></li>
+<li><p><strong>dim</strong> (<em>int</em>)</p></li>
+<li><p><strong>normalized</strong> (<em>bool</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="id7">
+<h2>Notes<a class="headerlink" href="#id7" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p>Supports zero-copy buffer bridging via from_buffer()/as_buffer()/as_numpy().</p></li>
+<li><p>Default dtype float32 little-endian for buffer interop.</p></li>
+</ul>
+</section>
+</section>
 
 
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="queries.html" class="btn btn-neutral float-left" title="Query System" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="linq.html" class="btn btn-neutral float-right" title="LINQ-like API" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="arrow_parquet.html" class="btn btn-neutral float-right" title="Arrow / Parquet Bridge" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>
 
   <div role="contentinfo">
-    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+    <p>&#169; Copyright 2025, ProtoBase Team.</p>
   </div>
 
   Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a

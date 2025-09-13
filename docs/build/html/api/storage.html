@@ -47,7 +47,11 @@
 <li class="toctree-l1"><a class="reference internal" href="../introduction.html">Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../storage_cloud.html">Cloud and Cluster Storage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="core.html">Core Components</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Storage Layer</a><ul>
@@ -57,6 +61,7 @@
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#standalone-file-storage">Standalone File Storage</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#proto_db.standalone_file_storage.StandaloneFileStorage"><code class="docutils literal notranslate"><span class="pre">StandaloneFileStorage</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#atom-level-caches">Atom-level caches</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#data-serialization-formats">Data Serialization Formats</a></li>
 </ul>
 </li>
@@ -93,9 +98,13 @@
 <li class="toctree-l2"><a class="reference internal" href="indexes.html">Secondary Indexes</a></li>
 <li class="toctree-l2"><a class="reference internal" href="queries.html">Query System</a></li>
 <li class="toctree-l2"><a class="reference internal" href="vectors.html">Vector Support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="vectors.html#module-0">Vectors</a></li>
+<li class="toctree-l2"><a class="reference internal" href="arrow_parquet.html">Arrow / Parquet Bridge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="linq.html">LINQ-like API</a></li>
 <li class="toctree-l2"><a class="reference internal" href="exceptions.html">Exceptions</a></li>
 <li class="toctree-l2"><a class="reference internal" href="fsm.html">Finite State Machine</a></li>
+<li class="toctree-l2"><a class="reference internal" href="atom_cache.html">Atom-level Caches</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parallel.html">Parallel (Work-Stealing and Adaptive Chunking)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="index.html#core-components">Core Components</a></li>
 <li class="toctree-l2 current"><a class="reference internal" href="index.html#storage-layer">Storage Layer</a><ul class="current">
 <li class="toctree-l3 current"><a class="current reference internal" href="#">Storage Layer</a><ul>
@@ -116,6 +125,7 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../development.html">Development</a></li>
 </ul>
 
@@ -151,17 +161,47 @@
 <h2>Memory Storage<a class="headerlink" href="#memory-storage" title="Link to this heading"></a></h2>
 <dl class="py class" id="module-proto_db.memory_storage">
 <dt class="sig sig-object py" id="proto_db.memory_storage.MemoryStorage">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.memory_storage.</span></span><span class="sig-name descname"><span class="pre">MemoryStorage</span></span><a class="reference internal" href="../_modules/proto_db/memory_storage.html#MemoryStorage"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.memory_storage.MemoryStorage" title="Link to this definition"></a></dt>
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.memory_storage.</span></span><span class="sig-name descname"><span class="pre">MemoryStorage</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">enable_atom_object_cache</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">enable_atom_bytes_cache</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_cache_max_entries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_cache_max_bytes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">268435456</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bytes_cache_max_entries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bytes_cache_max_bytes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">134217728</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_stripes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_probation_ratio</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">schema_epoch</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/memory_storage.html#MemoryStorage"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.memory_storage.MemoryStorage" title="Link to this definition"></a></dt>
 <dd><p>A simple in-memory implementation of a storage system.
 This acts as a lightweight and temporary alternative to persistent storage,
 ideal for testing and simulation purposes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>enable_atom_object_cache</strong> (<em>bool</em>)</p></li>
+<li><p><strong>enable_atom_bytes_cache</strong> (<em>bool</em>)</p></li>
+<li><p><strong>object_cache_max_entries</strong> (<em>int</em>)</p></li>
+<li><p><strong>object_cache_max_bytes</strong> (<em>int</em>)</p></li>
+<li><p><strong>bytes_cache_max_entries</strong> (<em>int</em>)</p></li>
+<li><p><strong>bytes_cache_max_bytes</strong> (<em>int</em>)</p></li>
+<li><p><strong>cache_stripes</strong> (<em>int</em>)</p></li>
+<li><p><strong>cache_probation_ratio</strong> (<em>float</em>)</p></li>
+<li><p><strong>schema_epoch</strong> (<em>int</em><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+</dl>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.memory_storage.MemoryStorage.__init__">
-<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/memory_storage.html#MemoryStorage.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.memory_storage.MemoryStorage.__init__" title="Link to this definition"></a></dt>
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">enable_atom_object_cache</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">enable_atom_bytes_cache</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_cache_max_entries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_cache_max_bytes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">268435456</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bytes_cache_max_entries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bytes_cache_max_bytes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">134217728</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_stripes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_probation_ratio</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">schema_epoch</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/memory_storage.html#MemoryStorage.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.memory_storage.MemoryStorage.__init__" title="Link to this definition"></a></dt>
 <dd><p>Initializes the in-memory storage. It sets up:
 - A unique transaction ID for all operations during this session.
 - An empty atom dictionary for storing atoms against their offsets.
 - A lock to make the memory storage thread-safe.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>enable_atom_object_cache</strong> (<em>bool</em>)</p></li>
+<li><p><strong>enable_atom_bytes_cache</strong> (<em>bool</em>)</p></li>
+<li><p><strong>object_cache_max_entries</strong> (<em>int</em>)</p></li>
+<li><p><strong>object_cache_max_bytes</strong> (<em>int</em>)</p></li>
+<li><p><strong>bytes_cache_max_entries</strong> (<em>int</em>)</p></li>
+<li><p><strong>bytes_cache_max_bytes</strong> (<em>int</em>)</p></li>
+<li><p><strong>cache_stripes</strong> (<em>int</em>)</p></li>
+<li><p><strong>cache_probation_ratio</strong> (<em>float</em>)</p></li>
+<li><p><strong>schema_epoch</strong> (<em>int</em><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py method">
@@ -222,9 +262,10 @@ systems associated with this object to achieve the unlocking process.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.memory_storage.MemoryStorage.push_atom">
 <span class="sig-name descname"><span class="pre">push_atom</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">atom</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/memory_storage.html#MemoryStorage.push_atom"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.memory_storage.MemoryStorage.push_atom" title="Link to this definition"></a></dt>
-<dd><p>Save an atom in the in-memory storage. Each atom gets a unique offset and is tied
-to the current transaction ID.
-:param atom: The <cite>Atom</cite> object to be stored.
+<dd><p>Save an atom in the in-memory storage.
+- If the atom has no pointer or its offset is None, assign a new pointer.
+- If the atom already has an offset that exists in storage, raise ProtoCorruptionException.
+:param atom: The <cite>Atom</cite> (or dict-like) object to be stored.
 :return: A <cite>Future</cite> containing the corresponding <cite>AtomPointer</cite> of the stored atom.
 :raises:</p>
 <blockquote>
@@ -318,7 +359,7 @@ For the in-memory storage, this method does not perform any operations.</p>
 <h2>Standalone File Storage<a class="headerlink" href="#standalone-file-storage" title="Link to this heading"></a></h2>
 <dl class="py class" id="module-proto_db.standalone_file_storage">
 <dt class="sig sig-object py" id="proto_db.standalone_file_storage.StandaloneFileStorage">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.standalone_file_storage.</span></span><span class="sig-name descname"><span class="pre">StandaloneFileStorage</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">block_provider</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">buffer_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1048576</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blob_max_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2147483648</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_workers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#StandaloneFileStorage"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage" title="Link to this definition"></a></dt>
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.standalone_file_storage.</span></span><span class="sig-name descname"><span class="pre">StandaloneFileStorage</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">block_provider</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">buffer_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1048576</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blob_max_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2147483648</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_workers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">enable_atom_object_cache</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">enable_atom_bytes_cache</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_cache_max_entries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_cache_max_bytes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">268435456</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bytes_cache_max_entries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bytes_cache_max_bytes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">134217728</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_stripes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_probation_ratio</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">schema_epoch</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#StandaloneFileStorage"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage" title="Link to this definition"></a></dt>
 <dd><p>An implementation of standalone file storage with support for Write-Ahead Logging (WAL).</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
@@ -327,12 +368,21 @@ For the in-memory storage, this method does not perform any operations.</p>
 <li><p><strong>buffer_size</strong> (<em>int</em>)</p></li>
 <li><p><strong>blob_max_size</strong> (<em>int</em>)</p></li>
 <li><p><strong>max_workers</strong> (<em>int</em>)</p></li>
+<li><p><strong>enable_atom_object_cache</strong> (<em>bool</em>)</p></li>
+<li><p><strong>enable_atom_bytes_cache</strong> (<em>bool</em>)</p></li>
+<li><p><strong>object_cache_max_entries</strong> (<em>int</em>)</p></li>
+<li><p><strong>object_cache_max_bytes</strong> (<em>int</em>)</p></li>
+<li><p><strong>bytes_cache_max_entries</strong> (<em>int</em>)</p></li>
+<li><p><strong>bytes_cache_max_bytes</strong> (<em>int</em>)</p></li>
+<li><p><strong>cache_stripes</strong> (<em>int</em>)</p></li>
+<li><p><strong>cache_probation_ratio</strong> (<em>float</em>)</p></li>
+<li><p><strong>schema_epoch</strong> (<em>int</em><em> | </em><em>None</em>)</p></li>
 </ul>
 </dd>
 </dl>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.standalone_file_storage.StandaloneFileStorage.__init__">
-<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">block_provider</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">buffer_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1048576</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blob_max_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2147483648</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_workers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#StandaloneFileStorage.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage.__init__" title="Link to this definition"></a></dt>
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">block_provider</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">buffer_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1048576</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blob_max_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2147483648</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_workers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">enable_atom_object_cache</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">enable_atom_bytes_cache</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_cache_max_entries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_cache_max_bytes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">268435456</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bytes_cache_max_entries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bytes_cache_max_bytes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">134217728</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_stripes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_probation_ratio</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">schema_epoch</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#StandaloneFileStorage.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage.__init__" title="Link to this definition"></a></dt>
 <dd><p>Constructor for the StandaloneFileStorage class.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
@@ -341,6 +391,15 @@ For the in-memory storage, this method does not perform any operations.</p>
 <li><p><strong>buffer_size</strong> (<em>int</em>) – Size of the WAL buffer in bytes</p></li>
 <li><p><strong>blob_max_size</strong> (<em>int</em>) – Maximum size of a blob in bytes</p></li>
 <li><p><strong>max_workers</strong> (<em>int</em>) – Number of worker threads for asynchronous operations</p></li>
+<li><p><strong>enable_atom_object_cache</strong> (<em>bool</em>)</p></li>
+<li><p><strong>enable_atom_bytes_cache</strong> (<em>bool</em>)</p></li>
+<li><p><strong>object_cache_max_entries</strong> (<em>int</em>)</p></li>
+<li><p><strong>object_cache_max_bytes</strong> (<em>int</em>)</p></li>
+<li><p><strong>bytes_cache_max_entries</strong> (<em>int</em>)</p></li>
+<li><p><strong>bytes_cache_max_bytes</strong> (<em>int</em>)</p></li>
+<li><p><strong>cache_stripes</strong> (<em>int</em>)</p></li>
+<li><p><strong>cache_probation_ratio</strong> (<em>float</em>)</p></li>
+<li><p><strong>schema_epoch</strong> (<em>int</em><em> | </em><em>None</em>)</p></li>
 </ul>
 </dd>
 </dl>
@@ -349,8 +408,8 @@ For the in-memory storage, this method does not perform any operations.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.standalone_file_storage.StandaloneFileStorage.read_current_root">
 <span class="sig-name descname"><span class="pre">read_current_root</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#StandaloneFileStorage.read_current_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage.read_current_root" title="Link to this definition"></a></dt>
-<dd><p>Read the current root object
-:return:</p>
+<dd><p>Read the current root object pointer from the underlying provider.
+The provider may return a raw JSON dict; normalize it into an AtomPointer.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a></p>
@@ -396,18 +455,11 @@ Nothing to do for this provider
 <dt class="sig sig-object py" id="proto_db.standalone_file_storage.StandaloneFileStorage.flush_wal">
 <span class="sig-name descname"><span class="pre">flush_wal</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#StandaloneFileStorage.flush_wal"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage.flush_wal" title="Link to this definition"></a></dt>
 <dd><p>Public method to flush WAL buffer and process pending writes.</p>
-<p>This method ensures that all data in the current WAL buffer is written to
-the pending writes list and then processes all pending writes by writing
-them to the underlying block provider.</p>
+<p>This method ensures that all data in the current WAL buffer is moved to
+pending writes and then written to the underlying block provider.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A tuple containing (bytes_flushed, operations_processed)</p>
-</dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>tuple</p>
-</dd>
-<dt class="field-odd">Raises<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="exceptions.html#proto_db.exceptions.ProtoUnexpectedException" title="proto_db.exceptions.ProtoUnexpectedException"><strong>ProtoUnexpectedException</strong></a> – If an error occurs during the flushing process</p>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>tuple[int, int]</p>
 </dd>
 </dl>
 </dd></dl>
@@ -444,21 +496,13 @@ closes the underlying block provider, and shuts down the executor pool.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.standalone_file_storage.StandaloneFileStorage.get_atom">
 <span class="sig-name descname"><span class="pre">get_atom</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pointer</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#StandaloneFileStorage.get_atom"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage.get_atom" title="Link to this definition"></a></dt>
-<dd><p>Retrieves an Atom from the underlying storage asynchronously.</p>
-<p>This method supports both the legacy format (without format indicator) and
-the new format with format indicators (JSON UTF-8 or MessagePack).</p>
+<dd><p>Retrieves an Atom from the underlying storage asynchronously with a two-tier atom cache (object and bytes).</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>) – An AtomPointer indicating the location of the atom</p>
+<dd class="field-odd"><p><strong>pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p>
 </dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>A Future that resolves to the atom data</p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>Future[dict]</p>
-</dd>
-<dt class="field-even">Raises<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference internal" href="exceptions.html#proto_db.exceptions.ProtoValidationException" title="proto_db.exceptions.ProtoValidationException"><strong>ProtoValidationException</strong></a> – If pointer is not an AtomPointer or if storage is closed</p>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>Future</em>[dict]</p>
 </dd>
 </dl>
 </dd></dl>
@@ -518,21 +562,13 @@ the new format with format indicators (JSON UTF-8 or MessagePack).</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.standalone_file_storage.StandaloneFileStorage.get_bytes">
 <span class="sig-name descname"><span class="pre">get_bytes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pointer</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#StandaloneFileStorage.get_bytes"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage.get_bytes" title="Link to this definition"></a></dt>
-<dd><p>Retrieves raw bytes from the underlying storage asynchronously.</p>
-<p>This method supports both the legacy format (without format indicator) and
-the new format with format indicators.</p>
+<dd><p>Retrieves raw bytes from the underlying storage asynchronously, using AtomBytesCache when enabled.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>) – An AtomPointer indicating the location of the data</p>
+<dd class="field-odd"><p><strong>pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p>
 </dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>A Future that resolves to the raw bytes</p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>Future[bytes]</p>
-</dd>
-<dt class="field-even">Raises<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference internal" href="exceptions.html#proto_db.exceptions.ProtoValidationException" title="proto_db.exceptions.ProtoValidationException"><strong>ProtoValidationException</strong></a> – If pointer is not an AtomPointer or if storage is closed</p>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>Future</em>[bytes]</p>
 </dd>
 </dl>
 </dd></dl>
@@ -596,6 +632,18 @@ and then calls push_bytes with FORMAT_MSGPACK.</p>
 </dd></dl>
 
 <p><code class="docutils literal notranslate"><span class="pre">StandaloneFileStorage</span></code> is a file-based storage implementation. It stores Atoms in files on disk, uses Write-Ahead Logging (WAL) for durability, and provides persistence across process restarts.</p>
+<section id="atom-level-caches">
+<h3>Atom-level caches<a class="headerlink" href="#atom-level-caches" title="Link to this heading"></a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">StandaloneFileStorage</span></code> exposes optional, in-memory atom caches configurable via its constructor:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">enable_atom_object_cache</span></code>, <code class="docutils literal notranslate"><span class="pre">enable_atom_bytes_cache</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">object_cache_max_entries</span></code>, <code class="docutils literal notranslate"><span class="pre">object_cache_max_bytes</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bytes_cache_max_entries</span></code>, <code class="docutils literal notranslate"><span class="pre">bytes_cache_max_bytes</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cache_stripes</span></code>, <code class="docutils literal notranslate"><span class="pre">cache_probation_ratio</span></code>, <code class="docutils literal notranslate"><span class="pre">schema_epoch</span></code></p></li>
+</ul>
+<p>When enabled, reads consult the object cache first, then the bytes cache, before touching the page/block provider.
+The caches are keyed by <code class="docutils literal notranslate"><span class="pre">AtomPointer</span></code> and leverage atom immutability for coherent reuse across transactions.</p>
+</section>
 <section id="data-serialization-formats">
 <h3>Data Serialization Formats<a class="headerlink" href="#data-serialization-formats" title="Link to this heading"></a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">StandaloneFileStorage</span></code> supports multiple data serialization formats:</p>
@@ -820,26 +868,20 @@ It could be an old one, or a new one.</p>
 <dt class="sig sig-object py" id="proto_db.file_block_provider.FileBlockProvider.get_current_root_object">
 <span class="sig-name descname"><span class="pre">get_current_root_object</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/file_block_provider.html#FileBlockProvider.get_current_root_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.file_block_provider.FileBlockProvider.get_current_root_object" title="Link to this definition"></a></dt>
 <dd><p>Read current root object from storage
-:return: the current root object</p>
-<dl class="field-list simple">
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a></p>
-</dd>
-</dl>
+:return: the current root object as a dict, or None if missing</p>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.file_block_provider.FileBlockProvider.update_root_object">
 <span class="sig-name descname"><span class="pre">update_root_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_root</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/file_block_provider.html#FileBlockProvider.update_root_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.file_block_provider.FileBlockProvider.update_root_object" title="Link to this definition"></a></dt>
-<dd><p>Updates or create the root object in storage
-On newly created databases, this is the first
-operation to perform</p>
+<dd><p>Updates or creates the root object in storage.
+Accepts either a plain dict (tests) or an AtomPointer (runtime code).</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>new_root</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p>
+<dd class="field-odd"><p><strong>new_root</strong> – dict or AtomPointer</p>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p></p>
+<dd class="field-even"><p>None</p>
 </dd>
 </dl>
 </dd></dl>
@@ -1185,18 +1227,27 @@ object storage service, with local caching to improve performance.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="proto_db.cloud_file_storage.CloudFileStorage.push_bytes">
+<span class="sig-name descname"><span class="pre">push_bytes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">format_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudFileStorage.push_bytes"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudFileStorage.push_bytes" title="Link to this definition"></a></dt>
+<dd><p>Override push_bytes to preserve legacy raw-bytes layout for cloud tests:
+store 8-byte length prefix followed directly by payload (no format indicator).
+Other behaviors (validation, size checks) mirror StandaloneFileStorage.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>bytes</em>)</p></li>
+<li><p><strong>format_type</strong> (<em>int</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="proto_db.cloud_file_storage.CloudFileStorage.flush_wal">
 <span class="sig-name descname"><span class="pre">flush_wal</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudFileStorage.flush_wal"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudFileStorage.flush_wal" title="Link to this definition"></a></dt>
 <dd><p>Public method to flush WAL buffer and process pending writes.</p>
-<p>This method overrides the base implementation to also process pending uploads.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A tuple containing (bytes_flushed, operations_processed)</p>
-</dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>tuple</p>
-</dd>
-</dl>
+<p>Returns a Future that resolves to True when the flush has been executed,
+matching the behavior expected by tests and the base class contract.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -1212,7 +1263,7 @@ to cloud storage before closing.</p>
 <p><code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code> extends <code class="docutils literal notranslate"><span class="pre">ClusterFileStorage</span></code> to add support for cloud storage. It stores data in cloud object storage (Amazon S3 or Google Cloud Storage), provides local caching for performance, supports background uploading of data, and is suitable for cloud-native applications.</p>
 <dl class="py class">
 <dt class="sig sig-object py" id="proto_db.cloud_file_storage.CloudBlockProvider">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_file_storage.</span></span><span class="sig-name descname"><span class="pre">CloudBlockProvider</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cloud_client</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cloud_cache'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">524288000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5242880</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudBlockProvider"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudBlockProvider" title="Link to this definition"></a></dt>
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_file_storage.</span></span><span class="sig-name descname"><span class="pre">CloudBlockProvider</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cloud_client</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cloud_cache'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">524288000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5242880</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">s3_client</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudBlockProvider"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudBlockProvider" title="Link to this definition"></a></dt>
 <dd><p>Block provider implementation for cloud storage.</p>
 <p>This class implements the BlockProvider interface for cloud storage providers,
 with local caching to improve performance.</p>
@@ -1223,12 +1274,13 @@ with local caching to improve performance.</p>
 <li><p><strong>cache_dir</strong> (<em>str</em>)</p></li>
 <li><p><strong>cache_size</strong> (<em>int</em>)</p></li>
 <li><p><strong>object_size</strong> (<em>int</em>)</p></li>
+<li><p><strong>s3_client</strong> (<a class="reference internal" href="#proto_db.cloud_file_storage.CloudStorageClient" title="proto_db.cloud_file_storage.CloudStorageClient"><em>CloudStorageClient</em></a><em> | </em><em>None</em>)</p></li>
 </ul>
 </dd>
 </dl>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.cloud_file_storage.CloudBlockProvider.__init__">
-<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cloud_client</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cloud_cache'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">524288000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5242880</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudBlockProvider.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudBlockProvider.__init__" title="Link to this definition"></a></dt>
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cloud_client</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cloud_cache'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">524288000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5242880</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">s3_client</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_file_storage.html#CloudBlockProvider.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_file_storage.CloudBlockProvider.__init__" title="Link to this definition"></a></dt>
 <dd><p>Initialize the cloud block provider.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
@@ -1237,6 +1289,7 @@ with local caching to improve performance.</p>
 <li><p><strong>cache_dir</strong> (<em>str</em>) – Directory for local cache</p></li>
 <li><p><strong>cache_size</strong> (<em>int</em>) – Maximum size of local cache in bytes</p></li>
 <li><p><strong>object_size</strong> (<em>int</em>) – Size of cloud storage objects in bytes</p></li>
+<li><p><strong>s3_client</strong> (<a class="reference internal" href="#proto_db.cloud_file_storage.CloudStorageClient" title="proto_db.cloud_file_storage.CloudStorageClient"><em>CloudStorageClient</em></a><em> | </em><em>None</em>) – Deprecated alias for cloud_client maintained for tests/backward compatibility</p></li>
 </ul>
 </dd>
 </dl>
@@ -1817,13 +1870,7 @@ Concrete implementations should be provided for specific cloud providers.</p>
 <dl class="py class" id="module-proto_db.cloud_cluster_file_storage">
 <dt class="sig sig-object py" id="proto_db.cloud_cluster_file_storage.CloudClusterFileStorage">
 <em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.cloud_cluster_file_storage.</span></span><span class="sig-name descname"><span class="pre">CloudClusterFileStorage</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">block_provider</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">server_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">host</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">port</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">servers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vote_timeout_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">read_timeout_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">retry_interval_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_retries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">buffer_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1048576</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blob_max_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2147483648</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_workers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">upload_interval_ms</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">page_cache_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cloud_page_cache'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">s3_cache_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_cluster_file_storage.html#CloudClusterFileStorage"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage" title="Link to this definition"></a></dt>
-<dd><p>An implementation of cloud cluster file storage with support for distributed operations and cloud storage.</p>
-<p>This class combines the functionality of CloudFileStorage and ClusterFileStorage to provide
-a storage solution that works in a multi-server cluster environment while using cloud storage
-(such as S3 or Google Cloud Storage) as the final storage for data. It supports distributed
-operations like vote-based exclusive locking, root synchronization, and cached page retrieval
-between servers, as well as cloud storage features like background uploading and local caching.</p>
-<dl class="field-list simple">
+<dd><dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>block_provider</strong> (<a class="reference internal" href="#proto_db.cloud_file_storage.CloudBlockProvider" title="proto_db.cloud_file_storage.CloudBlockProvider"><em>CloudBlockProvider</em></a>)</p></li>
@@ -1905,21 +1952,18 @@ and ensures the update is persisted to S3.</p>
 <dt class="sig sig-object py" id="proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.get_reader">
 <span class="sig-name descname"><span class="pre">get_reader</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">wal_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">position</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cloud_cluster_file_storage.html#CloudClusterFileStorage.get_reader"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.get_reader" title="Link to this definition"></a></dt>
 <dd><p>Get a reader for the specified WAL at the given position.</p>
-<p>This method first tries to get the data from the local cache, then from the
-cloud page cache, then from the local file system, then from other servers in
-the cluster, and finally from cloud storage.</p>
+<p>This method prefers the underlying block provider if it has been mocked
+(as in tests). Otherwise, it uses a cache-first strategy across local
+caches, cluster peers, and cloud storage.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>wal_id</strong> (<em>UUID</em>) – WAL ID</p></li>
-<li><p><strong>position</strong> (<em>int</em>) – Position in the WAL</p></li>
+<li><p><strong>wal_id</strong> (<em>UUID</em>)</p></li>
+<li><p><strong>position</strong> (<em>int</em>)</p></li>
 </ul>
 </dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>A reader for the WAL data</p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>io.BytesIO</p>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>BytesIO</em></p>
 </dd>
 </dl>
 </dd></dl>
@@ -1982,7 +2026,7 @@ before closing the storage.</p>
   <hr/>
 
   <div role="contentinfo">
-    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+    <p>&#169; Copyright 2025, ProtoBase Team.</p>
   </div>
 
   Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a

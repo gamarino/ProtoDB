@@ -1,0 +1,403 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Atom-level Caches &mdash; ProtoBase 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Parallel (Work-Stealing and Adaptive Chunking)" href="parallel.html" />
+    <link rel="prev" title="Finite State Machine" href="fsm.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            ProtoBase
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../introduction.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../testing.html">Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../storage_cloud.html">Cloud and Cluster Storage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="core.html">Core Components</a></li>
+<li class="toctree-l2"><a class="reference internal" href="storage.html">Storage Layer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data_structures.html">Data Structures</a></li>
+<li class="toctree-l2"><a class="reference internal" href="indexes.html">Secondary Indexes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html">Query System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="vectors.html">Vector Support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="vectors.html#module-0">Vectors</a></li>
+<li class="toctree-l2"><a class="reference internal" href="arrow_parquet.html">Arrow / Parquet Bridge</a></li>
+<li class="toctree-l2"><a class="reference internal" href="linq.html">LINQ-like API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="exceptions.html">Exceptions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fsm.html">Finite State Machine</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Atom-level Caches</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#components">Components</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#atompointer-keying">AtomPointer Keying</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#atombytescache">AtomBytesCache</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#atomobjectcache">AtomObjectCache</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#replacement-policy-2q">Replacement Policy (2Q)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#concurrency-and-single-flight">Concurrency and Single-flight</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#metrics-and-observability">Metrics and Observability</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.atom_cache.AtomCacheBundle"><code class="docutils literal notranslate"><span class="pre">AtomCacheBundle</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#integration-in-storage">Integration in Storage</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.standalone_file_storage.StandaloneFileStorage.__init__"><code class="docutils literal notranslate"><span class="pre">__init__()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#read-path">Read Path</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#configuration">Configuration</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#example">Example</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#notes">Notes</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="parallel.html">Parallel (Work-Stealing and Adaptive Chunking)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#core-components">Core Components</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#storage-layer">Storage Layer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#data-structures">Data Structures</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#query-system">Query System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#exceptions">Exceptions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#finite-state-machine">Finite State Machine</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../development.html">Development</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">ProtoBase</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">API Reference</a></li>
+      <li class="breadcrumb-item active">Atom-level Caches</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/atom_cache.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-proto_db.atom_cache">
+<span id="atom-level-caches"></span><h1>Atom-level Caches<a class="headerlink" href="#module-proto_db.atom_cache" title="Link to this heading"></a></h1>
+<p>ProtoBase includes an optional in-memory, atom-addressed cache layer that sits in front of the page/block cache.
+Because atoms are immutable and addressed by their AtomPointer (transaction_id, offset), entries never need
+logical invalidation. This layer significantly reduces latency for hot objects that are referenced across
+transactions or traversals.</p>
+<section id="components">
+<h2>Components<a class="headerlink" href="#components" title="Link to this heading"></a></h2>
+<section id="atompointer-keying">
+<h3>AtomPointer Keying<a class="headerlink" href="#atompointer-keying" title="Link to this heading"></a></h3>
+<p>Cache keys are derived from the atom address:</p>
+<ul class="simple">
+<li><p>Bytes cache key: <code class="docutils literal notranslate"><span class="pre">(transaction_uuid,</span> <span class="pre">offset)</span></code></p></li>
+<li><p>Object cache key: <code class="docutils literal notranslate"><span class="pre">(transaction_uuid,</span> <span class="pre">offset,</span> <span class="pre">schema_epoch)</span></code> (epoch is optional and allows fast
+invalidation on binary format/decoder changes)</p></li>
+</ul>
+</section>
+<section id="atombytescache">
+<h3>AtomBytesCache<a class="headerlink" href="#atombytescache" title="Link to this heading"></a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.atom_cache.AtomBytesCache">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.atom_cache.</span></span><span class="sig-name descname"><span class="pre">AtomBytesCache</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">max_entries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_bytes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">67108864</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stripes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">probation_ratio</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/atom_cache.html#AtomBytesCache"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.atom_cache.AtomBytesCache" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>max_entries</strong> (<em>int</em>)</p></li>
+<li><p><strong>max_bytes</strong> (<em>int</em>)</p></li>
+<li><p><strong>stripes</strong> (<em>int</em>)</p></li>
+<li><p><strong>probation_ratio</strong> (<em>float</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.atom_cache.AtomBytesCache.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">max_entries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_bytes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">67108864</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stripes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">probation_ratio</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/atom_cache.html#AtomBytesCache.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.atom_cache.AtomBytesCache.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>max_entries</strong> (<em>int</em>)</p></li>
+<li><p><strong>max_bytes</strong> (<em>int</em>)</p></li>
+<li><p><strong>stripes</strong> (<em>int</em>)</p></li>
+<li><p><strong>probation_ratio</strong> (<em>float</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>A capacity-bounded cache that stores the raw payload bytes of an atom (post WAL header). It returns
+<code class="docutils literal notranslate"><span class="pre">memoryview</span></code> slices to avoid copies on the hot path. Capacity is enforced by number of entries and total bytes.</p>
+</section>
+<section id="atomobjectcache">
+<h3>AtomObjectCache<a class="headerlink" href="#atomobjectcache" title="Link to this heading"></a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.atom_cache.AtomObjectCache">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.atom_cache.</span></span><span class="sig-name descname"><span class="pre">AtomObjectCache</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">max_entries=50000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_bytes=268435456</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stripes=64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">probation_ratio=0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_weak_for_probation=False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sizeof=&lt;function</span> <span class="pre">default_sizeof&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/atom_cache.html#AtomObjectCache"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.atom_cache.AtomObjectCache" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>max_entries</strong> (<em>int</em>)</p></li>
+<li><p><strong>max_bytes</strong> (<em>int</em>)</p></li>
+<li><p><strong>stripes</strong> (<em>int</em>)</p></li>
+<li><p><strong>probation_ratio</strong> (<em>float</em>)</p></li>
+<li><p><strong>use_weak_for_probation</strong> (<em>bool</em>)</p></li>
+<li><p><strong>sizeof</strong> (<em>Callable</em><em>[</em><em>[</em><em>Any</em><em>]</em><em>, </em><em>int</em><em>]</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.atom_cache.AtomObjectCache.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">max_entries=50000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_bytes=268435456</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stripes=64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">probation_ratio=0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_weak_for_probation=False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sizeof=&lt;function</span> <span class="pre">default_sizeof&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/atom_cache.html#AtomObjectCache.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.atom_cache.AtomObjectCache.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>max_entries</strong> (<em>int</em>)</p></li>
+<li><p><strong>max_bytes</strong> (<em>int</em>)</p></li>
+<li><p><strong>stripes</strong> (<em>int</em>)</p></li>
+<li><p><strong>probation_ratio</strong> (<em>float</em>)</p></li>
+<li><p><strong>use_weak_for_probation</strong> (<em>bool</em>)</p></li>
+<li><p><strong>sizeof</strong> (<em>Callable</em><em>[</em><em>[</em><em>Any</em><em>]</em><em>, </em><em>int</em><em>]</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>A capacity-bounded cache that stores fully deserialized atom objects (Python dicts for core atoms). An
+optional size estimator can be provided; otherwise a shallow <code class="docutils literal notranslate"><span class="pre">sys.getsizeof</span></code> is used.</p>
+</section>
+</section>
+<section id="replacement-policy-2q">
+<h2>Replacement Policy (2Q)<a class="headerlink" href="#replacement-policy-2q" title="Link to this heading"></a></h2>
+<p>Both caches implement a simple 2Q policy with two LRU queues: probation and protected.</p>
+<ul class="simple">
+<li><p>Admission: new entries go into probation.</p></li>
+<li><p>Promotion: a second reference promotes an entry to the protected queue.</p></li>
+<li><p>Eviction: entries are evicted from probation first, then protected, to avoid cache pollution during scans.</p></li>
+</ul>
+</section>
+<section id="concurrency-and-single-flight">
+<h2>Concurrency and Single-flight<a class="headerlink" href="#concurrency-and-single-flight" title="Link to this heading"></a></h2>
+<p>A lightweight single-flight mechanism deduplicates concurrent loads/deserializations for the same key.
+Only one worker performs the read/deserialize; followers wait and then hit the cache.</p>
+</section>
+<section id="metrics-and-observability">
+<h2>Metrics and Observability<a class="headerlink" href="#metrics-and-observability" title="Link to this heading"></a></h2>
+<p>Both caches expose basic statistics and latency buckets via <code class="docutils literal notranslate"><span class="pre">AtomCacheBundle</span></code>:</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.atom_cache.AtomCacheBundle">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.atom_cache.</span></span><span class="sig-name descname"><span class="pre">AtomCacheBundle</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">enable_object_cache</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">enable_bytes_cache</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_max_entries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_max_bytes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">268435456</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bytes_max_entries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bytes_max_bytes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">67108864</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stripes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">probation_ratio</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">schema_epoch</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/atom_cache.html#AtomCacheBundle"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.atom_cache.AtomCacheBundle" title="Link to this definition"></a></dt>
+<dd><p>Convenience container to embed in storages and expose single-flight and stats.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>enable_object_cache</strong> (<em>bool</em>)</p></li>
+<li><p><strong>enable_bytes_cache</strong> (<em>bool</em>)</p></li>
+<li><p><strong>object_max_entries</strong> (<em>int</em>)</p></li>
+<li><p><strong>object_max_bytes</strong> (<em>int</em>)</p></li>
+<li><p><strong>bytes_max_entries</strong> (<em>int</em>)</p></li>
+<li><p><strong>bytes_max_bytes</strong> (<em>int</em>)</p></li>
+<li><p><strong>stripes</strong> (<em>int</em>)</p></li>
+<li><p><strong>probation_ratio</strong> (<em>float</em>)</p></li>
+<li><p><strong>schema_epoch</strong> (<em>Optional</em><em>[</em><em>int</em><em>]</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.atom_cache.AtomCacheBundle.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">enable_object_cache</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">enable_bytes_cache</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_max_entries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_max_bytes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">268435456</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bytes_max_entries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bytes_max_bytes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">67108864</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stripes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">probation_ratio</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">schema_epoch</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/atom_cache.html#AtomCacheBundle.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.atom_cache.AtomCacheBundle.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>enable_object_cache</strong> (<em>bool</em>)</p></li>
+<li><p><strong>enable_bytes_cache</strong> (<em>bool</em>)</p></li>
+<li><p><strong>object_max_entries</strong> (<em>int</em>)</p></li>
+<li><p><strong>object_max_bytes</strong> (<em>int</em>)</p></li>
+<li><p><strong>bytes_max_entries</strong> (<em>int</em>)</p></li>
+<li><p><strong>bytes_max_bytes</strong> (<em>int</em>)</p></li>
+<li><p><strong>stripes</strong> (<em>int</em>)</p></li>
+<li><p><strong>probation_ratio</strong> (<em>float</em>)</p></li>
+<li><p><strong>schema_epoch</strong> (<em>int</em><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<ul class="simple">
+<li><p>Hits, misses, hit ratios</p></li>
+<li><p>Evictions</p></li>
+<li><p>Current sizes (entries/bytes)</p></li>
+<li><p>Single-flight deduplication count</p></li>
+<li><p>Latencies (p50/p95/p99) for object cache lookups, bytes cache lookups, and deserialization</p></li>
+</ul>
+</section>
+<section id="integration-in-storage">
+<h2>Integration in Storage<a class="headerlink" href="#integration-in-storage" title="Link to this heading"></a></h2>
+<p>The caches are integrated in the read path of <code class="docutils literal notranslate"><span class="pre">StandaloneFileStorage</span></code> and the constructor accepts
+configuration flags and limits:</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="proto_db.standalone_file_storage.StandaloneFileStorage.__init__">
+<span class="sig-prename descclassname"><span class="pre">proto_db.standalone_file_storage.StandaloneFileStorage.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">block_provider</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">buffer_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1048576</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blob_max_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2147483648</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_workers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">enable_atom_object_cache</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">enable_atom_bytes_cache</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_cache_max_entries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_cache_max_bytes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">268435456</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bytes_cache_max_entries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bytes_cache_max_bytes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">134217728</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_stripes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_probation_ratio</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">schema_epoch</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage.__init__" title="Link to this definition"></a></dt>
+<dd><p>Constructor for the StandaloneFileStorage class.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>block_provider</strong> (<a class="reference internal" href="core.html#proto_db.common.BlockProvider" title="proto_db.common.BlockProvider"><em>BlockProvider</em></a>) – The underlying storage provider</p></li>
+<li><p><strong>buffer_size</strong> (<em>int</em>) – Size of the WAL buffer in bytes</p></li>
+<li><p><strong>blob_max_size</strong> (<em>int</em>) – Maximum size of a blob in bytes</p></li>
+<li><p><strong>max_workers</strong> (<em>int</em>) – Number of worker threads for asynchronous operations</p></li>
+<li><p><strong>enable_atom_object_cache</strong> (<em>bool</em>)</p></li>
+<li><p><strong>enable_atom_bytes_cache</strong> (<em>bool</em>)</p></li>
+<li><p><strong>object_cache_max_entries</strong> (<em>int</em>)</p></li>
+<li><p><strong>object_cache_max_bytes</strong> (<em>int</em>)</p></li>
+<li><p><strong>bytes_cache_max_entries</strong> (<em>int</em>)</p></li>
+<li><p><strong>bytes_cache_max_bytes</strong> (<em>int</em>)</p></li>
+<li><p><strong>cache_stripes</strong> (<em>int</em>)</p></li>
+<li><p><strong>cache_probation_ratio</strong> (<em>float</em>)</p></li>
+<li><p><strong>schema_epoch</strong> (<em>int</em><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<section id="read-path">
+<h3>Read Path<a class="headerlink" href="#read-path" title="Link to this heading"></a></h3>
+<ol class="arabic simple">
+<li><p>Try <code class="docutils literal notranslate"><span class="pre">AtomObjectCache</span></code>; if hit, return immediately.</p></li>
+<li><p>Else try <code class="docutils literal notranslate"><span class="pre">AtomBytesCache</span></code>; if hit, deserialize, populate <code class="docutils literal notranslate"><span class="pre">AtomObjectCache</span></code>, return.</p></li>
+<li><p>Else read from WAL/page provider, extract payload, populate <code class="docutils literal notranslate"><span class="pre">AtomBytesCache</span></code> and <code class="docutils literal notranslate"><span class="pre">AtomObjectCache</span></code>.</p></li>
+<li><p>Single-flight ensures only one deserialize per key under concurrency.</p></li>
+</ol>
+</section>
+</section>
+<section id="configuration">
+<h2>Configuration<a class="headerlink" href="#configuration" title="Link to this heading"></a></h2>
+<p>Both <code class="docutils literal notranslate"><span class="pre">StandaloneFileStorage</span></code> and <code class="docutils literal notranslate"><span class="pre">MemoryStorage</span></code> accept the following parameters (with safe defaults):</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">enable_atom_object_cache</span></code> (bool)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">enable_atom_bytes_cache</span></code> (bool)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">object_cache_max_entries</span></code> (int)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">object_cache_max_bytes</span></code> (int)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bytes_cache_max_entries</span></code> (int)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bytes_cache_max_bytes</span></code> (int)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cache_stripes</span></code> (int) – number of lock stripes</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cache_probation_ratio</span></code> (float) – fraction of entries reserved for probation queue</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">schema_epoch</span></code> (int|None) – optional epoch for object cache keying</p></li>
+</ul>
+</section>
+<section id="example">
+<h2>Example<a class="headerlink" href="#example" title="Link to this heading"></a></h2>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.file_block_provider</span><span class="w"> </span><span class="kn">import</span> <span class="n">FileBlockProvider</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.standalone_file_storage</span><span class="w"> </span><span class="kn">import</span> <span class="n">StandaloneFileStorage</span>
+
+<span class="n">provider</span> <span class="o">=</span> <span class="n">FileBlockProvider</span><span class="p">(</span><span class="s1">&#39;/tmp/proto_db&#39;</span><span class="p">)</span>
+<span class="n">storage</span> <span class="o">=</span> <span class="n">StandaloneFileStorage</span><span class="p">(</span>
+    <span class="n">provider</span><span class="p">,</span>
+    <span class="n">enable_atom_object_cache</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">enable_atom_bytes_cache</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">object_cache_max_entries</span><span class="o">=</span><span class="mi">100_000</span><span class="p">,</span>
+    <span class="n">object_cache_max_bytes</span><span class="o">=</span><span class="mi">512</span><span class="o">*</span><span class="mi">1024</span><span class="o">*</span><span class="mi">1024</span><span class="p">,</span>
+    <span class="n">bytes_cache_max_entries</span><span class="o">=</span><span class="mi">50_000</span><span class="p">,</span>
+    <span class="n">bytes_cache_max_bytes</span><span class="o">=</span><span class="mi">256</span><span class="o">*</span><span class="mi">1024</span><span class="o">*</span><span class="mi">1024</span><span class="p">,</span>
+    <span class="n">cache_stripes</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span>
+    <span class="n">cache_probation_ratio</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+    <span class="n">schema_epoch</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="notes">
+<h2>Notes<a class="headerlink" href="#notes" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p>The caches rely on atom immutability; no invalidation is required on writes.</p></li>
+<li><p>For schema/decoder changes, bump <code class="docutils literal notranslate"><span class="pre">schema_epoch</span></code> to isolate object cache entries.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">AtomBytesCache</span></code> stores only the atom payload (without WAL length/format headers).</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="fsm.html" class="btn btn-neutral float-left" title="Finite State Machine" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="parallel.html" class="btn btn-neutral float-right" title="Parallel (Work-Stealing and Adaptive Chunking)" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, ProtoBase Team.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

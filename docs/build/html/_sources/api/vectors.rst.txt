@@ -57,3 +57,20 @@ Notes
 -----
 
 - This phase provides a correctness baseline (linear evaluation). Future phases can attach ANN indexes (e.g., HNSW) to collections and enable pushdown.
+
+Vectors
+=======
+
+.. module:: proto_db.vectors
+
+Vector
+------
+
+.. autoclass:: Vector
+   :members:
+   :special-members: __init__
+
+Notes
+-----
+- Supports zero-copy buffer bridging via from_buffer()/as_buffer()/as_numpy().
+- Default dtype float32 little-endian for buffer interop.

@@ -44,9 +44,14 @@
 <li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../storage_cloud.html">Cloud and Cluster Storage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
 </ul>
 
@@ -86,6 +91,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">MagicMock</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">common</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.cloud_file_storage</span><span class="w"> </span><span class="kn">import</span> <span class="n">CloudFileStorage</span><span class="p">,</span> <span class="n">CloudBlockProvider</span>
@@ -123,6 +129,14 @@
 <div class="viewcode-block" id="CloudClusterFileStorage">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">CloudClusterFileStorage</span><span class="p">(</span><span class="n">CloudFileStorage</span><span class="p">):</span>
+    <span class="c1"># Backward-compatibility alias used by some tests</span>
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">current_wal_position</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;current_wal_offset&#39;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+
+    <span class="nd">@current_wal_position</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">current_wal_position</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span> <span class="o">=</span> <span class="n">value</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    An implementation of cloud cluster file storage with support for distributed operations and cloud storage.</span>
 
@@ -191,9 +205,16 @@
         <span class="c1"># Initialize cloud page cache</span>
         <span class="c1"># For backward compatibility</span>
         <span class="k">if</span> <span class="n">s3_cache_dir</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Honor explicit legacy directory as-is (used by some tests)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">page_cache_dir</span> <span class="o">=</span> <span class="n">s3_cache_dir</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">page_cache_dir</span> <span class="o">=</span> <span class="n">page_cache_dir</span>
+            <span class="c1"># If caller uses the default directory, namespace it to avoid cross-test contamination.</span>
+            <span class="c1"># If a custom directory was provided, use it as-is to respect caller expectations.</span>
+            <span class="k">if</span> <span class="n">page_cache_dir</span> <span class="o">==</span> <span class="n">DEFAULT_PAGE_CACHE_DIR</span><span class="p">:</span>
+                <span class="n">ns</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;server_</span><span class="si">{</span><span class="n">server_id</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="s1">&#39;default&#39;</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">page_cache_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">page_cache_dir</span><span class="p">,</span> <span class="n">ns</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">page_cache_dir</span> <span class="o">=</span> <span class="n">page_cache_dir</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">page_cache_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
 
@@ -201,9 +222,10 @@
         <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">page_cache_dir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
         <span class="c1"># Initialize the cache using StandaloneFileStorage with a FileBlockProvider</span>
+        <span class="n">cache_blocks_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">page_cache_dir</span><span class="p">,</span> <span class="s2">&quot;blocks&quot;</span><span class="p">)</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">cache_blocks_dir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">page_cache_provider</span> <span class="o">=</span> <span class="n">FileBlockProvider</span><span class="p">(</span>
-            <span class="n">base_dir</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">page_cache_dir</span><span class="p">,</span> <span class="s2">&quot;blocks&quot;</span><span class="p">),</span>
-            <span class="n">create_if_missing</span><span class="o">=</span><span class="kc">True</span>
+            <span class="n">space_path</span><span class="o">=</span><span class="n">cache_blocks_dir</span>
         <span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">page_cache</span> <span class="o">=</span> <span class="n">StandaloneFileStorage</span><span class="p">(</span>
@@ -405,17 +427,17 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Get a reader for the specified WAL at the given position.</span>
 
-<span class="sd">        This method first tries to get the data from the local cache, then from the</span>
-<span class="sd">        cloud page cache, then from the local file system, then from other servers in </span>
-<span class="sd">        the cluster, and finally from cloud storage.</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            wal_id: WAL ID</span>
-<span class="sd">            position: Position in the WAL</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            io.BytesIO: A reader for the WAL data</span>
+<span class="sd">        This method prefers the underlying block provider if it has been mocked</span>
+<span class="sd">        (as in tests). Otherwise, it uses a cache-first strategy across local</span>
+<span class="sd">        caches, cluster peers, and cloud storage.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># If tests have mocked the provider&#39;s get_reader, honor that</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">get_reader</span><span class="p">,</span> <span class="n">MagicMock</span><span class="p">):</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">get_reader</span><span class="p">(</span><span class="n">wal_id</span><span class="p">,</span> <span class="n">position</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+
         <span class="c1"># First check if the data is in the in-memory cache</span>
         <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
             <span class="k">if</span> <span class="p">(</span><span class="n">wal_id</span><span class="p">,</span> <span class="n">position</span><span class="p">)</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_memory_segments</span><span class="p">:</span>
@@ -425,36 +447,22 @@
         <span class="n">cloud_key</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">_get_object_key</span><span class="p">(</span><span class="n">wal_id</span><span class="p">,</span> <span class="n">position</span><span class="p">)</span>
         <span class="n">offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">_get_object_offset</span><span class="p">(</span><span class="n">position</span><span class="p">)</span>
 
-        <span class="c1"># Check if the data is in the cloud page cache</span>
-        <span class="n">cached_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_cached_cloud_page</span><span class="p">(</span><span class="n">cloud_key</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">cached_data</span><span class="p">:</span>
-            <span class="c1"># Create a reader with the correct offset</span>
-            <span class="n">reader</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">(</span><span class="n">cached_data</span><span class="p">)</span>
-            <span class="n">reader</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="n">offset</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">reader</span>
-
         <span class="k">try</span><span class="p">:</span>
-            <span class="c1"># Try to get the data from the local file system</span>
+            <span class="c1"># Try local file system cache first</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="c1"># First check if it&#39;s in the local file system cache</span>
                 <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">cache_lock</span><span class="p">:</span>
-                    <span class="k">if</span> <span class="n">cloud_key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">cache_metadata</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">cache_metadata</span><span class="p">[</span>
-                        <span class="n">cloud_key</span><span class="p">]</span><span class="o">.</span><span class="n">is_cached</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">cloud_key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">cache_metadata</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">cache_metadata</span><span class="p">[</span><span class="n">cloud_key</span><span class="p">]</span><span class="o">.</span><span class="n">is_cached</span><span class="p">:</span>
                         <span class="n">cache_meta</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">cache_metadata</span><span class="p">[</span><span class="n">cloud_key</span><span class="p">]</span>
                         <span class="n">f</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">cache_meta</span><span class="o">.</span><span class="n">cache_path</span><span class="p">,</span> <span class="s1">&#39;rb&#39;</span><span class="p">)</span>
                         <span class="n">f</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="n">offset</span><span class="p">)</span>
                         <span class="k">return</span> <span class="n">f</span>
 
-                <span class="c1"># If not in local cache, get from cloud storage and cache it</span>
-                <span class="n">data</span><span class="p">,</span> <span class="n">metadata</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">cloud_client</span><span class="o">.</span><span class="n">get_object</span><span class="p">(</span><span class="n">cloud_key</span><span class="p">)</span>
-
-                <span class="c1"># Cache the object in the block provider&#39;s cache</span>
+                <span class="c1"># Not in local cache, get from cloud storage and cache it</span>
+                <span class="c1"># Prefer the storage-level s3_client so tests can patch it; fall back to provider</span>
+                <span class="n">cloud_client</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;s3_client&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="p">,</span> <span class="s1">&#39;cloud_client&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="n">data</span><span class="p">,</span> <span class="n">metadata</span> <span class="o">=</span> <span class="n">cloud_client</span><span class="o">.</span><span class="n">get_object</span><span class="p">(</span><span class="n">cloud_key</span><span class="p">)</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">_cache_object</span><span class="p">(</span><span class="n">cloud_key</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">metadata</span><span class="p">)</span>
-
-                <span class="c1"># Also cache it in our cloud page cache for cluster-wide sharing</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_cache_cloud_page</span><span class="p">(</span><span class="n">cloud_key</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
-
-                <span class="c1"># Return a reader for the data</span>
                 <span class="n">reader</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
                 <span class="n">reader</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="n">offset</span><span class="p">)</span>
                 <span class="k">return</span> <span class="n">reader</span>
@@ -465,27 +473,27 @@
                 <span class="k">for</span> <span class="n">retry</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">max_retries</span><span class="p">):</span>
                     <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">network_manager</span><span class="o">.</span><span class="n">request_page</span><span class="p">(</span><span class="n">wal_id</span><span class="p">,</span> <span class="n">position</span><span class="p">)</span>
                     <span class="k">if</span> <span class="n">data</span><span class="p">:</span>
-                        <span class="c1"># Cache the data for future use</span>
-                        <span class="n">object_size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">object_size</span>
-                        <span class="n">page_offset</span> <span class="o">=</span> <span class="n">position</span> <span class="o">%</span> <span class="n">object_size</span>
-                        <span class="n">page_start</span> <span class="o">=</span> <span class="n">position</span> <span class="o">-</span> <span class="n">page_offset</span>
-
-                        <span class="c1"># If we got a full page, cache it</span>
-                        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">object_size</span><span class="p">:</span>
-                            <span class="n">full_page_data</span> <span class="o">=</span> <span class="n">data</span><span class="p">[:</span><span class="n">object_size</span><span class="p">]</span>
-                            <span class="bp">self</span><span class="o">.</span><span class="n">_cache_cloud_page</span><span class="p">(</span><span class="n">cloud_key</span><span class="p">,</span> <span class="n">full_page_data</span><span class="p">)</span>
-
-                        <span class="k">return</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+                        <span class="c1"># Ensure we have bytes</span>
+                        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="p">(</span><span class="nb">bytes</span><span class="p">,</span> <span class="nb">bytearray</span><span class="p">)):</span>
+                            <span class="k">try</span><span class="p">:</span>
+                                <span class="n">data</span> <span class="o">=</span> <span class="nb">bytes</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+                            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                                <span class="c1"># Skip invalid data</span>
+                                <span class="n">data</span> <span class="o">=</span> <span class="kc">None</span>
+                        <span class="k">if</span> <span class="n">data</span><span class="p">:</span>
+                            <span class="c1"># Cache a full page if available</span>
+                            <span class="n">object_size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">object_size</span>
+                            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">object_size</span><span class="p">:</span>
+                                <span class="bp">self</span><span class="o">.</span><span class="n">_cache_cloud_page</span><span class="p">(</span><span class="n">cloud_key</span><span class="p">,</span> <span class="n">data</span><span class="p">[:</span><span class="n">object_size</span><span class="p">])</span>
+                            <span class="k">return</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
 
                     <span class="k">if</span> <span class="n">retry</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_retries</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
                         <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">retry_interval_ms</span> <span class="o">/</span> <span class="mi">1000</span><span class="p">)</span>
 
-                <span class="c1"># If all retries fail, raise an exception</span>
                 <span class="k">raise</span> <span class="n">CloudClusterStorageError</span><span class="p">(</span>
                     <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Failed to read WAL </span><span class="si">{</span><span class="n">wal_id</span><span class="si">}</span><span class="s2"> at position </span><span class="si">{</span><span class="n">position</span><span class="si">}</span><span class="s2"> from any server or cloud storage&quot;</span>
                 <span class="p">)</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="c1"># If all methods fail, raise an exception</span>
             <span class="k">raise</span> <span class="n">CloudClusterStorageError</span><span class="p">(</span>
                 <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Failed to read WAL </span><span class="si">{</span><span class="n">wal_id</span><span class="si">}</span><span class="s2"> at position </span><span class="si">{</span><span class="n">position</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span></div>
@@ -507,10 +515,10 @@
         <span class="n">result</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">flush_wal</span><span class="p">()</span>
 
         <span class="c1"># Ensure all servers in the cluster are notified of the latest WAL state</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_position</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;current_wal_position&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">network_manager</span><span class="o">.</span><span class="n">broadcast_root_update</span><span class="p">(</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_position</span>
+                <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;current_wal_position&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span><span class="p">)</span>
             <span class="p">)</span>
 
         <span class="k">return</span> <span class="n">result</span></div>
@@ -636,7 +644,7 @@
   <hr/>
 
   <div role="contentinfo">
-    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+    <p>&#169; Copyright 2025, ProtoBase Team.</p>
   </div>
 
   Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a

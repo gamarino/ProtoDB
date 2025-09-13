@@ -176,7 +176,7 @@ Lists are another basic data structure:
     tr2.commit()
 
 Working with Sets
-----------------
+----------------------
 
 Sets are useful for storing unique items:
 
@@ -217,7 +217,7 @@ Sets are useful for storing unique items:
     tr2.commit()
 
 Using Queries
-------------
+--------------------
 
 ProtoBase provides a powerful query system:
 
@@ -285,6 +285,6 @@ ProtoBase provides a powerful query system:
         # Output: New York: 2 users, Boston: 1 user
 
 Next Steps
----------
+----------------
 
 This quickstart guide covered the basics of using ProtoBase. For more detailed information, see the :doc:`api/index` documentation.

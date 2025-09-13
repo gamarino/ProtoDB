@@ -1,15 +1,15 @@
 Advanced Usage
-=============
+====================
 
 This section covers advanced usage scenarios for ProtoBase, including distributed storage, cloud storage, and performance optimization.
 
 Distributed Storage with ClusterFileStorage
-------------------------------------------
+--------------------------------------------------------------------------------
 
 ProtoBase provides distributed storage capabilities through the ``ClusterFileStorage`` class. This allows you to deploy ProtoBase across multiple nodes in a cluster for high availability and horizontal scaling.
 
 Setting Up a Cluster
-~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To set up a cluster, you need to:
 
@@ -51,7 +51,7 @@ Here's an example:
     db = space.get_database("my_database")
 
 Distributed Coordination
-~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``ClusterFileStorage`` uses a vote-based locking mechanism for distributed coordination. When a node wants to perform a write operation, it:
 
@@ -62,12 +62,12 @@ Distributed Coordination
 This ensures that only one node can write to the database at a time, preventing conflicts.
 
 Cloud Storage with CloudFileStorage
-----------------------------------
+--------------------------------------------------------------------------------
 
 ProtoBase provides cloud storage capabilities through the ``CloudFileStorage`` class. This allows you to store data in cloud object storage services like Amazon S3 or Google Cloud Storage.
 
 Setting Up Cloud Storage
-~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To set up cloud storage, you need to:
 
@@ -158,26 +158,26 @@ For testing purposes, you can use the built-in mock clients:
     )
 
 Local Caching
-~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``CloudFileStorage`` uses local caching to improve performance. When an object is read from cloud storage (Amazon S3 or Google Cloud Storage), it is cached locally. Subsequent reads of the same object will use the local cache, avoiding the need to fetch the object from cloud storage again.
 
 The cache is managed automatically, with least recently used objects being evicted when the cache size limit is reached.
 
 Background Uploading
-~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``CloudFileStorage`` also supports background uploading of data to cloud storage. When data is written to the database, it is first stored locally and then uploaded to cloud storage (Amazon S3 or Google Cloud Storage) in the background. This allows the application to continue working without waiting for the upload to complete.
 
 The upload interval can be configured to balance between performance and durability.
 
 Combined Cluster and Cloud Storage with CloudClusterFileStorage
--------------------------------------------------------------
+----------------------------------------------------------------------------------------------------
 
 ProtoBase provides a comprehensive solution for multi-server environments with the ``CloudClusterFileStorage`` class. This class combines the functionality of ``ClusterFileStorage`` and ``CloudFileStorage`` to provide a storage solution that works in a cluster environment while using cloud object storage (Amazon S3 or Google Cloud Storage) as the final storage for data.
 
 Setting Up Cloud Cluster Storage
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To set up cloud cluster storage, you need to:
 
@@ -255,7 +255,7 @@ Here's an example using Google Cloud Storage:
     db = space.get_database("my_database")
 
 Key Features
-~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``CloudClusterFileStorage`` provides the following key features:
 
@@ -270,7 +270,7 @@ Key Features
 5. **Fault Tolerance**: Provides fault tolerance through redundancy, with data being available from multiple sources (local cache, other nodes, cloud storage).
 
 Use Cases
-~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``CloudClusterFileStorage`` is ideal for:
 
@@ -279,12 +279,40 @@ Use Cases
 - Applications that need both the distributed coordination of a cluster and the durability of cloud storage
 
 Performance Optimization
-----------------------
+------------------------------------------------------------
+
+Atom-level Caching
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For read-heavy workloads with object reuse across transactions, enable the atom caches in your storage:
+
+.. code-block:: python
+
+    from proto_db.file_block_provider import FileBlockProvider
+    from proto_db.standalone_file_storage import StandaloneFileStorage
+
+    provider = FileBlockProvider('data_dir')
+    storage = StandaloneFileStorage(
+        provider,
+        enable_atom_object_cache=True,
+        enable_atom_bytes_cache=True,
+        object_cache_max_entries=50_000,
+        object_cache_max_bytes=256*1024*1024,
+        bytes_cache_max_entries=20_000,
+        bytes_cache_max_bytes=128*1024*1024,
+        cache_stripes=64,
+        cache_probation_ratio=0.5,
+        schema_epoch=None,
+    )
+
+This layer checks an object cache, then a bytes cache, before reading from the page/block provider. Because atoms are
+immutable, cached entries remain valid without invalidation. Use ``schema_epoch`` to quickly isolate entries after
+serializer changes.
 
 Here are some tips for optimizing the performance of ProtoBase:
 
 Batch Operations
-~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 When performing multiple operations, it's more efficient to batch them within a single transaction:
 
@@ -306,7 +334,7 @@ When performing multiple operations, it's more efficient to batch them within a 
 This is more efficient than creating a separate transaction for each operation.
 
 Use Appropriate Storage
-~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Choose the appropriate storage implementation based on your needs:
 
@@ -317,7 +345,7 @@ Choose the appropriate storage implementation based on your needs:
 - ``CloudClusterFileStorage``: For multi-server applications that need both distributed coordination and cloud storage.
 
 Optimize Queries
-~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 When working with large datasets, use the query system to filter, project, and aggregate data efficiently:
 
@@ -346,7 +374,7 @@ When working with large datasets, use the query system to filter, project, and a
 This is more efficient than retrieving all records and filtering them in application code.
 
 Use HashDictionary for Non-String Keys
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If you need to use non-string keys, use ``HashDictionary`` instead of ``Dictionary``:
 
@@ -366,7 +394,7 @@ If you need to use non-string keys, use ``HashDictionary`` instead of ``Dictiona
 ``HashDictionary`` uses hash-based lookups, which can be more efficient for certain types of keys.
 
 Close Storage When Done
-~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Always close the storage when you're done with it to release resources:
 

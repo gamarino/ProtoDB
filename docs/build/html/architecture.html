@@ -19,8 +19,8 @@
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="API Reference" href="api/index.html" />
-    <link rel="prev" title="Quickstart" href="quickstart.html" /> 
+    <link rel="next" title="Cloud and Cluster Storage" href="storage_cloud.html" />
+    <link rel="prev" title="Testing" href="testing.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -47,6 +47,8 @@
 <li class="toctree-l1"><a class="reference internal" href="introduction.html">Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="testing.html">Testing</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Architecture</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#core-components">Core Components</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#atom">Atom</a></li>
@@ -83,10 +85,17 @@
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#interaction-flow">Interaction Flow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#atom-level-cache-layer">Atom-level Cache Layer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#near-inmemory-execution">Near In‑Memory Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#writethrough-caching">Write‑Through Caching</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#indexaware-optimizer">Index‑Aware Optimizer</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="storage_cloud.html">Cloud and Cluster Storage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="development.html">Development</a></li>
 </ul>
 
@@ -351,20 +360,67 @@
 </ul>
 <p>This architecture provides a flexible and powerful foundation for building database applications.</p>
 </section>
+<section id="atom-level-cache-layer">
+<h2>Atom-level Cache Layer<a class="headerlink" href="#atom-level-cache-layer" title="Link to this heading"></a></h2>
+<p>ProtoBase integrates an optional, in-memory cache layer keyed by <code class="docutils literal notranslate"><span class="pre">AtomPointer</span></code> to accelerate reads across
+transactions:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">AtomBytesCache</span></code> stores the raw payload bytes (post WAL headers) as memoryviews.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">AtomObjectCache</span></code> stores fully deserialized atom objects (e.g., Python dicts).</p></li>
+<li><p>Keys: <code class="docutils literal notranslate"><span class="pre">(transaction_id,</span> <span class="pre">offset)</span></code> for bytes; <code class="docutils literal notranslate"><span class="pre">(transaction_id,</span> <span class="pre">offset,</span> <span class="pre">schema_epoch)</span></code> for objects.</p></li>
+<li><p>Replacement: 2Q (probation + protected LRU) to reduce scan pollution, with limits by bytes and entries.</p></li>
+<li><p>Concurrency: single-flight ensures at most one deserialize per key.</p></li>
+<li><p>Observability: hit/miss, evictions, and latency buckets exposed via <code class="docutils literal notranslate"><span class="pre">AtomCacheBundle</span></code>.</p></li>
+</ul>
+<p>The read path first checks the object cache, then the bytes cache, and finally falls back to reading from the
+underlying block provider if needed. Caches leverage the immutability of atoms, so they require no invalidation on
+writes; bump <code class="docutils literal notranslate"><span class="pre">schema_epoch</span></code> to isolate entries across decoder changes.</p>
+</section>
+<section id="near-inmemory-execution">
+<h2>Near In‑Memory Execution<a class="headerlink" href="#near-inmemory-execution" title="Link to this heading"></a></h2>
+<p>ProtoBase executes reads and writes within a transaction over an in‑memory object graph using copy‑on‑write. The main
+application thread does not wait for I/O on the hot path; persistence is delegated to a background executor. Commit
+synchronizes with the Write‑Ahead Log (WAL) to ensure durability without blocking routine operations on disk latency.</p>
+</section>
+<section id="writethrough-caching">
+<h2>Write‑Through Caching<a class="headerlink" href="#writethrough-caching" title="Link to this heading"></a></h2>
+<p>After a new atom is persisted, ProtoBase immediately publishes it to two caches keyed by AtomPointer:</p>
+<ul class="simple">
+<li><p>AtomObjectCache: deserialized objects (Python dicts for core atoms) keyed by (tx_uuid, offset, schema_epoch).</p></li>
+<li><p>AtomBytesCache: raw payload bytes keyed by (tx_uuid, offset).</p></li>
+</ul>
+<p>This write‑through behavior eliminates “read‑your‑own‑writes” penalties and keeps the hottest data resident in RAM.
+See <a class="reference internal" href="api/atom_cache.html"><span class="doc">Atom-level Caches</span></a> for API details and configuration options.</p>
+</section>
+<section id="indexaware-optimizer">
+<h2>Index‑Aware Optimizer<a class="headerlink" href="#indexaware-optimizer" title="Link to this heading"></a></h2>
+<p>The optimizer rewrites filters to leverage available secondary indexes:</p>
+<ul class="simple">
+<li><p>Single‑term predicates on indexed fields become direct index probes via <code class="docutils literal notranslate"><span class="pre">IndexedSearchPlan</span></code> or range scans via
+<code class="docutils literal notranslate"><span class="pre">IndexedRangeSearchPlan</span></code>.</p></li>
+<li><p>AND predicates compile into <code class="docutils literal notranslate"><span class="pre">AndMerge</span></code>: each sub‑term produces a set of stable references; sets are intersected
+from smallest to largest; only the final candidate set is materialized, then residual filters are applied.</p></li>
+<li><p>OR predicates compile into <code class="docutils literal notranslate"><span class="pre">OrMerge</span></code> when all sub‑terms are indexable; results are unioned with de‑duplication by
+stable reference.</p></li>
+</ul>
+<p>Range traversal operates directly over the AVL‑backed index structure: a lower‑bound binary search followed by an
+in‑order sequential walk until the upper bound is exceeded. Keys are compared natively (no string coercion), and
+inclusivity/exclusivity on bounds is respected.</p>
+</section>
 </section>
 
 
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="quickstart.html" class="btn btn-neutral float-left" title="Quickstart" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="api/index.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="testing.html" class="btn btn-neutral float-left" title="Testing" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="storage_cloud.html" class="btn btn-neutral float-right" title="Cloud and Cluster Storage" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>
 
   <div role="contentinfo">
-    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+    <p>&#169; Copyright 2025, ProtoBase Team.</p>
   </div>
 
   Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a

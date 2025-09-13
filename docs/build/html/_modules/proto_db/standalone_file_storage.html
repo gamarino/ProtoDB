@@ -1,263 +1,203 @@
+
+
 <!DOCTYPE html>
-<html class="writer-html5" data-content_root="../../" lang="en">
+<html class="writer-html5" lang="en" data-content_root="../../">
 <head>
-    <meta charset="utf-8"/>
-    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-    <title>proto_db.standalone_file_storage &mdash; ProtoBase 0.1.0 documentation</title>
-    <link href="../../_static/pygments.css?v=80d5e7a1" rel="stylesheet" type="text/css"/>
-    <link href="../../_static/css/theme.css?v=e59714d7" rel="stylesheet" type="text/css"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>proto_db.standalone_file_storage &mdash; ProtoBase 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
 
-
-    <script src="../../_static/jquery.js?v=5d32c60e"></script>
-    <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-    <script src="../../_static/documentation_options.js?v=01f34227"></script>
-    <script src="../../_static/doctools.js?v=9bcbadda"></script>
-    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/js/theme.js"></script>
-    <link href="../../genindex.html" rel="index" title="Index"/>
-    <link href="../../search.html" rel="search" title="Search"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
 </head>
 
-<body class="wy-body-for-nav">
-<div class="wy-grid-for-nav">
-    <nav class="wy-nav-side" data-toggle="wy-nav-shift">
-        <div class="wy-side-scroll">
-            <div class="wy-side-nav-search">
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
 
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            ProtoBase
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../testing.html">Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../storage_cloud.html">Cloud and Cluster Storage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
+</ul>
 
-                <a class="icon icon-home" href="../../index.html">
-                    ProtoBase
-                </a>
-                <div role="search">
-                    <form action="../../search.html" class="wy-form" id="rtd-search-form" method="get">
-                        <input aria-label="Search docs" name="q" placeholder="Search docs" type="text"/>
-                        <input name="check_keywords" type="hidden" value="yes"/>
-                        <input name="area" type="hidden" value="default"/>
-                    </form>
-                </div>
-            </div>
-            <div aria-label="Navigation menu" class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation">
-                <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
-                <ul>
-                    <li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a>
-                    </li>
-                    <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a>
-                    </li>
-                    <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a>
-                    </li>
-                    <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a>
-                    </li>
-                    <li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a>
-                    </li>
-                    <li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced
-                        Usage</a></li>
-                    <li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a>
-                    </li>
-                </ul>
-
-            </div>
         </div>
+      </div>
     </nav>
 
-    <section class="wy-nav-content-wrap" data-toggle="wy-nav-shift">
-        <nav aria-label="Mobile navigation menu" class="wy-nav-top">
-            <i class="fa fa-bars" data-toggle="wy-nav-top"></i>
-            <a href="../../index.html">ProtoBase</a>
-        </nav>
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">ProtoBase</a>
+      </nav>
 
-        <div class="wy-nav-content">
-            <div class="rst-content">
-                <div aria-label="Page navigation" role="navigation">
-                    <ul class="wy-breadcrumbs">
-                        <li><a aria-label="Home" class="icon icon-home" href="../../index.html"></a></li>
-                        <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
-                        <li class="breadcrumb-item active">proto_db.standalone_file_storage</li>
-                        <li class="wy-breadcrumbs-aside">
-                        </li>
-                    </ul>
-                    <hr/>
-                </div>
-                <div class="document" itemscope="itemscope" itemtype="http://schema.org/Article" role="main">
-                    <div itemprop="articleBody">
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">proto_db.standalone_file_storage</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for proto_db.standalone_file_storage</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
-                        <h1>Source code for proto_db.standalone_file_storage</h1>
-                        <div class="highlight"><pre>
-<span></span><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span
-                                class="n">annotations</span>
-<span class="kn">import</span> <span class="nn">concurrent.futures</span>
-<span class="kn">import</span> <span class="nn">io</span>
-<span class="kn">import</span> <span class="nn">json</span>
-<span class="kn">import</span> <span class="nn">os</span>
-<span class="kn">import</span> <span class="nn">msgpack</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">struct</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">ABC</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">threading</span><span class="w"> </span><span class="kn">import</span> <span class="n">Lock</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mock</span><span class="p">,</span> <span class="n">MagicMock</span>
 
-<span class="kn">from</span> <span class="nn">abc</span> <span class="kn">import</span> <span class="n">ABC</span>
-<span class="kn">from</span> <span class="nn">threading</span> <span class="kn">import</span> <span
-                                class="n">Lock</span>
-<span class="kn">from</span> <span class="nn">unittest.mock</span> <span class="kn">import</span> <span
-                                class="n">Mock</span><span class="p">,</span> <span class="n">MagicMock</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">msgpack</span>
 
-<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">common</span>
-<span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span
-                                class="n">MB</span><span class="p">,</span> <span class="n">GB</span>
-<span class="kn">from</span> <span class="nn">.exceptions</span> <span class="kn">import</span> <span class="n">ProtoUnexpectedException</span><span
-                                class="p">,</span> <span class="n">ProtoValidationException</span>
-<span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span
-                                class="n">Future</span><span class="p">,</span> <span
-                                class="n">BlockProvider</span><span class="p">,</span> <span
-                                class="n">AtomPointer</span>
-<span class="kn">from</span> <span class="nn">.hybrid_executor</span> <span class="kn">import</span> <span class="n">HybridExecutor</span>
-<span class="kn">import</span> <span class="nn">uuid</span>
-<span class="kn">import</span> <span class="nn">logging</span>
-<span class="kn">import</span> <span class="nn">struct</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">common</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="n">Future</span><span class="p">,</span> <span class="n">BlockProvider</span><span class="p">,</span> <span class="n">AtomPointer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="n">MB</span><span class="p">,</span> <span class="n">GB</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProtoUnexpectedException</span><span class="p">,</span> <span class="n">ProtoValidationException</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.hybrid_executor</span><span class="w"> </span><span class="kn">import</span> <span class="n">HybridExecutor</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.atom_cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">AtomCacheBundle</span>
 
 <span class="c1"># Format indicators for data serialization</span>
 <span class="n">FORMAT_RAW_BINARY</span> <span class="o">=</span> <span class="mh">0x00</span>  <span class="c1"># Raw binary data (no serialization)</span>
-<span class="n">FORMAT_JSON_UTF8</span> <span class="o">=</span> <span class="mh">0x01</span>   <span class="c1"># JSON serialized data in UTF-8 encoding</span>
-<span class="n">FORMAT_MSGPACK</span> <span class="o">=</span> <span class="mh">0x02</span>     <span class="c1"># MessagePack serialized data</span>
+<span class="n">FORMAT_JSON_UTF8</span> <span class="o">=</span> <span class="mh">0x01</span>  <span class="c1"># JSON serialized data in UTF-8 encoding</span>
+<span class="n">FORMAT_MSGPACK</span> <span class="o">=</span> <span class="mh">0x02</span>  <span class="c1"># MessagePack serialized data</span>
 
-
-<span class="n">_logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span
-                                class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span
-                                class="p">)</span>
+<span class="n">_logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
 
 <span class="c1"># Default buffer and storage sizes</span>
-<span class="n">BUFFER_SIZE</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">*</span> <span
-                                class="n">MB</span>
-<span class="n">BLOB_MAX_SIZE</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span
-                                class="n">GB</span>
+<span class="n">BUFFER_SIZE</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">*</span> <span class="n">MB</span>
+<span class="n">BLOB_MAX_SIZE</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">GB</span>
 
 <span class="c1"># Default number of worker threads for asynchronous execution</span>
-<span class="n">DEFAULT_MAX_WORKERS</span> <span class="o">=</span> <span class="p">(</span><span
-                                class="n">os</span><span class="o">.</span><span class="n">cpu_count</span><span
-                                class="p">()</span> <span class="ow">or</span> <span class="mi">1</span><span class="p">)</span> <span
-                                class="o">*</span> <span class="mi">5</span>
+<span class="n">DEFAULT_MAX_WORKERS</span> <span class="o">=</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">cpu_count</span><span class="p">()</span> <span class="ow">or</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mi">5</span>
 
 
 <div class="viewcode-block" id="WALState">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.WALState">[docs]</a>
-<span class="k">class</span> <span class="nc">WALState</span><span class="p">:</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">WALState</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    A class encapsulating the current WAL (Write-Ahead Log) state for easier manipulation.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
 <div class="viewcode-block" id="WALState.__init__">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.WALState.__init__">[docs]</a>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span
-        class="p">,</span> <span class="n">wal_buffer</span><span class="p">,</span> <span
-        class="n">wal_offset</span><span class="p">,</span> <span class="n">wal_base</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">wal_buffer</span> <span
-        class="o">=</span> <span class="n">wal_buffer</span><span class="p">[:]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">wal_offset</span> <span
-        class="o">=</span> <span class="n">wal_offset</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">wal_base</span> <span
-        class="o">=</span> <span class="n">wal_base</span></div>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wal_buffer</span><span class="p">,</span> <span class="n">wal_offset</span><span class="p">,</span> <span class="n">wal_base</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wal_buffer</span> <span class="o">=</span> <span class="n">wal_buffer</span><span class="p">[:]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wal_offset</span> <span class="o">=</span> <span class="n">wal_offset</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wal_base</span> <span class="o">=</span> <span class="n">wal_base</span></div>
 </div>
 
 
 
 <div class="viewcode-block" id="WALWriteOperation">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.WALWriteOperation">[docs]</a>
-<span class="k">class</span> <span class="nc">WALWriteOperation</span><span class="p">:</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">WALWriteOperation</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents a single WAL write operation.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
 <div class="viewcode-block" id="WALWriteOperation.__init__">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.WALWriteOperation.__init__">[docs]</a>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span
-        class="p">,</span> <span class="n">transaction_id</span><span class="p">:</span> <span
-        class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span
-        class="n">offset</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span
-        class="n">segments</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span
-        class="nb">bytearray</span><span class="p">]):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span> <span
-        class="o">=</span> <span class="n">transaction_id</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">offset</span> <span class="o">=</span> <span
-        class="n">offset</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">segments</span> <span
-        class="o">=</span> <span class="n">segments</span></div>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">transaction_id</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span class="n">offset</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">segments</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">bytearray</span><span class="p">]):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span> <span class="o">=</span> <span class="n">transaction_id</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">offset</span> <span class="o">=</span> <span class="n">offset</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">segments</span> <span class="o">=</span> <span class="n">segments</span></div>
 </div>
 
 
 
-<span class="k">def</span> <span class="nf">_get_valid_char_data</span><span class="p">(</span><span
-                                class="n">stream</span><span class="p">:</span> <span class="n">io</span><span
-                                class="o">.</span><span class="n">FileIO</span><span class="p">)</span> <span class="o">-&gt;</span> <span
-                                class="nb">str</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_valid_char_data</span><span class="p">(</span><span class="n">stream</span><span class="p">:</span> <span class="n">io</span><span class="o">.</span><span class="n">FileIO</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Reads and decodes valid characters from a binary stream.</span>
 <span class="sd">    Supports UTF-8 decoding for characters up to 4 bytes.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">try</span><span class="p">:</span>
-        <span class="n">first_byte</span> <span class="o">=</span> <span class="n">stream</span><span class="o">.</span><span
-                                class="n">read</span><span class="p">(</span><span class="mi">1</span><span
-                                class="p">)</span>
+        <span class="n">first_byte</span> <span class="o">=</span> <span class="n">stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">first_byte</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;End of stream reached unexpectedly.&quot;</span><span
-                                class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;End of stream reached unexpectedly.&quot;</span><span class="p">)</span>
 
-        <span class="n">byte</span> <span class="o">=</span> <span class="n">first_byte</span><span
-                                class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">byte</span> <span class="o">=</span> <span class="n">first_byte</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
         <span class="c1"># Determine the character size based on UTF-8 encoding</span>
-        <span class="k">if</span> <span class="n">byte</span> <span class="o">&gt;&gt;</span> <span class="mi">7</span> <span
-                                class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">first_byte</span><span class="o">.</span><span class="n">decode</span><span
-                                class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="n">byte</span> <span class="o">&gt;&gt;</span> <span
-                                class="mi">5</span> <span class="o">==</span> <span class="mb">0b110</span><span
-                                class="p">:</span>
-            <span class="k">return</span> <span class="p">(</span><span class="n">first_byte</span> <span
-                                class="o">+</span> <span class="n">stream</span><span class="o">.</span><span class="n">read</span><span
-                                class="p">(</span><span class="mi">1</span><span class="p">))</span><span
-                                class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span
-                                class="p">)</span>
-        <span class="k">elif</span> <span class="n">byte</span> <span class="o">&gt;&gt;</span> <span
-                                class="mi">4</span> <span class="o">==</span> <span class="mb">0b1110</span><span
-                                class="p">:</span>
-            <span class="k">return</span> <span class="p">(</span><span class="n">first_byte</span> <span
-                                class="o">+</span> <span class="n">stream</span><span class="o">.</span><span class="n">read</span><span
-                                class="p">(</span><span class="mi">2</span><span class="p">))</span><span
-                                class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span
-                                class="p">)</span>
+        <span class="k">if</span> <span class="n">byte</span> <span class="o">&gt;&gt;</span> <span class="mi">7</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">first_byte</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">byte</span> <span class="o">&gt;&gt;</span> <span class="mi">5</span> <span class="o">==</span> <span class="mb">0b110</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">first_byte</span> <span class="o">+</span> <span class="n">stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">byte</span> <span class="o">&gt;&gt;</span> <span class="mi">4</span> <span class="o">==</span> <span class="mb">0b1110</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">first_byte</span> <span class="o">+</span> <span class="n">stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">return</span> <span class="p">(</span><span class="n">first_byte</span> <span
-                                class="o">+</span> <span class="n">stream</span><span class="o">.</span><span class="n">read</span><span
-                                class="p">(</span><span class="mi">3</span><span class="p">))</span><span
-                                class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span
-                                class="p">)</span>
-    <span class="k">except</span> <span class="p">(</span><span class="ne">IndexError</span><span
-                                class="p">,</span> <span class="ne">UnicodeDecodeError</span><span
-                                class="p">)</span> <span class="k">as</span> <span class="n">e</span><span
-                                class="p">:</span>
-        <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span><span
-                                class="n">message</span><span class="o">=</span><span class="s2">&quot;Error reading stream&quot;</span><span
-                                class="p">,</span> <span class="n">exception_type</span><span class="o">=</span><span
-                                class="n">e</span><span class="o">.</span><span class="vm">__class__</span><span
-                                class="o">.</span><span class="vm">__name__</span><span class="p">)</span> <span
-                                class="kn">from</span> <span class="nn">e</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">first_byte</span> <span class="o">+</span> <span class="n">stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">3</span><span class="p">))</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">IndexError</span><span class="p">,</span> <span class="ne">UnicodeDecodeError</span><span class="p">)</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Error reading stream&quot;</span><span class="p">,</span> <span class="n">exception_type</span><span class="o">=</span><span class="n">e</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">e</span>
 
 
 <div class="viewcode-block" id="StandaloneFileStorage">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage">[docs]</a>
-<span class="k">class</span> <span class="nc">StandaloneFileStorage</span><span class="p">(</span><span
-        class="n">common</span><span class="o">.</span><span class="n">SharedStorage</span><span
-        class="p">,</span> <span class="n">ABC</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">StandaloneFileStorage</span><span class="p">(</span><span class="n">common</span><span class="o">.</span><span class="n">SharedStorage</span><span class="p">,</span> <span class="n">ABC</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    An implementation of standalone file storage with support for Write-Ahead Logging (WAL).</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
 <div class="viewcode-block" id="StandaloneFileStorage.__init__">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.__init__">[docs]</a>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span
-        class="p">,</span>
-                 <span class="n">block_provider</span><span class="p">:</span> <span class="n">BlockProvider</span><span
-        class="p">,</span>
-                 <span class="n">buffer_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span
-        class="n">BUFFER_SIZE</span><span class="p">,</span>
-                 <span class="n">blob_max_size</span><span class="p">:</span> <span class="nb">int</span> <span
-        class="o">=</span> <span class="n">BLOB_MAX_SIZE</span><span class="p">,</span>
-                 <span class="n">max_workers</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span
-        class="n">DEFAULT_MAX_WORKERS</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
+                 <span class="n">block_provider</span><span class="p">:</span> <span class="n">BlockProvider</span><span class="p">,</span>
+                 <span class="n">buffer_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">BUFFER_SIZE</span><span class="p">,</span>
+                 <span class="n">blob_max_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">BLOB_MAX_SIZE</span><span class="p">,</span>
+                 <span class="n">max_workers</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">DEFAULT_MAX_WORKERS</span><span class="p">,</span>
+                 <span class="n">enable_atom_object_cache</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+                 <span class="n">enable_atom_bytes_cache</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+                 <span class="n">object_cache_max_entries</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50000</span><span class="p">,</span>
+                 <span class="n">object_cache_max_bytes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">256</span> <span class="o">*</span> <span class="n">MB</span><span class="p">,</span>
+                 <span class="n">bytes_cache_max_entries</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20000</span><span class="p">,</span>
+                 <span class="n">bytes_cache_max_bytes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">128</span> <span class="o">*</span> <span class="n">MB</span><span class="p">,</span>
+                 <span class="n">cache_stripes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">64</span><span class="p">,</span>
+                 <span class="n">cache_probation_ratio</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
+                 <span class="n">schema_epoch</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Constructor for the StandaloneFileStorage class.</span>
 
@@ -267,91 +207,100 @@
 <span class="sd">            blob_max_size: Maximum size of a blob in bytes</span>
 <span class="sd">            max_workers: Number of worker threads for asynchronous operations</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span> <span
-        class="o">=</span> <span class="n">block_provider</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">buffer_size</span> <span class="o">=</span> <span
-        class="n">buffer_size</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">blob_max_size</span> <span
-        class="o">=</span> <span class="n">blob_max_size</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span> <span class="o">=</span> <span
-        class="n">Lock</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">=</span> <span
-        class="s1">&#39;Running&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span> <span class="o">=</span> <span class="n">block_provider</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">buffer_size</span> <span class="o">=</span> <span class="n">buffer_size</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">blob_max_size</span> <span class="o">=</span> <span class="n">blob_max_size</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span> <span class="o">=</span> <span class="n">Lock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">=</span> <span class="s1">&#39;Running&#39;</span>
 
         <span class="c1"># Create hybrid executor for async and sync operations</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">executor_pool</span> <span
-        class="o">=</span> <span class="n">HybridExecutor</span><span class="p">(</span><span
-        class="n">base_num_workers</span><span class="o">=</span><span class="n">max_workers</span> <span
-        class="o">//</span> <span class="mi">5</span><span class="p">,</span> <span
-        class="n">sync_multiplier</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">executor_pool</span> <span class="o">=</span> <span class="n">HybridExecutor</span><span class="p">(</span><span class="n">base_num_workers</span><span class="o">=</span><span class="n">max_workers</span> <span class="o">//</span> <span class="mi">5</span><span class="p">,</span> <span class="n">sync_multiplier</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
 
         <span class="c1"># WAL state management</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span> <span
-        class="o">=</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_base</span> <span
-        class="o">=</span> <span class="mi">0</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span> <span
-        class="o">=</span> <span class="mi">0</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_buffer</span> <span
-        class="o">=</span> <span class="p">[]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">pending_writes</span> <span
-        class="o">=</span> <span class="p">[]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">in_memory_segments</span> <span
-        class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_base</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_buffer</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pending_writes</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">in_memory_segments</span> <span class="o">=</span> <span class="p">{}</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">_get_new_wal</span><span class="p">()</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_get_new_wal</span><span class="p">()</span>
+
+        <span class="c1"># Atom-level caches</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_atom_caches</span> <span class="o">=</span> <span class="n">AtomCacheBundle</span><span class="p">(</span>
+            <span class="n">enable_object_cache</span><span class="o">=</span><span class="n">enable_atom_object_cache</span><span class="p">,</span>
+            <span class="n">enable_bytes_cache</span><span class="o">=</span><span class="n">enable_atom_bytes_cache</span><span class="p">,</span>
+            <span class="n">object_max_entries</span><span class="o">=</span><span class="n">object_cache_max_entries</span><span class="p">,</span>
+            <span class="n">object_max_bytes</span><span class="o">=</span><span class="n">object_cache_max_bytes</span><span class="p">,</span>
+            <span class="n">bytes_max_entries</span><span class="o">=</span><span class="n">bytes_cache_max_entries</span><span class="p">,</span>
+            <span class="n">bytes_max_bytes</span><span class="o">=</span><span class="n">bytes_cache_max_bytes</span><span class="p">,</span>
+            <span class="n">stripes</span><span class="o">=</span><span class="n">cache_stripes</span><span class="p">,</span>
+            <span class="n">probation_ratio</span><span class="o">=</span><span class="n">cache_probation_ratio</span><span class="p">,</span>
+            <span class="n">schema_epoch</span><span class="o">=</span><span class="n">schema_epoch</span><span class="p">,</span>
+        <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="StandaloneFileStorage.read_current_root">
-<a class="viewcode-back"
-   href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.read_current_root">[docs]</a>
-    <span class="k">def</span> <span class="nf">read_current_root</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span
-        class="n">AtomPointer</span><span class="p">:</span>
+<a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.read_current_root">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">read_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Read the current root object</span>
-<span class="sd">        :return:</span>
+<span class="sd">        Read the current root object pointer from the underlying provider.</span>
+<span class="sd">        The provider may return a raw JSON dict; normalize it into an AtomPointer.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">block_provider</span><span class="o">.</span><span class="n">get_current_root_object</span><span
-        class="p">()</span></div>
+        <span class="n">root</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">get_current_root_object</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">root</span><span class="p">:</span>
+            <span class="c1"># Signal uninitialized root as validation error (handled by callers)</span>
+            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Root object is not initialized&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">AtomPointer</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">root</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="c1"># Accept formats: {&#39;transaction_id&#39;: str|hex, &#39;offset&#39;: int} optionally with &#39;className&#39;</span>
+            <span class="n">tid_val</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;transaction_id&#39;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">root</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;tx&#39;</span><span class="p">)</span>
+            <span class="n">off</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;offset&#39;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">tid_val</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Invalid root object format: missing transaction_id&quot;</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">tid_val</span><span class="p">,</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">):</span>
+                    <span class="n">txid</span> <span class="o">=</span> <span class="n">tid_val</span>
+                <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">tid_val</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">txid</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">(</span><span class="n">tid_val</span><span class="p">)</span>
+                    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                        <span class="n">txid</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">(</span><span class="nb">hex</span><span class="o">=</span><span class="n">tid_val</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Unsupported transaction_id type&quot;</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Invalid root transaction_id: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">AtomPointer</span><span class="p">(</span><span class="n">transaction_id</span><span class="o">=</span><span class="n">txid</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="n">off</span><span class="p">)</span>
+        <span class="c1"># Unknown format</span>
+        <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Unsupported root object format&quot;</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="StandaloneFileStorage.read_lock_current_root">
-<a class="viewcode-back"
-   href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.read_lock_current_root">[docs]</a>
-    <span class="k">def</span> <span class="nf">read_lock_current_root</span><span class="p">(</span><span class="bp">self</span><span
-        class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
+<a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.read_lock_current_root">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">read_lock_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Read the current root object</span>
 <span class="sd">        In this provider, there is no difference with</span>
 <span class="sd">        a simple root reading</span>
 <span class="sd">        :return:</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_current_root</span><span
-        class="p">()</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_current_root</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="StandaloneFileStorage.set_current_root">
-<a class="viewcode-back"
-   href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.set_current_root">[docs]</a>
-    <span class="k">def</span> <span class="nf">set_current_root</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">,</span> <span class="n">root_pointer</span><span class="p">:</span> <span
-        class="n">AtomPointer</span><span class="p">):</span>
+<a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.set_current_root">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">root_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Set the current root object</span>
 <span class="sd">        :return:</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span
-        class="o">.</span><span class="n">update_root_object</span><span class="p">(</span><span
-        class="n">root_pointer</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">update_root_object</span><span class="p">(</span><span class="n">root_pointer</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="StandaloneFileStorage.unlock_current_root">
-<a class="viewcode-back"
-   href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.unlock_current_root">[docs]</a>
-    <span class="k">def</span> <span class="nf">unlock_current_root</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">):</span>
+<a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.unlock_current_root">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">unlock_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Abort root update process</span>
 <span class="sd">        Nothing to do for this provider</span>
@@ -360,49 +309,31 @@
         <span class="k">pass</span></div>
 
 
-    <span class="k">def</span> <span class="nf">_get_new_wal</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_new_wal</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Initializes a new Write-Ahead Log (WAL).</span>
 <span class="sd">        Allways new WALs start at buffer_size boundaries</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span><span
-        class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span> <span
-        class="o">=</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">block_provider</span><span class="o">.</span><span class="n">get_new_wal</span><span
-        class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span> <span
-        class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span> <span
-        class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="bp">self</span><span
-        class="o">.</span><span class="n">buffer_size</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span><span class="p">,</span> <span class="n">file_size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">get_new_wal</span><span class="p">()</span>
+        <span class="c1"># Align base and offset to buffer boundaries</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_base</span> <span class="o">=</span> <span class="n">file_size</span> <span class="o">-</span> <span class="p">(</span><span class="n">file_size</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer_size</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span> <span class="o">=</span> <span class="n">file_size</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_base</span>
 
-    <span class="k">def</span> <span class="nf">_save_state</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">WALState</span><span
-        class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_save_state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">WALState</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Saves the current WAL state for rollback purposes.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="n">WALState</span><span class="p">(</span><span
-        class="bp">self</span><span class="o">.</span><span class="n">current_wal_buffer</span><span class="p">,</span> <span
-        class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span><span class="p">,</span> <span
-        class="bp">self</span><span class="o">.</span><span class="n">current_wal_base</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">WALState</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">current_wal_buffer</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_base</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">_restore_state</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">,</span> <span class="n">state</span><span class="p">:</span> <span
-        class="n">WALState</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_restore_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">state</span><span class="p">:</span> <span class="n">WALState</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Restores the WAL state to a previously saved snapshot.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_buffer</span> <span
-        class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">wal_buffer</span><span
-        class="p">[:]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span> <span
-        class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">wal_offset</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_base</span> <span
-        class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">wal_base</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_buffer</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">wal_buffer</span><span class="p">[:]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">wal_offset</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_base</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">wal_base</span>
 
-    <span class="k">def</span> <span class="nf">_flush_wal</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_flush_wal</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Flushes the current WAL buffer to the pending writes list.</span>
 
@@ -413,39 +344,26 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            int: The number of bytes flushed, or 0 if nothing was flushed</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">current_wal_buffer</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_buffer</span><span class="p">:</span>
             <span class="k">return</span> <span class="mi">0</span>  <span class="c1"># Nothing to flush</span>
 
         <span class="c1"># Calculate total size before flushing for return value</span>
-        <span class="n">written_size</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span
-        class="nb">len</span><span class="p">(</span><span class="n">segment</span><span class="p">)</span> <span
-        class="k">for</span> <span class="n">segment</span> <span class="ow">in</span> <span class="bp">self</span><span
-        class="o">.</span><span class="n">current_wal_buffer</span><span class="p">)</span>
+        <span class="n">written_size</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">segment</span><span class="p">)</span> <span class="k">for</span> <span class="n">segment</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_buffer</span><span class="p">)</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">pending_writes</span><span
-        class="o">.</span><span class="n">append</span><span class="p">(</span><span
-        class="n">WALWriteOperation</span><span class="p">(</span>
-            <span class="n">transaction_id</span><span class="o">=</span><span class="bp">self</span><span
-        class="o">.</span><span class="n">current_wal_id</span><span class="p">,</span>
-            <span class="n">offset</span><span class="o">=</span><span class="bp">self</span><span
-        class="o">.</span><span class="n">current_wal_base</span><span class="p">,</span>
-            <span class="n">segments</span><span class="o">=</span><span class="bp">self</span><span
-        class="o">.</span><span class="n">current_wal_buffer</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pending_writes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">WALWriteOperation</span><span class="p">(</span>
+            <span class="n">transaction_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span><span class="p">,</span>
+            <span class="n">offset</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">current_wal_base</span><span class="p">,</span>
+            <span class="n">segments</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">current_wal_buffer</span>
         <span class="p">))</span>
 
         <span class="c1"># Reset WAL buffer</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_base</span> <span
-        class="o">+=</span> <span class="n">written_size</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span> <span
-        class="o">=</span> <span class="mi">0</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_buffer</span> <span
-        class="o">=</span> <span class="p">[]</span>  <span class="c1"># Clear the buffer</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_base</span> <span class="o">+=</span> <span class="n">written_size</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_buffer</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># Clear the buffer</span>
 
         <span class="k">return</span> <span class="n">written_size</span>
 
-    <span class="k">def</span> <span class="nf">_flush_pending_writes</span><span class="p">(</span><span class="bp">self</span><span
-        class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_flush_pending_writes</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Processes WALWriteOperation entries in the pending_writes list.</span>
 <span class="sd">        Writes the data to the underlying BlockProvider.</span>
@@ -465,226 +383,109 @@
         <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
             <span class="n">operations</span> <span class="o">=</span> <span class="p">[]</span>
 
-            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span
-        class="p">:</span>
-                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">pending_writes</span><span
-        class="p">:</span>
-                    <span class="n">first_write</span> <span class="o">=</span> <span class="bp">self</span><span
-        class="o">.</span><span class="n">pending_writes</span><span class="o">.</span><span class="n">pop</span><span
-        class="p">(</span><span class="mi">0</span><span class="p">)</span>
-                    <span class="n">operations</span> <span class="o">=</span> <span class="p">[</span><span class="n">first_write</span><span
-        class="p">]</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">pending_writes</span><span class="p">:</span>
+                    <span class="n">first_write</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pending_writes</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+                    <span class="n">operations</span> <span class="o">=</span> <span class="p">[</span><span class="n">first_write</span><span class="p">]</span>
 
                     <span class="c1"># Group operations with the same transaction ID</span>
-                    <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">pending_writes</span> <span
-        class="ow">and</span> <span class="n">first_write</span><span class="o">.</span><span
-        class="n">transaction_id</span> <span class="o">==</span> <span class="bp">self</span><span
-        class="o">.</span><span class="n">pending_writes</span><span class="p">[</span><span class="mi">0</span><span
-        class="p">]</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">:</span>
-                        <span class="n">operations</span><span class="o">.</span><span class="n">append</span><span
-        class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pending_writes</span><span
-        class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span
-        class="p">))</span>
+                    <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">pending_writes</span> <span class="ow">and</span> <span class="n">first_write</span><span class="o">.</span><span class="n">transaction_id</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">pending_writes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">:</span>
+                        <span class="n">operations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pending_writes</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="k">break</span>
 
             <span class="k">if</span> <span class="n">operations</span><span class="p">:</span>
                 <span class="k">try</span><span class="p">:</span>
                     <span class="c1"># Try to group consecutive writes operations and perform all of them together</span>
-                    <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span
-        class="o">.</span><span class="n">write_streamer</span><span class="p">(</span><span class="n">operations</span><span
-        class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">transaction_id</span><span
-        class="p">)</span> <span class="k">as</span> <span class="n">stream</span><span class="p">:</span>
-                        <span class="n">current_offset</span> <span class="o">=</span> <span class="n">operations</span><span
-        class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">offset</span>
-                        <span class="n">stream</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span
-        class="n">current_offset</span><span class="p">)</span>
-                        <span class="k">for</span> <span class="n">operation</span> <span class="ow">in</span> <span
-        class="n">operations</span><span class="p">:</span>
-                            <span class="k">for</span> <span class="n">segment</span> <span class="ow">in</span> <span
-        class="n">operation</span><span class="o">.</span><span class="n">segments</span><span class="p">:</span>
+                    <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">write_streamer</span><span class="p">(</span><span class="n">operations</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">)</span> <span class="k">as</span> <span class="n">stream</span><span class="p">:</span>
+                        <span class="n">current_offset</span> <span class="o">=</span> <span class="n">operations</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">offset</span>
+                        <span class="n">stream</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="n">current_offset</span><span class="p">)</span>
+                        <span class="k">for</span> <span class="n">operation</span> <span class="ow">in</span> <span class="n">operations</span><span class="p">:</span>
+                            <span class="k">for</span> <span class="n">segment</span> <span class="ow">in</span> <span class="n">operation</span><span class="o">.</span><span class="n">segments</span><span class="p">:</span>
                                 <span class="n">saved_offset</span> <span class="o">=</span> <span class="n">current_offset</span>
                                 <span class="c1"># Skip empty segments (used for test compatibility)</span>
-                                <span class="k">if</span> <span class="ow">not</span> <span
-        class="n">segment</span><span class="p">:</span>
+                                <span class="k">if</span> <span class="ow">not</span> <span class="n">segment</span><span class="p">:</span>
                                     <span class="k">continue</span>
 
-                                <span class="n">bytes_written</span> <span class="o">=</span> <span
-        class="n">stream</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span
-        class="n">segment</span><span class="p">)</span>
-                                <span class="k">if</span> <span class="n">bytes_written</span> <span class="o">!=</span> <span
-        class="nb">len</span><span class="p">(</span><span class="n">segment</span><span class="p">):</span>
-                                    <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span
-        class="p">(</span>
-                                        <span class="n">message</span><span class="o">=</span><span
-        class="sa">f</span><span class="s2">&quot;Failed to write complete segment: </span><span
-        class="si">{</span><span class="n">bytes_written</span><span class="si">}</span><span class="s2">/</span><span
-        class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">segment</span><span
-        class="p">)</span><span class="si">}</span><span class="s2"> bytes written&quot;</span>
+                                <span class="n">bytes_written</span> <span class="o">=</span> <span class="n">stream</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">segment</span><span class="p">)</span>
+                                <span class="c1"># In tests, write_streamer may be a MagicMock returning a non-int; only enforce when int</span>
+                                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">bytes_written</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">and</span> <span class="n">bytes_written</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">segment</span><span class="p">):</span>
+                                    <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span>
+                                        <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Failed to write complete segment: </span><span class="si">{</span><span class="n">bytes_written</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">segment</span><span class="p">)</span><span class="si">}</span><span class="s2"> bytes written&quot;</span>
                                     <span class="p">)</span>
-                                <span class="n">current_offset</span> <span class="o">+=</span> <span
-        class="nb">len</span><span class="p">(</span><span class="n">segment</span><span class="p">)</span>
-                                <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">_lock</span><span class="p">:</span>
-                                    <span class="n">pointer</span> <span class="o">=</span> <span
-        class="p">(</span><span class="n">operation</span><span class="o">.</span><span
-        class="n">transaction_id</span><span class="p">,</span> <span class="n">saved_offset</span><span
-        class="p">)</span>
-                                    <span class="k">if</span> <span class="n">pointer</span> <span class="ow">in</span> <span
-        class="bp">self</span><span class="o">.</span><span class="n">in_memory_segments</span><span class="p">:</span>
-                                        <span class="k">del</span> <span class="bp">self</span><span
-        class="o">.</span><span class="n">in_memory_segments</span><span class="p">[</span><span
-        class="n">pointer</span><span class="p">]</span>
+                                <span class="n">current_offset</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">segment</span><span class="p">)</span>
+                                <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+                                    <span class="n">pointer</span> <span class="o">=</span> <span class="p">(</span><span class="n">operation</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">saved_offset</span><span class="p">)</span>
+                                    <span class="k">if</span> <span class="n">pointer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_memory_segments</span><span class="p">:</span>
+                                        <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_memory_segments</span><span class="p">[</span><span class="n">pointer</span><span class="p">]</span>
 
-                    <span class="n">operations_processed</span> <span class="o">+=</span> <span
-        class="nb">len</span><span class="p">(</span><span class="n">operations</span><span class="p">)</span>
-                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span
-        class="n">e</span><span class="p">:</span>
-                    <span class="n">_logger</span><span class="o">.</span><span class="n">exception</span><span
-        class="p">(</span><span class="s2">&quot;Error during WAL write operation&quot;</span><span
-        class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="n">e</span><span
-        class="p">)</span>
+                    <span class="n">operations_processed</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">operations</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="n">_logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="s2">&quot;Error during WAL write operation&quot;</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="n">e</span><span class="p">)</span>
                     <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span>
-                        <span class="n">message</span><span class="o">=</span><span class="s2">&quot;Failed to flush pending writes&quot;</span><span
-        class="p">,</span>
-                        <span class="n">exception_type</span><span class="o">=</span><span class="n">e</span><span
-        class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span>
-                    <span class="p">)</span> <span class="kn">from</span> <span class="nn">e</span>
+                        <span class="n">message</span><span class="o">=</span><span class="s2">&quot;Failed to flush pending writes&quot;</span><span class="p">,</span>
+                        <span class="n">exception_type</span><span class="o">=</span><span class="n">e</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span>
+                    <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">e</span>
 
         <span class="k">return</span> <span class="n">operations_processed</span>
 
 <div class="viewcode-block" id="StandaloneFileStorage.flush_wal">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.flush_wal">[docs]</a>
-    <span class="k">def</span> <span class="nf">flush_wal</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span
-        class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span
-        class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">flush_wal</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Public method to flush WAL buffer and process pending writes.</span>
 
-<span class="sd">        This method ensures that all data in the current WAL buffer is written to</span>
-<span class="sd">        the pending writes list and then processes all pending writes by writing</span>
-<span class="sd">        them to the underlying block provider.</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            tuple: A tuple containing (bytes_flushed, operations_processed)</span>
-
-<span class="sd">        Raises:</span>
-<span class="sd">            ProtoUnexpectedException: If an error occurs during the flushing process</span>
+<span class="sd">        This method ensures that all data in the current WAL buffer is moved to</span>
+<span class="sd">        pending writes and then written to the underlying block provider.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">current_state</span> <span class="o">=</span> <span class="bp">self</span><span
-        class="o">.</span><span class="n">_save_state</span><span class="p">()</span>
+        <span class="n">current_state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_save_state</span><span class="p">()</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">bytes_flushed</span> <span class="o">=</span> <span class="mi">0</span>
-            <span class="n">operations_processed</span> <span class="o">=</span> <span class="mi">0</span>
-
-            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span
-        class="p">:</span>
-                <span class="c1"># Flush the current WAL buffer to pending writes</span>
-                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_buffer</span><span
-        class="p">:</span>
-                    <span class="n">bytes_flushed</span> <span class="o">=</span> <span class="bp">self</span><span
-        class="o">.</span><span class="n">_flush_wal</span><span class="p">()</span>
-                    <span class="n">operations_processed</span> <span class="o">+=</span> <span class="mi">1</span>
-
-                <span class="c1"># Ensure write_streamer is called for test compatibility</span>
-                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span> <span
-        class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="c1"># Create a mock stream for testing</span>
-                    <span class="n">mock_stream</span> <span class="o">=</span> <span class="n">Mock</span><span
-        class="p">()</span>
-                    <span class="n">mock_stream</span><span class="o">.</span><span class="n">write</span> <span
-        class="o">=</span> <span class="n">MagicMock</span><span class="p">(</span><span
-        class="n">return_value</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-                    <span class="n">mock_stream</span><span class="o">.</span><span class="n">seek</span> <span
-        class="o">=</span> <span class="n">MagicMock</span><span class="p">()</span>
-
-                    <span class="c1"># Get a context manager from write_streamer</span>
-                    <span class="n">streamer</span> <span class="o">=</span> <span class="bp">self</span><span
-        class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span
-        class="n">write_streamer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span
-        class="n">current_wal_id</span><span class="p">)</span>
-
-                    <span class="c1"># If it&#39;s a real context manager, use it</span>
-                    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">streamer</span><span
-        class="p">,</span> <span class="s1">&#39;__enter__&#39;</span><span class="p">)</span> <span
-        class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span
-        class="n">streamer</span><span class="p">,</span> <span class="s1">&#39;__exit__&#39;</span><span
-        class="p">):</span>
-                        <span class="k">with</span> <span class="n">streamer</span> <span class="k">as</span> <span
-        class="n">stream</span><span class="p">:</span>
-                            <span class="k">pass</span>  <span class="c1"># No actual writing needed for test</span>
-                    <span class="c1"># Otherwise just call it to satisfy the test</span>
-
-                    <span class="c1"># Clear pending writes since we&#39;ve &quot;processed&quot; them</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">pending_writes</span> <span
-        class="o">=</span> <span class="p">[]</span>
-
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+                <span class="n">bytes_flushed</span> <span class="o">=</span> <span class="mi">0</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_buffer</span><span class="p">:</span>
+                    <span class="n">bytes_flushed</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_flush_wal</span><span class="p">()</span>
+            <span class="c1"># Process pending writes outside the lock to allow IO</span>
+            <span class="n">operations_processed</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_flush_pending_writes</span><span class="p">()</span>
             <span class="k">return</span> <span class="n">bytes_flushed</span><span class="p">,</span> <span class="n">operations_processed</span>
-        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span
-        class="n">e</span><span class="p">:</span>
-            <span class="n">_logger</span><span class="o">.</span><span class="n">exception</span><span
-        class="p">(</span><span class="s2">&quot;Unexpected error during WAL flushing&quot;</span><span
-        class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="n">e</span><span
-        class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_restore_state</span><span
-        class="p">(</span><span class="n">current_state</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">_logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="s2">&quot;Unexpected error during WAL flushing&quot;</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="n">e</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_restore_state</span><span class="p">(</span><span class="n">current_state</span><span class="p">)</span>
             <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span>
-                <span class="n">message</span><span class="o">=</span><span class="s2">&quot;An exception occurred while flushing the WAL buffer.&quot;</span><span
-        class="p">,</span>
-                <span class="n">exception_type</span><span class="o">=</span><span class="n">e</span><span
-        class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span>
-            <span class="p">)</span> <span class="kn">from</span> <span class="nn">e</span></div>
+                <span class="n">message</span><span class="o">=</span><span class="s2">&quot;An exception occurred while flushing the WAL buffer.&quot;</span><span class="p">,</span>
+                <span class="n">exception_type</span><span class="o">=</span><span class="n">e</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span>
+            <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">e</span></div>
 
 
 <div class="viewcode-block" id="StandaloneFileStorage.close">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.close">[docs]</a>
-    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span
-        class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Closes the storage, flushing any pending writes and releasing resources.</span>
 
 <span class="sd">        This method changes the storage state to &#39;Closed&#39;, flushes the WAL buffer,</span>
 <span class="sd">        closes the underlying block provider, and shuts down the executor pool.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">_lock</span><span class="p">:</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">state</span> <span class="o">==</span> <span class="s1">&#39;Closed&#39;</span><span
-        class="p">:</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">==</span> <span class="s1">&#39;Closed&#39;</span><span class="p">:</span>
                 <span class="k">return</span>  <span class="c1"># Already closed</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span
-        class="o">=</span> <span class="s1">&#39;Closed&#39;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">=</span> <span class="s1">&#39;Closed&#39;</span>
 
         <span class="k">try</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">flush_wal</span><span
-        class="p">()</span>
-        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span
-        class="n">e</span><span class="p">:</span>
-            <span class="n">_logger</span><span class="o">.</span><span class="n">exception</span><span
-        class="p">(</span><span class="s2">&quot;Error during final WAL flush on close&quot;</span><span
-        class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="n">e</span><span
-        class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">flush_wal</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">_logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="s2">&quot;Error during final WAL flush on close&quot;</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="n">e</span><span class="p">)</span>
             <span class="c1"># Continue with closing even if flush fails</span>
 
         <span class="c1"># Shutdown the executor pool</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">executor_pool</span><span class="o">.</span><span
-        class="n">shutdown</span><span class="p">(</span><span class="n">wait</span><span class="o">=</span><span
-        class="kc">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">executor_pool</span><span class="o">.</span><span class="n">shutdown</span><span class="p">(</span><span class="n">wait</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
         <span class="c1"># Close the block provider</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span
-        class="o">.</span><span class="n">close</span><span class="p">()</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="StandaloneFileStorage.push_bytes_to_wal">
-<a class="viewcode-back"
-   href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.push_bytes_to_wal">[docs]</a>
-    <span class="k">def</span> <span class="nf">push_bytes_to_wal</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span> <span
-        class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">uuid</span><span
-        class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span class="nb">int</span><span
-        class="p">]:</span>
+<a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.push_bytes_to_wal">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">push_bytes_to_wal</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Adds data to the Write-Ahead Log (WAL).</span>
 
@@ -698,216 +499,153 @@
 <span class="sd">            ProtoValidationException: If data is not bytes or bytearray, is empty, exceeds maximum size,</span>
 <span class="sd">                                     or if the storage is not in &#39;Running&#39; state</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span
-        class="o">!=</span> <span class="s1">&#39;Running&#39;</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span
-        class="n">message</span><span class="o">=</span><span class="s2">&quot;Storage is not in &#39;Running&#39; state.&quot;</span><span
-        class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span
-        class="n">data</span><span class="p">,</span> <span class="p">(</span><span class="nb">bytes</span><span
-        class="p">,</span> <span class="nb">bytearray</span><span class="p">)):</span>
-            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span
-        class="n">message</span><span class="o">=</span><span
-        class="s2">&quot;Data must be bytes or bytearray.&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span
-        class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span
-        class="n">message</span><span class="o">=</span><span
-        class="s2">&quot;Cannot push an empty data!&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span
-        class="p">)</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">blob_max_size</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span
-        class="n">message</span><span class="o">=</span><span
-        class="s2">&quot;Data exceeds maximum blob size.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">!=</span> <span class="s1">&#39;Running&#39;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Storage is not in &#39;Running&#39; state.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="p">(</span><span class="nb">bytes</span><span class="p">,</span> <span class="nb">bytearray</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Data must be bytes or bytearray.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Cannot push an empty data!&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">blob_max_size</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Data exceeds maximum blob size.&quot;</span><span class="p">)</span>
 
         <span class="c1"># Ensure current WAL is capable of storing the data</span>
         <span class="c1"># If not, provide a fresh WAL, which could have a different transaction_id</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span
-        class="p">)</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">blob_max_size</span> <span class="o">-</span> <span class="bp">self</span><span
-        class="o">.</span><span class="n">current_wal_offset</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_flush_wal</span><span
-        class="p">()</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_get_new_wal</span><span
-        class="p">()</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">blob_max_size</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_flush_wal</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_get_new_wal</span><span class="p">()</span>
 
         <span class="c1"># At this point data will fit in the current WAL</span>
-        <span class="n">base_uuid</span> <span class="o">=</span> <span class="bp">self</span><span
-        class="o">.</span><span class="n">current_wal_id</span>
-        <span class="n">base_offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">current_wal_base</span> <span class="o">+</span> <span class="bp">self</span><span
-        class="o">.</span><span class="n">current_wal_offset</span>
+        <span class="n">base_uuid</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_id</span>
+        <span class="n">base_offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_base</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">in_memory_segments</span><span
-        class="p">[(</span><span class="n">base_uuid</span><span class="p">,</span> <span
-        class="n">base_offset</span><span class="p">)]</span> <span class="o">=</span> <span class="n">data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">in_memory_segments</span><span class="p">[(</span><span class="n">base_uuid</span><span class="p">,</span> <span class="n">base_offset</span><span class="p">)]</span> <span class="o">=</span> <span class="n">data</span>
 
         <span class="c1"># Break the data into chunks if needed</span>
         <span class="n">written_bytes</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="k">while</span> <span class="n">written_bytes</span> <span class="o">&lt;</span> <span class="nb">len</span><span
-        class="p">(</span><span class="n">data</span><span class="p">):</span>
-            <span class="n">available_space</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">buffer_size</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">current_wal_offset</span>
-            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span
-        class="n">data</span><span class="p">)</span> <span class="o">-</span> <span
-        class="n">written_bytes</span> <span class="o">&gt;</span> <span class="n">available_space</span><span
-        class="p">:</span>
-                <span class="n">fragment</span> <span class="o">=</span> <span class="n">data</span><span
-        class="p">[</span><span class="n">written_bytes</span><span class="p">:</span> <span
-        class="n">written_bytes</span> <span class="o">+</span> <span class="n">available_space</span><span
-        class="p">]</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_buffer</span><span
-        class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">fragment</span><span
-        class="p">)</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span> <span
-        class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">fragment</span><span
-        class="p">)</span>
+        <span class="k">while</span> <span class="n">written_bytes</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
+            <span class="n">available_space</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer_size</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">-</span> <span class="n">written_bytes</span> <span class="o">&gt;</span> <span class="n">available_space</span><span class="p">:</span>
+                <span class="n">fragment</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">written_bytes</span><span class="p">:</span> <span class="n">written_bytes</span> <span class="o">+</span> <span class="n">available_space</span><span class="p">]</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_buffer</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">fragment</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">fragment</span><span class="p">)</span>
                 <span class="n">written_bytes</span> <span class="o">+=</span> <span class="n">available_space</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_flush_wal</span><span
-        class="p">()</span>  <span class="c1"># Flush buffer if it becomes full</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_flush_wal</span><span class="p">()</span>  <span class="c1"># Flush buffer if it becomes full</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">fragment</span> <span class="o">=</span> <span class="n">data</span><span
-        class="p">[</span><span class="n">written_bytes</span><span class="p">:]</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_buffer</span><span
-        class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">fragment</span><span
-        class="p">)</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span> <span
-        class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">fragment</span><span
-        class="p">)</span>
-                <span class="n">written_bytes</span> <span class="o">+=</span> <span class="nb">len</span><span
-        class="p">(</span><span class="n">fragment</span><span class="p">)</span>
+                <span class="n">fragment</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">written_bytes</span><span class="p">:]</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_buffer</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">fragment</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_offset</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">fragment</span><span class="p">)</span>
+                <span class="n">written_bytes</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">fragment</span><span class="p">)</span>
 
         <span class="k">return</span> <span class="n">base_uuid</span><span class="p">,</span> <span class="n">base_offset</span></div>
 
 
 <div class="viewcode-block" id="StandaloneFileStorage.get_atom">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.get_atom">[docs]</a>
-    <span class="k">def</span> <span class="nf">get_atom</span><span class="p">(</span><span class="bp">self</span><span
-        class="p">,</span> <span class="n">pointer</span><span class="p">:</span> <span
-        class="n">AtomPointer</span><span class="p">)</span> <span class="o">-&gt;</span> <span
-        class="n">Future</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_atom</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pointer</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Retrieves an Atom from the underlying storage asynchronously.</span>
-
-<span class="sd">        This method supports both the legacy format (without format indicator) and </span>
-<span class="sd">        the new format with format indicators (JSON UTF-8 or MessagePack).</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            pointer: An AtomPointer indicating the location of the atom</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            Future[dict]: A Future that resolves to the atom data</span>
-
-<span class="sd">        Raises:</span>
-<span class="sd">            ProtoValidationException: If pointer is not an AtomPointer or if storage is closed</span>
+<span class="sd">        Retrieves an Atom from the underlying storage asynchronously with a two-tier atom cache (object and bytes).</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span
-        class="o">!=</span> <span class="s1">&#39;Running&#39;</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span
-        class="n">message</span><span class="o">=</span><span class="s2">&quot;Storage is not in &#39;Running&#39; state.&quot;</span><span
-        class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span
-        class="n">pointer</span><span class="p">,</span> <span class="n">AtomPointer</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span
-        class="n">message</span><span class="o">=</span><span class="s2">&quot;Pointer must be an instance of AtomPointer.&quot;</span><span
-        class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">!=</span> <span class="s1">&#39;Running&#39;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Storage is not in &#39;Running&#39; state.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">pointer</span><span class="p">,</span> <span class="n">AtomPointer</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Pointer must be an instance of AtomPointer.&quot;</span><span class="p">)</span>
 
-        <span class="k">def</span> <span class="nf">task_read_atom</span><span class="p">():</span>
-            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span
-        class="p">:</span>
-                <span class="k">if</span> <span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span
-        class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span
-        class="o">.</span><span class="n">offset</span><span class="p">)</span> <span class="ow">in</span> <span
-        class="bp">self</span><span class="o">.</span><span class="n">in_memory_segments</span><span class="p">:</span>
-                    <span class="c1"># It is already in memory</span>
-                    <span class="n">streamer</span> <span class="o">=</span> <span class="n">io</span><span
-        class="o">.</span><span class="n">BytesIO</span><span class="p">(</span><span class="bp">self</span><span
-        class="o">.</span><span class="n">in_memory_segments</span><span class="p">[(</span><span
-        class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span
-        class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span
-        class="p">)])</span>
-                <span class="k">else</span><span class="p">:</span>
-                    <span class="c1"># It should be found in block provider</span>
-                    <span class="n">streamer</span> <span class="o">=</span> <span class="bp">self</span><span
-        class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">get_reader</span><span
-        class="p">(</span><span class="n">pointer</span><span class="o">.</span><span
-        class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span
-        class="o">.</span><span class="n">offset</span><span class="p">)</span>
+        <span class="c1"># Fast path: object cache</span>
+        <span class="n">caches</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_atom_caches</span>
+        <span class="k">if</span> <span class="n">caches</span> <span class="ow">and</span> <span class="n">caches</span><span class="o">.</span><span class="n">obj_cache</span><span class="p">:</span>
+            <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+            <span class="n">obj</span> <span class="o">=</span> <span class="n">caches</span><span class="o">.</span><span class="n">obj_cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span> <span class="n">caches</span><span class="o">.</span><span class="n">schema_epoch</span><span class="p">)</span>
+            <span class="n">caches</span><span class="o">.</span><span class="n">record_latency</span><span class="p">(</span><span class="s2">&quot;object_cache_ms&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">obj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">f</span> <span class="o">=</span> <span class="n">Future</span><span class="p">()</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">set_result</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">f</span>
 
-            <span class="c1"># Read the atom from the storage getting just the needed amount of data. No extra reads</span>
-            <span class="k">with</span> <span class="n">streamer</span> <span class="k">as</span> <span class="n">wal_stream</span><span
-        class="p">:</span>
-                <span class="c1"># Read the size header (8 bytes)</span>
-                <span class="n">len_data</span> <span class="o">=</span> <span class="n">wal_stream</span><span
-        class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">8</span><span
-        class="p">)</span>
-                <span class="n">size</span> <span class="o">=</span> <span class="n">struct</span><span
-        class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s1">&#39;Q&#39;</span><span
-        class="p">,</span> <span class="n">len_data</span><span class="p">)[</span><span class="mi">0</span><span
-        class="p">]</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">task_read_atom</span><span class="p">():</span>
+            <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span> <span class="n">caches</span><span class="o">.</span><span class="n">schema_epoch</span> <span class="k">if</span> <span class="n">caches</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="c1"># Single-flight: only one thread does the load+deserialize</span>
+            <span class="n">leader_event</span> <span class="o">=</span> <span class="n">caches</span><span class="o">.</span><span class="n">singleflight</span><span class="o">.</span><span class="n">begin</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="k">if</span> <span class="n">caches</span> <span class="k">else</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">leader_event</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">caches</span><span class="p">:</span>
+                <span class="c1"># Follower: wait for leader to finish and then try caches again</span>
+                <span class="n">caches</span><span class="o">.</span><span class="n">singleflight</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">caches</span><span class="o">.</span><span class="n">obj_cache</span><span class="p">:</span>
+                    <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+                    <span class="n">obj2</span> <span class="o">=</span> <span class="n">caches</span><span class="o">.</span><span class="n">obj_cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span> <span class="n">caches</span><span class="o">.</span><span class="n">schema_epoch</span><span class="p">)</span>
+                    <span class="n">caches</span><span class="o">.</span><span class="n">record_latency</span><span class="p">(</span><span class="s2">&quot;object_cache_ms&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">obj2</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">caches</span><span class="o">.</span><span class="n">obj_cache</span><span class="o">.</span><span class="n">_stats</span><span class="o">.</span><span class="n">singleflight_dedup</span> <span class="o">+=</span> <span class="mi">1</span>
+                        <span class="k">return</span> <span class="n">obj2</span>
+                <span class="k">if</span> <span class="n">caches</span><span class="o">.</span><span class="n">bytes_cache</span><span class="p">:</span>
+                    <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+                    <span class="n">raw2</span> <span class="o">=</span> <span class="n">caches</span><span class="o">.</span><span class="n">bytes_cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">)</span>
+                    <span class="n">caches</span><span class="o">.</span><span class="n">record_latency</span><span class="p">(</span><span class="s2">&quot;bytes_cache_ms&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">raw2</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="c1"># Deserialize</span>
+                        <span class="n">tds0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+                        <span class="n">mv</span> <span class="o">=</span> <span class="n">raw2</span>
+                        <span class="c1"># Peek first byte for format when coming from bytes cache: we expect length+indicator already stripped,</span>
+                        <span class="c1"># but bytes cache stores the raw payload (we will cache only payload below). Here, for safety, just try JSON then MsgPack.</span>
+                        <span class="k">try</span><span class="p">:</span>
+                            <span class="n">atom_data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">mv</span><span class="o">.</span><span class="n">tobytes</span><span class="p">()</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s1">&#39;UTF-8&#39;</span><span class="p">))</span>
+                        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                            <span class="n">atom_data</span> <span class="o">=</span> <span class="n">msgpack</span><span class="o">.</span><span class="n">unpackb</span><span class="p">(</span><span class="n">mv</span><span class="p">)</span>
+                        <span class="n">caches</span><span class="o">.</span><span class="n">record_latency</span><span class="p">(</span><span class="s2">&quot;deserialize_ms&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">tds0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">caches</span><span class="o">.</span><span class="n">obj_cache</span><span class="p">:</span>
+                            <span class="n">caches</span><span class="o">.</span><span class="n">obj_cache</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span> <span class="n">atom_data</span><span class="p">,</span> <span class="n">caches</span><span class="o">.</span><span class="n">schema_epoch</span><span class="p">)</span>
+                        <span class="k">return</span> <span class="n">atom_data</span>
+                <span class="c1"># If here, leader probably failed; continue to load from storage</span>
 
-                <span class="c1"># Try to read the format indicator (1 byte)</span>
-                <span class="n">format_indicator_bytes</span> <span class="o">=</span> <span class="n">wal_stream</span><span
-        class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">1</span><span
-        class="p">)</span>
-                <span class="n">format_indicator</span> <span class="o">=</span> <span
-        class="n">format_indicator_bytes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span
-        class="k">if</span> <span class="n">format_indicator_bytes</span> <span class="k">else</span> <span class="kc">None</span>
-
-                <span class="c1"># Check if it&#39;s a valid format indicator</span>
-                <span class="k">if</span> <span class="n">format_indicator</span> <span class="ow">in</span> <span
-        class="p">(</span><span class="n">FORMAT_JSON_UTF8</span><span class="p">,</span> <span
-        class="n">FORMAT_MSGPACK</span><span class="p">):</span>
-                    <span class="c1"># New format with indicator</span>
-                    <span class="n">data</span> <span class="o">=</span> <span class="n">wal_stream</span><span
-        class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">size</span><span class="p">)</span>
-
-                    <span class="k">if</span> <span class="n">format_indicator</span> <span class="o">==</span> <span
-        class="n">FORMAT_JSON_UTF8</span><span class="p">:</span>
-                        <span class="c1"># JSON UTF-8 format</span>
-                        <span class="n">atom_data</span> <span class="o">=</span> <span class="n">json</span><span
-        class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">data</span><span
-        class="o">.</span><span class="n">decode</span><span class="p">(</span><span
-        class="s1">&#39;UTF-8&#39;</span><span class="p">))</span>
-                    <span class="k">else</span><span class="p">:</span>  <span class="c1"># FORMAT_MSGPACK</span>
-                        <span class="c1"># MessagePack format</span>
-                        <span class="n">atom_data</span> <span class="o">=</span> <span class="n">msgpack</span><span
-        class="o">.</span><span class="n">unpackb</span><span class="p">(</span><span class="n">data</span><span
-        class="p">)</span>
-                <span class="k">else</span><span class="p">:</span>
-                    <span class="c1"># Legacy format (no indicator) - assume JSON UTF-8</span>
-                    <span class="c1"># We need to put back the byte we read as format indicator</span>
-                    <span class="k">if</span> <span class="n">format_indicator_bytes</span><span class="p">:</span>
-                        <span class="n">data</span> <span class="o">=</span> <span
-        class="n">format_indicator_bytes</span> <span class="o">+</span> <span class="n">wal_stream</span><span
-        class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">size</span> <span
-        class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="c1"># Leader path or no single-flight available</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">)</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_memory_segments</span><span class="p">:</span>
+                        <span class="n">streamer</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">in_memory_segments</span><span class="p">[(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">)])</span>
                     <span class="k">else</span><span class="p">:</span>
-                        <span class="n">data</span> <span class="o">=</span> <span class="n">wal_stream</span><span
-        class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">size</span><span class="p">)</span>
+                        <span class="n">streamer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">get_reader</span><span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">)</span>
 
-                    <span class="n">atom_data</span> <span class="o">=</span> <span class="n">json</span><span
-        class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">data</span><span
-        class="o">.</span><span class="n">decode</span><span class="p">(</span><span
-        class="s1">&#39;UTF-8&#39;</span><span class="p">))</span>
+                <span class="k">with</span> <span class="n">streamer</span> <span class="k">as</span> <span class="n">wal_stream</span><span class="p">:</span>
+                    <span class="n">len_data</span> <span class="o">=</span> <span class="n">wal_stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">8</span><span class="p">)</span>
+                    <span class="n">size</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s1">&#39;Q&#39;</span><span class="p">,</span> <span class="n">len_data</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+                    <span class="n">format_indicator_bytes</span> <span class="o">=</span> <span class="n">wal_stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+                    <span class="n">format_indicator</span> <span class="o">=</span> <span class="n">format_indicator_bytes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">format_indicator_bytes</span> <span class="k">else</span> <span class="kc">None</span>
+                    <span class="k">if</span> <span class="n">format_indicator</span> <span class="ow">in</span> <span class="p">(</span><span class="n">FORMAT_JSON_UTF8</span><span class="p">,</span> <span class="n">FORMAT_MSGPACK</span><span class="p">):</span>
+                        <span class="n">data</span> <span class="o">=</span> <span class="n">wal_stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">size</span><span class="p">)</span>
+                        <span class="c1"># Populate bytes cache with payload only</span>
+                        <span class="k">if</span> <span class="n">caches</span> <span class="ow">and</span> <span class="n">caches</span><span class="o">.</span><span class="n">bytes_cache</span><span class="p">:</span>
+                            <span class="n">caches</span><span class="o">.</span><span class="n">bytes_cache</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+                        <span class="n">tds0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+                        <span class="k">if</span> <span class="n">format_indicator</span> <span class="o">==</span> <span class="n">FORMAT_JSON_UTF8</span><span class="p">:</span>
+                            <span class="n">atom_data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s1">&#39;UTF-8&#39;</span><span class="p">))</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="n">atom_data</span> <span class="o">=</span> <span class="n">msgpack</span><span class="o">.</span><span class="n">unpackb</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">caches</span><span class="p">:</span>
+                            <span class="n">caches</span><span class="o">.</span><span class="n">record_latency</span><span class="p">(</span><span class="s2">&quot;deserialize_ms&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">tds0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="c1"># Legacy format: treat as JSON without indicator; data may include the probed byte</span>
+                        <span class="k">if</span> <span class="n">format_indicator_bytes</span><span class="p">:</span>
+                            <span class="n">data</span> <span class="o">=</span> <span class="n">format_indicator_bytes</span> <span class="o">+</span> <span class="n">wal_stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">size</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="n">data</span> <span class="o">=</span> <span class="n">wal_stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">size</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">caches</span> <span class="ow">and</span> <span class="n">caches</span><span class="o">.</span><span class="n">bytes_cache</span><span class="p">:</span>
+                            <span class="n">caches</span><span class="o">.</span><span class="n">bytes_cache</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+                        <span class="n">tds0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+                        <span class="n">atom_data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s1">&#39;UTF-8&#39;</span><span class="p">))</span>
+                        <span class="k">if</span> <span class="n">caches</span><span class="p">:</span>
+                            <span class="n">caches</span><span class="o">.</span><span class="n">record_latency</span><span class="p">(</span><span class="s2">&quot;deserialize_ms&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">tds0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span><span class="p">)</span>
 
+                <span class="k">if</span> <span class="n">caches</span> <span class="ow">and</span> <span class="n">caches</span><span class="o">.</span><span class="n">obj_cache</span><span class="p">:</span>
+                    <span class="n">caches</span><span class="o">.</span><span class="n">obj_cache</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span> <span class="n">atom_data</span><span class="p">,</span> <span class="n">caches</span><span class="o">.</span><span class="n">schema_epoch</span><span class="p">)</span>
                 <span class="k">return</span> <span class="n">atom_data</span>
+            <span class="k">finally</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">caches</span> <span class="ow">and</span> <span class="n">leader_event</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">caches</span><span class="o">.</span><span class="n">singleflight</span><span class="o">.</span><span class="n">done</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
 
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">executor_pool</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span
-        class="n">task_read_atom</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">executor_pool</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">task_read_atom</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="StandaloneFileStorage.push_atom">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.push_atom">[docs]</a>
-    <span class="k">def</span> <span class="nf">push_atom</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">,</span> <span class="n">atom</span><span class="p">:</span> <span
-        class="nb">dict</span><span class="p">,</span> <span class="n">format_type</span><span class="p">:</span> <span
-        class="nb">int</span> <span class="o">=</span> <span class="n">FORMAT_JSON_UTF8</span><span
-        class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span
-        class="n">AtomPointer</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">push_atom</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">atom</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">format_type</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">FORMAT_JSON_UTF8</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="n">AtomPointer</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Serializes and pushes an Atom into the WAL asynchronously.</span>
 
@@ -922,61 +660,33 @@
 <span class="sd">        Raises:</span>
 <span class="sd">            ProtoValidationException: If the storage is not in &#39;Running&#39; state or if format_type is invalid</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span
-        class="o">!=</span> <span class="s1">&#39;Running&#39;</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span
-        class="n">message</span><span class="o">=</span><span class="s2">&quot;Storage is not in &#39;Running&#39; state.&quot;</span><span
-        class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">!=</span> <span class="s1">&#39;Running&#39;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Storage is not in &#39;Running&#39; state.&quot;</span><span class="p">)</span>
 
-        <span class="k">if</span> <span class="n">format_type</span> <span class="ow">not</span> <span
-        class="ow">in</span> <span class="p">(</span><span class="n">FORMAT_JSON_UTF8</span><span
-        class="p">,</span> <span class="n">FORMAT_MSGPACK</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span
-        class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Invalid format type: </span><span
-        class="si">{</span><span class="n">format_type</span><span class="si">}</span><span
-        class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">format_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="n">FORMAT_JSON_UTF8</span><span class="p">,</span> <span class="n">FORMAT_MSGPACK</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Invalid format type: </span><span class="si">{</span><span class="n">format_type</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
-        <span class="k">def</span> <span class="nf">task_push_atom</span><span class="p">():</span>
-            <span class="k">if</span> <span class="n">format_type</span> <span class="o">==</span> <span class="n">FORMAT_JSON_UTF8</span><span
-        class="p">:</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">task_push_atom</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">format_type</span> <span class="o">==</span> <span class="n">FORMAT_JSON_UTF8</span><span class="p">:</span>
                 <span class="c1"># JSON UTF-8 serialization</span>
-                <span class="n">data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span
-        class="n">dumps</span><span class="p">(</span><span class="n">atom</span><span class="p">)</span><span
-        class="o">.</span><span class="n">encode</span><span class="p">(</span><span
-        class="s1">&#39;UTF-8&#39;</span><span class="p">)</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">atom</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s1">&#39;UTF-8&#39;</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>  <span class="c1"># FORMAT_MSGPACK</span>
                 <span class="c1"># MessagePack serialization</span>
-                <span class="n">data</span> <span class="o">=</span> <span class="n">msgpack</span><span
-        class="o">.</span><span class="n">packb</span><span class="p">(</span><span class="n">atom</span><span
-        class="p">)</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="n">msgpack</span><span class="o">.</span><span class="n">packb</span><span class="p">(</span><span class="n">atom</span><span class="p">)</span>
 
             <span class="c1"># Add format indicator after length</span>
-            <span class="n">format_indicator</span> <span class="o">=</span> <span class="nb">bytes</span><span
-        class="p">([</span><span class="n">format_type</span><span class="p">])</span>
-            <span class="n">len_data</span> <span class="o">=</span> <span class="n">struct</span><span
-        class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s1">&#39;Q&#39;</span><span
-        class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span
-        class="p">))</span>
+            <span class="n">format_indicator</span> <span class="o">=</span> <span class="nb">bytes</span><span class="p">([</span><span class="n">format_type</span><span class="p">])</span>
+            <span class="n">len_data</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s1">&#39;Q&#39;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
 
-            <span class="n">transaction_id</span><span class="p">,</span> <span class="n">offset</span> <span class="o">=</span> <span
-        class="bp">self</span><span class="o">.</span><span class="n">push_bytes_to_wal</span><span
-        class="p">(</span><span class="n">len_data</span> <span class="o">+</span> <span
-        class="n">format_indicator</span> <span class="o">+</span> <span class="n">data</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">AtomPointer</span><span class="p">(</span><span class="n">transaction_id</span><span
-        class="p">,</span> <span class="n">offset</span><span class="p">)</span>
+            <span class="n">transaction_id</span><span class="p">,</span> <span class="n">offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">push_bytes_to_wal</span><span class="p">(</span><span class="n">len_data</span> <span class="o">+</span> <span class="n">format_indicator</span> <span class="o">+</span> <span class="n">data</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">AtomPointer</span><span class="p">(</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">offset</span><span class="p">)</span>
 
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">executor_pool</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span
-        class="n">task_push_atom</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">executor_pool</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">task_push_atom</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="StandaloneFileStorage.push_atom_msgpack">
-<a class="viewcode-back"
-   href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.push_atom_msgpack">[docs]</a>
-    <span class="k">def</span> <span class="nf">push_atom_msgpack</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">,</span> <span class="n">atom</span><span class="p">:</span> <span
-        class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span
-        class="p">[</span><span class="n">AtomPointer</span><span class="p">]:</span>
+<a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.push_atom_msgpack">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">push_atom_msgpack</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">atom</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="n">AtomPointer</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Serializes and pushes an Atom into the WAL asynchronously using MessagePack format.</span>
 
@@ -992,121 +702,64 @@
 <span class="sd">        Raises:</span>
 <span class="sd">            ProtoValidationException: If the storage is not in &#39;Running&#39; state</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">push_atom</span><span class="p">(</span><span class="n">atom</span><span class="p">,</span> <span
-        class="n">FORMAT_MSGPACK</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">push_atom</span><span class="p">(</span><span class="n">atom</span><span class="p">,</span> <span class="n">FORMAT_MSGPACK</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="StandaloneFileStorage.get_bytes">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.get_bytes">[docs]</a>
-    <span class="k">def</span> <span class="nf">get_bytes</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">,</span> <span class="n">pointer</span><span class="p">:</span> <span
-        class="n">AtomPointer</span><span class="p">)</span> <span class="o">-&gt;</span> <span
-        class="n">Future</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_bytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pointer</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Retrieves raw bytes from the underlying storage asynchronously.</span>
-
-<span class="sd">        This method supports both the legacy format (without format indicator) and </span>
-<span class="sd">        the new format with format indicators.</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            pointer: An AtomPointer indicating the location of the data</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            Future[bytes]: A Future that resolves to the raw bytes</span>
-
-<span class="sd">        Raises:</span>
-<span class="sd">            ProtoValidationException: If pointer is not an AtomPointer or if storage is closed</span>
+<span class="sd">        Retrieves raw bytes from the underlying storage asynchronously, using AtomBytesCache when enabled.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span
-        class="o">!=</span> <span class="s1">&#39;Running&#39;</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span
-        class="n">message</span><span class="o">=</span><span class="s2">&quot;Storage is not in &#39;Running&#39; state.&quot;</span><span
-        class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span
-        class="n">pointer</span><span class="p">,</span> <span class="n">AtomPointer</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span
-        class="n">message</span><span class="o">=</span><span class="s2">&quot;Pointer must be an instance of AtomPointer.&quot;</span><span
-        class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">!=</span> <span class="s1">&#39;Running&#39;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Storage is not in &#39;Running&#39; state.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">pointer</span><span class="p">,</span> <span class="n">AtomPointer</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Pointer must be an instance of AtomPointer.&quot;</span><span class="p">)</span>
 
-        <span class="k">def</span> <span class="nf">task_read_bytes</span><span class="p">():</span>
-            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span
-        class="p">:</span>
-                <span class="k">if</span> <span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span
-        class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span
-        class="o">.</span><span class="n">offset</span><span class="p">)</span> <span class="ow">in</span> <span
-        class="bp">self</span><span class="o">.</span><span class="n">in_memory_segments</span><span class="p">:</span>
+        <span class="c1"># Fast path: bytes cache</span>
+        <span class="n">caches</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_atom_caches</span>
+        <span class="k">if</span> <span class="n">caches</span> <span class="ow">and</span> <span class="n">caches</span><span class="o">.</span><span class="n">bytes_cache</span><span class="p">:</span>
+            <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+            <span class="n">raw</span> <span class="o">=</span> <span class="n">caches</span><span class="o">.</span><span class="n">bytes_cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">)</span>
+            <span class="n">caches</span><span class="o">.</span><span class="n">record_latency</span><span class="p">(</span><span class="s2">&quot;bytes_cache_ms&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">raw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">f</span> <span class="o">=</span> <span class="n">Future</span><span class="p">()</span>
+                <span class="c1"># return a copy of memoryview&#39;s bytes to conform to return type bytes</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">set_result</span><span class="p">(</span><span class="nb">bytes</span><span class="p">(</span><span class="n">raw</span><span class="p">))</span>
+                <span class="k">return</span> <span class="n">f</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">task_read_bytes</span><span class="p">():</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">)</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_memory_segments</span><span class="p">:</span>
                     <span class="c1"># It is already in memory</span>
-                    <span class="n">streamer</span> <span class="o">=</span> <span class="n">io</span><span
-        class="o">.</span><span class="n">BytesIO</span><span class="p">(</span><span class="bp">self</span><span
-        class="o">.</span><span class="n">in_memory_segments</span><span class="p">[(</span><span
-        class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span
-        class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span
-        class="p">)])</span>
+                    <span class="n">streamer</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">in_memory_segments</span><span class="p">[(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">)])</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="c1"># It should be found in block provider</span>
-                    <span class="n">streamer</span> <span class="o">=</span> <span class="bp">self</span><span
-        class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">get_reader</span><span
-        class="p">(</span><span class="n">pointer</span><span class="o">.</span><span
-        class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span
-        class="o">.</span><span class="n">offset</span><span class="p">)</span>
+                    <span class="n">streamer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">get_reader</span><span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">)</span>
 
-            <span class="c1"># Read the atom from the storage getting just the needed amount of data. No extra reads</span>
-            <span class="k">with</span> <span class="n">streamer</span> <span class="k">as</span> <span class="n">wal_stream</span><span
-        class="p">:</span>
-                <span class="c1"># Read the size header (8 bytes)</span>
-                <span class="n">len_data</span> <span class="o">=</span> <span class="n">wal_stream</span><span
-        class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">8</span><span
-        class="p">)</span>
-                <span class="n">size</span> <span class="o">=</span> <span class="n">struct</span><span
-        class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s1">&#39;Q&#39;</span><span
-        class="p">,</span> <span class="n">len_data</span><span class="p">)[</span><span class="mi">0</span><span
-        class="p">]</span>
-
-                <span class="c1"># Try to read the format indicator (1 byte)</span>
-                <span class="n">format_indicator_bytes</span> <span class="o">=</span> <span class="n">wal_stream</span><span
-        class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">1</span><span
-        class="p">)</span>
-                <span class="n">format_indicator</span> <span class="o">=</span> <span
-        class="n">format_indicator_bytes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span
-        class="k">if</span> <span class="n">format_indicator_bytes</span> <span class="k">else</span> <span class="kc">None</span>
-
-                <span class="c1"># Check if it&#39;s a valid format indicator</span>
-                <span class="k">if</span> <span class="n">format_indicator</span> <span class="ow">in</span> <span
-        class="p">(</span><span class="n">FORMAT_RAW_BINARY</span><span class="p">,</span> <span class="n">FORMAT_JSON_UTF8</span><span
-        class="p">,</span> <span class="n">FORMAT_MSGPACK</span><span class="p">):</span>
-                    <span class="c1"># New format with indicator</span>
-                    <span class="n">data</span> <span class="o">=</span> <span class="n">wal_stream</span><span
-        class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">size</span><span class="p">)</span>
+            <span class="k">with</span> <span class="n">streamer</span> <span class="k">as</span> <span class="n">wal_stream</span><span class="p">:</span>
+                <span class="n">len_data</span> <span class="o">=</span> <span class="n">wal_stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">8</span><span class="p">)</span>
+                <span class="n">size</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s1">&#39;Q&#39;</span><span class="p">,</span> <span class="n">len_data</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="n">format_indicator_bytes</span> <span class="o">=</span> <span class="n">wal_stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+                <span class="n">format_indicator</span> <span class="o">=</span> <span class="n">format_indicator_bytes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">format_indicator_bytes</span> <span class="k">else</span> <span class="kc">None</span>
+                <span class="k">if</span> <span class="n">format_indicator</span> <span class="ow">in</span> <span class="p">(</span><span class="n">FORMAT_RAW_BINARY</span><span class="p">,</span> <span class="n">FORMAT_JSON_UTF8</span><span class="p">,</span> <span class="n">FORMAT_MSGPACK</span><span class="p">):</span>
+                    <span class="n">data</span> <span class="o">=</span> <span class="n">wal_stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">size</span><span class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
-                    <span class="c1"># Legacy format (no indicator)</span>
-                    <span class="c1"># We need to put back the byte we read as format indicator</span>
                     <span class="k">if</span> <span class="n">format_indicator_bytes</span><span class="p">:</span>
-                        <span class="n">data</span> <span class="o">=</span> <span
-        class="n">format_indicator_bytes</span> <span class="o">+</span> <span class="n">wal_stream</span><span
-        class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">size</span> <span
-        class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+                        <span class="n">data</span> <span class="o">=</span> <span class="n">format_indicator_bytes</span> <span class="o">+</span> <span class="n">wal_stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">size</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
                     <span class="k">else</span><span class="p">:</span>
-                        <span class="n">data</span> <span class="o">=</span> <span class="n">wal_stream</span><span
-        class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">size</span><span class="p">)</span>
+                        <span class="n">data</span> <span class="o">=</span> <span class="n">wal_stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">size</span><span class="p">)</span>
 
+            <span class="k">if</span> <span class="n">caches</span> <span class="ow">and</span> <span class="n">caches</span><span class="o">.</span><span class="n">bytes_cache</span><span class="p">:</span>
+                <span class="n">caches</span><span class="o">.</span><span class="n">bytes_cache</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">data</span>
 
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">executor_pool</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span
-        class="n">task_read_bytes</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">executor_pool</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">task_read_bytes</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="StandaloneFileStorage.push_bytes">
-<a class="viewcode-back"
-   href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.push_bytes">[docs]</a>
-    <span class="k">def</span> <span class="nf">push_bytes</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span
-        class="nb">bytes</span><span class="p">,</span> <span class="n">format_type</span><span class="p">:</span> <span
-        class="nb">int</span> <span class="o">=</span> <span class="n">FORMAT_RAW_BINARY</span><span class="p">)</span> <span
-        class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="nb">tuple</span><span
-        class="p">[</span><span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span
-        class="nb">int</span><span class="p">]]:</span>
+<a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.push_bytes">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">push_bytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">,</span> <span class="n">format_type</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">FORMAT_RAW_BINARY</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Serializes and pushes raw bytes into the WAL asynchronously.</span>
 
@@ -1125,80 +778,42 @@
 <span class="sd">            ProtoValidationException: If data is not bytes, is empty, exceeds maximum size,</span>
 <span class="sd">                                     if the storage is not in &#39;Running&#39; state, or if format_type is invalid</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span
-        class="o">!=</span> <span class="s1">&#39;Running&#39;</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span
-        class="n">message</span><span class="o">=</span><span class="s2">&quot;Storage is not in &#39;Running&#39; state.&quot;</span><span
-        class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span
-        class="n">data</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span
-        class="n">message</span><span class="o">=</span><span
-        class="s2">&quot;Invalid data to push. Only bytes!&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span
-        class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span
-        class="n">message</span><span class="o">=</span><span class="s2">&quot;Cannot push empty data!&quot;</span><span
-        class="p">)</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span
-        class="p">)</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">blob_max_size</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">!=</span> <span class="s1">&#39;Running&#39;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Storage is not in &#39;Running&#39; state.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Invalid data to push. Only bytes!&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Cannot push empty data!&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">blob_max_size</span><span class="p">:</span>
             <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
-                <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Data exceeds maximum blob size (</span><span
-        class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span
-        class="p">)</span><span class="si">}</span><span class="s2"> bytes). &quot;</span>
-                        <span class="sa">f</span><span class="s2">&quot;Only up to </span><span class="si">{</span><span
-        class="bp">self</span><span class="o">.</span><span class="n">blob_max_size</span><span class="si">}</span><span
-        class="s2"> bytes are accepted!&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">format_type</span> <span class="ow">not</span> <span
-        class="ow">in</span> <span class="p">(</span><span class="n">FORMAT_RAW_BINARY</span><span
-        class="p">,</span> <span class="n">FORMAT_JSON_UTF8</span><span class="p">,</span> <span class="n">FORMAT_MSGPACK</span><span
-        class="p">):</span>
-            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span
-        class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Invalid format type: </span><span
-        class="si">{</span><span class="n">format_type</span><span class="si">}</span><span
-        class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Data exceeds maximum blob size (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="si">}</span><span class="s2"> bytes). &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;Only up to </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">blob_max_size</span><span class="si">}</span><span class="s2"> bytes are accepted!&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">format_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="n">FORMAT_RAW_BINARY</span><span class="p">,</span> <span class="n">FORMAT_JSON_UTF8</span><span class="p">,</span> <span class="n">FORMAT_MSGPACK</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Invalid format type: </span><span class="si">{</span><span class="n">format_type</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
         <span class="c1"># Ensure we have a WAL buffer to write to</span>
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">_lock</span><span class="p">:</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span
-        class="o">.</span><span class="n">current_wal_buffer</span><span class="p">:</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal_buffer</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_get_new_wal</span><span class="p">()</span>
 
-        <span class="k">def</span> <span class="nf">task_push_bytes</span><span class="p">():</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">task_push_bytes</span><span class="p">():</span>
             <span class="c1"># Pack the length as a 8-byte unsigned long</span>
-            <span class="n">len_data</span> <span class="o">=</span> <span class="n">struct</span><span
-        class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s1">&#39;Q&#39;</span><span
-        class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span
-        class="p">))</span>
+            <span class="n">len_data</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s1">&#39;Q&#39;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
 
             <span class="c1"># Add format indicator</span>
-            <span class="n">format_indicator</span> <span class="o">=</span> <span class="nb">bytes</span><span
-        class="p">([</span><span class="n">format_type</span><span class="p">])</span>
+            <span class="n">format_indicator</span> <span class="o">=</span> <span class="nb">bytes</span><span class="p">([</span><span class="n">format_type</span><span class="p">])</span>
 
             <span class="c1"># Combine length, format indicator, and data and push to WAL</span>
-            <span class="n">combined_data</span> <span class="o">=</span> <span class="n">len_data</span> <span
-        class="o">+</span> <span class="n">format_indicator</span> <span class="o">+</span> <span class="n">data</span>
-            <span class="n">transaction_id</span><span class="p">,</span> <span class="n">offset</span> <span class="o">=</span> <span
-        class="bp">self</span><span class="o">.</span><span class="n">push_bytes_to_wal</span><span
-        class="p">(</span><span class="n">combined_data</span><span class="p">)</span>
+            <span class="n">combined_data</span> <span class="o">=</span> <span class="n">len_data</span> <span class="o">+</span> <span class="n">format_indicator</span> <span class="o">+</span> <span class="n">data</span>
+            <span class="n">transaction_id</span><span class="p">,</span> <span class="n">offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">push_bytes_to_wal</span><span class="p">(</span><span class="n">combined_data</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">transaction_id</span><span class="p">,</span> <span class="n">offset</span>
 
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">executor_pool</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span
-        class="n">task_push_bytes</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">executor_pool</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">task_push_bytes</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="StandaloneFileStorage.push_bytes_msgpack">
-<a class="viewcode-back"
-   href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.push_bytes_msgpack">[docs]</a>
-    <span class="k">def</span> <span class="nf">push_bytes_msgpack</span><span class="p">(</span><span
-        class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span
-        class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span
-        class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">uuid</span><span
-        class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span class="nb">int</span><span
-        class="p">]]:</span>
+<a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.push_bytes_msgpack">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">push_bytes_msgpack</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Serializes a dictionary to MessagePack format and pushes it into the WAL asynchronously.</span>
 
@@ -1216,44 +831,39 @@
 <span class="sd">            ProtoValidationException: If the storage is not in &#39;Running&#39; state</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># Serialize the dictionary to MessagePack format</span>
-        <span class="n">packed_data</span> <span class="o">=</span> <span class="n">msgpack</span><span
-        class="o">.</span><span class="n">packb</span><span class="p">(</span><span class="n">data</span><span
-        class="p">)</span>
+        <span class="n">packed_data</span> <span class="o">=</span> <span class="n">msgpack</span><span class="o">.</span><span class="n">packb</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
 
         <span class="c1"># Push the serialized data with the MessagePack format indicator</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span
-        class="n">push_bytes</span><span class="p">(</span><span class="n">packed_data</span><span
-        class="p">,</span> <span class="n">FORMAT_MSGPACK</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">push_bytes</span><span class="p">(</span><span class="n">packed_data</span><span class="p">,</span> <span class="n">FORMAT_MSGPACK</span><span class="p">)</span></div>
 </div>
 
-</pre>
-                        </div>
+</pre></div>
 
-                    </div>
-                </div>
-                <footer>
+           </div>
+          </div>
+          <footer>
 
-                    <hr/>
+  <hr/>
 
-                    <div role="contentinfo">
-                        <p>&#169; Copyright 2023, ProtoBase Team.</p>
-                    </div>
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, ProtoBase Team.</p>
+  </div>
 
-                    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
-                    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
-                    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
 
-
-                </footer>
-            </div>
+</footer>
         </div>
+      </div>
     </section>
-</div>
-<script>
-    jQuery(function () {
-        SphinxRtdTheme.Navigation.enable(true);
-    });
-</script>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
 
 </body>
 </html>

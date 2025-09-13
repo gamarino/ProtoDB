@@ -20,7 +20,7 @@ Query Plans
 -----------
 
 QueryPlan
-~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: proto_db.common.QueryPlan
    :members:
@@ -294,7 +294,7 @@ Sorting
         print(f"{user['name']}: {user['age']}")  # Output: Jane: 25, John: 30, Bob: 35
 
 Grouping
-~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 
@@ -318,7 +318,7 @@ Grouping
     #   Jane
 
 Joining
-~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 
@@ -356,7 +356,7 @@ Joining
     # Bob lives in New York, USA
 
 Pagination
-~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 
@@ -394,7 +394,7 @@ Pagination
         print(user["name"])  # Output: Jane
 
 Counting
-~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 
@@ -423,7 +423,7 @@ Counting
     print(f"Users from New York: {result[0]['count']}")  # Output: Users from New York: 2
 
 Chaining
-~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 

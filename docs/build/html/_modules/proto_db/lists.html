@@ -44,9 +44,14 @@
 <li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../storage_cloud.html">Cloud and Cluster Storage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
 </ul>
 
@@ -76,9 +81,14 @@
              
   <h1>Source code for proto_db.lists</h1><div class="highlight"><pre>
 <span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
-
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast</span><span class="p">,</span> <span class="n">TYPE_CHECKING</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atom</span><span class="p">,</span> <span class="n">QueryPlan</span><span class="p">,</span> <span class="n">DBCollections</span><span class="p">,</span> <span class="n">AbstractTransaction</span><span class="p">,</span> <span class="n">AtomPointer</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.indexes</span><span class="w"> </span><span class="kn">import</span> <span class="n">IndexRegistry</span><span class="p">,</span> <span class="n">IndexDefinition</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">IndexedQueryPlan</span>
+
+<span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+    <span class="c1"># For type checking only to avoid circular imports at runtime</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.dictionaries</span><span class="w"> </span><span class="kn">import</span> <span class="n">RepeatedKeysDictionary</span>
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">ListQueryPlan</span><span class="p">(</span><span class="n">QueryPlan</span><span class="p">):</span>
@@ -114,9 +124,7 @@
 
 <div class="viewcode-block" id="List">
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.lists.List">[docs]</a>
-<span class="k">class</span><span class="w"> </span><span class="nc">List</span><span class="p">(</span><span class="n">Atom</span><span class="p">):</span>
-    <span class="n">_indexes</span><span class="p">:</span> <span class="n">IndexRegistry</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="n">_index_defs</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">IndexDefinition</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">List</span><span class="p">(</span><span class="n">DBCollections</span><span class="p">):</span>
     <span class="n">empty</span><span class="p">:</span> <span class="nb">bool</span>  <span class="c1"># Indicator to represent empty lists</span>
     <span class="n">value</span><span class="p">:</span> <span class="nb">object</span> <span class="o">|</span> <span class="kc">None</span>  <span class="c1"># The value associated with this position; None is a valid value.</span>
     <span class="n">height</span><span class="p">:</span> <span class="nb">int</span>  <span class="c1"># The height of the current subtree rooted at this node.</span>
@@ -131,6 +139,7 @@
             <span class="n">empty</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
             <span class="nb">next</span><span class="p">:</span> <span class="n">List</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
             <span class="n">previous</span><span class="p">:</span> <span class="n">List</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">indexes</span><span class="p">:</span> <span class="n">DBCollections</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
             <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
             <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
             <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
@@ -141,9 +150,12 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">next</span> <span class="o">=</span> <span class="nb">next</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">previous</span> <span class="o">=</span> <span class="n">previous</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">empty</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">value</span> <span class="ow">and</span> <span class="n">empty</span>
+        <span class="c1"># Do not auto-create a Dictionary for indexes here to avoid circular initialization</span>
+        <span class="c1"># Leave indexes as provided (can be None). Index structures will be created lazily when needed.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span> <span class="o">=</span> <span class="n">indexes</span>
 
         <span class="c1"># Calculate the total count of nodes in the current subtree.</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">empty</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
             <span class="n">count</span> <span class="o">=</span> <span class="mi">1</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
@@ -156,7 +168,7 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
 
         <span class="c1"># Calculate the height of the current subtree.</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">empty</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
             <span class="n">height</span> <span class="o">=</span> <span class="mi">1</span>
             <span class="n">previous_height</span> <span class="o">=</span> <span class="n">previous</span><span class="o">.</span><span class="n">height</span> <span class="k">if</span> <span class="n">previous</span> <span class="k">else</span> <span class="mi">0</span>
             <span class="n">next_height</span> <span class="o">=</span> <span class="nb">next</span><span class="o">.</span><span class="n">height</span> <span class="k">if</span> <span class="nb">next</span> <span class="k">else</span> <span class="mi">0</span>
@@ -165,6 +177,50 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">height</span> <span class="o">=</span> <span class="mi">0</span></div>
 
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_index</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="c1"># Local import to avoid circular dependency at module import time</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.dictionaries</span><span class="w"> </span><span class="kn">import</span> <span class="n">RepeatedKeysDictionary</span><span class="p">,</span> <span class="n">Dictionary</span> <span class="k">as</span> <span class="n">_Dictionary</span>
+        <span class="n">new_index</span> <span class="o">=</span> <span class="n">RepeatedKeysDictionary</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+        <span class="c1"># Build index: key -&gt; Set(records) using native keys</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">key</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">rec</span><span class="p">,</span> <span class="n">field_name</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="n">key</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="k">if</span> <span class="n">key</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">new_index</span> <span class="o">=</span> <span class="n">new_index</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">rec</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">indexes_dict</span> <span class="o">=</span> <span class="n">_Dictionary</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+            <span class="n">new_indexes</span> <span class="o">=</span> <span class="n">indexes_dict</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">field_name</span><span class="p">,</span> <span class="n">new_index</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">field_name</span><span class="p">,</span> <span class="n">new_index</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">List</span><span class="p">(</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+            <span class="n">empty</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">empty</span><span class="p">,</span>
+            <span class="nb">next</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="p">,</span>
+            <span class="n">previous</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="p">,</span>
+            <span class="n">indexes</span> <span class="o">=</span> <span class="n">new_indexes</span><span class="p">,</span>
+            <span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">remove_index</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">field_name</span><span class="p">):</span>
+            <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">field_name</span><span class="p">)</span>
+
+            <span class="k">return</span> <span class="n">List</span><span class="p">(</span>
+                <span class="n">value</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+                <span class="n">empty</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">empty</span><span class="p">,</span>
+                <span class="nb">next</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="p">,</span>
+                <span class="n">previous</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="p">,</span>
+                <span class="n">indexes</span><span class="o">=</span><span class="n">new_indexes</span><span class="p">,</span>
+                <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_load</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_loaded</span><span class="p">:</span>
@@ -185,33 +241,6 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
 
             <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_stable_id_for</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
-            <span class="k">try</span><span class="p">:</span>
-                <span class="k">return</span> <span class="n">value</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>
-            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-                <span class="k">pass</span>
-        <span class="k">return</span> <span class="nb">hash</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">set_index_defs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">defs</span><span class="p">:</span> <span class="s1">&#39;tuple[IndexDefinition, ...] | list[IndexDefinition]&#39;</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_index_defs</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">defs</span><span class="p">)</span>
-        <span class="c1"># Build lazily when needed</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_indexes</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_index_defs</span><span class="p">:</span>
-            <span class="n">reg</span> <span class="o">=</span> <span class="n">IndexRegistry</span><span class="p">()</span><span class="o">.</span><span class="n">with_defs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_index_defs</span><span class="p">)</span>
-            <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
-                <span class="n">reg</span> <span class="o">=</span> <span class="n">reg</span><span class="o">.</span><span class="n">with_add</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_stable_id_for</span><span class="p">(</span><span class="n">v</span><span class="p">),</span> <span class="n">v</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_indexes</span> <span class="o">=</span> <span class="n">reg</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_attach_indexes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="s1">&#39;List&#39;</span><span class="p">,</span> <span class="n">new_indexes</span><span class="p">:</span> <span class="n">IndexRegistry</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;List&#39;</span><span class="p">:</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="s1">&#39;_index_defs&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_index_defs</span><span class="p">)</span>
-            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="s1">&#39;_indexes&#39;</span><span class="p">,</span> <span class="n">new_indexes</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_indexes</span><span class="p">)</span>
-        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-            <span class="c1"># Fallback just in case immutability constraints bite</span>
-            <span class="n">target</span><span class="o">.</span><span class="n">_index_defs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_index_defs</span>
-            <span class="n">target</span><span class="o">.</span><span class="n">_indexes</span> <span class="o">=</span> <span class="n">new_indexes</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_indexes</span>
-        <span class="k">return</span> <span class="n">target</span>
 
 <div class="viewcode-block" id="List.as_iterable">
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.lists.List.as_iterable">[docs]</a>
@@ -249,7 +278,14 @@
 
 <span class="sd">        :return: A QueryPlan object for this list.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="n">ListQueryPlan</span><span class="p">(</span><span class="n">base</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span></div>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">IndexedQueryPlan</span><span class="p">(</span>
+                <span class="n">based_on</span><span class="o">=</span><span class="n">ListQueryPlan</span><span class="p">(</span><span class="n">base</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">),</span>
+                <span class="n">indexes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">,</span>
+                <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">ListQueryPlan</span><span class="p">(</span><span class="n">base</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="List.get_at">
@@ -446,43 +482,34 @@
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.lists.List.set_at">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">offset</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Updates or inserts a value in a self-balancing linked list structure at the given offset.</span>
+<span class="sd">        Updates the value at the given offset in the list.</span>
 
-<span class="sd">        If the offset is negative, it is treated as counting backwards from the end</span>
-<span class="sd">        of the list. If the offset is out of bounds, the value is inserted at the</span>
-<span class="sd">        start or end of the list. The method ensures the appropriate rebalancing</span>
-<span class="sd">        after performing the insertion or update.</span>
-
-<span class="sd">        :param offset: Specifies the position in the list where the value is to be</span>
-<span class="sd">            inserted or updated. Negative values indicate a position relative</span>
-<span class="sd">            to the end of the list.</span>
-<span class="sd">        :param value: The new value to be set at the specified offset. An instance</span>
-<span class="sd">            of the `Atom` class.</span>
-<span class="sd">        :return: A new instance of the `List` reflecting the updated state of the</span>
-<span class="sd">            self-balancing linked list, or None if no changes occurred.</span>
+<span class="sd">        Negative offsets are supported (from the end). If the normalized offset is</span>
+<span class="sd">        outside the range [0, count-1], an IndexError is raised.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
 
         <span class="k">if</span> <span class="n">offset</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
             <span class="n">offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">+</span> <span class="n">offset</span>
 
-        <span class="k">if</span> <span class="n">offset</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="n">offset</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="c1"># Out-of-range for set_at: must reference an existing element</span>
+        <span class="c1"># Special-case empty list: only offset 0 is valid (creates first element)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">offset</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">List</span><span class="p">(</span>
+                    <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span>
+                    <span class="n">empty</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                    <span class="n">previous</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                    <span class="nb">next</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                    <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+                <span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">IndexError</span><span class="p">(</span><span class="s1">&#39;Offset out of range&#39;</span><span class="p">)</span>
 
-        <span class="k">if</span> <span class="n">offset</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">count</span><span class="p">:</span>
-            <span class="n">offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">count</span>
+        <span class="c1"># Out-of-range for set_at: allow appending at the end (offset == count)</span>
+        <span class="k">if</span> <span class="n">offset</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">offset</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">count</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">IndexError</span><span class="p">(</span><span class="s1">&#39;Offset out of range&#39;</span><span class="p">)</span>
 
         <span class="n">node_offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="o">.</span><span class="n">count</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span> <span class="k">else</span> <span class="mi">0</span>
-
-        <span class="c1"># Case: Inserting into an empty List.</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">List</span><span class="p">(</span>
-                <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span>
-                <span class="n">empty</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-                <span class="n">previous</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                <span class="nb">next</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
-            <span class="p">)</span>
 
         <span class="n">cmp</span> <span class="o">=</span> <span class="n">offset</span> <span class="o">-</span> <span class="n">node_offset</span>
         <span class="k">if</span> <span class="n">cmp</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
@@ -542,17 +569,20 @@
             <span class="p">)</span>
 
         <span class="n">result</span> <span class="o">=</span> <span class="n">new_node</span><span class="o">.</span><span class="n">_rebalance</span><span class="p">()</span>
-        <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_indexes</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_index_defs</span><span class="p">:</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">new_indexes</span><span class="p">:</span>
-                <span class="n">new_indexes</span> <span class="o">=</span> <span class="n">IndexRegistry</span><span class="p">()</span><span class="o">.</span><span class="n">with_defs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_index_defs</span><span class="p">)</span>
-            <span class="k">elif</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">new_indexes</span><span class="p">,</span> <span class="s1">&#39;defs&#39;</span><span class="p">,</span> <span class="p">()):</span>  <span class="c1"># ensure defs attached</span>
-                <span class="n">new_indexes</span> <span class="o">=</span> <span class="n">new_indexes</span><span class="o">.</span><span class="n">with_defs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_index_defs</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">cmp</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
-                <span class="n">new_indexes</span> <span class="o">=</span> <span class="n">new_indexes</span><span class="o">.</span><span class="n">with_replace</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_stable_id_for</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="n">new_indexes</span> <span class="o">=</span> <span class="n">new_indexes</span><span class="o">.</span><span class="n">with_add</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_stable_id_for</span><span class="p">(</span><span class="n">value</span><span class="p">),</span> <span class="n">value</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_attach_indexes</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">new_indexes</span><span class="p">)</span></div>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">:</span>
+            <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">add2indexes</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span>
+
+        <span class="k">return</span> <span class="n">List</span><span class="p">(</span>
+            <span class="n">value</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+            <span class="n">empty</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">empty</span><span class="p">,</span>
+            <span class="n">previous</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">previous</span><span class="p">,</span>
+            <span class="nb">next</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">next</span><span class="p">,</span>
+            <span class="n">indexes</span><span class="o">=</span><span class="n">new_indexes</span><span class="p">,</span>
+            <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+        <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="List.insert_at">
@@ -657,7 +687,21 @@
                 <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
             <span class="p">)</span>
 
-        <span class="k">return</span> <span class="n">new_node</span><span class="o">.</span><span class="n">_rebalance</span><span class="p">()</span></div>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">new_node</span><span class="o">.</span><span class="n">_rebalance</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">:</span>
+            <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">add2indexes</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span>
+
+        <span class="k">return</span> <span class="n">List</span><span class="p">(</span>
+            <span class="n">value</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+            <span class="n">empty</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">empty</span><span class="p">,</span>
+            <span class="n">previous</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">previous</span><span class="p">,</span>
+            <span class="nb">next</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">next</span><span class="p">,</span>
+            <span class="n">indexes</span><span class="o">=</span><span class="n">new_indexes</span><span class="p">,</span>
+            <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+        <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="List.remove_at">
@@ -689,6 +733,8 @@
         <span class="c1"># Case: Remove from an empty List.</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span>
+
+        <span class="n">current_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">offset</span><span class="p">)</span>
 
         <span class="n">cmp</span> <span class="o">=</span> <span class="n">offset</span> <span class="o">-</span> <span class="n">node_offset</span>
         <span class="k">if</span> <span class="n">cmp</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
@@ -730,6 +776,7 @@
                 <span class="n">new_node</span> <span class="o">=</span> <span class="n">List</span><span class="p">(</span>
                     <span class="n">value</span><span class="o">=</span><span class="n">first_value</span><span class="p">,</span>
                     <span class="n">empty</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                    <span class="n">previous</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">previous</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
                     <span class="nb">next</span><span class="o">=</span><span class="n">new_next</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">new_next</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
                     <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
                 <span class="p">)</span>
@@ -747,7 +794,21 @@
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">return</span> <span class="kc">None</span>
 
-        <span class="k">return</span> <span class="n">new_node</span><span class="o">.</span><span class="n">_rebalance</span><span class="p">()</span></div>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">new_node</span><span class="o">.</span><span class="n">_rebalance</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">:</span>
+            <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove_from_indexes</span><span class="p">(</span><span class="n">current_value</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span>
+
+        <span class="k">return</span> <span class="n">List</span><span class="p">(</span>
+            <span class="n">value</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+            <span class="n">empty</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">empty</span><span class="p">,</span>
+            <span class="n">previous</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">previous</span><span class="p">,</span>
+            <span class="nb">next</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">next</span><span class="p">,</span>
+            <span class="n">indexes</span><span class="o">=</span><span class="n">new_indexes</span><span class="p">,</span>
+            <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+        <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="List.remove_first">
@@ -769,6 +830,8 @@
         <span class="c1"># Case: Removing from an empty List.</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span>
+
+        <span class="n">current_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="n">node_offset</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
             <span class="c1"># Remove from the left subtree.</span>
@@ -793,7 +856,21 @@
                 <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
             <span class="p">)</span>
 
-        <span class="k">return</span> <span class="n">new_node</span><span class="o">.</span><span class="n">_rebalance</span><span class="p">()</span></div>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">new_node</span><span class="o">.</span><span class="n">_rebalance</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">:</span>
+            <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove_from_indexes</span><span class="p">(</span><span class="n">current_value</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span>
+
+        <span class="k">return</span> <span class="n">List</span><span class="p">(</span>
+            <span class="n">value</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+            <span class="n">empty</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">empty</span><span class="p">,</span>
+            <span class="n">previous</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">previous</span><span class="p">,</span>
+            <span class="nb">next</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">next</span><span class="p">,</span>
+            <span class="n">indexes</span><span class="o">=</span><span class="n">new_indexes</span><span class="p">,</span>
+            <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+        <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="List.remove_last">
@@ -815,6 +892,8 @@
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span>
 
+        <span class="n">current_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
             <span class="c1"># Remove from the right subtree</span>
@@ -835,43 +914,39 @@
                 <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
             <span class="p">)</span>
 
-        <span class="k">return</span> <span class="n">new_node</span><span class="o">.</span><span class="n">_rebalance</span><span class="p">()</span></div>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">new_node</span><span class="o">.</span><span class="n">_rebalance</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">:</span>
+            <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove_from_indexes</span><span class="p">(</span><span class="n">current_value</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span>
+
+        <span class="k">return</span> <span class="n">List</span><span class="p">(</span>
+            <span class="n">value</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+            <span class="n">empty</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">empty</span><span class="p">,</span>
+            <span class="n">previous</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">previous</span><span class="p">,</span>
+            <span class="nb">next</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">next</span><span class="p">,</span>
+            <span class="n">indexes</span><span class="o">=</span><span class="n">new_indexes</span><span class="p">,</span>
+            <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+        <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="List.extend">
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.lists.List.extend">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">extend</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">items</span><span class="p">:</span> <span class="n">List</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Extend the current list with the given items, maintaining the structure of the list.</span>
-<span class="sd">        If the current list is empty, the returned list is a new list with the provided items.</span>
-<span class="sd">        Otherwise, appends or extends the list while ensuring the correct structure.</span>
-
-<span class="sd">        :param items: The items to extend the current list with.</span>
-<span class="sd">        :type items: List</span>
-<span class="sd">        :return: A new rebalanced list with the items appended.</span>
-<span class="sd">        :rtype: List</span>
+<span class="sd">        Return a new list with items from &#39;items&#39; appended after the current list.</span>
+<span class="sd">        This simple implementation builds the result by appending each element of</span>
+<span class="sd">        &#39;items&#39; to the end, preserving ordering and counts.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span>
+        <span class="k">if</span> <span class="n">items</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="p">(</span><span class="nb">hasattr</span><span class="p">(</span><span class="n">items</span><span class="p">,</span> <span class="s1">&#39;empty&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">items</span><span class="o">.</span><span class="n">empty</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">result</span>
 
-        <span class="c1"># Case: extending an empty List.</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">items</span>
-
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
-            <span class="c1"># Extend the right subtree.</span>
-            <span class="n">new_node</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">items</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="c1"># Extend this node</span>
-            <span class="n">new_node</span> <span class="o">=</span> <span class="n">List</span><span class="p">(</span>
-                <span class="n">value</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                <span class="n">empty</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-                <span class="n">previous</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                <span class="nb">next</span><span class="o">=</span><span class="n">items</span><span class="p">,</span>
-                <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
-            <span class="p">)</span>
-
-        <span class="k">return</span> <span class="n">new_node</span><span class="o">.</span><span class="n">_rebalance</span><span class="p">()</span></div>
+        <span class="k">for</span> <span class="n">it</span> <span class="ow">in</span> <span class="n">items</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">insert_at</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">count</span><span class="p">,</span> <span class="n">it</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">result</span></div>
 
 
 <div class="viewcode-block" id="List.append_first">
@@ -892,26 +967,10 @@
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.lists.List.append_last">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">append_last</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">:</span> <span class="nb">object</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Appends the specified item to the end of the collection by inserting it at the</span>
-<span class="sd">        last position.</span>
-
-<span class="sd">        :param item: The item to be appended to the collection.</span>
-<span class="sd">        :type item: Atom</span>
-<span class="sd">        :return: The result of the insertion operation.</span>
+<span class="sd">        Appends the specified item at the end by delegating to insert_at(count, item).</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
-
-        <span class="n">node</span> <span class="o">=</span> <span class="bp">self</span>
-
-        <span class="n">node</span> <span class="o">=</span> <span class="n">List</span><span class="p">(</span>
-            <span class="n">value</span><span class="o">=</span><span class="n">item</span><span class="p">,</span>
-            <span class="n">empty</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-            <span class="n">previous</span><span class="o">=</span><span class="n">node</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">node</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-            <span class="nb">next</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-            <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
-        <span class="p">)</span>
-
-        <span class="k">return</span> <span class="n">node</span><span class="o">.</span><span class="n">_rebalance</span><span class="p">()</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">insert_at</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">count</span><span class="p">,</span> <span class="n">item</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="List.head">
@@ -956,13 +1015,11 @@
         <span class="n">cmp</span> <span class="o">=</span> <span class="n">upper_limit</span> <span class="o">-</span> <span class="n">offset</span>
 
         <span class="k">if</span> <span class="n">cmp</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="n">node</span> <span class="o">=</span> <span class="n">List</span><span class="p">(</span>
-                <span class="n">value</span><span class="o">=</span><span class="n">node</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
-                <span class="n">empty</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-                <span class="n">previous</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="p">,</span>
-                <span class="nb">next</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
-            <span class="p">)</span>
+            <span class="c1"># Exactly the left subtree count; do not include the current node</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">previous</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">node</span><span class="o">.</span><span class="n">previous</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="n">upper_limit</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">List</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">cmp</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">next</span><span class="p">:</span>
             <span class="n">next_node</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">next</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="n">cmp</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
             <span class="n">node</span> <span class="o">=</span> <span class="n">List</span><span class="p">(</span>
@@ -1029,9 +1086,11 @@
                 <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
             <span class="p">)</span>
         <span class="k">elif</span> <span class="n">cmp</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">next</span><span class="p">:</span>
-            <span class="n">node</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">next</span><span class="o">.</span><span class="n">tail</span><span class="p">(</span><span class="n">lower_limit</span><span class="p">)</span>
+            <span class="c1"># Move to the right subtree reducing the remaining lower_limit</span>
+            <span class="n">node</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">next</span><span class="o">.</span><span class="n">tail</span><span class="p">(</span><span class="n">lower_limit</span> <span class="o">-</span> <span class="n">offset</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">cmp</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">previous</span><span class="p">:</span>
-            <span class="n">previous_node</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">next</span><span class="o">.</span><span class="n">tail</span><span class="p">(</span><span class="n">lower_limit</span><span class="p">)</span>
+            <span class="c1"># Move to the left subtree keeping the same lower_limit</span>
+            <span class="n">previous_node</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">previous</span><span class="o">.</span><span class="n">tail</span><span class="p">(</span><span class="n">lower_limit</span><span class="p">)</span>
             <span class="n">node</span> <span class="o">=</span> <span class="n">List</span><span class="p">(</span>
                 <span class="n">value</span><span class="o">=</span><span class="n">node</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
                 <span class="n">empty</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
@@ -1104,7 +1163,7 @@
   <hr/>
 
   <div role="contentinfo">
-    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+    <p>&#169; Copyright 2025, ProtoBase Team.</p>
   </div>
 
   Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a

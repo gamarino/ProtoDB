@@ -19,8 +19,8 @@
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Development" href="development.html" />
-    <link rel="prev" title="Finite State Machine" href="api/fsm.html" /> 
+    <link rel="next" title="Parallel Scans: Adaptive Chunking and Work-Stealing" href="parallel_scans.html" />
+    <link rel="prev" title="Parallel (Work-Stealing and Adaptive Chunking)" href="api/parallel.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -47,7 +47,11 @@
 <li class="toctree-l1"><a class="reference internal" href="introduction.html">Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="storage_cloud.html">Cloud and Cluster Storage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Advanced Usage</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#distributed-storage-with-clusterfilestorage">Distributed Storage with ClusterFileStorage</a><ul>
@@ -68,6 +72,7 @@
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#performance-optimization">Performance Optimization</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#atom-level-caching">Atom-level Caching</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#batch-operations">Batch Operations</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#use-appropriate-storage">Use Appropriate Storage</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#optimize-queries">Optimize Queries</a></li>
@@ -77,6 +82,7 @@
 </li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="development.html">Development</a></li>
 </ul>
 
@@ -360,7 +366,32 @@
 </section>
 <section id="performance-optimization">
 <h2>Performance Optimization<a class="headerlink" href="#performance-optimization" title="Link to this heading"></a></h2>
+<section id="atom-level-caching">
+<h3>Atom-level Caching<a class="headerlink" href="#atom-level-caching" title="Link to this heading"></a></h3>
+<p>For read-heavy workloads with object reuse across transactions, enable the atom caches in your storage:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.file_block_provider</span><span class="w"> </span><span class="kn">import</span> <span class="n">FileBlockProvider</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.standalone_file_storage</span><span class="w"> </span><span class="kn">import</span> <span class="n">StandaloneFileStorage</span>
+
+<span class="n">provider</span> <span class="o">=</span> <span class="n">FileBlockProvider</span><span class="p">(</span><span class="s1">&#39;data_dir&#39;</span><span class="p">)</span>
+<span class="n">storage</span> <span class="o">=</span> <span class="n">StandaloneFileStorage</span><span class="p">(</span>
+    <span class="n">provider</span><span class="p">,</span>
+    <span class="n">enable_atom_object_cache</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">enable_atom_bytes_cache</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">object_cache_max_entries</span><span class="o">=</span><span class="mi">50_000</span><span class="p">,</span>
+    <span class="n">object_cache_max_bytes</span><span class="o">=</span><span class="mi">256</span><span class="o">*</span><span class="mi">1024</span><span class="o">*</span><span class="mi">1024</span><span class="p">,</span>
+    <span class="n">bytes_cache_max_entries</span><span class="o">=</span><span class="mi">20_000</span><span class="p">,</span>
+    <span class="n">bytes_cache_max_bytes</span><span class="o">=</span><span class="mi">128</span><span class="o">*</span><span class="mi">1024</span><span class="o">*</span><span class="mi">1024</span><span class="p">,</span>
+    <span class="n">cache_stripes</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span>
+    <span class="n">cache_probation_ratio</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+    <span class="n">schema_epoch</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>This layer checks an object cache, then a bytes cache, before reading from the page/block provider. Because atoms are
+immutable, cached entries remain valid without invalidation. Use <code class="docutils literal notranslate"><span class="pre">schema_epoch</span></code> to quickly isolate entries after
+serializer changes.</p>
 <p>Here are some tips for optimizing the performance of ProtoBase:</p>
+</section>
 <section id="batch-operations">
 <h3>Batch Operations<a class="headerlink" href="#batch-operations" title="Link to this heading"></a></h3>
 <p>When performing multiple operations, it’s more efficient to batch them within a single transaction:</p>
@@ -456,14 +487,14 @@
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="api/fsm.html" class="btn btn-neutral float-left" title="Finite State Machine" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="development.html" class="btn btn-neutral float-right" title="Development" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="api/parallel.html" class="btn btn-neutral float-left" title="Parallel (Work-Stealing and Adaptive Chunking)" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="parallel_scans.html" class="btn btn-neutral float-right" title="Parallel Scans: Adaptive Chunking and Work-Stealing" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>
 
   <div role="contentinfo">
-    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+    <p>&#169; Copyright 2025, ProtoBase Team.</p>
   </div>
 
   Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a

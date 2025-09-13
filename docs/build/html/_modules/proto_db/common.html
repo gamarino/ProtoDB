@@ -44,9 +44,14 @@
 <li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../storage_cloud.html">Cloud and Cluster Storage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
 </ul>
 
@@ -86,9 +91,13 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">ABC</span><span class="p">,</span> <span class="n">abstractmethod</span><span class="p">,</span> <span class="n">ABCMeta</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">concurrent.futures</span><span class="w"> </span><span class="kn">import</span> <span class="n">Future</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast</span><span class="p">,</span> <span class="n">BinaryIO</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast</span><span class="p">,</span> <span class="n">BinaryIO</span><span class="p">,</span> <span class="n">TYPE_CHECKING</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">.exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProtoValidationException</span><span class="p">,</span> <span class="n">ProtoCorruptionException</span>
+
+<span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+    <span class="c1"># Only for type checking to avoid circular imports at runtime</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.dictionaries</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dictionary</span>
 
 <span class="c1"># Constants for storage size units</span>
 <span class="n">KB</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1024</span>
@@ -102,7 +111,10 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">AtomPointer</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
 <div class="viewcode-block" id="AtomPointer.__init__">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.AtomPointer.__init__">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">transaction_id</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">,</span> <span class="n">offset</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">transaction_id</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">offset</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">):</span>
+        <span class="c1"># Allow default construction for tests and convenience</span>
+        <span class="k">if</span> <span class="n">transaction_id</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">transaction_id</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span> <span class="o">=</span> <span class="n">transaction_id</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">offset</span> <span class="o">=</span> <span class="n">offset</span></div>
 
@@ -374,7 +386,13 @@
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span> <span class="o">=</span> <span class="n">transaction</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span> <span class="o">=</span> <span class="n">atom_pointer</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span> <span class="o">=</span> <span class="n">atom_pointer</span>
+        <span class="c1"># Accept arbitrary attributes for simple Atom usage in tests (e.g., Atom(value=&quot;...&quot;))</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">pass</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_load</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -383,11 +401,28 @@
             <span class="c1"># Use direct dictionary access to avoid triggering __getattr__</span>
             <span class="k">if</span> <span class="s1">&#39;transaction&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;transaction&#39;</span><span class="p">]:</span>
                 <span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;transaction&#39;</span><span class="p">]</span>
-                <span class="k">if</span> <span class="s1">&#39;atom_pointer&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]</span> <span class="ow">and</span> \
-                        <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">:</span>
-                    <span class="n">atom_pointer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]</span>
-                    <span class="n">loaded_atom</span> <span class="o">=</span> <span class="n">transaction</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">get_atom</span><span class="p">(</span>
-                        <span class="n">atom_pointer</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+                <span class="c1"># Normalize atom_pointer to AtomPointer if it is present as a raw dict (backward compatibility)</span>
+                <span class="n">ap</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ap</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">tid_val</span> <span class="o">=</span> <span class="n">ap</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;transaction_id&#39;</span><span class="p">)</span>
+                        <span class="n">txid</span> <span class="o">=</span> <span class="kc">None</span>
+                        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">tid_val</span><span class="p">,</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">):</span>
+                            <span class="n">txid</span> <span class="o">=</span> <span class="n">tid_val</span>
+                        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">tid_val</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                            <span class="k">try</span><span class="p">:</span>
+                                <span class="n">txid</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">(</span><span class="n">tid_val</span><span class="p">)</span>
+                            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                                <span class="n">txid</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">(</span><span class="nb">hex</span><span class="o">=</span><span class="n">tid_val</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">txid</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                            <span class="n">ap</span> <span class="o">=</span> <span class="n">AtomPointer</span><span class="p">(</span><span class="n">transaction_id</span><span class="o">=</span><span class="n">txid</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="n">ap</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;offset&#39;</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ap</span>
+                    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                        <span class="c1"># If normalization fails, leave as-is and skip loading</span>
+                        <span class="n">ap</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="k">if</span> <span class="n">ap</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">ap</span><span class="p">,</span> <span class="s1">&#39;transaction_id&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">):</span>
+                    <span class="n">atom_pointer</span> <span class="o">=</span> <span class="n">ap</span>
+                    <span class="n">loaded_atom</span> <span class="o">=</span> <span class="n">transaction</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">get_atom</span><span class="p">(</span><span class="n">atom_pointer</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
                     <span class="n">loaded_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_json_to_dict</span><span class="p">(</span><span class="n">loaded_atom</span><span class="p">)</span>
                     <span class="k">for</span> <span class="n">attribute_name</span><span class="p">,</span> <span class="n">attribute_value</span> <span class="ow">in</span> <span class="n">loaded_dict</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
                         <span class="c1"># Use object.__setattr__ to bypass potential recursion in __setattr__</span>
@@ -470,8 +505,14 @@
                     <span class="k">else</span><span class="p">:</span>
                         <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">get_literal</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;string&#39;</span><span class="p">])</span>
                 <span class="k">elif</span> <span class="n">class_name</span> <span class="ow">in</span> <span class="n">atom_class_registry</span><span class="p">:</span>
+                    <span class="c1"># Accept hyphenated UUID strings and raw hex</span>
+                    <span class="n">tx_str</span> <span class="o">=</span> <span class="n">value</span><span class="p">[</span><span class="s1">&#39;transaction_id&#39;</span><span class="p">]</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">txid</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">(</span><span class="n">tx_str</span><span class="p">)</span>
+                    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                        <span class="n">txid</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">(</span><span class="nb">hex</span><span class="o">=</span><span class="n">tx_str</span><span class="p">)</span>
                     <span class="n">atom_pointer</span> <span class="o">=</span> <span class="n">AtomPointer</span><span class="p">(</span>
-                        <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">(</span><span class="nb">hex</span><span class="o">=</span><span class="n">value</span><span class="p">[</span><span class="s1">&#39;transaction_id&#39;</span><span class="p">]),</span>
+                        <span class="n">txid</span><span class="p">,</span>
                         <span class="n">value</span><span class="p">[</span><span class="s1">&#39;offset&#39;</span><span class="p">]</span>
                     <span class="p">)</span>
                     <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">read_object</span><span class="p">(</span><span class="n">class_name</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="p">)</span>
@@ -495,7 +536,7 @@
                 <span class="n">value</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
                 <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
                     <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
-                    <span class="s1">&#39;transaction_id&#39;</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span>
+                    <span class="s1">&#39;transaction_id&#39;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">),</span>
                     <span class="s1">&#39;offset&#39;</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span>
                 <span class="p">}</span>
             <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
@@ -608,13 +649,57 @@
                     <span class="c1"># All attributes has valid AtomPointer values (either old or new)</span>
                     <span class="n">pointer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_push_to_storage</span><span class="p">(</span><span class="n">json_value</span><span class="p">)</span>
                     <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;atom_pointer&#39;</span><span class="p">,</span> <span class="n">AtomPointer</span><span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">))</span>
+
+                    <span class="c1"># Write-through caching: populate caches immediately after persisting</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">tr</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;transaction&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                        <span class="n">bundle</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">tr</span><span class="p">,</span> <span class="s1">&#39;atom_cache_bundle&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">if</span> <span class="n">tr</span> <span class="k">else</span> <span class="kc">None</span>
+                        <span class="k">if</span> <span class="n">bundle</span><span class="p">:</span>
+                            <span class="c1"># Serialize to bytes to estimate size and populate bytes cache</span>
+                            <span class="n">atom_bytes</span> <span class="o">=</span> <span class="kc">None</span>
+                            <span class="c1"># Prefer a storage-provided serializer if available</span>
+                            <span class="n">storage</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">tr</span><span class="p">,</span> <span class="s1">&#39;storage&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">if</span> <span class="n">tr</span> <span class="k">else</span> <span class="kc">None</span>
+                            <span class="n">serializer</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">storage</span><span class="p">,</span> <span class="s1">&#39;serializer&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                            <span class="k">if</span> <span class="n">serializer</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">serializer</span><span class="p">,</span> <span class="s1">&#39;serialize&#39;</span><span class="p">):</span>
+                                <span class="k">try</span><span class="p">:</span>
+                                    <span class="n">atom_bytes</span> <span class="o">=</span> <span class="n">serializer</span><span class="o">.</span><span class="n">serialize</span><span class="p">(</span><span class="n">json_value</span><span class="p">)</span>
+                                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                                    <span class="n">atom_bytes</span> <span class="o">=</span> <span class="kc">None</span>
+                            <span class="k">if</span> <span class="n">atom_bytes</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                                <span class="c1"># Fallback to JSON serialization</span>
+                                <span class="kn">import</span><span class="w"> </span><span class="nn">json</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">_json</span>
+                                <span class="n">atom_bytes</span> <span class="o">=</span> <span class="n">_json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">json_value</span><span class="p">,</span> <span class="n">separators</span><span class="o">=</span><span class="p">(</span><span class="s1">&#39;,&#39;</span><span class="p">,</span> <span class="s1">&#39;:&#39;</span><span class="p">))</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+
+                            <span class="c1"># Object cache (store the serialized object dict, as storage.get_atom returns dicts)</span>
+                            <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">bundle</span><span class="p">,</span> <span class="s1">&#39;obj_cache&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">):</span>
+                                <span class="n">bundle</span><span class="o">.</span><span class="n">obj_cache</span><span class="o">.</span><span class="n">put</span><span class="p">(</span>
+                                    <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span>
+                                    <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span>
+                                    <span class="n">json_value</span><span class="p">,</span>
+                                    <span class="n">schema_epoch</span><span class="o">=</span><span class="nb">getattr</span><span class="p">(</span><span class="n">bundle</span><span class="p">,</span> <span class="s1">&#39;schema_epoch&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+                                    <span class="n">size_bytes_est</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">atom_bytes</span><span class="p">)</span> <span class="k">if</span> <span class="n">atom_bytes</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+                                <span class="p">)</span>
+                            <span class="c1"># Bytes cache (stores serialized bytes)</span>
+                            <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">bundle</span><span class="p">,</span> <span class="s1">&#39;bytes_cache&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">and</span> <span class="n">atom_bytes</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                                <span class="n">bundle</span><span class="o">.</span><span class="n">bytes_cache</span><span class="o">.</span><span class="n">put</span><span class="p">(</span>
+                                    <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span>
+                                    <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span>
+                                    <span class="n">atom_bytes</span>
+                                <span class="p">)</span>
+                    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                        <span class="c1"># Caching must never break persistence; ignore cache errors</span>
+                        <span class="k">pass</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
                         <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;An DBObject can only be saved within a given transaction!&#39;</span>
                     <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">hash</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>
+        <span class="n">ap</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;atom_pointer&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">ap</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">ap</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>
+        <span class="c1"># Fallback for unsaved/ephemeral atoms: use object identity</span>
+        <span class="k">return</span> <span class="nb">hash</span><span class="p">(</span><span class="nb">id</span><span class="p">(</span><span class="bp">self</span><span class="p">))</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
         <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">):</span>
@@ -692,7 +777,8 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
-        <span class="k">return</span> <span class="kc">None</span>
+        <span class="c1"># Align with Python semantics: signal missing attribute for hasattr()</span>
+        <span class="k">raise</span> <span class="ne">AttributeError</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
         <span class="c1"># Special case for _loaded to prevent recursion</span>
@@ -831,28 +917,74 @@
 <span class="sd">    :type count: int</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">indexes</span><span class="p">:</span> <span class="n">Dictionary</span> <span class="o">=</span> <span class="kc">None</span>
 
 <div class="viewcode-block" id="DBCollections.__init__">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.DBCollections.__init__">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
+                 <span class="n">indexes</span><span class="p">:</span> <span class="s1">&#39;Dictionary&#39;</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
                  <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
                  <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
                  <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="c1"># Indexes are optional; some collections don&#39;t use them. Avoid importing Dictionary here to prevent cycles.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span> <span class="o">=</span> <span class="n">indexes</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="DBCollections.as_iterable">
-<a class="viewcode-back" href="../../api/core.html#proto_db.common.DBCollections.as_iterable">[docs]</a>
-    <span class="nd">@abstractmethod</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">as_iterable</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">object</span><span class="p">]:</span>
+<div class="viewcode-block" id="DBCollections.index_add">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.DBCollections.index_add">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">index_add</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DBCollections</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Returns an iterable representation of the collection&#39;s items.</span>
+<span class="sd">        When the DBCollection represents an index, add an element to the index.</span>
+<span class="sd">        On other collections, no change is made</span>
 
-<span class="sd">        This method provides a way to iterate through all items in the collection.</span>
-<span class="sd">        Implementations should define how the collection&#39;s data is traversed and yielded.</span>
+<span class="sd">        :param item:</span>
+<span class="sd">        :return: the new modified collection</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span></div>
 
-<span class="sd">        :return: An iterable of the collection&#39;s items.</span>
-<span class="sd">        &quot;&quot;&quot;</span></div>
+
+<div class="viewcode-block" id="DBCollections.index_remove">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.DBCollections.index_remove">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">index_remove</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DBCollections</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        When the DBCollection represents an index, remove an element from the index.</span>
+<span class="sd">        On other collections, no change is made</span>
+
+<span class="sd">        :param item:</span>
+<span class="sd">        :return: the new modified collection</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span></div>
+
+
+<div class="viewcode-block" id="DBCollections.add2indexes">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.DBCollections.add2indexes">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add2indexes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">            Add an element to the indexes.</span>
+<span class="sd">        :param item:</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="k">for</span> <span class="n">index_name</span><span class="p">,</span> <span class="n">index</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">index_name</span> <span class="ow">in</span> <span class="n">item</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">[</span><span class="n">index_name</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">index_name</span><span class="p">)</span><span class="o">.</span><span class="n">index_add</span><span class="p">(</span><span class="n">item</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DBCollections.remove_from_indexes">
+<a class="viewcode-back" href="../../api/core.html#proto_db.common.DBCollections.remove_from_indexes">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">remove_from_indexes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">            Remove an element from the indexes.</span>
+<span class="sd">        :param item:</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="k">for</span> <span class="n">index_name</span><span class="p">,</span> <span class="n">index</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">index_name</span> <span class="ow">in</span> <span class="n">item</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">[</span><span class="n">index_name</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">index_name</span><span class="p">)</span><span class="o">.</span><span class="n">index_remove</span><span class="p">(</span><span class="n">item</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="DBCollections.as_query_plan">
@@ -968,6 +1100,9 @@
                  <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
                  <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
                  <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="c1"># Accept legacy alias &#39;literal&#39; for compatibility with older tests/usages</span>
+        <span class="k">if</span> <span class="n">string</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="s1">&#39;literal&#39;</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
+            <span class="n">string</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;literal&#39;</span><span class="p">)</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">string</span> <span class="o">=</span> <span class="n">string</span> <span class="ow">or</span> <span class="s1">&#39;&#39;</span></div>
 
@@ -983,9 +1118,9 @@
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__add__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Literal</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Literal</span><span class="p">:</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="n">Literal</span><span class="p">):</span>
-            <span class="k">return</span> <span class="n">Literal</span><span class="p">(</span><span class="n">literal</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">string</span> <span class="o">+</span> <span class="n">other</span><span class="o">.</span><span class="n">string</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">Literal</span><span class="p">(</span><span class="n">string</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">string</span> <span class="o">+</span> <span class="n">other</span><span class="o">.</span><span class="n">string</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">Literal</span><span class="p">(</span><span class="n">literal</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">string</span> <span class="o">+</span> <span class="n">other</span><span class="p">)</span></div>
+            <span class="k">return</span> <span class="n">Literal</span><span class="p">(</span><span class="n">string</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">string</span> <span class="o">+</span> <span class="n">other</span><span class="p">)</span></div>
 
 
 
@@ -1218,7 +1353,7 @@
   <hr/>
 
   <div role="contentinfo">
-    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+    <p>&#169; Copyright 2025, ProtoBase Team.</p>
   </div>
 
   Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a

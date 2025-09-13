@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="The full test suite was run with 245 tests all passing. Issues with OrMerge.execute behavior and cloud cluster page cache handling were identified and fixed. Test discovery errors were resolved by running with the correct discovery top-level." />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="La documentación Sphinx se actualizó para reflejar el estado actual del proyecto con nuevas páginas y un índice ampliado. Se actualizaron el conf.py y se añadieron ejemplos, testing, almacenamiento en la nube y vectores. La documentación API permaneció sin cambios." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -273,15 +273,7 @@
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
       <workItem from="1757675249603" duration="41300000" />
-      <workItem from="1757781886166" duration="2780000" />
-    </task>
-    <task id="LOCAL-00057" summary="[ADD] The performance suite was updated to use new indexes, enabling a benchmark to evaluate proto_db with indexed collections against a Python baseline. A new benchmark script was created, executed successfully, and documentation was updated accordingly.">
-      <option name="closed" value="true" />
-      <created>1755792365792</created>
-      <option name="number" value="00057" />
-      <option name="presentableId" value="LOCAL-00057" />
-      <option name="project" value="LOCAL" />
-      <updated>1755792365792</updated>
+      <workItem from="1757781886166" duration="3101000" />
     </task>
     <task id="LOCAL-00058" summary="[ADD] The Sphinx documentation was successfully updated to reflect new features, including range operators, UnnestPlan, CollectionFieldPlan, index-aware WHERE optimizations, and the indexed benchmark. New pages were created and existing content modified as needed. All changes were documented and submitted for review.">
       <option name="closed" value="true" />
@@ -667,14 +659,21 @@
       <option name="project" value="LOCAL" />
       <updated>1757784671178</updated>
     </task>
-    <option name="localTasksCounter" value="106" />
+    <task id="LOCAL-00106" summary="La documentación Sphinx se actualizó para reflejar el estado actual del proyecto con nuevas páginas y un índice ampliado. Se actualizaron el conf.py y se añadieron ejemplos, testing, almacenamiento en la nube y vectores. La documentación API permaneció sin cambios.">
+      <option name="closed" value="true" />
+      <created>1757784992309</created>
+      <option name="number" value="00106" />
+      <option name="presentableId" value="LOCAL-00106" />
+      <option name="project" value="LOCAL" />
+      <updated>1757784992310</updated>
+    </task>
+    <option name="localTasksCounter" value="107" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[FIX] The performance suite was rerun with updated benchmark results saved in JSON files. Unit tests for the parallel module passed without issues. Documentation remained accurate and no updates were needed." />
     <MESSAGE value="[FIX] Several errors in test suite" />
     <MESSAGE value="[DOC] Performance update" />
     <MESSAGE value="[WIP] nuevos índices" />
@@ -699,7 +698,8 @@
     <MESSAGE value="Se corrigió y depuró collection_indexing_example.py para asegurar ejecución sin errores. El ejemplo ahora crea 50k usuarios, ejecuta búsquedas con y sin índice, y reporta una mejora de rendimiento. Se verificó que las pruebas clave pasen correctamente." />
     <MESSAGE value="All example scripts in the examples directory run without errors after adding sys.path bootstrapping and fixing a LINQ select bug. The fixes ensure proper dict projection evaluation and eliminate import issues. Unit tests confirmed the correctness of the LINQ-like behavior." />
     <MESSAGE value="The full test suite was run with 245 tests all passing. Issues with OrMerge.execute behavior and cloud cluster page cache handling were identified and fixed. Test discovery errors were resolved by running with the correct discovery top-level." />
-    <option name="LAST_COMMIT_MESSAGE" value="The full test suite was run with 245 tests all passing. Issues with OrMerge.execute behavior and cloud cluster page cache handling were identified and fixed. Test discovery errors were resolved by running with the correct discovery top-level." />
+    <MESSAGE value="La documentación Sphinx se actualizó para reflejar el estado actual del proyecto con nuevas páginas y un índice ampliado. Se actualizaron el conf.py y se añadieron ejemplos, testing, almacenamiento en la nube y vectores. La documentación API permaneció sin cambios." />
+    <option name="LAST_COMMIT_MESSAGE" value="La documentación Sphinx se actualizó para reflejar el estado actual del proyecto con nuevas páginas y un índice ampliado. Se actualizaron el conf.py y se añadieron ejemplos, testing, almacenamiento en la nube y vectores. La documentación API permaneció sin cambios." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

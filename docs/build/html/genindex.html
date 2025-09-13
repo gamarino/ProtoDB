@@ -44,9 +44,14 @@
 <li class="toctree-l1"><a class="reference internal" href="introduction.html">Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="storage_cloud.html">Cloud and Cluster Storage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="development.html">Development</a></li>
 </ul>
 
@@ -87,6 +92,7 @@
  | <a href="#G"><strong>G</strong></a>
  | <a href="#H"><strong>H</strong></a>
  | <a href="#I"><strong>I</strong></a>
+ | <a href="#J"><strong>J</strong></a>
  | <a href="#L"><strong>L</strong></a>
  | <a href="#M"><strong>M</strong></a>
  | <a href="#N"><strong>N</strong></a>
@@ -104,9 +110,17 @@
 <h2 id="_">_</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/storage.html#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.__init__">__init__() (proto_db.cloud_cluster_file_storage.CloudClusterFileStorage method)</a>
+      <li><a href="api/atom_cache.html#proto_db.standalone_file_storage.StandaloneFileStorage.__init__">__init__() (in module proto_db.standalone_file_storage.StandaloneFileStorage)</a>
 
       <ul>
+        <li><a href="api/atom_cache.html#proto_db.atom_cache.AtomBytesCache.__init__">(proto_db.atom_cache.AtomBytesCache method)</a>
+</li>
+        <li><a href="api/atom_cache.html#proto_db.atom_cache.AtomCacheBundle.__init__">(proto_db.atom_cache.AtomCacheBundle method)</a>
+</li>
+        <li><a href="api/atom_cache.html#proto_db.atom_cache.AtomObjectCache.__init__">(proto_db.atom_cache.AtomObjectCache method)</a>
+</li>
+        <li><a href="api/storage.html#proto_db.cloud_cluster_file_storage.CloudClusterFileStorage.__init__">(proto_db.cloud_cluster_file_storage.CloudClusterFileStorage method)</a>
+</li>
         <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudBlockProvider.__init__">(proto_db.cloud_file_storage.CloudBlockProvider method)</a>
 </li>
         <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudFileStorage.__init__">(proto_db.cloud_file_storage.CloudFileStorage method)</a>
@@ -193,7 +207,11 @@
 </li>
         <li><a href="api/queries.html#proto_db.queries.FromPlan.__init__">(proto_db.queries.FromPlan method)</a>
 </li>
+        <li><a href="api/queries.html#proto_db.queries.GroupByPlan.__init__">(proto_db.queries.GroupByPlan method)</a>
+</li>
         <li><a href="api/queries.html#proto_db.queries.IndexedRangeSearchPlan.__init__">(proto_db.queries.IndexedRangeSearchPlan method)</a>
+</li>
+        <li><a href="api/queries.html#proto_db.queries.JoinPlan.__init__">(proto_db.queries.JoinPlan method)</a>
 </li>
         <li><a href="api/queries.html#proto_db.queries.ListPlan.__init__">(proto_db.queries.ListPlan method)</a>
 </li>
@@ -211,7 +229,7 @@
 </li>
         <li><a href="api/storage.html#proto_db.standalone_file_storage.WALWriteOperation.__init__">(proto_db.standalone_file_storage.WALWriteOperation method)</a>
 </li>
-        <li><a href="api/vectors.html#proto_db.vectors.Vector.__init__">(proto_db.vectors.Vector method)</a>
+        <li><a href="api/vectors.html#id6">(proto_db.vectors.Vector method)</a>, <a href="api/vectors.html#proto_db.vectors.Vector.__init__">[1]</a>
 </li>
       </ul></li>
   </ul></td>
@@ -222,7 +240,11 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/core.html#proto_db.db_access.ObjectTransaction.abort">abort() (proto_db.db_access.ObjectTransaction method)</a>
 </li>
+      <li><a href="api/parallel.html#proto_db.parallel.AdaptiveChunkController">AdaptiveChunkController (class in proto_db.parallel)</a>
+</li>
       <li><a href="api/data_structures.html#proto_db.sets.Set.add">add() (proto_db.sets.Set method)</a>
+</li>
+      <li><a href="api/core.html#proto_db.common.DBCollections.add2indexes">add2indexes() (proto_db.common.DBCollections method)</a>
 </li>
       <li><a href="api/core.html#proto_db.common.Atom.after_load">after_load() (proto_db.common.Atom method)</a>
 </li>
@@ -232,11 +254,11 @@
 </li>
       <li><a href="api/data_structures.html#proto_db.lists.List.append_last">append_last() (proto_db.lists.List method)</a>
 </li>
-      <li><a href="api/core.html#proto_db.common.DBCollections.as_iterable">as_iterable() (proto_db.common.DBCollections method)</a>
+      <li><a href="api/vectors.html#id4">as_buffer() (proto_db.vectors.Vector method)</a>, <a href="api/vectors.html#proto_db.vectors.Vector.as_buffer">[1]</a>
+</li>
+      <li><a href="api/data_structures.html#proto_db.dictionaries.Dictionary.as_iterable">as_iterable() (proto_db.dictionaries.Dictionary method)</a>
 
       <ul>
-        <li><a href="api/data_structures.html#proto_db.dictionaries.Dictionary.as_iterable">(proto_db.dictionaries.Dictionary method)</a>
-</li>
         <li><a href="api/data_structures.html#proto_db.hash_dictionaries.HashDictionary.as_iterable">(proto_db.hash_dictionaries.HashDictionary method)</a>
 </li>
         <li><a href="api/data_structures.html#proto_db.lists.List.as_iterable">(proto_db.lists.List method)</a>
@@ -246,6 +268,8 @@
       </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/vectors.html#id5">as_numpy() (proto_db.vectors.Vector method)</a>, <a href="api/vectors.html#proto_db.vectors.Vector.as_numpy">[1]</a>
+</li>
       <li><a href="api/core.html#proto_db.common.DBCollections.as_query_plan">as_query_plan() (proto_db.common.DBCollections method)</a>
 
       <ul>
@@ -259,6 +283,12 @@
 </li>
       </ul></li>
       <li><a href="api/core.html#proto_db.common.Atom">Atom (class in proto_db.common)</a>
+</li>
+      <li><a href="api/atom_cache.html#proto_db.atom_cache.AtomBytesCache">AtomBytesCache (class in proto_db.atom_cache)</a>
+</li>
+      <li><a href="api/atom_cache.html#proto_db.atom_cache.AtomCacheBundle">AtomCacheBundle (class in proto_db.atom_cache)</a>
+</li>
+      <li><a href="api/atom_cache.html#proto_db.atom_cache.AtomObjectCache">AtomObjectCache (class in proto_db.atom_cache)</a>
 </li>
       <li><a href="api/core.html#proto_db.common.AtomPointer">AtomPointer (class in proto_db.common)</a>
 </li>
@@ -399,7 +429,11 @@
 </li>
         <li><a href="api/queries.html#proto_db.queries.FromPlan.execute">(proto_db.queries.FromPlan method)</a>
 </li>
+        <li><a href="api/queries.html#proto_db.queries.GroupByPlan.execute">(proto_db.queries.GroupByPlan method)</a>
+</li>
         <li><a href="api/queries.html#proto_db.queries.IndexedRangeSearchPlan.execute">(proto_db.queries.IndexedRangeSearchPlan method)</a>
+</li>
+        <li><a href="api/queries.html#proto_db.queries.JoinPlan.execute">(proto_db.queries.JoinPlan method)</a>
 </li>
         <li><a href="api/queries.html#proto_db.queries.ListPlan.execute">(proto_db.queries.ListPlan method)</a>
 </li>
@@ -436,6 +470,10 @@
       </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/vectors.html#id3">from_buffer() (proto_db.vectors.Vector static method)</a>, <a href="api/vectors.html#proto_db.vectors.Vector.from_buffer">[1]</a>
+</li>
+      <li><a href="api/arrow_parquet.html#proto_db.arrow_bridge.from_parquet_to_rows">from_parquet_to_rows() (in module proto_db.arrow_bridge)</a>
+</li>
       <li><a href="api/queries.html#proto_db.queries.FromPlan">FromPlan (class in proto_db.queries)</a>
 </li>
       <li><a href="api/fsm.html#proto_db.fsm.FSM">FSM (class in proto_db.fsm)</a>
@@ -486,8 +524,6 @@
       </ul></li>
       <li><a href="api/core.html#proto_db.db_access.ObjectTransaction.get_literal">get_literal() (proto_db.db_access.ObjectTransaction method)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudBlockProvider.get_new_wal">get_new_wal() (proto_db.cloud_file_storage.CloudBlockProvider method)</a>
 
       <ul>
@@ -496,6 +532,8 @@
         <li><a href="api/storage.html#proto_db.file_block_provider.FileBlockProvider.get_new_wal">(proto_db.file_block_provider.FileBlockProvider method)</a>
 </li>
       </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudStorageClient.get_object">get_object() (proto_db.cloud_file_storage.CloudStorageClient method)</a>
 
       <ul>
@@ -516,6 +554,8 @@
         <li><a href="api/storage.html#proto_db.file_block_provider.FileBlockProvider.get_reader">(proto_db.file_block_provider.FileBlockProvider method)</a>
 </li>
       </ul></li>
+      <li><a href="api/queries.html#proto_db.queries.IndexedRangeSearchPlan.get_references">get_references() (proto_db.queries.IndexedRangeSearchPlan method)</a>
+</li>
       <li><a href="api/core.html#proto_db.db_access.ObjectTransaction.get_root_object">get_root_object() (proto_db.db_access.ObjectTransaction method)</a>
 </li>
       <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudBlockProvider.get_writer_wal">get_writer_wal() (proto_db.cloud_file_storage.CloudBlockProvider method)</a>
@@ -527,6 +567,8 @@
 </li>
       </ul></li>
       <li><a href="api/storage.html#proto_db.cloud_file_storage.GoogleCloudClient">GoogleCloudClient (class in proto_db.cloud_file_storage)</a>
+</li>
+      <li><a href="api/queries.html#proto_db.queries.GroupByPlan">GroupByPlan (class in proto_db.queries)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -556,19 +598,31 @@
 <h2 id="I">I</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/core.html#proto_db.common.DBCollections.index_add">index_add() (proto_db.common.DBCollections method)</a>
+</li>
+      <li><a href="api/core.html#proto_db.common.DBCollections.index_remove">index_remove() (proto_db.common.DBCollections method)</a>
+</li>
       <li><a href="api/indexes.html#proto_db.indexes.IndexDefinition">IndexDefinition (class in proto_db.indexes)</a>
 </li>
       <li><a href="api/queries.html#proto_db.queries.IndexedRangeSearchPlan">IndexedRangeSearchPlan (class in proto_db.queries)</a>
 </li>
-      <li><a href="api/indexes.html#proto_db.indexes.IndexRegistry">IndexRegistry (class in proto_db.indexes)</a>
-</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/indexes.html#proto_db.indexes.IndexRegistry">IndexRegistry (class in proto_db.indexes)</a>
+</li>
       <li><a href="api/core.html#proto_db.db_access.ObjectTransaction.initial_mutable_objects">initial_mutable_objects (proto_db.db_access.ObjectTransaction attribute)</a>
 </li>
       <li><a href="api/data_structures.html#proto_db.lists.List.insert_at">insert_at() (proto_db.lists.List method)</a>
 </li>
       <li><a href="api/data_structures.html#proto_db.sets.Set.intersection">intersection() (proto_db.sets.Set method)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="J">J</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/queries.html#proto_db.queries.JoinPlan">JoinPlan (class in proto_db.queries)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -614,6 +668,10 @@
     module
 
       <ul>
+        <li><a href="api/arrow_parquet.html#module-proto_db.arrow_bridge">proto_db.arrow_bridge</a>
+</li>
+        <li><a href="api/atom_cache.html#module-proto_db.atom_cache">proto_db.atom_cache</a>
+</li>
         <li><a href="api/storage.html#module-proto_db.cloud_cluster_file_storage">proto_db.cloud_cluster_file_storage</a>
 </li>
         <li><a href="api/storage.html#module-proto_db.cloud_file_storage">proto_db.cloud_file_storage</a>
@@ -640,6 +698,8 @@
 </li>
         <li><a href="api/storage.html#module-proto_db.memory_storage">proto_db.memory_storage</a>
 </li>
+        <li><a href="api/parallel.html#module-proto_db.parallel">proto_db.parallel</a>
+</li>
         <li><a href="api/queries.html#module-proto_db.queries">proto_db.queries</a>
 </li>
         <li><a href="api/data_structures.html#module-proto_db.sets">proto_db.sets</a>
@@ -648,7 +708,7 @@
 </li>
         <li><a href="api/vectors.html#module-proto_db.vector_index">proto_db.vector_index</a>
 </li>
-        <li><a href="api/vectors.html#module-proto_db.vectors">proto_db.vectors</a>
+        <li><a href="api/vectors.html#module-0">proto_db.vectors</a>, <a href="api/vectors.html#module-proto_db.vectors">[1]</a>
 </li>
       </ul></li>
   </ul></td>
@@ -706,7 +766,11 @@
 </li>
         <li><a href="api/queries.html#proto_db.queries.FromPlan.optimize">(proto_db.queries.FromPlan method)</a>
 </li>
+        <li><a href="api/queries.html#proto_db.queries.GroupByPlan.optimize">(proto_db.queries.GroupByPlan method)</a>
+</li>
         <li><a href="api/queries.html#proto_db.queries.IndexedRangeSearchPlan.optimize">(proto_db.queries.IndexedRangeSearchPlan method)</a>
+</li>
+        <li><a href="api/queries.html#proto_db.queries.JoinPlan.optimize">(proto_db.queries.JoinPlan method)</a>
 </li>
         <li><a href="api/queries.html#proto_db.queries.ListPlan.optimize">(proto_db.queries.ListPlan method)</a>
 </li>
@@ -723,8 +787,26 @@
 <h2 id="P">P</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/parallel.html#proto_db.parallel.parallel_scan">parallel_scan() (in module proto_db.parallel)</a>
+</li>
+      <li><a href="api/parallel.html#proto_db.parallel.ParallelConfig">ParallelConfig (class in proto_db.parallel)</a>
+</li>
       <li><a href="api/fsm.html#proto_db.fsm.FSM.process_event">process_event() (proto_db.fsm.FSM method)</a>
 </li>
+      <li>
+    proto_db.arrow_bridge
+
+      <ul>
+        <li><a href="api/arrow_parquet.html#module-proto_db.arrow_bridge">module</a>
+</li>
+      </ul></li>
+      <li>
+    proto_db.atom_cache
+
+      <ul>
+        <li><a href="api/atom_cache.html#module-proto_db.atom_cache">module</a>
+</li>
+      </ul></li>
       <li>
     proto_db.cloud_cluster_file_storage
 
@@ -809,6 +891,8 @@
         <li><a href="api/data_structures.html#module-proto_db.lists">module</a>
 </li>
       </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li>
     proto_db.memory_storage
 
@@ -816,8 +900,13 @@
         <li><a href="api/storage.html#module-proto_db.memory_storage">module</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
+      <li>
+    proto_db.parallel
+
+      <ul>
+        <li><a href="api/parallel.html#module-proto_db.parallel">module</a>
+</li>
+      </ul></li>
       <li>
     proto_db.queries
 
@@ -850,7 +939,7 @@
     proto_db.vectors
 
       <ul>
-        <li><a href="api/vectors.html#module-proto_db.vectors">module</a>
+        <li><a href="api/vectors.html#module-0">module</a>, <a href="api/vectors.html#module-proto_db.vectors">[1]</a>
 </li>
       </ul></li>
       <li><a href="api/exceptions.html#proto_db.exceptions.ProtoBaseException">ProtoBaseException (class in proto_db.exceptions)</a>
@@ -875,9 +964,11 @@
       </ul></li>
       <li><a href="api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.push_atom_msgpack">push_atom_msgpack() (proto_db.standalone_file_storage.StandaloneFileStorage method)</a>
 </li>
-      <li><a href="api/storage.html#proto_db.memory_storage.MemoryStorage.push_bytes">push_bytes() (proto_db.memory_storage.MemoryStorage method)</a>
+      <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudFileStorage.push_bytes">push_bytes() (proto_db.cloud_file_storage.CloudFileStorage method)</a>
 
       <ul>
+        <li><a href="api/storage.html#proto_db.memory_storage.MemoryStorage.push_bytes">(proto_db.memory_storage.MemoryStorage method)</a>
+</li>
         <li><a href="api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.push_bytes">(proto_db.standalone_file_storage.StandaloneFileStorage method)</a>
 </li>
       </ul></li>
@@ -935,10 +1026,10 @@
 </li>
       <li><a href="api/core.html#proto_db.db_access.ObjectTransaction.read_objects">read_objects (proto_db.db_access.ObjectTransaction attribute)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/vectors.html#proto_db.vector_index.HNSWVectorIndex.rebuild">rebuild() (proto_db.vector_index.HNSWVectorIndex method)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/data_structures.html#proto_db.dictionaries.Dictionary.remove_at">remove_at() (proto_db.dictionaries.Dictionary method)</a>
 
       <ul>
@@ -952,6 +1043,8 @@
       <li><a href="api/core.html#proto_db.db_access.ObjectSpace.remove_database">remove_database() (proto_db.db_access.ObjectSpace method)</a>
 </li>
       <li><a href="api/data_structures.html#proto_db.lists.List.remove_first">remove_first() (proto_db.lists.List method)</a>
+</li>
+      <li><a href="api/core.html#proto_db.common.DBCollections.remove_from_indexes">remove_from_indexes() (proto_db.common.DBCollections method)</a>
 </li>
       <li><a href="api/data_structures.html#proto_db.lists.List.remove_last">remove_last() (proto_db.lists.List method)</a>
 </li>
@@ -974,6 +1067,8 @@
       <li><a href="api/storage.html#proto_db.cloud_file_storage.S3Client">S3Client (class in proto_db.cloud_file_storage)</a>
 </li>
       <li><a href="api/storage.html#proto_db.cloud_file_storage.S3ObjectMetadata">S3ObjectMetadata (in module proto_db.cloud_file_storage)</a>
+</li>
+      <li><a href="api/arrow_parquet.html#proto_db.arrow_bridge.scan_parquet">scan_parquet() (in module proto_db.arrow_bridge)</a>
 </li>
       <li><a href="api/vectors.html#proto_db.vector_index.ExactVectorIndex.search">search() (proto_db.vector_index.ExactVectorIndex method)</a>
 
@@ -1015,12 +1110,6 @@
       </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/data_structures.html#proto_db.dictionaries.Dictionary.set_index_defs">set_index_defs() (proto_db.dictionaries.Dictionary method)</a>
-
-      <ul>
-        <li><a href="api/data_structures.html#proto_db.sets.Set.set_index_defs">(proto_db.sets.Set method)</a>
-</li>
-      </ul></li>
       <li><a href="api/core.html#proto_db.db_access.ObjectTransaction.set_locked_object">set_locked_object() (proto_db.db_access.ObjectTransaction method)</a>
 </li>
       <li><a href="api/core.html#proto_db.db_access.ObjectTransaction.set_root_object">set_root_object() (proto_db.db_access.ObjectTransaction method)</a>
@@ -1051,15 +1140,21 @@
 <h2 id="T">T</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/arrow_parquet.html#proto_db.arrow_bridge.table_to_parquet">table_to_parquet() (in module proto_db.arrow_bridge)</a>
+</li>
       <li><a href="api/data_structures.html#proto_db.lists.List.tail">tail() (proto_db.lists.List method)</a>
 </li>
       <li><a href="api/fsm.html#proto_db.fsm.Timer">Timer (class in proto_db.fsm)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/fsm.html#proto_db.fsm.Timer.timer_execution">timer_execution (proto_db.fsm.Timer attribute)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/fsm.html#proto_db.fsm.FSM.timer_processed">timer_processed() (proto_db.fsm.FSM method)</a>
+</li>
+      <li><a href="api/arrow_parquet.html#proto_db.arrow_bridge.to_arrow">to_arrow() (in module proto_db.arrow_bridge)</a>
+</li>
+      <li><a href="api/arrow_parquet.html#proto_db.arrow_bridge.to_parquet_from_records">to_parquet_from_records() (in module proto_db.arrow_bridge)</a>
 </li>
       <li><a href="api/core.html#proto_db.db_access.ObjectTransaction.transaction_root">transaction_root (proto_db.db_access.ObjectTransaction attribute)</a>
 </li>
@@ -1099,11 +1194,13 @@
 <h2 id="V">V</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/vectors.html#proto_db.vectors.Vector">Vector (class in proto_db.vectors)</a>
+      <li><a href="api/vectors.html#id0">Vector (class in proto_db.vectors)</a>, <a href="api/vectors.html#proto_db.vectors.Vector">[1]</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/vectors.html#proto_db.vector_index.VectorIndex">VectorIndex (class in proto_db.vector_index)</a>
+</li>
+      <li><a href="api/arrow_parquet.html#proto_db.arrow_bridge.vectors_fixed_size_list">vectors_fixed_size_list() (in module proto_db.arrow_bridge)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -1117,9 +1214,11 @@
 </li>
       <li><a href="api/storage.html#proto_db.standalone_file_storage.WALWriteOperation">WALWriteOperation (class in proto_db.standalone_file_storage)</a>
 </li>
+      <li><a href="api/queries.html#proto_db.queries.WherePlan">WherePlan (class in proto_db.queries)</a>
+</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/queries.html#proto_db.queries.WherePlan">WherePlan (class in proto_db.queries)</a>
+      <li><a href="api/parallel.html#proto_db.parallel.WorkStealingPool">WorkStealingPool (class in proto_db.parallel)</a>
 </li>
       <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudBlockProvider.write_streamer">write_streamer() (proto_db.cloud_file_storage.CloudBlockProvider method)</a>
 
@@ -1141,7 +1240,7 @@
   <hr/>
 
   <div role="contentinfo">
-    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+    <p>&#169; Copyright 2025, ProtoBase Team.</p>
   </div>
 
   Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a

@@ -46,16 +46,21 @@
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Introduction</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#what-is-protobase">What is ProtoBase?</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#key-features">Key Features</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#use-cases">Use Cases</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#key-capabilities">Key Capabilities</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#ideal-use-cases">Ideal Use Cases</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#architecture-overview">Architecture Overview</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="storage_cloud.html">Cloud and Cluster Storage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="development.html">Development</a></li>
 </ul>
 
@@ -87,40 +92,38 @@
 <h1>Introduction<a class="headerlink" href="#introduction" title="Link to this heading"></a></h1>
 <section id="what-is-protobase">
 <h2>What is ProtoBase?<a class="headerlink" href="#what-is-protobase" title="Link to this heading"></a></h2>
-<p>ProtoBase is a powerful database system implemented in Python, designed to provide flexible storage options and rich data structures. It offers a unique combination of features that make it suitable for a wide range of applications, from simple data storage to complex distributed systems.</p>
+<p>ProtoBase is an embedded, transactional, object‑oriented data platform for Python. It operates directly on native Python objects at memory speed using copy‑on‑write, while a decoupled persistence engine ensures durability in the background. You get the ergonomics of Python data structures with ACID guarantees, immutable secondary indexes, and an index‑aware query optimizer.</p>
 </section>
-<section id="key-features">
-<h2>Key Features<a class="headerlink" href="#key-features" title="Link to this heading"></a></h2>
+<section id="key-capabilities">
+<h2>Key Capabilities<a class="headerlink" href="#key-capabilities" title="Link to this heading"></a></h2>
 <ul class="simple">
-<li><p><strong>Multiple Storage Options</strong>: Choose from in-memory storage, file-based storage, distributed cluster storage, or cloud-based storage.</p></li>
-<li><p><strong>Rich Data Structures</strong>: Built-in support for dictionaries, lists, sets, and hash dictionaries.</p></li>
-<li><p><strong>Transactional Operations</strong>: All database operations are performed within transactions, ensuring data consistency.</p></li>
-<li><p><strong>Query System</strong>: Powerful query capabilities including filtering, joining, grouping, and sorting.</p></li>
-<li><p><strong>Distributed Capabilities</strong>: Support for distributed operations across multiple nodes in a cluster.</p></li>
-<li><p><strong>Cloud Integration</strong>: Seamless integration with cloud object storage services (Amazon S3 and Google Cloud Storage).</p></li>
+<li><p>Near in‑memory performance: reads and writes within a transaction execute over in‑memory, immutable structures; persistence runs on background threads.</p></li>
+<li><p>Intelligent write‑through cache: newly persisted atoms are immediately published to object and bytes caches for instant read‑after‑write.</p></li>
+<li><p>Advanced query optimizer: exploits secondary indexes for single‑term, AND, and OR predicates (AndMerge, OrMerge, IndexedSearchPlan, IndexedRangeSearchPlan) and performs efficient range traversal without premature materialization.</p></li>
+<li><p>Rich data structures: Dictionary, List, Set, and HashDictionary with durable semantics.</p></li>
+<li><p>Multiple storage backends: in‑memory, file‑based with WAL, cluster/cloud variants.</p></li>
+<li><p>Vector search (optional): exact and ANN (IVF‑Flat) under the same query framework.</p></li>
 </ul>
 </section>
-<section id="use-cases">
-<h2>Use Cases<a class="headerlink" href="#use-cases" title="Link to this heading"></a></h2>
-<p>ProtoBase is well-suited for a variety of use cases:</p>
+<section id="ideal-use-cases">
+<h2>Ideal Use Cases<a class="headerlink" href="#ideal-use-cases" title="Link to this heading"></a></h2>
 <ul class="simple">
-<li><p><strong>Embedded Databases</strong>: Use the in-memory or file-based storage for applications that need a lightweight, embedded database.</p></li>
-<li><p><strong>Distributed Systems</strong>: Leverage the cluster storage option for applications that require high availability and horizontal scaling.</p></li>
-<li><p><strong>Cloud-Native Applications</strong>: Utilize the cloud storage option for applications deployed in cloud environments.</p></li>
-<li><p><strong>Data Analysis</strong>: Take advantage of the rich query system for data analysis and reporting.</p></li>
-<li><p><strong>Real-time Collaborative Applications</strong>: Use the distributed capabilities for applications that require real-time collaboration.</p></li>
+<li><p>High‑throughput transactional apps: carts, session stores, leaderboards, telemetry.</p></li>
+<li><p>Complex object graphs: nested documents, social graphs, configuration systems.</p></li>
+<li><p>Persistent, transactional cache: a higher‑level alternative to Redis/Memcached when you need multi‑key ACID semantics.</p></li>
+<li><p>Prototyping and product development: when <cite>pickle</cite>/<cite>shelve</cite> are too limited and a full RDBMS/ORM is too heavy.</p></li>
 </ul>
 </section>
 <section id="architecture-overview">
 <h2>Architecture Overview<a class="headerlink" href="#architecture-overview" title="Link to this heading"></a></h2>
 <p>ProtoBase is organized around several key abstractions:</p>
 <ul class="simple">
-<li><p><strong>Atom</strong>: The base class for all database objects.</p></li>
-<li><p><strong>Storage Layer</strong>: Responsible for persisting atoms to disk, memory, or cloud storage.</p></li>
-<li><p><strong>Data Structures</strong>: Built on top of atoms to provide higher-level abstractions.</p></li>
-<li><p><strong>Query System</strong>: Allows for complex data manipulation and retrieval.</p></li>
+<li><p>Atom: the base class for all durable objects.</p></li>
+<li><p>Storage layer: persistence engines for memory, files (WAL), clusters, and cloud.</p></li>
+<li><p>Data structures: durable collections built on Atoms.</p></li>
+<li><p>Query system: expression compiler, optimizer, and execution plans.</p></li>
 </ul>
-<p>For a more detailed explanation of the architecture, see the <a class="reference internal" href="architecture.html"><span class="doc">Architecture</span></a> section.</p>
+<p>For a deeper dive, see the <a class="reference internal" href="architecture.html"><span class="doc">Architecture</span></a> section.</p>
 </section>
 </section>
 
@@ -135,7 +138,7 @@
   <hr/>
 
   <div role="contentinfo">
-    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+    <p>&#169; Copyright 2025, ProtoBase Team.</p>
   </div>
 
   Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a

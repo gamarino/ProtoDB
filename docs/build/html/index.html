@@ -46,9 +46,14 @@
 <li class="toctree-l1"><a class="reference internal" href="introduction.html">Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="storage_cloud.html">Cloud and Cluster Storage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="development.html">Development</a></li>
 </ul>
 
@@ -78,14 +83,14 @@
              
   <section id="welcome-to-protobase-s-documentation">
 <h1>Welcome to ProtoBase’s documentation!<a class="headerlink" href="#welcome-to-protobase-s-documentation" title="Link to this heading"></a></h1>
-<p>ProtoBase is a powerful database system implemented in Python, providing various storage options and data structures.</p>
+<p>ProtoBase is an embedded, transactional, object‑oriented data platform for Python with near in‑memory performance, write‑through caching, immutable secondary indexes, and an index‑aware optimizer.</p>
 <div class="toctree-wrapper compound">
 <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="introduction.html">Introduction</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="introduction.html#what-is-protobase">What is ProtoBase?</a></li>
-<li class="toctree-l2"><a class="reference internal" href="introduction.html#key-features">Key Features</a></li>
-<li class="toctree-l2"><a class="reference internal" href="introduction.html#use-cases">Use Cases</a></li>
+<li class="toctree-l2"><a class="reference internal" href="introduction.html#key-capabilities">Key Capabilities</a></li>
+<li class="toctree-l2"><a class="reference internal" href="introduction.html#ideal-use-cases">Ideal Use Cases</a></li>
 <li class="toctree-l2"><a class="reference internal" href="introduction.html#architecture-overview">Architecture Overview</a></li>
 </ul>
 </li>
@@ -108,12 +113,42 @@
 <li class="toctree-l2"><a class="reference internal" href="quickstart.html#next-steps">Next Steps</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="examples.html#running-an-example">Running an example</a></li>
+<li class="toctree-l2"><a class="reference internal" href="examples.html#indexed-access-demonstration">Indexed access demonstration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="examples.html#indexed-benchmark">Indexed benchmark</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="testing.html">Testing</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="testing.html#running-tests">Running tests</a></li>
+<li class="toctree-l2"><a class="reference internal" href="testing.html#patterns-and-tips">Patterns and tips</a></li>
+<li class="toctree-l2"><a class="reference internal" href="testing.html#environment">Environment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="testing.html#contributing-tests">Contributing tests</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="architecture.html#core-components">Core Components</a></li>
 <li class="toctree-l2"><a class="reference internal" href="architecture.html#storage-layer">Storage Layer</a></li>
 <li class="toctree-l2"><a class="reference internal" href="architecture.html#data-structures">Data Structures</a></li>
 <li class="toctree-l2"><a class="reference internal" href="architecture.html#query-system">Query System</a></li>
 <li class="toctree-l2"><a class="reference internal" href="architecture.html#interaction-flow">Interaction Flow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="architecture.html#atom-level-cache-layer">Atom-level Cache Layer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="architecture.html#near-inmemory-execution">Near In‑Memory Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="architecture.html#writethrough-caching">Write‑Through Caching</a></li>
+<li class="toctree-l2"><a class="reference internal" href="architecture.html#indexaware-optimizer">Index‑Aware Optimizer</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="storage_cloud.html">Cloud and Cluster Storage</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="storage_cloud.html#clusterfilestorage">ClusterFileStorage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="storage_cloud.html#cloudfilestorage">CloudFileStorage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="storage_cloud.html#cloudclusterfilestorage">CloudClusterFileStorage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="storage_cloud.html#example-mocked-cloud-client-single-node">Example (mocked cloud client / single node)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="storage_cloud.html#notes">Notes</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="vectors_arrow.html">Vectors and Arrow Bridge</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="vectors_arrow.html#vectors">Vectors</a></li>
+<li class="toctree-l2"><a class="reference internal" href="vectors_arrow.html#arrow-parquet-bridge">Arrow/Parquet bridge</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a><ul>
@@ -123,9 +158,13 @@
 <li class="toctree-l2"><a class="reference internal" href="api/indexes.html">Secondary Indexes</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/queries.html">Query System</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/vectors.html">Vector Support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/vectors.html#module-0">Vectors</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/arrow_parquet.html">Arrow / Parquet Bridge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/linq.html">LINQ-like API</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/exceptions.html">Exceptions</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/fsm.html">Finite State Machine</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/atom_cache.html">Atom-level Caches</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/parallel.html">Parallel (Work-Stealing and Adaptive Chunking)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/index.html#core-components">Core Components</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/index.html#storage-layer">Storage Layer</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/index.html#data-structures">Data Structures</a></li>
@@ -139,6 +178,16 @@
 <li class="toctree-l2"><a class="reference internal" href="advanced_usage.html#cloud-storage-with-cloudfilestorage">Cloud Storage with CloudFileStorage</a></li>
 <li class="toctree-l2"><a class="reference internal" href="advanced_usage.html#combined-cluster-and-cloud-storage-with-cloudclusterfilestorage">Combined Cluster and Cloud Storage with CloudClusterFileStorage</a></li>
 <li class="toctree-l2"><a class="reference internal" href="advanced_usage.html#performance-optimization">Performance Optimization</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="parallel_scans.html#overview">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parallel_scans.html#configuration">Configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parallel_scans.html#how-it-works">How it Works</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parallel_scans.html#metrics-and-observability">Metrics and Observability</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parallel_scans.html#usage-example">Usage Example</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parallel_scans.html#tuning-guidance">Tuning Guidance</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parallel_scans.html#compatibility">Compatibility</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="development.html">Development</a><ul>
@@ -174,7 +223,7 @@
   <hr/>
 
   <div role="contentinfo">
-    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+    <p>&#169; Copyright 2025, ProtoBase Team.</p>
   </div>
 
   Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a

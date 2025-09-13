@@ -241,3 +241,57 @@ During this process:
 - The query system can be used to retrieve and manipulate data
 
 This architecture provides a flexible and powerful foundation for building database applications.
+
+
+
+Atom-level Cache Layer
+----------------------
+
+ProtoBase integrates an optional, in-memory cache layer keyed by ``AtomPointer`` to accelerate reads across
+transactions:
+
+- ``AtomBytesCache`` stores the raw payload bytes (post WAL headers) as memoryviews.
+- ``AtomObjectCache`` stores fully deserialized atom objects (e.g., Python dicts).
+- Keys: ``(transaction_id, offset)`` for bytes; ``(transaction_id, offset, schema_epoch)`` for objects.
+- Replacement: 2Q (probation + protected LRU) to reduce scan pollution, with limits by bytes and entries.
+- Concurrency: single-flight ensures at most one deserialize per key.
+- Observability: hit/miss, evictions, and latency buckets exposed via ``AtomCacheBundle``.
+
+The read path first checks the object cache, then the bytes cache, and finally falls back to reading from the
+underlying block provider if needed. Caches leverage the immutability of atoms, so they require no invalidation on
+writes; bump ``schema_epoch`` to isolate entries across decoder changes.
+
+
+Near In‑Memory Execution
+------------------------
+
+ProtoBase executes reads and writes within a transaction over an in‑memory object graph using copy‑on‑write. The main
+application thread does not wait for I/O on the hot path; persistence is delegated to a background executor. Commit
+synchronizes with the Write‑Ahead Log (WAL) to ensure durability without blocking routine operations on disk latency.
+
+Write‑Through Caching
+---------------------
+
+After a new atom is persisted, ProtoBase immediately publishes it to two caches keyed by AtomPointer:
+
+- AtomObjectCache: deserialized objects (Python dicts for core atoms) keyed by (tx_uuid, offset, schema_epoch).
+- AtomBytesCache: raw payload bytes keyed by (tx_uuid, offset).
+
+This write‑through behavior eliminates "read‑your‑own‑writes" penalties and keeps the hottest data resident in RAM.
+See :doc:`api/atom_cache` for API details and configuration options.
+
+Index‑Aware Optimizer
+---------------------
+
+The optimizer rewrites filters to leverage available secondary indexes:
+
+- Single‑term predicates on indexed fields become direct index probes via ``IndexedSearchPlan`` or range scans via
+  ``IndexedRangeSearchPlan``.
+- AND predicates compile into ``AndMerge``: each sub‑term produces a set of stable references; sets are intersected
+  from smallest to largest; only the final candidate set is materialized, then residual filters are applied.
+- OR predicates compile into ``OrMerge`` when all sub‑terms are indexable; results are unioned with de‑duplication by
+  stable reference.
+
+Range traversal operates directly over the AVL‑backed index structure: a lower‑bound binary search followed by an
+in‑order sequential walk until the upper bound is exceeded. Keys are compared natively (no string coercion), and
+inclusivity/exclusivity on bounds is respected.
