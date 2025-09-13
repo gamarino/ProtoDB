@@ -7,7 +7,7 @@ from .common import Atom, DBCollections, QueryPlan, Literal, AbstractTransaction
 from .exceptions import ProtoNotSupportedException
 from .lists import List
 from .queries import IndexedQueryPlan
-from .sets import Set
+from .sets import Set, CountedSet
 
 _logger = logging.getLogger(__name__)
 
@@ -383,23 +383,35 @@ class RepeatedKeysDictionary(Dictionary):
         Registers an intent to insert or update a key-value pair in the dictionary.
 
         This method checks if the specified key already exists in the dictionary. If the key exists,
-        its associated record list is updated with the new value
+        its associated record set (bucket) is updated with the new value. Buckets are CountedSet to
+        preserve reference counts when the same record is added multiple times.
 
         :param key: The string key for the item being added or updated.
         :param value: The value associated with the key.
         :return: A new instance of Dictionary with the updated content.
         """
+        # Load current bucket, upgrading to CountedSet when necessary
         if super().has(key):
-            record_list = cast(Set, super().get_at(key))
+            bucket = cast(Set, super().get_at(key))
+            if not isinstance(bucket, CountedSet):
+                # Convert Set -> CountedSet with count=1 per unique element
+                cs = CountedSet(transaction=self.transaction)
+                for v in bucket.as_iterable():
+                    cs = cs.add(v)
+                bucket = cs
         else:
-            record_list = Set(transaction=self.transaction)
-        record_list = record_list.add(value)
+            bucket = CountedSet(transaction=self.transaction)
 
-        new_content = super(RepeatedKeysDictionary, self).set_at(key, record_list).content
+        # Detect first insertion of this specific value for index update semantics
+        previously_present = bucket.has(value)
+        bucket = bucket.add(value)
+
+        new_content = super(RepeatedKeysDictionary, self).set_at(key, bucket).content
         new_op_log = self._op_log + [('set', key, value)]
 
         new_indexes = self.indexes
-        if self.indexes:
+        if self.indexes and not previously_present:
+            # Update indexes only on the 0 -> 1 transition for this value within the bucket
             new_indexes = self.add2indexes(value)
         return RepeatedKeysDictionary(
             content=new_content,
@@ -450,17 +462,19 @@ class RepeatedKeysDictionary(Dictionary):
             record_set = cast(Set, super().get_at(key))
             new_content = self.content
             if record_set.has(record):
-                record_set = record_set.remove_at(record)
-                if record_set.count == 0:
+                updated_set = record_set.remove_at(record)
+                # Remove the entire key if the bucket becomes empty
+                if updated_set.count == 0:
                     new_content = new_content.remove_at(key)
                 else:
                     # Update the key with the reduced set
-                    new_content = super(RepeatedKeysDictionary, self).set_at(key, record_set).content
+                    new_content = super(RepeatedKeysDictionary, self).set_at(key, updated_set).content
 
                 new_op_log = self._op_log + [('remove_record', key, record)]
 
+                # Update indexes only when the record is no longer present in the bucket (last removal)
                 new_indexes = self.indexes
-                if self.indexes:
+                if self.indexes and not updated_set.has(record):
                     new_indexes = self.remove_from_indexes(record)
                 return RepeatedKeysDictionary(
                     content=new_content,

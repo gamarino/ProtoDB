@@ -4,14 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Implemented LINQ integration with index-aware optimizer ensuring compatibility and fast-path execution. Added tests validating indexed equality, IN, range, AND/OR merges, and explain diagnostics. Public LINQ API remains backward compatible with no Python set materialization for index buckets.">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/hash_dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/hash_dictionaries.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/linq.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/linq.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/lists.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
-    </list>
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Implemented CountedSet as a multiset-style Atom preserving Set semantics with immutability and correct index updates. Exposed CountedSet in the public API via proto_db/common.py and added comprehensive tests covering duplicates, removals, counts, iteration, mixed types, immutability, and persistence. Existing modules and tests remain unaffected, and all tests pass." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -280,23 +273,7 @@
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
       <workItem from="1757675249603" duration="41300000" />
-      <workItem from="1757781886166" duration="14917000" />
-    </task>
-    <task id="LOCAL-00066" summary="[ADD]IVF-Flat performance comparison has been integrated into the vector benchmark suite, enabling comparisons against Exact and HNSW indices. The updated benchmark includes IVF metrics and can be executed with specific parameters to generate detailed results.">
-      <option name="closed" value="true" />
-      <created>1755810743155</created>
-      <option name="number" value="00066" />
-      <option name="presentableId" value="LOCAL-00066" />
-      <option name="project" value="LOCAL" />
-      <updated>1755810743156</updated>
-    </task>
-    <task id="LOCAL-00067" summary="[IMP] linq alike functions">
-      <option name="closed" value="true" />
-      <created>1757001841883</created>
-      <option name="number" value="00067" />
-      <option name="presentableId" value="LOCAL-00067" />
-      <option name="project" value="LOCAL" />
-      <updated>1757001841883</updated>
+      <workItem from="1757781886166" duration="15303000" />
     </task>
     <task id="LOCAL-00068" summary="[IMP] linq between operator">
       <option name="closed" value="true" />
@@ -674,15 +651,29 @@
       <option name="project" value="LOCAL" />
       <updated>1757802044785</updated>
     </task>
-    <option name="localTasksCounter" value="115" />
+    <task id="LOCAL-00115" summary="Removed full_plan parameter from all QueryPlan.optimize methods and calls. Updated signatures and calls across multiple files including common.py, queries.py, lists.py, hash_dictionaries.py, and linq.py. Adjusted examples and tests accordingly.">
+      <option name="closed" value="true" />
+      <created>1757803716829</created>
+      <option name="number" value="00115" />
+      <option name="presentableId" value="LOCAL-00115" />
+      <option name="project" value="LOCAL" />
+      <updated>1757803716830</updated>
+    </task>
+    <task id="LOCAL-00116" summary="Implemented CountedSet as a multiset-style Atom preserving Set semantics with immutability and correct index updates. Exposed CountedSet in the public API via proto_db/common.py and added comprehensive tests covering duplicates, removals, counts, iteration, mixed types, immutability, and persistence. Existing modules and tests remain unaffected, and all tests pass.">
+      <option name="closed" value="true" />
+      <created>1757804086918</created>
+      <option name="number" value="00116" />
+      <option name="presentableId" value="LOCAL-00116" />
+      <option name="project" value="LOCAL" />
+      <updated>1757804086918</updated>
+    </task>
+    <option name="localTasksCounter" value="117" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Implemented a reference-first execution pipeline reducing object materialization by using stable reference hashes for index queries and removing string key conversions. Rewrote AndMerge to intersect reference sets before materializing objects, ensuring efficient AND predicate evaluation. Verified functionality with unit tests and maintained existing AVL-based data structures and immutability." />
-    <MESSAGE value="Implemented a reference-centric indexed query strategy using efficient AVL range traversal and intersection without premature object materialization. Added deterministic native comparisons for DictionaryItem, removed string coercions, and optimized AndMerge to intersect reference sets before materialization. Passed focused unit tests confirming correctness and performance improvements." />
     <MESSAGE value="The performance suite was rerun after fixing blockers related to native key comparisons. The indexed benchmark with 50,000 items completed successfully and produced a JSON report with timings and latency metrics. The indexed path was slower than the linear path, meeting the objective to evaluate improvements with results saved at examples/benchmark_results_indexed.json." />
     <MESSAGE value="The performance documentation was updated with a new section titled &quot;Latest Results (2025-09-13)&quot;. This section includes details of two recent benchmark runs, their commands, artifact paths, key metrics, speedups, and tuning tips. The updates align the documentation with current improvements in the indexed query engine." />
     <MESSAGE value="Implemented write-through caching in Atom._save to populate caches after persistence. Modified ObjectTransaction to expose the AtomCacheBundle from storage. Added a unit test verifying cache hits on read-after-write scenarios, all tests passed successfully." />
@@ -706,7 +697,9 @@
     <MESSAGE value="Updated commercial_positioning.md with new 2025-09-13 performance data. Replaced outdated query summaries with two benchmark runs and included speedup metrics. Added artifact references and reproducible commands without source code changes." />
     <MESSAGE value="Updated commercial_positioning.md" />
     <MESSAGE value="Implemented LINQ integration with index-aware optimizer ensuring compatibility and fast-path execution. Added tests validating indexed equality, IN, range, AND/OR merges, and explain diagnostics. Public LINQ API remains backward compatible with no Python set materialization for index buckets." />
-    <option name="LAST_COMMIT_MESSAGE" value="Implemented LINQ integration with index-aware optimizer ensuring compatibility and fast-path execution. Added tests validating indexed equality, IN, range, AND/OR merges, and explain diagnostics. Public LINQ API remains backward compatible with no Python set materialization for index buckets." />
+    <MESSAGE value="Removed full_plan parameter from all QueryPlan.optimize methods and calls. Updated signatures and calls across multiple files including common.py, queries.py, lists.py, hash_dictionaries.py, and linq.py. Adjusted examples and tests accordingly." />
+    <MESSAGE value="Implemented CountedSet as a multiset-style Atom preserving Set semantics with immutability and correct index updates. Exposed CountedSet in the public API via proto_db/common.py and added comprehensive tests covering duplicates, removals, counts, iteration, mixed types, immutability, and persistence. Existing modules and tests remain unaffected, and all tests pass." />
+    <option name="LAST_COMMIT_MESSAGE" value="Implemented CountedSet as a multiset-style Atom preserving Set semantics with immutability and correct index updates. Exposed CountedSet in the public API via proto_db/common.py and added comprehensive tests covering duplicates, removals, counts, iteration, mixed types, immutability, and persistence. Existing modules and tests remain unaffected, and all tests pass." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
