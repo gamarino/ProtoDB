@@ -5,38 +5,38 @@
     "item_count": 1000,
     "query_count": 50,
     "benchmark": "all",
-    "timestamp": "2025-08-04T01:02:37.459973"
+    "timestamp": "2025-09-13T16:44:59.793857"
   },
   "benchmarks": {
     "insert": {
-      "total_time": 7.7067201137542725,
+      "total_time": 4.274389266967773,
       "items": 1000,
-      "time_per_item_ms": 7.7067201137542725,
-      "items_per_second": 129.75688558032468
+      "time_per_item_ms": 4.274389266967773,
+      "items_per_second": 233.95155133107335
     },
     "read": {
-      "total_time": 0.777625560760498,
+      "total_time": 0.273669958114624,
       "items": 1000,
-      "time_per_item_ms": 0.777625560760498,
-      "items_per_second": 1285.965959017635
+      "time_per_item_ms": 0.273669958114624,
+      "items_per_second": 3654.0364418850813
     },
     "update": {
-      "total_time": 7.780277252197266,
+      "total_time": 4.629346609115601,
       "items": 1000,
-      "time_per_item_ms": 7.780277252197266,
-      "items_per_second": 128.53012400266138
+      "time_per_item_ms": 4.629346609115601,
+      "items_per_second": 216.0132054123815
     },
     "query": {
-      "total_time": 51.16687035560608,
+      "total_time": 30.227470874786377,
       "queries": 50,
-      "time_per_query_ms": 1023.3374071121215,
-      "queries_per_second": 0.977194806962075
+      "time_per_query_ms": 604.5494174957275,
+      "queries_per_second": 1.6541244951361933
     },
     "delete": {
-      "total_time": 0.8965973854064941,
+      "total_time": 0.4533200263977051,
       "items": 1000,
-      "time_per_item_ms": 0.8965973854064941,
-      "items_per_second": 1115.3278118769283
+      "time_per_item_ms": 0.4533200263977051,
+      "items_per_second": 2205.9471052855797
     }
   }
 }

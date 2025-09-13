@@ -60,6 +60,49 @@ Notes
 - On small datasets, index overhead can dominate, occasionally performing worse than a linear scan. As dataset size grows (for example, 100k–1M), indexed evaluation is expected to outperform linear scans due to selective candidate‑set intersections.
 - This benchmark uses in‑memory data and focuses on query time. Performance with persisted storage may differ.
 
+## Latest results (2025-09-13)
+
+Two recent runs focused on indexed collections. Hardware/environment: Python 3.11, in-memory ListPlan, default interpreter (no PyPy), warm cache.
+
+- Run A: 10,000 items, 200 queries, window=500, categories=200, statuses=50
+  - Total time (seconds):
+    - python_list_baseline: 0.2585
+    - protodb_linear_where: 1.4748
+    - protodb_indexed_where: 0.2194
+    - python_list_pk_lookup: 0.2614
+    - protodb_linear_pk_lookup: 1.3195
+    - protodb_indexed_pk_lookup: 0.0317
+  - Latency (ms):
+    - protodb_indexed_where avg/p50/p95: 1.094 / 1.040 / 1.467
+    - protodb_linear_where avg/p50/p95: 7.370 / 7.121 / 9.189
+    - indexed PK avg/p50/p95: 0.157 / 0.149 / 0.207
+  - Speedups:
+    - indexed_over_linear: 6.72x
+    - indexed_over_python: 1.18x
+    - indexed_pk_over_linear: 41.62x
+
+- Run B: 50,000 items, 100 queries, window=500, categories=500, statuses=100
+  - Total time (seconds):
+    - python_list_baseline: 0.8465
+    - protodb_linear_where: 4.0585
+    - protodb_indexed_where: 0.2464
+    - python_list_pk_lookup: 1.0834
+    - protodb_linear_pk_lookup: 3.7138
+    - protodb_indexed_pk_lookup: 0.0226
+  - Latency (ms):
+    - protodb_indexed_where avg/p50/p95: 2.461 / 2.171 / 3.078
+    - protodb_linear_where avg/p50/p95: 40.580 / 39.375 / 51.214
+    - indexed PK avg/p50/p95: 0.225 / 0.223 / 0.282
+  - Speedups:
+    - indexed_over_linear: 16.47x
+    - indexed_over_python: 3.44x
+    - indexed_pk_over_linear: 164.09x
+
+Observations
+- Indexed WherePlan consistently outperforms linear scans as dataset size grows, with bigger gains at 50k vs 10k items.
+- Primary-key lookups via the ad-hoc index are orders of magnitude faster than linear scans.
+- Against pure Python list comprehensions, indexed WherePlan ranges from slightly faster at 10k to ~3.4x at 50k; benefits scale with selectivity and size.
+
 ## How indexes are used by the engine
 
 - The benchmark builds three secondary indexes using RepeatedKeysDictionary:

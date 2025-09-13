@@ -4,16 +4,17 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="The performance benchmark suite was executed, showing a 6.44× speedup using indexed queries over linear scans on large datasets. CRUD and LINQ benchmarks completed successfully with detailed timing metrics collected. Results and JSON artifacts were saved without any code changes required.">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="The indexed performance suite was executed on a dataset of 20,000 items with 50 queries. Results showed the indexed path outperforms linear scan by ~3.5× and primary key lookups are ~72× faster than linear plans. Documentation was updated with the findings and a JSON results file was generated; a larger run with 100k items timed out.">
+      <change beforePath="$PROJECT_DIR$/commercial_positioning.md" beforeDir="false" afterPath="$PROJECT_DIR$/commercial_positioning.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/docs/performance.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/performance.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/index.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/index.rst" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/benchmark_results.json" beforeDir="false" afterPath="$PROJECT_DIR$/examples/benchmark_results.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/examples/benchmark_results_indexed.json" beforeDir="false" afterPath="$PROJECT_DIR$/examples/benchmark_results_indexed.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/benchmark_results_indexed_win200.json" beforeDir="false" afterPath="$PROJECT_DIR$/examples/benchmark_results_indexed_win200.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/examples/benchmark_results_linq.json" beforeDir="false" afterPath="$PROJECT_DIR$/examples/benchmark_results_linq.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/examples/benchmark_results_indexed.json" beforeDir="false" afterPath="$PROJECT_DIR$/examples/examples/benchmark_results_indexed.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/benchmark_results_vectors.json" beforeDir="false" afterPath="$PROJECT_DIR$/examples/benchmark_results_vectors.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/collection_indexing_example.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/collection_indexing_example.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/db_performance_benchmark.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/db_performance_benchmark.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/examples/indexed_benchmark.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/indexed_benchmark.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -104,7 +105,7 @@
       <recent name="$PROJECT_DIR$/proto_db" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.indexed_benchmark">
+  <component name="RunManager" selected="Python.collection_indexing_example">
     <configuration name="Makefile (2)" type="MAKEFILE_TARGET_RUN_CONFIGURATION" factoryName="Makefile">
       <makefile filename="$PROJECT_DIR$/docs/Makefile" target="" workingDirectory="$PROJECT_DIR$/docs/source" arguments="">
         <envs />
@@ -237,9 +238,9 @@
     </list>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.collection_indexing_example" />
         <item itemvalue="Python.indexed_benchmark" />
         <item itemvalue="Python.minimal_benchmark" />
-        <item itemvalue="Python.collection_indexing_example" />
         <item itemvalue="Python.run_tests" />
         <item itemvalue="Python.comprehensive_benchmark" />
       </list>
@@ -283,15 +284,7 @@
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
       <workItem from="1757675249603" duration="41300000" />
-      <workItem from="1757781886166" duration="10192000" />
-    </task>
-    <task id="LOCAL-00060" summary="[UPD] commercial_positioning.md">
-      <option name="closed" value="true" />
-      <created>1755794248206</created>
-      <option name="number" value="00060" />
-      <option name="presentableId" value="LOCAL-00060" />
-      <option name="project" value="LOCAL" />
-      <updated>1755794248206</updated>
+      <workItem from="1757781886166" duration="11578000" />
     </task>
     <task id="LOCAL-00061" summary="[FIX] __init__.py : dependency errors">
       <option name="closed" value="true" />
@@ -677,14 +670,21 @@
       <option name="project" value="LOCAL" />
       <updated>1757786494089</updated>
     </task>
-    <option name="localTasksCounter" value="109" />
+    <task id="LOCAL-00109" summary="The indexed performance suite was executed on a dataset of 20,000 items with 50 queries. Results showed the indexed path outperforms linear scan by ~3.5× and primary key lookups are ~72× faster than linear plans. Documentation was updated with the findings and a JSON results file was generated; a larger run with 100k items timed out.">
+      <option name="closed" value="true" />
+      <created>1757792261529</created>
+      <option name="number" value="00109" />
+      <option name="presentableId" value="LOCAL-00109" />
+      <option name="project" value="LOCAL" />
+      <updated>1757792261529</updated>
+    </task>
+    <option name="localTasksCounter" value="110" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[WIP] nuevos índices" />
     <MESSAGE value="[FIX] queries.py: Fixed multiple errors in proto_db/queries.py related to IndexedQueryPlan and index handling. Corrected API usage, key normalization, bounds checking, and index-based query execution. Testing is currently blocked by a separate circular import issue unrelated to these fixes." />
     <MESSAGE value="[FIX] The test suite was run, failures were identified, and targeted fixes were applied to make indexes optional and correct dictionary behaviors. After implementing the fixes, the full test suite of 241 tests passed successfully. Guidance on running the tests with proper discovery was provided." />
     <MESSAGE value="The performance suite was refocused on indexed collections and a runtime bug in IndexedQueryPlan.execute was fixed. Benchmark scripts and documentation were updated to emphasize index-aware evaluation and improve clarity. Unit tests passed and updated benchmark results were saved successfully." />
@@ -709,7 +709,8 @@
     <MESSAGE value="La documentación Sphinx se actualizó para reflejar el estado actual del proyecto con nuevas páginas y un índice ampliado. Se actualizaron el conf.py y se añadieron ejemplos, testing, almacenamiento en la nube y vectores. La documentación API permaneció sin cambios." />
     <MESSAGE value="All Sphinx &quot;Title underline too short&quot; warnings in multiple reStructuredText files were fixed by extending the underline lengths to exceed the title lengths. This was done for headings in advanced_usage.rst, quickstart.rst, and api/queries.rst files through systematic search-and-replace edits. Multiple rebuilds were run to verify that no remaining warnings persisted." />
     <MESSAGE value="The performance benchmark suite was executed, showing a 6.44× speedup using indexed queries over linear scans on large datasets. CRUD and LINQ benchmarks completed successfully with detailed timing metrics collected. Results and JSON artifacts were saved without any code changes required." />
-    <option name="LAST_COMMIT_MESSAGE" value="The performance benchmark suite was executed, showing a 6.44× speedup using indexed queries over linear scans on large datasets. CRUD and LINQ benchmarks completed successfully with detailed timing metrics collected. Results and JSON artifacts were saved without any code changes required." />
+    <MESSAGE value="The indexed performance suite was executed on a dataset of 20,000 items with 50 queries. Results showed the indexed path outperforms linear scan by ~3.5× and primary key lookups are ~72× faster than linear plans. Documentation was updated with the findings and a JSON results file was generated; a larger run with 100k items timed out." />
+    <option name="LAST_COMMIT_MESSAGE" value="The indexed performance suite was executed on a dataset of 20,000 items with 50 queries. Results showed the indexed path outperforms linear scan by ~3.5× and primary key lookups are ~72× faster than linear plans. Documentation was updated with the findings and a JSON results file was generated; a larger run with 100k items timed out." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -755,7 +756,7 @@
     <SUITE FILE_PATH="coverage/ProtoBase$run_tests.coverage" NAME="run_tests Coverage Results" MODIFIED="1757682167480" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/ProtoBase$performance_benchmark.coverage" NAME="performance_benchmark Coverage Results" MODIFIED="1754260400708" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$indexed_benchmark.coverage" NAME="indexed_benchmark Coverage Results" MODIFIED="1757791235937" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
-    <SUITE FILE_PATH="coverage/ProtoBase$collection_indexing_example.coverage" NAME="collection_indexing_example Coverage Results" MODIFIED="1757780822525" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/ProtoBase$collection_indexing_example.coverage" NAME="collection_indexing_example Coverage Results" MODIFIED="1757792976890" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$db_performance_benchmark.coverage" NAME="db_performance_benchmark Coverage Results" MODIFIED="1754260420768" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$simple_performance_benchmark.coverage" NAME="simple_performance_benchmark Coverage Results" MODIFIED="1754260319108" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$minimal_benchmark.coverage" NAME="minimal_benchmark Coverage Results" MODIFIED="1757783415322" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />

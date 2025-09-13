@@ -101,3 +101,28 @@ ProtoBase is no longer “just” a persistent object database—it is a Transac
   - Strengths: zero overhead for simple scenarios; unparalleled flexibility.
   - Limitations: no durability, no transactions, no consistent snapshots, no secondary indexes.
   - ProtoBase advantage: feels like native structures but adds durability, transactions, indexes, and a query optimizer—without leaving Python.
+
+  ---
+
+  ## Performance-driven positioning (updated 2025-09-13)
+
+  Recent benchmarks underline ProtoBase’s value proposition for indexed queries and primary-key lookups:
+
+  - Indexed AND + BETWEEN vs linear scan
+    - On a 20k‑row synthetic dataset, the index‑aware path is ~3.5× faster than a linear WherePlan.
+    - Latency improves across the distribution (lower p50/p95) with higher QPS.
+  - Primary‑key lookups
+    - With an ad‑hoc index on id, PK lookups are ~72× faster than a linear WherePlan at this scale.
+    - A native PK map in collections would further reduce overhead and should extend the lead as data grows.
+  - Comparison to pure Python lists
+    - At small sizes, a plain Python list comprehension can be competitive due to zero planning overhead. As data volume and selectivity increase, ProtoBase’s index‑aware execution scales better.
+
+  Source: examples/benchmark_results_indexed.json produced by running:
+
+  ```bash
+  python examples/indexed_benchmark.py --items 20000 --queries 50 --window 100 --warmup 5 --out examples/benchmark_results_indexed.json
+  ```
+
+  Implications for positioning
+  - ProtoBase offers memory‑class latency with ACID guarantees and index‑aware query planning that materially outperforms linear scans on realistic sizes.
+  - For applications with selective predicates or frequent point lookups, ProtoBase delivers order‑of‑magnitude improvements without abandoning Python’s native object model.

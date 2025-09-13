@@ -95,13 +95,13 @@ indexed_plan = indexed_user_list.as_query_plan()
 
 # Creamos un WherePlan exactamente igual que antes.
 search_plan_fast = WherePlan(
-    filter_spec=['email', '==', target_email],
+    filter_spec=[['email', '==', target_email]],
     based_on=indexed_plan,
     transaction=tr
 )
 
 start_time = time.perf_counter()
-results_fast = list(search_plan_fast.execute())
+results_fast = list(search_plan_fast.optimize(search_plan_fast).execute())
 end_time = time.perf_counter()
 
 time_fast = (end_time - start_time) * 1000  # en milisegundos
