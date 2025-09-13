@@ -1,144 +1,65 @@
-# ProtoBase: The In‑Memory Python Database that Remembers
+Implications for positioning
+- ProtoBase offers memory‑class latency with ACID guarantees and index‑aware query planning that materially outperforms linear scans on realistic sizes.
+- For applications with selective predicates or frequent point lookups, ProtoBase delivers order‑of‑magnitude improvements without abandoning Python’s native object model.
 
-Tagline: Experience the speed of in‑memory computing with the safety of on‑disk persistence. ProtoBase offers fully transactional Python objects that operate at RAM speed.
+## Ease of Use vs. Competitors and the “Relational → Object” Paradigm Shift
 
----
+ProtoBase’s recent gains do not only strengthen the performance story; they also sharpen the developer experience and reduce operational overhead. Below is a practical comparison against common alternatives and guidance on the paradigm shift from relational models to object‑centric data.
 
-## Core Concept
+- Versus RDBMS + ORM (e.g., PostgreSQL/SQLite + SQLAlchemy/Django ORM)
+  - ProtoBase advantages:
+    - Zero server ops: embedded engine, no external service to deploy/manage.
+    - Native Python object model: no impedance mismatch or heavy ORM sessions.
+    - ACID transactions and immutable secondary indexes with an index‑aware optimizer; write code once, let the engine pick efficient plans.
+    - Memory‑class latency for hot working sets; persistence runs off the critical path.
+  - RDBMS/ORM advantages:
+    - SQL universality and mature tooling (migrations, BI/reporting).
+    - Complex joins/analytics remain their strength.
+  - Takeaway: For Python‑centric apps with selective filters and PK lookups, ProtoBase typically requires less ceremony and delivers lower latency. For heavy SQL reporting, keep a complementary RDBMS pipeline (export/ETL).
 
-ProtoBase is a high‑performance, transactional data platform for Python. Its hybrid architecture operates directly on native Python objects at memory speed using copy‑on‑write, while a decoupled persistence engine guarantees durability in the background. Forget heavy ORMs and disk latency on your critical path. With ProtoBase you get the simplicity of a `dict` or `list` with full ACID guarantees.
+- Versus Document Stores (MongoDB‑like)
+  - ProtoBase advantages:
+    - In‑process execution (no network round‑trips); strong consistency via snapshot isolation and true multi‑object transactions.
+    - Pythonic API over objects; no BSON/driver semantics to learn.
+  - Document store advantages:
+    - Horizontal scale patterns and mature ops ecosystems.
+  - Takeaway: For embedded, low‑latency services and transactional caches over object graphs, ProtoBase simplifies both code and operations.
 
-## Key Characteristics
+- Versus Key-Value Caches (Redis/Memcached)
+  - ProtoBase advantages:
+    - Transactions across multiple keys and durable persistence built-in.
+    - Rich queries over attributes (not just key→value).
+  - KV cache advantages:
+    - O(1) primitives and broad ecosystem.
+  - Takeaway: If you need transactional semantics and attribute-based lookups, ProtoBase reduces glue code versus a KV + custom indexing layer.
 
-- Near In‑Memory Performance
-  - All reads and writes within a transaction execute in memory over immutable (copy‑on‑write) structures.
-  - Persistence runs on background threads, decoupling app latency from disk speed.
+- Versus Embedded Databases (SQLite/LMDB)
+  - ProtoBase advantages:
+    - Higher-level object abstractions and index-aware query planning; no manual mapping or SQL layer required.
+  - Embedded DB advantages:
+    - Standard SQL (SQLite) and ubiquitous tooling.
+  - Takeaway: If your domain already lives as Python objects and you don’t require SQL, ProtoBase cuts boilerplate and accelerates iteration.
 
-- Intelligent Write‑Through Cache
-  - Newly written atoms are immediately published to the AtomObjectCache and AtomBytesCache.
-  - Eliminates the “read‑your‑own‑writes” penalty and keeps the hottest data in RAM for instant reads.
+Is the “Relational → Object” shift a concern?
+- For most Python teams, no. Working with objects, lists, dictionaries, and sets is natural. ProtoBase keeps that mental model and adds:
+  - ACID transactions with snapshot isolation.
+  - Immutable secondary indexes and an optimizer that pushes down equality/IN/BETWEEN and intersects candidate sets before materializing objects.
+- Where to be mindful:
+  - Heavy tabular analytics/BI: maintain an export path (e.g., Arrow/Parquet) for downstream SQL/BI tools.
+  - Complex cross‑domain joins at scale: possible in ProtoBase, but a relational store may remain a better fit for analytical workloads.
+  - Index discipline: as in RDBMS, ensure the right fields are indexed to keep p95/p99 low.
 
-- Advanced Query Optimizer
-  - The engine exploits indexes for `AND`, `OR`, and single‑term predicates, building plans like AndMerge, OrMerge, and IndexedSearchPlan.
-  - Instead of table scans, it combines low‑cost reference sets and materializes objects only at the end.
+Adoption playbook (minimize learning curve)
+- Start as a “transactional dict/list with persistence”: use ProtoBase collections and add indexes on frequently queried fields (id, email, status, etc.).
+- Reuse plans/expressions: compile once, bind parameters, and run optimized plans to avoid per‑query overheads.
+- Use explain() and metrics: expose chosen plans, bucket sizes, and latency percentiles; this builds intuition similar to SQL’s EXPLAIN.
+- Keep a reporting bridge: export to Arrow/Parquet or Pandas for BI/data science pipelines.
 
-- Full ACID Transactions with Snapshot Isolation
-  - Snapshot isolation via immutable structures: consistent reads within each transaction.
-  - No dirty or non‑repeatable reads.
+Where ProtoBase shines today
+- Hot reads with high selectivity and primary‑key lookups (catalogs, profiles, sessions, feature stores): sub‑millisecond latencies with ACID guarantees.
+- Transactional, persistent cache layer: replaces KV + custom index code + ad hoc durability.
+- Embedded services and microservices: no server to operate, simple deployment, excellent DX.
 
-- Zero‑Overhead Object Mapping
-  - Work directly with your Python objects: no mandatory base classes, no ORM sessions to manage, no separate query DSL to learn.
-  - If it’s a Python object, it can be persisted.
-
-## Ideal Use Cases
-
-- High‑Throughput Applications
-  - Shopping carts, session management, game leaderboards, telemetry/metrics ingestion.
-
-- Complex Data Modeling
-  - Object graphs: nested documents, social graphs, configuration systems.
-
-- Persistent, Transactional Cache
-  - A higher‑level replacement for Redis/Memcached when you need multi‑key transactions and automatic durability.
-
-- Rapid Prototyping and Product Development
-  - When `pickle`/`shelve` are too limited but Postgres/MySQL add too much administrative overhead.
-
-## Simple Analogy
-
-Think of ProtoBase as a supercharged Python `dict`. It’s as easy to use as a dictionary, but it’s thread‑safe, fully transactional, and asynchronously persists its state to disk so you don’t have to think about it. It’s the perfect bridge between the simplicity of Python data structures and the robustness of a real database.
-
----
-
-### Why it feels instant
-
-- Copy‑on‑write over an in‑memory object graph: the main thread does not wait for I/O.
-- Persistence and serialization delegated to a background executor pool; `commit` synchronizes with the WAL.
-- Write‑through cache: read‑after‑write hits the cache, not the disk.
-
-### Why it stays safe
-
-- ACID transactions with snapshot isolation.
-- Immutable secondary indexes and an optimizer that avoids premature materialization.
-- AtomPointer as a stable identifier for intersections and de‑duplication in `AND`/`OR` plans.
-
----
-
-## Positioning Statement
-
-ProtoBase is no longer “just” a persistent object database—it is a Transactional Data Platform with Memory‑Class Performance. It combines the speed and ergonomics of an in‑memory solution with the durability, query capabilities, and transactional guarantees of a traditional database—directly in Python.
-
----
-
-## Competitive Landscape & Positioning
-
-- Traditional RDBMS + ORM (e.g., PostgreSQL + SQLAlchemy/Django ORM)
-  - Strengths: mature ecosystems, rich SQL, strong durability and tooling.
-  - Limitations: object/relational impedance mismatch, ORM session management, network and disk latency in the critical path.
-  - ProtoBase advantage: native Python object model with copy‑on‑write, near in‑memory latency, background persistence, and index‑aware query plans—without ORM ceremony.
-
-- In‑Memory Caches (Redis/Memcached)
-  - Strengths: extremely fast key/value operations, broad adoption.
-  - Limitations: limited transactional semantics across multiple keys, external service ops burden, optional/complex durability.
-  - ProtoBase advantage: built‑in ACID transactions, write‑through persistence, and object‑level queries—all embedded in your Python process.
-
-- Document/NoSQL Stores (MongoDB, DynamoDB‑like systems)
-  - Strengths: flexible schemas, good for nested documents and horizontal scale.
-  - Limitations: driver round‑trips, eventual consistency modes, vendor‑specific query semantics; complex local development.
-  - ProtoBase advantage: local, embedded engine with snapshot isolation, deterministic consistency, and a Pythonic query API over native objects.
-
-- Embedded Databases (SQLite, LMDB)
-  - Strengths: simple deployment, proven reliability.
-  - Limitations: row/byte‑oriented abstractions, SQL or key/value mindset; requires mapping layers and manual indexing strategies.
-  - ProtoBase advantage: higher‑level object model, immutable secondary indexes, and an optimizer that intersects reference sets before materialization.
-
-- In‑Memory/Hybrid Databases (H2, HSQLDB, DuckDB for analytics)
-  - Strengths: fast in‑process execution.
-  - Limitations: primarily table/column oriented; object mapping and transactional object graphs are out of scope.
-  - ProtoBase advantage: designed for Python object graphs with ACID semantics and asynchronous durability, plus optional vector search integration.
-
-- Pure Python Data Structures
-  - Strengths: zero overhead for simple scenarios; unparalleled flexibility.
-  - Limitations: no durability, no transactions, no consistent snapshots, no secondary indexes.
-  - ProtoBase advantage: feels like native structures but adds durability, transactions, indexes, and a query optimizer—without leaving Python.
-
-  ---
-
-  ## Performance-driven positioning (updated 2025-09-13)
-
-  Recent benchmarks underline ProtoBase’s value proposition for indexed queries and primary-key lookups. Two representative runs on in-memory data:
-
-  - Indexed AND + BETWEEN vs linear scan
-    - Run A (10k items, 200 queries, window=500, categories=200, statuses=50): indexed_over_linear ≈ 6.72×; indexed_over_python ≈ 1.18×.
-    - Run B (50k items, 100 queries, window=500, categories=500, statuses=100): indexed_over_linear ≈ 16.47×; indexed_over_python ≈ 3.44×.
-    - Latency improves across the distribution (lower p50/p95) with higher QPS as data size grows.
-  - Primary‑key lookups
-    - Run A: indexed_pk_over_linear ≈ 41.62×.
-    - Run B: indexed_pk_over_linear ≈ 164.09×.
-    - A native PK map in collections would further reduce overhead and should extend the lead as data grows.
-  - Comparison to pure Python lists
-    - At small sizes, a plain Python list comprehension can be competitive due to zero planning overhead; by 50k rows, the indexed path is ~3.4× faster.
-
-  Sources / artifacts:
-  - examples/benchmark_results_indexed.json (Run A)
-  - examples/benchmark_results_indexed_win200.json (Run B)
-
-  To reproduce:
-
-  ```bash
-  # Run A
-  python examples/indexed_benchmark.py \
-    --items 10000 --queries 200 --window 500 --warmup 20 \
-    --categories 200 --statuses 50 \
-    --out examples/benchmark_results_indexed.json
-
-  # Run B
-  python examples/indexed_benchmark.py \
-    --items 50000 --queries 100 --window 500 --warmup 20 \
-    --categories 500 --statuses 100 \
-    --out examples/benchmark_results_indexed_win200.json
-  ```
-
-  Implications for positioning
-  - ProtoBase offers memory‑class latency with ACID guarantees and index‑aware query planning that materially outperforms linear scans on realistic sizes.
-  - For applications with selective predicates or frequent point lookups, ProtoBase delivers order‑of‑magnitude improvements without abandoning Python’s native object model.
+Bottom line
+- Ease of use: ProtoBase is often simpler than ORMs/SQL for the majority of application workloads (CRUD + attribute filters) and significantly faster in‑process.
+- Paradigm shift: rather than a hurdle, it’s a return to idiomatic Python objects—with indexes and an optimizer doing the heavy lifting. For SQL‑centric analytics, ProtoBase coexists cleanly via exports and hybrid pipelines.

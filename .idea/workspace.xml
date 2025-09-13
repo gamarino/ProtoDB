@@ -4,17 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="The indexed performance suite was executed on a dataset of 20,000 items with 50 queries. Results showed the indexed path outperforms linear scan by ~3.5× and primary key lookups are ~72× faster than linear plans. Documentation was updated with the findings and a JSON results file was generated; a larger run with 100k items timed out.">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Updated commercial_positioning.md with new 2025-09-13 performance data. Replaced outdated query summaries with two benchmark runs and included speedup metrics. Added artifact references and reproducible commands without source code changes.">
       <change beforePath="$PROJECT_DIR$/commercial_positioning.md" beforeDir="false" afterPath="$PROJECT_DIR$/commercial_positioning.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/performance.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/performance.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/benchmark_results.json" beforeDir="false" afterPath="$PROJECT_DIR$/examples/benchmark_results.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/benchmark_results_indexed.json" beforeDir="false" afterPath="$PROJECT_DIR$/examples/benchmark_results_indexed.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/benchmark_results_indexed_win200.json" beforeDir="false" afterPath="$PROJECT_DIR$/examples/benchmark_results_indexed_win200.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/benchmark_results_linq.json" beforeDir="false" afterPath="$PROJECT_DIR$/examples/benchmark_results_linq.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/benchmark_results_vectors.json" beforeDir="false" afterPath="$PROJECT_DIR$/examples/benchmark_results_vectors.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/collection_indexing_example.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/collection_indexing_example.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/db_performance_benchmark.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/db_performance_benchmark.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/indexed_benchmark.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/indexed_benchmark.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -284,31 +275,7 @@
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
       <workItem from="1757675249603" duration="41300000" />
-      <workItem from="1757781886166" duration="11578000" />
-    </task>
-    <task id="LOCAL-00061" summary="[FIX] __init__.py : dependency errors">
-      <option name="closed" value="true" />
-      <created>1755802960398</created>
-      <option name="number" value="00061" />
-      <option name="presentableId" value="LOCAL-00061" />
-      <option name="project" value="LOCAL" />
-      <updated>1755802960398</updated>
-    </task>
-    <task id="LOCAL-00062" summary="[ADD] HNSWVectorIndex was successfully implemented for handling vector fields in proto_db, including functionality for KNN and near[] queries, with fallback to ExactVectorIndex and support for incremental updates and persistent storage. All associated unit tests passed, and documentation was updated accordingly. No errors or issues were reported during the implementation phase.">
-      <option name="closed" value="true" />
-      <created>1755806061722</created>
-      <option name="number" value="00062" />
-      <option name="presentableId" value="LOCAL-00062" />
-      <option name="project" value="LOCAL" />
-      <updated>1755806061722</updated>
-    </task>
-    <task id="LOCAL-00063" summary="[ADD] A vector ANN benchmark script was created to measure and compare the performance of HNSW against ExactVectorIndex and optional NumPy and scikit-learn baselines, successfully producing JSON output with timings. All existing tests remained unaffected and passed. No errors were encountered during execution, confirming the accuracy of the benchmarking tool.">
-      <option name="closed" value="true" />
-      <created>1755806841067</created>
-      <option name="number" value="00063" />
-      <option name="presentableId" value="LOCAL-00063" />
-      <option name="project" value="LOCAL" />
-      <updated>1755806841067</updated>
+      <workItem from="1757781886166" duration="12443000" />
     </task>
     <task id="LOCAL-00064" summary="[ADD] A vector ANN benchmark script was created to measure and compare the performance of HNSW against ExactVectorIndex and optional NumPy and scikit-learn baselines, successfully producing JSON output with timings. All existing tests remained unaffected and passed. No errors were encountered during execution, confirming the accuracy of the benchmarking tool.">
       <option name="closed" value="true" />
@@ -678,16 +645,37 @@
       <option name="project" value="LOCAL" />
       <updated>1757792261529</updated>
     </task>
-    <option name="localTasksCounter" value="110" />
+    <task id="LOCAL-00110" summary="Executed indexed collections performance benchmarks with two dataset sizes. Collected timing and latency metrics demonstrating significant speedups over linear scans. Updated the documentation with detailed results and observations without modifying source code.">
+      <option name="closed" value="true" />
+      <created>1757793658739</created>
+      <option name="number" value="00110" />
+      <option name="presentableId" value="LOCAL-00110" />
+      <option name="project" value="LOCAL" />
+      <updated>1757793658739</updated>
+    </task>
+    <task id="LOCAL-00111" summary="Updated README.md to show current project performance with benchmarks. Replaced outdated indexed query results with summaries of two runs including times and speedups. Added links to detailed performance documentation without altering source code.">
+      <option name="closed" value="true" />
+      <created>1757793768206</created>
+      <option name="number" value="00111" />
+      <option name="presentableId" value="LOCAL-00111" />
+      <option name="project" value="LOCAL" />
+      <updated>1757793768206</updated>
+    </task>
+    <task id="LOCAL-00112" summary="Updated commercial_positioning.md with new 2025-09-13 performance data. Replaced outdated query summaries with two benchmark runs and included speedup metrics. Added artifact references and reproducible commands without source code changes.">
+      <option name="closed" value="true" />
+      <created>1757793902147</created>
+      <option name="number" value="00112" />
+      <option name="presentableId" value="LOCAL-00112" />
+      <option name="project" value="LOCAL" />
+      <updated>1757793902148</updated>
+    </task>
+    <option name="localTasksCounter" value="113" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[FIX] queries.py: Fixed multiple errors in proto_db/queries.py related to IndexedQueryPlan and index handling. Corrected API usage, key normalization, bounds checking, and index-based query execution. Testing is currently blocked by a separate circular import issue unrelated to these fixes." />
-    <MESSAGE value="[FIX] The test suite was run, failures were identified, and targeted fixes were applied to make indexes optional and correct dictionary behaviors. After implementing the fixes, the full test suite of 241 tests passed successfully. Guidance on running the tests with proper discovery was provided." />
-    <MESSAGE value="The performance suite was refocused on indexed collections and a runtime bug in IndexedQueryPlan.execute was fixed. Benchmark scripts and documentation were updated to emphasize index-aware evaluation and improve clarity. Unit tests passed and updated benchmark results were saved successfully." />
     <MESSAGE value="The key bug preventing index usage was fixed by correctly using Dictionary methods and normalizing keys. Performance improved slightly, with indexed queries now faster than linear scans, achieving about 56 queries per second on 50k items. Unit tests passed, and further optimizations are needed to meet the expected performance targets." />
     <MESSAGE value="La documentación de performance fue actualizada incluyendo clarificaciones sobre el uso actual de índices y una nueva sección con resultados recientes de benchmarks con interpretaciones y consejos. No se realizaron cambios en el código; solo en la documentación. El README ya enlazaba a la documentación actualizada, por lo que no fue necesario modificarlo." />
     <MESSAGE value="Implemented a reference-first execution pipeline reducing object materialization by using stable reference hashes for index queries and removing string key conversions. Rewrote AndMerge to intersect reference sets before materializing objects, ensuring efficient AND predicate evaluation. Verified functionality with unit tests and maintained existing AVL-based data structures and immutability." />
@@ -710,7 +698,10 @@
     <MESSAGE value="All Sphinx &quot;Title underline too short&quot; warnings in multiple reStructuredText files were fixed by extending the underline lengths to exceed the title lengths. This was done for headings in advanced_usage.rst, quickstart.rst, and api/queries.rst files through systematic search-and-replace edits. Multiple rebuilds were run to verify that no remaining warnings persisted." />
     <MESSAGE value="The performance benchmark suite was executed, showing a 6.44× speedup using indexed queries over linear scans on large datasets. CRUD and LINQ benchmarks completed successfully with detailed timing metrics collected. Results and JSON artifacts were saved without any code changes required." />
     <MESSAGE value="The indexed performance suite was executed on a dataset of 20,000 items with 50 queries. Results showed the indexed path outperforms linear scan by ~3.5× and primary key lookups are ~72× faster than linear plans. Documentation was updated with the findings and a JSON results file was generated; a larger run with 100k items timed out." />
-    <option name="LAST_COMMIT_MESSAGE" value="The indexed performance suite was executed on a dataset of 20,000 items with 50 queries. Results showed the indexed path outperforms linear scan by ~3.5× and primary key lookups are ~72× faster than linear plans. Documentation was updated with the findings and a JSON results file was generated; a larger run with 100k items timed out." />
+    <MESSAGE value="Executed indexed collections performance benchmarks with two dataset sizes. Collected timing and latency metrics demonstrating significant speedups over linear scans. Updated the documentation with detailed results and observations without modifying source code." />
+    <MESSAGE value="Updated README.md to show current project performance with benchmarks. Replaced outdated indexed query results with summaries of two runs including times and speedups. Added links to detailed performance documentation without altering source code." />
+    <MESSAGE value="Updated commercial_positioning.md with new 2025-09-13 performance data. Replaced outdated query summaries with two benchmark runs and included speedup metrics. Added artifact references and reproducible commands without source code changes." />
+    <option name="LAST_COMMIT_MESSAGE" value="Updated commercial_positioning.md with new 2025-09-13 performance data. Replaced outdated query summaries with two benchmark runs and included speedup metrics. Added artifact references and reproducible commands without source code changes." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
