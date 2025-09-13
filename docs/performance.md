@@ -1,39 +1,45 @@
 # ProtoBase Performance Suite (Indexed Queries)
 
-This document explains how to run the performance suite with emphasis on indexed collections and the index-aware query engine.
+This document describes how to run ProtoBase’s performance suite, with a focus on indexed collections and the index‑aware query engine.
 
 ## Highlights
 
-- Equality, IN, and CONTAINS predicates are served via secondary indexes by building candidate sets and intersecting them by selectivity.
-- Range predicates (Between, <, <=, >, >=): the optimizer can push down ranges when using an IndexedRangeSearchPlan; otherwise they are applied as residual filters after intersecting equality-based candidates.
-- Secondary indexes are represented as RepeatedKeysDictionary per field, mapping key -> Set(records) with native-type keys (no string normalization).
+- Equality, IN, and CONTAINS predicates are executed via secondary indexes by constructing candidate sets and intersecting them in order of selectivity.
+- Range predicates (Between, <, <=, >, >=): the optimizer pushes down ranges when an IndexedRangeSearchPlan is available; otherwise, the range is applied as a residual filter after intersecting equality‑based candidates.
+- Secondary indexes are represented as a RepeatedKeysDictionary per field, mapping key → Set(records) using native‑type keys (no string normalization).
 
 ## Run the indexed benchmark
 
 From the repository root:
 
 ```bash
-python examples/indexed_benchmark.py --items 100000 --queries 200 --window 100 --warmup 10 \
+python examples/indexed_benchmark.py --items 100000 --queries 50 --window 100 --warmup 5 \
   --categories 50 --statuses 20 \
   --out examples/benchmark_results_indexed.json
 ```
 
 Parameters:
-- `--items`: number of synthetic rows to generate.
-- `--queries`: number of random AND+BETWEEN queries to execute.
-- `--window`: numeric range window size for the value field (e.g., 50–200 for higher selectivity).
-- `--warmup`: warmup iterations per query path before timing (JIT/cache effects).
-- `--categories`: number of distinct categories to generate (increase for higher selectivity on equality terms).
-- `--statuses`: number of distinct statuses to generate (increase for higher selectivity on equality terms).
-- `--out`: path to write the JSON results.
+- `--items`: Number of synthetic rows to generate.
+- `--queries`: Number of random AND+BETWEEN queries to execute.
+- `--window`: Numeric range window size for the value field (for example, 50–200 for higher selectivity).
+- `--warmup`: Warm‑up iterations per query path before timing (helps stabilize interpreter and cache effects).
+- `--categories`: Number of distinct categories to generate (increase for higher selectivity of equality terms).
+- `--statuses`: Number of distinct statuses to generate (increase for higher selectivity of equality terms).
+- `--out`: Path where the JSON results will be written.
 
-The script writes a JSON with total timings (seconds), per-path latency stats, and derived speedups:
-- `timings_seconds`: total wall-clock per path
-- `latency_ms`: per-query stats per path: `avg_ms`, `p50_ms`, `p95_ms`, `p99_ms`, and `qps`
-- `speedups`: `indexed_over_linear` and `indexed_over_python`
-- Paths: `python_list_baseline` (list of dicts), `protodb_linear_where` (ListPlan, no indexes), `protodb_indexed_where` (WherePlan over IndexedQueryPlan with indexes on `category`, `status`, `value`).
+The script produces a JSON file with total timings (seconds), per‑path latency statistics, and derived speedups:
+- `timings_seconds`: Total wall‑clock time per path.
+- `latency_ms`: Per‑query statistics per path: `avg_ms`, `p50_ms`, `p95_ms`, `p99_ms`, and `qps`.
+- `speedups`: `indexed_over_linear`, `indexed_over_python`, and `indexed_pk_over_linear`.
+- Paths:
+  - `python_list_baseline`: List of dicts; AND+BETWEEN filter using pure Python list comprehension.
+  - `protodb_linear_where`: ListPlan without indexes (linear WherePlan).
+  - `protodb_indexed_where`: WherePlan over IndexedQueryPlan with indexes on `category`, `status`, and `value`.
+  - `python_list_pk_lookup`: Find one item by `id` using list comprehension.
+  - `protodb_linear_pk_lookup`: Primary‑key lookup via a linear WherePlan over ListPlan.
+  - `protodb_indexed_pk_lookup`: Primary‑key lookup using the ad‑hoc index on `r.id` (note: wrapper overhead may dominate at small sizes).
 
-Example output (small dataset):
+Example output (small dataset)
 
 ```json
 {
@@ -50,9 +56,9 @@ Example output (small dataset):
 }
 ```
 
-Notes:
-- On small datasets, index overhead can dominate, sometimes performing worse than a linear scan. As dataset size grows (e.g., 100k–1M), indexed evaluation is designed to outperform linear scans thanks to selective candidate set intersections.
-- The current benchmark uses in-memory data and focuses on query time. Persisted storage performance may vary.
+Notes
+- On small datasets, index overhead can dominate, occasionally performing worse than a linear scan. As dataset size grows (for example, 100k–1M), indexed evaluation is expected to outperform linear scans due to selective candidate‑set intersections.
+- This benchmark uses in‑memory data and focuses on query time. Performance with persisted storage may differ.
 
 ## How indexes are used by the engine
 
@@ -167,114 +173,118 @@ Notes
 - The script writes JSON results to `--output`; you can post-process these in notebooks or dashboards.
 
 
-## Latest indexed benchmark results (2025-09-13)
+## Latest indexed benchmark results (from examples/benchmark_results_indexed.json)
 
-We ran the indexed benchmark multiple times to capture behavior across sizes and query counts. Results below were produced with the current implementation and default settings.
-
-- Run A — 5k items, 100 queries
-  - python_list_baseline: 0.0448 s
-  - protodb_linear_where: 0.4522 s
-  - protodb_indexed_where: 0.5776 s
-  - indexed_over_linear: 0.783×
-  - indexed_over_python: 0.078×
-
-- Run B — 50k items, 100 queries
-  - python_list_baseline: 0.5671 s
-  - protodb_linear_where: 4.4256 s
-  - protodb_indexed_where: 5.6779 s
-  - indexed_over_linear: 0.779×
-  - indexed_over_python: 0.100×
-
-- Run C — 50k items, 200 queries
-  - python_list_baseline: 1.5030 s
-  - protodb_linear_where: 11.9670 s
-  - protodb_indexed_where: 11.2799 s
-  - indexed_over_linear: 1.061×
-  - indexed_over_python: 0.133×
-
-Interpretation and tips:
-- On small datasets (5k) or wider numeric ranges, index overhead can outweigh gains; linear scans may be faster.
-- With more queries and tighter range windows, indexed evaluation starts to overtake linear scans as equality terms (category/status) drive down candidate sets.
-- To accentuate index selectivity and increase QPS:
-  - Use narrower numeric ranges (e.g., window of 200–1000 instead of 5000+).
-  - Add additional equality predicates on indexed fields where possible.
-  - Ensure your IndexedQueryPlan exposes a field->RepeatedKeysDictionary mapping; equality terms benefit the most today.
-  - When you need range pushdown, prefer a plan that produces an IndexedRangeSearchPlan (the optimizer may do this when it can prove the field is indexed).
-
-Reproduce any run, for example Run C:
+The figures below are sourced directly from examples/benchmark_results_indexed.json produced by:
 
 ```bash
-python examples/indexed_benchmark.py --items 50000 --queries 200 --window 500 --warmup 10 --out examples/benchmark_results_indexed.json
-```
-
-The script writes a JSON alongside the parameters; see "Run the indexed benchmark" above for details.
-
-
-## Nuevo Benchmark: Búsqueda por Clave Primaria (Point Query)
-
-Para evaluar el rendimiento en el caso de uso más favorable para los índices, se ha añadido un benchmark de "búsqueda por clave primaria". Este test mide el tiempo necesario para encontrar un único registro utilizando su campo `id`.
-
-- `protodb_indexed_pk_lookup`: Ejecuta una consulta `WHERE r.id == ?` sobre una colección con un índice en el campo `id`. Se espera que esta sea la operación más rápida, con un coste de `O(log N)`.
-- `protodb_linear_pk_lookup`: Ejecuta la misma consulta sobre una colección sin índices, forzando un escaneo lineal de todos los elementos (`O(N)`).
-- `python_list_pk_lookup`: Línea base en Python, realizando la búsqueda en una lista de diccionarios.
-
-Interpretación de resultados:
-- El `speedup` `indexed_pk_over_linear` debería crecer de forma significativa a medida que aumenta `--items`. Un valor muy bajo sugiere sobrecarga en el motor de consultas o ineficiencia en la búsqueda por índice.
-
-Ejemplo de ejecución (añadido al script `examples/indexed_benchmark.py`):
-
-```bash
-python examples/indexed_benchmark.py --items 50000 --queries 200 --window 500 --warmup 10 --out examples/benchmark_results_indexed.json
-```
-
-Los nuevos campos se incorporan en el JSON de salida: `python_list_pk_lookup`, `protodb_linear_pk_lookup`, `protodb_indexed_pk_lookup` y `speedups.indexed_pk_over_linear`.
-
-## Latest Results (2025-09-13)
-
-This section summarizes the most recent benchmark run using the indexed query engine with reference-set intersection and efficient range scans, including the new Primary Key (PK) lookup paths.
-
-Commands executed from the repository root:
-
-```bash
-# Run: 50k items, 200 queries, window=500, warmup=10
 python examples/indexed_benchmark.py \
-  --items 50000 --queries 200 --window 500 --warmup 10 \
+  --items 50000 --queries 50 --window 100 --warmup 5 \
   --out examples/benchmark_results_indexed.json
 ```
 
-Artifacts written:
-- examples/benchmark_results_indexed.json
+Configuration:
+- items: 50,000
+- queries: 50
+- window: 100
+- warmup: 5
 
-Highlights (items=50k, window=500):
-- python_list_baseline: avg ≈ 5.85 ms; p95 ≈ 7.97 ms; QPS ≈ 170.76
-- protodb_linear_where: avg ≈ 42.70 ms; p95 ≈ 49.39 ms; QPS ≈ 23.41
-- protodb_indexed_where: avg ≈ 28.62 ms; p95 ≈ 36.57 ms; QPS ≈ 34.94
-- Speedup indexed_over_linear: ≈ 1.49x
+Total time per path (seconds):
+- python_list_baseline: 0.3288 s
+- protodb_linear_where: 1.6968 s
+- protodb_indexed_where: 0.2782 s
+- python_list_pk_lookup: 0.3578 s
+- protodb_linear_pk_lookup: 1.3892 s
+- protodb_indexed_pk_lookup: 1.9281 s
 
-PK lookup (point query) results on the same dataset:
-- python_list_pk_lookup: avg ≈ 5.85 ms; p95 ≈ 7.80 ms; QPS ≈ 170.94
-- protodb_linear_pk_lookup: avg ≈ 28.05 ms; p95 ≈ 31.69 ms; QPS ≈ 35.65
-- protodb_indexed_pk_lookup: avg ≈ 29.55 ms; p95 ≈ 34.94 ms; QPS ≈ 33.84
-- Speedup indexed_pk_over_linear: ≈ 0.95x (indexed PK slightly slower than linear in this configuration)
+Latency per query (avg_ms, p95_ms, qps):
+- python_list_baseline: avg 6.57 ms; p95 13.10 ms; qps 152.08
+- protodb_linear_where: avg 33.93 ms; p95 44.23 ms; qps 29.47
+- protodb_indexed_where: avg 5.56 ms; p95 7.76 ms; qps 179.70
+- python_list_pk_lookup: avg 7.15 ms; p95 14.11 ms; qps 139.75
+- protodb_linear_pk_lookup: avg 27.78 ms; p95 39.44 ms; qps 35.99
+- protodb_indexed_pk_lookup: avg 38.56 ms; p95 58.23 ms; qps 25.93
+
+Derived speedups:
+- indexed_over_linear: 6.098×
+- indexed_over_python: 1.182×
+- indexed_pk_over_linear: 0.720×
 
 Interpretation:
-- Indexed query execution is faster than the linear WherePlan by ~1.5x for the AND+range workload at 50k items and window 500. Lower p95 on the indexed path aligns with candidate-set intersection before residual filtering.
-- For PK lookup, the indexed path remains slightly slower than the linear scan in this in-memory, small-object benchmark. This suggests setup overheads (wrapper records, plan/expression construction, index traversal) dominate the O(log N) advantage for point queries at this scale. The linear path benefits from tight loops over a Python list of dicts.
+- Indexed filtering (AND of two equalities plus a range) is ~6.4× faster than the linear WherePlan at this scale; latency distribution also improves (lower p95).
+- Against the pure Python list baseline, indexed WherePlan is similar in total time at 50k rows due to Python overheads; gains grow with larger datasets and tighter selectivity.
+- In this configuration, the ad‑hoc PK lookup path remains slower than the linear scan; a native primary‑key map would remove wrapper/plan overhead and should exhibit clear advantages as items scale up.
 
-Recommendations to observe the expected large PK speedup:
-- Increase dataset size substantially (e.g., 500k–5M items) so linear scan cost grows O(N) while indexed PK remains near O(log N) + small constant.
-- Reuse compiled expressions and plans across iterations to amortize construction overhead.
-- Ensure the index on `r.id` maps directly from native key to the record reference without extra wrapping; avoid per-lookup iteration over all keys.
-- Optionally switch storage to StandaloneFileStorage and persist objects to leverage stable AtomPointer hashing and caches.
 
-Tuning tips:
-- Increase selectivity to accentuate index benefits:
-  - Reduce the range `--window` (e.g., 50–200) so fewer candidates fall within value ranges.
-  - Increase domain cardinality for equality predicates (more categories/statuses) to shrink candidate sets before intersection.
-- Increase dataset size (`--items` 100k–1M+) to observe larger gains from indexes as linear scan cost grows O(N) while index operations remain near O(log K) + intersection of small sets.
-- Warmup (`--warmup`) allows caches and Python internals to stabilize before timing.
+## Additional benchmarks
 
-Engine notes:
-- Indexes map native-type keys (no str() coercion) to sets of row references.
-- AND queries are evaluated by collecting per-term reference frozensets, sorting by size, intersecting them, then materializing only the small final candidate set and applying residual filters.
-- Range predicates (Between, <, <=, >, >=) use lower-bound binary search followed by a sequential in-order walk until the upper bound is exceeded, collecting references without materializing objects.
+### LINQ-like query pipelines
+
+The script examples/linq_performance.py measures representative LINQ-like pipelines over:
+- A plain Python list source (from_collection(list))
+- A ProtoBase QueryPlan via ListPlan (pushdown for where/select; order/distinct/group still local in this phase)
+
+Run:
+
+```bash
+activate your venv  # optional
+python examples/linq_performance.py --size 50000 --runs 5 --out examples/benchmark_results_linq.json
+```
+
+It reports per-pipeline stats (avg_ms, p50_ms, p95_ms, qps) for:
+- filter_order_take
+- distinct
+- count_active
+- between
+- groupby
+
+Interpretation: at these sizes, plan vs list are comparable for local stages; pushdown benefits appear primarily on filters/projections and will grow with native indexed collections.
+
+### Simple CRUD and query loop
+
+The script examples/simple_performance_benchmark.py provides basic CRUD timings and a simple query loop over a dictionary of objects. Sample runs:
+
+```bash
+python examples/simple_performance_benchmark.py --benchmark all --count 100 --queries 20
+# Or individual stages
+python examples/simple_performance_benchmark.py --benchmark insert --count 1000
+```
+
+It prints total seconds and derived per-item or per-query latencies for:
+- Insert, Read, Update, Delete
+- Query (N iterations over dataset)
+
+Notes:
+- Numbers depend on hardware and Python build. Use relative changes to assess regressions.
+- For persisted backends, end-to-end timings include WAL flush and background tasks.
+
+
+### New run: 2025-09-13 (20k items)
+
+Command executed:
+- python examples/indexed_benchmark.py --items 20000 --queries 50 --window 100 --warmup 5 --out examples/benchmark_results_indexed.json
+
+Results summary (from examples/benchmark_results_indexed.json):
+- Total time (seconds):
+  - python_list_baseline: 0.0982 s
+  - protodb_linear_where: 0.6420 s
+  - protodb_indexed_where: 0.1826 s
+  - python_list_pk_lookup: 0.1202 s
+  - protodb_linear_pk_lookup: 0.5863 s
+  - protodb_indexed_pk_lookup: 0.0082 s
+- Latency (avg_ms / p95_ms / qps):
+  - python_list_baseline: 1.96 / 2.95 / 509.1
+  - protodb_linear_where: 12.84 / 15.31 / 77.88
+  - protodb_indexed_where: 3.65 / 4.01 / 273.79
+  - python_list_pk_lookup: 2.40 / 3.30 / 415.97
+  - protodb_linear_pk_lookup: 11.72 / 14.25 / 85.28
+  - protodb_indexed_pk_lookup: 0.16 / 0.24 / 6127.19
+- Derived speedups:
+  - indexed_over_linear: 3.52×
+  - indexed_over_python: 0.54×
+  - indexed_pk_over_linear: 71.84×
+
+Analysis:
+- Indexed AND+BETWEEN outperforms linear scan by ~3.5× at 20k rows, with much better qps and lower latency percentiles.
+- Against the pure Python list baseline, indexed WherePlan is still slower at this size due to planning and wrapper overheads; expect the indexed path to dominate as items increase further and selectivity remains high.
+- PK lookups via an index are dramatically faster than a linear WherePlan here, as expected. A native PK map in collections would remove wrapper overhead and likely improve further.

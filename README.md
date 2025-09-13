@@ -145,17 +145,17 @@ MIT License. See LICENSE for details.
 
 ## Latest indexed query results (2025-09-13)
 
-A recent run of the indexed benchmark on in-memory data produced these highlights (50k items, 200 queries, window=500, warmup=10):
-- python_list_baseline: avg ≈ 5.85 ms; p95 ≈ 7.97 ms; QPS ≈ 170.76
-- protodb_linear_where: avg ≈ 42.70 ms; p95 ≈ 49.39 ms; QPS ≈ 23.41
-- protodb_indexed_where: avg ≈ 28.62 ms; p95 ≈ 36.57 ms; QPS ≈ 34.94
-- Speedup indexed_over_linear: ≈ 1.49×
+A recent run of the indexed benchmark on in-memory data produced these highlights (50k items, 200 queries, window=100, warmup=10):
+- python_list_baseline: avg ≈ 5.27 ms; p95 ≈ 9.48 ms; QPS ≈ 189.60
+- protodb_linear_where: avg ≈ 31.11 ms; p95 ≈ 42.35 ms; QPS ≈ 32.14
+- protodb_indexed_where: avg ≈ 5.27 ms; p95 ≈ 6.63 ms; QPS ≈ 189.70
+- Speedup indexed_over_linear: ≈ 5.90×
 
 Primary Key (PK) lookup on the same dataset:
-- python_list_pk_lookup: avg ≈ 5.85 ms; p95 ≈ 7.80 ms; QPS ≈ 170.94
-- protodb_linear_pk_lookup: avg ≈ 28.05 ms; p95 ≈ 31.69 ms; QPS ≈ 35.65
-- protodb_indexed_pk_lookup: avg ≈ 29.55 ms; p95 ≈ 34.94 ms; QPS ≈ 33.84
-- Speedup indexed_pk_over_linear: ≈ 0.95× (indexed PK slightly slower than linear in this configuration)
+- python_list_pk_lookup: avg ≈ 5.72 ms; p95 ≈ 8.50 ms; QPS ≈ 174.70
+- protodb_linear_pk_lookup: avg ≈ 26.82 ms; p95 ≈ 38.63 ms; QPS ≈ 37.28
+- protodb_indexed_pk_lookup: avg ≈ 34.69 ms; p95 ≈ 40.07 ms; QPS ≈ 28.82
+- Speedup indexed_pk_over_linear: ≈ 0.77× (indexed PK slower than linear in this configuration; a native PK map would remove overhead)
 
 Artifacts: examples/benchmark_results_indexed.json
 

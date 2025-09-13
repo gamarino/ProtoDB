@@ -774,7 +774,7 @@ class IndexedQueryPlan(QueryPlan):
 
     def get_equal_than(self, field_name: str, value: object) -> list:
         if self.indexes and self.indexes.has(field_name):
-            idx_dict = cast(Dictionary, self.indexes.get_at(field_name))
+            idx_dict = self.indexes.get_at(field_name)
             if idx_dict is None:
                 return
 
@@ -783,7 +783,6 @@ class IndexedQueryPlan(QueryPlan):
             if value_set is None:
                 return
 
-            value_set = cast(Set, value_set)
             for record in value_set.as_iterable():
                 yield record
         else:
@@ -806,7 +805,7 @@ class IndexedQueryPlan(QueryPlan):
                 yield record
 
     def get_lower_than(self, field_name: str, value: object) -> list:
-        idx_dict = cast(Dictionary, self.indexes.get_at(field_name))
+        idx_dict = self.indexes.get_at(field_name)
         if idx_dict is None:
             return []
         index = self.position_at(field_name, value)
@@ -814,7 +813,7 @@ class IndexedQueryPlan(QueryPlan):
         return self.yield_up_to_index(field_name, index)
 
     def get_lower_or_equal_than(self, field_name: str, value: object) -> list:
-        idx_dict = cast(Dictionary, self.indexes.get_at(field_name))
+        idx_dict = self.indexes.get_at(field_name)
         if idx_dict is None:
             return []
         index = self.position_at(field_name, value)
@@ -834,7 +833,7 @@ class IndexedQueryPlan(QueryPlan):
         self._load()
         if not (self.indexes and self.indexes.has(field_name)):
             raise ProtoValidationException(message=f'No index on field {field_name}!')
-        idx_dict = cast(Dictionary, self.indexes.get_at(field_name))
+        idx_dict = self.indexes.get_at(field_name)
         if idx_dict is None:
             return
 
@@ -1584,7 +1583,10 @@ class WherePlan(QueryPlan):
         :rtype: list
         """
 
-        # Attempt index-aware evaluation for AND conditions
+        # Attempt index-aware evaluation
+        from .queries import Term as _Term
+        from .queries import AndExpression as _AndExpression
+        from .queries import IndexedQueryPlan as _IQP
         from .queries import Between as _Between
         from .queries import Equal as _Equal, In as _In, Contains as _Contains
         from .queries import Greater as _Greater, GreaterOrEqual as _GreaterOrEqual
@@ -1592,24 +1594,21 @@ class WherePlan(QueryPlan):
         base = self.based_on
         flt = self.filter
 
-        def build_candidate_set(term: Term):
+        def build_candidate_set(term: _Term):
             # Only terms with target attribute present in indexes are eligible
             try:
                 field = term.target_attribute
                 # Ensure we have an IndexedQueryPlan and an index for the field
-                from .queries import IndexedQueryPlan as _IQP
-                # Ensure we have an IndexedQueryPlan and an index for the field
-                from .queries import IndexedQueryPlan as _IQP
                 if not isinstance(base, _IQP):
                     return None
                 idxs = getattr(base, 'indexes', None)
                 if not idxs or not getattr(idxs, 'has', None) or not idxs.has(field):
                     return None
                 op = term.operation
+                idx_dict = idxs.get_at(field)
                 # Equality
                 if isinstance(op, _Equal):
-                    idx_dict = idxs.get_at(field)
-                    item = idx_dict.get_at(str(term.value))
+                    item = idx_dict.get_at(term.value)
                     if not item:
                         return set()
                     # item is a Set; turn into Python set of records
@@ -1619,8 +1618,7 @@ class WherePlan(QueryPlan):
                     result = set()
                     try:
                         for v in term.value:
-                            idx_dict = idxs.get_at(field)
-                            it = idx_dict.get_at(str(v))
+                            it = idx_dict.get_at(v)
                             if it:
                                 result.update(it.as_iterable())
                     except Exception:
@@ -1628,63 +1626,59 @@ class WherePlan(QueryPlan):
                     return result
                 # CONTAINS: treat as equality on elements if index was built for contained elements
                 if isinstance(op, _Contains):
-                    idx_dict = idxs.get_at(field)
-                    it = idx_dict.get_at(str(term.value))
+                    it = idx_dict.get_at(term.value)
                     if it:
                         return set(it.as_iterable())
                     return set()
                 # BETWEEN (range) — avoid materializing large range sets; leave as residual filter
-                if isinstance(op, _Between):
-                    return None
-                # Greater/Less family as residual filters as well
-                if isinstance(op, _Greater):
-                    return None
-                if isinstance(op, _GreaterOrEqual):
-                    return None
-                if isinstance(op, _Lower):
-                    return None
-                if isinstance(op, _LowerOrEqual):
+                if isinstance(op, (_Between, _Greater, _GreaterOrEqual, _Lower, _LowerOrEqual)):
                     return None
                 return None
             except Exception:
                 return None
 
-        # Only attempt when filter is a conjunction of terms
-        if isinstance(flt, AndExpression):
-            candidate_sets: list[set] = []
-            residual = []  # keep full filter for safety; residual list reserved for future split
-            for t in flt.terms:
-                if isinstance(t, Term):
-                    cand = build_candidate_set(t)
-                    if cand is None:
-                        residual.append(t)
-                    else:
-                        candidate_sets.append(cand)
-                else:
-                    residual.append(t)
+        # Generalize fast path for single Term and AndExpression
+        indexable_term_sets: list[set] = []
+        residual_filters: list[Expression] = []
+        can_use_fast_path = isinstance(base, _IQP) and (isinstance(flt, (_AndExpression, _Term)))
 
-            if candidate_sets:
+        if can_use_fast_path:
+            terms_in_filter = flt.terms if isinstance(flt, _AndExpression) else [flt]
+
+            for t in terms_in_filter:
+                if isinstance(t, _Term):
+                    cand_set = build_candidate_set(t)
+                    if cand_set is not None:
+                        indexable_term_sets.append(cand_set)
+                    else:
+                        residual_filters.append(t)
+                else:
+                    residual_filters.append(t)
+
+            if indexable_term_sets:
                 # Order by selectivity (ascending size)
-                candidate_sets.sort(key=lambda s: len(s))
+                indexable_term_sets.sort(key=len)
                 # Progressive intersection with early exit
-                current = candidate_sets[0]
-                for s in candidate_sets[1:]:
+                current = indexable_term_sets[0]
+                for s in indexable_term_sets[1:]:
                     if not current:
                         break
-                    current = current.intersection(s)
+                    current.intersection_update(s)
                 if not current:
                     return  # empty generator
-                # Apply only residual (non-indexed) terms on the reduced set
+
+                # Apply residual filters on the reduced set
                 def _matches_residual(rec):
-                    if not residual:
+                    if not residual_filters:
                         return True
                     try:
-                        for expr in residual:
+                        for expr in residual_filters:
                             if not expr.match(rec):
                                 return False
                         return True
                     except Exception:
                         return False
+
                 for rec in current:
                     if _matches_residual(rec):
                         yield rec

@@ -79,7 +79,7 @@ def time_queries(fn, n=50, warmup=5):
     return stats
 
 
-def run_benchmark(n_items=100000, n_queries=50, out_path="examples/benchmark_results_indexed.json", window=100, warmup=10, n_categories=50, n_statuses=20):
+def run_benchmark(n_items=1000, n_queries=50, out_path="examples/benchmark_results_indexed.json", window=100, warmup=10, n_categories=50, n_statuses=20):
     global CATEGORIES, STATUSES
     # Generate domains with higher cardinality to increase selectivity for equality predicates
     CATEGORIES = [f"category{i+1}" for i in range(max(1, n_categories))]
@@ -165,12 +165,14 @@ def run_benchmark(n_items=100000, n_queries=50, out_path="examples/benchmark_res
         hi = lo + window
         flt = Expression.compile(['&', ['r.category', '==', cat], ['r.status', '==', st], ['r.value', 'between()', lo, hi]])
         plan = WherePlan(filter=flt, based_on=indexed, transaction=tr)
+        plan = plan.optimize(plan)
         list(plan.execute())
 
     def pb_indexed_query_single_item():
         target_id = data[random.randrange(n_items)].get('id') if data else None
         flt = Expression.compile(['r.id', '==', target_id])
         plan = WherePlan(filter=flt, based_on=indexed, transaction=tr)
+        plan = plan.optimize(plan)
         list(plan.execute())
 
     pb_indexed_stats = time_queries(lambda: pb_indexed_query_once(), n=n_queries, warmup=warmup)
@@ -210,7 +212,7 @@ def run_benchmark(n_items=100000, n_queries=50, out_path="examples/benchmark_res
 if __name__ == '__main__':
     import argparse
     p = argparse.ArgumentParser(description='Indexed performance benchmark for ProtoBase')
-    p.add_argument('--items', type=int, default=100000)
+    p.add_argument('--items', type=int, default=1000)
     p.add_argument('--queries', type=int, default=50)
     p.add_argument('--window', type=int, default=100, help='numeric range window size for value field (smaller → higher selectivity)')
     p.add_argument('--warmup', type=int, default=10, help='warmup query iterations before timing')
