@@ -4,12 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[DOC] Performance update">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[WIP] nuevos índices">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/dictionaries.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/lists.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/sets.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/sets.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -277,15 +274,7 @@
       <workItem from="1757647544978" duration="4378000" />
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
-      <workItem from="1757675249603" duration="23208000" />
-    </task>
-    <task id="LOCAL-00033" summary="[FIX] README.md, pyproject.toml: update to current status">
-      <option name="closed" value="true" />
-      <created>1753739560627</created>
-      <option name="number" value="00033" />
-      <option name="presentableId" value="LOCAL-00033" />
-      <option name="project" value="LOCAL" />
-      <updated>1753739560627</updated>
+      <workItem from="1757675249603" duration="24424000" />
     </task>
     <task id="LOCAL-00034" summary="[IMP] examples">
       <option name="closed" value="true" />
@@ -671,14 +660,21 @@
       <option name="project" value="LOCAL" />
       <updated>1757682552949</updated>
     </task>
-    <option name="localTasksCounter" value="82" />
+    <task id="LOCAL-00082" summary="[WIP] nuevos índices">
+      <option name="closed" value="true" />
+      <created>1757733224499</created>
+      <option name="number" value="00082" />
+      <option name="presentableId" value="LOCAL-00082" />
+      <option name="project" value="LOCAL" />
+      <updated>1757733224499</updated>
+    </task>
+    <option name="localTasksCounter" value="83" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[FIX] test files cleanup" />
     <MESSAGE value="[FIX] additional files for new query features" />
     <MESSAGE value="[ADD] Implemented persistent internal secondary indexes for List, Dictionary, and Set, updating relevant methods and iterators to use these indexes. The new indexes.py module includes IndexDefinition and an immutable IndexRegistry, ensuring stable identifiers and lazy index loading. Completed testing confirmed proper functionality and index integrity." />
     <MESSAGE value="[ADD] Range operators `between[]`, `between()`, `between(]`, and `between[)` were implemented with parsing, evaluation, and index-based optimization. All tests passed successfully, confirming correct functionality and backward compatibility. The solution is now ready for submission." />
@@ -703,7 +699,8 @@
     <MESSAGE value="[FIX] The performance suite was rerun with updated benchmark results saved in JSON files. Unit tests for the parallel module passed without issues. Documentation remained accurate and no updates were needed." />
     <MESSAGE value="[FIX] Several errors in test suite" />
     <MESSAGE value="[DOC] Performance update" />
-    <option name="LAST_COMMIT_MESSAGE" value="[DOC] Performance update" />
+    <MESSAGE value="[WIP] nuevos índices" />
+    <option name="LAST_COMMIT_MESSAGE" value="[WIP] nuevos índices" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

@@ -565,7 +565,9 @@ class IndexedQueryPlan(QueryPlan):
         new_index = RepeatedKeysDictionary(transaction=self.transaction)
         for record in self.execute():
             if record.has(field_name):
-                new_index = new_index.set_at(record[field_name], record)
+                # Keys in Dictionary are compared as strings; normalize key to str
+                key = str(record[field_name])
+                new_index = new_index.set_at(key, record)
 
         return IndexedQueryPlan(
             indexes=self.indexes.set_at(field_name, new_index),
@@ -591,7 +593,8 @@ class IndexedQueryPlan(QueryPlan):
         for field_name, index in self.indexes.as_iterable():
             index = cast(RepeatedKeysDictionary, index)
             if removed_record[field_name]:
-                new_indexes.set_at(field_name, index.remove_record_at(removed_record[field_name], removed_record))
+                key = str(removed_record[field_name])
+                new_indexes.set_at(field_name, index.remove_record_at(key, removed_record))
 
         return IndexedQueryPlan(
             indexes=new_indexes,
@@ -617,7 +620,8 @@ class IndexedQueryPlan(QueryPlan):
         for field_name, index in self.indexes.as_iterable():
             index = cast(RepeatedKeysDictionary, index)
             if added_record[field_name]:
-                new_indexes.set_at(field_name, index.set_at(added_record[field_name], added_record))
+                key = str(added_record[field_name])
+                new_indexes.set_at(field_name, index.set_at(key, added_record))
 
         return IndexedQueryPlan(
             indexes=new_indexes,
@@ -628,20 +632,23 @@ class IndexedQueryPlan(QueryPlan):
     def position_at(self, field_name: str, value) -> int:
         self._load()
 
-        if field_name in self.indexes:
-            index = cast(Dictionary, self.indexes[field_name])
+        if self.indexes and self.indexes.has(field_name):
+            idx_dict = cast(Dictionary, self.indexes.get_at(field_name))
+            if idx_dict is None:
+                return 0
 
             left = 0
-            right = index.content.count - 1
+            right = idx_dict.content.count - 1
 
+            sval = str(value)
             while left <= right:
                 center = (left + right) // 2
 
-                item = cast(DictionaryItem, index.content.get_at(center))
-                if item and str(item.key) == value:
+                item = cast(DictionaryItem, idx_dict.content.get_at(center))
+                if item and str(item.key) == sval:
                     return center
 
-                if str(item.key) > value:
+                if item and str(item.key) > sval:
                     right = center - 1
                 else:
                     left = center + 1
@@ -653,18 +660,27 @@ class IndexedQueryPlan(QueryPlan):
             )
 
     def yield_from_index(self, field_name: str, index: int) -> list:
-        while index < self.indexes[field_name].count:
-            item = cast(DictionaryItem, self.indexes[field_name].get_at(index))
+        idx_dict = cast(Dictionary, self.indexes.get_at(field_name))
+        if idx_dict is None:
+            return
+        while index < idx_dict.content.count:
+            item = cast(DictionaryItem, idx_dict.content.get_at(index))
             index += 1
+            if item is None:
+                continue
             value_set = cast(Set, item.value)
             for record in value_set.as_iterable():
                 yield record
 
     def get_greater_than(self, field_name: str, value: object) -> list:
+        idx_dict = cast(Dictionary, self.indexes.get_at(field_name))
+        if idx_dict is None:
+            return []
         index = self.position_at(field_name, value)
-        item = cast(DictionaryItem, self.indexes[field_name].get_at(index))
-        if item.key == value:
-            item += 1
+        if index < idx_dict.content.count:
+            item = cast(DictionaryItem, idx_dict.content.get_at(index))
+            if item and str(item.key) == str(value):
+                index += 1
         return self.yield_from_index(field_name, index)
 
     def get_greater_or_equal_than(self, field_name: str, value: object) -> list:
@@ -672,13 +688,14 @@ class IndexedQueryPlan(QueryPlan):
         return self.yield_from_index(field_name, index)
 
     def get_equal_than(self, field_name: str, value: object) -> list:
-        if field_name in self.indexes:
-            index = cast(Dictionary, self.indexes[field_name])
-            if index is None:
+        if self.indexes and self.indexes.has(field_name):
+            idx_dict = cast(Dictionary, self.indexes.get_at(field_name))
+            if idx_dict is None:
                 return []
 
-            item = cast(DictionaryItem, index.get_at(value))
-            value_set = cast(Set, item.value)
+            value_set = cast(Set, idx_dict.get_at(str(value)))
+            if value_set is None:
+                return []
             for record in value_set.as_iterable():
                 yield record
         else:
@@ -687,23 +704,37 @@ class IndexedQueryPlan(QueryPlan):
             )
 
     def yield_up_to_index(self, field_name: str, index_up_to: int) -> list:
+        idx_dict = cast(Dictionary, self.indexes.get_at(field_name))
+        if idx_dict is None:
+            return
         index = 0
-        while index < self.indexes[field_name].count and index < index_up_to:
-            item = cast(DictionaryItem, self.indexes[field_name].get_at(index))
+        while index < idx_dict.content.count and index < index_up_to:
+            item = cast(DictionaryItem, idx_dict.content.get_at(index))
             index += 1
+            if item is None:
+                continue
             value_set = cast(Set, item.value)
             for record in value_set.as_iterable():
                 yield record
 
     def get_lower_than(self, field_name: str, value: object) -> list:
+        idx_dict = cast(Dictionary, self.indexes.get_at(field_name))
+        if idx_dict is None:
+            return []
         index = self.position_at(field_name, value)
-        item = cast(DictionaryItem, self.indexes[field_name].get_at(index))
-        if item.key == value:
-            item -= 1
+        # Exclusive: do not include the bucket equal to value
         return self.yield_up_to_index(field_name, index)
 
     def get_lower_or_equal_than(self, field_name: str, value: object) -> list:
+        idx_dict = cast(Dictionary, self.indexes.get_at(field_name))
+        if idx_dict is None:
+            return []
         index = self.position_at(field_name, value)
+        # Inclusive: if exact match at position, include it by advancing one
+        if index < idx_dict.content.count:
+            item = cast(DictionaryItem, idx_dict.content.get_at(index))
+            if item and str(item.key) == str(value):
+                index += 1
         return self.yield_up_to_index(field_name, index)
 
     def get_range(self, field_name: str, lo: object, hi: object, include_lower: bool, include_upper: bool):
@@ -711,28 +742,32 @@ class IndexedQueryPlan(QueryPlan):
         Iterate records whose indexed key is within [lo, hi] with bound inclusivity flags.
         """
         self._load()
-        if field_name not in self.indexes:
+        if not (self.indexes and self.indexes.has(field_name)):
             raise ProtoValidationException(message=f'No index on field {field_name}!')
+        idx_dict = cast(Dictionary, self.indexes.get_at(field_name))
+        if idx_dict is None:
+            return
         # Find start position
         start = self.position_at(field_name, lo)
         # Adjust for exclusive lower if exact match
-        if start < self.indexes[field_name].count:
-            item = cast(DictionaryItem, self.indexes[field_name].get_at(start))
-            if item and item.key == lo and not include_lower:
+        if start < idx_dict.content.count:
+            item = cast(DictionaryItem, idx_dict.content.get_at(start))
+            if item and str(item.key) == str(lo) and not include_lower:
                 start += 1
         # Iterate until passing upper bound
         idx = start
-        while idx < self.indexes[field_name].count:
-            item = cast(DictionaryItem, self.indexes[field_name].get_at(idx))
+        shi = str(hi)
+        while idx < idx_dict.content.count:
+            item = cast(DictionaryItem, idx_dict.content.get_at(idx))
             if item is None:
                 break
-            key = item.key
+            skey = str(item.key)
             # Stop based on upper bound
             if include_upper:
-                if key > hi:
+                if skey > shi:
                     break
             else:
-                if key >= hi:
+                if skey >= shi:
                     break
             value_set = cast(Set, item.value)
             for record in value_set.as_iterable():
@@ -809,12 +844,13 @@ class IndexedSearchPlan(IndexedQueryPlan):
         - Otherwise, fallback to executing and counting.
         """
         try:
-            if isinstance(self.operator, Equal) and self.field_to_scan in self.indexes:
-                index = cast(Dictionary, self.indexes[self.field_to_scan])
-                item = cast(DictionaryItem, index.get_at(self.value))
-                if not item:
+            if isinstance(self.operator, Equal) and self.indexes and self.indexes.has(self.field_to_scan):
+                idx_dict = cast(Dictionary, self.indexes.get_at(self.field_to_scan))
+                if idx_dict is None:
                     return 0
-                value_set = cast(Set, item.value)
+                value_set = cast(Set, idx_dict.get_at(str(self.value)))
+                if value_set is None:
+                    return 0
                 return value_set.count
         except Exception:
             # On any unexpected shape, fallback to generic count
@@ -916,14 +952,15 @@ class IndexedRangeSearchPlan(IndexedQueryPlan):
         self.include_upper = include_upper
 
     def execute(self):
-        # If no indexes available, fallback to scanning based_on
-        if not isinstance(self.based_on, IndexedQueryPlan) or self.field_to_scan not in self.indexes:
-            # Fallback should not normally happen if optimizer set this, but guard anyway
+        # Prefer using the index if available; otherwise, fallback to based_on
+        if self.indexes and self.indexes.has(self.field_to_scan):
+            yield from self.get_range(self.field_to_scan, self.lo, self.hi, self.include_lower, self.include_upper)
+            return
+        # Fallback should not normally happen if optimizer set this, but guard anyway
+        if self.based_on is not None:
             for rec in self.based_on.execute():
                 yield rec
-            return
-        # Use index range
-        yield from self.get_range(self.field_to_scan, self.lo, self.hi, self.include_lower, self.include_upper)
+        return
 
     def optimize(self, full_plan: QueryPlan) -> QueryPlan:
         return IndexedRangeSearchPlan(
