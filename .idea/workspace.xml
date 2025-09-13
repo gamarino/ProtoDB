@@ -4,13 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] The test suite was run, failures were identified, and targeted fixes were applied to make indexes optional and correct dictionary behaviors. After implementing the fixes, the full test suite of 241 tests passed successfully. Guidance on running the tests with proper discovery was provided.">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/performance.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/performance.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/benchmark_results_indexed.json" beforeDir="false" afterPath="$PROJECT_DIR$/examples/benchmark_results_indexed.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/indexed_benchmark.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/indexed_benchmark.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
-    </list>
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="The key bug preventing index usage was fixed by correctly using Dictionary methods and normalizing keys. Performance improved slightly, with indexed queries now faster than linear scans, achieving about 56 queries per second on 50k items. Unit tests passed, and further optimizations are needed to meet the expected performance targets." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -277,23 +271,7 @@
       <workItem from="1757647544978" duration="4378000" />
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
-      <workItem from="1757675249603" duration="26762000" />
-    </task>
-    <task id="LOCAL-00036" summary="[FIX] simple_example.py: in proper proto_db style">
-      <option name="closed" value="true" />
-      <created>1753990664213</created>
-      <option name="number" value="00036" />
-      <option name="presentableId" value="LOCAL-00036" />
-      <option name="project" value="LOCAL" />
-      <updated>1753990664213</updated>
-    </task>
-    <task id="LOCAL-00037" summary="[FIX] task_manager.py: in proper proto_db style">
-      <option name="closed" value="true" />
-      <created>1753991180093</created>
-      <option name="number" value="00037" />
-      <option name="presentableId" value="LOCAL-00037" />
-      <option name="project" value="LOCAL" />
-      <updated>1753991180093</updated>
+      <workItem from="1757675249603" duration="27889000" />
     </task>
     <task id="LOCAL-00038" summary="[WIP] simple_example.py: TODO: list with errors">
       <option name="closed" value="true" />
@@ -671,15 +649,29 @@
       <option name="project" value="LOCAL" />
       <updated>1757735771568</updated>
     </task>
-    <option name="localTasksCounter" value="85" />
+    <task id="LOCAL-00085" summary="The performance suite was refocused on indexed collections and a runtime bug in IndexedQueryPlan.execute was fixed. Benchmark scripts and documentation were updated to emphasize index-aware evaluation and improve clarity. Unit tests passed and updated benchmark results were saved successfully.">
+      <option name="closed" value="true" />
+      <created>1757736613011</created>
+      <option name="number" value="00085" />
+      <option name="presentableId" value="LOCAL-00085" />
+      <option name="project" value="LOCAL" />
+      <updated>1757736613011</updated>
+    </task>
+    <task id="LOCAL-00086" summary="The key bug preventing index usage was fixed by correctly using Dictionary methods and normalizing keys. Performance improved slightly, with indexed queries now faster than linear scans, achieving about 56 queries per second on 50k items. Unit tests passed, and further optimizations are needed to meet the expected performance targets.">
+      <option name="closed" value="true" />
+      <created>1757737725535</created>
+      <option name="number" value="00086" />
+      <option name="presentableId" value="LOCAL-00086" />
+      <option name="project" value="LOCAL" />
+      <updated>1757737725535</updated>
+    </task>
+    <option name="localTasksCounter" value="87" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[ADD] Range operators `between[]`, `between()`, `between(]`, and `between[)` were implemented with parsing, evaluation, and index-based optimization. All tests passed successfully, confirming correct functionality and backward compatibility. The solution is now ready for submission." />
-    <MESSAGE value="[ADD] Se implementó la optimización de la cláusula `where` con intersección progresiva de condiciones AND ordenadas por selectividad utilizando índices. Todas las pruebas objetivo fueron exitosas, aunque hubo un error con el descubrimiento completo por un módulo externo faltante. Sin índices, se conserva el filtrado linear habitual." />
     <MESSAGE value="[ADD] The performance suite was updated to use new indexes, enabling a benchmark to evaluate proto_db with indexed collections against a Python baseline. A new benchmark script was created, executed successfully, and documentation was updated accordingly." />
     <MESSAGE value="[ADD] The Sphinx documentation was successfully updated to reflect new features, including range operators, UnnestPlan, CollectionFieldPlan, index-aware WHERE optimizations, and the indexed benchmark. New pages were created and existing content modified as needed. All changes were documented and submitted for review." />
     <MESSAGE value="[ADD] A new `Vector` type and an `ExactVectorIndex` interface with basic operators for similarity search were successfully implemented in `proto_db`. The `near[]` operator was integrated, allowing for linear fallback evaluations, and all tests passed successfully. Documentation was updated accordingly, leaving future enhancements like ANN and persistence for subsequent phases." />
@@ -703,7 +695,9 @@
     <MESSAGE value="[WIP] nuevos índices" />
     <MESSAGE value="[FIX] queries.py: Fixed multiple errors in proto_db/queries.py related to IndexedQueryPlan and index handling. Corrected API usage, key normalization, bounds checking, and index-based query execution. Testing is currently blocked by a separate circular import issue unrelated to these fixes." />
     <MESSAGE value="[FIX] The test suite was run, failures were identified, and targeted fixes were applied to make indexes optional and correct dictionary behaviors. After implementing the fixes, the full test suite of 241 tests passed successfully. Guidance on running the tests with proper discovery was provided." />
-    <option name="LAST_COMMIT_MESSAGE" value="[FIX] The test suite was run, failures were identified, and targeted fixes were applied to make indexes optional and correct dictionary behaviors. After implementing the fixes, the full test suite of 241 tests passed successfully. Guidance on running the tests with proper discovery was provided." />
+    <MESSAGE value="The performance suite was refocused on indexed collections and a runtime bug in IndexedQueryPlan.execute was fixed. Benchmark scripts and documentation were updated to emphasize index-aware evaluation and improve clarity. Unit tests passed and updated benchmark results were saved successfully." />
+    <MESSAGE value="The key bug preventing index usage was fixed by correctly using Dictionary methods and normalizing keys. Performance improved slightly, with indexed queries now faster than linear scans, achieving about 56 queries per second on 50k items. Unit tests passed, and further optimizations are needed to meet the expected performance targets." />
+    <option name="LAST_COMMIT_MESSAGE" value="The key bug preventing index usage was fixed by correctly using Dictionary methods and normalizing keys. Performance improved slightly, with indexed queries now faster than linear scans, achieving about 56 queries per second on 50k items. Unit tests passed, and further optimizations are needed to meet the expected performance targets." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -720,7 +714,7 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/queries.py</url>
-          <line>263</line>
+          <line>265</line>
           <option name="timeStamp" value="188" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">

@@ -4,9 +4,9 @@ This document explains how to run the performance suite with emphasis on indexed
 
 ## Highlights
 
-- AND + range (Between, <, <=, >, >=) predicates can leverage secondary indexes.
-- The WherePlan optimizer orders predicates by selectivity and uses prebuilt indexes to compute candidate sets and intersect them.
-- Secondary indexes are represented as RepeatedKeysDictionary per field, mapping key -> Set(records).
+- Equality, IN, and CONTAINS predicates are served via secondary indexes by building candidate sets and intersecting them by selectivity.
+- Range predicates (Between, <, <=, >, >=): the optimizer can push down ranges when using an IndexedRangeSearchPlan; otherwise they are applied as residual filters after intersecting equality-based candidates.
+- Secondary indexes are represented as RepeatedKeysDictionary per field, mapping key -> Set(records) with string-normalized keys.
 
 ## Run the indexed benchmark
 
@@ -158,3 +158,46 @@ Notes
 - For file-based storage, use `--storage file` and optionally tune filesystem and WAL directory placement.
 - For larger datasets, pass `--size medium` (10k items) or `--size large` (100k items). The script automatically scales query count.
 - The script writes JSON results to `--output`; you can post-process these in notebooks or dashboards.
+
+
+## Latest indexed benchmark results (2025-09-13)
+
+We ran the indexed benchmark multiple times to capture behavior across sizes and query counts. Results below were produced with the current implementation and default settings.
+
+- Run A — 5k items, 100 queries
+  - python_list_baseline: 0.0448 s
+  - protodb_linear_where: 0.4522 s
+  - protodb_indexed_where: 0.5776 s
+  - indexed_over_linear: 0.783×
+  - indexed_over_python: 0.078×
+
+- Run B — 50k items, 100 queries
+  - python_list_baseline: 0.5671 s
+  - protodb_linear_where: 4.4256 s
+  - protodb_indexed_where: 5.6779 s
+  - indexed_over_linear: 0.779×
+  - indexed_over_python: 0.100×
+
+- Run C — 50k items, 200 queries
+  - python_list_baseline: 1.5030 s
+  - protodb_linear_where: 11.9670 s
+  - protodb_indexed_where: 11.2799 s
+  - indexed_over_linear: 1.061×
+  - indexed_over_python: 0.133×
+
+Interpretation and tips:
+- On small datasets (5k) or wider numeric ranges, index overhead can outweigh gains; linear scans may be faster.
+- With more queries and tighter range windows, indexed evaluation starts to overtake linear scans as equality terms (category/status) drive down candidate sets.
+- To accentuate index selectivity and increase QPS:
+  - Use narrower numeric ranges (e.g., window of 200–1000 instead of 5000+).
+  - Add additional equality predicates on indexed fields where possible.
+  - Ensure your IndexedQueryPlan exposes a field->RepeatedKeysDictionary mapping; equality terms benefit the most today.
+  - When you need range pushdown, prefer a plan that produces an IndexedRangeSearchPlan (the optimizer may do this when it can prove the field is indexed).
+
+Reproduce any run, for example Run C:
+
+```bash
+python examples/indexed_benchmark.py --items 50000 --queries 200 --out examples/benchmark_results_indexed.json
+```
+
+The script writes a JSON alongside the parameters; see "Run the indexed benchmark" above for details.
