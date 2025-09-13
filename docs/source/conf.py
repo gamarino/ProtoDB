@@ -12,9 +12,16 @@ sys.path.insert(0, os.path.abspath('../..'))
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'ProtoBase'
-copyright = '2023, ProtoBase Team'
+copyright = '2025, ProtoBase Team'
 author = 'ProtoBase Team'
-release = '0.1.0'
+# Try to read version from pyproject.toml; fallback to semantic string
+try:
+    import tomllib  # Python 3.11+
+    with open(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../pyproject.toml')), 'rb') as _f:
+        _data = tomllib.load(_f)
+        release = _data.get('project', {}).get('version', '0.1.0')
+except Exception:
+    release = '0.1.0'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
