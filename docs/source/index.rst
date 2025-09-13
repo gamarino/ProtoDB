@@ -3,7 +3,7 @@
 Welcome to ProtoBase's documentation!
 ====================================
 
-ProtoBase is a powerful database system implemented in Python, providing various storage options and data structures.
+ProtoBase is an embedded, transactional, object‑oriented data platform for Python with near in‑memory performance, write‑through caching, immutable secondary indexes, and an index‑aware optimizer.
 
 .. toctree::
    :maxdepth: 2

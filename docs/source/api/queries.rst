@@ -8,10 +8,13 @@ This module provides the query system of ProtoBase, which allows for complex dat
 New in this release
 ---------------------
 
-- Range operators between[]/()/[)/(] with proper bound inclusivity via the Between operator.
-- Collection-oriented plans: UnnestPlan and CollectionFieldPlan.
-- Index-aware filtering optimization in WherePlan for AND conjunctions using progressive intersection ordered by selectivity.
-- Range pushdown over indexes via IndexedRangeSearchPlan.
+- Expression compilation flattens nested AND/OR trees into canonical shapes (e.g., ['&', ['&', A, B], C] → AndExpression[A,B,C]).
+- Single‑term index rewrites: a lone indexable predicate becomes an IndexedSearchPlan or IndexedRangeSearchPlan.
+- AND optimization: AndMerge intersects per‑term reference sets (stable AtomPointer.hash) sorted by selectivity, materializing only the final candidate set.
+- OR optimization: OrMerge unions results from index sub‑plans with de‑duplication by stable reference when all terms are indexable.
+- Range operators Between/<
+  =/>=/>: efficient lower‑bound search plus sequential in‑order traversal over AVL‑backed indexes with native key comparisons.
+- Collection‑oriented plans: UnnestPlan and CollectionFieldPlan.
 
 Query Plans
 -----------
