@@ -10,6 +10,8 @@ from .hybrid_executor import HybridExecutor
 
 if TYPE_CHECKING:
     from .db_access import ObjectTransaction
+    from .dictionaries import Dictionary, DictionaryItem, RepeatedKeysDictionary
+    from .sets import Set
 
 # Executor for async operations
 max_workers = (os.cpu_count() or 1) * 5
@@ -1300,13 +1302,18 @@ class WherePlan(QueryPlan):
                 field = term.target_attribute
                 # Ensure we have an IndexedQueryPlan and an index for the field
                 from .queries import IndexedQueryPlan as _IQP
-                if not isinstance(base, _IQP) or field not in getattr(base, 'indexes', {}):
+                # Ensure we have an IndexedQueryPlan and an index for the field
+                from .queries import IndexedQueryPlan as _IQP
+                if not isinstance(base, _IQP):
+                    return None
+                idxs = getattr(base, 'indexes', None)
+                if not idxs or not getattr(idxs, 'has', None) or not idxs.has(field):
                     return None
                 op = term.operation
                 # Equality
                 if isinstance(op, _Equal):
-                    idx_dict = base.indexes[field]
-                    item = idx_dict.get_at(term.value)
+                    idx_dict = idxs.get_at(field)
+                    item = idx_dict.get_at(str(term.value))
                     if not item:
                         return set()
                     # item is a Set; turn into Python set of records
@@ -1316,8 +1323,8 @@ class WherePlan(QueryPlan):
                     result = set()
                     try:
                         for v in term.value:
-                            idx_dict = base.indexes[field]
-                            it = idx_dict.get_at(v)
+                            idx_dict = idxs.get_at(field)
+                            it = idx_dict.get_at(str(v))
                             if it:
                                 result.update(it.as_iterable())
                     except Exception:
@@ -1325,30 +1332,23 @@ class WherePlan(QueryPlan):
                     return result
                 # CONTAINS: treat as equality on elements if index was built for contained elements
                 if isinstance(op, _Contains):
-                    idx_dict = base.indexes[field]
-                    it = idx_dict.get_at(term.value)
+                    idx_dict = idxs.get_at(field)
+                    it = idx_dict.get_at(str(term.value))
                     if it:
                         return set(it.as_iterable())
                     return set()
-                # BETWEEN (range)
+                # BETWEEN (range) — avoid materializing large range sets; leave as residual filter
                 if isinstance(op, _Between):
-                    try:
-                        lo, hi = term.value
-                    except Exception:
-                        return None
-                    if lo is None or hi is None:
-                        return None
-                    # Use indexed range helper to avoid scanning all
-                    return set(base.get_range(field, lo, hi, op.include_lower, op.include_upper))
-                # Greater/Less family as ranges
+                    return None
+                # Greater/Less family as residual filters as well
                 if isinstance(op, _Greater):
-                    return set(base.get_greater_than(field, term.value))
+                    return None
                 if isinstance(op, _GreaterOrEqual):
-                    return set(base.get_greater_or_equal_than(field, term.value))
+                    return None
                 if isinstance(op, _Lower):
-                    return set(base.get_lower_than(field, term.value))
+                    return None
                 if isinstance(op, _LowerOrEqual):
-                    return set(base.get_lower_or_equal_than(field, term.value))
+                    return None
                 return None
             except Exception:
                 return None
@@ -1378,14 +1378,20 @@ class WherePlan(QueryPlan):
                     current = current.intersection(s)
                 if not current:
                     return  # empty generator
-                # Apply residual/full filter on reduced set only
-                for rec in current:
+                # Apply only residual (non-indexed) terms on the reduced set
+                def _matches_residual(rec):
+                    if not residual:
+                        return True
                     try:
-                        if self.filter.match(rec):
-                            yield rec
+                        for expr in residual:
+                            if not expr.match(rec):
+                                return False
+                        return True
                     except Exception:
-                        # Be conservative: if matching fails, skip
-                        pass
+                        return False
+                for rec in current:
+                    if _matches_residual(rec):
+                        yield rec
                 return
 
         # Fallback: linear scan

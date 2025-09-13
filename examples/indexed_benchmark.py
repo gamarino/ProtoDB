@@ -109,8 +109,8 @@ def run_benchmark(n_items=10000, n_queries=50, out_path="examples/benchmark_resu
     def pb_indexed_query_once():
         cat = random.choice(CATEGORIES)
         st = random.choice(STATUSES)
-        lo = random.randint(1, 50000)
-        hi = lo + random.randint(100, 10000)
+        lo = random.randint(1, 99500)
+        hi = lo + 500
         # Build a WherePlan over the IndexedQueryPlan so the optimizer can use indexes
         flt = Expression.compile(['&', ['r.category', '==', cat], ['r.status', '==', st], ['r.value', 'between()', lo, hi]])
         plan = WherePlan(filter=flt, based_on=indexed, transaction=tr)

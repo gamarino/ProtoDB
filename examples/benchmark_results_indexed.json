@@ -1,15 +1,15 @@
 {
   "config": {
     "n_items": 50000,
-    "n_queries": 100
+    "n_queries": 200
   },
   "timings_seconds": {
-    "python_list_baseline": 0.7109410762786865,
-    "protodb_linear_where": 5.070519924163818,
-    "protodb_indexed_where": 5.565518379211426
+    "python_list_baseline": 1.5030179023742676,
+    "protodb_linear_where": 11.966989994049072,
+    "protodb_indexed_where": 11.279869318008423
   },
   "speedups": {
-    "indexed_over_linear": 0.9110597753308034,
-    "indexed_over_python": 0.1277403159666538
+    "indexed_over_linear": 1.0609156592748512,
+    "indexed_over_python": 0.1332478116545805
   }
 }
