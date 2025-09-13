@@ -145,18 +145,21 @@ MIT License. See LICENSE for details.
 
 ## Latest indexed query results (2025-09-13)
 
-A recent run of the indexed benchmark on in-memory data produced these highlights (50k items, 200 queries, window=100, warmup=10):
-- python_list_baseline: avg ≈ 5.27 ms; p95 ≈ 9.48 ms; QPS ≈ 189.60
-- protodb_linear_where: avg ≈ 31.11 ms; p95 ≈ 42.35 ms; QPS ≈ 32.14
-- protodb_indexed_where: avg ≈ 5.27 ms; p95 ≈ 6.63 ms; QPS ≈ 189.70
-- Speedup indexed_over_linear: ≈ 5.90×
+Two representative runs on in-memory data using the indexed benchmark:
 
-Primary Key (PK) lookup on the same dataset:
-- python_list_pk_lookup: avg ≈ 5.72 ms; p95 ≈ 8.50 ms; QPS ≈ 174.70
-- protodb_linear_pk_lookup: avg ≈ 26.82 ms; p95 ≈ 38.63 ms; QPS ≈ 37.28
-- protodb_indexed_pk_lookup: avg ≈ 34.69 ms; p95 ≈ 40.07 ms; QPS ≈ 28.82
-- Speedup indexed_pk_over_linear: ≈ 0.77× (indexed PK slower than linear in this configuration; a native PK map would remove overhead)
+- Run A: 10,000 items, 200 queries, window=500, categories=200, statuses=50
+  - Total time (s): python_list_baseline 0.2585; protodb_linear_where 1.4748; protodb_indexed_where 0.2194; python_list_pk_lookup 0.2614; protodb_linear_pk_lookup 1.3195; protodb_indexed_pk_lookup 0.0317
+  - Speedups: indexed_over_linear 6.72×; indexed_over_python 1.18×; indexed_pk_over_linear 41.62×
 
-Artifacts: examples/benchmark_results_indexed.json
+- Run B: 50,000 items, 100 queries, window=500, categories=500, statuses=100
+  - Total time (s): python_list_baseline 0.8465; protodb_linear_where 4.0585; protodb_indexed_where 0.2464; python_list_pk_lookup 1.0834; protodb_linear_pk_lookup 3.7138; protodb_indexed_pk_lookup 0.0226
+  - Speedups: indexed_over_linear 16.47×; indexed_over_python 3.44×; indexed_pk_over_linear 164.09×
 
-For guidance, tuning tips, and additional scenarios, see docs/performance.md.
+Observations
+- Indexed WherePlan increasingly outperforms linear scans as dataset size grows.
+- Primary-key lookups via the ad-hoc index are orders of magnitude faster than linear scans in these runs.
+- Against pure Python list comprehensions, indexed WherePlan ranges from slightly faster at 10k to ~3.4× at 50k; benefits scale with selectivity and size.
+
+Artifacts: examples/benchmark_results_indexed.json, examples/benchmark_results_indexed_win200.json
+
+For details, methodology, and latency stats, see docs/performance.md.
