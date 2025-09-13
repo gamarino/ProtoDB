@@ -22,10 +22,11 @@ ProtoBase is an embedded, transactional, object‑oriented database for Python. 
   - Cluster/Cloud storage variants (S3/GCS‑compatible) under a unified API
 - LINQ‑like query API with pushdown and explain()
 - Immutable secondary indexes; range operators with inclusive/exclusive bounds
+- Advanced index-aware optimizer (2025): AndMerge for AND intersections, OrMerge for OR unions, and single-term index rewrites with efficient range traversal and reference-set intersection to minimize materialization
 - Vector search: exact and ANN (IVF‑Flat; optional HNSW when available)
 - Atom‑level caches (new in 2025):
-  - AtomObjectCache (deserialized objects) and AtomBytesCache (raw bytes)
-  - 2Q policy and single‑flight to cut repeated reads/deserializations
+  - Write-through on save: newly persisted atoms are immediately available in AtomObjectCache and AtomBytesCache
+  - AtomObjectCache (deserialized objects) and AtomBytesCache (raw bytes) with 2Q policy and single‑flight de‑duplication
 - Parallel scans (optional, new in 2025):
   - Adaptive chunking with EMA and clamped bounds
   - Work‑stealing scheduler with per‑worker local deques and metrics hooks
@@ -114,17 +115,22 @@ python -m unittest proto_db.tests.test_parallel
 
 ## Benchmarks
 
-Indexed queries and vector ANN microbenchmarks are provided:
+Indexed queries (including PK lookup) and vector ANN microbenchmarks are provided:
 
 ```bash
-# Indexed benchmark (secondary indexes)
-python examples/indexed_benchmark.py --items 50000 --queries 200 --out examples/benchmark_results_indexed.json
+# Indexed benchmark (secondary indexes with higher selectivity and warmup)
+python examples/indexed_benchmark.py \
+  --items 100000 --queries 200 --window 100 --warmup 10 \
+  --categories 50 --statuses 20 \
+  --out examples/benchmark_results_indexed.json
 
 # Vector ANN benchmark (exact vs IVF‑Flat vs optional HNSW)
 python examples/vector_ann_benchmark.py --n 20000 --dim 64 --queries 50 --k 10 --out examples/benchmark_results_vectors.json
 ```
 
-See docs/performance.md for guidance, caveats on small datasets, and how to interpret results.
+Notes:
+- The indexed benchmark now includes a Primary Key (PK) lookup path comparing indexed vs linear and Python list baselines.
+- See docs/performance.md for guidance, caveats on small datasets, and how to interpret results.
 
 ## Compatibility
 
@@ -137,19 +143,20 @@ MIT License. See LICENSE for details.
 
 
 
-## Latest performance snapshot (2025-09-12)
+## Latest indexed query results (2025-09-13)
 
-A recent run of the comprehensive benchmark on in-memory storage with a small dataset (1000 items, 50 queries) produced the following results:
-- insert: total_time=3.5555 s; time_per_item=3.5555 ms; items_per_second=281.26
-- read: total_time=0.1555 s; time_per_item=0.1555 ms; items_per_second=6429.15
-- update: total_time=2.9889 s; time_per_item=2.9889 ms; items_per_second=334.57
-- delete: total_time=0.4149 s; time_per_item=0.4149 ms; items_per_second=2410.42
-- query (50 queries): total_time=23.2793 s; time_per_query=465.5861 ms; queries_per_second=2.148
+A recent run of the indexed benchmark on in-memory data produced these highlights (50k items, 200 queries, window=500, warmup=10):
+- python_list_baseline: avg ≈ 5.85 ms; p95 ≈ 7.97 ms; QPS ≈ 170.76
+- protodb_linear_where: avg ≈ 42.70 ms; p95 ≈ 49.39 ms; QPS ≈ 23.41
+- protodb_indexed_where: avg ≈ 28.62 ms; p95 ≈ 36.57 ms; QPS ≈ 34.94
+- Speedup indexed_over_linear: ≈ 1.49×
 
-Reproduce locally:
+Primary Key (PK) lookup on the same dataset:
+- python_list_pk_lookup: avg ≈ 5.85 ms; p95 ≈ 7.80 ms; QPS ≈ 170.94
+- protodb_linear_pk_lookup: avg ≈ 28.05 ms; p95 ≈ 31.69 ms; QPS ≈ 35.65
+- protodb_indexed_pk_lookup: avg ≈ 29.55 ms; p95 ≈ 34.94 ms; QPS ≈ 33.84
+- Speedup indexed_pk_over_linear: ≈ 0.95× (indexed PK slightly slower than linear in this configuration)
 
-```bash
-python examples/comprehensive_benchmark.py --storage memory --size small --benchmark all --output benchmark_results.json
-```
+Artifacts: examples/benchmark_results_indexed.json
 
-See docs/performance.md for details and caveats. The raw JSON for the latest run is in benchmark_results.json at the repository root.
+For guidance, tuning tips, and additional scenarios, see docs/performance.md.

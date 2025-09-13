@@ -4,7 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="The indexed performance benchmark was re-run after fixing a duplicate OrMerge class blocker. Results showed the indexed AND+range path was about 1.49x faster than the linear plan with improved latency, while PK lookup was slightly slower. The documentation was updated with new metrics, analysis, and recommendations, and results were saved in a JSON artifact." />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="The commercial_positioning.md was translated into professional English. A new Competitive Landscape &amp; Positioning section was added, contrasting ProtoBase with various technologies. The update fulfills the task requirements fully.">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -271,23 +274,7 @@
       <workItem from="1757647544978" duration="4378000" />
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
-      <workItem from="1757675249603" duration="39692000" />
-    </task>
-    <task id="LOCAL-00050" summary="[PROPOSAL] next steps by AI">
-      <option name="closed" value="true" />
-      <created>1754281811663</created>
-      <option name="number" value="00050" />
-      <option name="presentableId" value="LOCAL-00050" />
-      <option name="project" value="LOCAL" />
-      <updated>1754281811663</updated>
-    </task>
-    <task id="LOCAL-00051" summary="[PROPOSAL] commercial positioning">
-      <option name="closed" value="true" />
-      <created>1754282542856</created>
-      <option name="number" value="00051" />
-      <option name="presentableId" value="LOCAL-00051" />
-      <option name="project" value="LOCAL" />
-      <updated>1754282542857</updated>
+      <workItem from="1757675249603" duration="40524000" />
     </task>
     <task id="LOCAL-00052" summary="[FIX] test files cleanup">
       <option name="closed" value="true" />
@@ -665,15 +652,29 @@
       <option name="project" value="LOCAL" />
       <updated>1757779388379</updated>
     </task>
-    <option name="localTasksCounter" value="99" />
+    <task id="LOCAL-00099" summary="Updated commercial_positioning.md with ProtoBase’s new near-memory performance and features. Added new title, slogan, key characteristics, use cases, and analogy. Aligned document with recent improvements.">
+      <option name="closed" value="true" />
+      <created>1757779513572</created>
+      <option name="number" value="00099" />
+      <option name="presentableId" value="LOCAL-00099" />
+      <option name="project" value="LOCAL" />
+      <updated>1757779513572</updated>
+    </task>
+    <task id="LOCAL-00100" summary="The commercial_positioning.md was translated into professional English. A new Competitive Landscape &amp; Positioning section was added, contrasting ProtoBase with various technologies. The update fulfills the task requirements fully.">
+      <option name="closed" value="true" />
+      <created>1757779904202</created>
+      <option name="number" value="00100" />
+      <option name="presentableId" value="LOCAL-00100" />
+      <option name="project" value="LOCAL" />
+      <updated>1757779904202</updated>
+    </task>
+    <option name="localTasksCounter" value="101" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[IMP] linq operators doc" />
-    <MESSAGE value="[IMP] Performance measurement scripts for LINQ queries were added in the `examples/` directory, including `linq_performance.py`. The execution and results can now be saved to a JSON file, demonstrating the performance of LINQ operations over various data structures. All changes were successfully implemented without errors." />
     <MESSAGE value="[UPD] next_steps_proposal.md" />
     <MESSAGE value="[UPD] commercial_positioning.md" />
     <MESSAGE value="[IMP]  Atom-level in-memory caches (AtomObjectCache and AtomBytesCache) were successfully implemented with a 2Q replacement policy, integrated into the atom read path, and tested. The implementation ensures high hit rates and improved read performance without introducing regressions or deadlocks. Metrics for cache efficiency are also exposed for monitoring." />
@@ -697,7 +698,9 @@
     <MESSAGE value="Added a primary key lookup benchmark comparing Python list, ProtoDB linear, and ProtoDB indexed searches. Updated indexed_benchmark.py with new query functions, integrated timings and latency calculations, and included speedup metrics. Documentation was enhanced in performance.md with explanations of the new benchmark and its expected outcome." />
     <MESSAGE value="Implemented index-based optimizations for single-term and OR filters in the query optimizer. Added OrMerge to union sub-query results with deduplication and updated WherePlan.optimize accordingly. New unit tests confirm correct behavior and fallback to linear scans when necessary." />
     <MESSAGE value="The indexed performance benchmark was re-run after fixing a duplicate OrMerge class blocker. Results showed the indexed AND+range path was about 1.49x faster than the linear plan with improved latency, while PK lookup was slightly slower. The documentation was updated with new metrics, analysis, and recommendations, and results were saved in a JSON artifact." />
-    <option name="LAST_COMMIT_MESSAGE" value="The indexed performance benchmark was re-run after fixing a duplicate OrMerge class blocker. Results showed the indexed AND+range path was about 1.49x faster than the linear plan with improved latency, while PK lookup was slightly slower. The documentation was updated with new metrics, analysis, and recommendations, and results were saved in a JSON artifact." />
+    <MESSAGE value="Updated commercial_positioning.md with ProtoBase’s new near-memory performance and features. Added new title, slogan, key characteristics, use cases, and analogy. Aligned document with recent improvements." />
+    <MESSAGE value="The commercial_positioning.md was translated into professional English. A new Competitive Landscape &amp; Positioning section was added, contrasting ProtoBase with various technologies. The update fulfills the task requirements fully." />
+    <option name="LAST_COMMIT_MESSAGE" value="The commercial_positioning.md was translated into professional English. A new Competitive Landscape &amp; Positioning section was added, contrasting ProtoBase with various technologies. The update fulfills the task requirements fully." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -744,12 +747,12 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/examples/indexed_benchmark.py</url>
-          <line>168</line>
+          <line>172</line>
           <option name="timeStamp" value="261" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/examples/indexed_benchmark.py</url>
-          <line>167</line>
+          <line>171</line>
           <option name="timeStamp" value="262" />
         </line-breakpoint>
       </breakpoints>
