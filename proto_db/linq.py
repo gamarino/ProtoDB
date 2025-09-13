@@ -45,8 +45,18 @@ class _Pred:
     def __init__(self, fn: Callable[[Any], bool], pb_tokens: Optional[list] = None):
         self.fn = fn
         self.pb_tokens = pb_tokens  # Optional Expression.compile token stream
+        self._compiled_expr: Optional[PBExpression] = None
     def __call__(self, x):
         return self.fn(x)
+    def get_compiled(self) -> Optional[PBExpression]:
+        if self.pb_tokens is None:
+            return None
+        if self._compiled_expr is None:
+            try:
+                self._compiled_expr = PBExpression.compile(self.pb_tokens)
+            except Exception:
+                self._compiled_expr = None
+        return self._compiled_expr
     def __and__(self, other: ' _Pred | Callable[[Any], bool]') -> '_Pred':
         other_fn = other.fn if isinstance(other, _Pred) else other
         # Merge pb tokens into And expression if available
@@ -508,7 +518,11 @@ class Queryable(Generic[T]):
                     arg0 = args[0]
                     # Prefer PB Expression tokens if available for pushdown/index usage
                     if isinstance(arg0, _Pred) and arg0.pb_tokens is not None:
-                        current_plan = WherePlan(filter_spec=arg0.pb_tokens, based_on=current_plan)
+                        compiled = arg0.get_compiled()
+                        if compiled is not None:
+                            current_plan = WherePlan(filter=compiled, based_on=current_plan)
+                        else:
+                            current_plan = WherePlan(filter_spec=arg0.pb_tokens, based_on=current_plan)
                         plan_prefix_len += 1
                         continue
                     # Try translating lambda chained comparisons to Between
@@ -782,16 +796,55 @@ class Queryable(Generic[T]):
 
     def explain(self, format: str = "text") -> str | dict:
         ops = [op for op in self._ops]
-        # Detect prefix translatable to plan (same logic as _execute but lightweight)
+        # Build a plan prefix mirroring _execute()
         plan_prefix_len = 0
-        if self._base_plan is not None:
+        current_plan: Optional[QueryPlan] = self._base_plan
+        if current_plan is not None:
             for (name, args, kwargs) in ops:
                 if name == 'where':
-                    plan_prefix_len += 1
+                    arg0 = args[0]
+                    if isinstance(arg0, _Pred) and arg0.pb_tokens is not None:
+                        compiled = arg0.get_compiled()
+                        if compiled is not None:
+                            current_plan = WherePlan(filter=compiled, based_on=current_plan)
+                        else:
+                            current_plan = WherePlan(filter_spec=arg0.pb_tokens, based_on=current_plan)
+                        plan_prefix_len += 1
+                        continue
+                    if callable(arg0):
+                        lam_tokens = _translate_lambda_between(arg0)
+                        if lam_tokens is not None:
+                            current_plan = WherePlan(filter_spec=lam_tokens, based_on=current_plan)
+                            plan_prefix_len += 1
+                            continue
+                    # Fallback cannot be planned
+                    break
                 elif name == 'select' and isinstance(args[0], dict):
-                    plan_prefix_len += 1
+                    fields: Dict[str, Any] = {}
+                    ok = True
+                    for k, v in args[0].items():
+                        if isinstance(v, str):
+                            fields[k] = v
+                        else:
+                            fn = _to_callable(v)
+                            if fn is None:
+                                ok = False
+                                break
+                            fields[k] = fn
+                    if ok:
+                        current_plan = SelectPlan(fields=fields, based_on=current_plan)
+                        plan_prefix_len += 1
+                        continue
+                    break
                 else:
                     break
+        optimized_node = None
+        try:
+            if current_plan is not None and plan_prefix_len > 0:
+                optimized_node = current_plan.optimize(current_plan)
+        except Exception:
+            optimized_node = None
+        node_name = optimized_node.__class__.__name__ if optimized_node is not None else None
         if format == 'json':
             return {
                 "base": "QueryPlan" if self._base_plan is not None else "Iterable",
@@ -799,6 +852,7 @@ class Queryable(Generic[T]):
                     {"op": name, "args": [str(a) for a in args], **kwargs}
                     for (name, args, kwargs) in ops[:plan_prefix_len]
                 ],
+                "optimized_node": node_name,
                 "local_ops": [
                     {"op": name, "args": [str(a) for a in args], **kwargs}
                     for (name, args, kwargs) in ops[plan_prefix_len:]
@@ -808,6 +862,8 @@ class Queryable(Generic[T]):
         segments = []
         if plan_prefix_len:
             segments.append("plan:" + " -> ".join(f"{name}" for (name,_,_) in ops[:plan_prefix_len]))
+            if node_name:
+                segments.append(f"optimized:{node_name}")
         if plan_prefix_len < len(ops):
             segments.append("local:" + " -> ".join(f"{name}" for (name,_,_) in ops[plan_prefix_len:]))
         return " | ".join(segments) if segments else ("plan: <none>" if self._base_plan is not None else "local: <none>")
