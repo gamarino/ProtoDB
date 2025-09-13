@@ -4,9 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Implemented flattening of nested AND and OR expressions in Expression.compile and a recursive optimize method in proto_db/queries.py. The solution ensures that nested logical expressions are canonically flattened, including top-level implicit ANDs. All related unit tests in proto_db.tests passed successfully.">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Added a primary key lookup benchmark comparing Python list, ProtoDB linear, and ProtoDB indexed searches. Updated indexed_benchmark.py with new query functions, integrated timings and latency calculations, and included speedup metrics. Documentation was enhanced in performance.md with explanations of the new benchmark and its expected outcome.">
       <change beforePath="$PROJECT_DIR$/docs/performance.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/performance.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/indexed_benchmark.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/indexed_benchmark.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/benchmark_results_indexed.json" beforeDir="false" afterPath="$PROJECT_DIR$/examples/benchmark_results_indexed.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_where_plan.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_where_plan.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -274,15 +276,7 @@
       <workItem from="1757647544978" duration="4378000" />
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
-      <workItem from="1757675249603" duration="37440000" />
-    </task>
-    <task id="LOCAL-00047" summary="[FIX] Reformatted code">
-      <option name="closed" value="true" />
-      <created>1754280554141</created>
-      <option name="number" value="00047" />
-      <option name="presentableId" value="LOCAL-00047" />
-      <option name="project" value="LOCAL" />
-      <updated>1754280554141</updated>
+      <workItem from="1757675249603" duration="39134000" />
     </task>
     <task id="LOCAL-00048" summary="[FIX] Updated comments">
       <option name="closed" value="true" />
@@ -668,14 +662,21 @@
       <option name="project" value="LOCAL" />
       <updated>1757776356325</updated>
     </task>
-    <option name="localTasksCounter" value="96" />
+    <task id="LOCAL-00096" summary="Added a primary key lookup benchmark comparing Python list, ProtoDB linear, and ProtoDB indexed searches. Updated indexed_benchmark.py with new query functions, integrated timings and latency calculations, and included speedup metrics. Documentation was enhanced in performance.md with explanations of the new benchmark and its expected outcome.">
+      <option name="closed" value="true" />
+      <created>1757777165921</created>
+      <option name="number" value="00096" />
+      <option name="presentableId" value="LOCAL-00096" />
+      <option name="project" value="LOCAL" />
+      <updated>1757777165921</updated>
+    </task>
+    <option name="localTasksCounter" value="97" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[ADD]IVF-Flat performance comparison has been integrated into the vector benchmark suite, enabling comparisons against Exact and HNSW indices. The updated benchmark includes IVF metrics and can be executed with specific parameters to generate detailed results." />
     <MESSAGE value="[IMP] linq alike functions" />
     <MESSAGE value="[IMP] linq between operator" />
     <MESSAGE value="[IMP] linq operators doc" />
@@ -700,7 +701,8 @@
     <MESSAGE value="The performance documentation was updated with a new section titled &quot;Latest Results (2025-09-13)&quot;. This section includes details of two recent benchmark runs, their commands, artifact paths, key metrics, speedups, and tuning tips. The updates align the documentation with current improvements in the indexed query engine." />
     <MESSAGE value="Implemented write-through caching in Atom._save to populate caches after persistence. Modified ObjectTransaction to expose the AtomCacheBundle from storage. Added a unit test verifying cache hits on read-after-write scenarios, all tests passed successfully." />
     <MESSAGE value="Implemented flattening of nested AND and OR expressions in Expression.compile and a recursive optimize method in proto_db/queries.py. The solution ensures that nested logical expressions are canonically flattened, including top-level implicit ANDs. All related unit tests in proto_db.tests passed successfully." />
-    <option name="LAST_COMMIT_MESSAGE" value="Implemented flattening of nested AND and OR expressions in Expression.compile and a recursive optimize method in proto_db/queries.py. The solution ensures that nested logical expressions are canonically flattened, including top-level implicit ANDs. All related unit tests in proto_db.tests passed successfully." />
+    <MESSAGE value="Added a primary key lookup benchmark comparing Python list, ProtoDB linear, and ProtoDB indexed searches. Updated indexed_benchmark.py with new query functions, integrated timings and latency calculations, and included speedup metrics. Documentation was enhanced in performance.md with explanations of the new benchmark and its expected outcome." />
+    <option name="LAST_COMMIT_MESSAGE" value="Added a primary key lookup benchmark comparing Python list, ProtoDB linear, and ProtoDB indexed searches. Updated indexed_benchmark.py with new query functions, integrated timings and latency calculations, and included speedup metrics. Documentation was enhanced in performance.md with explanations of the new benchmark and its expected outcome." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -747,8 +749,13 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/examples/indexed_benchmark.py</url>
-          <line>154</line>
-          <option name="timeStamp" value="259" />
+          <line>168</line>
+          <option name="timeStamp" value="261" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/examples/indexed_benchmark.py</url>
+          <line>167</line>
+          <option name="timeStamp" value="262" />
         </line-breakpoint>
       </breakpoints>
       <default-breakpoints>
@@ -765,7 +772,7 @@
     <SUITE FILE_PATH="coverage/ProtoBase$.coverage" NAME=" Coverage Results" MODIFIED="1736352327720" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/ProtoBase$run_tests.coverage" NAME="run_tests Coverage Results" MODIFIED="1757682167480" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/ProtoBase$performance_benchmark.coverage" NAME="performance_benchmark Coverage Results" MODIFIED="1754260400708" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
-    <SUITE FILE_PATH="coverage/ProtoBase$indexed_benchmark.coverage" NAME="indexed_benchmark Coverage Results" MODIFIED="1757743159440" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/ProtoBase$indexed_benchmark.coverage" NAME="indexed_benchmark Coverage Results" MODIFIED="1757777969871" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$db_performance_benchmark.coverage" NAME="db_performance_benchmark Coverage Results" MODIFIED="1754260420768" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$minimal_benchmark.coverage" NAME="minimal_benchmark Coverage Results" MODIFIED="1754260411492" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$simple_performance_benchmark.coverage" NAME="simple_performance_benchmark Coverage Results" MODIFIED="1754260319108" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />

@@ -7,8 +7,9 @@ from proto_db.db_access import ObjectSpace
 from proto_db.memory_storage import MemoryStorage
 from proto_db.queries import (
     WherePlan, ListPlan, Term, AndExpression, OrExpression, NotExpression,
-    Equal, NotEqual, Greater, GreaterOrEqual, Lower, LowerOrEqual
+    Equal, NotEqual, Greater, GreaterOrEqual, Lower, LowerOrEqual, OrMerge, IndexedQueryPlan
 )
+from proto_db.dictionaries import Dictionary, RepeatedKeysDictionary
 
 
 class TestWherePlan(unittest.TestCase):
@@ -241,6 +242,45 @@ class TestWherePlan(unittest.TestCase):
 
         # Verify that optimize was called on the base plan
         self.base_plan.optimize.assert_called_once()
+
+
+    def _build_indexed_plan(self, fields: list[str]):
+        # Build indexes over given fields mapping key->Set(DBObject) for current mock_data
+        base_plan = ListPlan(base_list=self.mock_data, transaction=self.transaction)
+        idx_map = {}
+        for fld in fields:
+            rkd = RepeatedKeysDictionary(transaction=self.transaction)
+            for rec in self.mock_data:
+                key = getattr(rec, fld)
+                rkd = rkd.set_at(key, rec)
+            idx_map[fld] = rkd
+        indexes_dict = Dictionary(transaction=self.transaction)
+        for k, v in idx_map.items():
+            indexes_dict = indexes_dict.set_at(k, v)
+        return IndexedQueryPlan(indexes=indexes_dict, based_on=base_plan, transaction=self.transaction)
+
+    def test_single_term_indexed_lookup(self):
+        indexed = self._build_indexed_plan(['id'])
+        term = Term('id', Equal(), 3)
+        wp = WherePlan(filter=term, based_on=indexed, transaction=self.transaction)
+        optimized = wp.optimize(wp)
+        from proto_db.queries import IndexedSearchPlan
+        self.assertIsInstance(optimized, IndexedSearchPlan)
+
+    def test_or_expression_indexed_lookup(self):
+        indexed = self._build_indexed_plan(['id'])
+        expr = OrExpression([Term('id', Equal(), 1), Term('id', Equal(), 3)])
+        wp = WherePlan(filter=expr, based_on=indexed, transaction=self.transaction)
+        optimized = wp.optimize(wp)
+        self.assertIsInstance(optimized, OrMerge)
+
+    def test_or_expression_fallback_on_unindexed_term(self):
+        indexed = self._build_indexed_plan(['id'])
+        expr = OrExpression([Term('id', Equal(), 1), Term('name', Equal(), 'Person 2')])
+        wp = WherePlan(filter=expr, based_on=indexed, transaction=self.transaction)
+        optimized = wp.optimize(wp)
+        # Should not be OrMerge because one term is unindexed
+        self.assertNotIsInstance(optimized, OrMerge)
 
 
 if __name__ == "__main__":

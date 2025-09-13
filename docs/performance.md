@@ -227,47 +227,47 @@ Los nuevos campos se incorporan en el JSON de salida: `python_list_pk_lookup`, `
 
 ## Latest Results (2025-09-13)
 
-This section summarizes the most recent benchmark runs using the indexed query engine with reference-set intersection and efficient range scans.
+This section summarizes the most recent benchmark run using the indexed query engine with reference-set intersection and efficient range scans, including the new Primary Key (PK) lookup paths.
 
 Commands executed from the repository root:
 
 ```bash
-# Run 1: 50k items, 200 queries, window=500, warmup=10
+# Run: 50k items, 200 queries, window=500, warmup=10
 python examples/indexed_benchmark.py \
   --items 50000 --queries 200 --window 500 --warmup 10 \
   --out examples/benchmark_results_indexed.json
-
-# Run 2: 50k items, 200 queries, window=200, warmup=10
-python examples/indexed_benchmark.py \
-  --items 50000 --queries 200 --window 200 --warmup 10 \
-  --out examples/benchmark_results_indexed_win200.json
 ```
 
 Artifacts written:
 - examples/benchmark_results_indexed.json
-- examples/benchmark_results_indexed_win200.json
 
-Highlights (Run 1: items=50k, window=500):
-- python_list_baseline: avg ≈ 5.74 ms; p95 ≈ 9.31 ms; QPS ≈ 174
-- protodb_linear_where: avg ≈ 44.07 ms; p95 ≈ 65.03 ms; QPS ≈ 22.7
-- protodb_indexed_where: avg ≈ 29.26 ms; p95 ≈ 32.67 ms; QPS ≈ 34.2
-- Speedup indexed_over_linear: ≈ 1.51x
+Highlights (items=50k, window=500):
+- python_list_baseline: avg ≈ 5.70 ms; p95 ≈ 14.95 ms; QPS ≈ 175.3
+- protodb_linear_where: avg ≈ 48.08 ms; p95 ≈ 109.66 ms; QPS ≈ 20.8
+- protodb_indexed_where: avg ≈ 35.59 ms; p95 ≈ 55.76 ms; QPS ≈ 28.10
+- Speedup indexed_over_linear: ≈ 1.35x
 
-Highlights (Run 2: items=50k, window=200):
-- python_list_baseline: avg ≈ 5.63 ms; p95 ≈ 8.63 ms; QPS ≈ 177
-- protodb_linear_where: avg ≈ 42.51 ms; p95 ≈ 46.51 ms; QPS ≈ 23.5
-- protodb_indexed_where: avg ≈ 29.80 ms; p95 ≈ 34.11 ms; QPS ≈ 33.6
-- Speedup indexed_over_linear: ≈ 1.43x
+PK lookup (point query) results on the same dataset:
+- python_list_pk_lookup: avg ≈ 9.64 ms; p95 ≈ 16.39 ms; QPS ≈ 103.7
+- protodb_linear_pk_lookup: avg ≈ 28.86 ms; p95 ≈ 63.81 ms; QPS ≈ 34.64
+- protodb_indexed_pk_lookup: avg ≈ 40.15 ms; p95 ≈ 83.68 ms; QPS ≈ 24.90
+- Speedup indexed_pk_over_linear: ≈ 0.72x (indexed PK slower than linear in this configuration)
 
 Interpretation:
-- Indexed query execution is consistently faster than the linear WherePlan by ~1.4–1.5x on these configurations. p95 latency is markedly lower on the indexed path, indicating successful exploitation of secondary indexes via reference-set intersections and true range scans over the AVL-backed index.
-- The Python list baseline remains the fastest in absolute terms at this scale because it avoids plan construction and object model overhead and runs tight loops over raw dicts.
+- Indexed query execution is faster than the linear WherePlan by ~1.35x for the AND+range workload at 50k items and window 500. Lower p95 on the indexed path aligns with candidate-set intersection before residual filtering.
+- For PK lookup, the indexed path underperformed the linear scan in this in-memory, small-object benchmark. This is likely due to benchmark setup overheads (wrapper objects, plan/expression construction, index dictionary traversal) dominating the O(log N) advantages for point queries at this scale. The linear path iterates the 50k list with tight Python loops and minimal framework overhead.
+
+Recommendations to observe the expected large PK speedup:
+- Increase dataset size substantially (e.g., 500k–5M items) so linear scan cost grows O(N) while indexed PK remains near O(log N) + small constant.
+- Reuse compiled expressions and plans across iterations to amortize construction overhead.
+- Ensure the index on `r.id` maps directly from native key to the record reference without extra wrapping; avoid per-lookup iteration over all keys.
+- Optionally switch storage to StandaloneFileStorage and persist objects to leverage stable AtomPointer hashing and caches.
 
 Tuning tips:
 - Increase selectivity to accentuate index benefits:
   - Reduce the range `--window` (e.g., 50–200) so fewer candidates fall within value ranges.
   - Increase domain cardinality for equality predicates (more categories/statuses) to shrink candidate sets before intersection.
-- Increase dataset size (`--items` 100k–1M) to observe larger gains from indexes as linear scan cost grows O(N) while index operations remain near O(log K) + union/intersection of small sets.
+- Increase dataset size (`--items` 100k–1M+) to observe larger gains from indexes as linear scan cost grows O(N) while index operations remain near O(log K) + intersection of small sets.
 - Warmup (`--warmup`) allows caches and Python internals to stabilize before timing.
 
 Engine notes:

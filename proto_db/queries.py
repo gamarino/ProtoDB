@@ -1019,6 +1019,49 @@ class IndexedSearchPlan(IndexedQueryPlan):
             return frozenset()
 
 
+class OrMerge(QueryPlan):
+    or_queries: list[QueryPlan]
+
+    def __init__(self,
+                 or_queries: list[QueryPlan] = None,
+                 based_on: QueryPlan = None,
+                 transaction: ObjectTransaction = None,
+                 atom_pointer: AtomPointer = None,
+                 **kwargs):
+        super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
+        self.or_queries = or_queries or []
+
+    def execute(self) -> list:
+        """
+        Execute all sub-queries and yield a de-duplicated union of results.
+        Uses stable record identity via AtomPointer.hash() when available.
+        """
+        seen: set[int] = set()
+        def _ref_of(rec) -> int:
+            try:
+                if isinstance(rec, Atom) and getattr(rec, 'atom_pointer', None):
+                    return rec.atom_pointer.hash()
+            except Exception:
+                pass
+            try:
+                return rec.hash()
+            except Exception:
+                return hash(rec)
+        for q in self.or_queries:
+            for rec in q.execute():
+                h = _ref_of(rec)
+                if h not in seen:
+                    seen.add(h)
+                    yield rec
+
+    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
+        return OrMerge(
+            or_queries=[q.optimize(full_plan) for q in self.or_queries],
+            based_on=self.based_on.optimize(full_plan) if self.based_on else None,
+            transaction=self.transaction
+        )
+
+
 class AndMerge(QueryPlan):
     and_queries: list[QueryPlan]
     residual_filters: list[Expression] | None
@@ -1679,11 +1722,11 @@ class WherePlan(QueryPlan):
 
     def optimize(self, full_plan: 'QueryPlan') -> 'QueryPlan':
         """
-        Optimizer rewrite focusing on index-aware AND conjunctions.
-        - For AndExpression: build index sub-plans (IndexedSearchPlan/IndexedRangeSearchPlan)
-          for indexable terms and return a single AndMerge that intersects by references and
-          applies non-indexable terms as residual filters.
-        - Otherwise, keep prior minor optimizations and return self.
+        Optimizer rewrite to leverage indexes for:
+        - Single Term expressions over an IndexedQueryPlan
+        - AndExpression: intersect multiple indexable terms via AndMerge with residual filters
+        - OrExpression: union multiple indexable terms via OrMerge when all terms are indexable
+        Otherwise, fallback to keeping the original WherePlan (with optimized base).
         """
         optimized_based_on = self.based_on.optimize(full_plan)
         current_filter = self.filter
@@ -1692,107 +1735,123 @@ class WherePlan(QueryPlan):
         if hasattr(optimized_based_on, 'accept_filter'):
             return optimized_based_on.accept_filter(current_filter)
 
-        # If we can leverage indexes, do it here
+        # Helper: construct an index-backed plan for a term if possible
+        def plan_for_term(expr: Expression) -> QueryPlan | None:
+            if not isinstance(optimized_based_on, IndexedQueryPlan):
+                return None
+            if not isinstance(expr, Term):
+                return None
+            idxs = getattr(optimized_based_on, 'indexes', None)
+            if not idxs or not idxs.has(expr.target_attribute):
+                return None
+            field = expr.target_attribute
+            op = expr.operation
+            if isinstance(op, Equal):
+                return IndexedSearchPlan(
+                    field_to_scan=field,
+                    operator=op,
+                    value=expr.value,
+                    indexes=idxs,
+                    based_on=optimized_based_on,
+                    transaction=self.transaction
+                )
+            if isinstance(op, Between):
+                lo, hi = expr.value if isinstance(expr.value, tuple) else (None, None)
+                if lo is None or hi is None:
+                    return None
+                return IndexedRangeSearchPlan(
+                    field_to_scan=field,
+                    lo=lo,
+                    hi=hi,
+                    include_lower=op.include_lower,
+                    include_upper=op.include_upper,
+                    indexes=idxs,
+                    based_on=optimized_based_on,
+                    transaction=self.transaction
+                )
+            if isinstance(op, Greater):
+                return IndexedRangeSearchPlan(
+                    field_to_scan=field,
+                    lo=expr.value,
+                    hi=float('inf'),
+                    include_lower=False,
+                    include_upper=True,
+                    indexes=idxs,
+                    based_on=optimized_based_on,
+                    transaction=self.transaction
+                )
+            if isinstance(op, GreaterOrEqual):
+                return IndexedRangeSearchPlan(
+                    field_to_scan=field,
+                    lo=expr.value,
+                    hi=float('inf'),
+                    include_lower=True,
+                    include_upper=True,
+                    indexes=idxs,
+                    based_on=optimized_based_on,
+                    transaction=self.transaction
+                )
+            if isinstance(op, Lower):
+                return IndexedRangeSearchPlan(
+                    field_to_scan=field,
+                    lo=float('-inf'),
+                    hi=expr.value,
+                    include_lower=True,
+                    include_upper=False,
+                    indexes=idxs,
+                    based_on=optimized_based_on,
+                    transaction=self.transaction
+                )
+            if isinstance(op, LowerOrEqual):
+                return IndexedRangeSearchPlan(
+                    field_to_scan=field,
+                    lo=float('-inf'),
+                    hi=expr.value,
+                    include_lower=True,
+                    include_upper=True,
+                    indexes=idxs,
+                    based_on=optimized_based_on,
+                    transaction=self.transaction
+                )
+            return None
+
+        # 1) Single Term over an IndexedQueryPlan
+        if isinstance(current_filter, Term):
+            plan = plan_for_term(current_filter)
+            if plan is not None:
+                return plan
+
+        # 2) AND expression: existing behavior with intersection
         if isinstance(current_filter, AndExpression) and isinstance(optimized_based_on, IndexedQueryPlan):
             idxs = getattr(optimized_based_on, 'indexes', None)
             if idxs:
                 index_plans: list[QueryPlan] = []
                 residuals: list[Expression] = []
-
                 for expr in current_filter.terms:
-                    if not isinstance(expr, Term):
+                    p = plan_for_term(expr)
+                    if p is not None:
+                        index_plans.append(p)
+                    else:
                         residuals.append(expr)
-                        continue
-                    field = expr.target_attribute
-                    op = expr.operation
-                    # Only terms for which we have an index are candidates
-                    if not idxs.has(field):
-                        residuals.append(expr)
-                        continue
-                    # Equality
-                    if isinstance(op, Equal):
-                        index_plans.append(IndexedSearchPlan(
-                            field_to_scan=field,
-                            operator=op,
-                            value=expr.value,
-                            indexes=idxs,
-                            based_on=optimized_based_on,
-                            transaction=self.transaction
-                        ))
-                        continue
-                    # Range family via IndexedRangeSearchPlan
-                    if isinstance(op, Between):
-                        lo, hi = expr.value if isinstance(expr.value, tuple) else (None, None)
-                        if lo is None or hi is None:
-                            residuals.append(expr)
-                        else:
-                            index_plans.append(IndexedRangeSearchPlan(
-                                field_to_scan=field,
-                                lo=lo,
-                                hi=hi,
-                                include_lower=op.include_lower,
-                                include_upper=op.include_upper,
-                                indexes=idxs,
-                                based_on=optimized_based_on,
-                                transaction=self.transaction
-                            ))
-                        continue
-                    if isinstance(op, Greater):
-                        index_plans.append(IndexedRangeSearchPlan(
-                            field_to_scan=field,
-                            lo=expr.value,
-                            hi=float('inf'),
-                            include_lower=False,
-                            include_upper=True,
-                            indexes=idxs,
-                            based_on=optimized_based_on,
-                            transaction=self.transaction
-                        ))
-                        continue
-                    if isinstance(op, GreaterOrEqual):
-                        index_plans.append(IndexedRangeSearchPlan(
-                            field_to_scan=field,
-                            lo=expr.value,
-                            hi=float('inf'),
-                            include_lower=True,
-                            include_upper=True,
-                            indexes=idxs,
-                            based_on=optimized_based_on,
-                            transaction=self.transaction
-                        ))
-                        continue
-                    if isinstance(op, Lower):
-                        index_plans.append(IndexedRangeSearchPlan(
-                            field_to_scan=field,
-                            lo=float('-inf'),
-                            hi=expr.value,
-                            include_lower=True,
-                            include_upper=False,
-                            indexes=idxs,
-                            based_on=optimized_based_on,
-                            transaction=self.transaction
-                        ))
-                        continue
-                    if isinstance(op, LowerOrEqual):
-                        index_plans.append(IndexedRangeSearchPlan(
-                            field_to_scan=field,
-                            lo=float('-inf'),
-                            hi=expr.value,
-                            include_lower=True,
-                            include_upper=True,
-                            indexes=idxs,
-                            based_on=optimized_based_on,
-                            transaction=self.transaction
-                        ))
-                        continue
-                    # Not indexable operator: residual
-                    residuals.append(expr)
-
                 if index_plans:
                     return AndMerge(and_queries=index_plans,
                                     based_on=optimized_based_on,
                                     transaction=self.transaction,
                                     residual_filters=residuals)
+
+        # 3) OR expression: only if all sub-terms are indexable
+        if isinstance(current_filter, OrExpression) and isinstance(optimized_based_on, IndexedQueryPlan):
+            idx_plans: list[QueryPlan] = []
+            all_indexable = True
+            for expr in current_filter.terms:
+                p = plan_for_term(expr)
+                if p is None:
+                    all_indexable = False
+                    break
+                idx_plans.append(p)
+            if all_indexable and idx_plans:
+                return OrMerge(or_queries=idx_plans, based_on=optimized_based_on, transaction=self.transaction)
+
         # Default: keep as WherePlan with optimized base
         self.based_on = optimized_based_on
         self.filter = current_filter
