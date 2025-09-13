@@ -1033,10 +1033,51 @@ class OrMerge(QueryPlan):
 
     def execute(self) -> list:
         """
-        Execute all sub-queries and yield a de-duplicated union of results.
-        Uses stable record identity via AtomPointer.hash() when available.
+        Execute all sub-queries and yield the concatenated union of results without de-duplication.
+        De-duplication is responsibility of count() or higher-level consumers when needed.
         """
-        seen: set[int] = set()
+        for q in self.or_queries:
+            for rec in q.execute():
+                yield rec
+
+    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
+        return OrMerge(
+            or_queries=[q.optimize(full_plan) for q in self.or_queries],
+            based_on=self.based_on.optimize(full_plan) if self.based_on else None,
+            transaction=self.transaction
+        )
+
+    def count(self) -> int:
+        """
+        Count unique records across sub-queries.
+        Prefer fast path with get_references()/keys_iterator() when available; otherwise fall back to hashing
+        materialized items from execute().
+        """
+        # Try fast path using get_references when present
+        uniq: set[int] = set()
+        any_fast = False
+        for q in self.or_queries:
+            if hasattr(q, 'get_references'):
+                try:
+                    refs = getattr(q, 'get_references')()
+                    if refs:
+                        any_fast = True
+                        uniq.update(refs)
+                        continue
+                except Exception:
+                    pass
+            # Try keys_iterator if defined
+            if hasattr(q, 'keys_iterator'):
+                try:
+                    for k in q.keys_iterator():
+                        uniq.add(hash(k))
+                    any_fast = True
+                    continue
+                except Exception:
+                    pass
+        if any_fast:
+            return len(uniq)
+        # Fallback: materialize and hash
         def _ref_of(rec) -> int:
             try:
                 if isinstance(rec, Atom) and getattr(rec, 'atom_pointer', None):
@@ -1047,19 +1088,12 @@ class OrMerge(QueryPlan):
                 return rec.hash()
             except Exception:
                 return hash(rec)
-        for q in self.or_queries:
-            for rec in q.execute():
-                h = _ref_of(rec)
-                if h not in seen:
-                    seen.add(h)
-                    yield rec
-
-    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
-        return OrMerge(
-            or_queries=[q.optimize(full_plan) for q in self.or_queries],
-            based_on=self.based_on.optimize(full_plan) if self.based_on else None,
-            transaction=self.transaction
-        )
+        for rec in self.execute():
+            try:
+                uniq.add(_ref_of(rec))
+            except Exception:
+                continue
+        return len(uniq)
 
 
 class AndMerge(QueryPlan):
