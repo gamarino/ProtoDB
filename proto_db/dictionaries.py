@@ -307,7 +307,8 @@ class RepeatedKeysDictionary(Dictionary):
             op_log: list = None,
             **kwargs):
         super().__init__(content=content, transaction=transaction, atom_pointer=atom_pointer, op_log=op_log, **kwargs)
-        self.indexes = indexes if indexes else DBCollections(transaction=transaction)
+        # Indexes are optional; keep None when not provided to avoid instantiating abstract base classes.
+        self.indexes = indexes
 
     def get_at(self, key: str) -> Set | None:
         """
@@ -361,7 +362,7 @@ class RepeatedKeysDictionary(Dictionary):
         if super().has(key):
             value_set = cast(Set, super().get_at(key))
             new_indexes = self.indexes
-            for value in value_set.get_as_iterable():
+            for value in value_set.as_iterable():
                 new_indexes = self.remove_from_indexes(value)
 
             result = super(RepeatedKeysDictionary, self).remove_at(key)
@@ -396,6 +397,9 @@ class RepeatedKeysDictionary(Dictionary):
                 record_set = record_set.remove_at(record)
                 if record_set.count == 0:
                     new_content = new_content.remove_at(key)
+                else:
+                    # Update the key with the reduced set
+                    new_content = super(RepeatedKeysDictionary, self).set_at(key, record_set).content
 
                 new_op_log = self._op_log + [('remove_record', key, record)]
 
@@ -409,7 +413,7 @@ class RepeatedKeysDictionary(Dictionary):
                     indexes=new_indexes
                 )
 
-        return self
+            return self
 
     def _rebase_on_concurrent_update(self, current_db_object: Atom) -> Atom:
         """

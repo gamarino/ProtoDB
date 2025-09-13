@@ -1,9 +1,12 @@
 from __future__ import annotations
-from typing import cast
-from .common import Atom, QueryPlan, AbstractTransaction, AtomPointer, DBCollections, Dictionary
+from typing import cast, TYPE_CHECKING
+from .common import Atom, QueryPlan, AbstractTransaction, AtomPointer, DBCollections
 from .hash_dictionaries import HashDictionary
-from .dictionaries import RepeatedKeysDictionary
 from .queries import IndexedQueryPlan
+
+if TYPE_CHECKING:
+    # Only for type annotations
+    from .dictionaries import Dictionary, RepeatedKeysDictionary
 
 
 class Set(Atom):
@@ -37,7 +40,12 @@ class Set(Atom):
         self.content = content if content else HashDictionary(
             transaction=transaction)  # Store the underlying hash-based dictionary.
         self.count = self.content.count
-        self.indexes = indexes or Dictionary(transaction=transaction)
+        if indexes is None:
+            # Local import to avoid circular dependency
+            from .dictionaries import Dictionary as _Dictionary
+            self.indexes = _Dictionary(transaction=transaction)
+        else:
+            self.indexes = indexes
 
     def _save(self):
         if not self._saved:
@@ -72,10 +80,12 @@ class Set(Atom):
         self._load()
 
         if self.indexes:
-            return IndexedQueryPlan(base=self, indexes=cast(RepeatedKeysDictionary, self.indexes))
+            return IndexedQueryPlan(base=self, indexes=self.indexes)
         return self.content.as_query_plan()
 
     def add_index(self, field_name: str):
+        # Local import to avoid circular dependency at module import time
+        from .dictionaries import RepeatedKeysDictionary
         new_index = RepeatedKeysDictionary(self.transaction)
         # Regenerate index on creation
         if not self.empty:

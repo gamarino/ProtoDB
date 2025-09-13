@@ -1,9 +1,12 @@
 from __future__ import annotations
-from typing import cast
-from . import RepeatedKeysDictionary
+from typing import cast, TYPE_CHECKING
 from .common import Atom, QueryPlan, DBCollections, AbstractTransaction, AtomPointer
 from .indexes import IndexRegistry, IndexDefinition
 from .queries import IndexedQueryPlan
+
+if TYPE_CHECKING:
+    # For type checking only to avoid circular imports at runtime
+    from .dictionaries import RepeatedKeysDictionary
 
 
 class ListQueryPlan(QueryPlan):
@@ -87,6 +90,8 @@ class List(DBCollections):
             self.height = 0
 
     def add_index(self, field_name: str):
+        # Local import to avoid circular dependency at module import time
+        from .dictionaries import RepeatedKeysDictionary
         new_index = RepeatedKeysDictionary(self.transaction)
         # Regenerate index on creation
         if not self.empty:
@@ -171,7 +176,7 @@ class List(DBCollections):
         :return: A QueryPlan object for this list.
         """
         if self.indexes:
-            return IndexedQueryPlan(base=self, indexes=cast(RepeatedKeysDictionary, self.indexes))
+            return IndexedQueryPlan(base=self, indexes=self.indexes)
         else:
             return ListQueryPlan(base=self)
 

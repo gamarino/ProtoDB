@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
-from typing import cast
+from typing import cast, TYPE_CHECKING
 
 from .common import Atom, QueryPlan, AtomPointer, DBObject
-from .db_access import ObjectTransaction
-from .dictionaries import RepeatedKeysDictionary, Dictionary, DictionaryItem
 from .exceptions import ProtoValidationException
 from .hybrid_executor import HybridExecutor
-from .sets import Set
+
+if TYPE_CHECKING:
+    from .db_access import ObjectTransaction
 
 # Executor for async operations
 max_workers = (os.cpu_count() or 1) * 5
@@ -524,17 +524,23 @@ class IndexedQueryPlan(QueryPlan):
     indices in query operations.
 
     """
-    indexes: Dictionary
+    indexes: object
 
     def __init__(
             self,
-            indexes: Dictionary = None,
+            indexes = None,
             based_on: QueryPlan = None,
             atom_pointer: AtomPointer = None,
             transaction: ObjectTransaction = None,
             **kwargs):
         super().__init__(based_on=based_on, atom_pointer=atom_pointer, transaction=transaction, **kwargs)
-        self.indexes = indexes if indexes else Dictionary(transaction=self.transaction)
+        if indexes is None:
+            # Lazy import to avoid circular dependency; only used if someone constructs
+            # an IndexedQueryPlan without providing indexes.
+            from .dictionaries import Dictionary as _Dictionary
+            self.indexes = _Dictionary(transaction=self.transaction)
+        else:
+            self.indexes = indexes
 
     def execute(self) -> list:
         return super().execute()
@@ -562,6 +568,7 @@ class IndexedQueryPlan(QueryPlan):
             return self
 
         # Reindex the current content on the added field
+        from .dictionaries import RepeatedKeysDictionary
         new_index = RepeatedKeysDictionary(transaction=self.transaction)
         for record in self.execute():
             if record.has(field_name):
@@ -591,7 +598,7 @@ class IndexedQueryPlan(QueryPlan):
         """
         new_indexes = self.indexes
         for field_name, index in self.indexes.as_iterable():
-            index = cast(RepeatedKeysDictionary, index)
+            # index is expected to support remove_record_at(key, record)
             if removed_record[field_name]:
                 key = str(removed_record[field_name])
                 new_indexes.set_at(field_name, index.remove_record_at(key, removed_record))
@@ -644,7 +651,7 @@ class IndexedQueryPlan(QueryPlan):
             while left <= right:
                 center = (left + right) // 2
 
-                item = cast(DictionaryItem, idx_dict.content.get_at(center))
+                item = idx_dict.content.get_at(center)
                 if item and str(item.key) == sval:
                     return center
 

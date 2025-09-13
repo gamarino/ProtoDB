@@ -88,31 +88,37 @@ class _Field:
                 cur = getattr(cur, p, None)
         return cur
 
-    # comparison and boolean operators build callables for now (Phase 1)
-    def _cmp(self, other: Any, op: Callable[[Any, Any], bool]) -> _Pred:
-        return _Pred(lambda x: op(self._resolve(x), other))
+    # comparison and boolean operators build callables and PB tokens for pushdown
+    def _cmp(self, other: Any, op: Callable[[Any, Any], bool], op_token: Optional[str] = None) -> _Pred:
+        pb = None
+        if op_token is not None:
+            pb = ['.'.join(self._path), op_token, other]
+        return _Pred(lambda x: op(self._resolve(x), other), pb)
 
     def __eq__(self, other):
-        return self._cmp(other, lambda a, b: a == b)
+        return self._cmp(other, lambda a, b: a == b, '==')
 
     def __ne__(self, other):
-        return self._cmp(other, lambda a, b: a != b)
+        return self._cmp(other, lambda a, b: a != b, '!=')
 
     def __gt__(self, other):
-        return self._cmp(other, lambda a, b: a is not None and b is not None and a > b)
+        return self._cmp(other, lambda a, b: a is not None and b is not None and a > b, '>')
 
     def __ge__(self, other):
-        return self._cmp(other, lambda a, b: a is not None and b is not None and a >= b)
+        return self._cmp(other, lambda a, b: a is not None and b is not None and a >= b, '>=')
 
     def __lt__(self, other):
-        return self._cmp(other, lambda a, b: a is not None and b is not None and a < b)
+        return self._cmp(other, lambda a, b: a is not None and b is not None and a < b, '<')
 
     def __le__(self, other):
-        return self._cmp(other, lambda a, b: a is not None and b is not None and a <= b)
+        return self._cmp(other, lambda a, b: a is not None and b is not None and a <= b, '<=')
 
     def in_(self, seq: Iterable[Any]):
         s = set(seq)
-        return _Pred(lambda x: self._resolve(x) in s)
+        # Note: store original iterable in tokens if list/tuple; else fall back to list for safety
+        vals = list(seq) if not isinstance(seq, (list, tuple)) else seq
+        pb = ['.'.join(self._path), 'in', list(vals)]
+        return _Pred(lambda x: self._resolve(x) in s, pb)
 
     # Between DSL
     def between(self, lo: Any, hi: Any, inclusive: tuple[bool,bool] = (True, True)) -> _Pred:
@@ -176,7 +182,8 @@ class _Field:
         return self.between(lo, hi, inclusive=inc)
 
     def contains(self, sub: Any):
-        return _Pred(lambda x: (self._resolve(x) or "").__contains__(sub))
+        pb = ['.'.join(self._path), 'contains', sub]
+        return _Pred(lambda x: (self._resolve(x) or "").__contains__(sub), pb)
 
     def startswith(self, prefix: str):
         return _Pred(lambda x: (self._resolve(x) or "").startswith(prefix))

@@ -9,10 +9,13 @@ import io
 import uuid
 from abc import ABC, abstractmethod, ABCMeta
 from concurrent.futures import Future
-from typing import cast, BinaryIO
+from typing import cast, BinaryIO, TYPE_CHECKING
 
-from . import Dictionary
 from .exceptions import ProtoValidationException, ProtoCorruptionException
+
+if TYPE_CHECKING:
+    # Only for type checking to avoid circular imports at runtime
+    from .dictionaries import Dictionary
 
 # Constants for storage size units
 KB: int = 1024
@@ -766,10 +769,11 @@ class DBCollections(Atom):
     indexes: Dictionary = None
 
     def __init__(self,
-                 indexes: Dictionary,
+                 indexes: 'Dictionary' = None,
                  transaction: AbstractTransaction = None,
                  atom_pointer: AtomPointer = None,
                  **kwargs):
+        # Indexes are optional; some collections don't use them. Avoid importing Dictionary here to prevent cycles.
         self.indexes = indexes
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
 
@@ -799,6 +803,8 @@ class DBCollections(Atom):
         :param item:
         :return:
         """
+        if not self.indexes:
+            return
         for index_name, index in self.indexes.as_iterable():
             if index_name in item:
                 self.indexes[index_name] = self.indexes.get_at(index_name).index_add(item)
@@ -809,6 +815,8 @@ class DBCollections(Atom):
         :param item:
         :return:
         """
+        if not self.indexes:
+            return
         for index_name, index in self.indexes.as_iterable():
             if index_name in item:
                 self.indexes[index_name] = self.indexes.get_at(index_name).index_remove(item)
