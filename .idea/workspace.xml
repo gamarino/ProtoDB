@@ -4,9 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="The commercial_positioning.md was translated into professional English. A new Competitive Landscape &amp; Positioning section was added, contrasting ProtoBase with various technologies. The update fulfills the task requirements fully.">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Added an example script showing collection indexing. Demonstrated faster searches using add_index('email') with timing and speedup output. as_query_plan() returns IndexedQueryPlan enabling optimized queries.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/lists.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -50,57 +50,81 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
-    "Makefile Target.Makefile (1).executor": "Run",
-    "Makefile Target.Makefile (3).executor": "Run",
-    "Makefile Target.Makefile.executor": "Run",
-    "Python tests.Python tests in test_db_access.py.executor": "Run",
-    "Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor": "Run",
-    "Python tests.Python tests in test_file_block_provider.py.executor": "Debug",
-    "Python tests.Python tests in test_standalone_file_storage.py.executor": "Debug",
-    "Python.comprehensive_benchmark.executor": "Run",
-    "Python.db_performance_benchmark.executor": "Run",
-    "Python.indexed_benchmark.executor": "Debug",
-    "Python.minimal_benchmark.executor": "Run",
-    "Python.performance_benchmark.executor": "Run",
-    "Python.run_tests.executor": "Run",
-    "Python.simple_example.executor": "Debug",
-    "Python.simple_performance_benchmark.executor": "Run",
-    "Python.task_manager.executor": "Debug",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "com.google.cloudcode.ide_session_index": "20250803_0001",
-    "git-widget-placeholder": "master",
-    "junie.onboarding.icon.badge.shown": "true",
-    "last_opened_file_path": "/home/gamarino/odoo/ltf-18.0",
-    "node.js.detected.package.eslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "ml.llm.LLMConfigurable",
-    "to.speed.mode.migration.done": "true",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ASKED_MARK_IGNORED_FILES_AS_EXCLUDED&quot;: &quot;true&quot;,
+    &quot;Makefile Target.Makefile (1).executor&quot;: &quot;Run&quot;,
+    &quot;Makefile Target.Makefile (3).executor&quot;: &quot;Run&quot;,
+    &quot;Makefile Target.Makefile.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in test_db_access.py.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in test_file_block_provider.py.executor&quot;: &quot;Debug&quot;,
+    &quot;Python tests.Python tests in test_standalone_file_storage.py.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.collection_indexing_example.executor&quot;: &quot;Run&quot;,
+    &quot;Python.comprehensive_benchmark.executor&quot;: &quot;Run&quot;,
+    &quot;Python.db_performance_benchmark.executor&quot;: &quot;Run&quot;,
+    &quot;Python.indexed_benchmark.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.minimal_benchmark.executor&quot;: &quot;Run&quot;,
+    &quot;Python.performance_benchmark.executor&quot;: &quot;Run&quot;,
+    &quot;Python.run_tests.executor&quot;: &quot;Run&quot;,
+    &quot;Python.simple_example.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.simple_performance_benchmark.executor&quot;: &quot;Run&quot;,
+    &quot;Python.task_manager.executor&quot;: &quot;Debug&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;com.google.cloudcode.ide_session_index&quot;: &quot;20250803_0001&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/gamarino/odoo/ltf-18.0&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;ml.llm.LLMConfigurable&quot;,
+    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   },
-  "keyToStringList": {
-    "com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File": [
-      "Requirements"
+  &quot;keyToStringList&quot;: {
+    &quot;com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File&quot;: [
+      &quot;Requirements&quot;
     ]
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/proto_db/tests" />
       <recent name="$PROJECT_DIR$/proto_db" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.indexed_benchmark">
+  <component name="RunManager" selected="Python.collection_indexing_example">
     <configuration name="Makefile (2)" type="MAKEFILE_TARGET_RUN_CONFIGURATION" factoryName="Makefile">
       <makefile filename="$PROJECT_DIR$/docs/Makefile" target="" workingDirectory="$PROJECT_DIR$/docs/source" arguments="">
         <envs />
       </makefile>
+      <method v="2" />
+    </configuration>
+    <configuration name="collection_indexing_example" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="ProtoBase" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/examples" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/examples/collection_indexing_example.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
     <configuration name="comprehensive_benchmark" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
@@ -119,29 +143,6 @@
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/examples/comprehensive_benchmark.py" />
-      <option name="PARAMETERS" value="" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <method v="2" />
-    </configuration>
-    <configuration name="db_performance_benchmark" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
-      <module name="ProtoBase" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/examples" />
-      <option name="IS_MODULE_SDK" value="true" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/examples/db_performance_benchmark.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -221,19 +222,19 @@
     </configuration>
     <list>
       <item itemvalue="Makefile Target.Makefile (2)" />
+      <item itemvalue="Python.collection_indexing_example" />
       <item itemvalue="Python.run_tests" />
       <item itemvalue="Python.indexed_benchmark" />
       <item itemvalue="Python.comprehensive_benchmark" />
-      <item itemvalue="Python.db_performance_benchmark" />
       <item itemvalue="Python.simple_example" />
     </list>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.collection_indexing_example" />
         <item itemvalue="Python.indexed_benchmark" />
         <item itemvalue="Python.run_tests" />
         <item itemvalue="Python.comprehensive_benchmark" />
         <item itemvalue="Python.simple_example" />
-        <item itemvalue="Python.db_performance_benchmark" />
       </list>
     </recent_temporary>
   </component>
@@ -274,23 +275,7 @@
       <workItem from="1757647544978" duration="4378000" />
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
-      <workItem from="1757675249603" duration="40524000" />
-    </task>
-    <task id="LOCAL-00052" summary="[FIX] test files cleanup">
-      <option name="closed" value="true" />
-      <created>1754282790699</created>
-      <option name="number" value="00052" />
-      <option name="presentableId" value="LOCAL-00052" />
-      <option name="project" value="LOCAL" />
-      <updated>1754282790699</updated>
-    </task>
-    <task id="LOCAL-00053" summary="[FIX] additional files for new query features">
-      <option name="closed" value="true" />
-      <created>1755790181665</created>
-      <option name="number" value="00053" />
-      <option name="presentableId" value="LOCAL-00053" />
-      <option name="project" value="LOCAL" />
-      <updated>1755790181665</updated>
+      <workItem from="1757675249603" duration="41300000" />
     </task>
     <task id="LOCAL-00054" summary="[ADD] Implemented persistent internal secondary indexes for List, Dictionary, and Set, updating relevant methods and iterators to use these indexes. The new indexes.py module includes IndexDefinition and an immutable IndexRegistry, ensuring stable identifiers and lazy index loading. Completed testing confirmed proper functionality and index integrity.">
       <option name="closed" value="true" />
@@ -668,15 +653,29 @@
       <option name="project" value="LOCAL" />
       <updated>1757779904202</updated>
     </task>
-    <option name="localTasksCounter" value="101" />
+    <task id="LOCAL-00101" summary="The README.md was updated to reflect the current state of ProtoBase. Key Features were enhanced with new index-aware optimizer details and caching behavior. The Benchmarks section and performance snapshot were revised with updated parameters and results.">
+      <option name="closed" value="true" />
+      <created>1757780237565</created>
+      <option name="number" value="00101" />
+      <option name="presentableId" value="LOCAL-00101" />
+      <option name="project" value="LOCAL" />
+      <updated>1757780237565</updated>
+    </task>
+    <task id="LOCAL-00102" summary="Added an example script showing collection indexing. Demonstrated faster searches using add_index('email') with timing and speedup output. as_query_plan() returns IndexedQueryPlan enabling optimized queries.">
+      <option name="closed" value="true" />
+      <created>1757780765016</created>
+      <option name="number" value="00102" />
+      <option name="presentableId" value="LOCAL-00102" />
+      <option name="project" value="LOCAL" />
+      <updated>1757780765016</updated>
+    </task>
+    <option name="localTasksCounter" value="103" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[UPD] next_steps_proposal.md" />
-    <MESSAGE value="[UPD] commercial_positioning.md" />
     <MESSAGE value="[IMP]  Atom-level in-memory caches (AtomObjectCache and AtomBytesCache) were successfully implemented with a 2Q replacement policy, integrated into the atom read path, and tested. The implementation ensures high hit rates and improved read performance without introducing regressions or deadlocks. Metrics for cache efficiency are also exposed for monitoring." />
     <MESSAGE value="[IMP]  Implemented adaptive chunking and work-stealing for parallel scans as an optional feature without changing default behavior. Added configuration, metrics, graceful shutdown, and comprehensive tests ensuring correctness, performance, and backward compatibility. Provided new user documentation, API references, ADR, and a changelog entry." />
     <MESSAGE value="[FIX] Translated commercial_positioning.md to professional English preserving structure and tone. Updated multiple sections with accurate English content and verified related unit tests passed. No code changes occurred, and repository integrity remained intact." />
@@ -700,7 +699,9 @@
     <MESSAGE value="The indexed performance benchmark was re-run after fixing a duplicate OrMerge class blocker. Results showed the indexed AND+range path was about 1.49x faster than the linear plan with improved latency, while PK lookup was slightly slower. The documentation was updated with new metrics, analysis, and recommendations, and results were saved in a JSON artifact." />
     <MESSAGE value="Updated commercial_positioning.md with ProtoBase’s new near-memory performance and features. Added new title, slogan, key characteristics, use cases, and analogy. Aligned document with recent improvements." />
     <MESSAGE value="The commercial_positioning.md was translated into professional English. A new Competitive Landscape &amp; Positioning section was added, contrasting ProtoBase with various technologies. The update fulfills the task requirements fully." />
-    <option name="LAST_COMMIT_MESSAGE" value="The commercial_positioning.md was translated into professional English. A new Competitive Landscape &amp; Positioning section was added, contrasting ProtoBase with various technologies. The update fulfills the task requirements fully." />
+    <MESSAGE value="The README.md was updated to reflect the current state of ProtoBase. Key Features were enhanced with new index-aware optimizer details and caching behavior. The Benchmarks section and performance snapshot were revised with updated parameters and results." />
+    <MESSAGE value="Added an example script showing collection indexing. Demonstrated faster searches using add_index('email') with timing and speedup output. as_query_plan() returns IndexedQueryPlan enabling optimized queries." />
+    <option name="LAST_COMMIT_MESSAGE" value="Added an example script showing collection indexing. Demonstrated faster searches using add_index('email') with timing and speedup output. as_query_plan() returns IndexedQueryPlan enabling optimized queries." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -771,6 +772,7 @@
     <SUITE FILE_PATH="coverage/ProtoBase$run_tests.coverage" NAME="run_tests Coverage Results" MODIFIED="1757682167480" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/ProtoBase$performance_benchmark.coverage" NAME="performance_benchmark Coverage Results" MODIFIED="1754260400708" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$indexed_benchmark.coverage" NAME="indexed_benchmark Coverage Results" MODIFIED="1757777969871" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/ProtoBase$collection_indexing_example.coverage" NAME="collection_indexing_example Coverage Results" MODIFIED="1757780822525" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$db_performance_benchmark.coverage" NAME="db_performance_benchmark Coverage Results" MODIFIED="1754260420768" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$minimal_benchmark.coverage" NAME="minimal_benchmark Coverage Results" MODIFIED="1754260411492" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$simple_performance_benchmark.coverage" NAME="simple_performance_benchmark Coverage Results" MODIFIED="1754260319108" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />

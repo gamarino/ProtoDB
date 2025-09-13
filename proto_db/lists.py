@@ -64,7 +64,9 @@ class List(DBCollections):
         self.next = next
         self.previous = previous
         self.empty = not value and empty
-        self.indexes = indexes or {}
+        # Do not auto-create a Dictionary for indexes here to avoid circular initialization
+        # Leave indexes as provided (can be None). Index structures will be created lazily when needed.
+        self.indexes = indexes
 
         # Calculate the total count of nodes in the current subtree.
         if not self.empty:
@@ -91,14 +93,23 @@ class List(DBCollections):
 
     def add_index(self, field_name: str):
         # Local import to avoid circular dependency at module import time
-        from .dictionaries import RepeatedKeysDictionary
-        new_index = RepeatedKeysDictionary(self.transaction)
-        # Regenerate index on creation
+        from .dictionaries import RepeatedKeysDictionary, Dictionary as _Dictionary
+        new_index = RepeatedKeysDictionary(transaction=self.transaction)
+        # Build index: key -> Set(records) using native keys
         if not self.empty:
-            for v in self.as_iterable():
-                new_index = new_index.common_add(v)
-
-        new_indexes = self.indexes.set_at(field_name, new_index)
+            for rec in self.as_iterable():
+                try:
+                    key = getattr(rec, field_name)
+                except Exception:
+                    key = None
+                if key is not None:
+                    new_index = new_index.set_at(key, rec)
+        
+        if self.indexes is None:
+            indexes_dict = _Dictionary(transaction=self.transaction)
+            new_indexes = indexes_dict.set_at(field_name, new_index)
+        else:
+            new_indexes = self.indexes.set_at(field_name, new_index)
 
         return List(
             value = self.value,
@@ -176,9 +187,13 @@ class List(DBCollections):
         :return: A QueryPlan object for this list.
         """
         if self.indexes:
-            return IndexedQueryPlan(base=self, indexes=self.indexes)
+            return IndexedQueryPlan(
+                based_on=ListQueryPlan(base=self, transaction=self.transaction),
+                indexes=self.indexes,
+                transaction=self.transaction
+            )
         else:
-            return ListQueryPlan(base=self)
+            return ListQueryPlan(base=self, transaction=self.transaction)
 
     def get_at(self, offset: int) -> Atom | None:
         """

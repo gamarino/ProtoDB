@@ -8,7 +8,6 @@ Se contrasta una búsqueda lineal (lenta) con una búsqueda indexada (rápida)
 sobre la misma colección de datos.
 """
 import time
-import uuid
 
 from proto_db.db_access import ObjectSpace
 from proto_db.memory_storage import MemoryStorage
