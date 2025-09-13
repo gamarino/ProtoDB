@@ -1,3 +1,16 @@
 include LICENSE
 include README.md
+include CHANGELOG.md
+include PYPI_UPLOAD.md
+
+# Exclude non-runtime large artifacts
+prune examples
+prune docs/build
+prune cloud_page_cache
+prune benchmark_data_small
+
+# Exclude benchmark outputs and misc
+global-exclude *.pyc __pycache__ *.pyo *.DS_Store
+global-exclude *.json
+
 recursive-include proto_db *.py

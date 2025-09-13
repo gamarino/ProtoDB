@@ -45,6 +45,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../storage_cloud.html">Cloud and Cluster Storage</a></li>
@@ -677,7 +678,7 @@
 
 <div class="viewcode-block" id="ListPlan.optimize">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.queries.ListPlan.optimize">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">full_plan</span><span class="p">:</span> <span class="n">QueryPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span></div>
 </div>
 
@@ -718,10 +719,10 @@
         <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
             <span class="k">yield</span> <span class="n">rec</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">full_plan</span><span class="p">:</span> <span class="n">QueryPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">IndexedQueryPlan</span><span class="p">(</span>
             <span class="n">indexes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">,</span>
-            <span class="n">based_on</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="n">full_plan</span><span class="p">),</span>
+            <span class="n">based_on</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
             <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
         <span class="p">)</span>
 
@@ -877,18 +878,15 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">get_equal_than</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">field_name</span><span class="p">):</span>
-            <span class="n">idx_dict</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Dictionary</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">field_name</span><span class="p">))</span>
+            <span class="n">idx_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">field_name</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">idx_dict</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">return</span> <span class="p">[]</span>
+                <span class="k">return</span>
 
             <span class="c1"># Native key match without string conversion</span>
-            <span class="n">value_set</span> <span class="o">=</span> <span class="kc">None</span>
-            <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">idx_dict</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
-                <span class="k">if</span> <span class="n">k</span> <span class="o">==</span> <span class="n">value</span><span class="p">:</span>
-                    <span class="n">value_set</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Set</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
-                    <span class="k">break</span>
+            <span class="n">value_set</span> <span class="o">=</span> <span class="n">idx_dict</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">value_set</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">return</span> <span class="p">[]</span>
+                <span class="k">return</span>
+
             <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">value_set</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
                 <span class="k">yield</span> <span class="n">record</span>
         <span class="k">else</span><span class="p">:</span>
@@ -911,7 +909,7 @@
                 <span class="k">yield</span> <span class="n">record</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">get_lower_than</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
-        <span class="n">idx_dict</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Dictionary</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">field_name</span><span class="p">))</span>
+        <span class="n">idx_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">field_name</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">idx_dict</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="p">[]</span>
         <span class="n">index</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">position_at</span><span class="p">(</span><span class="n">field_name</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
@@ -919,7 +917,7 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">yield_up_to_index</span><span class="p">(</span><span class="n">field_name</span><span class="p">,</span> <span class="n">index</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">get_lower_or_equal_than</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
-        <span class="n">idx_dict</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Dictionary</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">field_name</span><span class="p">))</span>
+        <span class="n">idx_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">field_name</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">idx_dict</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="p">[]</span>
         <span class="n">index</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">position_at</span><span class="p">(</span><span class="n">field_name</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
@@ -939,7 +937,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">indexes</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">field_name</span><span class="p">)):</span>
             <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;No index on field </span><span class="si">{</span><span class="n">field_name</span><span class="si">}</span><span class="s1">!&#39;</span><span class="p">)</span>
-        <span class="n">idx_dict</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Dictionary</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">field_name</span><span class="p">))</span>
+        <span class="n">idx_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">field_name</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">idx_dict</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span>
 
@@ -1042,13 +1040,13 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="k">return</span> <span class="p">[]</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">full_plan</span><span class="p">:</span> <span class="n">QueryPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">IndexedSearchPlan</span><span class="p">(</span>
             <span class="n">field_to_scan</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">field_to_scan</span><span class="p">,</span>
             <span class="n">operator</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">operator</span><span class="p">,</span>
             <span class="n">value</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
             <span class="n">indexes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">,</span>
-            <span class="n">based_on</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="n">full_plan</span><span class="p">),</span>
+            <span class="n">based_on</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
             <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
         <span class="p">)</span>
 
@@ -1063,12 +1061,8 @@
                 <span class="n">idx_dict</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Dictionary</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">field_to_scan</span><span class="p">))</span>
                 <span class="k">if</span> <span class="n">idx_dict</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                     <span class="k">return</span> <span class="mi">0</span>
-                <span class="c1"># Try native-key lookup by scanning keys to avoid string conversion</span>
-                <span class="n">value_set</span> <span class="o">=</span> <span class="kc">None</span>
-                <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">idx_dict</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
-                    <span class="k">if</span> <span class="n">k</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">:</span>
-                        <span class="n">value_set</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Set</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
-                        <span class="k">break</span>
+                <span class="c1"># Try native-key lookup by using get_at for direct access</span>
+                <span class="n">value_set</span> <span class="o">=</span> <span class="n">idx_dict</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
                 <span class="k">if</span> <span class="n">value_set</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                     <span class="k">return</span> <span class="mi">0</span>
                 <span class="k">return</span> <span class="n">value_set</span><span class="o">.</span><span class="n">count</span>
@@ -1103,11 +1097,7 @@
 
             <span class="c1"># Handle equality natively; others fallback to execute()</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">operator</span><span class="p">,</span> <span class="n">Equal</span><span class="p">):</span>
-                <span class="n">bucket</span> <span class="o">=</span> <span class="kc">None</span>
-                <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">idx_dict</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
-                    <span class="k">if</span> <span class="n">k</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">:</span>
-                        <span class="n">bucket</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Set</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
-                        <span class="k">break</span>
+                <span class="n">bucket</span> <span class="o">=</span> <span class="n">idx_dict</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
                 <span class="k">if</span> <span class="n">bucket</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                     <span class="k">return</span> <span class="nb">frozenset</span><span class="p">()</span>
                 <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">bucket</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
@@ -1143,10 +1133,10 @@
             <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">q</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
                 <span class="k">yield</span> <span class="n">rec</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">full_plan</span><span class="p">:</span> <span class="n">QueryPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">OrMerge</span><span class="p">(</span>
-            <span class="n">or_queries</span><span class="o">=</span><span class="p">[</span><span class="n">q</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="n">full_plan</span><span class="p">)</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">or_queries</span><span class="p">],</span>
-            <span class="n">based_on</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="n">full_plan</span><span class="p">)</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">or_queries</span><span class="o">=</span><span class="p">[</span><span class="n">q</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">or_queries</span><span class="p">],</span>
+            <span class="n">based_on</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
             <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
         <span class="p">)</span>
 
@@ -1296,10 +1286,10 @@
             <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
                 <span class="k">continue</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">full_plan</span><span class="p">:</span> <span class="n">QueryPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">AndMerge</span><span class="p">(</span>
             <span class="n">and_queries</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">and_queries</span><span class="p">,</span>
-            <span class="n">based_on</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="n">full_plan</span><span class="p">),</span>
+            <span class="n">based_on</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
             <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
         <span class="p">)</span>
 
@@ -1313,7 +1303,7 @@
             <span class="k">return</span> <span class="mi">0</span>
 
         <span class="c1"># Optimize sub-queries first</span>
-        <span class="n">optimized_queries</span> <span class="o">=</span> <span class="p">[</span><span class="n">q</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">and_queries</span><span class="p">]</span>
+        <span class="n">optimized_queries</span> <span class="o">=</span> <span class="p">[</span><span class="n">q</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">and_queries</span><span class="p">]</span>
 
         <span class="c1"># Get iterators of IDs, not full objects</span>
         <span class="n">id_iterators</span> <span class="o">=</span> <span class="p">[</span><span class="n">q</span><span class="o">.</span><span class="n">keys_iterator</span><span class="p">()</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">optimized_queries</span><span class="p">]</span>
@@ -1373,7 +1363,7 @@
 
 <div class="viewcode-block" id="IndexedRangeSearchPlan.optimize">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.queries.IndexedRangeSearchPlan.optimize">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">full_plan</span><span class="p">:</span> <span class="n">QueryPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">IndexedRangeSearchPlan</span><span class="p">(</span>
             <span class="n">field_to_scan</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">field_to_scan</span><span class="p">,</span>
             <span class="n">lo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">lo</span><span class="p">,</span>
@@ -1381,7 +1371,7 @@
             <span class="n">include_lower</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">include_lower</span><span class="p">,</span>
             <span class="n">include_upper</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">include_upper</span><span class="p">,</span>
             <span class="n">indexes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">,</span>
-            <span class="n">based_on</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="n">full_plan</span><span class="p">),</span>
+            <span class="n">based_on</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
             <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
         <span class="p">)</span></div>
 
@@ -1514,10 +1504,10 @@
 
 <div class="viewcode-block" id="FromPlan.optimize">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.queries.FromPlan.optimize">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">full_plan</span><span class="p">:</span> <span class="n">QueryPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">FromPlan</span><span class="p">(</span>
             <span class="n">alias</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">alias</span><span class="p">,</span>
-            <span class="n">based_on</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="n">full_plan</span><span class="p">),</span>
+            <span class="n">based_on</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
             <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
         <span class="p">)</span></div>
 </div>
@@ -1686,11 +1676,11 @@
 
 <div class="viewcode-block" id="JoinPlan.optimize">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.queries.JoinPlan.optimize">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">full_plan</span><span class="p">:</span> <span class="n">QueryPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">JoinPlan</span><span class="p">(</span>
-            <span class="n">join_query</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">join_query</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="n">full_plan</span><span class="p">)</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">join_query</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">join_query</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">join_query</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">join_query</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
             <span class="n">join_type</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">join_type</span><span class="p">,</span>
-            <span class="n">based_on</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="n">full_plan</span><span class="p">)</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">based_on</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
             <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
         <span class="p">)</span></div>
 </div>
@@ -1746,7 +1736,10 @@
 <span class="sd">        :rtype: list</span>
 <span class="sd">        &quot;&quot;&quot;</span>
 
-        <span class="c1"># Attempt index-aware evaluation for AND conditions</span>
+        <span class="c1"># Attempt index-aware evaluation</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">Term</span> <span class="k">as</span> <span class="n">_Term</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">AndExpression</span> <span class="k">as</span> <span class="n">_AndExpression</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">IndexedQueryPlan</span> <span class="k">as</span> <span class="n">_IQP</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">Between</span> <span class="k">as</span> <span class="n">_Between</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">Equal</span> <span class="k">as</span> <span class="n">_Equal</span><span class="p">,</span> <span class="n">In</span> <span class="k">as</span> <span class="n">_In</span><span class="p">,</span> <span class="n">Contains</span> <span class="k">as</span> <span class="n">_Contains</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">Greater</span> <span class="k">as</span> <span class="n">_Greater</span><span class="p">,</span> <span class="n">GreaterOrEqual</span> <span class="k">as</span> <span class="n">_GreaterOrEqual</span>
@@ -1754,24 +1747,21 @@
         <span class="n">base</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span>
         <span class="n">flt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">filter</span>
 
-        <span class="k">def</span><span class="w"> </span><span class="nf">build_candidate_set</span><span class="p">(</span><span class="n">term</span><span class="p">:</span> <span class="n">Term</span><span class="p">):</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">build_candidate_set</span><span class="p">(</span><span class="n">term</span><span class="p">:</span> <span class="n">_Term</span><span class="p">):</span>
             <span class="c1"># Only terms with target attribute present in indexes are eligible</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="n">field</span> <span class="o">=</span> <span class="n">term</span><span class="o">.</span><span class="n">target_attribute</span>
                 <span class="c1"># Ensure we have an IndexedQueryPlan and an index for the field</span>
-                <span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">IndexedQueryPlan</span> <span class="k">as</span> <span class="n">_IQP</span>
-                <span class="c1"># Ensure we have an IndexedQueryPlan and an index for the field</span>
-                <span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">IndexedQueryPlan</span> <span class="k">as</span> <span class="n">_IQP</span>
                 <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="n">_IQP</span><span class="p">):</span>
                     <span class="k">return</span> <span class="kc">None</span>
                 <span class="n">idxs</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="s1">&#39;indexes&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
                 <span class="k">if</span> <span class="ow">not</span> <span class="n">idxs</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">idxs</span><span class="p">,</span> <span class="s1">&#39;has&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">idxs</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">field</span><span class="p">):</span>
                     <span class="k">return</span> <span class="kc">None</span>
                 <span class="n">op</span> <span class="o">=</span> <span class="n">term</span><span class="o">.</span><span class="n">operation</span>
+                <span class="n">idx_dict</span> <span class="o">=</span> <span class="n">idxs</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
                 <span class="c1"># Equality</span>
                 <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">_Equal</span><span class="p">):</span>
-                    <span class="n">idx_dict</span> <span class="o">=</span> <span class="n">idxs</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
-                    <span class="n">item</span> <span class="o">=</span> <span class="n">idx_dict</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">))</span>
+                    <span class="n">item</span> <span class="o">=</span> <span class="n">idx_dict</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
                     <span class="k">if</span> <span class="ow">not</span> <span class="n">item</span><span class="p">:</span>
                         <span class="k">return</span> <span class="nb">set</span><span class="p">()</span>
                     <span class="c1"># item is a Set; turn into Python set of records</span>
@@ -1781,8 +1771,7 @@
                     <span class="n">result</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
                     <span class="k">try</span><span class="p">:</span>
                         <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">:</span>
-                            <span class="n">idx_dict</span> <span class="o">=</span> <span class="n">idxs</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
-                            <span class="n">it</span> <span class="o">=</span> <span class="n">idx_dict</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">v</span><span class="p">))</span>
+                            <span class="n">it</span> <span class="o">=</span> <span class="n">idx_dict</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
                             <span class="k">if</span> <span class="n">it</span><span class="p">:</span>
                                 <span class="n">result</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">it</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">())</span>
                     <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
@@ -1790,63 +1779,59 @@
                     <span class="k">return</span> <span class="n">result</span>
                 <span class="c1"># CONTAINS: treat as equality on elements if index was built for contained elements</span>
                 <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">_Contains</span><span class="p">):</span>
-                    <span class="n">idx_dict</span> <span class="o">=</span> <span class="n">idxs</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
-                    <span class="n">it</span> <span class="o">=</span> <span class="n">idx_dict</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">))</span>
+                    <span class="n">it</span> <span class="o">=</span> <span class="n">idx_dict</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
                     <span class="k">if</span> <span class="n">it</span><span class="p">:</span>
                         <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="n">it</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">())</span>
                     <span class="k">return</span> <span class="nb">set</span><span class="p">()</span>
                 <span class="c1"># BETWEEN (range) — avoid materializing large range sets; leave as residual filter</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">_Between</span><span class="p">):</span>
-                    <span class="k">return</span> <span class="kc">None</span>
-                <span class="c1"># Greater/Less family as residual filters as well</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">_Greater</span><span class="p">):</span>
-                    <span class="k">return</span> <span class="kc">None</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">_GreaterOrEqual</span><span class="p">):</span>
-                    <span class="k">return</span> <span class="kc">None</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">_Lower</span><span class="p">):</span>
-                    <span class="k">return</span> <span class="kc">None</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">_LowerOrEqual</span><span class="p">):</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="p">(</span><span class="n">_Between</span><span class="p">,</span> <span class="n">_Greater</span><span class="p">,</span> <span class="n">_GreaterOrEqual</span><span class="p">,</span> <span class="n">_Lower</span><span class="p">,</span> <span class="n">_LowerOrEqual</span><span class="p">)):</span>
                     <span class="k">return</span> <span class="kc">None</span>
                 <span class="k">return</span> <span class="kc">None</span>
             <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
                 <span class="k">return</span> <span class="kc">None</span>
 
-        <span class="c1"># Only attempt when filter is a conjunction of terms</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">flt</span><span class="p">,</span> <span class="n">AndExpression</span><span class="p">):</span>
-            <span class="n">candidate_sets</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">set</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-            <span class="n">residual</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># keep full filter for safety; residual list reserved for future split</span>
-            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">flt</span><span class="o">.</span><span class="n">terms</span><span class="p">:</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">Term</span><span class="p">):</span>
-                    <span class="n">cand</span> <span class="o">=</span> <span class="n">build_candidate_set</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
-                    <span class="k">if</span> <span class="n">cand</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                        <span class="n">residual</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
-                    <span class="k">else</span><span class="p">:</span>
-                        <span class="n">candidate_sets</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cand</span><span class="p">)</span>
-                <span class="k">else</span><span class="p">:</span>
-                    <span class="n">residual</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+        <span class="c1"># Generalize fast path for single Term and AndExpression</span>
+        <span class="n">indexable_term_sets</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">set</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">residual_filters</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Expression</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">can_use_fast_path</span> <span class="o">=</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="n">_IQP</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">flt</span><span class="p">,</span> <span class="p">(</span><span class="n">_AndExpression</span><span class="p">,</span> <span class="n">_Term</span><span class="p">)))</span>
 
-            <span class="k">if</span> <span class="n">candidate_sets</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">can_use_fast_path</span><span class="p">:</span>
+            <span class="n">terms_in_filter</span> <span class="o">=</span> <span class="n">flt</span><span class="o">.</span><span class="n">terms</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">flt</span><span class="p">,</span> <span class="n">_AndExpression</span><span class="p">)</span> <span class="k">else</span> <span class="p">[</span><span class="n">flt</span><span class="p">]</span>
+
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">terms_in_filter</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">_Term</span><span class="p">):</span>
+                    <span class="n">cand_set</span> <span class="o">=</span> <span class="n">build_candidate_set</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">cand_set</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">indexable_term_sets</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cand_set</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">residual_filters</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">residual_filters</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">indexable_term_sets</span><span class="p">:</span>
                 <span class="c1"># Order by selectivity (ascending size)</span>
-                <span class="n">candidate_sets</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="p">))</span>
+                <span class="n">indexable_term_sets</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="nb">len</span><span class="p">)</span>
                 <span class="c1"># Progressive intersection with early exit</span>
-                <span class="n">current</span> <span class="o">=</span> <span class="n">candidate_sets</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-                <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">candidate_sets</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
+                <span class="n">current</span> <span class="o">=</span> <span class="n">indexable_term_sets</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">indexable_term_sets</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
                     <span class="k">if</span> <span class="ow">not</span> <span class="n">current</span><span class="p">:</span>
                         <span class="k">break</span>
-                    <span class="n">current</span> <span class="o">=</span> <span class="n">current</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+                    <span class="n">current</span><span class="o">.</span><span class="n">intersection_update</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
                 <span class="k">if</span> <span class="ow">not</span> <span class="n">current</span><span class="p">:</span>
                     <span class="k">return</span>  <span class="c1"># empty generator</span>
-                <span class="c1"># Apply only residual (non-indexed) terms on the reduced set</span>
+
+                <span class="c1"># Apply residual filters on the reduced set</span>
                 <span class="k">def</span><span class="w"> </span><span class="nf">_matches_residual</span><span class="p">(</span><span class="n">rec</span><span class="p">):</span>
-                    <span class="k">if</span> <span class="ow">not</span> <span class="n">residual</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">residual_filters</span><span class="p">:</span>
                         <span class="k">return</span> <span class="kc">True</span>
                     <span class="k">try</span><span class="p">:</span>
-                        <span class="k">for</span> <span class="n">expr</span> <span class="ow">in</span> <span class="n">residual</span><span class="p">:</span>
+                        <span class="k">for</span> <span class="n">expr</span> <span class="ow">in</span> <span class="n">residual_filters</span><span class="p">:</span>
                             <span class="k">if</span> <span class="ow">not</span> <span class="n">expr</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">rec</span><span class="p">):</span>
                                 <span class="k">return</span> <span class="kc">False</span>
                         <span class="k">return</span> <span class="kc">True</span>
                     <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
                         <span class="k">return</span> <span class="kc">False</span>
+
                 <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">current</span><span class="p">:</span>
                     <span class="k">if</span> <span class="n">_matches_residual</span><span class="p">(</span><span class="n">rec</span><span class="p">):</span>
                         <span class="k">yield</span> <span class="n">rec</span>
@@ -1860,7 +1845,7 @@
 
 <div class="viewcode-block" id="WherePlan.optimize">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.queries.WherePlan.optimize">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">full_plan</span><span class="p">:</span> <span class="s1">&#39;QueryPlan&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;QueryPlan&#39;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;QueryPlan&#39;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Optimizer rewrite to leverage indexes for:</span>
 <span class="sd">        - Single Term expressions over an IndexedQueryPlan</span>
@@ -1868,7 +1853,7 @@
 <span class="sd">        - OrExpression: union multiple indexable terms via OrMerge when all terms are indexable</span>
 <span class="sd">        Otherwise, fallback to keeping the original WherePlan (with optimized base).</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">optimized_based_on</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="n">full_plan</span><span class="p">)</span>
+        <span class="n">optimized_based_on</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="kc">None</span>
         <span class="n">current_filter</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">filter</span>
 
         <span class="c1"># Preserve predicate pushdown when supported by the underlying plan</span>
@@ -2186,11 +2171,11 @@
 
 <div class="viewcode-block" id="GroupByPlan.optimize">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.queries.GroupByPlan.optimize">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">full_plan</span><span class="p">:</span> <span class="n">QueryPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">GroupByPlan</span><span class="p">(</span>
             <span class="n">group_fields</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">group_fields</span><span class="p">),</span>
             <span class="n">agreggated_fields</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">agreggated_fields</span><span class="p">),</span>
-            <span class="n">based_on</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="n">full_plan</span><span class="p">)</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">based_on</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
             <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
         <span class="p">)</span></div>
 </div>
@@ -2271,9 +2256,9 @@
 
 <div class="viewcode-block" id="UnnestPlan.optimize">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.queries.UnnestPlan.optimize">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">full_plan</span><span class="p">:</span> <span class="n">QueryPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="n">full_plan</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span>
         <span class="k">return</span> <span class="bp">self</span></div>
 </div>
 
@@ -2304,7 +2289,7 @@
             <span class="k">if</span> <span class="n">subplan</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">results</span> <span class="o">=</span> <span class="p">[]</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">subplan</span> <span class="o">=</span> <span class="n">subplan</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+                <span class="n">subplan</span> <span class="o">=</span> <span class="n">subplan</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span>
                 <span class="n">results</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">subplan</span><span class="o">.</span><span class="n">execute</span><span class="p">())</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">left</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
                 <span class="n">out</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">left</span><span class="p">)</span>
@@ -2323,9 +2308,9 @@
 
 <div class="viewcode-block" id="CollectionFieldPlan.optimize">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.queries.CollectionFieldPlan.optimize">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">full_plan</span><span class="p">:</span> <span class="n">QueryPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="n">full_plan</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span>
         <span class="k">return</span> <span class="bp">self</span></div>
 </div>
 
@@ -2400,15 +2385,12 @@
 
 <div class="viewcode-block" id="SelectPlan.optimize">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.queries.SelectPlan.optimize">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">full_plan</span><span class="p">:</span> <span class="s1">&#39;QueryPlan&#39;</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;QueryPlan&#39;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Optimize this plan and its dependencies.</span>
 
 <span class="sd">        This method delegates optimization to the underlying plan and then</span>
 <span class="sd">        creates a new SelectPlan with the optimized base.</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            full_plan: The complete query plan for context</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            An optimized version of this plan</span>
@@ -2416,7 +2398,7 @@
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span>
 
-        <span class="n">optimized_base</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="n">full_plan</span><span class="p">)</span>
+        <span class="n">optimized_base</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span>
 
         <span class="k">if</span> <span class="n">optimized_base</span> <span class="ow">is</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span>
@@ -2469,7 +2451,7 @@
 
 <div class="viewcode-block" id="CountPlan.optimize">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.queries.CountPlan.optimize">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">full_plan</span><span class="p">:</span> <span class="s1">&#39;QueryPlan&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;QueryPlan&#39;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;QueryPlan&#39;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Optimizes the counting process.</span>
 
@@ -2481,7 +2463,7 @@
 <span class="sd">            A plan that can provide the count, potentially a new optimized plan</span>
 <span class="sd">            or itself.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">optimized_based_on</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="n">full_plan</span><span class="p">)</span>
+        <span class="n">optimized_based_on</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span>
 
         <span class="c1"># Duck-typing: Check if the optimized underlying plan has a fast `count` method.</span>
         <span class="c1"># Only delegate if the method is overridden (not the default QueryPlan.count).</span>
@@ -2535,7 +2517,7 @@
 
 <div class="viewcode-block" id="CountResultPlan.optimize">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.queries.CountResultPlan.optimize">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">full_plan</span><span class="p">:</span> <span class="s1">&#39;QueryPlan&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;QueryPlan&#39;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;QueryPlan&#39;</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span></div>
 </div>
 

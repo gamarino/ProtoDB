@@ -1,6 +1,8 @@
 # Lightweight package initializer to avoid heavy imports and circular dependencies during testing.
 # Export exceptions into package namespace for modules that import from proto_db import ProtoCorruptionException, etc.
 
+__version__ = "0.1.0"
+
 # Optional: expose storage backends if dependencies are available, otherwise keep None to avoid ImportError
 from .exceptions import ProtoBaseException, ProtoUserException, ProtoCorruptionException, \
     ProtoValidationException, ProtoNotSupportedException, ProtoNotAuthorizedException

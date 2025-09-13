@@ -1,96 +1,128 @@
 # Uploading proto_db to PyPI
 
-This document provides instructions for building and uploading the proto_db package to the Python Package Index (PyPI).
+This guide describes how to build, verify, and publish the proto_db package to PyPI (and TestPyPI). It also includes a reproducible local smoke test and CI automation.
 
 ## Prerequisites
 
-Before you can upload to PyPI, you need to:
+- Python 3.11+
+- A PyPI account and API token (and optionally a TestPyPI token)
+- Tools:
+  ```bash
+  python -m pip install --upgrade build twine
+  ```
 
-1. Create an account on [PyPI](https://pypi.org/account/register/)
-2. Install the required tools:
-   ```bash
-   pip install build twine
-   ```
+## Build and verify locally
 
-## Building the Package
-
-To build the package, run the following command from the project root directory:
+Run from the project root:
 
 ```bash
+# Clean previous artifacts
+rm -rf dist build *.egg-info
+
+# Build sdist and wheel
 python -m build
+
+# Validate metadata
+python -m twine check dist/*
+
+# Smoke test install from the built wheel in a clean venv
+python -m venv .venv-test
+. .venv-test/bin/activate
+python -m pip install --upgrade pip
+pip install dist/*.whl
+python - <<'PY'
+import proto_db
+print('proto_db', proto_db.__version__)
+PY
+
+# Optional: smoke test extras (if you have deps available)
+# Parquet/Arrow
+# pip install "dist/*.whl[parquet]" && python -c "import proto_db.arrow_bridge as ab; print('arrow ok')"
+# Vectors
+# pip install "dist/*.whl[vectors]" && python -c "import numpy as np; print('vectors ok')"
+
+deactivate
 ```
 
-This will create both source distribution (.tar.gz) and wheel (.whl) files in the `dist/` directory.
-
-## Testing the Package
-
-Before uploading to PyPI, it's a good idea to test the package by uploading it to the PyPI test server:
+## Test upload to TestPyPI
 
 ```bash
-python -m twine upload --repository-url https://test.pypi.org/legacy/ dist/*
+python -m twine upload --repository testpypi dist/*
+# Then test install
+pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple proto_db
 ```
 
-You can then install and test the package from the test server:
-
-```bash
-pip install --index-url https://test.pypi.org/simple/ --no-deps proto_db
-```
-
-## Uploading to PyPI
-
-Once you've verified that the package works correctly, you can upload it to the real PyPI:
+## Publish to PyPI
 
 ```bash
 python -m twine upload dist/*
 ```
 
-You'll be prompted for your PyPI username and password.
+Use an API token stored as `__token__` / `pypi-XXXX` when prompted or via environment variables in CI.
 
-## Updating the Package
+## Versioning and release process
 
-To update the package:
+1. Bump version in `proto_db/__init__.py` (and keep it in sync with `pyproject.toml`).
+2. Update `CHANGELOG.md`.
+3. Commit and tag the release: `git tag vX.Y.Z && git push --tags`.
+4. CI will build and publish on tags (see workflow below).
 
-1. Update the version number in `pyproject.toml`
-2. Build the package again
-3. Upload the new version to PyPI
+## GitHub Actions (publish on tags)
 
-## Automating Uploads with GitHub Actions
-
-You can automate the process of building and uploading to PyPI using GitHub Actions. Here's a sample workflow file:
+Create `.github/workflows/publish.yml`:
 
 ```yaml
-name: Upload Python Package
+name: Publish to PyPI / TestPyPI
 
 on:
-  release:
-    types: [created]
+  push:
+    tags:
+      - 'v*'
 
 jobs:
-  deploy:
+  build-and-publish:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: '3.11'
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install build twine
-    - name: Build and publish
-      env:
-        TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
-        TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
-      run: |
-        python -m build
-        twine upload dist/*
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+      - name: Build
+        run: |
+          python -m build
+          python -m twine check dist/*
+      - name: Publish to TestPyPI for pre-releases
+        if: contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'a') || contains(github.ref_name, 'b')
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        run: |
+          python -m twine upload --repository testpypi dist/*
+      - name: Publish to PyPI for stable tags
+        if: ${{ ! (contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'a') || contains(github.ref_name, 'b')) }}
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          python -m twine upload dist/*
 ```
 
-To use this workflow, you'll need to add your PyPI username and password as secrets in your GitHub repository settings.
+Optional: add a separate job to run unit tests before publishing.
 
-## Additional Resources
+## Optional extras installation in docs
 
-- [Packaging Python Projects](https://packaging.python.org/tutorials/packaging-projects/)
-- [PyPI documentation](https://pypi.org/help/)
-- [Twine documentation](https://twine.readthedocs.io/en/latest/)
+Users can enable optional functionality via extras:
+
+- Parquet/Arrow: `pip install "proto_db[parquet]"`
+- Vectors: `pip install "proto_db[vectors]"`
+- Dev tooling: `pip install "proto_db[dev]"`
+
+## References
+
+- Packaging Python Projects: https://packaging.python.org/tutorials/packaging-projects/
+- Twine: https://twine.readthedocs.io/en/latest/
+- TestPyPI: https://test.pypi.org/

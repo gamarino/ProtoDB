@@ -29,7 +29,7 @@ QueryPlan
 The ``QueryPlan`` class is the base class for all query plans in ProtoBase. It provides methods for query execution and chaining.
 
 FromPlan
-~~~~~~~
+~~~~~~~~~~~~~~~
 
 .. autoclass:: FromPlan
    :members:
@@ -38,7 +38,7 @@ FromPlan
 ``FromPlan`` is the starting point for queries. It takes a collection as input, provides an iterator over the collection, and can be used as the basis for other query plans.
 
 WherePlan
-~~~~~~~~
+~~~~~~~~~~~~
 
 .. autoclass:: WherePlan
    :members:
@@ -47,7 +47,7 @@ WherePlan
 ``WherePlan`` filters records based on a condition. It takes a filter function and a base plan, returns only records that satisfy the condition, and can be chained with other query plans.
 
 JoinPlan
-~~~~~~~
+~~~~~~~~~~~~
 
 .. autoclass:: JoinPlan
    :members:
@@ -56,7 +56,7 @@ JoinPlan
 ``JoinPlan`` joins multiple data sources. It takes two plans and a join condition, returns records that satisfy the join condition, and supports inner, left, right, and full joins.
 
 GroupByPlan
-~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: GroupByPlan
    :members:

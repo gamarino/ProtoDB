@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="RepeatedKeysDictionary was updated to use CountedSet instead of Set with correct index update logic. Code duplication issues causing syntax errors were fixed. Targeted tests for CountedSet and indexed fast paths pass, while pre-existing unrelated test failures remain." />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="The code and tests were updated to replace all occurrences of optimize(None) with optimize(). Unit tests were adjusted to match the new optimize() signature and successfully passed without errors. A full test suite run confirmed no regressions and no remaining optimize(None) calls." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -273,15 +273,7 @@
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
       <workItem from="1757675249603" duration="41300000" />
-      <workItem from="1757781886166" duration="15799000" />
-    </task>
-    <task id="LOCAL-00069" summary="[IMP] linq operators doc">
-      <option name="closed" value="true" />
-      <created>1757018459194</created>
-      <option name="number" value="00069" />
-      <option name="presentableId" value="LOCAL-00069" />
-      <option name="project" value="LOCAL" />
-      <updated>1757018459194</updated>
+      <workItem from="1757781886166" duration="17573000" />
     </task>
     <task id="LOCAL-00070" summary="[IMP] Performance measurement scripts for LINQ queries were added in the `examples/` directory, including `linq_performance.py`. The execution and results can now be saved to a JSON file, demonstrating the performance of LINQ operations over various data structures. All changes were successfully implemented without errors.">
       <option name="closed" value="true" />
@@ -667,14 +659,21 @@
       <option name="project" value="LOCAL" />
       <updated>1757804582882</updated>
     </task>
-    <option name="localTasksCounter" value="118" />
+    <task id="LOCAL-00118" summary="The code and tests were updated to replace all occurrences of optimize(None) with optimize(). Unit tests were adjusted to match the new optimize() signature and successfully passed without errors. A full test suite run confirmed no regressions and no remaining optimize(None) calls.">
+      <option name="closed" value="true" />
+      <created>1757806362543</created>
+      <option name="number" value="00118" />
+      <option name="presentableId" value="LOCAL-00118" />
+      <option name="project" value="LOCAL" />
+      <updated>1757806362543</updated>
+    </task>
+    <option name="localTasksCounter" value="119" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="The performance documentation was updated with a new section titled &quot;Latest Results (2025-09-13)&quot;. This section includes details of two recent benchmark runs, their commands, artifact paths, key metrics, speedups, and tuning tips. The updates align the documentation with current improvements in the indexed query engine." />
     <MESSAGE value="Implemented write-through caching in Atom._save to populate caches after persistence. Modified ObjectTransaction to expose the AtomCacheBundle from storage. Added a unit test verifying cache hits on read-after-write scenarios, all tests passed successfully." />
     <MESSAGE value="Implemented flattening of nested AND and OR expressions in Expression.compile and a recursive optimize method in proto_db/queries.py. The solution ensures that nested logical expressions are canonically flattened, including top-level implicit ANDs. All related unit tests in proto_db.tests passed successfully." />
     <MESSAGE value="Added a primary key lookup benchmark comparing Python list, ProtoDB linear, and ProtoDB indexed searches. Updated indexed_benchmark.py with new query functions, integrated timings and latency calculations, and included speedup metrics. Documentation was enhanced in performance.md with explanations of the new benchmark and its expected outcome." />
@@ -699,7 +698,8 @@
     <MESSAGE value="Removed full_plan parameter from all QueryPlan.optimize methods and calls. Updated signatures and calls across multiple files including common.py, queries.py, lists.py, hash_dictionaries.py, and linq.py. Adjusted examples and tests accordingly." />
     <MESSAGE value="Implemented CountedSet as a multiset-style Atom preserving Set semantics with immutability and correct index updates. Exposed CountedSet in the public API via proto_db/common.py and added comprehensive tests covering duplicates, removals, counts, iteration, mixed types, immutability, and persistence. Existing modules and tests remain unaffected, and all tests pass." />
     <MESSAGE value="RepeatedKeysDictionary was updated to use CountedSet instead of Set with correct index update logic. Code duplication issues causing syntax errors were fixed. Targeted tests for CountedSet and indexed fast paths pass, while pre-existing unrelated test failures remain." />
-    <option name="LAST_COMMIT_MESSAGE" value="RepeatedKeysDictionary was updated to use CountedSet instead of Set with correct index update logic. Code duplication issues causing syntax errors were fixed. Targeted tests for CountedSet and indexed fast paths pass, while pre-existing unrelated test failures remain." />
+    <MESSAGE value="The code and tests were updated to replace all occurrences of optimize(None) with optimize(). Unit tests were adjusted to match the new optimize() signature and successfully passed without errors. A full test suite run confirmed no regressions and no remaining optimize(None) calls." />
+    <option name="LAST_COMMIT_MESSAGE" value="The code and tests were updated to replace all occurrences of optimize(None) with optimize(). Unit tests were adjusted to match the new optimize() signature and successfully passed without errors. A full test suite run confirmed no regressions and no remaining optimize(None) calls." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

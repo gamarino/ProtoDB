@@ -1,33 +1,46 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
+requires = ["setuptools>=69", "wheel", "build"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "proto_db"
 version = "0.1.0"
-description = "A transactional, object-oriented database system implemented in Python"
+description = "Embedded, transactional, object‑oriented database for Python with index‑aware query planning and optional vector/Arrow support."
 readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
 authors = [
-    { name = "ProtoBase Team", email = "example@example.com" }
+    { name = "ProtoBase Team", email = "contact@example.com" }
 ]
-license = { text = "MIT", file = "LICENSE" }
+keywords = ["database", "embedded", "in-memory", "ACID", "indexes", "LINQ", "object database", "parquet", "arrow"]
 classifiers = [
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
+    "Development Status :: 4 - Beta",
     "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Intended Audience :: Developers",
     "Topic :: Database",
-    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Libraries",
+    "Operating System :: OS Independent",
 ]
-keywords = ["database", "transactional", "object-oriented"]
-requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+parquet = ["pyarrow>=14"]
+vectors = ["numpy>=1.23", "scikit-learn>=1.1; python_version >= '3.11'"]
+dev = ["pytest>=7", "build>=1.0", "twine>=4.0"]
+docs = ["sphinx>=7", "jinja2>=3"]
+
 [project.urls]
-"Homepage" = "https://github.com/ProtoBase/proto_db"
-"Bug Tracker" = "https://github.com/ProtoBase/proto_db/issues"
+Homepage = "https://github.com/gamarino/ProtoBase"
+Documentation = "https://github.com/gamarino/ProtoBase#readme"
+Changelog = "https://github.com/gamarino/ProtoBase/blob/main/CHANGELOG.md"
+Issues = "https://github.com/gamarino/ProtoBase/issues"
 
 [tool.setuptools]
-packages = ["proto_db"]
+
+[tool.setuptools.packages.find]
+include = ["proto_db*"]
+exclude = ["examples*", "docs*", "benchmark_*", "cloud_page_cache*"]

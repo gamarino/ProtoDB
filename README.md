@@ -74,14 +74,28 @@ results = parallel_scan(len(data), fetch, process, config=cfg)
 ```
 
 ## Installation
-
 ProtoBase requires Python 3.11 or higher. Install from PyPI:
 
 ```bash
 pip install proto_db
 ```
 
-Optional features like Arrow/Parquet bridging use pyarrow if you already have it installed; ProtoBase does not force any heavy dependencies.
+Optional features are provided via extras so you don’t pull heavy deps unless needed:
+
+- Parquet/Arrow bridge:
+  ```bash
+  pip install "proto_db[parquet]"
+  ```
+- Vectors (ANN helpers):
+  ```bash
+  pip install "proto_db[vectors]"
+  ```
+- Dev (tests and build tooling):
+  ```bash
+  pip install "proto_db[dev]"
+  ```
+
+Note: Arrow/Parquet features import pyarrow lazily and will raise a helpful ArrowNotAvailable error if not installed.
 
 ## Documentation
 

@@ -48,6 +48,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../storage_cloud.html">Cloud and Cluster Storage</a></li>
@@ -587,20 +588,17 @@ execution logic based on the query plan type.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.common.QueryPlan.optimize">
-<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">optimize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">full_plan</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#QueryPlan.optimize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.QueryPlan.optimize" title="Link to this definition"></a></dt>
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">optimize</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#QueryPlan.optimize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.QueryPlan.optimize" title="Link to this definition"></a></dt>
 <dd><p>Optimizes the query plan for better performance.</p>
-<p>This method analyzes the current query plan and the full plan context to
-create a more efficient execution strategy. Implementations should define
-specific optimization techniques based on the query plan type.</p>
+<p>Implementations should analyze the current node (and recursively its
+children via based_on) to create a more efficient execution strategy.
+No external context parameter is required.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>full_plan</strong> (<a class="reference internal" href="queries.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>) – The complete query plan to be optimized.</p>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The optimized query plan.</p>
 </dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>The optimized query plan.</p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="queries.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="queries.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
 </dd>
 </dl>
 </dd></dl>
