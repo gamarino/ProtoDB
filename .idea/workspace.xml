@@ -4,7 +4,16 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="La documentación Sphinx se actualizó para reflejar el estado actual del proyecto con nuevas páginas y un índice ampliado. Se actualizaron el conf.py y se añadieron ejemplos, testing, almacenamiento en la nube y vectores. La documentación API permaneció sin cambios." />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="All Sphinx &quot;Title underline too short&quot; warnings in multiple reStructuredText files were fixed by extending the underline lengths to exceed the title lengths. This was done for headings in advanced_usage.rst, quickstart.rst, and api/queries.rst files through systematic search-and-replace edits. Multiple rebuilds were run to verify that no remaining warnings persisted.">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/advanced_usage.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/advanced_usage.doctree" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/api/queries.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/api/queries.doctree" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/environment.pickle" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/environment.pickle" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/quickstart.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/quickstart.doctree" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_sources/api/queries.rst.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_sources/api/queries.rst.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/source/api/queries.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/queries.rst" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -273,15 +282,7 @@
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
       <workItem from="1757675249603" duration="41300000" />
-      <workItem from="1757781886166" duration="3101000" />
-    </task>
-    <task id="LOCAL-00058" summary="[ADD] The Sphinx documentation was successfully updated to reflect new features, including range operators, UnnestPlan, CollectionFieldPlan, index-aware WHERE optimizations, and the indexed benchmark. New pages were created and existing content modified as needed. All changes were documented and submitted for review.">
-      <option name="closed" value="true" />
-      <created>1755792710870</created>
-      <option name="number" value="00058" />
-      <option name="presentableId" value="LOCAL-00058" />
-      <option name="project" value="LOCAL" />
-      <updated>1755792710870</updated>
+      <workItem from="1757781886166" duration="4309000" />
     </task>
     <task id="LOCAL-00059" summary="[ADD] A new `Vector` type and an `ExactVectorIndex` interface with basic operators for similarity search were successfully implemented in `proto_db`. The `near[]` operator was integrated, allowing for linear fallback evaluations, and all tests passed successfully. Documentation was updated accordingly, leaving future enhancements like ANN and persistence for subsequent phases.">
       <option name="closed" value="true" />
@@ -667,14 +668,21 @@
       <option name="project" value="LOCAL" />
       <updated>1757784992310</updated>
     </task>
-    <option name="localTasksCounter" value="107" />
+    <task id="LOCAL-00107" summary="All Sphinx &quot;Title underline too short&quot; warnings in multiple reStructuredText files were fixed by extending the underline lengths to exceed the title lengths. This was done for headings in advanced_usage.rst, quickstart.rst, and api/queries.rst files through systematic search-and-replace edits. Multiple rebuilds were run to verify that no remaining warnings persisted.">
+      <option name="closed" value="true" />
+      <created>1757785569916</created>
+      <option name="number" value="00107" />
+      <option name="presentableId" value="LOCAL-00107" />
+      <option name="project" value="LOCAL" />
+      <updated>1757785569916</updated>
+    </task>
+    <option name="localTasksCounter" value="108" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[FIX] Several errors in test suite" />
     <MESSAGE value="[DOC] Performance update" />
     <MESSAGE value="[WIP] nuevos índices" />
     <MESSAGE value="[FIX] queries.py: Fixed multiple errors in proto_db/queries.py related to IndexedQueryPlan and index handling. Corrected API usage, key normalization, bounds checking, and index-based query execution. Testing is currently blocked by a separate circular import issue unrelated to these fixes." />
@@ -699,7 +707,8 @@
     <MESSAGE value="All example scripts in the examples directory run without errors after adding sys.path bootstrapping and fixing a LINQ select bug. The fixes ensure proper dict projection evaluation and eliminate import issues. Unit tests confirmed the correctness of the LINQ-like behavior." />
     <MESSAGE value="The full test suite was run with 245 tests all passing. Issues with OrMerge.execute behavior and cloud cluster page cache handling were identified and fixed. Test discovery errors were resolved by running with the correct discovery top-level." />
     <MESSAGE value="La documentación Sphinx se actualizó para reflejar el estado actual del proyecto con nuevas páginas y un índice ampliado. Se actualizaron el conf.py y se añadieron ejemplos, testing, almacenamiento en la nube y vectores. La documentación API permaneció sin cambios." />
-    <option name="LAST_COMMIT_MESSAGE" value="La documentación Sphinx se actualizó para reflejar el estado actual del proyecto con nuevas páginas y un índice ampliado. Se actualizaron el conf.py y se añadieron ejemplos, testing, almacenamiento en la nube y vectores. La documentación API permaneció sin cambios." />
+    <MESSAGE value="All Sphinx &quot;Title underline too short&quot; warnings in multiple reStructuredText files were fixed by extending the underline lengths to exceed the title lengths. This was done for headings in advanced_usage.rst, quickstart.rst, and api/queries.rst files through systematic search-and-replace edits. Multiple rebuilds were run to verify that no remaining warnings persisted." />
+    <option name="LAST_COMMIT_MESSAGE" value="All Sphinx &quot;Title underline too short&quot; warnings in multiple reStructuredText files were fixed by extending the underline lengths to exceed the title lengths. This was done for headings in advanced_usage.rst, quickstart.rst, and api/queries.rst files through systematic search-and-replace edits. Multiple rebuilds were run to verify that no remaining warnings persisted." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

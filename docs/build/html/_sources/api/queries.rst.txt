@@ -20,7 +20,7 @@ Query Plans
 -----------
 
 QueryPlan
-~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: proto_db.common.QueryPlan
    :members:

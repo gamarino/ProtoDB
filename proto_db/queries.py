@@ -776,16 +776,14 @@ class IndexedQueryPlan(QueryPlan):
         if self.indexes and self.indexes.has(field_name):
             idx_dict = cast(Dictionary, self.indexes.get_at(field_name))
             if idx_dict is None:
-                return []
+                return
 
             # Native key match without string conversion
-            value_set = None
-            for k, v in idx_dict.as_iterable():
-                if k == value:
-                    value_set = cast(Set, v)
-                    break
+            value_set = idx_dict.get_at(value)
             if value_set is None:
-                return []
+                return
+
+            value_set = cast(Set, value_set)
             for record in value_set.as_iterable():
                 yield record
         else:
@@ -960,12 +958,8 @@ class IndexedSearchPlan(IndexedQueryPlan):
                 idx_dict = cast(Dictionary, self.indexes.get_at(self.field_to_scan))
                 if idx_dict is None:
                     return 0
-                # Try native-key lookup by scanning keys to avoid string conversion
-                value_set = None
-                for k, v in idx_dict.as_iterable():
-                    if k == self.value:
-                        value_set = cast(Set, v)
-                        break
+                # Try native-key lookup by using get_at for direct access
+                value_set = idx_dict.get_at(self.value)
                 if value_set is None:
                     return 0
                 return value_set.count
@@ -1000,11 +994,7 @@ class IndexedSearchPlan(IndexedQueryPlan):
 
             # Handle equality natively; others fallback to execute()
             if isinstance(self.operator, Equal):
-                bucket = None
-                for k, v in idx_dict.as_iterable():
-                    if k == self.value:
-                        bucket = cast(Set, v)
-                        break
+                bucket = idx_dict.get_at(self.value)
                 if bucket is None:
                     return frozenset()
                 for rec in bucket.as_iterable():
