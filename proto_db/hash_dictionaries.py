@@ -27,11 +27,9 @@ class HashDictionaryQueryPlan(QueryPlan):
         for item in self.base.as_iterable():
             yield from item
 
-    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
+    def optimize(self) -> QueryPlan:
         """
-
-        :param full_plan:
-        :return:
+        Return this plan; no optimization needed for hash dictionary scan.
         """
         return self
 

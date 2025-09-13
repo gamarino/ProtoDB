@@ -4,8 +4,13 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Updated commercial_positioning.md with new 2025-09-13 performance data. Replaced outdated query summaries with two benchmark runs and included speedup metrics. Added artifact references and reproducible commands without source code changes.">
-      <change beforePath="$PROJECT_DIR$/commercial_positioning.md" beforeDir="false" afterPath="$PROJECT_DIR$/commercial_positioning.md" afterDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Implemented LINQ integration with index-aware optimizer ensuring compatibility and fast-path execution. Added tests validating indexed equality, IN, range, AND/OR merges, and explain diagnostics. Public LINQ API remains backward compatible with no Python set materialization for index buckets.">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/hash_dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/hash_dictionaries.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/linq.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/linq.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/lists.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -275,23 +280,7 @@
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
       <workItem from="1757675249603" duration="41300000" />
-      <workItem from="1757781886166" duration="12443000" />
-    </task>
-    <task id="LOCAL-00064" summary="[ADD] A vector ANN benchmark script was created to measure and compare the performance of HNSW against ExactVectorIndex and optional NumPy and scikit-learn baselines, successfully producing JSON output with timings. All existing tests remained unaffected and passed. No errors were encountered during execution, confirming the accuracy of the benchmarking tool.">
-      <option name="closed" value="true" />
-      <created>1755807035532</created>
-      <option name="number" value="00064" />
-      <option name="presentableId" value="LOCAL-00064" />
-      <option name="project" value="LOCAL" />
-      <updated>1755807035532</updated>
-    </task>
-    <task id="LOCAL-00065" summary="[ADD] An IVF-Flat vector index backend (IVFFlatIndex) was implemented in `vector_index.py`, enabling copy-on-write updates without tombstones and multiprobe search. All unit tests passed, ensuring functionality and integration with existing vector features.">
-      <option name="closed" value="true" />
-      <created>1755809696416</created>
-      <option name="number" value="00065" />
-      <option name="presentableId" value="LOCAL-00065" />
-      <option name="project" value="LOCAL" />
-      <updated>1755809696416</updated>
+      <workItem from="1757781886166" duration="14917000" />
     </task>
     <task id="LOCAL-00066" summary="[ADD]IVF-Flat performance comparison has been integrated into the vector benchmark suite, enabling comparisons against Exact and HNSW indices. The updated benchmark includes IVF metrics and can be executed with specific parameters to generate detailed results.">
       <option name="closed" value="true" />
@@ -669,15 +658,29 @@
       <option name="project" value="LOCAL" />
       <updated>1757793902148</updated>
     </task>
-    <option name="localTasksCounter" value="113" />
+    <task id="LOCAL-00113" summary="Updated commercial_positioning.md">
+      <option name="closed" value="true" />
+      <created>1757794520547</created>
+      <option name="number" value="00113" />
+      <option name="presentableId" value="LOCAL-00113" />
+      <option name="project" value="LOCAL" />
+      <updated>1757794520547</updated>
+    </task>
+    <task id="LOCAL-00114" summary="Implemented LINQ integration with index-aware optimizer ensuring compatibility and fast-path execution. Added tests validating indexed equality, IN, range, AND/OR merges, and explain diagnostics. Public LINQ API remains backward compatible with no Python set materialization for index buckets.">
+      <option name="closed" value="true" />
+      <created>1757802044785</created>
+      <option name="number" value="00114" />
+      <option name="presentableId" value="LOCAL-00114" />
+      <option name="project" value="LOCAL" />
+      <updated>1757802044785</updated>
+    </task>
+    <option name="localTasksCounter" value="115" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="The key bug preventing index usage was fixed by correctly using Dictionary methods and normalizing keys. Performance improved slightly, with indexed queries now faster than linear scans, achieving about 56 queries per second on 50k items. Unit tests passed, and further optimizations are needed to meet the expected performance targets." />
-    <MESSAGE value="La documentación de performance fue actualizada incluyendo clarificaciones sobre el uso actual de índices y una nueva sección con resultados recientes de benchmarks con interpretaciones y consejos. No se realizaron cambios en el código; solo en la documentación. El README ya enlazaba a la documentación actualizada, por lo que no fue necesario modificarlo." />
     <MESSAGE value="Implemented a reference-first execution pipeline reducing object materialization by using stable reference hashes for index queries and removing string key conversions. Rewrote AndMerge to intersect reference sets before materializing objects, ensuring efficient AND predicate evaluation. Verified functionality with unit tests and maintained existing AVL-based data structures and immutability." />
     <MESSAGE value="Implemented a reference-centric indexed query strategy using efficient AVL range traversal and intersection without premature object materialization. Added deterministic native comparisons for DictionaryItem, removed string coercions, and optimized AndMerge to intersect reference sets before materialization. Passed focused unit tests confirming correctness and performance improvements." />
     <MESSAGE value="The performance suite was rerun after fixing blockers related to native key comparisons. The indexed benchmark with 50,000 items completed successfully and produced a JSON report with timings and latency metrics. The indexed path was slower than the linear path, meeting the objective to evaluate improvements with results saved at examples/benchmark_results_indexed.json." />
@@ -701,7 +704,9 @@
     <MESSAGE value="Executed indexed collections performance benchmarks with two dataset sizes. Collected timing and latency metrics demonstrating significant speedups over linear scans. Updated the documentation with detailed results and observations without modifying source code." />
     <MESSAGE value="Updated README.md to show current project performance with benchmarks. Replaced outdated indexed query results with summaries of two runs including times and speedups. Added links to detailed performance documentation without altering source code." />
     <MESSAGE value="Updated commercial_positioning.md with new 2025-09-13 performance data. Replaced outdated query summaries with two benchmark runs and included speedup metrics. Added artifact references and reproducible commands without source code changes." />
-    <option name="LAST_COMMIT_MESSAGE" value="Updated commercial_positioning.md with new 2025-09-13 performance data. Replaced outdated query summaries with two benchmark runs and included speedup metrics. Added artifact references and reproducible commands without source code changes." />
+    <MESSAGE value="Updated commercial_positioning.md" />
+    <MESSAGE value="Implemented LINQ integration with index-aware optimizer ensuring compatibility and fast-path execution. Added tests validating indexed equality, IN, range, AND/OR merges, and explain diagnostics. Public LINQ API remains backward compatible with no Python set materialization for index buckets." />
+    <option name="LAST_COMMIT_MESSAGE" value="Implemented LINQ integration with index-aware optimizer ensuring compatibility and fast-path execution. Added tests validating indexed equality, IN, range, AND/OR merges, and explain diagnostics. Public LINQ API remains backward compatible with no Python set materialization for index buckets." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

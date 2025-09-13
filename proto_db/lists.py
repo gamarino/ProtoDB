@@ -30,11 +30,10 @@ class ListQueryPlan(QueryPlan):
         for item in self.base.as_iterable():
             yield item
 
-    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
+    def optimize(self) -> QueryPlan:
         """
         Optimizes the query plan for better performance.
 
-        :param full_plan: The complete query plan to be optimized.
         :return: The optimized query plan.
         """
         return self

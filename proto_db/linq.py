@@ -567,7 +567,7 @@ class Queryable(Generic[T]):
         if current_plan is not None and plan_prefix_len > 0:
             # Execute the plan prefix to an iterable and continue locally with the rest
             try:
-                it = current_plan.optimize(current_plan).execute()
+                it = current_plan.optimize().execute()
             except Exception:
                 # In case of any issue, fallback to local execution over base iterable
                 it = self._source if self._source is not None else []

@@ -910,15 +910,14 @@ class QueryPlan(Atom):
         """
 
     @abstractmethod
-    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
+    def optimize(self) -> QueryPlan:
         """
         Optimizes the query plan for better performance.
 
-        This method analyzes the current query plan and the full plan context to
-        create a more efficient execution strategy. Implementations should define
-        specific optimization techniques based on the query plan type.
+        Implementations should analyze the current node (and recursively its
+        children via based_on) to create a more efficient execution strategy.
+        No external context parameter is required.
 
-        :param full_plan: The complete query plan to be optimized.
         :return: The optimized query plan.
         """
 
