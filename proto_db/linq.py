@@ -294,9 +294,13 @@ def _to_callable(expr_or_fn: Optional[Callable[[T], Any] | Any]) -> Optional[Cal
     if callable(expr_or_fn):
         return expr_or_fn
     if isinstance(expr_or_fn, dict):
-        # map dict of selectors
+        # map dict of selectors (support Field, Pred, callables, literals)
         def mapper(x):
-            return {k: (v(x) if callable(v) else v) for k, v in expr_or_fn.items()}
+            out = {}
+            for k, v in expr_or_fn.items():
+                vf = _to_callable(v)
+                out[k] = vf(x) if vf is not None else v
+            return out
         return mapper
     if isinstance(expr_or_fn, (list, tuple)):
         def mapper2(x):

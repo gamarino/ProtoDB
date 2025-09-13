@@ -3,6 +3,10 @@ LINQ-like API: policies for unsupported expressions.
 Run: python examples/linq_policies.py
 """
 
+import os
+import sys
+# Ensure project root is on sys.path for direct execution
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from proto_db.linq import from_collection, F, Policy
 
 
@@ -37,7 +41,7 @@ def main():
     # Fully supported using F DSL (no fallback needed)
     res2 = (
         from_collection(items)
-        .where((F.score >= 0.8))
+        .where((F.score != None) & (F.score >= 0.8))
         .to_list()
     )
     print("DSL-supported results:", res2)

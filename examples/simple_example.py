@@ -89,8 +89,9 @@ def main():
         print(f'Name: {u.name}')
         print(f'Email: {u.email}')
         print(f'Role: {u.role}')
-        if u.friends:
-            for f in u.friends.as_iterable():
+        friends = getattr(u, 'friends', None)
+        if friends:
+            for f in friends.as_iterable():
                 print(f'Friend: {f.name}')
         print('--' * 20)
 

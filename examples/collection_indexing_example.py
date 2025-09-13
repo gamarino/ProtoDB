@@ -8,6 +8,10 @@ Se contrasta una búsqueda lineal (lenta) con una búsqueda indexada (rápida)
 sobre la misma colección de datos.
 """
 import time
+import os
+import sys
+# Ensure project root is on sys.path for direct execution
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from proto_db.db_access import ObjectSpace
 from proto_db.memory_storage import MemoryStorage

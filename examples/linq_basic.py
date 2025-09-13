@@ -3,6 +3,10 @@ LINQ-like API basic usage examples.
 Run: python examples/linq_basic.py
 """
 
+import os
+import sys
+# Ensure project root is on sys.path for direct execution
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from proto_db.linq import from_collection, F
 
 
@@ -19,7 +23,7 @@ def main():
         from_collection(users)
         .where((F.age >= 18) & F.country.in_(["ES", "AR"]))
         .order_by(F.last_login, ascending=False)
-        .select({"id": F["id"], "name": F.first_name + " " + F.last_name})
+        .select({"id": F.id, "name": F.first_name + " " + F.last_name})
         .take(3)
     )
 

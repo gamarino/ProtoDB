@@ -4,9 +4,17 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Added an example script showing collection indexing. Demonstrated faster searches using add_index('email') with timing and speedup output. as_query_plan() returns IndexedQueryPlan enabling optimized queries.">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Se corrigió y depuró collection_indexing_example.py para asegurar ejecución sin errores. El ejemplo ahora crea 50k usuarios, ejecuta búsquedas con y sin índice, y reporta una mejora de rendimiento. Se verificó que las pruebas clave pasen correctamente.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/lists.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/benchmark_results_indexed.json" beforeDir="false" afterPath="$PROJECT_DIR$/examples/benchmark_results_indexed.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/collection_indexing_example.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/collection_indexing_example.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/linq_basic.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/linq_basic.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/linq_between.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/linq_between.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/linq_groupby.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/linq_groupby.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/linq_performance.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/linq_performance.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/linq_policies.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/linq_policies.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/simple_example.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/simple_example.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/linq.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/linq.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -50,54 +58,54 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ASKED_MARK_IGNORED_FILES_AS_EXCLUDED&quot;: &quot;true&quot;,
-    &quot;Makefile Target.Makefile (1).executor&quot;: &quot;Run&quot;,
-    &quot;Makefile Target.Makefile (3).executor&quot;: &quot;Run&quot;,
-    &quot;Makefile Target.Makefile.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests in test_db_access.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests in test_file_block_provider.py.executor&quot;: &quot;Debug&quot;,
-    &quot;Python tests.Python tests in test_standalone_file_storage.py.executor&quot;: &quot;Debug&quot;,
-    &quot;Python.collection_indexing_example.executor&quot;: &quot;Run&quot;,
-    &quot;Python.comprehensive_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.db_performance_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.indexed_benchmark.executor&quot;: &quot;Debug&quot;,
-    &quot;Python.minimal_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.performance_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.run_tests.executor&quot;: &quot;Run&quot;,
-    &quot;Python.simple_example.executor&quot;: &quot;Debug&quot;,
-    &quot;Python.simple_performance_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.task_manager.executor&quot;: &quot;Debug&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;com.google.cloudcode.ide_session_index&quot;: &quot;20250803_0001&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/home/gamarino/odoo/ltf-18.0&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;ml.llm.LLMConfigurable&quot;,
-    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
+    "Makefile Target.Makefile (1).executor": "Run",
+    "Makefile Target.Makefile (3).executor": "Run",
+    "Makefile Target.Makefile.executor": "Run",
+    "Python tests.Python tests in test_db_access.py.executor": "Run",
+    "Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor": "Run",
+    "Python tests.Python tests in test_file_block_provider.py.executor": "Debug",
+    "Python tests.Python tests in test_standalone_file_storage.py.executor": "Debug",
+    "Python.collection_indexing_example.executor": "Run",
+    "Python.comprehensive_benchmark.executor": "Run",
+    "Python.db_performance_benchmark.executor": "Run",
+    "Python.indexed_benchmark.executor": "Debug",
+    "Python.minimal_benchmark.executor": "Debug",
+    "Python.performance_benchmark.executor": "Run",
+    "Python.run_tests.executor": "Run",
+    "Python.simple_example.executor": "Debug",
+    "Python.simple_performance_benchmark.executor": "Run",
+    "Python.task_manager.executor": "Debug",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "com.google.cloudcode.ide_session_index": "20250803_0001",
+    "git-widget-placeholder": "master",
+    "junie.onboarding.icon.badge.shown": "true",
+    "last_opened_file_path": "/home/gamarino/odoo/ltf-18.0",
+    "node.js.detected.package.eslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "ml.llm.LLMConfigurable",
+    "to.speed.mode.migration.done": "true",
+    "vue.rearranger.settings.migration": "true"
   },
-  &quot;keyToStringList&quot;: {
-    &quot;com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File&quot;: [
-      &quot;Requirements&quot;
+  "keyToStringList": {
+    "com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File": [
+      "Requirements"
     ]
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/proto_db/tests" />
       <recent name="$PROJECT_DIR$/proto_db" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.collection_indexing_example">
+  <component name="RunManager" selected="Python.minimal_benchmark">
     <configuration name="Makefile (2)" type="MAKEFILE_TARGET_RUN_CONFIGURATION" factoryName="Makefile">
       <makefile filename="$PROJECT_DIR$/docs/Makefile" target="" workingDirectory="$PROJECT_DIR$/docs/source" arguments="">
         <envs />
@@ -174,6 +182,29 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
+    <configuration name="minimal_benchmark" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="ProtoBase" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/examples" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/examples/minimal_benchmark.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
     <configuration name="run_tests" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="ProtoBase" />
       <option name="ENV_FILES" value="" />
@@ -197,44 +228,21 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="simple_example" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
-      <module name="ProtoBase" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/examples" />
-      <option name="IS_MODULE_SDK" value="true" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/examples/simple_example.py" />
-      <option name="PARAMETERS" value="" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <method v="2" />
-    </configuration>
     <list>
       <item itemvalue="Makefile Target.Makefile (2)" />
+      <item itemvalue="Python.minimal_benchmark" />
       <item itemvalue="Python.collection_indexing_example" />
       <item itemvalue="Python.run_tests" />
       <item itemvalue="Python.indexed_benchmark" />
       <item itemvalue="Python.comprehensive_benchmark" />
-      <item itemvalue="Python.simple_example" />
     </list>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.minimal_benchmark" />
         <item itemvalue="Python.collection_indexing_example" />
         <item itemvalue="Python.indexed_benchmark" />
         <item itemvalue="Python.run_tests" />
         <item itemvalue="Python.comprehensive_benchmark" />
-        <item itemvalue="Python.simple_example" />
       </list>
     </recent_temporary>
   </component>
@@ -276,14 +284,7 @@
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
       <workItem from="1757675249603" duration="41300000" />
-    </task>
-    <task id="LOCAL-00054" summary="[ADD] Implemented persistent internal secondary indexes for List, Dictionary, and Set, updating relevant methods and iterators to use these indexes. The new indexes.py module includes IndexDefinition and an immutable IndexRegistry, ensuring stable identifiers and lazy index loading. Completed testing confirmed proper functionality and index integrity.">
-      <option name="closed" value="true" />
-      <created>1755790479657</created>
-      <option name="number" value="00054" />
-      <option name="presentableId" value="LOCAL-00054" />
-      <option name="project" value="LOCAL" />
-      <updated>1755790479657</updated>
+      <workItem from="1757781886166" duration="2109000" />
     </task>
     <task id="LOCAL-00055" summary="[ADD] Range operators `between[]`, `between()`, `between(]`, and `between[)` were implemented with parsing, evaluation, and index-based optimization. All tests passed successfully, confirming correct functionality and backward compatibility. The solution is now ready for submission.">
       <option name="closed" value="true" />
@@ -669,14 +670,21 @@
       <option name="project" value="LOCAL" />
       <updated>1757780765016</updated>
     </task>
-    <option name="localTasksCounter" value="103" />
+    <task id="LOCAL-00103" summary="Se corrigió y depuró collection_indexing_example.py para asegurar ejecución sin errores. El ejemplo ahora crea 50k usuarios, ejecuta búsquedas con y sin índice, y reporta una mejora de rendimiento. Se verificó que las pruebas clave pasen correctamente.">
+      <option name="closed" value="true" />
+      <created>1757782622426</created>
+      <option name="number" value="00103" />
+      <option name="presentableId" value="LOCAL-00103" />
+      <option name="project" value="LOCAL" />
+      <updated>1757782622427</updated>
+    </task>
+    <option name="localTasksCounter" value="104" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="[IMP]  Atom-level in-memory caches (AtomObjectCache and AtomBytesCache) were successfully implemented with a 2Q replacement policy, integrated into the atom read path, and tested. The implementation ensures high hit rates and improved read performance without introducing regressions or deadlocks. Metrics for cache efficiency are also exposed for monitoring." />
     <MESSAGE value="[IMP]  Implemented adaptive chunking and work-stealing for parallel scans as an optional feature without changing default behavior. Added configuration, metrics, graceful shutdown, and comprehensive tests ensuring correctness, performance, and backward compatibility. Provided new user documentation, API references, ADR, and a changelog entry." />
     <MESSAGE value="[FIX] Translated commercial_positioning.md to professional English preserving structure and tone. Updated multiple sections with accurate English content and verified related unit tests passed. No code changes occurred, and repository integrity remained intact." />
     <MESSAGE value="[FIX] The performance suite was rerun with updated benchmark results saved in JSON files. Unit tests for the parallel module passed without issues. Documentation remained accurate and no updates were needed." />
@@ -701,7 +709,8 @@
     <MESSAGE value="The commercial_positioning.md was translated into professional English. A new Competitive Landscape &amp; Positioning section was added, contrasting ProtoBase with various technologies. The update fulfills the task requirements fully." />
     <MESSAGE value="The README.md was updated to reflect the current state of ProtoBase. Key Features were enhanced with new index-aware optimizer details and caching behavior. The Benchmarks section and performance snapshot were revised with updated parameters and results." />
     <MESSAGE value="Added an example script showing collection indexing. Demonstrated faster searches using add_index('email') with timing and speedup output. as_query_plan() returns IndexedQueryPlan enabling optimized queries." />
-    <option name="LAST_COMMIT_MESSAGE" value="Added an example script showing collection indexing. Demonstrated faster searches using add_index('email') with timing and speedup output. as_query_plan() returns IndexedQueryPlan enabling optimized queries." />
+    <MESSAGE value="Se corrigió y depuró collection_indexing_example.py para asegurar ejecución sin errores. El ejemplo ahora crea 50k usuarios, ejecuta búsquedas con y sin índice, y reporta una mejora de rendimiento. Se verificó que las pruebas clave pasen correctamente." />
+    <option name="LAST_COMMIT_MESSAGE" value="Se corrigió y depuró collection_indexing_example.py para asegurar ejecución sin errores. El ejemplo ahora crea 50k usuarios, ejecuta búsquedas con y sin índice, y reporta una mejora de rendimiento. Se verificó que las pruebas clave pasen correctamente." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -720,21 +729,6 @@
           <url>file://$PROJECT_DIR$/proto_db/queries.py</url>
           <line>329</line>
           <option name="timeStamp" value="188" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/examples/simple_example.py</url>
-          <line>81</line>
-          <option name="timeStamp" value="237" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/examples/simple_example.py</url>
-          <line>85</line>
-          <option name="timeStamp" value="238" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/examples/simple_example.py</url>
-          <line>84</line>
-          <option name="timeStamp" value="239" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/db_access.py</url>
@@ -774,8 +768,8 @@
     <SUITE FILE_PATH="coverage/ProtoBase$indexed_benchmark.coverage" NAME="indexed_benchmark Coverage Results" MODIFIED="1757777969871" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$collection_indexing_example.coverage" NAME="collection_indexing_example Coverage Results" MODIFIED="1757780822525" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$db_performance_benchmark.coverage" NAME="db_performance_benchmark Coverage Results" MODIFIED="1754260420768" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
-    <SUITE FILE_PATH="coverage/ProtoBase$minimal_benchmark.coverage" NAME="minimal_benchmark Coverage Results" MODIFIED="1754260411492" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$simple_performance_benchmark.coverage" NAME="simple_performance_benchmark Coverage Results" MODIFIED="1754260319108" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/ProtoBase$minimal_benchmark.coverage" NAME="minimal_benchmark Coverage Results" MODIFIED="1757783415322" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$simple_example.coverage" NAME="simple_example Coverage Results" MODIFIED="1754267859053" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$comprehensive_benchmark.coverage" NAME="comprehensive_benchmark Coverage Results" MODIFIED="1755802519494" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
