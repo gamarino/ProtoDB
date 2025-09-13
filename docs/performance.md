@@ -206,6 +206,25 @@ python examples/indexed_benchmark.py --items 50000 --queries 200 --window 500 --
 The script writes a JSON alongside the parameters; see "Run the indexed benchmark" above for details.
 
 
+## Nuevo Benchmark: Búsqueda por Clave Primaria (Point Query)
+
+Para evaluar el rendimiento en el caso de uso más favorable para los índices, se ha añadido un benchmark de "búsqueda por clave primaria". Este test mide el tiempo necesario para encontrar un único registro utilizando su campo `id`.
+
+- `protodb_indexed_pk_lookup`: Ejecuta una consulta `WHERE r.id == ?` sobre una colección con un índice en el campo `id`. Se espera que esta sea la operación más rápida, con un coste de `O(log N)`.
+- `protodb_linear_pk_lookup`: Ejecuta la misma consulta sobre una colección sin índices, forzando un escaneo lineal de todos los elementos (`O(N)`).
+- `python_list_pk_lookup`: Línea base en Python, realizando la búsqueda en una lista de diccionarios.
+
+Interpretación de resultados:
+- El `speedup` `indexed_pk_over_linear` debería crecer de forma significativa a medida que aumenta `--items`. Un valor muy bajo sugiere sobrecarga en el motor de consultas o ineficiencia en la búsqueda por índice.
+
+Ejemplo de ejecución (añadido al script `examples/indexed_benchmark.py`):
+
+```bash
+python examples/indexed_benchmark.py --items 50000 --queries 200 --window 500 --warmup 10 --out examples/benchmark_results_indexed.json
+```
+
+Los nuevos campos se incorporan en el JSON de salida: `python_list_pk_lookup`, `protodb_linear_pk_lookup`, `protodb_indexed_pk_lookup` y `speedups.indexed_pk_over_linear`.
+
 ## Latest Results (2025-09-13)
 
 This section summarizes the most recent benchmark runs using the indexed query engine with reference-set intersection and efficient range scans.

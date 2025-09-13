@@ -90,7 +90,14 @@ def run_benchmark(n_items=10000, n_queries=50, out_path="examples/benchmark_resu
         hi = lo + window
         return [r for r in data if (r.get('category') == cat and r.get('status') == st and lo < r.get('value', 0) < hi)]
 
+    # Baseline PK lookup: find a single record by its id using list comprehension
+    def py_query_single_item():
+        # Choose an existing id to avoid misses with UUIDs
+        target_id = data[random.randrange(n_items)].get('id') if data else None
+        return [r for r in data if r.get('id') == target_id]
+
     py_stats = time_queries(lambda: py_query_once(), n=n_queries, warmup=warmup)
+    py_pk_stats = time_queries(lambda: py_query_single_item(), n=n_queries, warmup=warmup)
 
     # ProtoBase setup: use ListPlan over dict rows
     space = ObjectSpace(storage=MemoryStorage())
@@ -110,9 +117,16 @@ def run_benchmark(n_items=10000, n_queries=50, out_path="examples/benchmark_resu
         plan = WherePlan(filter=flt, based_on=base_plan, transaction=tr)
         list(plan.execute())
 
-    pb_linear_stats = time_queries(lambda: pb_linear_query_once(), n=n_queries, warmup=warmup)
+    def pb_linear_query_single_item():
+        target_id = data[random.randrange(n_items)].get('id') if data else None
+        flt = Expression.compile(['id', '==', target_id])
+        plan = WherePlan(filter=flt, based_on=base_plan, transaction=tr)
+        list(plan.execute())
 
-    # Indexed path: build indexes for r.category, r.status, r.value over wrapped rows
+    pb_linear_stats = time_queries(lambda: pb_linear_query_once(), n=n_queries, warmup=warmup)
+    pb_linear_pk_stats = time_queries(lambda: pb_linear_query_single_item(), n=n_queries, warmup=warmup)
+
+    # Indexed path: build indexes for r.category, r.status, r.value, and r.id over wrapped rows
     class RowWrap:
         __slots__ = ('r', '_h')
         def __init__(self, row: dict):
@@ -124,7 +138,7 @@ def run_benchmark(n_items=10000, n_queries=50, out_path="examples/benchmark_resu
     base_indexed_plan = ListPlan(base_list=wrapped_records, transaction=tr)
     from proto_db.dictionaries import Dictionary, RepeatedKeysDictionary
     idx_map = {}
-    for fld in ('r.category', 'r.status', 'r.value'):
+    for fld in ('r.category', 'r.status', 'r.value', 'r.id'):
         rkd = RepeatedKeysDictionary(transaction=tr)
         alias, attr = fld.split('.', 1)
         for rec in wrapped_records:
@@ -149,7 +163,14 @@ def run_benchmark(n_items=10000, n_queries=50, out_path="examples/benchmark_resu
         plan = WherePlan(filter=flt, based_on=indexed, transaction=tr)
         list(plan.execute())
 
+    def pb_indexed_query_single_item():
+        target_id = data[random.randrange(n_items)].get('id') if data else None
+        flt = Expression.compile(['r.id', '==', target_id])
+        plan = WherePlan(filter=flt, based_on=indexed, transaction=tr)
+        list(plan.execute())
+
     pb_indexed_stats = time_queries(lambda: pb_indexed_query_once(), n=n_queries, warmup=warmup)
+    pb_indexed_pk_stats = time_queries(lambda: pb_indexed_query_single_item(), n=n_queries, warmup=warmup)
 
     results = {
         "config": {"n_items": n_items, "n_queries": n_queries, "window": window, "warmup": warmup},
@@ -157,15 +178,22 @@ def run_benchmark(n_items=10000, n_queries=50, out_path="examples/benchmark_resu
             "python_list_baseline": py_stats['total_seconds'],
             "protodb_linear_where": pb_linear_stats['total_seconds'],
             "protodb_indexed_where": pb_indexed_stats['total_seconds'],
+            "python_list_pk_lookup": py_pk_stats['total_seconds'],
+            "protodb_linear_pk_lookup": pb_linear_pk_stats['total_seconds'],
+            "protodb_indexed_pk_lookup": pb_indexed_pk_stats['total_seconds'],
         },
         "latency_ms": {
             "python_list_baseline": {k: v for k, v in py_stats.items() if k != 'total_seconds'},
             "protodb_linear_where": {k: v for k, v in pb_linear_stats.items() if k != 'total_seconds'},
             "protodb_indexed_where": {k: v for k, v in pb_indexed_stats.items() if k != 'total_seconds'},
+            "python_list_pk_lookup": {k: v for k, v in py_pk_stats.items() if k != 'total_seconds'},
+            "protodb_linear_pk_lookup": {k: v for k, v in pb_linear_pk_stats.items() if k != 'total_seconds'},
+            "protodb_indexed_pk_lookup": {k: v for k, v in pb_indexed_pk_stats.items() if k != 'total_seconds'},
         },
         "speedups": {
             "indexed_over_linear": (pb_linear_stats['total_seconds'] / pb_indexed_stats['total_seconds']) if pb_indexed_stats['total_seconds'] > 0 else None,
             "indexed_over_python": (py_stats['total_seconds'] / pb_indexed_stats['total_seconds']) if pb_indexed_stats['total_seconds'] > 0 else None,
+            "indexed_pk_over_linear": (pb_linear_pk_stats['total_seconds'] / pb_indexed_pk_stats['total_seconds']) if pb_indexed_pk_stats['total_seconds'] > 0 else None,
         },
     }
 
