@@ -242,20 +242,20 @@ Artifacts written:
 - examples/benchmark_results_indexed.json
 
 Highlights (items=50k, window=500):
-- python_list_baseline: avg ≈ 5.70 ms; p95 ≈ 14.95 ms; QPS ≈ 175.3
-- protodb_linear_where: avg ≈ 48.08 ms; p95 ≈ 109.66 ms; QPS ≈ 20.8
-- protodb_indexed_where: avg ≈ 35.59 ms; p95 ≈ 55.76 ms; QPS ≈ 28.10
-- Speedup indexed_over_linear: ≈ 1.35x
+- python_list_baseline: avg ≈ 5.85 ms; p95 ≈ 7.97 ms; QPS ≈ 170.76
+- protodb_linear_where: avg ≈ 42.70 ms; p95 ≈ 49.39 ms; QPS ≈ 23.41
+- protodb_indexed_where: avg ≈ 28.62 ms; p95 ≈ 36.57 ms; QPS ≈ 34.94
+- Speedup indexed_over_linear: ≈ 1.49x
 
 PK lookup (point query) results on the same dataset:
-- python_list_pk_lookup: avg ≈ 9.64 ms; p95 ≈ 16.39 ms; QPS ≈ 103.7
-- protodb_linear_pk_lookup: avg ≈ 28.86 ms; p95 ≈ 63.81 ms; QPS ≈ 34.64
-- protodb_indexed_pk_lookup: avg ≈ 40.15 ms; p95 ≈ 83.68 ms; QPS ≈ 24.90
-- Speedup indexed_pk_over_linear: ≈ 0.72x (indexed PK slower than linear in this configuration)
+- python_list_pk_lookup: avg ≈ 5.85 ms; p95 ≈ 7.80 ms; QPS ≈ 170.94
+- protodb_linear_pk_lookup: avg ≈ 28.05 ms; p95 ≈ 31.69 ms; QPS ≈ 35.65
+- protodb_indexed_pk_lookup: avg ≈ 29.55 ms; p95 ≈ 34.94 ms; QPS ≈ 33.84
+- Speedup indexed_pk_over_linear: ≈ 0.95x (indexed PK slightly slower than linear in this configuration)
 
 Interpretation:
-- Indexed query execution is faster than the linear WherePlan by ~1.35x for the AND+range workload at 50k items and window 500. Lower p95 on the indexed path aligns with candidate-set intersection before residual filtering.
-- For PK lookup, the indexed path underperformed the linear scan in this in-memory, small-object benchmark. This is likely due to benchmark setup overheads (wrapper objects, plan/expression construction, index dictionary traversal) dominating the O(log N) advantages for point queries at this scale. The linear path iterates the 50k list with tight Python loops and minimal framework overhead.
+- Indexed query execution is faster than the linear WherePlan by ~1.5x for the AND+range workload at 50k items and window 500. Lower p95 on the indexed path aligns with candidate-set intersection before residual filtering.
+- For PK lookup, the indexed path remains slightly slower than the linear scan in this in-memory, small-object benchmark. This suggests setup overheads (wrapper records, plan/expression construction, index traversal) dominate the O(log N) advantage for point queries at this scale. The linear path benefits from tight loops over a Python list of dicts.
 
 Recommendations to observe the expected large PK speedup:
 - Increase dataset size substantially (e.g., 500k–5M items) so linear scan cost grows O(N) while indexed PK remains near O(log N) + small constant.

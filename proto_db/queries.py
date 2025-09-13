@@ -1312,55 +1312,6 @@ class IndexedRangeSearchPlan(IndexedQueryPlan):
             return frozenset()
 
 
-class OrMerge(QueryPlan):
-    or_queries: list[QueryPlan]
-
-    def __init__(self,
-                 or_queries: list[QueryPlan] = None,
-                 based_on: QueryPlan = None,
-                 transaction: ObjectTransaction = None,
-                 atom_pointer: AtomPointer = None,
-                 **kwargs):
-        super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        self.or_queries = or_queries
-
-    def execute(self) -> list:
-        for query in self.or_queries:
-            for record in query.execute():
-                yield record
-
-    def optimize(self, full_plan: QueryPlan) -> QueryPlan:
-        return OrMerge(
-            or_queries=self.or_queries,
-            based_on=self.based_on.optimize(full_plan),
-            transaction=self.transaction
-        )
-
-    def count(self) -> int:
-        """
-        Calculates the count of the union of sub-queries.
-        Prefer fast path with keys_iterator() when available; otherwise fall back to
-        executing the plans and counting unique results.
-        """
-        if not self.or_queries:
-            return 0
-
-        optimized_queries = [q.optimize(self) for q in self.or_queries]
-
-        all_ids = set()
-        for q in optimized_queries:
-            if hasattr(q, 'keys_iterator'):
-                try:
-                    for k in q.keys_iterator():
-                        all_ids.add(k)
-                    continue
-                except Exception:
-                    # Fallback to execute
-                    pass
-            for rec in q.execute():
-                all_ids.add(rec)
-
-        return len(all_ids)
 
 
 class FromPlan(IndexedQueryPlan):
