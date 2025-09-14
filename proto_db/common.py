@@ -928,6 +928,20 @@ class QueryPlan(Atom):
         """
         return sum(1 for _ in self.execute())
 
+    def explain(self) -> dict:
+        """
+        Lightweight structured explanation of the plan.
+        Subclasses should override to add more details.
+        """
+        try:
+            base_type = type(self.based_on).__name__ if getattr(self, 'based_on', None) is not None else None
+        except Exception:
+            base_type = None
+        return {
+            'plan_type': type(self).__name__,
+            'based_on': base_type,
+        }
+
 
 class Literal(Atom):
     """
@@ -1142,6 +1156,33 @@ class SharedStorage(AbstractSharedStorage):
         :return:
         """
 
+
+# Canonical identity hash helper exposed publicly
+# Prefer AtomPointer.hash() for Atoms; otherwise fall back to built-in hash
+
+def canonical_hash(obj) -> int:
+    """
+    Return a canonical identity hash for objects used in ProtoBase collections.
+    - If obj is an Atom with an AtomPointer, return obj.atom_pointer.hash().
+    - Else, if Atom exposes hash(), use it.
+    - Otherwise, return Python's built-in hash(obj).
+    This ensures stable identity for dedup and index buckets.
+    """
+    try:
+        if isinstance(obj, Atom):
+            ap = getattr(obj, 'atom_pointer', None)
+            if ap is not None and isinstance(ap, AtomPointer):
+                return ap.hash()
+            try:
+                return obj.hash()
+            except Exception:
+                pass
+        return hash(obj)
+    except Exception:
+        try:
+            return hash(str(obj))
+        except Exception:
+            return 0
 
 # Lazy export to avoid circular import: provide CountedSet via attribute access
 def __getattr__(name: str):

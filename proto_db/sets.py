@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import cast, TYPE_CHECKING
-from .common import Atom, QueryPlan, AbstractTransaction, AtomPointer, DBCollections
+from .common import Atom, QueryPlan, AbstractTransaction, AtomPointer, DBCollections, canonical_hash
 from .hash_dictionaries import HashDictionary
 from .queries import IndexedQueryPlan
 
@@ -46,6 +46,10 @@ class Set(Atom):
             self.indexes = _Dictionary(transaction=transaction)
         else:
             self.indexes = indexes
+
+    # Unified hashing using canonical_hash for identity stability
+    def _hash_of(self, key: object) -> int:
+        return canonical_hash(key)
 
     def _save(self):
         if not self._saved:
@@ -119,11 +123,8 @@ class Set(Atom):
         :param key: The object to search for in the set. This can be an instance of `Atom`.
         :return: `True` if the key exists in the set, otherwise `False`.
         """
-        # Calculate the hash of the key, considering whether the key is an `Atom` or not.
-        if isinstance(key, Atom):
-            item_hash = key.hash()  # Use the `hash` method of the `Atom`.
-        else:
-            item_hash = hash(key)  # Fallback to the built-in Python hash.
+        # Calculate the canonical hash of the key
+        item_hash = self._hash_of(key)
 
         # Check if the computed hash exists in the `HashDictionary`.
         self._load()
@@ -140,11 +141,8 @@ class Set(Atom):
         :param key: The object to add to the set. This can be an instance of `Atom`.
         :return: A new `Set` object that contains the additional key.
         """
-        # Calculate the hash of the key to ensure appropriate insertion; handle `Atom` objects.
-        if isinstance(key, Atom):
-            item_hash = key.hash()  # Use the `hash` method for `Atom`.
-        else:
-            item_hash = hash(key)  # Use the default Python hash for non-Atom objects.
+        # Calculate the canonical hash of the key to ensure appropriate insertion
+        item_hash = self._hash_of(key)
 
         # Create and return a new `Set` with the updated `HashDictionary`.
         self._load()
@@ -171,11 +169,8 @@ class Set(Atom):
         """
         self._load()
 
-        # Calculate the hash of the key for removal; handle `Atom` objects.
-        if isinstance(key, Atom):
-            item_hash = key.hash()  # Use the `hash` method for `Atom`.
-        else:
-            item_hash = hash(key)  # Use the default Python hash for non-Atom objects.
+        # Calculate the canonical hash of the key for removal
+        item_hash = self._hash_of(key)
 
         if not self.has(key):
             return self
@@ -220,12 +215,9 @@ class Set(Atom):
 
         result = Set(transaction=self.transaction)
         for item in self.as_iterable():
-            if isinstance(item, Atom):
-                item_hash = item.hash()
-            else:
-                item_hash = hash(item)
+            item_hash = self._hash_of(item)
 
-            if other.has(item_hash):
+            if other.has(item):
                 result = result.add(item)
 
         return result
@@ -242,12 +234,9 @@ class Set(Atom):
 
         result = Set(transaction=self.transaction)
         for item in self.as_iterable():
-            if isinstance(item, Atom):
-                item_hash = item.hash()
-            else:
-                item_hash = hash(item)
+            item_hash = self._hash_of(item)
 
-            if not other.has(item_hash):
+            if not other.has(item):
                 result = result.add(item)
 
         return result

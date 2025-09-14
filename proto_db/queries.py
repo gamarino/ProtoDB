@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import logging
 from abc import ABC, abstractmethod
 from typing import cast, TYPE_CHECKING
 
@@ -16,6 +17,9 @@ if TYPE_CHECKING:
 # Executor for async operations
 max_workers = (os.cpu_count() or 1) * 5
 executor_pool = HybridExecutor(base_num_workers=max_workers // 5, sync_multiplier=5)
+
+_logger = logging.getLogger(__name__)
+PROTODB_WARN_LINEAR_FALLBACK = os.getenv('PROTODB_WARN_LINEAR_FALLBACK', '0') not in ('', '0', 'false', 'False', 'no', 'No')
 
 
 class Expression(ABC):
@@ -991,21 +995,23 @@ class IndexedSearchPlan(IndexedQueryPlan):
                 except Exception:
                     return hash(rec)
 
-            # Handle equality natively; others fallback to execute()
-            if isinstance(self.operator, Equal):
-                bucket = idx_dict.get_at(self.value)
-                if bucket is None:
-                    return frozenset()
-                for rec in bucket.as_iterable():
-                    refs.add(_ref_of(rec))
-                return frozenset(refs)
-
-            # Fallback: execute and convert to references (less efficient)
-            for rec in self.execute():
-                refs.add(_ref_of(rec))
-            return frozenset(refs)
         except Exception:
             return frozenset()
+        # Build from index buckets
+        for rec in self.execute():
+            refs.add(_ref_of(rec))
+        return frozenset(refs)
+
+    def explain(self) -> dict:
+        op_name = type(self.operator).__name__
+        return {
+            'plan_type': type(self).__name__,
+            'field': self.field_to_scan,
+            'operator': op_name,
+            'value': self.value,
+            'used_index': True,
+        }
+
 
 
 class OrMerge(QueryPlan):
@@ -1597,15 +1603,18 @@ class WherePlan(QueryPlan):
         base = self.based_on
         flt = self.filter
 
+        reasons: list[str] = []
         def build_candidate_set(term: _Term):
             # Only terms with target attribute present in indexes are eligible
             try:
                 field = term.target_attribute
                 # Ensure we have an IndexedQueryPlan and an index for the field
                 if not isinstance(base, _IQP):
+                    reasons.append('base is not IndexedQueryPlan')
                     return None
                 idxs = getattr(base, 'indexes', None)
                 if not idxs or not getattr(idxs, 'has', None) or not idxs.has(field):
+                    reasons.append(f"no index for '{field}'")
                     return None
                 op = term.operation
                 idx_dict = idxs.get_at(field)
@@ -1625,6 +1634,8 @@ class WherePlan(QueryPlan):
                             if it:
                                 result.update(it.as_iterable())
                     except Exception:
+                        # invalid IN value
+                        reasons.append('invalid IN value')
                         return None
                     return result
                 # CONTAINS: treat as equality on elements if index was built for contained elements
@@ -1635,9 +1646,12 @@ class WherePlan(QueryPlan):
                     return set()
                 # BETWEEN (range) — avoid materializing large range sets; leave as residual filter
                 if isinstance(op, (_Between, _Greater, _GreaterOrEqual, _Lower, _LowerOrEqual)):
+                    reasons.append('range or inequality operator; defer to range plan')
                     return None
+                reasons.append(f'operator not indexable: {type(op).__name__}')
                 return None
-            except Exception:
+            except Exception as ex:
+                reasons.append(f'error building candidate: {ex}')
                 return None
 
         # Generalize fast path for single Term and AndExpression

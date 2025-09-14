@@ -4,36 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="The project was prepared for PyPI publication with complete metadata, packaging, optional extras support, and automated CI release workflows. A version export was added, MANIFEST.in refined, README updated for extras installation, and a GitHub Actions workflow created for tagged releases. Build, twine checks, and install tests were verified with no changes to core runtime behavior or test requirements.">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/environment.pickle" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/environment.pickle" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/installation.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/installation.doctree" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/_sources/installation.rst.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_sources/installation.rst.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/advanced_usage.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/advanced_usage.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/api/arrow_parquet.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/arrow_parquet.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/api/atom_cache.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/atom_cache.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/api/exceptions.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/exceptions.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/api/fsm.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/fsm.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/api/indexes.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/indexes.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/api/linq.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/linq.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/api/parallel.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/parallel.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/api/storage.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/storage.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/api/vectors.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/vectors.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/architecture.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/architecture.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/development.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/development.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/examples.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/examples.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/installation.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/installation.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/introduction.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/introduction.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/parallel_scans.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/parallel_scans.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/quickstart.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/quickstart.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/searchindex.js" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/searchindex.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/storage_cloud.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/storage_cloud.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/testing.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/testing.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/build/html/vectors_arrow.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/vectors_arrow.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/api/queries.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/queries.rst" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/conf.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/conf.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/source/installation.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/installation.rst" afterDir="false" />
-    </list>
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Se corrigieron errores y warnings en la generación de la documentación con Sphinx. Se eliminaron referencias a clases inexistentes y se ajustaron los docstrings para cumplir con reStructuredText. La compilación final de la documentación se realiza sin advertencias ni errores." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -303,14 +274,7 @@
       <workItem from="1757675175377" duration="49000" />
       <workItem from="1757675249603" duration="41300000" />
       <workItem from="1757781886166" duration="18715000" />
-    </task>
-    <task id="LOCAL-00072" summary="[IMP] Performance measurement scripts for LINQ queries were added in the `examples/` directory, including `linq_performance.py`. The execution and results can now be saved to a JSON file, demonstrating the performance of LINQ operations over various data structures. All changes were successfully implemented without errors.">
-      <option name="closed" value="true" />
-      <created>1757019634369</created>
-      <option name="number" value="00072" />
-      <option name="presentableId" value="LOCAL-00072" />
-      <option name="project" value="LOCAL" />
-      <updated>1757019634369</updated>
+      <workItem from="1757807568113" duration="543000" />
     </task>
     <task id="LOCAL-00073" summary="[UPD] next_steps_proposal.md">
       <option name="closed" value="true" />
@@ -696,14 +660,21 @@
       <option name="project" value="LOCAL" />
       <updated>1757806974911</updated>
     </task>
-    <option name="localTasksCounter" value="121" />
+    <task id="LOCAL-00121" summary="Se corrigieron errores y warnings en la generación de la documentación con Sphinx. Se eliminaron referencias a clases inexistentes y se ajustaron los docstrings para cumplir con reStructuredText. La compilación final de la documentación se realiza sin advertencias ni errores.">
+      <option name="closed" value="true" />
+      <created>1757808108898</created>
+      <option name="number" value="00121" />
+      <option name="presentableId" value="LOCAL-00121" />
+      <option name="project" value="LOCAL" />
+      <updated>1757808108899</updated>
+    </task>
+    <option name="localTasksCounter" value="122" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Added a primary key lookup benchmark comparing Python list, ProtoDB linear, and ProtoDB indexed searches. Updated indexed_benchmark.py with new query functions, integrated timings and latency calculations, and included speedup metrics. Documentation was enhanced in performance.md with explanations of the new benchmark and its expected outcome." />
     <MESSAGE value="Implemented index-based optimizations for single-term and OR filters in the query optimizer. Added OrMerge to union sub-query results with deduplication and updated WherePlan.optimize accordingly. New unit tests confirm correct behavior and fallback to linear scans when necessary." />
     <MESSAGE value="The indexed performance benchmark was re-run after fixing a duplicate OrMerge class blocker. Results showed the indexed AND+range path was about 1.49x faster than the linear plan with improved latency, while PK lookup was slightly slower. The documentation was updated with new metrics, analysis, and recommendations, and results were saved in a JSON artifact." />
     <MESSAGE value="Updated commercial_positioning.md with ProtoBase’s new near-memory performance and features. Added new title, slogan, key characteristics, use cases, and analogy. Aligned document with recent improvements." />
@@ -728,7 +699,8 @@
     <MESSAGE value="The code and tests were updated to replace all occurrences of optimize(None) with optimize(). Unit tests were adjusted to match the new optimize() signature and successfully passed without errors. A full test suite run confirmed no regressions and no remaining optimize(None) calls." />
     <MESSAGE value="Created a requirements.txt listing optional dependencies and tooling suggestions. Core has no mandatory dependencies, and tests pass without extras. No source code modifications were made." />
     <MESSAGE value="The project was prepared for PyPI publication with complete metadata, packaging, optional extras support, and automated CI release workflows. A version export was added, MANIFEST.in refined, README updated for extras installation, and a GitHub Actions workflow created for tagged releases. Build, twine checks, and install tests were verified with no changes to core runtime behavior or test requirements." />
-    <option name="LAST_COMMIT_MESSAGE" value="The project was prepared for PyPI publication with complete metadata, packaging, optional extras support, and automated CI release workflows. A version export was added, MANIFEST.in refined, README updated for extras installation, and a GitHub Actions workflow created for tagged releases. Build, twine checks, and install tests were verified with no changes to core runtime behavior or test requirements." />
+    <MESSAGE value="Se corrigieron errores y warnings en la generación de la documentación con Sphinx. Se eliminaron referencias a clases inexistentes y se ajustaron los docstrings para cumplir con reStructuredText. La compilación final de la documentación se realiza sin advertencias ni errores." />
+    <option name="LAST_COMMIT_MESSAGE" value="Se corrigieron errores y warnings en la generación de la documentación con Sphinx. Se eliminaron referencias a clases inexistentes y se ajustaron los docstrings para cumplir con reStructuredText. La compilación final de la documentación se realiza sin advertencias ni errores." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

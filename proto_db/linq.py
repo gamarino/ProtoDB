@@ -9,7 +9,7 @@ import ast
 
 # ProtoBase query infrastructure
 from .common import QueryPlan, DBCollections
-from .queries import ListPlan, WherePlan, SelectPlan, Expression as PBExpression
+from .queries import ListPlan, WherePlan, SelectPlan, Expression as PBExpression, FromPlan as PBFromPlan
 
 T = TypeVar('T')
 K = TypeVar('K')
@@ -76,6 +76,15 @@ class _Pred:
             tokens = ['!', self.pb_tokens]
         return _Pred(lambda x: not self.fn(x), tokens)
 
+DEFAULT_ALIAS = 'r'
+
+def _prefix_alias(attr: str) -> str:
+    if not attr:
+        return DEFAULT_ALIAS
+    if attr.startswith(DEFAULT_ALIAS + '.'):
+        return attr
+    return f"{DEFAULT_ALIAS}.{attr}"
+
 class _Field:
     def __init__(self, path: Tuple[str, ...] = ()):  # empty is root
         self._path = path
@@ -102,7 +111,8 @@ class _Field:
     def _cmp(self, other: Any, op: Callable[[Any, Any], bool], op_token: Optional[str] = None) -> _Pred:
         pb = None
         if op_token is not None:
-            pb = ['.'.join(self._path), op_token, other]
+            pb_attr = _prefix_alias('.'.join(self._path))
+            pb = [pb_attr, op_token, other]
         return _Pred(lambda x: op(self._resolve(x), other), pb)
 
     def __eq__(self, other):
@@ -127,7 +137,7 @@ class _Field:
         s = set(seq)
         # Note: store original iterable in tokens if list/tuple; else fall back to list for safety
         vals = list(seq) if not isinstance(seq, (list, tuple)) else seq
-        pb = ['.'.join(self._path), 'in', list(vals)]
+        pb = [_prefix_alias('.'.join(self._path)), 'in', list(vals)]
         return _Pred(lambda x: self._resolve(x) in s, pb)
 
     # Between DSL
@@ -162,7 +172,7 @@ class _Field:
                 'between[)' if (l_inc and not r_inc) else 'between(]'
             )
         )
-        attr = '.'.join(self._path)
+        attr = _prefix_alias('.'.join(self._path))
         pb_tokens = [attr, bounds_token, lo, hi]
         return _Pred(_pred, pb_tokens)
 
@@ -516,6 +526,13 @@ class Queryable(Generic[T]):
             for (name, args, kwargs) in ops_in_order:
                 if name == 'where':
                     arg0 = args[0]
+                    # Ensure alias-wrapped base for consistent index field names
+                    try:
+                        cur_indexes = getattr(current_plan, 'indexes', None)
+                        current_plan = PBFromPlan(alias=DEFAULT_ALIAS, indexes=cur_indexes, based_on=current_plan,
+                                                  transaction=getattr(current_plan, 'transaction', None))
+                    except Exception:
+                        pass
                     # Prefer PB Expression tokens if available for pushdown/index usage
                     if isinstance(arg0, _Pred) and arg0.pb_tokens is not None:
                         compiled = arg0.get_compiled()
