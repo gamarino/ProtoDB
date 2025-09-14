@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Se corrigieron errores y warnings en la generación de la documentación con Sphinx. Se eliminaron referencias a clases inexistentes y se ajustaron los docstrings para cumplir con reStructuredText. La compilación final de la documentación se realiza sin advertencias ni errores." />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Added canonical_hash helper and adopted in sets for stable hashing. Enhanced LINQ with optimize() calls, alias normalization, and operator token unification. Implemented explain() with optional warnings on linear fallback and added extensive tests." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -274,15 +274,7 @@
       <workItem from="1757675175377" duration="49000" />
       <workItem from="1757675249603" duration="41300000" />
       <workItem from="1757781886166" duration="18715000" />
-      <workItem from="1757807568113" duration="543000" />
-    </task>
-    <task id="LOCAL-00073" summary="[UPD] next_steps_proposal.md">
-      <option name="closed" value="true" />
-      <created>1757020050666</created>
-      <option name="number" value="00073" />
-      <option name="presentableId" value="LOCAL-00073" />
-      <option name="project" value="LOCAL" />
-      <updated>1757020050666</updated>
+      <workItem from="1757807568113" duration="1391000" />
     </task>
     <task id="LOCAL-00074" summary="[UPD] commercial_positioning.md">
       <option name="closed" value="true" />
@@ -668,14 +660,21 @@
       <option name="project" value="LOCAL" />
       <updated>1757808108899</updated>
     </task>
-    <option name="localTasksCounter" value="122" />
+    <task id="LOCAL-00122" summary="Added canonical_hash helper and adopted in sets for stable hashing. Enhanced LINQ with optimize() calls, alias normalization, and operator token unification. Implemented explain() with optional warnings on linear fallback and added extensive tests.">
+      <option name="closed" value="true" />
+      <created>1757808958186</created>
+      <option name="number" value="00122" />
+      <option name="presentableId" value="LOCAL-00122" />
+      <option name="project" value="LOCAL" />
+      <updated>1757808958186</updated>
+    </task>
+    <option name="localTasksCounter" value="123" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Implemented index-based optimizations for single-term and OR filters in the query optimizer. Added OrMerge to union sub-query results with deduplication and updated WherePlan.optimize accordingly. New unit tests confirm correct behavior and fallback to linear scans when necessary." />
     <MESSAGE value="The indexed performance benchmark was re-run after fixing a duplicate OrMerge class blocker. Results showed the indexed AND+range path was about 1.49x faster than the linear plan with improved latency, while PK lookup was slightly slower. The documentation was updated with new metrics, analysis, and recommendations, and results were saved in a JSON artifact." />
     <MESSAGE value="Updated commercial_positioning.md with ProtoBase’s new near-memory performance and features. Added new title, slogan, key characteristics, use cases, and analogy. Aligned document with recent improvements." />
     <MESSAGE value="The commercial_positioning.md was translated into professional English. A new Competitive Landscape &amp; Positioning section was added, contrasting ProtoBase with various technologies. The update fulfills the task requirements fully." />
@@ -700,7 +699,8 @@
     <MESSAGE value="Created a requirements.txt listing optional dependencies and tooling suggestions. Core has no mandatory dependencies, and tests pass without extras. No source code modifications were made." />
     <MESSAGE value="The project was prepared for PyPI publication with complete metadata, packaging, optional extras support, and automated CI release workflows. A version export was added, MANIFEST.in refined, README updated for extras installation, and a GitHub Actions workflow created for tagged releases. Build, twine checks, and install tests were verified with no changes to core runtime behavior or test requirements." />
     <MESSAGE value="Se corrigieron errores y warnings en la generación de la documentación con Sphinx. Se eliminaron referencias a clases inexistentes y se ajustaron los docstrings para cumplir con reStructuredText. La compilación final de la documentación se realiza sin advertencias ni errores." />
-    <option name="LAST_COMMIT_MESSAGE" value="Se corrigieron errores y warnings en la generación de la documentación con Sphinx. Se eliminaron referencias a clases inexistentes y se ajustaron los docstrings para cumplir con reStructuredText. La compilación final de la documentación se realiza sin advertencias ni errores." />
+    <MESSAGE value="Added canonical_hash helper and adopted in sets for stable hashing. Enhanced LINQ with optimize() calls, alias normalization, and operator token unification. Implemented explain() with optional warnings on linear fallback and added extensive tests." />
+    <option name="LAST_COMMIT_MESSAGE" value="Added canonical_hash helper and adopted in sets for stable hashing. Enhanced LINQ with optimize() calls, alias normalization, and operator token unification. Implemented explain() with optional warnings on linear fallback and added extensive tests." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -717,7 +717,7 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/queries.py</url>
-          <line>329</line>
+          <line>333</line>
           <option name="timeStamp" value="188" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
