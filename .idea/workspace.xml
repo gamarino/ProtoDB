@@ -4,7 +4,36 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="The code and tests were updated to replace all occurrences of optimize(None) with optimize(). Unit tests were adjusted to match the new optimize() signature and successfully passed without errors. A full test suite run confirmed no regressions and no remaining optimize(None) calls." />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="The project was prepared for PyPI publication with complete metadata, packaging, optional extras support, and automated CI release workflows. A version export was added, MANIFEST.in refined, README updated for extras installation, and a GitHub Actions workflow created for tagged releases. Build, twine checks, and install tests were verified with no changes to core runtime behavior or test requirements.">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/environment.pickle" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/environment.pickle" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/doctrees/installation.doctree" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/doctrees/installation.doctree" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/_sources/installation.rst.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/_sources/installation.rst.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/advanced_usage.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/advanced_usage.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/arrow_parquet.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/arrow_parquet.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/atom_cache.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/atom_cache.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/exceptions.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/exceptions.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/fsm.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/fsm.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/indexes.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/indexes.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/linq.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/linq.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/parallel.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/parallel.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/storage.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/storage.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/api/vectors.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/api/vectors.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/architecture.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/architecture.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/development.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/development.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/examples.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/examples.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/installation.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/installation.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/introduction.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/introduction.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/parallel_scans.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/parallel_scans.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/quickstart.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/quickstart.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/searchindex.js" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/searchindex.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/storage_cloud.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/storage_cloud.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/testing.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/testing.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/vectors_arrow.html" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/vectors_arrow.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/source/api/queries.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/api/queries.rst" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/source/conf.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/conf.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/source/installation.rst" beforeDir="false" afterPath="$PROJECT_DIR$/docs/source/installation.rst" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -47,47 +76,47 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
-    "Makefile Target.Makefile (1).executor": "Run",
-    "Makefile Target.Makefile (3).executor": "Run",
-    "Makefile Target.Makefile.executor": "Run",
-    "Python tests.Python tests in test_db_access.py.executor": "Run",
-    "Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor": "Run",
-    "Python tests.Python tests in test_file_block_provider.py.executor": "Debug",
-    "Python tests.Python tests in test_standalone_file_storage.py.executor": "Debug",
-    "Python.collection_indexing_example.executor": "Run",
-    "Python.comprehensive_benchmark.executor": "Run",
-    "Python.db_performance_benchmark.executor": "Run",
-    "Python.indexed_benchmark.executor": "Debug",
-    "Python.minimal_benchmark.executor": "Debug",
-    "Python.performance_benchmark.executor": "Run",
-    "Python.run_tests.executor": "Run",
-    "Python.simple_example.executor": "Debug",
-    "Python.simple_performance_benchmark.executor": "Run",
-    "Python.task_manager.executor": "Debug",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "com.google.cloudcode.ide_session_index": "20250803_0001",
-    "git-widget-placeholder": "master",
-    "junie.onboarding.icon.badge.shown": "true",
-    "last_opened_file_path": "/home/gamarino/odoo/ltf-18.0",
-    "node.js.detected.package.eslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "ml.llm.LLMConfigurable",
-    "to.speed.mode.migration.done": "true",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ASKED_MARK_IGNORED_FILES_AS_EXCLUDED&quot;: &quot;true&quot;,
+    &quot;Makefile Target.Makefile (1).executor&quot;: &quot;Run&quot;,
+    &quot;Makefile Target.Makefile (3).executor&quot;: &quot;Run&quot;,
+    &quot;Makefile Target.Makefile.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in test_db_access.py.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in test_file_block_provider.py.executor&quot;: &quot;Debug&quot;,
+    &quot;Python tests.Python tests in test_standalone_file_storage.py.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.collection_indexing_example.executor&quot;: &quot;Run&quot;,
+    &quot;Python.comprehensive_benchmark.executor&quot;: &quot;Run&quot;,
+    &quot;Python.db_performance_benchmark.executor&quot;: &quot;Run&quot;,
+    &quot;Python.indexed_benchmark.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.minimal_benchmark.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.performance_benchmark.executor&quot;: &quot;Run&quot;,
+    &quot;Python.run_tests.executor&quot;: &quot;Run&quot;,
+    &quot;Python.simple_example.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.simple_performance_benchmark.executor&quot;: &quot;Run&quot;,
+    &quot;Python.task_manager.executor&quot;: &quot;Debug&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;com.google.cloudcode.ide_session_index&quot;: &quot;20250803_0001&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/gamarino/odoo/ltf-18.0&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;ml.llm.LLMConfigurable&quot;,
+    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   },
-  "keyToStringList": {
-    "com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File": [
-      "Requirements"
+  &quot;keyToStringList&quot;: {
+    &quot;com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File&quot;: [
+      &quot;Requirements&quot;
     ]
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/proto_db/tests" />
@@ -273,23 +302,7 @@
       <workItem from="1757652737831" duration="2406000" />
       <workItem from="1757675175377" duration="49000" />
       <workItem from="1757675249603" duration="41300000" />
-      <workItem from="1757781886166" duration="17573000" />
-    </task>
-    <task id="LOCAL-00070" summary="[IMP] Performance measurement scripts for LINQ queries were added in the `examples/` directory, including `linq_performance.py`. The execution and results can now be saved to a JSON file, demonstrating the performance of LINQ operations over various data structures. All changes were successfully implemented without errors.">
-      <option name="closed" value="true" />
-      <created>1757018904372</created>
-      <option name="number" value="00070" />
-      <option name="presentableId" value="LOCAL-00070" />
-      <option name="project" value="LOCAL" />
-      <updated>1757018904372</updated>
-    </task>
-    <task id="LOCAL-00071" summary="[IMP] Performance measurement scripts for LINQ queries were added in the `examples/` directory, including `linq_performance.py`. The execution and results can now be saved to a JSON file, demonstrating the performance of LINQ operations over various data structures. All changes were successfully implemented without errors.">
-      <option name="closed" value="true" />
-      <created>1757019608911</created>
-      <option name="number" value="00071" />
-      <option name="presentableId" value="LOCAL-00071" />
-      <option name="project" value="LOCAL" />
-      <updated>1757019608911</updated>
+      <workItem from="1757781886166" duration="18715000" />
     </task>
     <task id="LOCAL-00072" summary="[IMP] Performance measurement scripts for LINQ queries were added in the `examples/` directory, including `linq_performance.py`. The execution and results can now be saved to a JSON file, demonstrating the performance of LINQ operations over various data structures. All changes were successfully implemented without errors.">
       <option name="closed" value="true" />
@@ -667,15 +680,29 @@
       <option name="project" value="LOCAL" />
       <updated>1757806362543</updated>
     </task>
-    <option name="localTasksCounter" value="119" />
+    <task id="LOCAL-00119" summary="Created a requirements.txt listing optional dependencies and tooling suggestions. Core has no mandatory dependencies, and tests pass without extras. No source code modifications were made.">
+      <option name="closed" value="true" />
+      <created>1757806535965</created>
+      <option name="number" value="00119" />
+      <option name="presentableId" value="LOCAL-00119" />
+      <option name="project" value="LOCAL" />
+      <updated>1757806535965</updated>
+    </task>
+    <task id="LOCAL-00120" summary="The project was prepared for PyPI publication with complete metadata, packaging, optional extras support, and automated CI release workflows. A version export was added, MANIFEST.in refined, README updated for extras installation, and a GitHub Actions workflow created for tagged releases. Build, twine checks, and install tests were verified with no changes to core runtime behavior or test requirements.">
+      <option name="closed" value="true" />
+      <created>1757806974911</created>
+      <option name="number" value="00120" />
+      <option name="presentableId" value="LOCAL-00120" />
+      <option name="project" value="LOCAL" />
+      <updated>1757806974911</updated>
+    </task>
+    <option name="localTasksCounter" value="121" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Implemented write-through caching in Atom._save to populate caches after persistence. Modified ObjectTransaction to expose the AtomCacheBundle from storage. Added a unit test verifying cache hits on read-after-write scenarios, all tests passed successfully." />
-    <MESSAGE value="Implemented flattening of nested AND and OR expressions in Expression.compile and a recursive optimize method in proto_db/queries.py. The solution ensures that nested logical expressions are canonically flattened, including top-level implicit ANDs. All related unit tests in proto_db.tests passed successfully." />
     <MESSAGE value="Added a primary key lookup benchmark comparing Python list, ProtoDB linear, and ProtoDB indexed searches. Updated indexed_benchmark.py with new query functions, integrated timings and latency calculations, and included speedup metrics. Documentation was enhanced in performance.md with explanations of the new benchmark and its expected outcome." />
     <MESSAGE value="Implemented index-based optimizations for single-term and OR filters in the query optimizer. Added OrMerge to union sub-query results with deduplication and updated WherePlan.optimize accordingly. New unit tests confirm correct behavior and fallback to linear scans when necessary." />
     <MESSAGE value="The indexed performance benchmark was re-run after fixing a duplicate OrMerge class blocker. Results showed the indexed AND+range path was about 1.49x faster than the linear plan with improved latency, while PK lookup was slightly slower. The documentation was updated with new metrics, analysis, and recommendations, and results were saved in a JSON artifact." />
@@ -699,7 +726,9 @@
     <MESSAGE value="Implemented CountedSet as a multiset-style Atom preserving Set semantics with immutability and correct index updates. Exposed CountedSet in the public API via proto_db/common.py and added comprehensive tests covering duplicates, removals, counts, iteration, mixed types, immutability, and persistence. Existing modules and tests remain unaffected, and all tests pass." />
     <MESSAGE value="RepeatedKeysDictionary was updated to use CountedSet instead of Set with correct index update logic. Code duplication issues causing syntax errors were fixed. Targeted tests for CountedSet and indexed fast paths pass, while pre-existing unrelated test failures remain." />
     <MESSAGE value="The code and tests were updated to replace all occurrences of optimize(None) with optimize(). Unit tests were adjusted to match the new optimize() signature and successfully passed without errors. A full test suite run confirmed no regressions and no remaining optimize(None) calls." />
-    <option name="LAST_COMMIT_MESSAGE" value="The code and tests were updated to replace all occurrences of optimize(None) with optimize(). Unit tests were adjusted to match the new optimize() signature and successfully passed without errors. A full test suite run confirmed no regressions and no remaining optimize(None) calls." />
+    <MESSAGE value="Created a requirements.txt listing optional dependencies and tooling suggestions. Core has no mandatory dependencies, and tests pass without extras. No source code modifications were made." />
+    <MESSAGE value="The project was prepared for PyPI publication with complete metadata, packaging, optional extras support, and automated CI release workflows. A version export was added, MANIFEST.in refined, README updated for extras installation, and a GitHub Actions workflow created for tagged releases. Build, twine checks, and install tests were verified with no changes to core runtime behavior or test requirements." />
+    <option name="LAST_COMMIT_MESSAGE" value="The project was prepared for PyPI publication with complete metadata, packaging, optional extras support, and automated CI release workflows. A version export was added, MANIFEST.in refined, README updated for extras installation, and a GitHub Actions workflow created for tagged releases. Build, twine checks, and install tests were verified with no changes to core runtime behavior or test requirements." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

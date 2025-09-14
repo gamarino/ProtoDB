@@ -66,24 +66,16 @@
 <li class="toctree-l4"><a class="reference internal" href="#whereplan">WherePlan</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#joinplan">JoinPlan</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#groupbyplan">GroupByPlan</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#orderbyplan">OrderByPlan</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#selectplan">SelectPlan</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#countplan">CountPlan</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#countresultplan">CountResultPlan</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#limitplan">LimitPlan</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#offsetplan">OffsetPlan</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#listplan">ListPlan</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#unnestplan">UnnestPlan</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#collectionfieldplan">CollectionFieldPlan</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#indexedrangesearchplan">IndexedRangeSearchPlan</a></li>
 </ul>
 </li>
-<li class="toctree-l3"><a class="reference internal" href="#optimized-counting">Optimized Counting</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#indexedsearchplan-count">IndexedSearchPlan.count()</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#andmerge-count">AndMerge.count()</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#ormerge-count">OrMerge.count()</a></li>
-</ul>
-</li>
+<li class="toctree-l3"><a class="reference internal" href="#optimized-counting">Optimized Counting</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#range-operators-between">Range Operators (Between)</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#proto_db.queries.Between"><code class="docutils literal notranslate"><span class="pre">Between</span></code></a></li>
 </ul>
@@ -93,10 +85,8 @@
 <li class="toctree-l4"><a class="reference internal" href="#basic-query">Basic Query</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#filtering">Filtering</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#projection">Projection</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#sorting">Sorting</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#grouping">Grouping</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#joining">Joining</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#pagination">Pagination</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#counting">Counting</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#chaining">Chaining</a></li>
 </ul>
@@ -376,14 +366,12 @@ are passed downstream.</p>
 <dt class="sig sig-object py" id="proto_db.queries.WherePlan.execute">
 <span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#WherePlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.WherePlan.execute" title="Link to this definition"></a></dt>
 <dd><p>Execute the filtering logic over the input records.</p>
-<p>Optimized path:
-- If the filter is an AndExpression and the underlying plan exposes indexes</p>
-<blockquote>
-<div><p>(IndexedQueryPlan), build candidate sets for indexable terms (==, in, contains,
-between, &lt;, &lt;=, &gt;, &gt;=) using the index, sort by selectivity (len), and intersect
-progressively. Then apply residual filtering on the reduced set only.</p>
-</div></blockquote>
+<p>Optimized path:</p>
 <ul class="simple">
+<li><p>If the filter is an AndExpression and the underlying plan exposes indexes
+(IndexedQueryPlan), build candidate sets for indexable terms (==, in, contains,
+between, &lt;, &lt;=, &gt;, &gt;=) using the index, sort by selectivity (len), and intersect
+progressively. Then apply residual filtering on the reduced set only.</p></li>
 <li><p>Otherwise, fallback to linear scan.</p></li>
 </ul>
 <dl class="field-list simple">
@@ -421,8 +409,8 @@ Otherwise, fallback to keeping the original WherePlan (with optimized base).</p>
 <dt class="sig sig-object py" id="proto_db.queries.JoinPlan">
 <em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.queries.</span></span><span class="sig-name descname"><span class="pre">JoinPlan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">join_query</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">join_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'inner'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">based_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#JoinPlan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.JoinPlan" title="Link to this definition"></a></dt>
 <dd><p>Join two query plans with simple heuristic-based join semantics.</p>
-<dl>
-<dt>Supported join_type values in tests:</dt><dd><ul class="simple">
+<p>Supported join_type values in tests:</p>
+<ul class="simple">
 <li><p>‘inner’: only matching pairs</p></li>
 <li><p>‘left’: all from left, matching from right when available</p></li>
 <li><p>‘right’: all from right, matching from left when available</p></li>
@@ -431,16 +419,14 @@ Otherwise, fallback to keeping the original WherePlan (with optimized base).</p>
 <li><p>‘external_right’: right-only plus cartesian product</p></li>
 <li><p>‘outer’: only side-only elements (no combining)</p></li>
 </ul>
-</dd>
-<dt>Matching heuristic for inner/left/right:</dt><dd><dl class="simple">
-<dt>If left has field “{right_alias}_id” and right has field “id”:</dt><dd><p>left.{right_alias}_id == right.id</p>
-</dd>
-<dt>Else if left has field “id” and right has field “{left_alias}_id”:</dt><dd><p>left.id == right.{left_alias}_id</p>
-</dd>
-</dl>
-<p>Otherwise, no match.</p>
-</dd>
-</dl>
+<p>Matching heuristic for inner/left/right:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">If</span> <span class="n">left</span> <span class="n">has</span> <span class="n">field</span> <span class="s2">&quot;</span><span class="si">{right_alias}</span><span class="s2">_id&quot;</span> <span class="ow">and</span> <span class="n">right</span> <span class="n">has</span> <span class="n">field</span> <span class="s2">&quot;id&quot;</span><span class="p">:</span>
+  <span class="n">left</span><span class="o">.</span><span class="p">{</span><span class="n">right_alias</span><span class="p">}</span><span class="n">_id</span> <span class="o">==</span> <span class="n">right</span><span class="o">.</span><span class="n">id</span>
+<span class="n">Else</span> <span class="k">if</span> <span class="n">left</span> <span class="n">has</span> <span class="n">field</span> <span class="s2">&quot;id&quot;</span> <span class="ow">and</span> <span class="n">right</span> <span class="n">has</span> <span class="n">field</span> <span class="s2">&quot;</span><span class="si">{left_alias}</span><span class="s2">_id&quot;</span><span class="p">:</span>
+  <span class="n">left</span><span class="o">.</span><span class="n">id</span> <span class="o">==</span> <span class="n">right</span><span class="o">.</span><span class="p">{</span><span class="n">left_alias</span><span class="p">}</span><span class="n">_id</span>
+<span class="n">Otherwise</span><span class="p">,</span> <span class="n">no</span> <span class="n">match</span><span class="o">.</span>
+</pre></div>
+</div>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
@@ -569,10 +555,6 @@ No external context parameter is required.</p>
 </dd></dl>
 
 <p><code class="docutils literal notranslate"><span class="pre">GroupByPlan</span></code> groups records by a key. It takes a key function and a base plan, returns groups of records with the same key, and can be used for aggregation.</p>
-</section>
-<section id="orderbyplan">
-<h3>OrderByPlan<a class="headerlink" href="#orderbyplan" title="Link to this heading"></a></h3>
-<p><code class="docutils literal notranslate"><span class="pre">OrderByPlan</span></code> sorts records. It takes a key function and a base plan, returns records sorted by the key, and supports ascending and descending order.</p>
 </section>
 <section id="selectplan">
 <h3>SelectPlan<a class="headerlink" href="#selectplan" title="Link to this heading"></a></h3>
@@ -780,14 +762,6 @@ No external context parameter is required.</p>
 </dd></dl>
 
 <p><code class="docutils literal notranslate"><span class="pre">CountResultPlan</span></code> is a terminal plan that holds and returns a pre-calculated count. It is the result of an optimized CountPlan.</p>
-</section>
-<section id="limitplan">
-<h3>LimitPlan<a class="headerlink" href="#limitplan" title="Link to this heading"></a></h3>
-<p><code class="docutils literal notranslate"><span class="pre">LimitPlan</span></code> limits the number of records returned. It takes a limit and a base plan, and returns at most the specified number of records.</p>
-</section>
-<section id="offsetplan">
-<h3>OffsetPlan<a class="headerlink" href="#offsetplan" title="Link to this heading"></a></h3>
-<p><code class="docutils literal notranslate"><span class="pre">OffsetPlan</span></code> skips a number of records. It takes an offset and a base plan, and returns records starting from the specified offset.</p>
 </section>
 <section id="listplan">
 <h3>ListPlan<a class="headerlink" href="#listplan" title="Link to this heading"></a></h3>
@@ -1093,9 +1067,7 @@ scans sequentially until the upper bound is exceeded, collecting AtomPointer has
 <section id="optimized-counting">
 <h2>Optimized Counting<a class="headerlink" href="#optimized-counting" title="Link to this heading"></a></h2>
 <p>Several query plan classes implement optimized counting methods to improve performance when only the count of results is needed, not the actual data. These optimizations avoid iterating through all records when possible.</p>
-<section id="indexedsearchplan-count">
-<h3>IndexedSearchPlan.count()<a class="headerlink" href="#indexedsearchplan-count" title="Link to this heading"></a></h3>
-<p>The <code class="docutils literal notranslate"><span class="pre">IndexedSearchPlan</span></code> class provides a fast count method that leverages the underlying index count. This avoids iterating over the actual data.</p>
+<p><strong>IndexedSearchPlan count optimization:</strong> The <code class="docutils literal notranslate"><span class="pre">IndexedSearchPlan</span></code> class provides a fast count method that leverages the underlying index count. This avoids iterating over the actual data.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Using an indexed field for counting is much faster</span>
 <span class="n">indexed_search</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">IndexedSearchPlan</span><span class="p">(</span>
     <span class="n">field_to_scan</span><span class="o">=</span><span class="s2">&quot;city&quot;</span><span class="p">,</span>
@@ -1109,15 +1081,8 @@ scans sequentially until the upper bound is exceeded, collecting AtomPointer has
 <span class="n">count</span> <span class="o">=</span> <span class="n">indexed_search</span><span class="o">.</span><span class="n">count</span><span class="p">()</span>
 </pre></div>
 </div>
-</section>
-<section id="andmerge-count">
-<h3>AndMerge.count()<a class="headerlink" href="#andmerge-count" title="Link to this heading"></a></h3>
-<p>The <code class="docutils literal notranslate"><span class="pre">AndMerge</span></code> class optimizes counting for the intersection of sub-queries. It iterates the smaller result set and checks for existence in the larger one, without materializing full objects.</p>
-</section>
-<section id="ormerge-count">
-<h3>OrMerge.count()<a class="headerlink" href="#ormerge-count" title="Link to this heading"></a></h3>
-<p>The <code class="docutils literal notranslate"><span class="pre">OrMerge</span></code> class optimizes counting for the union of sub-queries. It uses a set to efficiently combine IDs and get the final count of unique results.</p>
-</section>
+<p><strong>AndMerge count optimization:</strong> The <code class="docutils literal notranslate"><span class="pre">AndMerge</span></code> class optimizes counting for the intersection of sub-queries. It iterates the smaller result set and checks for existence in the larger one, without materializing full objects.</p>
+<p><strong>OrMerge count optimization:</strong> The <code class="docutils literal notranslate"><span class="pre">OrMerge</span></code> class optimizes counting for the union of sub-queries. It uses a set to efficiently combine IDs and get the final count of unique results.</p>
 </section>
 <section id="range-operators-between">
 <h2>Range Operators (Between)<a class="headerlink" href="#range-operators-between" title="Link to this heading"></a></h2>
@@ -1254,20 +1219,6 @@ in the subclass.</p>
 </pre></div>
 </div>
 </section>
-<section id="sorting">
-<h3>Sorting<a class="headerlink" href="#sorting" title="Link to this heading"></a></h3>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Sort users by age</span>
-<span class="n">order_plan</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">OrderByPlan</span><span class="p">(</span>
-    <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">user</span><span class="p">:</span> <span class="n">user</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">],</span>
-    <span class="n">based_on</span><span class="o">=</span><span class="n">from_plan</span>
-<span class="p">)</span>
-
-<span class="c1"># Execute the query</span>
-<span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">order_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">user</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">user</span><span class="p">[</span><span class="s1">&#39;age&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>  <span class="c1"># Output: Jane: 25, John: 30, Bob: 35</span>
-</pre></div>
-</div>
-</section>
 <section id="grouping">
 <h3>Grouping<a class="headerlink" href="#grouping" title="Link to this heading"></a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Group users by city</span>
@@ -1325,43 +1276,6 @@ in the subclass.</p>
 <span class="c1"># John lives in New York, USA</span>
 <span class="c1"># Jane lives in Boston, USA</span>
 <span class="c1"># Bob lives in New York, USA</span>
-</pre></div>
-</div>
-</section>
-<section id="pagination">
-<h3>Pagination<a class="headerlink" href="#pagination" title="Link to this heading"></a></h3>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Limit to 2 users</span>
-<span class="n">limit_plan</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">LimitPlan</span><span class="p">(</span>
-    <span class="n">limit</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-    <span class="n">based_on</span><span class="o">=</span><span class="n">from_plan</span>
-<span class="p">)</span>
-
-<span class="c1"># Execute the query</span>
-<span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">limit_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">user</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">])</span>  <span class="c1"># Output: John, Jane</span>
-
-<span class="c1"># Skip the first user</span>
-<span class="n">offset_plan</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">OffsetPlan</span><span class="p">(</span>
-    <span class="n">offset</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-    <span class="n">based_on</span><span class="o">=</span><span class="n">from_plan</span>
-<span class="p">)</span>
-
-<span class="c1"># Execute the query</span>
-<span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">offset_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">user</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">])</span>  <span class="c1"># Output: Jane, Bob</span>
-
-<span class="c1"># Combine limit and offset for pagination</span>
-<span class="n">page_plan</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">LimitPlan</span><span class="p">(</span>
-    <span class="n">limit</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-    <span class="n">based_on</span><span class="o">=</span><span class="n">proto_db</span><span class="o">.</span><span class="n">OffsetPlan</span><span class="p">(</span>
-        <span class="n">offset</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-        <span class="n">based_on</span><span class="o">=</span><span class="n">from_plan</span>
-    <span class="p">)</span>
-<span class="p">)</span>
-
-<span class="c1"># Execute the query</span>
-<span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">page_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">user</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">])</span>  <span class="c1"># Output: Jane</span>
 </pre></div>
 </div>
 </section>

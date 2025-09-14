@@ -1521,15 +1521,17 @@
 <span class="sd">    Join two query plans with simple heuristic-based join semantics.</span>
 
 <span class="sd">    Supported join_type values in tests:</span>
-<span class="sd">      - &#39;inner&#39;: only matching pairs</span>
-<span class="sd">      - &#39;left&#39;: all from left, matching from right when available</span>
-<span class="sd">      - &#39;right&#39;: all from right, matching from left when available</span>
-<span class="sd">      - &#39;external&#39;: cartesian product of both sides plus both sides individually</span>
-<span class="sd">      - &#39;external_left&#39;: left-only plus cartesian product</span>
-<span class="sd">      - &#39;external_right&#39;: right-only plus cartesian product</span>
-<span class="sd">      - &#39;outer&#39;: only side-only elements (no combining)</span>
 
-<span class="sd">    Matching heuristic for inner/left/right:</span>
+<span class="sd">    - &#39;inner&#39;: only matching pairs</span>
+<span class="sd">    - &#39;left&#39;: all from left, matching from right when available</span>
+<span class="sd">    - &#39;right&#39;: all from right, matching from left when available</span>
+<span class="sd">    - &#39;external&#39;: cartesian product of both sides plus both sides individually</span>
+<span class="sd">    - &#39;external_left&#39;: left-only plus cartesian product</span>
+<span class="sd">    - &#39;external_right&#39;: right-only plus cartesian product</span>
+<span class="sd">    - &#39;outer&#39;: only side-only elements (no combining)</span>
+
+<span class="sd">    Matching heuristic for inner/left/right::</span>
+
 <span class="sd">      If left has field &quot;{right_alias}_id&quot; and right has field &quot;id&quot;:</span>
 <span class="sd">        left.{right_alias}_id == right.id</span>
 <span class="sd">      Else if left has field &quot;id&quot; and right has field &quot;{left_alias}_id&quot;:</span>
@@ -1726,6 +1728,7 @@
 <span class="sd">        Execute the filtering logic over the input records.</span>
 
 <span class="sd">        Optimized path:</span>
+
 <span class="sd">        - If the filter is an AndExpression and the underlying plan exposes indexes</span>
 <span class="sd">          (IndexedQueryPlan), build candidate sets for indexable terms (==, in, contains,</span>
 <span class="sd">          between, &lt;, &lt;=, &gt;, &gt;=) using the index, sort by selectivity (len), and intersect</span>

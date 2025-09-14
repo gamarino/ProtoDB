@@ -1,13 +1,13 @@
 Installation
-===========
+============
 
 Requirements
------------
+------------
 
 ProtoBase requires Python 3.11 or higher. It is designed to work with standard Python libraries and has minimal external dependencies.
 
 Installing from PyPI
--------------------
+---------------------
 
 The recommended way to install ProtoBase is from the Python Package Index (PyPI) using pip:
 
@@ -18,7 +18,7 @@ The recommended way to install ProtoBase is from the Python Package Index (PyPI)
 This will install the latest stable version of ProtoBase and all its dependencies.
 
 Installing from Source
----------------------
+-----------------------
 
 If you prefer to install from source, you can clone the repository and install it using pip:
 
@@ -31,7 +31,7 @@ If you prefer to install from source, you can clone the repository and install i
 This will install ProtoBase in development mode, allowing you to make changes to the code and have them immediately reflected in your environment.
 
 Verifying the Installation
--------------------------
+---------------------------
 
 To verify that ProtoBase has been installed correctly, you can run the following Python code:
 
@@ -65,6 +65,6 @@ To verify that ProtoBase has been installed correctly, you can run the following
 If you see the message "Hello, ProtoBase!" printed to the console, then ProtoBase has been installed correctly.
 
 Next Steps
----------
+----------
 
 Now that you have ProtoBase installed, you can proceed to the :doc:`quickstart` guide to learn how to use it.

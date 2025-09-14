@@ -1385,15 +1385,17 @@ class JoinPlan(QueryPlan):
     Join two query plans with simple heuristic-based join semantics.
 
     Supported join_type values in tests:
-      - 'inner': only matching pairs
-      - 'left': all from left, matching from right when available
-      - 'right': all from right, matching from left when available
-      - 'external': cartesian product of both sides plus both sides individually
-      - 'external_left': left-only plus cartesian product
-      - 'external_right': right-only plus cartesian product
-      - 'outer': only side-only elements (no combining)
 
-    Matching heuristic for inner/left/right:
+    - 'inner': only matching pairs
+    - 'left': all from left, matching from right when available
+    - 'right': all from right, matching from left when available
+    - 'external': cartesian product of both sides plus both sides individually
+    - 'external_left': left-only plus cartesian product
+    - 'external_right': right-only plus cartesian product
+    - 'outer': only side-only elements (no combining)
+
+    Matching heuristic for inner/left/right::
+
       If left has field "{right_alias}_id" and right has field "id":
         left.{right_alias}_id == right.id
       Else if left has field "id" and right has field "{left_alias}_id":
@@ -1573,6 +1575,7 @@ class WherePlan(QueryPlan):
         Execute the filtering logic over the input records.
 
         Optimized path:
+
         - If the filter is an AndExpression and the underlying plan exposes indexes
           (IndexedQueryPlan), build candidate sets for indexable terms (==, in, contains,
           between, <, <=, >, >=) using the index, sort by selectivity (len), and intersect

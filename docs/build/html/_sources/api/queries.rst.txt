@@ -1,12 +1,12 @@
 Query System
-=============
+============
 
 .. module:: proto_db.queries
 
 This module provides the query system of ProtoBase, which allows for complex data manipulation and retrieval.
 
 New in this release
----------------------
+-------------------
 
 - Expression compilation flattens nested AND/OR trees into canonical shapes (e.g., ['&', ['&', A, B], C] → AndExpression[A,B,C]).
 - Single‑term index rewrites: a lone indexable predicate becomes an IndexedSearchPlan or IndexedRangeSearchPlan.
@@ -20,7 +20,7 @@ Query Plans
 -----------
 
 QueryPlan
-~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~
 
 .. autoclass:: proto_db.common.QueryPlan
    :members:
@@ -29,7 +29,7 @@ QueryPlan
 The ``QueryPlan`` class is the base class for all query plans in ProtoBase. It provides methods for query execution and chaining.
 
 FromPlan
-~~~~~~~~~~~~~~~
+~~~~~~~~
 
 .. autoclass:: FromPlan
    :members:
@@ -38,7 +38,7 @@ FromPlan
 ``FromPlan`` is the starting point for queries. It takes a collection as input, provides an iterator over the collection, and can be used as the basis for other query plans.
 
 WherePlan
-~~~~~~~~~~~~
+~~~~~~~~~
 
 .. autoclass:: WherePlan
    :members:
@@ -47,7 +47,7 @@ WherePlan
 ``WherePlan`` filters records based on a condition. It takes a filter function and a base plan, returns only records that satisfy the condition, and can be chained with other query plans.
 
 JoinPlan
-~~~~~~~~~~~~
+~~~~~~~~
 
 .. autoclass:: JoinPlan
    :members:
@@ -56,7 +56,7 @@ JoinPlan
 ``JoinPlan`` joins multiple data sources. It takes two plans and a join condition, returns records that satisfy the join condition, and supports inner, left, right, and full joins.
 
 GroupByPlan
-~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~
 
 .. autoclass:: GroupByPlan
    :members:
@@ -64,17 +64,9 @@ GroupByPlan
 
 ``GroupByPlan`` groups records by a key. It takes a key function and a base plan, returns groups of records with the same key, and can be used for aggregation.
 
-OrderByPlan
-~~~~~~~~~~
-
-.. autoclass:: OrderByPlan
-   :members:
-   :special-members: __init__
-
-``OrderByPlan`` sorts records. It takes a key function and a base plan, returns records sorted by the key, and supports ascending and descending order.
 
 SelectPlan
-~~~~~~~~~
+~~~~~~~~~~
 
 .. autoclass:: SelectPlan
    :members:
@@ -83,7 +75,7 @@ SelectPlan
 ``SelectPlan`` projects specific fields. It takes a projection function and a base plan, returns transformed records, and can be used to extract specific fields.
 
 CountPlan
-~~~~~~~~
+~~~~~~~~~
 
 .. autoclass:: CountPlan
    :members:
@@ -92,7 +84,7 @@ CountPlan
 ``CountPlan`` counts the results from a sub-plan. It takes a base plan and returns a single record with the count. It is optimized to use index counts whenever possible, avoiding full data iteration.
 
 CountResultPlan
-~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~
 
 .. autoclass:: CountResultPlan
    :members:
@@ -100,26 +92,9 @@ CountResultPlan
 
 ``CountResultPlan`` is a terminal plan that holds and returns a pre-calculated count. It is the result of an optimized CountPlan.
 
-LimitPlan
-~~~~~~~~
-
-.. autoclass:: LimitPlan
-   :members:
-   :special-members: __init__
-
-``LimitPlan`` limits the number of records returned. It takes a limit and a base plan, and returns at most the specified number of records.
-
-OffsetPlan
-~~~~~~~~~
-
-.. autoclass:: OffsetPlan
-   :members:
-   :special-members: __init__
-
-``OffsetPlan`` skips a number of records. It takes an offset and a base plan, and returns records starting from the specified offset.
 
 ListPlan
-~~~~~~~
+~~~~~~~~
 
 .. autoclass:: ListPlan
    :members:
@@ -155,14 +130,11 @@ IndexedRangeSearchPlan
 This plan iterates only the index buckets whose keys fall within a specified range, respecting inclusive/exclusive bounds. It is produced by WherePlan.optimize when a Between operator applies to an indexed field.
 
 Optimized Counting
--------------------
+------------------
 
 Several query plan classes implement optimized counting methods to improve performance when only the count of results is needed, not the actual data. These optimizations avoid iterating through all records when possible.
 
-IndexedSearchPlan.count()
-~~~~~~~~~~~~~~~~~~~~~~~
-
-The ``IndexedSearchPlan`` class provides a fast count method that leverages the underlying index count. This avoids iterating over the actual data.
+**IndexedSearchPlan count optimization:** The ``IndexedSearchPlan`` class provides a fast count method that leverages the underlying index count. This avoids iterating over the actual data.
 
 .. code-block:: python
 
@@ -178,15 +150,9 @@ The ``IndexedSearchPlan`` class provides a fast count method that leverages the 
     # Get the count directly without iterating
     count = indexed_search.count()
 
-AndMerge.count()
-~~~~~~~~~~~~~
+**AndMerge count optimization:** The ``AndMerge`` class optimizes counting for the intersection of sub-queries. It iterates the smaller result set and checks for existence in the larger one, without materializing full objects.
 
-The ``AndMerge`` class optimizes counting for the intersection of sub-queries. It iterates the smaller result set and checks for existence in the larger one, without materializing full objects.
-
-OrMerge.count()
-~~~~~~~~~~~~
-
-The ``OrMerge`` class optimizes counting for the union of sub-queries. It uses a set to efficiently combine IDs and get the final count of unique results.
+**OrMerge count optimization:** The ``OrMerge`` class optimizes counting for the union of sub-queries. It uses a set to efficiently combine IDs and get the final count of unique results.
 
 Range Operators (Between)
 -------------------------
@@ -213,7 +179,7 @@ Usage Examples
 ----------------
 
 Basic Query
-~~~~~~~~~~
+~~~~~~~~~~~
 
 .. code-block:: python
 
@@ -249,7 +215,7 @@ Basic Query
         print(user["name"])  # Output: John, Jane, Bob
 
 Filtering
-~~~~~~~~
+~~~~~~~~~
 
 .. code-block:: python
 
@@ -264,7 +230,7 @@ Filtering
         print(user["name"])  # Output: John, Bob
 
 Projection
-~~~~~~~~~
+~~~~~~~~~~
 
 .. code-block:: python
 
@@ -278,23 +244,9 @@ Projection
     for user in select_plan.execute():
         print(f"{user['name']}: {user['age']}")  # Output: John: 30, Jane: 25, Bob: 35
 
-Sorting
-~~~~~~
-
-.. code-block:: python
-
-    # Sort users by age
-    order_plan = proto_db.OrderByPlan(
-        key=lambda user: user["age"],
-        based_on=from_plan
-    )
-
-    # Execute the query
-    for user in order_plan.execute():
-        print(f"{user['name']}: {user['age']}")  # Output: Jane: 25, John: 30, Bob: 35
 
 Grouping
-~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~
 
 .. code-block:: python
 
@@ -318,7 +270,7 @@ Grouping
     #   Jane
 
 Joining
-~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~
 
 .. code-block:: python
 
@@ -355,43 +307,6 @@ Joining
     # Jane lives in Boston, USA
     # Bob lives in New York, USA
 
-Pagination
-~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: python
-
-    # Limit to 2 users
-    limit_plan = proto_db.LimitPlan(
-        limit=2,
-        based_on=from_plan
-    )
-
-    # Execute the query
-    for user in limit_plan.execute():
-        print(user["name"])  # Output: John, Jane
-
-    # Skip the first user
-    offset_plan = proto_db.OffsetPlan(
-        offset=1,
-        based_on=from_plan
-    )
-
-    # Execute the query
-    for user in offset_plan.execute():
-        print(user["name"])  # Output: Jane, Bob
-
-    # Combine limit and offset for pagination
-    page_plan = proto_db.LimitPlan(
-        limit=1,
-        based_on=proto_db.OffsetPlan(
-            offset=1,
-            based_on=from_plan
-        )
-    )
-
-    # Execute the query
-    for user in page_plan.execute():
-        print(user["name"])  # Output: Jane
 
 Counting
 ~~~~~~~~~~~~~~~~~~~~~~

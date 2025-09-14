@@ -39,10 +39,24 @@ exclude_patterns = []
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'sphinx_rtd_theme'
+# Prefer Read the Docs theme if available; otherwise fallback to a built-in theme
+try:
+    import sphinx_rtd_theme  # type: ignore
+    html_theme = 'sphinx_rtd_theme'
+except Exception:  # pragma: no cover
+    html_theme = 'alabaster'
+
 html_static_path = ['_static']
 
 # -- Extension configuration -------------------------------------------------
+# Make autodoc robust when optional deps are missing
+# Mock imports for optional/extra dependencies so autodoc doesn't fail
+autodoc_mock_imports = [
+    'pyarrow', 'pyarrow.parquet', 'pyarrow.dataset',
+    'numpy', 'sklearn', 'sklearn.neighbors',
+    'boto3', 'botocore', 'botocore.client'
+]
+
 autodoc_member_order = 'bysource'
 autodoc_typehints = 'description'
 napoleon_google_docstring = True
