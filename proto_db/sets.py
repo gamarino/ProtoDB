@@ -1,6 +1,7 @@
 from __future__ import annotations
-from typing import cast, TYPE_CHECKING
+from typing import cast, TYPE_CHECKING, Iterable
 from .common import Atom, QueryPlan, AbstractTransaction, AtomPointer, DBCollections, canonical_hash
+from .lists import List
 from .hash_dictionaries import HashDictionary
 from .queries import IndexedQueryPlan
 
@@ -29,17 +30,26 @@ class Set(Atom):
     :param kwargs: Any additional data passed for extended configurations.
     """
 
+    # _new_objects is a temporary storage for objects that have not been saved yet.
+    # This is used to ensure that the set will not be persisted in storage until commit.
+    # This logic enables the creation of temporary sets inside the transaction, that will
+    # be persisted only when the transaction is committed. If the set is not part of
+    # the finally committed objects, no storage will be consumed.
+    _new_objects: HashDictionary = None
+
     def __init__(
             self,
             content: HashDictionary = None,
+            new_objects: HashDictionary = None,
             transaction: AbstractTransaction = None,
             atom_pointer: AtomPointer = None,
             indexes: DBCollections | None = None,
             **kwargs):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
-        self.content = content if content else HashDictionary(
-            transaction=transaction)  # Store the underlying hash-based dictionary.
-        self.count = self.content.count
+        self.content = content if content else HashDictionary(transaction=transaction)
+        self._new_objects = new_objects if new_objects else HashDictionary(transaction=transaction)
+        self.count = self.content.count + self._new_objects.count
+
         if indexes is None:
             # Local import to avoid circular dependency
             from .dictionaries import Dictionary as _Dictionary
@@ -53,11 +63,17 @@ class Set(Atom):
 
     def _save(self):
         if not self._saved:
-            super()._save()
+            for element in self._new_objects:
+                if isinstance(element, Atom):
+                    element._save()
+                self.content = self.content.set_at(self._hash_of(element), element)
+
             self.content.transaction = self.transaction
             self.content._save()
 
-    def as_iterable(self) -> list[Atom]:
+            super()._save()
+
+    def as_iterable(self) -> Iterable:
         """
         Converts the `Set` to an iterable structure, essentially a collection of its unique
         elements, and yields each element stored in the set.
@@ -66,6 +82,9 @@ class Set(Atom):
         """
         # Iterate over the stored hash dictionary's iterable and yield its items (the stored Atoms).
         self._load()
+
+        for element in self._new_objects:
+            yield element
 
         for hash_value, item in self.content.as_iterable():
             yield item
@@ -85,7 +104,8 @@ class Set(Atom):
 
         if self.indexes:
             return IndexedQueryPlan(base=self, indexes=self.indexes)
-        return self.content.as_query_plan()
+        else:
+            return QueryPlan(base=self)
 
     def add_index(self, field_name: str):
         # Local import to avoid circular dependency at module import time
@@ -129,7 +149,10 @@ class Set(Atom):
         # Check if the computed hash exists in the `HashDictionary`.
         self._load()
 
-        return self.content.has(item_hash)
+        if self._new_objects.has(item_hash):
+            return True
+        else:
+            return self.content.has(item_hash)
 
     def add(self, key: object) -> Set:
         """
@@ -141,20 +164,22 @@ class Set(Atom):
         :param key: The object to add to the set. This can be an instance of `Atom`.
         :return: A new `Set` object that contains the additional key.
         """
-        # Calculate the canonical hash of the key to ensure appropriate insertion
-        item_hash = self._hash_of(key)
 
         # Create and return a new `Set` with the updated `HashDictionary`.
         self._load()
 
-        new_content = self.content.set_at(item_hash, key)
-        new_indexes = self.indexes
+        if self.has(key):
+            return self
 
+        self._new_objects = self._new_objects.set_at(self._hash_of(key), key)
+
+        new_indexes = self.indexes
         if self.indexes:
             new_indexes = self.indexes.add2indexes(key)
 
         return Set(
-            content=new_content,
+            content=self.content,
+            new_objects=self._new_objects,
             transaction=self.transaction,
             indexes=new_indexes
         )
@@ -175,14 +200,21 @@ class Set(Atom):
         if not self.has(key):
             return self
 
+        new_objects = self._new_objects
+        new_content = self.content
+        if self._new_objects.has(item_hash):
+            new_objects = self._new_objects.remove_at(item_hash)
+        else:
+            new_content = self.content.remove_at(item_hash)
+
         # Create and return a new `Set` with the updated `HashDictionary`.
-        new_content = self.content.remove_at(item_hash)
         new_indexes = self.indexes
         if new_indexes:
             new_indexes = new_indexes.remove_from_indexes(key)
 
         return Set(
             content=new_content,
+            new_objects=new_objects,
             transaction=self.transaction,
             indexes=new_indexes
         )
@@ -255,9 +287,20 @@ class CountedSet(Set):
     - On last removal (1 -> 0), remove_from_indexes(key) is invoked
     - Intermediate increments/decrements do not touch indexes
     """
+
+    # _new_objects is a temporary storage for objects that have not been saved yet.
+    # This is used to ensure that the set will not be persisted in storage until commit.
+    # This logic enables the creation of temporary sets inside the transaction, that will
+    # be persisted only when the transaction is committed. If the set is not part of
+    # the finally committed objects, no storage will be consumed.
+    _new_objects: HashDictionary = None
+    _new_counts: HashDictionary = None
+
     def __init__(self,
                  items: HashDictionary | None = None,
                  counts: HashDictionary | None = None,
+                 new_objects: HashDictionary | None = None,
+                 new_counts: HashDictionary | None = None,
                  transaction: AbstractTransaction = None,
                  atom_pointer: AtomPointer = None,
                  indexes: DBCollections | None = None,
@@ -267,19 +310,12 @@ class CountedSet(Set):
         # Internals
         self.items: HashDictionary = self.content  # alias for clarity
         self.counts: HashDictionary = counts if counts is not None else HashDictionary(transaction=transaction)
+        self._new_objects = new_objects if new_objects is not None else HashDictionary(transaction=transaction)
         # Unique count mirrors items.count
-        self.count = self.items.count
+        self._new_counts = new_counts if new_counts is not None else HashDictionary(transaction=transaction)
         # Compute total_count from counts if not set
-        try:
-            tc = 0
-            for h, v in self.counts.as_iterable():
-                try:
-                    tc += int(v or 0)
-                except Exception:
-                    pass
-            self.total_count = tc
-        except Exception:
-            self.total_count = self.count  # fallback
+
+        self.count = self.items.count + self._new_objects.count
 
     # Hashing strategy identical to Set
     def _hash_of(self, key: object) -> int:
@@ -290,6 +326,14 @@ class CountedSet(Set):
     def _save(self):
         if not self._saved:
             super()._save()
+            for element in self._new_objects:
+                if isinstance(element, Atom):
+                    element._save()
+                hash_index = self._hash_of(element)
+                self.items = self.items.set_at(hash_index, element)
+                self.counts = self.counts.set_at(hash_index,
+                                                 (cast(int, self._new_counts.get_at(hash_index)) or 0) + 1)
+
             # Save both dictionaries
             self.items.transaction = self.transaction
             self.items._save()
@@ -299,6 +343,9 @@ class CountedSet(Set):
     # External API
     def as_iterable(self):
         self._load()
+        for item in self._new_objects:
+            yield item
+
         for h, item in self.items.as_iterable():
             yield item
 
@@ -309,86 +356,123 @@ class CountedSet(Set):
         self._load()
         if self.indexes:
             return IndexedQueryPlan(base=self, indexes=self.indexes)
-        return self.items.as_query_plan()
+        return QueryPlan(base=self)
 
     def has(self, key: object) -> bool:
         h = self._hash_of(key)
+
         self._load()
-        if not self.counts.has(h):
-            return False
-        c = self.counts.get_at(h)
-        try:
-            return bool(c) and int(c) > 0
-        except Exception:
-            return False
+        if self._new_counts.has(h):
+            return True
+        return self.counts.has(h)
 
     def get_count(self, key: object) -> int:
         h = self._hash_of(key)
         self._load()
-        if not self.counts.has(h):
-            return 0
-        try:
-            return int(self.counts.get_at(h) or 0)
-        except Exception:
+        if self.counts.has(h):
+            return cast(int, self.counts.get_at(h))
+        elif self._new_counts.has(h):
+            return cast(int, self._new_counts.get_at(h))
+        else:
             return 0
 
     def add(self, key: object) -> 'CountedSet':
         h = self._hash_of(key)
         self._load()
-        present = self.counts.has(h)
-        if not present:
-            # First occurrence: insert in items and counts=1; update indexes
-            new_items = self.items.set_at(h, key)
-            new_counts = self.counts.set_at(h, 1)
-            new_indexes = self.indexes
-            try:
-                if self.indexes:
-                    # Update indexes only on first insertion
-                    new_indexes = self.indexes.add2indexes(key)
-            except Exception:
+        present = self.counts.has(h) or self._new_counts.has(h)
+        if self.counts.has(h):
+            new_counts = self.counts.set_at(h, cast(int, self.counts.get_at(h)) + 1)
+            return CountedSet(
+                items=self.items,
+                counts=new_counts,
+                indexes=self.indexes,
+                new_objects=self._new_objects,
+                new_counts=self._new_counts,
+                transaction=self.transaction,
+            )
+            return CountedSet(
+                items=self.items,
+                counts=new_counts,
+                indexes=self.indexes,
+                new_objects=self._new_objects,
+                new_counts=self._new_counts,
+                transaction=self.transaction,
+            )
+        elif self._new_counts.has(h):
+            new_new_counts = self._new_counts.set_at(h, cast(int, self._new_counts.get_at(h)) + 1)
+            return CountedSet(
+                items=self.items,
+                counts=self.counts,
+                indexes=self.indexes,
+                new_objects=self._new_objects,
+                new_counts=new_new_counts,
+            )
+            return CountedSet(
+                items=self.items,
+                counts=self.counts,
+                indexes=self.indexes,
+                new_objects=self._new_objects,
+                new_counts=new_new_counts,
+                transaction=self.transaction,
+            )
+        else:
+            new_objects = self._new_objects.set_at(h, key)
+            new_new_counts = self._new_counts.set_at(h, 1)
+            if self.indexes:
+                new_indexes = self.indexes.add2indexes(key)
+            else:
                 new_indexes = self.indexes
-            new_obj = CountedSet(items=new_items, counts=new_counts, transaction=self.transaction,
-                                  indexes=new_indexes)
-            new_obj.count = new_items.count
-            new_obj.total_count = self.total_count + 1
-            return new_obj
-        # Already present: increment counter only
-        cur = self.get_count(key)
-        new_counts = self.counts.set_at(h, cur + 1)
-        new_obj = CountedSet(items=self.items, counts=new_counts, transaction=self.transaction, indexes=self.indexes)
-        new_obj.count = self.items.count  # unchanged unique count
-        new_obj.total_count = self.total_count + 1
-        return new_obj
+            return CountedSet(
+                items=self.items,
+                counts=self.counts,
+                indexes=new_indexes,
+                new_objects=new_objects,
+                new_counts=new_new_counts,
+                transaction=self.transaction,
+            )
 
     def remove_at(self, key: object) -> 'CountedSet':
         h = self._hash_of(key)
         self._load()
-        if not self.counts.has(h):
-            return self
-        cur = self.get_count(key)
-        if cur <= 1:
-            # Last removal: physically remove from both dicts; update indexes
-            new_items = self.items.remove_at(h)
-            if new_items is None:
-                # Normalize to empty HashDictionary when last element removed
-                new_items = HashDictionary(transaction=self.transaction)
-            new_counts = self.counts.remove_at(h)
-            if new_counts is None:
-                new_counts = HashDictionary(transaction=self.transaction)
+        if self.counts.has(h):
+            repetition = cast(int, self.counts.get_at(h)) - 1
+            new_counts = self.counts
+            new_items = self.items
             new_indexes = self.indexes
-            try:
-                if new_indexes:
-                    new_indexes = new_indexes.remove_from_indexes(key)
-            except Exception:
-                new_indexes = self.indexes
-            new_obj = CountedSet(items=new_items, counts=new_counts, transaction=self.transaction,
-                                  indexes=new_indexes)
-            new_obj.count = new_items.count
-            new_obj.total_count = max(0, self.total_count - 1)
-            return new_obj
-        # Intermediate removal: decrement only
-        new_counts = self.counts.set_at(h, cur - 1)
-        new_obj = CountedSet(items=self.items, counts=new_counts, transaction=self.transaction, indexes=self.indexes)
-        new_obj.count = self.items.count
-        new_obj.total_count = max(0, self.total_count - 1)
-        return new_obj
+            if repetition > 0:
+                new_counts = new_counts.set_at(h, repetition)
+            else:
+                new_counts = new_counts.remove_at(h)
+                new_items = new_items.remove_at(h)
+                new_indexes = new_indexes.remove_from_indexes(key)
+
+            return CountedSet(
+                items=new_items,
+                counts=new_counts,
+                new_objects=self._new_objects,
+                new_counts=self._new_counts,
+                transaction=self.transaction,
+                indexes=self.indexes
+            )
+        elif self._new_counts.has(h):
+            repetition = cast(int, self._new_counts.get_at(h)) - 1
+            new_new_counts = self._new_counts
+            new_objects = self._new_objects
+            new_indexes = self.indexes
+            if repetition > 0:
+                new_new_counts = new_new_counts.set_at(h, repetition)
+            else:
+                new_counts = new_new_counts.remove_at(h)
+                new_objects = new_objects.remove_at(h)
+                new_indexes = new_indexes.remove_from_indexes(key)
+
+            return CountedSet(
+                items=self.items,
+                counts=self.counts,
+                indexes=new_indexes,
+                new_objects=new_objects,
+                new_counts=new_new_counts,
+                transaction=self.transaction,
+            )
+        else:
+            return self

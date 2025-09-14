@@ -488,11 +488,10 @@ class Atom(metaclass=CombinedMeta):
         if 'atom_pointer' not in self.__dict__ or not self.__dict__['atom_pointer']:
             if '_saved' not in self.__dict__ or not self.__dict__['_saved']:
                 # It's a new object
-
+                self._saved = True
                 if 'transaction' in self.__dict__ and self.__dict__['transaction']:
                     # Push the object tree downhill, avoiding recursion loops
                     # converting attributes strs to Literals
-                    object.__setattr__(self, '_saved', True)
 
                     if isinstance(self, Literal) and not self.atom_pointer:
                         json_value = {
@@ -598,12 +597,20 @@ class Atom(metaclass=CombinedMeta):
                         message=f'An DBObject can only be saved within a given transaction!'
                     )
 
-    def hash(self) -> int:
-        ap = getattr(self, 'atom_pointer', None)
-        if ap:
-            return ap.hash()
-        # Fallback for unsaved/ephemeral atoms: use object identity
-        return hash(id(self))
+    def hash(self):
+        """
+        A hash value is generated from the object's AtomPointer.
+        That means that the hash value is the same for all instances of the same object. Always
+        Therefore, to have a hash, the object should be pushed to storage, even if
+        finally is not reachable from database roots.
+        Be careful using hash() on DBObjects, because if the object is not going to be
+        part of the commit, this object's storage (and all its dependencies) will be persisted
+
+        :return: A hash value
+        """
+
+        self._save()
+        return self.atom_pointer.hash()
 
     def __getitem__(self, item: str):
         if hasattr(self, item):
