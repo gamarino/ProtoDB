@@ -686,20 +686,13 @@ class DBObject(Atom):
         raise AttributeError(name)
 
     def __setattr__(self, key, value):
-        # Special case for _loaded to prevent recursion
-        if key == '_loaded':
+        # Allow internal/private attributes and critical wiring attributes without immutability checks
+        if key.startswith('_') or key in ('transaction', 'atom_pointer'):
             object.__setattr__(self, key, value)
             return
 
-        # Special case for transaction and atom_pointer during initialization
-        if key in ('transaction', 'atom_pointer'):
-            object.__setattr__(self, key, value)
-            return
-
-        # For other attributes, ensure the object is loaded first
-        if not key.startswith('_'):  # Skip internal attributes to prevent recursion
-            self._load()
-
+        # For public attributes, ensure the object is loaded first and enforce immutability
+        self._load()
         if key in self.__dict__:
             object.__setattr__(self, key, value)
         else:
@@ -853,8 +846,19 @@ class DBCollections(Atom):
         if not self.indexes:
             return
         for index_name, index in self.indexes.as_iterable():
-            if index_name in item:
-                self.indexes[index_name] = self.indexes.get_at(index_name).index_add(item)
+            try:
+                has_field = False
+                try:
+                    has_field = (index_name in item)  # DBObject supports 'in' for fields
+                except Exception:
+                    # Fallback for plain objects/dicts
+                    has_field = hasattr(item, index_name) or (isinstance(item, dict) and index_name in item)
+                if has_field:
+                    new_bucket = self.indexes.get_at(index_name).index_add(item)
+                    # Use Dictionary API to set updated bucket
+                    self.indexes = self.indexes.set_at(index_name, new_bucket)
+            except Exception:
+                continue
 
     def remove_from_indexes(self, item):
         """
@@ -865,8 +869,17 @@ class DBCollections(Atom):
         if not self.indexes:
             return
         for index_name, index in self.indexes.as_iterable():
-            if index_name in item:
-                self.indexes[index_name] = self.indexes.get_at(index_name).index_remove(item)
+            try:
+                has_field = False
+                try:
+                    has_field = (index_name in item)
+                except Exception:
+                    has_field = hasattr(item, index_name) or (isinstance(item, dict) and index_name in item)
+                if has_field:
+                    new_bucket = self.indexes.get_at(index_name).index_remove(item)
+                    self.indexes = self.indexes.set_at(index_name, new_bucket)
+            except Exception:
+                continue
 
     @abstractmethod
     def as_query_plan(self) -> QueryPlan:
@@ -1183,7 +1196,8 @@ def canonical_hash(obj) -> int:
             try:
                 return obj.hash()
             except Exception:
-                pass
+                # Fallback to identity when Atom cannot be saved (no transaction)
+                return id(obj)
         return hash(obj)
     except Exception:
         try:

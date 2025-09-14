@@ -63,7 +63,7 @@ class Set(Atom):
 
     def _save(self):
         if not self._saved:
-            for element in self._new_objects:
+            for h, element in self._new_objects.as_iterable():
                 if isinstance(element, Atom):
                     element._save()
                 self.content = self.content.set_at(self._hash_of(element), element)
@@ -83,7 +83,7 @@ class Set(Atom):
         # Iterate over the stored hash dictionary's iterable and yield its items (the stored Atoms).
         self._load()
 
-        for element in self._new_objects:
+        for h, element in self._new_objects.as_iterable():
             yield element
 
         for hash_value, item in self.content.as_iterable():
@@ -313,26 +313,28 @@ class CountedSet(Set):
         self._new_objects = new_objects if new_objects is not None else HashDictionary(transaction=transaction)
         # Unique count mirrors items.count
         self._new_counts = new_counts if new_counts is not None else HashDictionary(transaction=transaction)
-        # Compute total_count from counts if not set
-
-        self.count = self.items.count + self._new_objects.count
+        # Unique item count equals items.count (items holds unique view; _new_objects are mirrored in items)
+        self.count = self.items.count
 
     # Hashing strategy identical to Set
     def _hash_of(self, key: object) -> int:
-        if isinstance(key, Atom):
-            return key.hash()
-        return hash(key)
+        # Use canonical identity hashing for stability (AtomPointer.hash when available)
+        return canonical_hash(key)
 
     def _save(self):
         if not self._saved:
+            # Persist base Set first (moves _new_objects into items/content)
             super()._save()
-            for element in self._new_objects:
+            # Consolidate counts for pending new objects using their pending counts
+            for h, element in self._new_objects.as_iterable():
                 if isinstance(element, Atom):
                     element._save()
-                hash_index = self._hash_of(element)
+                hash_index = h
+                inc = cast(int, self._new_counts.get_at(hash_index)) or 0
+                base = cast(int, self.counts.get_at(hash_index)) if self.counts.has(hash_index) else 0
+                # Ensure the item exists and set the correct total count
                 self.items = self.items.set_at(hash_index, element)
-                self.counts = self.counts.set_at(hash_index,
-                                                 (cast(int, self._new_counts.get_at(hash_index)) or 0) + 1)
+                self.counts = self.counts.set_at(hash_index, base + inc)
 
             # Save both dictionaries
             self.items.transaction = self.transaction
@@ -343,9 +345,7 @@ class CountedSet(Set):
     # External API
     def as_iterable(self):
         self._load()
-        for item in self._new_objects:
-            yield item
-
+        # Items dictionary holds the unique elements view (persisted + staged)
         for h, item in self.items.as_iterable():
             yield item
 
@@ -376,11 +376,26 @@ class CountedSet(Set):
         else:
             return 0
 
+    @property
+    def total_count(self) -> int:
+        """
+        Total number of occurrences across all unique items (persisted + pending).
+        """
+        self._load()
+        total = 0
+        # Sum persisted counts
+        for h, cnt in self.counts.as_iterable():
+            try:
+                total += int(cnt)
+            except Exception:
+                pass
+        return total
+
     def add(self, key: object) -> 'CountedSet':
         h = self._hash_of(key)
         self._load()
-        present = self.counts.has(h) or self._new_counts.has(h)
         if self.counts.has(h):
+            # Increment existing persisted count; no index updates for intermediate increments
             new_counts = self.counts.set_at(h, cast(int, self.counts.get_at(h)) + 1)
             return CountedSet(
                 items=self.items,
@@ -390,41 +405,32 @@ class CountedSet(Set):
                 new_counts=self._new_counts,
                 transaction=self.transaction,
             )
-            return CountedSet(
-                items=self.items,
-                counts=new_counts,
-                indexes=self.indexes,
-                new_objects=self._new_objects,
-                new_counts=self._new_counts,
-                transaction=self.transaction,
-            )
         elif self._new_counts.has(h):
+            # Increment pending count for an element staged in this transaction
             new_new_counts = self._new_counts.set_at(h, cast(int, self._new_counts.get_at(h)) + 1)
+            # Mirror increment to persisted counts view
+            new_counts_persisted = self.counts.set_at(h, (cast(int, self.counts.get_at(h)) if self.counts.has(h) else 0) + 1)
             return CountedSet(
                 items=self.items,
-                counts=self.counts,
-                indexes=self.indexes,
-                new_objects=self._new_objects,
-                new_counts=new_new_counts,
-            )
-            return CountedSet(
-                items=self.items,
-                counts=self.counts,
+                counts=new_counts_persisted,
                 indexes=self.indexes,
                 new_objects=self._new_objects,
                 new_counts=new_new_counts,
                 transaction=self.transaction,
             )
         else:
+            # First insertion: materialize element in items and set count=1; update indexes on 0 -> 1 transition
+            new_items = self.items.set_at(h, key)
             new_objects = self._new_objects.set_at(h, key)
             new_new_counts = self._new_counts.set_at(h, 1)
+            new_counts_persisted = self.counts.set_at(h, 1)
             if self.indexes:
                 new_indexes = self.indexes.add2indexes(key)
             else:
                 new_indexes = self.indexes
             return CountedSet(
-                items=self.items,
-                counts=self.counts,
+                items=new_items,
+                counts=new_counts_persisted,
                 indexes=new_indexes,
                 new_objects=new_objects,
                 new_counts=new_new_counts,
@@ -439,20 +445,27 @@ class CountedSet(Set):
             new_counts = self.counts
             new_items = self.items
             new_indexes = self.indexes
+            new_new_counts = self._new_counts
+            new_objects = self._new_objects
             if repetition > 0:
                 new_counts = new_counts.set_at(h, repetition)
             else:
                 new_counts = new_counts.remove_at(h)
                 new_items = new_items.remove_at(h)
                 new_indexes = new_indexes.remove_from_indexes(key)
+                # Also clear staged views for this key (0 -> removal)
+                if new_new_counts.has(h):
+                    new_new_counts = new_new_counts.remove_at(h)
+                if new_objects.has(h):
+                    new_objects = new_objects.remove_at(h)
 
             return CountedSet(
                 items=new_items,
                 counts=new_counts,
-                new_objects=self._new_objects,
-                new_counts=self._new_counts,
+                new_objects=new_objects,
+                new_counts=new_new_counts,
                 transaction=self.transaction,
-                indexes=self.indexes
+                indexes=new_indexes
             )
         elif self._new_counts.has(h):
             repetition = cast(int, self._new_counts.get_at(h)) - 1
@@ -462,7 +475,7 @@ class CountedSet(Set):
             if repetition > 0:
                 new_new_counts = new_new_counts.set_at(h, repetition)
             else:
-                new_counts = new_new_counts.remove_at(h)
+                new_new_counts = new_new_counts.remove_at(h)
                 new_objects = new_objects.remove_at(h)
                 new_indexes = new_indexes.remove_from_indexes(key)
 
