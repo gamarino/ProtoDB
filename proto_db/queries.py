@@ -1702,6 +1702,12 @@ class WherePlan(QueryPlan):
                 return
 
         # Fallback: linear scan
+        if PROTODB_WARN_LINEAR_FALLBACK and isinstance(base, _IQP):
+            try:
+                msg = "; ".join(reasons) if reasons else "unknown reason"
+                _logger.warning("WherePlan fell back to linear: %s", msg)
+            except Exception:
+                pass
         for record in base.execute():
             if flt.match(record):
                 yield record

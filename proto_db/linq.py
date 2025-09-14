@@ -25,7 +25,7 @@ class Policy:
     on_unsupported: 'error' | 'warn' | 'fallback'
     Limits are enforced when local Python fallback is used.
     """
-    on_unsupported: str = "error"  # 'error' | 'warn' | 'fallback'
+    on_unsupported: str = "fallback"  # 'error' | 'warn' | 'fallback'
     max_rows_local: int = 100_000
     max_memory_mb: int = 256
     timeout_ms: int = 0  # 0 = no timeout
@@ -202,7 +202,7 @@ class _Field:
         return self.between(lo, hi, inclusive=inc)
 
     def contains(self, sub: Any):
-        pb = ['.'.join(self._path), 'contains', sub]
+        pb = [_prefix_alias('.'.join(self._path)), 'contains', sub]
         return _Pred(lambda x: (self._resolve(x) or "").__contains__(sub), pb)
 
     def startswith(self, prefix: str):
@@ -455,9 +455,10 @@ class Queryable(Generic[T]):
                 self._base_plan = None
                 self._source = source.as_iterable()
         elif isinstance(source, list):
-            # Wrap Python list into a ListPlan for plan-based features where possible
-            self._base_plan = ListPlan(base_list=source)
-            self._source = None
+            # Keep plain Python lists as local iterables to preserve record shape in results
+            # Plan-based features (indexes/alias) are not applicable to plain lists
+            self._base_plan = None
+            self._source = source
         else:
             self._source = source  # generic iterable fallback
         self._ops: list[tuple[str, tuple, dict]] = plan[:] if plan else []
@@ -610,25 +611,30 @@ class Queryable(Generic[T]):
                 arg0 = args[0]
                 is_supported = isinstance(arg0, _Pred)
                 if not is_supported:
-                    if self._policy.on_unsupported == 'error':
-                        # Try to translate lambda chained compare to between
-                        if callable(arg0):
-                            tokens = _translate_lambda_between(arg0)
-                            if tokens is not None:
-                                # Evaluate via tokens locally as well after plan prefix
-                                # For local execution maintain predicate function
-                                pass
-                            else:
+                    if callable(arg0):
+                        tokens = _translate_lambda_between(arg0)
+                        if tokens is None:
+                            if self._policy.on_unsupported == 'error':
                                 raise ValueError('Unsupported where predicate; use F DSL (e.g., F.field == 1) or set on_unsupported("warn"|"fallback")')
-                        else:
+                            elif self._policy.on_unsupported == 'warn':
+                                warnings.warn('Falling back to local Python evaluation for where()', RuntimeWarning)
+                        # If tokens detected, proceed silently with local callable
+                    else:
+                        if self._policy.on_unsupported == 'error':
                             raise ValueError('Unsupported where predicate; use F DSL (e.g., F.field == 1) or set on_unsupported("warn"|"fallback")')
-                    elif self._policy.on_unsupported == 'warn':
-                        warnings.warn('Falling back to local Python evaluation for where()', RuntimeWarning)
-                    # If lambda is a between pattern, we can still evaluate locally using the callable
+                        elif self._policy.on_unsupported == 'warn':
+                            warnings.warn('Falling back to local Python evaluation for where()', RuntimeWarning)
                 pred = _to_callable(arg0)
                 if pred is None:
                     continue
-                it = (x for x in it if pred(x))
+                def _safe(pred_fn):
+                    def _f(x):
+                        try:
+                            return bool(pred_fn(x))
+                        except Exception:
+                            return False
+                    return _f
+                it = (x for x in it if _safe(pred)(x))
             elif name == 'select':
                 sel = _to_callable(args[0]) or (lambda x: x)
                 it = (sel(x) for x in it)
