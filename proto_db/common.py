@@ -1184,9 +1184,3 @@ def canonical_hash(obj) -> int:
         except Exception:
             return 0
 
-# Lazy export to avoid circular import: provide CountedSet via attribute access
-def __getattr__(name: str):
-    if name == 'CountedSet':
-        from .sets import CountedSet as _CS
-        return _CS
-    raise AttributeError(name)

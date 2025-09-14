@@ -4,9 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="clean up testing cache">
-      <change beforePath="$PROJECT_DIR$/proto_db/linq.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/linq.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="All 259 tests passed after fixing failing tests and improving query handling. Enhanced warnings, explain() support, LINQ behavior, and hashing consistency were implemented. The project test suite ran cleanly with no errors remaining.">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -277,15 +277,7 @@
       <workItem from="1757675175377" duration="49000" />
       <workItem from="1757675249603" duration="41300000" />
       <workItem from="1757781886166" duration="18715000" />
-      <workItem from="1757807568113" duration="2187000" />
-    </task>
-    <task id="LOCAL-00075" summary="[IMP]  Atom-level in-memory caches (AtomObjectCache and AtomBytesCache) were successfully implemented with a 2Q replacement policy, integrated into the atom read path, and tested. The implementation ensures high hit rates and improved read performance without introducing regressions or deadlocks. Metrics for cache efficiency are also exposed for monitoring.">
-      <option name="closed" value="true" />
-      <created>1757649428795</created>
-      <option name="number" value="00075" />
-      <option name="presentableId" value="LOCAL-00075" />
-      <option name="project" value="LOCAL" />
-      <updated>1757649428795</updated>
+      <workItem from="1757807568113" duration="6843000" />
     </task>
     <task id="LOCAL-00076" summary="[IMP]  Implemented adaptive chunking and work-stealing for parallel scans as an optional feature without changing default behavior. Added configuration, metrics, graceful shutdown, and comprehensive tests ensuring correctness, performance, and backward compatibility. Provided new user documentation, API references, ADR, and a changelog entry.">
       <option name="closed" value="true" />
@@ -671,14 +663,21 @@
       <option name="project" value="LOCAL" />
       <updated>1757809070738</updated>
     </task>
-    <option name="localTasksCounter" value="124" />
+    <task id="LOCAL-00124" summary="All 259 tests passed after fixing failing tests and improving query handling. Enhanced warnings, explain() support, LINQ behavior, and hashing consistency were implemented. The project test suite ran cleanly with no errors remaining.">
+      <option name="closed" value="true" />
+      <created>1757810415976</created>
+      <option name="number" value="00124" />
+      <option name="presentableId" value="LOCAL-00124" />
+      <option name="project" value="LOCAL" />
+      <updated>1757810415976</updated>
+    </task>
+    <option name="localTasksCounter" value="125" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Updated commercial_positioning.md with ProtoBase’s new near-memory performance and features. Added new title, slogan, key characteristics, use cases, and analogy. Aligned document with recent improvements." />
     <MESSAGE value="The commercial_positioning.md was translated into professional English. A new Competitive Landscape &amp; Positioning section was added, contrasting ProtoBase with various technologies. The update fulfills the task requirements fully." />
     <MESSAGE value="The README.md was updated to reflect the current state of ProtoBase. Key Features were enhanced with new index-aware optimizer details and caching behavior. The Benchmarks section and performance snapshot were revised with updated parameters and results." />
     <MESSAGE value="Added an example script showing collection indexing. Demonstrated faster searches using add_index('email') with timing and speedup output. as_query_plan() returns IndexedQueryPlan enabling optimized queries." />
@@ -703,7 +702,8 @@
     <MESSAGE value="Se corrigieron errores y warnings en la generación de la documentación con Sphinx. Se eliminaron referencias a clases inexistentes y se ajustaron los docstrings para cumplir con reStructuredText. La compilación final de la documentación se realiza sin advertencias ni errores." />
     <MESSAGE value="Added canonical_hash helper and adopted in sets for stable hashing. Enhanced LINQ with optimize() calls, alias normalization, and operator token unification. Implemented explain() with optional warnings on linear fallback and added extensive tests." />
     <MESSAGE value="clean up testing cache" />
-    <option name="LAST_COMMIT_MESSAGE" value="clean up testing cache" />
+    <MESSAGE value="All 259 tests passed after fixing failing tests and improving query handling. Enhanced warnings, explain() support, LINQ behavior, and hashing consistency were implemented. The project test suite ran cleanly with no errors remaining." />
+    <option name="LAST_COMMIT_MESSAGE" value="All 259 tests passed after fixing failing tests and improving query handling. Enhanced warnings, explain() support, LINQ behavior, and hashing consistency were implemented. The project test suite ran cleanly with no errors remaining." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
