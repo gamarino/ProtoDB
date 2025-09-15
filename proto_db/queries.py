@@ -1030,6 +1030,29 @@ class IndexedSearchPlan(IndexedQueryPlan):
             refs.add(_ref_of(rec))
         return frozenset(refs)
 
+    def get_cardinality_estimate(self) -> int:
+        """
+        Exact O(1) estimate for equality lookups using the underlying index bucket size.
+        Returns 0 when the key is absent or index is unavailable.
+        """
+        try:
+            if isinstance(self.operator, Equal) and self.indexes and self.indexes.has(self.field_to_scan):
+                idx_dict = cast(Dictionary, self.indexes.get_at(self.field_to_scan))
+                if idx_dict is None:
+                    return 0
+                value_set = idx_dict.get_at(self.value)
+                return int(value_set.count) if value_set is not None else 0
+        except Exception:
+            pass
+        # Fallback to base class heuristic
+        return super().get_cardinality_estimate()
+
+    def get_cost_estimate(self) -> float:
+        """
+        Equality lookup on an index is very cheap.
+        """
+        return 1.0
+
     def explain(self) -> dict:
         op_name = type(self.operator).__name__
         return {
@@ -1297,6 +1320,26 @@ class IndexedRangeSearchPlan(IndexedQueryPlan):
 
     def count(self) -> int:
         return sum(1 for _ in self.execute())
+
+    def get_cardinality_estimate(self) -> int:
+        """
+        Heuristic estimate for range scans. Use 25% of based_on count when available; otherwise a small constant.
+        """
+        try:
+            if getattr(self, 'based_on', None) is not None:
+                total = int(self.based_on.count())
+            else:
+                total = 100
+        except Exception:
+            total = 100
+        est = int(total * 0.25)
+        return est if est > 0 else 1
+
+    def get_cost_estimate(self) -> float:
+        """
+        Range scans are more expensive than point lookups. Cost grows with estimated cardinality.
+        """
+        return 10.0 + self.get_cardinality_estimate() * 0.1
 
     def get_references(self) -> frozenset[int]:
         """

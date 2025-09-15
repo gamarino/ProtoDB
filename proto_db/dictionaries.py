@@ -6,7 +6,7 @@ from typing import cast
 from .common import Atom, DBCollections, QueryPlan, Literal, AbstractTransaction, AtomPointer, ConcurrentOptimized
 from .exceptions import ProtoNotSupportedException
 from .lists import List
-from .queries import IndexedQueryPlan
+from .queries import IndexedQueryPlan, QueryableIndex, QueryContext, Term, Equal, Between, Greater, GreaterOrEqual, Lower, LowerOrEqual, IndexedSearchPlan, IndexedRangeSearchPlan
 from .sets import Set, CountedSet
 
 _logger = logging.getLogger(__name__)
@@ -343,7 +343,7 @@ class Dictionary(DBCollections, ConcurrentOptimized):
         return rebased_dict
 
 
-class RepeatedKeysDictionary(Dictionary):
+class RepeatedKeysDictionary(Dictionary, QueryableIndex):
     """
     Represents a dictionary-like data structure allowing multiple records
     associated with a single key, with support for concurrent modifications.
@@ -484,6 +484,94 @@ class RepeatedKeysDictionary(Dictionary):
                 )
 
             return self
+
+    def build_query_plan(self, term: Term, context: QueryContext) -> QueryPlan | None:
+        """
+        Implement QueryableIndex: produce an index-backed plan for supported operations.
+        This dictionary represents an ordered index over a single field (the caller passes the Term).
+        """
+        try:
+            # Ensure we have a valid Term
+            if not isinstance(term, Term):
+                return None
+            field = term.target_attribute
+            op = term.operation
+
+            # Build a minimal index mapping for the planner: {field: this_index}
+            idxs = Dictionary(transaction=context.transaction or self.transaction)
+            idxs = idxs.set_at(field, self)
+            tx = context.transaction or self.transaction
+
+            if isinstance(op, Equal):
+                return IndexedSearchPlan(
+                    field_to_scan=field,
+                    operator=op,
+                    value=term.value,
+                    indexes=idxs,
+                    based_on=None,
+                    transaction=tx,
+                )
+            if isinstance(op, Between):
+                lo, hi = term.value if isinstance(term.value, tuple) else (None, None)
+                if lo is None or hi is None:
+                    return None
+                return IndexedRangeSearchPlan(
+                    field_to_scan=field,
+                    lo=lo,
+                    hi=hi,
+                    include_lower=op.include_lower,
+                    include_upper=op.include_upper,
+                    indexes=idxs,
+                    based_on=None,
+                    transaction=tx,
+                )
+            if isinstance(op, Greater):
+                return IndexedRangeSearchPlan(
+                    field_to_scan=field,
+                    lo=term.value,
+                    hi=float('inf'),
+                    include_lower=False,
+                    include_upper=True,
+                    indexes=idxs,
+                    based_on=None,
+                    transaction=tx,
+                )
+            if isinstance(op, GreaterOrEqual):
+                return IndexedRangeSearchPlan(
+                    field_to_scan=field,
+                    lo=term.value,
+                    hi=float('inf'),
+                    include_lower=True,
+                    include_upper=True,
+                    indexes=idxs,
+                    based_on=None,
+                    transaction=tx,
+                )
+            if isinstance(op, Lower):
+                return IndexedRangeSearchPlan(
+                    field_to_scan=field,
+                    lo=float('-inf'),
+                    hi=term.value,
+                    include_lower=True,
+                    include_upper=False,
+                    indexes=idxs,
+                    based_on=None,
+                    transaction=tx,
+                )
+            if isinstance(op, LowerOrEqual):
+                return IndexedRangeSearchPlan(
+                    field_to_scan=field,
+                    lo=float('-inf'),
+                    hi=term.value,
+                    include_lower=True,
+                    include_upper=True,
+                    indexes=idxs,
+                    based_on=None,
+                    transaction=tx,
+                )
+            return None
+        except Exception:
+            return None
 
     def _rebase_on_concurrent_update(self, current_db_object: Atom) -> Atom:
         """
