@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import os
 import logging
+from dataclasses import dataclass
 from abc import ABC, abstractmethod
-from typing import cast, TYPE_CHECKING
+from typing import Optional, cast, TYPE_CHECKING
 
-from .common import Atom, QueryPlan, AtomPointer, DBObject
+from .common import Atom, QueryPlan, AtomPointer, DBObject, AbstractTransaction, DBCollections
 from .exceptions import ProtoValidationException
 from .hybrid_executor import HybridExecutor
 
@@ -13,6 +14,33 @@ if TYPE_CHECKING:
     from .db_access import ObjectTransaction
     from .dictionaries import Dictionary, DictionaryItem, RepeatedKeysDictionary
     from .sets import Set
+
+
+@dataclass
+class QueryContext:
+    """
+    Lightweight context passed from the planner to indices while building plans.
+
+    Attributes:
+        transaction: Optional transaction to be used during planning/execution.
+        (Future fields like limit, offset can be added here.)
+    """
+    transaction: Optional[AbstractTransaction] = None
+
+
+class QueryableIndex(DBCollections, ABC):
+    """
+    Abstract interface for pluggable indices that can contribute specialized
+    query plans for particular terms.
+    """
+
+    @abstractmethod
+    def build_query_plan(self, term: 'Term', context: QueryContext) -> Optional[QueryPlan]:
+        """
+        Return a specialized QueryPlan for the given term if this index can
+        handle it efficiently; otherwise return None.
+        """
+        raise NotImplementedError
 
 # Executor for async operations
 max_workers = (os.cpu_count() or 1) * 5

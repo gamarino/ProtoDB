@@ -953,6 +953,31 @@ class QueryPlan(Atom):
         :return: The optimized query plan.
         """
 
+    def get_cardinality_estimate(self) -> int:
+        """
+        Estimate the expected number of records produced by this plan.
+        Lower values mean higher selectivity.
+
+        Default: worst case based on the underlying source if available.
+        """
+        try:
+            if getattr(self, 'based_on', None) is not None:
+                # Fallback to counting the underlying plan as a crude estimate
+                return int(self.based_on.count())
+        except Exception:
+            pass
+        # Unknown base: use a very large number to denote worst case
+        return 2**63 - 1
+
+    def get_cost_estimate(self) -> float:
+        """
+        Estimate the relative computational cost to execute this plan.
+        Lower is better. This is not time, but a unit to compare plans.
+
+        Default: infinity to indicate non-optimized/unknown cost.
+        """
+        return float('inf')
+
     def count(self) -> int:
         """
         Default count implementation: iterate through execute() and count the results.

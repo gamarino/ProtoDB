@@ -4,8 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="El README.md se actualizó para reflejar el estado actual del proyecto. Se eliminaron referencias obsoletas y se añadieron descripciones precisas de funcionalidades, instalación, ejemplos y documentación. El archivo quedó alineado con el código y la documentación vigente.">
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Updated README.md to accurately describe LINQ-like features, ANN functions, and parallel work stealing. Added new example sections and corrected outdated disclaimers. Documentation and examples were also updated accordingly.">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/build/html/searchindex.js" beforeDir="false" afterPath="$PROJECT_DIR$/docs/build/html/searchindex.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -75,7 +78,7 @@
     &quot;com.google.cloudcode.ide_session_index&quot;: &quot;20250803_0001&quot;,
     &quot;git-widget-placeholder&quot;: &quot;master&quot;,
     &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/home/gamarino/odoo/ltf-18.0&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/gamarino/odoo/mrgroup-18.0&quot;,
     &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
     &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
@@ -277,15 +280,8 @@
       <workItem from="1757675249603" duration="41300000" />
       <workItem from="1757781886166" duration="18715000" />
       <workItem from="1757807568113" duration="16660000" />
-      <workItem from="1757895377114" duration="4200000" />
-    </task>
-    <task id="LOCAL-00083" summary="[FIX] queries.py: Fixed multiple errors in proto_db/queries.py related to IndexedQueryPlan and index handling. Corrected API usage, key normalization, bounds checking, and index-based query execution. Testing is currently blocked by a separate circular import issue unrelated to these fixes.">
-      <option name="closed" value="true" />
-      <created>1757734298792</created>
-      <option name="number" value="00083" />
-      <option name="presentableId" value="LOCAL-00083" />
-      <option name="project" value="LOCAL" />
-      <updated>1757734298792</updated>
+      <workItem from="1757895377114" duration="6936000" />
+      <workItem from="1757947628681" duration="6159000" />
     </task>
     <task id="LOCAL-00084" summary="[FIX] The test suite was run, failures were identified, and targeted fixes were applied to make indexes optional and correct dictionary behaviors. After implementing the fixes, the full test suite of 241 tests passed successfully. Guidance on running the tests with proper discovery was provided.">
       <option name="closed" value="true" />
@@ -671,14 +667,21 @@
       <option name="project" value="LOCAL" />
       <updated>1757899360120</updated>
     </task>
-    <option name="localTasksCounter" value="132" />
+    <task id="LOCAL-00132" summary="Updated README.md to accurately describe LINQ-like features, ANN functions, and parallel work stealing. Added new example sections and corrected outdated disclaimers. Documentation and examples were also updated accordingly.">
+      <option name="closed" value="true" />
+      <created>1757899803917</created>
+      <option name="number" value="00132" />
+      <option name="presentableId" value="LOCAL-00132" />
+      <option name="project" value="LOCAL" />
+      <updated>1757899803917</updated>
+    </task>
+    <option name="localTasksCounter" value="133" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="All Sphinx &quot;Title underline too short&quot; warnings in multiple reStructuredText files were fixed by extending the underline lengths to exceed the title lengths. This was done for headings in advanced_usage.rst, quickstart.rst, and api/queries.rst files through systematic search-and-replace edits. Multiple rebuilds were run to verify that no remaining warnings persisted." />
     <MESSAGE value="The performance benchmark suite was executed, showing a 6.44× speedup using indexed queries over linear scans on large datasets. CRUD and LINQ benchmarks completed successfully with detailed timing metrics collected. Results and JSON artifacts were saved without any code changes required." />
     <MESSAGE value="The indexed performance suite was executed on a dataset of 20,000 items with 50 queries. Results showed the indexed path outperforms linear scan by ~3.5× and primary key lookups are ~72× faster than linear plans. Documentation was updated with the findings and a JSON results file was generated; a larger run with 100k items timed out." />
     <MESSAGE value="Executed indexed collections performance benchmarks with two dataset sizes. Collected timing and latency metrics demonstrating significant speedups over linear scans. Updated the documentation with detailed results and observations without modifying source code." />
@@ -703,7 +706,8 @@
     <MESSAGE value="Three new test modules were added to strengthen ProtoDB’s test suite. These include concurrency stress tests, Hypothesis-driven property tests for collections, and integration tests verifying persistence and index usage. All tests run successfully without modifying core code or documentation." />
     <MESSAGE value="Implemented comprehensive packaging with pyproject.toml including metadata and dependencies. Added MANIFEST.in for auxiliary files and configured GitHub Actions workflow for automated PyPI publishing on release. Verified local build and install functionality, preparing the repository for trusted publishing." />
     <MESSAGE value="El README.md se actualizó para reflejar el estado actual del proyecto. Se eliminaron referencias obsoletas y se añadieron descripciones precisas de funcionalidades, instalación, ejemplos y documentación. El archivo quedó alineado con el código y la documentación vigente." />
-    <option name="LAST_COMMIT_MESSAGE" value="El README.md se actualizó para reflejar el estado actual del proyecto. Se eliminaron referencias obsoletas y se añadieron descripciones precisas de funcionalidades, instalación, ejemplos y documentación. El archivo quedó alineado con el código y la documentación vigente." />
+    <MESSAGE value="Updated README.md to accurately describe LINQ-like features, ANN functions, and parallel work stealing. Added new example sections and corrected outdated disclaimers. Documentation and examples were also updated accordingly." />
+    <option name="LAST_COMMIT_MESSAGE" value="Updated README.md to accurately describe LINQ-like features, ANN functions, and parallel work stealing. Added new example sections and corrected outdated disclaimers. Documentation and examples were also updated accordingly." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -720,7 +724,7 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/queries.py</url>
-          <line>333</line>
+          <line>361</line>
           <option name="timeStamp" value="188" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
