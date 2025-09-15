@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Implemented comprehensive packaging with pyproject.toml including metadata and dependencies. Added MANIFEST.in for auxiliary files and configured GitHub Actions workflow for automated PyPI publishing on release. Verified local build and install functionality, preparing the repository for trusted publishing.">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="El README.md se actualizó para reflejar el estado actual del proyecto. Se eliminaron referencias obsoletas y se añadieron descripciones precisas de funcionalidades, instalación, ejemplos y documentación. El archivo quedó alineado con el código y la documentación vigente.">
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -277,15 +277,7 @@
       <workItem from="1757675249603" duration="41300000" />
       <workItem from="1757781886166" duration="18715000" />
       <workItem from="1757807568113" duration="16660000" />
-      <workItem from="1757895377114" duration="3847000" />
-    </task>
-    <task id="LOCAL-00082" summary="[WIP] nuevos índices">
-      <option name="closed" value="true" />
-      <created>1757733224499</created>
-      <option name="number" value="00082" />
-      <option name="presentableId" value="LOCAL-00082" />
-      <option name="project" value="LOCAL" />
-      <updated>1757733224499</updated>
+      <workItem from="1757895377114" duration="4200000" />
     </task>
     <task id="LOCAL-00083" summary="[FIX] queries.py: Fixed multiple errors in proto_db/queries.py related to IndexedQueryPlan and index handling. Corrected API usage, key normalization, bounds checking, and index-based query execution. Testing is currently blocked by a separate circular import issue unrelated to these fixes.">
       <option name="closed" value="true" />
@@ -671,14 +663,21 @@
       <option name="project" value="LOCAL" />
       <updated>1757898931499</updated>
     </task>
-    <option name="localTasksCounter" value="131" />
+    <task id="LOCAL-00131" summary="El README.md se actualizó para reflejar el estado actual del proyecto. Se eliminaron referencias obsoletas y se añadieron descripciones precisas de funcionalidades, instalación, ejemplos y documentación. El archivo quedó alineado con el código y la documentación vigente.">
+      <option name="closed" value="true" />
+      <created>1757899360120</created>
+      <option name="number" value="00131" />
+      <option name="presentableId" value="LOCAL-00131" />
+      <option name="project" value="LOCAL" />
+      <updated>1757899360120</updated>
+    </task>
+    <option name="localTasksCounter" value="132" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="La documentación Sphinx se actualizó para reflejar el estado actual del proyecto con nuevas páginas y un índice ampliado. Se actualizaron el conf.py y se añadieron ejemplos, testing, almacenamiento en la nube y vectores. La documentación API permaneció sin cambios." />
     <MESSAGE value="All Sphinx &quot;Title underline too short&quot; warnings in multiple reStructuredText files were fixed by extending the underline lengths to exceed the title lengths. This was done for headings in advanced_usage.rst, quickstart.rst, and api/queries.rst files through systematic search-and-replace edits. Multiple rebuilds were run to verify that no remaining warnings persisted." />
     <MESSAGE value="The performance benchmark suite was executed, showing a 6.44× speedup using indexed queries over linear scans on large datasets. CRUD and LINQ benchmarks completed successfully with detailed timing metrics collected. Results and JSON artifacts were saved without any code changes required." />
     <MESSAGE value="The indexed performance suite was executed on a dataset of 20,000 items with 50 queries. Results showed the indexed path outperforms linear scan by ~3.5× and primary key lookups are ~72× faster than linear plans. Documentation was updated with the findings and a JSON results file was generated; a larger run with 100k items timed out." />
@@ -703,7 +702,8 @@
     <MESSAGE value="Created two new documentation guides explaining fundamental concepts and practical recipes. Updated key API docstrings with warnings and notes for clarity. Successfully built the documentation with the new content included and verified render." />
     <MESSAGE value="Three new test modules were added to strengthen ProtoDB’s test suite. These include concurrency stress tests, Hypothesis-driven property tests for collections, and integration tests verifying persistence and index usage. All tests run successfully without modifying core code or documentation." />
     <MESSAGE value="Implemented comprehensive packaging with pyproject.toml including metadata and dependencies. Added MANIFEST.in for auxiliary files and configured GitHub Actions workflow for automated PyPI publishing on release. Verified local build and install functionality, preparing the repository for trusted publishing." />
-    <option name="LAST_COMMIT_MESSAGE" value="Implemented comprehensive packaging with pyproject.toml including metadata and dependencies. Added MANIFEST.in for auxiliary files and configured GitHub Actions workflow for automated PyPI publishing on release. Verified local build and install functionality, preparing the repository for trusted publishing." />
+    <MESSAGE value="El README.md se actualizó para reflejar el estado actual del proyecto. Se eliminaron referencias obsoletas y se añadieron descripciones precisas de funcionalidades, instalación, ejemplos y documentación. El archivo quedó alineado con el código y la documentación vigente." />
+    <option name="LAST_COMMIT_MESSAGE" value="El README.md se actualizó para reflejar el estado actual del proyecto. Se eliminaron referencias obsoletas y se añadieron descripciones precisas de funcionalidades, instalación, ejemplos y documentación. El archivo quedó alineado con el código y la documentación vigente." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

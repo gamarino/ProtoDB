@@ -29,8 +29,9 @@ This README reflects the current state of the codebase (2025‑09‑14). For dee
   - explain() to inspect plans
 - Collections: Dictionary, RepeatedKeysDictionary, List (AVL), Set, CountedSet
 - Ephemeral vs. persistent behavior in Set/CountedSet to avoid unintended writes when hashing Atoms
-
-Note: Experimental or future ideas such as a LINQ layer, vector ANN modules, or parallel work‑stealing are not part of the current codebase. The README no longer references those.
+- LINQ‑like query API (proto_db.linq) with lazy pipelines, grouping/ordering, and explain(); integrates with collection indexes when applicable
+- Parallel hybrid executor with work‑stealing (HybridExecutor) to overlap I/O and CPU tasks across pipelines and storage operations
+- Vector similarity search components: exact index and optional HNSW ANN via hnswlib (install with `pip install "proto_db[vectors]"`)
 
 ## Installation
 
@@ -116,12 +117,66 @@ results = list(plan.execute())
 
 See also the runnable example at examples/collection_indexing_example.py.
 
+### LINQ-like Queries (Phase 1)
+
+ProtoBase includes a lazy, composable LINQ-like API that works over Python iterables as well as ProtoBase collections. It can optimize when the source is an indexed collection.
+
+Example:
+
+```python
+from proto_db.linq import from_collection, F
+
+# Over a plain Python list
+people = [
+    {"name": "Alice", "age": 30},
+    {"name": "Bob", "age": 22},
+    {"name": "Carol", "age": 27},
+]
+
+q = (
+    from_collection(people)
+    .where(F.age >= 25)
+    .order_by(F.age.desc())
+    .select({"name": F.name, "age": F.age})
+    .take(2)
+)
+print(list(q))  # [{'name': 'Alice', 'age': 30}, {'name': 'Carol', 'age': 27}]
+```
+
+See docs for using the same API over ProtoBase collections and how indexes are used automatically when available.
+
+### Vector similarity (ANN)
+
+ProtoBase provides a small vector search module with an exact index and an optional HNSW ANN index based on hnswlib. Install extras with:
+
+```bash
+pip install "proto_db[vectors]"
+```
+
+Minimal usage:
+
+```python
+from proto_db.vector_index import HNSWVectorIndex, ExactVectorIndex
+
+# Build an index (HNSW requires hnswlib + numpy; falls back to exact when unavailable)
+idx = HNSWVectorIndex(metric="cosine", M=16, efConstruction=200, efSearch=64)
+idx.build(vectors=[[0.1, 0.2], [0.0, 0.9], [0.4, 0.4]], ids=["a", "b", "c"])  # toy example
+
+# k-NN query
+neighbors = idx.search(query=[0.1, 0.25], k=2)
+print(neighbors)  # [(id, score), ...]
+```
+
+See examples/vector_ann_benchmark.py and docs/performance.md for benchmarks and configuration tips.
+
 ## Documentation
 
 Sphinx documentation lives under docs/ and includes:
 
 - Concepts guide: docs/source/concepts.(md|rst)
 - Cookbook recipes: docs/source/cookbook.(md|rst)
+- LINQ-like API: docs/source/api/linq.rst
+- Vector API: docs/source/api/vectors.rst
 - Performance notes: docs/performance.md
 - API reference (autodoc) and additional guides listed in docs/source/index.rst
 
