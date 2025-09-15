@@ -33,6 +33,20 @@ extensions = [
     'sphinx.ext.intersphinx',
 ]
 
+# Optionally enable Markdown support via MyST if available
+try:
+    import myst_parser  # type: ignore  # noqa: F401
+    extensions.append('myst_parser')
+    source_suffix = {
+        '.rst': 'restructuredtext',
+        '.md': 'markdown',
+    }
+except Exception:
+    # Fallback: only .rst files are processed
+    source_suffix = {
+        '.rst': 'restructuredtext',
+    }
+
 templates_path = ['_templates']
 exclude_patterns = []
 

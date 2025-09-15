@@ -597,14 +597,20 @@ class ObjectTransaction(AbstractTransaction):
 
     def commit(self):
         """
-        Close the transaction and make it persistent. All changes recorded
-        Before commit all checked and modified objects will be tested if modified
-        by another transaction. Transaction will proceed only if no change in
-        used objects is verified.
-        If a return object is specified, the full tree of related objects is persisted
-        All created objects, not reachable from this return_object or any updated root
-        will NOT BE PERSISTED, and they will be not usable after commit!
-        :return:
+        Commit this transaction, making changes durable and visible to others.
+
+        High-level steps:
+
+        1) Save newly created/modified objects in this transaction context.
+        2) Acquire a lock on the database root to prevent concurrent root updates.
+        3) Check for concurrent modifications of any read-locked objects; abort on conflicts.
+        4) Update indexes for modified mutables and merge new/updated roots.
+        5) Persist the new root object pointer to storage (WAL write-through).
+
+        .. note::
+           Only objects reachable from updated roots (and modified mutables) are persisted.
+           Objects created during the transaction but not reachable from the final committed
+           graph will not be saved and become unusable after commit.
         """
         with self.lock:
             if self.state != 'Running':

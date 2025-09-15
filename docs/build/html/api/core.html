@@ -48,6 +48,8 @@
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../concepts.html">ProtoDB Fundamental Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../cookbook.html">ProtoDB Cookbook</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
@@ -246,6 +248,34 @@ validations, or updates required post-loading should be implemented here.</p>
 </dl>
 </dd></dl>
 
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.Atom.hash">
+<span class="sig-name descname"><span class="pre">hash</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#Atom.hash"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.Atom.hash" title="Link to this definition"></a></dt>
+<dd><p>Return a stable hash derived from this object’s AtomPointer.</p>
+<p>The hash is identical for all instances that point to the same persisted Atom. To
+obtain an AtomPointer, the object must be persisted.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Calling <code class="docutils literal notranslate"><span class="pre">hash(obj)</span></code> on an Atom that has not yet been persisted will trigger
+a write to storage via <code class="docutils literal notranslate"><span class="pre">_save()</span></code> to obtain an <code class="docutils literal notranslate"><span class="pre">AtomPointer</span></code>. This can have
+performance and durability implications:</p>
+<ul class="simple">
+<li><p>It will persist the object and any newly created dependent Atoms reachable
+from it, even if they are not ultimately reachable from database roots.</p></li>
+<li><p>It can increase I/O and WAL size if used on temporary objects (for example,
+while using a Set for intermediate calculations).</p></li>
+</ul>
+<p>Best practice: avoid hashing new Atoms unless they are intended to become part of
+the committed object graph. For temporary work, prefer ephemeral containers that
+do not require hashing Atoms, or use value-based hashing on plain Python objects.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Stable integer hash value based on the <code class="docutils literal notranslate"><span class="pre">AtomPointer</span></code>.</p>
+</dd>
+</dl>
+</dd></dl>
+
 </dd></dl>
 
 <p>The <code class="docutils literal notranslate"><span class="pre">Atom</span></code> class is the fundamental building block of ProtoBase. All database objects are derived from this class. An Atom represents a piece of data that can be stored in the database.</p>
@@ -400,6 +430,37 @@ provided during initialization or generated if not supplied.</p>
 <li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
 <li><p><strong>atom_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
 </ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.MutableObject.hash">
+<span class="sig-name descname"><span class="pre">hash</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#MutableObject.hash"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.MutableObject.hash" title="Link to this definition"></a></dt>
+<dd><p>Return a stable hash derived from this object’s AtomPointer.</p>
+<p>The hash is identical for all instances that point to the same persisted Atom. To
+obtain an AtomPointer, the object must be persisted.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Calling <code class="docutils literal notranslate"><span class="pre">hash(obj)</span></code> on an Atom that has not yet been persisted will trigger
+a write to storage via <code class="docutils literal notranslate"><span class="pre">_save()</span></code> to obtain an <code class="docutils literal notranslate"><span class="pre">AtomPointer</span></code>. This can have
+performance and durability implications:</p>
+<ul class="simple">
+<li><p>It will persist the object and any newly created dependent Atoms reachable
+from it, even if they are not ultimately reachable from database roots.</p></li>
+<li><p>It can increase I/O and WAL size if used on temporary objects (for example,
+while using a Set for intermediate calculations).</p></li>
+</ul>
+<p>Best practice: avoid hashing new Atoms unless they are intended to become part of
+the committed object graph. For temporary work, prefer ephemeral containers that
+do not require hashing Atoms, or use value-based hashing on plain Python objects.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Stable integer hash value based on the <code class="docutils literal notranslate"><span class="pre">AtomPointer</span></code>.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>int</p>
 </dd>
 </dl>
 </dd></dl>
@@ -611,6 +672,18 @@ Subclasses can override for more efficient counting.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.QueryPlan.explain">
+<span class="sig-name descname"><span class="pre">explain</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#QueryPlan.explain"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.QueryPlan.explain" title="Link to this definition"></a></dt>
+<dd><p>Lightweight structured explanation of the plan.
+Subclasses should override to add more details.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
 </dd>
 </dl>
 </dd></dl>
@@ -1201,14 +1274,21 @@ mutable index.</p></li>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.commit">
 <span class="sig-name descname"><span class="pre">commit</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction.commit"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.commit" title="Link to this definition"></a></dt>
-<dd><p>Close the transaction and make it persistent. All changes recorded
-Before commit all checked and modified objects will be tested if modified
-by another transaction. Transaction will proceed only if no change in
-used objects is verified.
-If a return object is specified, the full tree of related objects is persisted
-All created objects, not reachable from this return_object or any updated root
-will NOT BE PERSISTED, and they will be not usable after commit!
-:return:</p>
+<dd><p>Commit this transaction, making changes durable and visible to others.</p>
+<p>High-level steps:</p>
+<ol class="arabic simple">
+<li><p>Save newly created/modified objects in this transaction context.</p></li>
+<li><p>Acquire a lock on the database root to prevent concurrent root updates.</p></li>
+<li><p>Check for concurrent modifications of any read-locked objects; abort on conflicts.</p></li>
+<li><p>Update indexes for modified mutables and merge new/updated roots.</p></li>
+<li><p>Persist the new root object pointer to storage (WAL write-through).</p></li>
+</ol>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Only objects reachable from updated roots (and modified mutables) are persisted.
+Objects created during the transaction but not reachable from the final committed
+graph will not be saved and become unusable after commit.</p>
+</div>
 </dd></dl>
 
 <dl class="py method">

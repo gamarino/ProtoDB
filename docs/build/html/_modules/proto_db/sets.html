@@ -45,6 +45,8 @@
 <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../concepts.html">ProtoDB Fundamental Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cookbook.html">ProtoDB Cookbook</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
@@ -82,8 +84,9 @@
              
   <h1>Source code for proto_db.sets</h1><div class="highlight"><pre>
 <span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast</span><span class="p">,</span> <span class="n">TYPE_CHECKING</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atom</span><span class="p">,</span> <span class="n">QueryPlan</span><span class="p">,</span> <span class="n">AbstractTransaction</span><span class="p">,</span> <span class="n">AtomPointer</span><span class="p">,</span> <span class="n">DBCollections</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast</span><span class="p">,</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Iterable</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atom</span><span class="p">,</span> <span class="n">QueryPlan</span><span class="p">,</span> <span class="n">AbstractTransaction</span><span class="p">,</span> <span class="n">AtomPointer</span><span class="p">,</span> <span class="n">DBCollections</span><span class="p">,</span> <span class="n">canonical_hash</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.lists</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.hash_dictionaries</span><span class="w"> </span><span class="kn">import</span> <span class="n">HashDictionary</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">IndexedQueryPlan</span>
 
@@ -96,12 +99,24 @@
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.sets.Set">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">Set</span><span class="p">(</span><span class="n">Atom</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    A custom implementation of a mathematical set, storing unique elements of type `Atom`.</span>
-<span class="sd">    The internal data structure is backed by a `HashDictionary` which ensures that</span>
-<span class="sd">    duplicates are avoided and allows for efficient operations such as lookup, insertion,</span>
-<span class="sd">    and element removal.</span>
-<span class="sd">    Sets can handle any object, but only using Atoms the Set will be durable. Mixing any other</span>
-<span class="sd">    objects with Atoms is not supported (no warning will be emitted)</span>
+<span class="sd">    A mathematical set of unique elements with dual ephemeral/persistent behavior.</span>
+
+<span class="sd">    Backed by a ``HashDictionary`` for efficient membership and iteration, ``Set`` can</span>
+<span class="sd">    hold any Python object; however, only ``Atom`` instances participate in durable</span>
+<span class="sd">    persistence.</span>
+
+<span class="sd">    .. note::</span>
+<span class="sd">       ``Set`` uses a dual-state model to handle temporary objects safely:</span>
+
+<span class="sd">       - ``_new_objects`` is a staging area for elements added during the transaction that</span>
+<span class="sd">         have not yet been persisted. Objects here live only in memory and are NOT written</span>
+<span class="sd">         to storage unless the Set itself becomes part of the committed object graph.</span>
+<span class="sd">       - ``content`` contains the persisted elements. Only when a Set is committed are the</span>
+<span class="sd">         staged objects promoted from ``_new_objects`` into ``content``.</span>
+
+<span class="sd">       This design avoids unintended persistence caused by hashing new Atoms. You can freely</span>
+<span class="sd">       use Sets for intermediate computations (union, intersection, etc.) without incurring</span>
+<span class="sd">       writes, as long as the Set is not stored into a persistent structure or root.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">content</span><span class="p">:</span> <span class="n">HashDictionary</span>  <span class="c1"># The underlying container storing the set elements.</span>
 
@@ -114,19 +129,28 @@
 <span class="sd">    :param kwargs: Any additional data passed for extended configurations.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
+    <span class="c1"># _new_objects is a temporary storage for objects that have not been saved yet.</span>
+    <span class="c1"># This is used to ensure that the set will not be persisted in storage until commit.</span>
+    <span class="c1"># This logic enables the creation of temporary sets inside the transaction, that will</span>
+    <span class="c1"># be persisted only when the transaction is committed. If the set is not part of</span>
+    <span class="c1"># the finally committed objects, no storage will be consumed.</span>
+    <span class="n">_new_objects</span><span class="p">:</span> <span class="n">HashDictionary</span> <span class="o">=</span> <span class="kc">None</span>
+
 <div class="viewcode-block" id="Set.__init__">
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.sets.Set.__init__">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
             <span class="bp">self</span><span class="p">,</span>
             <span class="n">content</span><span class="p">:</span> <span class="n">HashDictionary</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">new_objects</span><span class="p">:</span> <span class="n">HashDictionary</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
             <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
             <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
             <span class="n">indexes</span><span class="p">:</span> <span class="n">DBCollections</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
             <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">content</span> <span class="o">=</span> <span class="n">content</span> <span class="k">if</span> <span class="n">content</span> <span class="k">else</span> <span class="n">HashDictionary</span><span class="p">(</span>
-            <span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">)</span>  <span class="c1"># Store the underlying hash-based dictionary.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">count</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">content</span> <span class="o">=</span> <span class="n">content</span> <span class="k">if</span> <span class="n">content</span> <span class="k">else</span> <span class="n">HashDictionary</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_new_objects</span> <span class="o">=</span> <span class="n">new_objects</span> <span class="k">if</span> <span class="n">new_objects</span> <span class="k">else</span> <span class="n">HashDictionary</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">count</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_objects</span><span class="o">.</span><span class="n">count</span>
+
         <span class="k">if</span> <span class="n">indexes</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="c1"># Local import to avoid circular dependency</span>
             <span class="kn">from</span><span class="w"> </span><span class="nn">.dictionaries</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dictionary</span> <span class="k">as</span> <span class="n">_Dictionary</span>
@@ -135,15 +159,33 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span> <span class="o">=</span> <span class="n">indexes</span></div>
 
 
+    <span class="c1"># Unified hashing using canonical_hash for identity stability</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_hash_of</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute the identity hash used for membership and indexing.</span>
+
+<span class="sd">        This method delegates to :func:`proto_db.common.canonical_hash` to ensure that:</span>
+<span class="sd">        - Persisted Atoms use their ``AtomPointer``-derived stable hash.</span>
+<span class="sd">        - Ephemeral Atoms do not force persistence and fall back to a non-persistent identity.</span>
+<span class="sd">        - Plain Python objects use their built-in ``hash``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">canonical_hash</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_save</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_saved</span><span class="p">:</span>
-            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">h</span><span class="p">,</span> <span class="n">element</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_objects</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">element</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
+                    <span class="n">element</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_hash_of</span><span class="p">(</span><span class="n">element</span><span class="p">),</span> <span class="n">element</span><span class="p">)</span>
+
             <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
 
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+
 <div class="viewcode-block" id="Set.as_iterable">
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.sets.Set.as_iterable">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">as_iterable</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atom</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">as_iterable</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Converts the `Set` to an iterable structure, essentially a collection of its unique</span>
 <span class="sd">        elements, and yields each element stored in the set.</span>
@@ -152,6 +194,9 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># Iterate over the stored hash dictionary&#39;s iterable and yield its items (the stored Atoms).</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">h</span><span class="p">,</span> <span class="n">element</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_objects</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
+            <span class="k">yield</span> <span class="n">element</span>
 
         <span class="k">for</span> <span class="n">hash_value</span><span class="p">,</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
             <span class="k">yield</span> <span class="n">item</span></div>
@@ -174,7 +219,8 @@
 
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">IndexedQueryPlan</span><span class="p">(</span><span class="n">base</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">indexes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">as_query_plan</span><span class="p">()</span></div>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">QueryPlan</span><span class="p">(</span><span class="n">base</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">add_index</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
@@ -215,16 +261,16 @@
 <span class="sd">        :param key: The object to search for in the set. This can be an instance of `Atom`.</span>
 <span class="sd">        :return: `True` if the key exists in the set, otherwise `False`.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># Calculate the hash of the key, considering whether the key is an `Atom` or not.</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
-            <span class="n">item_hash</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>  <span class="c1"># Use the `hash` method of the `Atom`.</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">item_hash</span> <span class="o">=</span> <span class="nb">hash</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>  <span class="c1"># Fallback to the built-in Python hash.</span>
+        <span class="c1"># Calculate the canonical hash of the key</span>
+        <span class="n">item_hash</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_hash_of</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
 
         <span class="c1"># Check if the computed hash exists in the `HashDictionary`.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
 
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">item_hash</span><span class="p">)</span></div>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_objects</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">item_hash</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">item_hash</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="Set.add">
@@ -239,23 +285,22 @@
 <span class="sd">        :param key: The object to add to the set. This can be an instance of `Atom`.</span>
 <span class="sd">        :return: A new `Set` object that contains the additional key.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># Calculate the hash of the key to ensure appropriate insertion; handle `Atom` objects.</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
-            <span class="n">item_hash</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>  <span class="c1"># Use the `hash` method for `Atom`.</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">item_hash</span> <span class="o">=</span> <span class="nb">hash</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>  <span class="c1"># Use the default Python hash for non-Atom objects.</span>
 
         <span class="c1"># Create and return a new `Set` with the updated `HashDictionary`.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
 
-        <span class="n">new_content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">item_hash</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span>
-        <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span>
 
+        <span class="bp">self</span><span class="o">.</span><span class="n">_new_objects</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_objects</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_hash_of</span><span class="p">(</span><span class="n">key</span><span class="p">),</span> <span class="n">key</span><span class="p">)</span>
+
+        <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">:</span>
             <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">add2indexes</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
 
         <span class="k">return</span> <span class="n">Set</span><span class="p">(</span>
-            <span class="n">content</span><span class="o">=</span><span class="n">new_content</span><span class="p">,</span>
+            <span class="n">content</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="p">,</span>
+            <span class="n">new_objects</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_new_objects</span><span class="p">,</span>
             <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span>
             <span class="n">indexes</span><span class="o">=</span><span class="n">new_indexes</span>
         <span class="p">)</span></div>
@@ -273,23 +318,27 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
 
-        <span class="c1"># Calculate the hash of the key for removal; handle `Atom` objects.</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
-            <span class="n">item_hash</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>  <span class="c1"># Use the `hash` method for `Atom`.</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">item_hash</span> <span class="o">=</span> <span class="nb">hash</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>  <span class="c1"># Use the default Python hash for non-Atom objects.</span>
+        <span class="c1"># Calculate the canonical hash of the key for removal</span>
+        <span class="n">item_hash</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_hash_of</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
             <span class="k">return</span> <span class="bp">self</span>
 
+        <span class="n">new_objects</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_objects</span>
+        <span class="n">new_content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_objects</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">item_hash</span><span class="p">):</span>
+            <span class="n">new_objects</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_objects</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">item_hash</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">new_content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">item_hash</span><span class="p">)</span>
+
         <span class="c1"># Create and return a new `Set` with the updated `HashDictionary`.</span>
-        <span class="n">new_content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">item_hash</span><span class="p">)</span>
         <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span>
         <span class="k">if</span> <span class="n">new_indexes</span><span class="p">:</span>
             <span class="n">new_indexes</span> <span class="o">=</span> <span class="n">new_indexes</span><span class="o">.</span><span class="n">remove_from_indexes</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
 
         <span class="k">return</span> <span class="n">Set</span><span class="p">(</span>
             <span class="n">content</span><span class="o">=</span><span class="n">new_content</span><span class="p">,</span>
+            <span class="n">new_objects</span><span class="o">=</span><span class="n">new_objects</span><span class="p">,</span>
             <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span>
             <span class="n">indexes</span><span class="o">=</span><span class="n">new_indexes</span>
         <span class="p">)</span></div>
@@ -328,12 +377,9 @@
 
         <span class="n">result</span> <span class="o">=</span> <span class="n">Set</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
-                <span class="n">item_hash</span> <span class="o">=</span> <span class="n">item</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="n">item_hash</span> <span class="o">=</span> <span class="nb">hash</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+            <span class="n">item_hash</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_hash_of</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
 
-            <span class="k">if</span> <span class="n">other</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">item_hash</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">other</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
                 <span class="n">result</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
 
         <span class="k">return</span> <span class="n">result</span></div>
@@ -353,12 +399,9 @@
 
         <span class="n">result</span> <span class="o">=</span> <span class="n">Set</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
-                <span class="n">item_hash</span> <span class="o">=</span> <span class="n">item</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="n">item_hash</span> <span class="o">=</span> <span class="nb">hash</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+            <span class="n">item_hash</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_hash_of</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
 
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">other</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">item_hash</span><span class="p">):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">other</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
                 <span class="n">result</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
 
         <span class="k">return</span> <span class="n">result</span></div>
@@ -379,9 +422,20 @@
 <span class="sd">    - On last removal (1 -&gt; 0), remove_from_indexes(key) is invoked</span>
 <span class="sd">    - Intermediate increments/decrements do not touch indexes</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># _new_objects is a temporary storage for objects that have not been saved yet.</span>
+    <span class="c1"># This is used to ensure that the set will not be persisted in storage until commit.</span>
+    <span class="c1"># This logic enables the creation of temporary sets inside the transaction, that will</span>
+    <span class="c1"># be persisted only when the transaction is committed. If the set is not part of</span>
+    <span class="c1"># the finally committed objects, no storage will be consumed.</span>
+    <span class="n">_new_objects</span><span class="p">:</span> <span class="n">HashDictionary</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">_new_counts</span><span class="p">:</span> <span class="n">HashDictionary</span> <span class="o">=</span> <span class="kc">None</span>
+
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
                  <span class="n">items</span><span class="p">:</span> <span class="n">HashDictionary</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
                  <span class="n">counts</span><span class="p">:</span> <span class="n">HashDictionary</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">new_objects</span><span class="p">:</span> <span class="n">HashDictionary</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">new_counts</span><span class="p">:</span> <span class="n">HashDictionary</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
                  <span class="n">transaction</span><span class="p">:</span> <span class="n">AbstractTransaction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
                  <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
                  <span class="n">indexes</span><span class="p">:</span> <span class="n">DBCollections</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -391,29 +445,32 @@
         <span class="c1"># Internals</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="p">:</span> <span class="n">HashDictionary</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span>  <span class="c1"># alias for clarity</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="p">:</span> <span class="n">HashDictionary</span> <span class="o">=</span> <span class="n">counts</span> <span class="k">if</span> <span class="n">counts</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">HashDictionary</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_new_objects</span> <span class="o">=</span> <span class="n">new_objects</span> <span class="k">if</span> <span class="n">new_objects</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">HashDictionary</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">)</span>
         <span class="c1"># Unique count mirrors items.count</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_new_counts</span> <span class="o">=</span> <span class="n">new_counts</span> <span class="k">if</span> <span class="n">new_counts</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">HashDictionary</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">)</span>
+        <span class="c1"># Unique item count equals items.count (items holds unique view; _new_objects are mirrored in items)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="o">.</span><span class="n">count</span>
-        <span class="c1"># Compute total_count from counts if not set</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">tc</span> <span class="o">=</span> <span class="mi">0</span>
-            <span class="k">for</span> <span class="n">h</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
-                <span class="k">try</span><span class="p">:</span>
-                    <span class="n">tc</span> <span class="o">+=</span> <span class="nb">int</span><span class="p">(</span><span class="n">v</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
-                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-                    <span class="k">pass</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">total_count</span> <span class="o">=</span> <span class="n">tc</span>
-        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">total_count</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">count</span>  <span class="c1"># fallback</span>
 
     <span class="c1"># Hashing strategy identical to Set</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_hash_of</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
-            <span class="k">return</span> <span class="n">key</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>
-        <span class="k">return</span> <span class="nb">hash</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="c1"># Use canonical identity hashing for stability (AtomPointer.hash when available)</span>
+        <span class="k">return</span> <span class="n">canonical_hash</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_save</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_saved</span><span class="p">:</span>
+            <span class="c1"># Persist base Set first (moves _new_objects into items/content)</span>
             <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+            <span class="c1"># Consolidate counts for pending new objects using their pending counts</span>
+            <span class="k">for</span> <span class="n">h</span><span class="p">,</span> <span class="n">element</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_objects</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">element</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
+                    <span class="n">element</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+                <span class="n">hash_index</span> <span class="o">=</span> <span class="n">h</span>
+                <span class="n">inc</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_counts</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">hash_index</span><span class="p">))</span> <span class="ow">or</span> <span class="mi">0</span>
+                <span class="n">base</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">hash_index</span><span class="p">))</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">hash_index</span><span class="p">)</span> <span class="k">else</span> <span class="mi">0</span>
+                <span class="c1"># Ensure the item exists and set the correct total count</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">items</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">hash_index</span><span class="p">,</span> <span class="n">element</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">counts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">hash_index</span><span class="p">,</span> <span class="n">base</span> <span class="o">+</span> <span class="n">inc</span><span class="p">)</span>
+
             <span class="c1"># Save both dictionaries</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="o">.</span><span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
@@ -423,6 +480,7 @@
     <span class="c1"># External API</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">as_iterable</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+        <span class="c1"># Items dictionary holds the unique elements view (persisted + staged)</span>
         <span class="k">for</span> <span class="n">h</span><span class="p">,</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
             <span class="k">yield</span> <span class="n">item</span>
 
@@ -433,89 +491,139 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">IndexedQueryPlan</span><span class="p">(</span><span class="n">base</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">indexes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="o">.</span><span class="n">as_query_plan</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">QueryPlan</span><span class="p">(</span><span class="n">base</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">has</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
         <span class="n">h</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_hash_of</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">h</span><span class="p">):</span>
-            <span class="k">return</span> <span class="kc">False</span>
-        <span class="n">c</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">int</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span>
-        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_counts</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">h</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">get_count</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
         <span class="n">h</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_hash_of</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">h</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">h</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">cast</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">h</span><span class="p">))</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_counts</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">h</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">cast</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_counts</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">h</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
             <span class="k">return</span> <span class="mi">0</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">h</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
-        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-            <span class="k">return</span> <span class="mi">0</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">total_count</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Total number of occurrences across all unique items (persisted + pending).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+        <span class="n">total</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="c1"># Sum persisted counts</span>
+        <span class="k">for</span> <span class="n">h</span><span class="p">,</span> <span class="n">cnt</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">total</span> <span class="o">+=</span> <span class="nb">int</span><span class="p">(</span><span class="n">cnt</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">pass</span>
+        <span class="k">return</span> <span class="n">total</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;CountedSet&#39;</span><span class="p">:</span>
         <span class="n">h</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_hash_of</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
-        <span class="n">present</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">present</span><span class="p">:</span>
-            <span class="c1"># First occurrence: insert in items and counts=1; update indexes</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">h</span><span class="p">):</span>
+            <span class="c1"># Increment existing persisted count; no index updates for intermediate increments</span>
+            <span class="n">new_counts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">cast</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">h</span><span class="p">))</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">CountedSet</span><span class="p">(</span>
+                <span class="n">items</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="p">,</span>
+                <span class="n">counts</span><span class="o">=</span><span class="n">new_counts</span><span class="p">,</span>
+                <span class="n">indexes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">,</span>
+                <span class="n">new_objects</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_new_objects</span><span class="p">,</span>
+                <span class="n">new_counts</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_new_counts</span><span class="p">,</span>
+                <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_counts</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">h</span><span class="p">):</span>
+            <span class="c1"># Increment pending count for an element staged in this transaction</span>
+            <span class="n">new_new_counts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_counts</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">cast</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_counts</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">h</span><span class="p">))</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="c1"># Mirror increment to persisted counts view</span>
+            <span class="n">new_counts_persisted</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="p">(</span><span class="n">cast</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">h</span><span class="p">))</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">h</span><span class="p">)</span> <span class="k">else</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">CountedSet</span><span class="p">(</span>
+                <span class="n">items</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="p">,</span>
+                <span class="n">counts</span><span class="o">=</span><span class="n">new_counts_persisted</span><span class="p">,</span>
+                <span class="n">indexes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">,</span>
+                <span class="n">new_objects</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_new_objects</span><span class="p">,</span>
+                <span class="n">new_counts</span><span class="o">=</span><span class="n">new_new_counts</span><span class="p">,</span>
+                <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># First insertion: materialize element in items and set count=1; update indexes on 0 -&gt; 1 transition</span>
             <span class="n">new_items</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span>
-            <span class="n">new_counts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-            <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span>
-            <span class="k">try</span><span class="p">:</span>
-                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">:</span>
-                    <span class="c1"># Update indexes only on first insertion</span>
-                    <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">add2indexes</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
-            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="n">new_objects</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_objects</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span>
+            <span class="n">new_new_counts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_counts</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">new_counts_persisted</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">:</span>
+                <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">add2indexes</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
                 <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span>
-            <span class="n">new_obj</span> <span class="o">=</span> <span class="n">CountedSet</span><span class="p">(</span><span class="n">items</span><span class="o">=</span><span class="n">new_items</span><span class="p">,</span> <span class="n">counts</span><span class="o">=</span><span class="n">new_counts</span><span class="p">,</span> <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span>
-                                  <span class="n">indexes</span><span class="o">=</span><span class="n">new_indexes</span><span class="p">)</span>
-            <span class="n">new_obj</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="n">new_items</span><span class="o">.</span><span class="n">count</span>
-            <span class="n">new_obj</span><span class="o">.</span><span class="n">total_count</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">total_count</span> <span class="o">+</span> <span class="mi">1</span>
-            <span class="k">return</span> <span class="n">new_obj</span>
-        <span class="c1"># Already present: increment counter only</span>
-        <span class="n">cur</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_count</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
-        <span class="n">new_counts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">cur</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">new_obj</span> <span class="o">=</span> <span class="n">CountedSet</span><span class="p">(</span><span class="n">items</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="p">,</span> <span class="n">counts</span><span class="o">=</span><span class="n">new_counts</span><span class="p">,</span> <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span> <span class="n">indexes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">)</span>
-        <span class="n">new_obj</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="o">.</span><span class="n">count</span>  <span class="c1"># unchanged unique count</span>
-        <span class="n">new_obj</span><span class="o">.</span><span class="n">total_count</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">total_count</span> <span class="o">+</span> <span class="mi">1</span>
-        <span class="k">return</span> <span class="n">new_obj</span>
+            <span class="k">return</span> <span class="n">CountedSet</span><span class="p">(</span>
+                <span class="n">items</span><span class="o">=</span><span class="n">new_items</span><span class="p">,</span>
+                <span class="n">counts</span><span class="o">=</span><span class="n">new_counts_persisted</span><span class="p">,</span>
+                <span class="n">indexes</span><span class="o">=</span><span class="n">new_indexes</span><span class="p">,</span>
+                <span class="n">new_objects</span><span class="o">=</span><span class="n">new_objects</span><span class="p">,</span>
+                <span class="n">new_counts</span><span class="o">=</span><span class="n">new_new_counts</span><span class="p">,</span>
+                <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span>
+            <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">remove_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;CountedSet&#39;</span><span class="p">:</span>
         <span class="n">h</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_hash_of</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">h</span><span class="p">):</span>
-            <span class="k">return</span> <span class="bp">self</span>
-        <span class="n">cur</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_count</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">cur</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
-            <span class="c1"># Last removal: physically remove from both dicts; update indexes</span>
-            <span class="n">new_items</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">new_items</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="c1"># Normalize to empty HashDictionary when last element removed</span>
-                <span class="n">new_items</span> <span class="o">=</span> <span class="n">HashDictionary</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
-            <span class="n">new_counts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">new_counts</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">new_counts</span> <span class="o">=</span> <span class="n">HashDictionary</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">h</span><span class="p">):</span>
+            <span class="n">repetition</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">h</span><span class="p">))</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="n">new_counts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span>
+            <span class="n">new_items</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">items</span>
             <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span>
-            <span class="k">try</span><span class="p">:</span>
-                <span class="k">if</span> <span class="n">new_indexes</span><span class="p">:</span>
-                    <span class="n">new_indexes</span> <span class="o">=</span> <span class="n">new_indexes</span><span class="o">.</span><span class="n">remove_from_indexes</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
-            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-                <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span>
-            <span class="n">new_obj</span> <span class="o">=</span> <span class="n">CountedSet</span><span class="p">(</span><span class="n">items</span><span class="o">=</span><span class="n">new_items</span><span class="p">,</span> <span class="n">counts</span><span class="o">=</span><span class="n">new_counts</span><span class="p">,</span> <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span>
-                                  <span class="n">indexes</span><span class="o">=</span><span class="n">new_indexes</span><span class="p">)</span>
-            <span class="n">new_obj</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="n">new_items</span><span class="o">.</span><span class="n">count</span>
-            <span class="n">new_obj</span><span class="o">.</span><span class="n">total_count</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">total_count</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">new_obj</span>
-        <span class="c1"># Intermediate removal: decrement only</span>
-        <span class="n">new_counts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">cur</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">new_obj</span> <span class="o">=</span> <span class="n">CountedSet</span><span class="p">(</span><span class="n">items</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="p">,</span> <span class="n">counts</span><span class="o">=</span><span class="n">new_counts</span><span class="p">,</span> <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span> <span class="n">indexes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="p">)</span>
-        <span class="n">new_obj</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="o">.</span><span class="n">count</span>
-        <span class="n">new_obj</span><span class="o">.</span><span class="n">total_count</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">total_count</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">new_obj</span>
+            <span class="n">new_new_counts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_counts</span>
+            <span class="n">new_objects</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_objects</span>
+            <span class="k">if</span> <span class="n">repetition</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">new_counts</span> <span class="o">=</span> <span class="n">new_counts</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">repetition</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">new_counts</span> <span class="o">=</span> <span class="n">new_counts</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
+                <span class="n">new_items</span> <span class="o">=</span> <span class="n">new_items</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
+                <span class="n">new_indexes</span> <span class="o">=</span> <span class="n">new_indexes</span><span class="o">.</span><span class="n">remove_from_indexes</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+                <span class="c1"># Also clear staged views for this key (0 -&gt; removal)</span>
+                <span class="k">if</span> <span class="n">new_new_counts</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">h</span><span class="p">):</span>
+                    <span class="n">new_new_counts</span> <span class="o">=</span> <span class="n">new_new_counts</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">new_objects</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">h</span><span class="p">):</span>
+                    <span class="n">new_objects</span> <span class="o">=</span> <span class="n">new_objects</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
+
+            <span class="k">return</span> <span class="n">CountedSet</span><span class="p">(</span>
+                <span class="n">items</span><span class="o">=</span><span class="n">new_items</span><span class="p">,</span>
+                <span class="n">counts</span><span class="o">=</span><span class="n">new_counts</span><span class="p">,</span>
+                <span class="n">new_objects</span><span class="o">=</span><span class="n">new_objects</span><span class="p">,</span>
+                <span class="n">new_counts</span><span class="o">=</span><span class="n">new_new_counts</span><span class="p">,</span>
+                <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span>
+                <span class="n">indexes</span><span class="o">=</span><span class="n">new_indexes</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_counts</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">h</span><span class="p">):</span>
+            <span class="n">repetition</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_counts</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">h</span><span class="p">))</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="n">new_new_counts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_counts</span>
+            <span class="n">new_objects</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_new_objects</span>
+            <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span>
+            <span class="k">if</span> <span class="n">repetition</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">new_new_counts</span> <span class="o">=</span> <span class="n">new_new_counts</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">repetition</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">new_new_counts</span> <span class="o">=</span> <span class="n">new_new_counts</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
+                <span class="n">new_objects</span> <span class="o">=</span> <span class="n">new_objects</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
+                <span class="n">new_indexes</span> <span class="o">=</span> <span class="n">new_indexes</span><span class="o">.</span><span class="n">remove_from_indexes</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+
+            <span class="k">return</span> <span class="n">CountedSet</span><span class="p">(</span>
+                <span class="n">items</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="p">,</span>
+                <span class="n">counts</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="p">,</span>
+                <span class="n">indexes</span><span class="o">=</span><span class="n">new_indexes</span><span class="p">,</span>
+                <span class="n">new_objects</span><span class="o">=</span><span class="n">new_objects</span><span class="p">,</span>
+                <span class="n">new_counts</span><span class="o">=</span><span class="n">new_new_counts</span><span class="p">,</span>
+                <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span>
 </pre></div>
 
            </div>

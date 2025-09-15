@@ -12,12 +12,24 @@ if TYPE_CHECKING:
 
 class Set(Atom):
     """
-    A custom implementation of a mathematical set, storing unique elements of type `Atom`.
-    The internal data structure is backed by a `HashDictionary` which ensures that
-    duplicates are avoided and allows for efficient operations such as lookup, insertion,
-    and element removal.
-    Sets can handle any object, but only using Atoms the Set will be durable. Mixing any other
-    objects with Atoms is not supported (no warning will be emitted)
+    A mathematical set of unique elements with dual ephemeral/persistent behavior.
+
+    Backed by a ``HashDictionary`` for efficient membership and iteration, ``Set`` can
+    hold any Python object; however, only ``Atom`` instances participate in durable
+    persistence.
+
+    .. note::
+       ``Set`` uses a dual-state model to handle temporary objects safely:
+
+       - ``_new_objects`` is a staging area for elements added during the transaction that
+         have not yet been persisted. Objects here live only in memory and are NOT written
+         to storage unless the Set itself becomes part of the committed object graph.
+       - ``content`` contains the persisted elements. Only when a Set is committed are the
+         staged objects promoted from ``_new_objects`` into ``content``.
+
+       This design avoids unintended persistence caused by hashing new Atoms. You can freely
+       use Sets for intermediate computations (union, intersection, etc.) without incurring
+       writes, as long as the Set is not stored into a persistent structure or root.
     """
     content: HashDictionary  # The underlying container storing the set elements.
 
@@ -59,6 +71,14 @@ class Set(Atom):
 
     # Unified hashing using canonical_hash for identity stability
     def _hash_of(self, key: object) -> int:
+        """
+        Compute the identity hash used for membership and indexing.
+
+        This method delegates to :func:`proto_db.common.canonical_hash` to ensure that:
+        - Persisted Atoms use their ``AtomPointer``-derived stable hash.
+        - Ephemeral Atoms do not force persistence and fall back to a non-persistent identity.
+        - Plain Python objects use their built-in ``hash``.
+        """
         return canonical_hash(key)
 
     def _save(self):

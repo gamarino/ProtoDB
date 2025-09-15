@@ -48,6 +48,8 @@
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../concepts.html">ProtoDB Fundamental Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../cookbook.html">ProtoDB Cookbook</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
@@ -846,17 +848,30 @@ be within the bounds of the sequence.</p>
 <span id="set"></span><h2>Set<a class="headerlink" href="#module-proto_db.sets" title="Link to this heading"></a></h2>
 <dl class="py class">
 <dt class="sig sig-object py" id="proto_db.sets.Set">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.sets.</span></span><span class="sig-name descname"><span class="pre">Set</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">content</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">indexes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/sets.html#Set"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.sets.Set" title="Link to this definition"></a></dt>
-<dd><p>A custom implementation of a mathematical set, storing unique elements of type <cite>Atom</cite>.
-The internal data structure is backed by a <cite>HashDictionary</cite> which ensures that
-duplicates are avoided and allows for efficient operations such as lookup, insertion,
-and element removal.
-Sets can handle any object, but only using Atoms the Set will be durable. Mixing any other
-objects with Atoms is not supported (no warning will be emitted)</p>
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.sets.</span></span><span class="sig-name descname"><span class="pre">Set</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">content</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">new_objects</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">indexes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/sets.html#Set"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.sets.Set" title="Link to this definition"></a></dt>
+<dd><p>A mathematical set of unique elements with dual ephemeral/persistent behavior.</p>
+<p>Backed by a <code class="docutils literal notranslate"><span class="pre">HashDictionary</span></code> for efficient membership and iteration, <code class="docutils literal notranslate"><span class="pre">Set</span></code> can
+hold any Python object; however, only <code class="docutils literal notranslate"><span class="pre">Atom</span></code> instances participate in durable
+persistence.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><code class="docutils literal notranslate"><span class="pre">Set</span></code> uses a dual-state model to handle temporary objects safely:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">_new_objects</span></code> is a staging area for elements added during the transaction that
+have not yet been persisted. Objects here live only in memory and are NOT written
+to storage unless the Set itself becomes part of the committed object graph.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">content</span></code> contains the persisted elements. Only when a Set is committed are the
+staged objects promoted from <code class="docutils literal notranslate"><span class="pre">_new_objects</span></code> into <code class="docutils literal notranslate"><span class="pre">content</span></code>.</p></li>
+</ul>
+<p>This design avoids unintended persistence caused by hashing new Atoms. You can freely
+use Sets for intermediate computations (union, intersection, etc.) without incurring
+writes, as long as the Set is not stored into a persistent structure or root.</p>
+</div>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>content</strong> (<a class="reference internal" href="#proto_db.hash_dictionaries.HashDictionary" title="proto_db.hash_dictionaries.HashDictionary"><em>HashDictionary</em></a>)</p></li>
+<li><p><strong>new_objects</strong> (<a class="reference internal" href="#proto_db.hash_dictionaries.HashDictionary" title="proto_db.hash_dictionaries.HashDictionary"><em>HashDictionary</em></a>)</p></li>
 <li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
 <li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
 <li><p><strong>indexes</strong> (<a class="reference internal" href="core.html#proto_db.common.DBCollections" title="proto_db.common.DBCollections"><em>DBCollections</em></a><em> | </em><em>None</em>)</p></li>
@@ -865,11 +880,12 @@ objects with Atoms is not supported (no warning will be emitted)</p>
 </dl>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.sets.Set.__init__">
-<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">content</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">indexes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/sets.html#Set.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.sets.Set.__init__" title="Link to this definition"></a></dt>
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">content</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">new_objects</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">indexes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/sets.html#Set.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.sets.Set.__init__" title="Link to this definition"></a></dt>
 <dd><dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>content</strong> (<a class="reference internal" href="#proto_db.hash_dictionaries.HashDictionary" title="proto_db.hash_dictionaries.HashDictionary"><em>HashDictionary</em></a>)</p></li>
+<li><p><strong>new_objects</strong> (<a class="reference internal" href="#proto_db.hash_dictionaries.HashDictionary" title="proto_db.hash_dictionaries.HashDictionary"><em>HashDictionary</em></a>)</p></li>
 <li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
 <li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
 <li><p><strong>indexes</strong> (<a class="reference internal" href="core.html#proto_db.common.DBCollections" title="proto_db.common.DBCollections"><em>DBCollections</em></a><em> | </em><em>None</em>)</p></li>
@@ -904,7 +920,7 @@ elements, and yields each element stored in the set.</p>
 <dd class="field-odd"><p>A generator containing all the elements (<cite>Atom</cite>) in the set.</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>list[<a class="reference internal" href="core.html#proto_db.common.Atom" title="proto_db.common.Atom"><em>Atom</em></a>]</p>
+<dd class="field-even"><p><em>Iterable</em></p>
 </dd>
 </dl>
 </dd></dl>

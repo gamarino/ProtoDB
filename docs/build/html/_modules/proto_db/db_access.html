@@ -45,6 +45,9 @@
 <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../concepts.html">ProtoDB Fundamental Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../storage_cloud.html">Cloud and Cluster Storage</a></li>
@@ -731,14 +734,20 @@
 <a class="viewcode-back" href="../../api/core.html#proto_db.db_access.ObjectTransaction.commit">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">commit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Close the transaction and make it persistent. All changes recorded</span>
-<span class="sd">        Before commit all checked and modified objects will be tested if modified</span>
-<span class="sd">        by another transaction. Transaction will proceed only if no change in</span>
-<span class="sd">        used objects is verified.</span>
-<span class="sd">        If a return object is specified, the full tree of related objects is persisted</span>
-<span class="sd">        All created objects, not reachable from this return_object or any updated root</span>
-<span class="sd">        will NOT BE PERSISTED, and they will be not usable after commit!</span>
-<span class="sd">        :return:</span>
+<span class="sd">        Commit this transaction, making changes durable and visible to others.</span>
+
+<span class="sd">        High-level steps:</span>
+
+<span class="sd">        1) Save newly created/modified objects in this transaction context.</span>
+<span class="sd">        2) Acquire a lock on the database root to prevent concurrent root updates.</span>
+<span class="sd">        3) Check for concurrent modifications of any read-locked objects; abort on conflicts.</span>
+<span class="sd">        4) Update indexes for modified mutables and merge new/updated roots.</span>
+<span class="sd">        5) Persist the new root object pointer to storage (WAL write-through).</span>
+
+<span class="sd">        .. note::</span>
+<span class="sd">           Only objects reachable from updated roots (and modified mutables) are persisted.</span>
+<span class="sd">           Objects created during the transaction but not reachable from the final committed</span>
+<span class="sd">           graph will not be saved and become unusable after commit.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">!=</span> <span class="s1">&#39;Running&#39;</span><span class="p">:</span>

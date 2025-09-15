@@ -1,0 +1,193 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ProtoDB Fundamental Concepts &mdash; ProtoBase 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=01f34227"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="ProtoDB Cookbook" href="cookbook.html" />
+    <link rel="prev" title="Examples" href="examples.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            ProtoBase
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="introduction.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">ProtoDB Fundamental Concepts</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#the-core-idea-the-world-is-made-of-immutable-atoms">1. The Core Idea: The World is Made of Immutable Atoms</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#stable-identity-the-atompointer">2. Stable Identity: The AtomPointer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#the-atom-hash-contract-and-its-critical-side-effect">3. The Atom.hash() Contract and its Critical Side-Effect</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#the-solution-ephemeral-vs-persistent-state-in-collections">4. The Solution: Ephemeral vs. Persistent State in Collections</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#transactions-your-isolated-sandbox">5. Transactions: Your Isolated Sandbox</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="performance.html">Performance</a></li>
+<li class="toctree-l1"><a class="reference internal" href="testing.html">Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="storage_cloud.html">Cloud and Cluster Storage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="vectors_arrow.html">Vectors and Arrow Bridge</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="development.html">Development</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">ProtoBase</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">ProtoDB Fundamental Concepts</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/concepts.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="protodb-fundamental-concepts">
+<h1>ProtoDB Fundamental Concepts<a class="headerlink" href="#protodb-fundamental-concepts" title="Link to this heading"></a></h1>
+<p>This guide explains the core mental model behind ProtoDB so you can use it correctly and efficiently. We use simple analogies and highlight critical behaviors to avoid surprises.</p>
+<section id="the-core-idea-the-world-is-made-of-immutable-atoms">
+<h2>1. The Core Idea: The World is Made of Immutable Atoms<a class="headerlink" href="#the-core-idea-the-world-is-made-of-immutable-atoms" title="Link to this heading"></a></h2>
+<p>In ProtoDB, everything is an Atom: a self-contained, immutable piece of data.</p>
+<ul class="simple">
+<li><p>Think of an Atom like a Git commit — once written, it never changes.</p></li>
+<li><p>“Modifying” an object does not mutate it in place. Instead, a new Atom is created with the new content, and references are updated to point to it.</p></li>
+<li><p>Immutability makes concurrency safer and enables copy-on-write semantics.</p></li>
+</ul>
+</section>
+<section id="stable-identity-the-atompointer">
+<h2>2. Stable Identity: The AtomPointer<a class="headerlink" href="#stable-identity-the-atompointer" title="Link to this heading"></a></h2>
+<p>Python’s <code class="docutils literal notranslate"><span class="pre">id()</span></code> is process-local and not stable across time or machines. ProtoDB needs a durable identity to support hashing, equality, and indexing that remain consistent across sessions.</p>
+<ul class="simple">
+<li><p>AtomPointer is the stable identity for an Atom: <code class="docutils literal notranslate"><span class="pre">(transaction_id,</span> <span class="pre">offset)</span></code>.</p></li>
+<li><p>It acts like a birth certificate. When an Atom is persisted, it gets an AtomPointer.</p></li>
+<li><p>Stable identity underpins Atom’s <code class="docutils literal notranslate"><span class="pre">hash()</span></code> and equality (<code class="docutils literal notranslate"><span class="pre">==</span></code>) semantics.</p></li>
+</ul>
+</section>
+<section id="the-atom-hash-contract-and-its-critical-side-effect">
+<h2>3. The Atom.hash() Contract and its Critical Side-Effect<a class="headerlink" href="#the-atom-hash-contract-and-its-critical-side-effect" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p>The stable hash of an Atom is derived from its AtomPointer.</p></li>
+<li><p>To obtain an AtomPointer, an Atom must be persisted (saved to storage).</p></li>
+<li><p>Therefore, calling <code class="docutils literal notranslate"><span class="pre">hash(my_new_atom)</span></code> will trigger a write to storage so the Atom gains an AtomPointer.</p></li>
+</ul>
+<p>Why this is necessary:</p>
+<ul class="simple">
+<li><p>Stable identity is essential for data structures, deduplication, and secondary indexes.</p></li>
+</ul>
+<p>Why it can be problematic:</p>
+<ul class="simple">
+<li><p>Hashing a temporary Atom you don’t intend to persist will cause unnecessary writes and WAL growth. If that Atom never becomes reachable from a root, it still consumed I/O during the transaction.</p></li>
+</ul>
+</section>
+<section id="the-solution-ephemeral-vs-persistent-state-in-collections">
+<h2>4. The Solution: Ephemeral vs. Persistent State in Collections<a class="headerlink" href="#the-solution-ephemeral-vs-persistent-state-in-collections" title="Link to this heading"></a></h2>
+<p>ProtoDB collections (notably <code class="docutils literal notranslate"><span class="pre">Set</span></code> and <code class="docutils literal notranslate"><span class="pre">CountedSet</span></code>) embrace a dual-state model to avoid the <code class="docutils literal notranslate"><span class="pre">hash()</span></code> pitfall:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">_new_objects</span></code>: a staging area (draft space) for newly added elements during a transaction. Lives only in memory.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">content</span></code>: the persisted elements that are part of the committed object graph.</p></li>
+</ul>
+<p>Only when a collection is part of the final committed graph do staged objects get promoted from <code class="docutils literal notranslate"><span class="pre">_new_objects</span></code> into <code class="docutils literal notranslate"><span class="pre">content</span></code>. This allows you to:</p>
+<ul class="simple">
+<li><p>Use Sets for intermediate results without writing anything if you do not persist the Set.</p></li>
+<li><p>Avoid accidental persistence from hashing new Atoms while doing temporary calculations.</p></li>
+</ul>
+</section>
+<section id="transactions-your-isolated-sandbox">
+<h2>5. Transactions: Your Isolated Sandbox<a class="headerlink" href="#transactions-your-isolated-sandbox" title="Link to this heading"></a></h2>
+<p>A transaction is your safe, isolated workspace.</p>
+<p>Lifecycle:</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">tr</span> <span class="pre">=</span> <span class="pre">db.new_transaction()</span></code></p></li>
+<li><p>Perform operations (create objects, update roots, query)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tr.commit()</span></code> applies your changes atomically (or <code class="docutils literal notranslate"><span class="pre">tr.abort()</span></code> discards them)</p></li>
+</ol>
+<p>Notes:</p>
+<ul class="simple">
+<li><p>Transactions are snapshot-based (copy-on-write). Your changes are invisible to others until commit.</p></li>
+<li><p>Only objects reachable from updated roots (and modified mutables) are persisted. Unreachable objects created during the transaction are discarded at commit time.</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="examples.html" class="btn btn-neutral float-left" title="Examples" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="cookbook.html" class="btn btn-neutral float-right" title="ProtoDB Cookbook" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, ProtoBase Team.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -599,14 +599,26 @@ class Atom(metaclass=CombinedMeta):
 
     def hash(self):
         """
-        A hash value is generated from the object's AtomPointer.
-        That means that the hash value is the same for all instances of the same object. Always
-        Therefore, to have a hash, the object should be pushed to storage, even if
-        finally is not reachable from database roots.
-        Be careful using hash() on DBObjects, because if the object is not going to be
-        part of the commit, this object's storage (and all its dependencies) will be persisted
+        Return a stable hash derived from this object's AtomPointer.
 
-        :return: A hash value
+        The hash is identical for all instances that point to the same persisted Atom. To
+        obtain an AtomPointer, the object must be persisted.
+
+        .. warning::
+           Calling ``hash(obj)`` on an Atom that has not yet been persisted will trigger
+           a write to storage via ``_save()`` to obtain an ``AtomPointer``. This can have
+           performance and durability implications:
+
+           - It will persist the object and any newly created dependent Atoms reachable
+             from it, even if they are not ultimately reachable from database roots.
+           - It can increase I/O and WAL size if used on temporary objects (for example,
+             while using a Set for intermediate calculations).
+
+           Best practice: avoid hashing new Atoms unless they are intended to become part of
+           the committed object graph. For temporary work, prefer ephemeral containers that
+           do not require hashing Atoms, or use value-based hashing on plain Python objects.
+
+        :return: Stable integer hash value based on the ``AtomPointer``.
         """
 
         self._save()
@@ -1182,11 +1194,21 @@ class SharedStorage(AbstractSharedStorage):
 
 def canonical_hash(obj) -> int:
     """
-    Return a canonical identity hash for objects used in ProtoBase collections.
-    - If obj is an Atom with an AtomPointer, return obj.atom_pointer.hash().
-    - Else, if Atom exposes hash(), use it.
-    - Otherwise, return Python's built-in hash(obj).
-    This ensures stable identity for dedup and index buckets.
+    Return a canonical hash for objects used in ProtoBase collections.
+
+    - If ``obj`` is an ``Atom`` with an ``AtomPointer``, return ``obj.atom_pointer.hash()``.
+    - Else, if ``obj`` is an ``Atom`` that exposes ``hash()``, use it.
+    - Otherwise, return Python's built-in ``hash(obj)``.
+
+    .. note::
+       For Atoms that have not yet been persisted and thus do not have an ``AtomPointer``,
+       this helper avoids forcing persistence. If ``obj.hash()`` cannot be computed without
+       saving (for example, because there is no active transaction), we fall back to a
+       non-persistent identity hash using ``id(obj)``. This preserves the ephemeral vs.
+       persistent behavior expected by collections like ``Set``.
+
+    This ensures stable identity for deduplication and index buckets when persistence exists,
+    while remaining side-effect-free for ephemeral objects.
     """
     try:
         if isinstance(obj, Atom):

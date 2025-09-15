@@ -4,10 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[IMP] sets.py: implementation of Sets and CountedSet with lazy save to avoid persisting a set if it is finally not part of the persisted graph at commit. It allows limitless creation of intermediate sets during transaction processing, persisting only referred objects">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="The Sets and CountedSet tests were re-run and fixed, resolving issues in CountedSet.remove_at and count calculations. DBObject immutability errors during save were addressed by allowing certain internal attributes to be set. The full test suite completed successfully with all 259 tests passing.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/sets.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/sets.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -278,15 +276,7 @@
       <workItem from="1757675175377" duration="49000" />
       <workItem from="1757675249603" duration="41300000" />
       <workItem from="1757781886166" duration="18715000" />
-      <workItem from="1757807568113" duration="14193000" />
-    </task>
-    <task id="LOCAL-00078" summary="[FIX] The performance suite was rerun with updated benchmark results saved in JSON files. Unit tests for the parallel module passed without issues. Documentation remained accurate and no updates were needed.">
-      <option name="closed" value="true" />
-      <created>1757654138377</created>
-      <option name="number" value="00078" />
-      <option name="presentableId" value="LOCAL-00078" />
-      <option name="project" value="LOCAL" />
-      <updated>1757654138377</updated>
+      <workItem from="1757807568113" duration="16660000" />
     </task>
     <task id="LOCAL-00079" summary="[FIX] The performance suite was rerun with updated benchmark results saved in JSON files. Unit tests for the parallel module passed without issues. Documentation remained accurate and no updates were needed.">
       <option name="closed" value="true" />
@@ -672,14 +662,21 @@
       <option name="project" value="LOCAL" />
       <updated>1757857312007</updated>
     </task>
-    <option name="localTasksCounter" value="127" />
+    <task id="LOCAL-00127" summary="The Sets and CountedSet tests were re-run and fixed, resolving issues in CountedSet.remove_at and count calculations. DBObject immutability errors during save were addressed by allowing certain internal attributes to be set. The full test suite completed successfully with all 259 tests passing.">
+      <option name="closed" value="true" />
+      <created>1757858935077</created>
+      <option name="number" value="00127" />
+      <option name="presentableId" value="LOCAL-00127" />
+      <option name="project" value="LOCAL" />
+      <updated>1757858935077</updated>
+    </task>
+    <option name="localTasksCounter" value="128" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Added an example script showing collection indexing. Demonstrated faster searches using add_index('email') with timing and speedup output. as_query_plan() returns IndexedQueryPlan enabling optimized queries." />
     <MESSAGE value="Se corrigió y depuró collection_indexing_example.py para asegurar ejecución sin errores. El ejemplo ahora crea 50k usuarios, ejecuta búsquedas con y sin índice, y reporta una mejora de rendimiento. Se verificó que las pruebas clave pasen correctamente." />
     <MESSAGE value="All example scripts in the examples directory run without errors after adding sys.path bootstrapping and fixing a LINQ select bug. The fixes ensure proper dict projection evaluation and eliminate import issues. Unit tests confirmed the correctness of the LINQ-like behavior." />
     <MESSAGE value="The full test suite was run with 245 tests all passing. Issues with OrMerge.execute behavior and cloud cluster page cache handling were identified and fixed. Test discovery errors were resolved by running with the correct discovery top-level." />
@@ -704,7 +701,8 @@
     <MESSAGE value="All 259 tests passed after fixing failing tests and improving query handling. Enhanced warnings, explain() support, LINQ behavior, and hashing consistency were implemented. The project test suite ran cleanly with no errors remaining." />
     <MESSAGE value="[IMP] future_vision.md" />
     <MESSAGE value="[IMP] sets.py: implementation of Sets and CountedSet with lazy save to avoid persisting a set if it is finally not part of the persisted graph at commit. It allows limitless creation of intermediate sets during transaction processing, persisting only referred objects" />
-    <option name="LAST_COMMIT_MESSAGE" value="[IMP] sets.py: implementation of Sets and CountedSet with lazy save to avoid persisting a set if it is finally not part of the persisted graph at commit. It allows limitless creation of intermediate sets during transaction processing, persisting only referred objects" />
+    <MESSAGE value="The Sets and CountedSet tests were re-run and fixed, resolving issues in CountedSet.remove_at and count calculations. DBObject immutability errors during save were addressed by allowing certain internal attributes to be set. The full test suite completed successfully with all 259 tests passing." />
+    <option name="LAST_COMMIT_MESSAGE" value="The Sets and CountedSet tests were re-run and fixed, resolving issues in CountedSet.remove_at and count calculations. DBObject immutability errors during save were addressed by allowing certain internal attributes to be set. The full test suite completed successfully with all 259 tests passing." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
