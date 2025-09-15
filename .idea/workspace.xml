@@ -4,9 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Created two new documentation guides explaining fundamental concepts and practical recipes. Updated key API docstrings with warnings and notes for clarity. Successfully built the documentation with the new content included and verified render.">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-    </list>
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Three new test modules were added to strengthen ProtoDB’s test suite. These include concurrency stress tests, Hypothesis-driven property tests for collections, and integration tests verifying persistence and index usage. All tests run successfully without modifying core code or documentation." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -277,15 +275,7 @@
       <workItem from="1757675249603" duration="41300000" />
       <workItem from="1757781886166" duration="18715000" />
       <workItem from="1757807568113" duration="16660000" />
-      <workItem from="1757895377114" duration="2604000" />
-    </task>
-    <task id="LOCAL-00080" summary="[FIX] Several errors in test suite">
-      <option name="closed" value="true" />
-      <created>1757682258445</created>
-      <option name="number" value="00080" />
-      <option name="presentableId" value="LOCAL-00080" />
-      <option name="project" value="LOCAL" />
-      <updated>1757682258446</updated>
+      <workItem from="1757895377114" duration="3290000" />
     </task>
     <task id="LOCAL-00081" summary="[DOC] Performance update">
       <option name="closed" value="true" />
@@ -671,14 +661,21 @@
       <option name="project" value="LOCAL" />
       <updated>1757897274439</updated>
     </task>
-    <option name="localTasksCounter" value="129" />
+    <task id="LOCAL-00129" summary="Three new test modules were added to strengthen ProtoDB’s test suite. These include concurrency stress tests, Hypothesis-driven property tests for collections, and integration tests verifying persistence and index usage. All tests run successfully without modifying core code or documentation.">
+      <option name="closed" value="true" />
+      <created>1757898789798</created>
+      <option name="number" value="00129" />
+      <option name="presentableId" value="LOCAL-00129" />
+      <option name="project" value="LOCAL" />
+      <updated>1757898789798</updated>
+    </task>
+    <option name="localTasksCounter" value="130" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="All example scripts in the examples directory run without errors after adding sys.path bootstrapping and fixing a LINQ select bug. The fixes ensure proper dict projection evaluation and eliminate import issues. Unit tests confirmed the correctness of the LINQ-like behavior." />
     <MESSAGE value="The full test suite was run with 245 tests all passing. Issues with OrMerge.execute behavior and cloud cluster page cache handling were identified and fixed. Test discovery errors were resolved by running with the correct discovery top-level." />
     <MESSAGE value="La documentación Sphinx se actualizó para reflejar el estado actual del proyecto con nuevas páginas y un índice ampliado. Se actualizaron el conf.py y se añadieron ejemplos, testing, almacenamiento en la nube y vectores. La documentación API permaneció sin cambios." />
     <MESSAGE value="All Sphinx &quot;Title underline too short&quot; warnings in multiple reStructuredText files were fixed by extending the underline lengths to exceed the title lengths. This was done for headings in advanced_usage.rst, quickstart.rst, and api/queries.rst files through systematic search-and-replace edits. Multiple rebuilds were run to verify that no remaining warnings persisted." />
@@ -703,7 +700,8 @@
     <MESSAGE value="[IMP] sets.py: implementation of Sets and CountedSet with lazy save to avoid persisting a set if it is finally not part of the persisted graph at commit. It allows limitless creation of intermediate sets during transaction processing, persisting only referred objects" />
     <MESSAGE value="The Sets and CountedSet tests were re-run and fixed, resolving issues in CountedSet.remove_at and count calculations. DBObject immutability errors during save were addressed by allowing certain internal attributes to be set. The full test suite completed successfully with all 259 tests passing." />
     <MESSAGE value="Created two new documentation guides explaining fundamental concepts and practical recipes. Updated key API docstrings with warnings and notes for clarity. Successfully built the documentation with the new content included and verified render." />
-    <option name="LAST_COMMIT_MESSAGE" value="Created two new documentation guides explaining fundamental concepts and practical recipes. Updated key API docstrings with warnings and notes for clarity. Successfully built the documentation with the new content included and verified render." />
+    <MESSAGE value="Three new test modules were added to strengthen ProtoDB’s test suite. These include concurrency stress tests, Hypothesis-driven property tests for collections, and integration tests verifying persistence and index usage. All tests run successfully without modifying core code or documentation." />
+    <option name="LAST_COMMIT_MESSAGE" value="Three new test modules were added to strengthen ProtoDB’s test suite. These include concurrency stress tests, Hypothesis-driven property tests for collections, and integration tests verifying persistence and index usage. All tests run successfully without modifying core code or documentation." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
