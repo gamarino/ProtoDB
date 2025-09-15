@@ -4,108 +4,128 @@
 [![Python Version](https://img.shields.io/pypi/pyversions/proto_db.svg)](https://pypi.org/project/proto_db/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-ProtoBase is an embedded, transactional, object‑oriented database for Python. It unifies structured data and vectors under a Pythonic, LINQ‑like query API with immutable secondary indexes, range‑aware optimization, and optional vector similarity search. New in 2025, ProtoBase adds an atom‑level caching layer that reduces tail latency for hot reads and an optional parallel scanning module with adaptive chunking and a lightweight work‑stealing scheduler. Defaults preserve current behavior; new features are opt‑in and dependency‑free.
+ProtoBase is an embedded, transactional, object‑oriented database for Python. It provides immutable collections, secondary indexes, and a simple, index‑aware query planner — all running in‑process without a separate server.
+
+This README reflects the current state of the codebase (2025‑09‑14). For deeper docs, see the Sphinx site under docs/ (Concepts and Cookbook included).
 
 ## Why ProtoBase?
 
 - Lightweight, in‑process engine: no external server to deploy or operate.
-- Transactional object model: copy‑on‑write with transactional rebase keeps data and indexes consistent.
-- Rich, Pythonic API: compose queries fluently (where/select/order_by/group_by) and call explain() to inspect plans.
-- Hybrid capabilities: structured filters plus vector search in the same engine.
-- Extensible and testable: clean abstractions, thorough unit tests, and clear docs.
+- Transactional object model: copy‑on‑write with safe concurrent commits and rebase.
+- Pythonic collections: List, Dictionary, Set, CountedSet.
+- Secondary indexes with an optimizer that can use them transparently.
+- Clear docs and a growing test suite (including concurrency and property‑based tests).
 
-## Key Features
+## Key Features (Implemented)
 
 - Transactions and persistence over multiple storage backends:
   - MemoryStorage (in‑memory)
   - StandaloneFileStorage (file‑based with WAL)
-  - Cluster/Cloud storage variants (S3/GCS‑compatible) under a unified API
-- LINQ‑like query API with pushdown and explain()
-- Immutable secondary indexes; range operators with inclusive/exclusive bounds
-- Advanced index-aware optimizer (2025): AndMerge for AND intersections, OrMerge for OR unions, and single-term index rewrites with efficient range traversal and reference-set intersection to minimize materialization
-- Vector search: exact and ANN (IVF‑Flat; optional HNSW when available)
-- Atom‑level caches (new in 2025):
-  - Write-through on save: newly persisted atoms are immediately available in AtomObjectCache and AtomBytesCache
-  - AtomObjectCache (deserialized objects) and AtomBytesCache (raw bytes) with 2Q policy and single‑flight de‑duplication
-- Parallel scans (optional, new in 2025):
-  - Adaptive chunking with EMA and clamped bounds
-  - Work‑stealing scheduler with per‑worker local deques and metrics hooks
-  - Backward‑compatible fallback to a simple thread‑pool/sequential mode
-- Rich built‑ins: Dictionary, List, Set, HashDictionary
+- Immutable secondary indexes on collections that support indexing
+- Query system:
+  - WherePlan with Expression/Term DSL
+  - IndexedQueryPlan with basic index‑aware optimization
+  - AndMerge and GroupByPlan utilities for composition and aggregation
+  - explain() to inspect plans
+- Collections: Dictionary, RepeatedKeysDictionary, List (AVL), Set, CountedSet
+- Ephemeral vs. persistent behavior in Set/CountedSet to avoid unintended writes when hashing Atoms
 
-See docs for details: API reference, user guides, performance notes, and an ADR for the parallel module.
-
-## Quick Examples
-
-LINQ‑style filtering and projection:
-
-```python
-from proto_db.linq import from_collection, F
-
-users = [
-    {"id": 1, "first_name": "Alice", "last_name": "Zeus", "age": 30, "country": "ES", "status": "active", "email": "a@example.com", "last_login": 5},
-    {"id": 2, "first_name": "Bob", "last_name": "Young", "age": 17, "country": "AR", "status": "inactive", "email": "b@example.com", "last_login": 10},
-]
-
-q = (from_collection(users)
-     .where((F.age >= 18) & F.country.in_(["ES", "AR"]))
-     .order_by(F.last_login, ascending=False)
-     .select({"id": lambda x: x["id"], "name": F.first_name + " " + F.last_name})
-     .take(20))
-
-res = q.to_list()
-```
-
-Optional parallel scan with adaptive chunking and work‑stealing:
-
-```python
-from proto_db.parallel import parallel_scan, ParallelConfig
-
-data = list(range(100000))
-
-def fetch(off, cnt):
-    return data[off:off+cnt]
-
-def process(x):
-    return x*2 if x % 2 == 0 else None
-
-cfg = ParallelConfig(max_workers=4, scheduler='work_stealing')
-results = parallel_scan(len(data), fetch, process, config=cfg)
-```
+Note: Experimental or future ideas such as a LINQ layer, vector ANN modules, or parallel work‑stealing are not part of the current codebase. The README no longer references those.
 
 ## Installation
-ProtoBase requires Python 3.11 or higher. Install from PyPI:
+
+Requirements: Python 3.11+
+
+From PyPI:
 
 ```bash
 pip install proto_db
 ```
 
-Optional features are provided via extras so you don’t pull heavy deps unless needed:
+Optional extras (declared in pyproject.toml):
 
-- Parquet/Arrow bridge:
+- Parquet/Arrow integration (future/optional):
   ```bash
   pip install "proto_db[parquet]"
   ```
-- Vectors (ANN helpers):
+- Vector helpers (experimental placeholder):
   ```bash
   pip install "proto_db[vectors]"
   ```
-- Dev (tests and build tooling):
+- Development tooling (tests, docs, build):
   ```bash
   pip install "proto_db[dev]"
   ```
 
-Note: Arrow/Parquet features import pyarrow lazily and will raise a helpful ArrowNotAvailable error if not installed.
+These extras are optional; core features do not require third‑party packages.
+
+## Quickstart
+
+Create a database, store a collection as a root, and read it back:
+
+```python
+from proto_db.db_access import ObjectSpace
+from proto_db.memory_storage import MemoryStorage
+
+# Create an in‑memory ObjectSpace and a database
+space = ObjectSpace(MemoryStorage())
+db = space.new_database("ExampleDB")
+
+# Write
+tr = db.new_transaction()
+nums = tr.new_list().append_last(1).append_last(2).append_last(3)
+tr.set_root_object("numbers", nums)
+tr.commit()
+
+# Read
+tr2 = db.new_transaction()
+loaded = tr2.get_root_object("numbers")
+print(list(loaded.as_iterable()))  # [1, 2, 3]
+tr2.commit()
+space.close()
+```
+
+### Indexing and Querying
+
+Add an index to a list and run a filter that the optimizer can use:
+
+```python
+from proto_db.db_access import ObjectSpace
+from proto_db.memory_storage import MemoryStorage
+from proto_db.queries import WherePlan, Expression
+
+# Minimal setup (separate from the previous snippet)
+space = ObjectSpace(MemoryStorage())
+db = space.new_database("ExampleDB")
+
+tr = db.new_transaction()
+people = tr.new_list()
+people = people.append_last({"id": 1, "city": "NY"})
+people = people.append_last({"id": 2, "city": "SF"})
+
+people = people.add_index("city")  # enable secondary index
+
+plan = WherePlan(
+    based_on=people.as_query_plan(),
+    filter=Expression(field="city", op="==", value="NY"),
+    transaction=tr,
+)
+print(plan.explain())  # should indicate an IndexedSearchPlan
+results = list(plan.execute())
+```
+
+See also the runnable example at examples/collection_indexing_example.py.
 
 ## Documentation
 
-- Sphinx docs (docs/source): introduction, quickstart, API reference
-- Parallel Scans guide: docs/source/parallel_scans.rst
-- API reference for the parallel module: docs/source/api/parallel.rst
-- Performance suite: docs/performance.md
-- ADR: docs/adr_work_stealing.md
+Sphinx documentation lives under docs/ and includes:
 
-To build the docs locally:
+- Concepts guide: docs/source/concepts.(md|rst)
+- Cookbook recipes: docs/source/cookbook.(md|rst)
+- Performance notes: docs/performance.md
+- API reference (autodoc) and additional guides listed in docs/source/index.rst
+
+Build locally:
 
 ```bash
 cd docs && make html
@@ -121,59 +141,23 @@ Run the full test suite:
 python -m unittest discover proto_db/tests
 ```
 
-Or run a specific file:
+Run a specific test module:
 
 ```bash
-python -m unittest proto_db.tests.test_parallel
+python -m unittest proto_db.tests.test_db_access_with_standalone_file_storage
 ```
 
-## Benchmarks
+The suite includes concurrency stress tests, property‑based tests (Hypothesis, optional), and integration round‑trip tests.
 
-Indexed queries (including PK lookup) and vector ANN microbenchmarks are provided:
+## Examples
 
-```bash
-# Indexed benchmark (secondary indexes with higher selectivity and warmup)
-python examples/indexed_benchmark.py \
-  --items 100000 --queries 200 --window 100 --warmup 10 \
-  --categories 50 --statuses 20 \
-  --out examples/benchmark_results_indexed.json
-
-# Vector ANN benchmark (exact vs IVF‑Flat vs optional HNSW)
-python examples/vector_ann_benchmark.py --n 20000 --dim 64 --queries 50 --k 10 --out examples/benchmark_results_vectors.json
-```
-
-Notes:
-- The indexed benchmark now includes a Primary Key (PK) lookup path comparing indexed vs linear and Python list baselines.
-- See docs/performance.md for guidance, caveats on small datasets, and how to interpret results.
+- examples/collection_indexing_example.py — show indexing and query speedup on a simple dataset.
 
 ## Compatibility
 
-- Works on standard CPython today; design is GIL‑agnostic and scales on free‑threaded Python builds without code changes.
-- No third‑party runtime dependency is required for core features.
+- CPython 3.11+ supported.
+- Core features have no mandatory third‑party dependencies.
 
 ## License
 
 MIT License. See LICENSE for details.
-
-
-
-## Latest indexed query results (2025-09-13)
-
-Two representative runs on in-memory data using the indexed benchmark:
-
-- Run A: 10,000 items, 200 queries, window=500, categories=200, statuses=50
-  - Total time (s): python_list_baseline 0.2585; protodb_linear_where 1.4748; protodb_indexed_where 0.2194; python_list_pk_lookup 0.2614; protodb_linear_pk_lookup 1.3195; protodb_indexed_pk_lookup 0.0317
-  - Speedups: indexed_over_linear 6.72×; indexed_over_python 1.18×; indexed_pk_over_linear 41.62×
-
-- Run B: 50,000 items, 100 queries, window=500, categories=500, statuses=100
-  - Total time (s): python_list_baseline 0.8465; protodb_linear_where 4.0585; protodb_indexed_where 0.2464; python_list_pk_lookup 1.0834; protodb_linear_pk_lookup 3.7138; protodb_indexed_pk_lookup 0.0226
-  - Speedups: indexed_over_linear 16.47×; indexed_over_python 3.44×; indexed_pk_over_linear 164.09×
-
-Observations
-- Indexed WherePlan increasingly outperforms linear scans as dataset size grows.
-- Primary-key lookups via the ad-hoc index are orders of magnitude faster than linear scans in these runs.
-- Against pure Python list comprehensions, indexed WherePlan ranges from slightly faster at 10k to ~3.4× at 50k; benefits scale with selectivity and size.
-
-Artifacts: examples/benchmark_results_indexed.json, examples/benchmark_results_indexed_win200.json
-
-For details, methodology, and latency stats, see docs/performance.md.
