@@ -95,8 +95,24 @@
 </li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="#vector-search-plans">Vector Search Plans</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#proto_db.queries.VectorSearchPlan"><code class="docutils literal notranslate"><span class="pre">VectorSearchPlan</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.queries.VectorSearchPlan.execute"><code class="docutils literal notranslate"><span class="pre">VectorSearchPlan.execute()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.queries.VectorSearchPlan.get_cardinality_estimate"><code class="docutils literal notranslate"><span class="pre">VectorSearchPlan.get_cardinality_estimate()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.queries.VectorSearchPlan.get_cost_estimate"><code class="docutils literal notranslate"><span class="pre">VectorSearchPlan.get_cost_estimate()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#queryableindex-interface">QueryableIndex Interface</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#proto_db.queries.QueryableIndex"><code class="docutils literal notranslate"><span class="pre">QueryableIndex</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.queries.QueryableIndex.build_query_plan"><code class="docutils literal notranslate"><span class="pre">QueryableIndex.build_query_plan()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#example-ann-pushdown-with-near">Example: ANN pushdown with Near</a></li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="vectors.html">Vector Support</a></li>
-<li class="toctree-l2"><a class="reference internal" href="vectors.html#module-0">Vectors</a></li>
 <li class="toctree-l2"><a class="reference internal" href="arrow_parquet.html">Arrow / Parquet Bridge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="linq.html">LINQ-like API</a></li>
 <li class="toctree-l2"><a class="reference internal" href="exceptions.html">Exceptions</a></li>
@@ -114,6 +130,15 @@
 <li class="toctree-l4"><a class="reference internal" href="#range-operators-between">Range Operators (Between)</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#index-aware-and-optimization">Index-aware AND optimization</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#usage-examples">Usage Examples</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#vector-search-plans">Vector Search Plans</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.queries.VectorSearchPlan"><code class="docutils literal notranslate"><span class="pre">VectorSearchPlan</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#queryableindex-interface">QueryableIndex Interface</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.queries.QueryableIndex"><code class="docutils literal notranslate"><span class="pre">QueryableIndex</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#example-ann-pushdown-with-near">Example: ANN pushdown with Near</a></li>
 </ul>
 </li>
 </ul>
@@ -420,11 +445,16 @@ and materializes the result into a List to enable slicing/pagination.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.queries.WherePlan.optimize">
 <span class="sig-name descname"><span class="pre">optimize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#WherePlan.optimize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.WherePlan.optimize" title="Link to this definition"></a></dt>
-<dd><p>Optimizer rewrite to leverage indexes for:
-- Single Term expressions over an IndexedQueryPlan
-- AndExpression: intersect multiple indexable terms via AndMerge with residual filters
-- OrExpression: union multiple indexable terms via OrMerge when all terms are indexable
-Otherwise, fallback to keeping the original WherePlan (with optimized base).</p>
+<dd><p>Cooperative optimization: delegate term planning to QueryableIndex.
+- If the base is not an IndexedQueryPlan, return self (linear scan fallback).
+- If the filter is a Term or an AndExpression of Terms, ask each field’s index</p>
+<blockquote>
+<div><p>(if it implements QueryableIndex) to build a specialized plan for the term.</p>
+</div></blockquote>
+<ul class="simple">
+<li><p>Combine all index-backed plans with AndMerge, and keep non-indexable terms
+as residual_filters to be applied after intersection.</p></li>
+</ul>
 <dl class="field-list simple">
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
@@ -1389,6 +1419,140 @@ in the subclass.</p>
 </pre></div>
 </div>
 </section>
+</section>
+</section>
+<section id="vector-search-plans">
+<h1>Vector Search Plans<a class="headerlink" href="#vector-search-plans" title="Link to this heading"></a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.queries.VectorSearchPlan">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.queries.</span></span><span class="sig-name descname"><span class="pre">VectorSearchPlan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">query_vector</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metric</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">based_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#VectorSearchPlan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.VectorSearchPlan" title="Link to this definition"></a></dt>
+<dd><p>Query plan that delegates to a vector index implementing a search API.
+It supports either top-k or threshold (range) searches.
+The index is expected to either return Atom objects directly or (id, score) pairs.
+If pairs are returned, an id→object map can be provided via index._id_to_obj.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>k</strong> (<em>int</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>threshold</strong> (<em>float</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>metric</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>based_on</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.queries.VectorSearchPlan.execute">
+<span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#VectorSearchPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.VectorSearchPlan.execute" title="Link to this definition"></a></dt>
+<dd><p>Executes the query plan and returns the results as a DBCollections instance.</p>
+<p>This method processes the query plan and retrieves the data according to
+the plan’s specifications. Implementations should define the specific
+execution logic based on the query plan type and return a concrete
+collection (e.g., List) to enable efficient pagination via slice().</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A DBCollections object containing the results.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="core.html#proto_db.common.DBCollections" title="proto_db.common.DBCollections"><em>DBCollections</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.queries.VectorSearchPlan.get_cardinality_estimate">
+<span class="sig-name descname"><span class="pre">get_cardinality_estimate</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#VectorSearchPlan.get_cardinality_estimate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.VectorSearchPlan.get_cardinality_estimate" title="Link to this definition"></a></dt>
+<dd><p>Estimate the expected number of records produced by this plan.
+Lower values mean higher selectivity.</p>
+<p>Default: worst case based on the underlying source if available.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.queries.VectorSearchPlan.get_cost_estimate">
+<span class="sig-name descname"><span class="pre">get_cost_estimate</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#VectorSearchPlan.get_cost_estimate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.VectorSearchPlan.get_cost_estimate" title="Link to this definition"></a></dt>
+<dd><p>Estimate the relative computational cost to execute this plan.
+Lower is better. This is not time, but a unit to compare plans.</p>
+<p>Default: infinity to indicate non-optimized/unknown cost.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="queryableindex-interface">
+<h1>QueryableIndex Interface<a class="headerlink" href="#queryableindex-interface" title="Link to this heading"></a></h1>
+<p>Some index types can participate in planning by implementing <code class="docutils literal notranslate"><span class="pre">QueryableIndex</span></code> and <code class="docutils literal notranslate"><span class="pre">build_query_plan</span></code>.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.queries.QueryableIndex">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.queries.</span></span><span class="sig-name descname"><span class="pre">QueryableIndex</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">indexes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#QueryableIndex"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.QueryableIndex" title="Link to this definition"></a></dt>
+<dd><p>Abstract interface for pluggable indices that can contribute specialized
+query plans for particular terms.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>indexes</strong> (<a class="reference internal" href="data_structures.html#proto_db.dictionaries.Dictionary" title="proto_db.dictionaries.Dictionary"><em>Dictionary</em></a>)</p></li>
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.queries.QueryableIndex.build_query_plan">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">build_query_plan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">term</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">context</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#QueryableIndex.build_query_plan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.QueryableIndex.build_query_plan" title="Link to this definition"></a></dt>
+<dd><p>Return a specialized QueryPlan for the given term if this index can
+handle it efficiently; otherwise return None.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>term</strong> (<em>Term</em>)</p></li>
+<li><p><strong>context</strong> (<em>QueryContext</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a> | None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<section id="example-ann-pushdown-with-near">
+<h2>Example: ANN pushdown with Near<a class="headerlink" href="#example-ann-pushdown-with-near" title="Link to this heading"></a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.indexes</span><span class="w"> </span><span class="kn">import</span> <span class="n">IndexDefinition</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.vector_index</span><span class="w"> </span><span class="kn">import</span> <span class="n">HNSWVectorIndex</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">WherePlan</span><span class="p">,</span> <span class="n">Expression</span>
+
+<span class="c1"># Create and attach a vector index</span>
+<span class="n">vec_idx</span> <span class="o">=</span> <span class="n">IndexDefinition</span><span class="p">(</span>
+    <span class="n">name</span><span class="o">=</span><span class="s1">&#39;emb&#39;</span><span class="p">,</span>
+    <span class="n">extractor</span><span class="o">=</span><span class="k">lambda</span> <span class="n">rec</span><span class="p">:</span> <span class="n">rec</span><span class="p">[</span><span class="s1">&#39;emb&#39;</span><span class="p">],</span>
+    <span class="n">index_class</span><span class="o">=</span><span class="n">HNSWVectorIndex</span><span class="p">,</span>
+    <span class="n">index_params</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;metric&#39;</span><span class="p">:</span> <span class="s1">&#39;cosine&#39;</span><span class="p">,</span> <span class="s1">&#39;M&#39;</span><span class="p">:</span> <span class="mi">16</span><span class="p">,</span> <span class="s1">&#39;efConstruction&#39;</span><span class="p">:</span> <span class="mi">200</span><span class="p">,</span> <span class="s1">&#39;efSearch&#39;</span><span class="p">:</span> <span class="mi">64</span><span class="p">},</span>
+<span class="p">)</span>
+<span class="n">coll</span> <span class="o">=</span> <span class="n">coll</span><span class="o">.</span><span class="n">add_index</span><span class="p">(</span><span class="n">vec_idx</span><span class="p">)</span>
+
+<span class="c1"># Near operator: cosine threshold 0.8</span>
+<span class="n">expr</span> <span class="o">=</span> <span class="n">Expression</span><span class="o">.</span><span class="n">compile</span><span class="p">([</span><span class="s1">&#39;emb&#39;</span><span class="p">,</span> <span class="s1">&#39;near[]&#39;</span><span class="p">,</span> <span class="p">[</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">],</span> <span class="mf">0.8</span><span class="p">])</span>
+<span class="n">plan</span> <span class="o">=</span> <span class="n">WherePlan</span><span class="p">(</span><span class="nb">filter</span><span class="o">=</span><span class="n">expr</span><span class="p">,</span> <span class="n">based_on</span><span class="o">=</span><span class="n">coll</span><span class="o">.</span><span class="n">as_query_plan</span><span class="p">(),</span> <span class="n">transaction</span><span class="o">=</span><span class="n">tr</span><span class="p">)</span>
+
+<span class="n">opt</span> <span class="o">=</span> <span class="n">plan</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span>  <span class="c1"># → VectorSearchPlan or AndMerge with residuals</span>
+<span class="n">results</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>  <span class="c1"># returns a collection (e.g., List)</span>
+<span class="c1"># Paginate efficiently without re-running the query</span>
+<span class="n">page</span> <span class="o">=</span> <span class="n">results</span><span class="o">.</span><span class="n">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">page</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
+    <span class="o">...</span>
+</pre></div>
+</div>
 </section>
 </section>
 

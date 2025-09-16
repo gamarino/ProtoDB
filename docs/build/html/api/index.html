@@ -61,8 +61,9 @@
 <li class="toctree-l2"><a class="reference internal" href="data_structures.html">Data Structures</a></li>
 <li class="toctree-l2"><a class="reference internal" href="indexes.html">Secondary Indexes</a></li>
 <li class="toctree-l2"><a class="reference internal" href="queries.html">Query System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html#vector-search-plans">Vector Search Plans</a></li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html#queryableindex-interface">QueryableIndex Interface</a></li>
 <li class="toctree-l2"><a class="reference internal" href="vectors.html">Vector Support</a></li>
-<li class="toctree-l2"><a class="reference internal" href="vectors.html#module-0">Vectors</a></li>
 <li class="toctree-l2"><a class="reference internal" href="arrow_parquet.html">Arrow / Parquet Bridge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="linq.html">LINQ-like API</a></li>
 <li class="toctree-l2"><a class="reference internal" href="exceptions.html">Exceptions</a></li>
@@ -83,6 +84,8 @@
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#query-system">Query System</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="queries.html">Query System</a></li>
+<li class="toctree-l3"><a class="reference internal" href="queries.html#vector-search-plans">Vector Search Plans</a></li>
+<li class="toctree-l3"><a class="reference internal" href="queries.html#queryableindex-interface">QueryableIndex Interface</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#exceptions">Exceptions</a><ul>
@@ -178,18 +181,23 @@
 <li class="toctree-l2"><a class="reference internal" href="queries.html#usage-examples">Usage Examples</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="queries.html#vector-search-plans">Vector Search Plans</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="queries.html#proto_db.queries.VectorSearchPlan"><code class="docutils literal notranslate"><span class="pre">VectorSearchPlan</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="queries.html#queryableindex-interface">QueryableIndex Interface</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="queries.html#proto_db.queries.QueryableIndex"><code class="docutils literal notranslate"><span class="pre">QueryableIndex</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html#example-ann-pushdown-with-near">Example: ANN pushdown with Near</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="vectors.html">Vector Support</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="vectors.html#vector">Vector</a></li>
 <li class="toctree-l2"><a class="reference internal" href="vectors.html#utility-functions">Utility Functions</a></li>
 <li class="toctree-l2"><a class="reference internal" href="vectors.html#module-proto_db.vector_index">Vector Indexes</a></li>
 <li class="toctree-l2"><a class="reference internal" href="vectors.html#notes-on-backends">Notes on backends</a></li>
+<li class="toctree-l2"><a class="reference internal" href="vectors.html#query-integration-ann-pushdown">Query Integration (ANN pushdown)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="vectors.html#operators">Operators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="vectors.html#notes">Notes</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="vectors.html#module-0">Vectors</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="vectors.html#id1">Vector</a></li>
-<li class="toctree-l2"><a class="reference internal" href="vectors.html#id7">Notes</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="arrow_parquet.html">Arrow / Parquet Bridge</a><ul>
@@ -272,6 +280,8 @@
 <div class="toctree-wrapper compound">
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="queries.html">Query System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="queries.html#vector-search-plans">Vector Search Plans</a></li>
+<li class="toctree-l1"><a class="reference internal" href="queries.html#queryableindex-interface">QueryableIndex Interface</a></li>
 </ul>
 </div>
 </section>

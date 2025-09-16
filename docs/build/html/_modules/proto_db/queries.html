@@ -113,19 +113,25 @@
     <span class="n">transaction</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">AbstractTransaction</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
 
+<div class="viewcode-block" id="QueryableIndex">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.queries.QueryableIndex">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">QueryableIndex</span><span class="p">(</span><span class="n">DBCollections</span><span class="p">,</span> <span class="n">ABC</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Abstract interface for pluggable indices that can contribute specialized</span>
 <span class="sd">    query plans for particular terms.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
+<div class="viewcode-block" id="QueryableIndex.build_query_plan">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.queries.QueryableIndex.build_query_plan">[docs]</a>
     <span class="nd">@abstractmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">build_query_plan</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">term</span><span class="p">:</span> <span class="s1">&#39;Term&#39;</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">QueryContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">QueryPlan</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Return a specialized QueryPlan for the given term if this index can</span>
 <span class="sd">        handle it efficiently; otherwise return None.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">raise</span> <span class="ne">NotImplementedError</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span></div>
+</div>
+
 
 <span class="c1"># Executor for async operations</span>
 <span class="n">max_workers</span> <span class="o">=</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">cpu_count</span><span class="p">()</span> <span class="ow">or</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mi">5</span>
@@ -717,6 +723,81 @@
 <a class="viewcode-back" href="../../api/queries.html#proto_db.queries.ListPlan.optimize">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="VectorSearchPlan">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.queries.VectorSearchPlan">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">VectorSearchPlan</span><span class="p">(</span><span class="n">QueryPlan</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Query plan that delegates to a vector index implementing a search API.</span>
+<span class="sd">    It supports either top-k or threshold (range) searches.</span>
+<span class="sd">    The index is expected to either return Atom objects directly or (id, score) pairs.</span>
+<span class="sd">    If pairs are returned, an id→object map can be provided via index._id_to_obj.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">,</span> <span class="n">query_vector</span><span class="p">,</span> <span class="n">k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">metric</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">based_on</span><span class="p">:</span> <span class="n">QueryPlan</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">transaction</span><span class="p">:</span> <span class="n">ObjectTransaction</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">based_on</span><span class="o">=</span><span class="n">based_on</span><span class="p">,</span> <span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">index</span> <span class="o">=</span> <span class="n">index</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">query_vector</span> <span class="o">=</span> <span class="n">query_vector</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">k</span> <span class="o">=</span> <span class="n">k</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">threshold</span> <span class="o">=</span> <span class="n">threshold</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">metric</span> <span class="o">=</span> <span class="n">metric</span>
+
+<div class="viewcode-block" id="VectorSearchPlan.execute">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.queries.VectorSearchPlan.execute">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DBCollections</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.lists</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span> <span class="k">as</span> <span class="n">_List</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">_List</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">results</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">query_vector</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">k</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">metric</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># Fallback to range_search when threshold is provided</span>
+                <span class="n">results</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">range_search</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">query_vector</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">threshold</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">metric</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="n">results</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">id_map</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="s1">&#39;_id_to_obj&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="c1"># Normalize to objects</span>
+        <span class="k">if</span> <span class="n">results</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">results</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="nb">tuple</span><span class="p">):</span>
+            <span class="n">objs</span> <span class="o">=</span> <span class="n">results</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">objs</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">results</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">rid</span> <span class="o">=</span> <span class="n">item</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                    <span class="k">if</span> <span class="n">id_map</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">rid</span> <span class="ow">in</span> <span class="n">id_map</span><span class="p">:</span>
+                        <span class="n">objs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">id_map</span><span class="p">[</span><span class="n">rid</span><span class="p">])</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="c1"># If rid is already an Atom/record, use it</span>
+                        <span class="n">objs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rid</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">continue</span>
+        <span class="k">for</span> <span class="n">obj</span> <span class="ow">in</span> <span class="n">objs</span><span class="p">:</span>
+            <span class="n">res</span> <span class="o">=</span> <span class="n">res</span><span class="o">.</span><span class="n">append_last</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">res</span></div>
+
+
+<div class="viewcode-block" id="VectorSearchPlan.get_cardinality_estimate">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.queries.VectorSearchPlan.get_cardinality_estimate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_cardinality_estimate</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">k</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">k</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">k</span>
+        <span class="c1"># Heuristic: 1% of base, if available</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">base_cnt</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">count</span><span class="p">())</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="mi">0</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="n">base_cnt</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">base_cnt</span> <span class="o">//</span> <span class="mi">100</span><span class="p">)</span> <span class="k">if</span> <span class="n">base_cnt</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="mi">100</span></div>
+
+
+<div class="viewcode-block" id="VectorSearchPlan.get_cost_estimate">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.queries.VectorSearchPlan.get_cost_estimate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_cost_estimate</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="c1"># Cheaper than full scan, more expensive than exact key lookup</span>
+        <span class="k">return</span> <span class="mf">25.0</span></div>
 </div>
 
 
@@ -1844,140 +1925,115 @@
 <a class="viewcode-back" href="../../api/queries.html#proto_db.queries.WherePlan.optimize">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;QueryPlan&#39;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Optimizer rewrite to leverage indexes for:</span>
-<span class="sd">        - Single Term expressions over an IndexedQueryPlan</span>
-<span class="sd">        - AndExpression: intersect multiple indexable terms via AndMerge with residual filters</span>
-<span class="sd">        - OrExpression: union multiple indexable terms via OrMerge when all terms are indexable</span>
-<span class="sd">        Otherwise, fallback to keeping the original WherePlan (with optimized base).</span>
+<span class="sd">        Cooperative optimization: delegate term planning to QueryableIndex.</span>
+<span class="sd">        - If the base is not an IndexedQueryPlan, return self (linear scan fallback).</span>
+<span class="sd">        - If the filter is a Term or an AndExpression of Terms, ask each field&#39;s index</span>
+<span class="sd">          (if it implements QueryableIndex) to build a specialized plan for the term.</span>
+<span class="sd">        - Combine all index-backed plans with AndMerge, and keep non-indexable terms</span>
+<span class="sd">          as residual_filters to be applied after intersection.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">optimized_based_on</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="kc">None</span>
-        <span class="n">current_filter</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">filter</span>
+        <span class="c1"># 1) Ensure we have an index-aware base plan</span>
+        <span class="n">base_plan</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">base_plan</span><span class="p">,</span> <span class="n">IndexedQueryPlan</span><span class="p">):</span>
+            <span class="c1"># No indexes available → keep the plan as-is over optimized base</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="o">=</span> <span class="n">base_plan</span>
+            <span class="k">return</span> <span class="bp">self</span>
 
-        <span class="c1"># Preserve predicate pushdown when supported by the underlying plan</span>
-        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">optimized_based_on</span><span class="p">,</span> <span class="s1">&#39;accept_filter&#39;</span><span class="p">):</span>
-            <span class="k">return</span> <span class="n">optimized_based_on</span><span class="o">.</span><span class="n">accept_filter</span><span class="p">(</span><span class="n">current_filter</span><span class="p">)</span>
+        <span class="c1"># 2) Normalize/validate the filter shape we handle now (Term or AndExpression)</span>
+        <span class="n">flt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">filter</span>
+        <span class="n">terms</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Expression</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">flt</span><span class="p">,</span> <span class="n">Term</span><span class="p">):</span>
+            <span class="n">terms</span> <span class="o">=</span> <span class="p">[</span><span class="n">flt</span><span class="p">]</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">flt</span><span class="p">,</span> <span class="n">AndExpression</span><span class="p">):</span>
+            <span class="n">terms</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">flt</span><span class="o">.</span><span class="n">terms</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">flt</span><span class="p">,</span> <span class="n">OrExpression</span><span class="p">):</span>
+            <span class="c1"># We&#39;ll handle OR below using index-backed plans if all terms are indexable</span>
+            <span class="n">terms</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">flt</span><span class="o">.</span><span class="n">terms</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Not handled in this phase; return self (linear WherePlan over base)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="o">=</span> <span class="n">base_plan</span>
+            <span class="k">return</span> <span class="bp">self</span>
 
-        <span class="c1"># Helper: construct an index-backed plan for a term if possible</span>
-        <span class="k">def</span><span class="w"> </span><span class="nf">plan_for_term</span><span class="p">(</span><span class="n">expr</span><span class="p">:</span> <span class="n">Expression</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">optimized_based_on</span><span class="p">,</span> <span class="n">IndexedQueryPlan</span><span class="p">):</span>
-                <span class="k">return</span> <span class="kc">None</span>
+        <span class="c1"># 3) For each term, consult the corresponding index if it is QueryableIndex</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">.dictionaries</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dictionary</span>  <span class="c1"># type: ignore</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="n">Dictionary</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># type: ignore</span>
+        <span class="n">indexes</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">base_plan</span><span class="p">,</span> <span class="s1">&#39;indexes&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">indexes</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="o">=</span> <span class="n">base_plan</span>
+            <span class="k">return</span> <span class="bp">self</span>
+
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">QueryContext</span><span class="p">,</span> <span class="n">QueryableIndex</span>  <span class="c1"># self-module safe import</span>
+        <span class="n">context</span> <span class="o">=</span> <span class="n">QueryContext</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+
+        <span class="n">index_plans</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">QueryPlan</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">residual_filters</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Expression</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">built_plans</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">QueryPlan</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">expr</span> <span class="ow">in</span> <span class="n">terms</span><span class="p">:</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">expr</span><span class="p">,</span> <span class="n">Term</span><span class="p">):</span>
-                <span class="k">return</span> <span class="kc">None</span>
-            <span class="n">idxs</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">optimized_based_on</span><span class="p">,</span> <span class="s1">&#39;indexes&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">idxs</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">idxs</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">expr</span><span class="o">.</span><span class="n">target_attribute</span><span class="p">):</span>
-                <span class="k">return</span> <span class="kc">None</span>
+                <span class="n">residual_filters</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">expr</span><span class="p">)</span>
+                <span class="k">continue</span>
             <span class="n">field</span> <span class="o">=</span> <span class="n">expr</span><span class="o">.</span><span class="n">target_attribute</span>
-            <span class="n">op</span> <span class="o">=</span> <span class="n">expr</span><span class="o">.</span><span class="n">operation</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">Equal</span><span class="p">):</span>
-                <span class="k">return</span> <span class="n">IndexedSearchPlan</span><span class="p">(</span>
-                    <span class="n">field_to_scan</span><span class="o">=</span><span class="n">field</span><span class="p">,</span>
-                    <span class="n">operator</span><span class="o">=</span><span class="n">op</span><span class="p">,</span>
-                    <span class="n">value</span><span class="o">=</span><span class="n">expr</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
-                    <span class="n">indexes</span><span class="o">=</span><span class="n">idxs</span><span class="p">,</span>
-                    <span class="n">based_on</span><span class="o">=</span><span class="n">optimized_based_on</span><span class="p">,</span>
-                    <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
-                <span class="p">)</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">Between</span><span class="p">):</span>
-                <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span> <span class="o">=</span> <span class="n">expr</span><span class="o">.</span><span class="n">value</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">expr</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span> <span class="k">else</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-                <span class="k">if</span> <span class="n">lo</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">hi</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="k">return</span> <span class="kc">None</span>
-                <span class="k">return</span> <span class="n">IndexedRangeSearchPlan</span><span class="p">(</span>
-                    <span class="n">field_to_scan</span><span class="o">=</span><span class="n">field</span><span class="p">,</span>
-                    <span class="n">lo</span><span class="o">=</span><span class="n">lo</span><span class="p">,</span>
-                    <span class="n">hi</span><span class="o">=</span><span class="n">hi</span><span class="p">,</span>
-                    <span class="n">include_lower</span><span class="o">=</span><span class="n">op</span><span class="o">.</span><span class="n">include_lower</span><span class="p">,</span>
-                    <span class="n">include_upper</span><span class="o">=</span><span class="n">op</span><span class="o">.</span><span class="n">include_upper</span><span class="p">,</span>
-                    <span class="n">indexes</span><span class="o">=</span><span class="n">idxs</span><span class="p">,</span>
-                    <span class="n">based_on</span><span class="o">=</span><span class="n">optimized_based_on</span><span class="p">,</span>
-                    <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
-                <span class="p">)</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">Greater</span><span class="p">):</span>
-                <span class="k">return</span> <span class="n">IndexedRangeSearchPlan</span><span class="p">(</span>
-                    <span class="n">field_to_scan</span><span class="o">=</span><span class="n">field</span><span class="p">,</span>
-                    <span class="n">lo</span><span class="o">=</span><span class="n">expr</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
-                    <span class="n">hi</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="s1">&#39;inf&#39;</span><span class="p">),</span>
-                    <span class="n">include_lower</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-                    <span class="n">include_upper</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-                    <span class="n">indexes</span><span class="o">=</span><span class="n">idxs</span><span class="p">,</span>
-                    <span class="n">based_on</span><span class="o">=</span><span class="n">optimized_based_on</span><span class="p">,</span>
-                    <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
-                <span class="p">)</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">GreaterOrEqual</span><span class="p">):</span>
-                <span class="k">return</span> <span class="n">IndexedRangeSearchPlan</span><span class="p">(</span>
-                    <span class="n">field_to_scan</span><span class="o">=</span><span class="n">field</span><span class="p">,</span>
-                    <span class="n">lo</span><span class="o">=</span><span class="n">expr</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
-                    <span class="n">hi</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="s1">&#39;inf&#39;</span><span class="p">),</span>
-                    <span class="n">include_lower</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-                    <span class="n">include_upper</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-                    <span class="n">indexes</span><span class="o">=</span><span class="n">idxs</span><span class="p">,</span>
-                    <span class="n">based_on</span><span class="o">=</span><span class="n">optimized_based_on</span><span class="p">,</span>
-                    <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
-                <span class="p">)</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">Lower</span><span class="p">):</span>
-                <span class="k">return</span> <span class="n">IndexedRangeSearchPlan</span><span class="p">(</span>
-                    <span class="n">field_to_scan</span><span class="o">=</span><span class="n">field</span><span class="p">,</span>
-                    <span class="n">lo</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">),</span>
-                    <span class="n">hi</span><span class="o">=</span><span class="n">expr</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
-                    <span class="n">include_lower</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-                    <span class="n">include_upper</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-                    <span class="n">indexes</span><span class="o">=</span><span class="n">idxs</span><span class="p">,</span>
-                    <span class="n">based_on</span><span class="o">=</span><span class="n">optimized_based_on</span><span class="p">,</span>
-                    <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
-                <span class="p">)</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">LowerOrEqual</span><span class="p">):</span>
-                <span class="k">return</span> <span class="n">IndexedRangeSearchPlan</span><span class="p">(</span>
-                    <span class="n">field_to_scan</span><span class="o">=</span><span class="n">field</span><span class="p">,</span>
-                    <span class="n">lo</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">),</span>
-                    <span class="n">hi</span><span class="o">=</span><span class="n">expr</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
-                    <span class="n">include_lower</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-                    <span class="n">include_upper</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-                    <span class="n">indexes</span><span class="o">=</span><span class="n">idxs</span><span class="p">,</span>
-                    <span class="n">based_on</span><span class="o">=</span><span class="n">optimized_based_on</span><span class="p">,</span>
-                    <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
-                <span class="p">)</span>
-            <span class="k">return</span> <span class="kc">None</span>
-
-        <span class="c1"># 1) Single Term over an IndexedQueryPlan</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">current_filter</span><span class="p">,</span> <span class="n">Term</span><span class="p">):</span>
-            <span class="n">plan</span> <span class="o">=</span> <span class="n">plan_for_term</span><span class="p">(</span><span class="n">current_filter</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">has_idx</span> <span class="o">=</span> <span class="n">indexes</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="n">has_idx</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">has_idx</span><span class="p">:</span>
+                <span class="n">residual_filters</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">expr</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">idx</span> <span class="o">=</span> <span class="n">indexes</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="n">idx</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">idx</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="n">QueryableIndex</span><span class="p">):</span>
+                <span class="n">residual_filters</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">expr</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">plan</span> <span class="o">=</span> <span class="n">idx</span><span class="o">.</span><span class="n">build_query_plan</span><span class="p">(</span><span class="n">expr</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="n">plan</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">built_plans</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">plan</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">plan</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">return</span> <span class="n">plan</span>
+                <span class="n">index_plans</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">plan</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">residual_filters</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">expr</span><span class="p">)</span>
 
-        <span class="c1"># 2) AND expression: existing behavior with intersection</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">current_filter</span><span class="p">,</span> <span class="n">AndExpression</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">optimized_based_on</span><span class="p">,</span> <span class="n">IndexedQueryPlan</span><span class="p">):</span>
-            <span class="n">idxs</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">optimized_based_on</span><span class="p">,</span> <span class="s1">&#39;indexes&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">idxs</span><span class="p">:</span>
-                <span class="n">index_plans</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">QueryPlan</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-                <span class="n">residuals</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Expression</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-                <span class="k">for</span> <span class="n">expr</span> <span class="ow">in</span> <span class="n">current_filter</span><span class="o">.</span><span class="n">terms</span><span class="p">:</span>
-                    <span class="n">p</span> <span class="o">=</span> <span class="n">plan_for_term</span><span class="p">(</span><span class="n">expr</span><span class="p">)</span>
-                    <span class="k">if</span> <span class="n">p</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                        <span class="n">index_plans</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
-                    <span class="k">else</span><span class="p">:</span>
-                        <span class="n">residuals</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">expr</span><span class="p">)</span>
-                <span class="k">if</span> <span class="n">index_plans</span><span class="p">:</span>
-                    <span class="k">return</span> <span class="n">AndMerge</span><span class="p">(</span><span class="n">and_queries</span><span class="o">=</span><span class="n">index_plans</span><span class="p">,</span>
-                                    <span class="n">based_on</span><span class="o">=</span><span class="n">optimized_based_on</span><span class="p">,</span>
-                                    <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span>
-                                    <span class="n">residual_filters</span><span class="o">=</span><span class="n">residuals</span><span class="p">)</span>
+        <span class="c1"># 4) If no index-backed plans, decide fallback based on filter type</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">index_plans</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="o">=</span> <span class="n">base_plan</span>
+            <span class="k">return</span> <span class="bp">self</span>
 
-        <span class="c1"># 3) OR expression: only if all sub-terms are indexable</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">current_filter</span><span class="p">,</span> <span class="n">OrExpression</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">optimized_based_on</span><span class="p">,</span> <span class="n">IndexedQueryPlan</span><span class="p">):</span>
-            <span class="n">idx_plans</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">QueryPlan</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-            <span class="n">all_indexable</span> <span class="o">=</span> <span class="kc">True</span>
-            <span class="k">for</span> <span class="n">expr</span> <span class="ow">in</span> <span class="n">current_filter</span><span class="o">.</span><span class="n">terms</span><span class="p">:</span>
-                <span class="n">p</span> <span class="o">=</span> <span class="n">plan_for_term</span><span class="p">(</span><span class="n">expr</span><span class="p">)</span>
-                <span class="k">if</span> <span class="n">p</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="n">all_indexable</span> <span class="o">=</span> <span class="kc">False</span>
-                    <span class="k">break</span>
-                <span class="n">idx_plans</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">all_indexable</span> <span class="ow">and</span> <span class="n">idx_plans</span><span class="p">:</span>
-                <span class="k">return</span> <span class="n">OrMerge</span><span class="p">(</span><span class="n">or_queries</span><span class="o">=</span><span class="n">idx_plans</span><span class="p">,</span> <span class="n">based_on</span><span class="o">=</span><span class="n">optimized_based_on</span><span class="p">,</span> <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+        <span class="c1"># 5) If the original filter was a single Term and we have a single plan and no residuals → return it directly</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">flt</span><span class="p">,</span> <span class="n">Term</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">index_plans</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">residual_filters</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">index_plans</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
 
-        <span class="c1"># Default: keep as WherePlan with optimized base</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="o">=</span> <span class="n">optimized_based_on</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">filter</span> <span class="o">=</span> <span class="n">current_filter</span>
-        <span class="k">return</span> <span class="bp">self</span></div>
+        <span class="c1"># 6) If it was an OR, only succeed when all terms produced plans</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">flt</span><span class="p">,</span> <span class="n">OrExpression</span><span class="p">):</span>
+            <span class="c1"># Success only if we built a plan for every term and none is None</span>
+            <span class="k">if</span> <span class="n">built_plans</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">built_plans</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">terms</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">all</span><span class="p">(</span><span class="n">p</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">built_plans</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">OrMerge</span><span class="p">(</span><span class="n">or_queries</span><span class="o">=</span><span class="n">cast</span><span class="p">(</span><span class="nb">list</span><span class="p">[</span><span class="n">QueryPlan</span><span class="p">],</span> <span class="n">built_plans</span><span class="p">),</span> <span class="n">based_on</span><span class="o">=</span><span class="n">base_plan</span><span class="p">,</span> <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="o">=</span> <span class="n">base_plan</span>
+                <span class="k">return</span> <span class="bp">self</span>
+
+        <span class="c1"># 7) AND-path: order by estimated cardinality (more selective first)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">index_plans</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">get_cardinality_estimate</span><span class="p">()))</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+        <span class="c1"># 8) If exactly one index plan and no residuals, return the plan directly</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">index_plans</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">residual_filters</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">index_plans</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="c1"># 9) Build AndMerge with residual filters; base is preserved only for explain chaining</span>
+        <span class="k">return</span> <span class="n">AndMerge</span><span class="p">(</span>
+            <span class="n">and_queries</span><span class="o">=</span><span class="n">index_plans</span><span class="p">,</span>
+            <span class="n">residual_filters</span><span class="o">=</span><span class="n">residual_filters</span><span class="p">,</span>
+            <span class="n">based_on</span><span class="o">=</span><span class="n">base_plan</span><span class="p">,</span>
+            <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span>
+        <span class="p">)</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_reorder_and_expression</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">and_expression</span><span class="p">:</span> <span class="s1">&#39;AndExpression&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;AndExpression&#39;</span><span class="p">:</span>

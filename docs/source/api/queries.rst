@@ -357,3 +357,48 @@ Chaining
     # Execute the query
     for user in chain_plan.execute().as_iterable():
         print(user["name"])  # Output: Bob, John
+
+
+
+Vector Search Plans
+===================
+
+.. autoclass:: proto_db.queries.VectorSearchPlan
+   :members:
+
+QueryableIndex Interface
+========================
+
+Some index types can participate in planning by implementing ``QueryableIndex`` and ``build_query_plan``.
+
+.. autoclass:: proto_db.queries.QueryableIndex
+   :members:
+
+Example: ANN pushdown with Near
+--------------------------------
+
+.. code-block:: python
+
+    from proto_db.indexes import IndexDefinition
+    from proto_db.vector_index import HNSWVectorIndex
+    from proto_db.queries import WherePlan, Expression
+
+    # Create and attach a vector index
+    vec_idx = IndexDefinition(
+        name='emb',
+        extractor=lambda rec: rec['emb'],
+        index_class=HNSWVectorIndex,
+        index_params={'metric': 'cosine', 'M': 16, 'efConstruction': 200, 'efSearch': 64},
+    )
+    coll = coll.add_index(vec_idx)
+
+    # Near operator: cosine threshold 0.8
+    expr = Expression.compile(['emb', 'near[]', [0.1, 0.2, 0.3], 0.8])
+    plan = WherePlan(filter=expr, based_on=coll.as_query_plan(), transaction=tr)
+
+    opt = plan.optimize()  # → VectorSearchPlan or AndMerge with residuals
+    results = opt.execute()  # returns a collection (e.g., List)
+    # Paginate efficiently without re-running the query
+    page = results.slice(0, 20)
+    for rec in page.as_iterable():
+        ...

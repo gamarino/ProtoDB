@@ -61,6 +61,8 @@
 <li class="toctree-l2"><a class="reference internal" href="data_structures.html">Data Structures</a></li>
 <li class="toctree-l2"><a class="reference internal" href="indexes.html">Secondary Indexes</a></li>
 <li class="toctree-l2"><a class="reference internal" href="queries.html">Query System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html#vector-search-plans">Vector Search Plans</a></li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html#queryableindex-interface">QueryableIndex Interface</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Vector Support</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#vector">Vector</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#proto_db.vectors.Vector"><code class="docutils literal notranslate"><span class="pre">Vector</span></code></a></li>
@@ -74,16 +76,9 @@
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#notes-on-backends">Notes on backends</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#query-integration-ann-pushdown">Query Integration (ANN pushdown)</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#operators">Operators</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#notes">Notes</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="#module-0">Vectors</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#id1">Vector</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#id0"><code class="docutils literal notranslate"><span class="pre">Vector</span></code></a></li>
-</ul>
-</li>
-<li class="toctree-l3"><a class="reference internal" href="#id7">Notes</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="arrow_parquet.html">Arrow / Parquet Bridge</a></li>
@@ -132,7 +127,7 @@
              
   <section id="module-proto_db.vectors">
 <span id="vector-support"></span><h1>Vector Support<a class="headerlink" href="#module-proto_db.vectors" title="Link to this heading"></a></h1>
-<p>ProtoBase provides a lightweight Vector type and an exact in-memory vector index suitable as a fallback for similarity search.</p>
+<p>ProtoBase provides a lightweight Vector type and vector indexes (exact and optional ANN) for similarity search that integrate with the cooperative query optimizer.</p>
 <section id="vector">
 <h2>Vector<a class="headerlink" href="#vector" title="Link to this heading"></a></h2>
 <dl class="py class">
@@ -169,7 +164,7 @@ copy semantics:</p>
 </ul>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference internal" href="#id0" title="proto_db.vectors.Vector"><em>Vector</em></a></p>
+<dd class="field-even"><p><a class="reference internal" href="#proto_db.vectors.Vector" title="proto_db.vectors.Vector"><em>Vector</em></a></p>
 </dd>
 </dl>
 </dd></dl>
@@ -239,9 +234,50 @@ copy semantics:</p>
 <span id="vector-indexes"></span><h2>Vector Indexes<a class="headerlink" href="#module-proto_db.vector_index" title="Link to this heading"></a></h2>
 <dl class="py class">
 <dt class="sig sig-object py" id="proto_db.vector_index.VectorIndex">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.vector_index.</span></span><span class="sig-name descname"><span class="pre">VectorIndex</span></span><a class="reference internal" href="../_modules/proto_db/vector_index.html#VectorIndex"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.vector_index.VectorIndex" title="Link to this definition"></a></dt>
-<dd><p>Abstract vector index interface.
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.vector_index.</span></span><span class="sig-name descname"><span class="pre">VectorIndex</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">indexes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/vector_index.html#VectorIndex"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.vector_index.VectorIndex" title="Link to this definition"></a></dt>
+<dd><p>Abstract vector index interface and QueryableIndex participant.
 Concrete implementations may be ANN structures (e.g., HNSW) or exact.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>indexes</strong> (<a class="reference internal" href="data_structures.html#proto_db.dictionaries.Dictionary" title="proto_db.dictionaries.Dictionary"><em>Dictionary</em></a>)</p></li>
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.vector_index.VectorIndex.as_query_plan">
+<span class="sig-name descname"><span class="pre">as_query_plan</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/vector_index.html#VectorIndex.as_query_plan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.vector_index.VectorIndex.as_query_plan" title="Link to this definition"></a></dt>
+<dd><p>Creates a query plan based on this collection.</p>
+<p>This method generates a QueryPlan object that can be used to execute
+queries against the collection’s data. Implementations should define
+how the collection’s specific structure is translated into a query plan.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A QueryPlan object for this collection.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.vector_index.VectorIndex.build_query_plan">
+<span class="sig-name descname"><span class="pre">build_query_plan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">term</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">context</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/vector_index.html#VectorIndex.build_query_plan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.vector_index.VectorIndex.build_query_plan" title="Link to this definition"></a></dt>
+<dd><p>Return a specialized QueryPlan for the given term if this index can
+handle it efficiently; otherwise return None.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>term</strong> (<em>Term</em>)</p></li>
+<li><p><strong>context</strong> (<em>QueryContext</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="queries.html#proto_db.queries.VectorSearchPlan" title="proto_db.queries.VectorSearchPlan"><em>VectorSearchPlan</em></a> | None</p>
+</dd>
+</dl>
+</dd></dl>
+
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.vector_index.VectorIndex.search">
 <em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">search</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">query</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metric</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/vector_index.html#VectorIndex.search"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.vector_index.VectorIndex.search" title="Link to this definition"></a></dt>
@@ -249,7 +285,7 @@ Concrete implementations may be ANN structures (e.g., HNSW) or exact.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>query</strong> (<a class="reference internal" href="#id0" title="proto_db.vectors.Vector"><em>Vector</em></a><em> | </em><em>Iterable</em><em>[</em><em>float</em><em>]</em>)</p></li>
+<li><p><strong>query</strong> (<a class="reference internal" href="#proto_db.vectors.Vector" title="proto_db.vectors.Vector"><em>Vector</em></a><em> | </em><em>Iterable</em><em>[</em><em>float</em><em>]</em>)</p></li>
 <li><p><strong>k</strong> (<em>int</em>)</p></li>
 <li><p><strong>metric</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
 <li><p><strong>params</strong> (<em>dict</em><em> | </em><em>None</em>)</p></li>
@@ -281,7 +317,7 @@ Suitable as a correctness fallback when ANN libs are unavailable.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>query</strong> (<a class="reference internal" href="#id0" title="proto_db.vectors.Vector"><em>Vector</em></a><em> | </em><em>Iterable</em><em>[</em><em>float</em><em>]</em>)</p></li>
+<li><p><strong>query</strong> (<a class="reference internal" href="#proto_db.vectors.Vector" title="proto_db.vectors.Vector"><em>Vector</em></a><em> | </em><em>Iterable</em><em>[</em><em>float</em><em>]</em>)</p></li>
 <li><p><strong>k</strong> (<em>int</em>)</p></li>
 <li><p><strong>metric</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
 <li><p><strong>params</strong> (<em>dict</em><em> | </em><em>None</em>)</p></li>
@@ -313,13 +349,31 @@ Suitable as a correctness fallback when ANN libs are unavailable.</p>
 </dd>
 </dl>
 <dl class="py method">
+<dt class="sig sig-object py" id="proto_db.vector_index.HNSWVectorIndex.build_query_plan">
+<span class="sig-name descname"><span class="pre">build_query_plan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">term</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">context</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/vector_index.html#HNSWVectorIndex.build_query_plan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.vector_index.HNSWVectorIndex.build_query_plan" title="Link to this definition"></a></dt>
+<dd><p>Return a specialized QueryPlan for the given term if this index can
+handle it efficiently; otherwise return None.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>term</strong> (<em>Term</em>)</p></li>
+<li><p><strong>context</strong> (<em>QueryContext</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="queries.html#proto_db.queries.VectorSearchPlan" title="proto_db.queries.VectorSearchPlan"><em>VectorSearchPlan</em></a> | None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="proto_db.vector_index.HNSWVectorIndex.search">
 <span class="sig-name descname"><span class="pre">search</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">query</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metric</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/vector_index.html#HNSWVectorIndex.search"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.vector_index.HNSWVectorIndex.search" title="Link to this definition"></a></dt>
 <dd><p>Return list of (id, score). For cosine: score is similarity; for l2: negative distance.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>query</strong> (<a class="reference internal" href="#id0" title="proto_db.vectors.Vector"><em>Vector</em></a><em> | </em><em>Iterable</em><em>[</em><em>float</em><em>]</em>)</p></li>
+<li><p><strong>query</strong> (<a class="reference internal" href="#proto_db.vectors.Vector" title="proto_db.vectors.Vector"><em>Vector</em></a><em> | </em><em>Iterable</em><em>[</em><em>float</em><em>]</em>)</p></li>
 <li><p><strong>k</strong> (<em>int</em>)</p></li>
 <li><p><strong>metric</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
 <li><p><strong>params</strong> (<em>dict</em><em> | </em><em>None</em>)</p></li>
@@ -352,13 +406,49 @@ Suitable as a correctness fallback when ANN libs are unavailable.</p>
 <li><p>HNSW supports parameters M, efConstruction and efSearch. Use save(path_prefix)/load(path_prefix) to persist and reload the index and its metadata (id mapping, metric, params).</p></li>
 </ul>
 </section>
+<section id="query-integration-ann-pushdown">
+<h2>Query Integration (ANN pushdown)<a class="headerlink" href="#query-integration-ann-pushdown" title="Link to this heading"></a></h2>
+<p>Vector indexes implement the <code class="docutils literal notranslate"><span class="pre">QueryableIndex</span></code> interface so they can participate in planning. When you add a vector index to a collection and express a <code class="docutils literal notranslate"><span class="pre">Near</span></code> term in a WherePlan, the optimizer builds a specialized <code class="docutils literal notranslate"><span class="pre">VectorSearchPlan</span></code> that executes a top-k or threshold search in the index and returns results as a collection.</p>
+<p>Typical setup using <code class="docutils literal notranslate"><span class="pre">IndexDefinition</span></code> and <code class="docutils literal notranslate"><span class="pre">HNSWVectorIndex</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.indexes</span><span class="w"> </span><span class="kn">import</span> <span class="n">IndexDefinition</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.vector_index</span><span class="w"> </span><span class="kn">import</span> <span class="n">HNSWVectorIndex</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">WherePlan</span><span class="p">,</span> <span class="n">Expression</span>
+
+<span class="c1"># Suppose each record has an embedding at key &#39;emb&#39;</span>
+<span class="n">idx_def</span> <span class="o">=</span> <span class="n">IndexDefinition</span><span class="p">(</span>
+    <span class="n">name</span><span class="o">=</span><span class="s1">&#39;emb&#39;</span><span class="p">,</span>
+    <span class="n">extractor</span><span class="o">=</span><span class="k">lambda</span> <span class="n">rec</span><span class="p">:</span> <span class="n">rec</span><span class="p">[</span><span class="s1">&#39;emb&#39;</span><span class="p">],</span>  <span class="c1"># produce the vector per record</span>
+    <span class="n">index_class</span><span class="o">=</span><span class="n">HNSWVectorIndex</span><span class="p">,</span>
+    <span class="n">index_params</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;metric&#39;</span><span class="p">:</span> <span class="s1">&#39;cosine&#39;</span><span class="p">,</span> <span class="s1">&#39;M&#39;</span><span class="p">:</span> <span class="mi">16</span><span class="p">,</span> <span class="s1">&#39;efConstruction&#39;</span><span class="p">:</span> <span class="mi">200</span><span class="p">,</span> <span class="s1">&#39;efSearch&#39;</span><span class="p">:</span> <span class="mi">64</span><span class="p">},</span>
+<span class="p">)</span>
+
+<span class="c1"># Build the index on a List/Set</span>
+<span class="n">people</span> <span class="o">=</span> <span class="n">people</span><span class="o">.</span><span class="n">add_index</span><span class="p">(</span><span class="n">idx_def</span><span class="p">)</span>
+
+<span class="c1"># Express a vector similarity predicate using the Near operator via Expression.compile</span>
+<span class="c1"># Cosine threshold 0.8; optionally you may include k as a third value</span>
+<span class="n">expr</span> <span class="o">=</span> <span class="n">Expression</span><span class="o">.</span><span class="n">compile</span><span class="p">([</span><span class="s1">&#39;emb&#39;</span><span class="p">,</span> <span class="s1">&#39;near[]&#39;</span><span class="p">,</span> <span class="p">[</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">],</span> <span class="mf">0.8</span><span class="p">])</span>
+<span class="n">plan</span> <span class="o">=</span> <span class="n">WherePlan</span><span class="p">(</span><span class="nb">filter</span><span class="o">=</span><span class="n">expr</span><span class="p">,</span> <span class="n">based_on</span><span class="o">=</span><span class="n">people</span><span class="o">.</span><span class="n">as_query_plan</span><span class="p">(),</span> <span class="n">transaction</span><span class="o">=</span><span class="n">tr</span><span class="p">)</span>
+
+<span class="c1"># Optimize: the planner detects the vector index and returns a VectorSearchPlan (or an AndMerge with residuals)</span>
+<span class="n">opt</span> <span class="o">=</span> <span class="n">plan</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">opt</span><span class="o">.</span><span class="n">explain</span><span class="p">())</span>
+
+<span class="c1"># Execute and page efficiently (execute returns a DBCollections, e.g., List)</span>
+<span class="n">coll</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
+<span class="n">page1</span> <span class="o">=</span> <span class="n">coll</span><span class="o">.</span><span class="n">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>  <span class="c1"># O(1) slice for pagination</span>
+<span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">page1</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
+    <span class="o">...</span>
+</pre></div>
+</div>
+</section>
 <section id="operators">
 <h2>Operators<a class="headerlink" href="#operators" title="Link to this heading"></a></h2>
-<p>The query system recognizes a similarity-threshold operator for linear evaluation:</p>
+<p>The query system provides a similarity operator for use in expressions:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">near[]</span></code>: match records whose vector field is near a query vector above a threshold for cosine (or within a distance threshold for l2).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">near[]</span></code>: match records whose vector field is near a query vector above a threshold for cosine (or within a distance threshold for l2). It can be used by vector indexes to create a <code class="docutils literal notranslate"><span class="pre">VectorSearchPlan</span></code>.</p></li>
 </ul>
-<p>Example:</p>
+<p>Example (linear fallback when no index is present):</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Filter records with cosine similarity &gt;= 0.8 to query vector</span>
 <span class="n">expr</span> <span class="o">=</span> <span class="n">Expression</span><span class="o">.</span><span class="n">compile</span><span class="p">([</span><span class="s1">&#39;emb&#39;</span><span class="p">,</span> <span class="s1">&#39;near[]&#39;</span><span class="p">,</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span> <span class="mf">0.8</span><span class="p">])</span>
 <span class="n">plan</span> <span class="o">=</span> <span class="n">WherePlan</span><span class="p">(</span><span class="nb">filter</span><span class="o">=</span><span class="n">expr</span><span class="p">,</span> <span class="n">based_on</span><span class="o">=</span><span class="n">base_plan</span><span class="p">,</span> <span class="n">transaction</span><span class="o">=</span><span class="n">tr</span><span class="p">)</span>
@@ -369,112 +459,9 @@ Suitable as a correctness fallback when ANN libs are unavailable.</p>
 <section id="notes">
 <h2>Notes<a class="headerlink" href="#notes" title="Link to this heading"></a></h2>
 <ul class="simple">
-<li><p>This phase provides a correctness baseline (linear evaluation). Future phases can attach ANN indexes (e.g., HNSW) to collections and enable pushdown.</p></li>
-</ul>
-</section>
-</section>
-<section id="module-0">
-<span id="vectors"></span><h1>Vectors<a class="headerlink" href="#module-0" title="Link to this heading"></a></h1>
-<section id="id1">
-<h2>Vector<a class="headerlink" href="#id1" title="Link to this heading"></a></h2>
-<dl class="py class">
-<dt class="sig sig-object py" id="id0">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.vectors.</span></span><span class="sig-name descname"><span class="pre">Vector</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dim</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normalized</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/vectors.html#Vector"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id0" title="Link to this definition"></a></dt>
-<dd><p>Simple immutable vector wrapper.
-- data: list of float32-like values (stored as Python floats).
-- dim: dimension (validated against data length).
-- normalized: whether data was L2-normalized (for cosine).</p>
-<section id="id2">
-<h3>Zero-copy buffers<a class="headerlink" href="#id2" title="Link to this heading"></a></h3>
-<ul class="simple">
-<li><p>from_buffer(buf, dtype=’float32’, copy=’auto’|’true’|’false’)</p></li>
-<li><p>as_buffer() -&gt; memoryview</p></li>
-<li><p>as_numpy(copy: bool | None = None)</p></li>
-</ul>
-<dl class="py method">
-<dt class="sig sig-object py" id="id3">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">from_buffer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">buf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'float32'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">copy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'auto'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/vectors.html#Vector.from_buffer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id3" title="Link to this definition"></a></dt>
-<dd><p>Create a Vector from a buffer (bytes, bytearray, memoryview, or numpy array if available).
-copy semantics:</p>
-<blockquote>
-<div><ul class="simple">
-<li><p>‘false’: never copy; requires C-contiguous, little-endian float32; otherwise raises.</p></li>
-<li><p>‘auto’: no copy if compatible; else copy once.</p></li>
-<li><p>‘true’: always copy into Python floats.</p></li>
-</ul>
-</div></blockquote>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>dtype</strong> (<em>str</em>)</p></li>
-<li><p><strong>copy</strong> (<em>str</em>)</p></li>
-</ul>
-</dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference internal" href="#id0" title="proto_db.vectors.Vector"><em>Vector</em></a></p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="id4">
-<span class="sig-name descname"><span class="pre">as_buffer</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/vectors.html#Vector.as_buffer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id4" title="Link to this definition"></a></dt>
-<dd><p>Return a read-only memoryview of float32 little-endian values (copy once).</p>
-<dl class="field-list simple">
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>memoryview</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="id5">
-<span class="sig-name descname"><span class="pre">as_numpy</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">copy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/vectors.html#Vector.as_numpy"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id5" title="Link to this definition"></a></dt>
-<dd><p>Return a numpy array representation of the vector.
-- copy=False or None: return a NumPy array with dtype float32. Implementation may copy for safety.
-- copy=True: always return a new independent ndarray.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>copy</strong> (<em>bool</em><em> | </em><em>None</em>)</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="id6">
-<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dim</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normalized</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#id6" title="Link to this definition"></a></dt>
-<dd><dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>data</strong> (<em>tuple</em><em>[</em><em>float</em><em>, </em><em>...</em><em>]</em>)</p></li>
-<li><p><strong>dim</strong> (<em>int</em>)</p></li>
-<li><p><strong>normalized</strong> (<em>bool</em>)</p></li>
-</ul>
-</dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>None</p>
-</dd>
-</dl>
-</dd></dl>
-
-</section>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>data</strong> (<em>tuple</em><em>[</em><em>float</em><em>, </em><em>...</em><em>]</em>)</p></li>
-<li><p><strong>dim</strong> (<em>int</em>)</p></li>
-<li><p><strong>normalized</strong> (<em>bool</em>)</p></li>
-</ul>
-</dd>
-</dl>
-</dd></dl>
-
-</section>
-<section id="id7">
-<h2>Notes<a class="headerlink" href="#id7" title="Link to this heading"></a></h2>
-<ul class="simple">
-<li><p>Supports zero-copy buffer bridging via from_buffer()/as_buffer()/as_numpy().</p></li>
-<li><p>Default dtype float32 little-endian for buffer interop.</p></li>
+<li><p>With a configured vector index, <code class="docutils literal notranslate"><span class="pre">WherePlan.optimize()</span></code> pushes down <code class="docutils literal notranslate"><span class="pre">Near</span></code> terms to a specialized <code class="docutils literal notranslate"><span class="pre">VectorSearchPlan</span></code>.</p></li>
+<li><p>Results are first-class collections, so paginating with <code class="docutils literal notranslate"><span class="pre">slice()</span></code> is O(1) and requires no re-execution.</p></li>
+<li><p>If no index is present, evaluation falls back to a linear scan for correctness.</p></li>
 </ul>
 </section>
 </section>

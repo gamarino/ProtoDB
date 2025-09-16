@@ -88,8 +88,9 @@
 </li>
 <li class="toctree-l2"><a class="reference internal" href="indexes.html">Secondary Indexes</a></li>
 <li class="toctree-l2"><a class="reference internal" href="queries.html">Query System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html#vector-search-plans">Vector Search Plans</a></li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html#queryableindex-interface">QueryableIndex Interface</a></li>
 <li class="toctree-l2"><a class="reference internal" href="vectors.html">Vector Support</a></li>
-<li class="toctree-l2"><a class="reference internal" href="vectors.html#module-0">Vectors</a></li>
 <li class="toctree-l2"><a class="reference internal" href="arrow_parquet.html">Arrow / Parquet Bridge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="linq.html">LINQ-like API</a></li>
 <li class="toctree-l2"><a class="reference internal" href="exceptions.html">Exceptions</a></li>
@@ -607,6 +608,16 @@ Rebalances the structure after insertion if necessary.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="proto_db.lists.List.add_index">
+<span class="sig-name descname"><span class="pre">add_index</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index_def</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/lists.html#List.add_index"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.lists.List.add_index" title="Link to this definition"></a></dt>
+<dd><p>Add a secondary index to this List.
+Backward compatible: if a string is provided, builds a RepeatedKeysDictionary on that field.
+If an IndexDefinition is provided, uses its index_class and extractor to populate the index.
+For vector indexes (with a <cite>build</cite> method), uses the extractor to get vectors and assigns an id→object map
+to enable mapping search results back to records.</p>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="proto_db.lists.List.as_iterable">
 <span class="sig-name descname"><span class="pre">as_iterable</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/lists.html#List.as_iterable"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.lists.List.as_iterable" title="Link to this definition"></a></dt>
 <dd><p>Returns an iterable representation of the list items.</p>
@@ -956,6 +967,15 @@ execution frameworks. Delegates the conversion to the underlying <cite>HashDicti
 <dd class="field-even"><p><a class="reference internal" href="queries.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
 </dd>
 </dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.sets.Set.add_index">
+<span class="sig-name descname"><span class="pre">add_index</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index_def</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/sets.html#Set.add_index"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.sets.Set.add_index" title="Link to this definition"></a></dt>
+<dd><p>Add an index over the elements of the Set.
+Backward compatible: if given a string, builds a RepeatedKeysDictionary whose key is the element itself.
+If given an IndexDefinition, uses its index_class and extractor.
+For vector indexes, uses bulk build with an id→object map.</p>
 </dd></dl>
 
 <dl class="py method">

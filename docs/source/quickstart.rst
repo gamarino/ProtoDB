@@ -288,3 +288,39 @@ Next Steps
 ----------------
 
 This quickstart guide covered the basics of using ProtoBase. For more detailed information, see the :doc:`api/index` documentation.
+
+
+Vector Similarity Search (ANN)
+------------------------------
+
+ProtoBase can perform vector similarity queries natively when a vector index is attached to a collection. The optimizer pushes ``Near`` terms to the index via a ``VectorSearchPlan``.
+
+.. code-block:: python
+
+    from proto_db.indexes import IndexDefinition
+    from proto_db.vector_index import HNSWVectorIndex
+    from proto_db.queries import WherePlan, Expression
+
+    # Each record has an embedding at key 'emb'
+    idx_def = IndexDefinition(
+        name='emb',
+        extractor=lambda rec: rec['emb'],  # return the vector for each record
+        index_class=HNSWVectorIndex,
+        index_params={'metric': 'cosine', 'M': 16, 'efConstruction': 200, 'efSearch': 64},
+    )
+
+    # Attach the index to a List or Set
+    items = items.add_index(idx_def)
+
+    # Build a Near expression: cosine similarity >= 0.8
+    expr = Expression.compile(['emb', 'near[]', [0.12, 0.87, 0.05], 0.8])
+    plan = WherePlan(filter=expr, based_on=items.as_query_plan(), transaction=tr)
+
+    # Optimize and execute: returns a DBCollections (e.g., List)
+    opt = plan.optimize()
+    coll = opt.execute()
+
+    # Paginate efficiently using slice() without recomputing the query
+    page = coll.slice(0, 10)
+    for rec in page.as_iterable():
+        print(rec)

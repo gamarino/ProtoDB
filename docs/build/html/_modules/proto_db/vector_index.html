@@ -44,9 +44,17 @@
 <li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../concepts.html">ProtoDB Fundamental Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../performance.html">Performance</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../storage_cloud.html">Cloud and Cluster Storage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
 </ul>
 
@@ -78,18 +86,34 @@
 <span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">ABC</span><span class="p">,</span> <span class="n">abstractmethod</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Any</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Optional</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">.vectors</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vector</span><span class="p">,</span> <span class="n">cosine_similarity</span><span class="p">,</span> <span class="n">l2_distance</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">QueryableIndex</span><span class="p">,</span> <span class="n">QueryContext</span><span class="p">,</span> <span class="n">Term</span><span class="p">,</span> <span class="n">Near</span><span class="p">,</span> <span class="n">VectorSearchPlan</span>
 
 
 <div class="viewcode-block" id="VectorIndex">
 <a class="viewcode-back" href="../../api/vectors.html#proto_db.vector_index.VectorIndex">[docs]</a>
-<span class="k">class</span><span class="w"> </span><span class="nc">VectorIndex</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">VectorIndex</span><span class="p">(</span><span class="n">QueryableIndex</span><span class="p">,</span> <span class="n">ABC</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Abstract vector index interface.</span>
+<span class="sd">    Abstract vector index interface and QueryableIndex participant.</span>
 <span class="sd">    Concrete implementations may be ANN structures (e.g., HNSW) or exact.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># Satisfy DBCollections API minimally; indices are not iterated as collections.</span>
+<div class="viewcode-block" id="VectorIndex.as_query_plan">
+<a class="viewcode-back" href="../../api/vectors.html#proto_db.vector_index.VectorIndex.as_query_plan">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">as_query_plan</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">ListPlan</span> <span class="k">as</span> <span class="n">_ListPlan</span>
+        <span class="k">return</span> <span class="n">_ListPlan</span><span class="p">(</span><span class="n">base_list</span><span class="o">=</span><span class="p">[],</span> <span class="n">transaction</span><span class="o">=</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;transaction&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span></div>
+
+
+    <span class="c1"># Cooperative planner hook: default to not handling any term</span>
+<div class="viewcode-block" id="VectorIndex.build_query_plan">
+<a class="viewcode-back" href="../../api/vectors.html#proto_db.vector_index.VectorIndex.build_query_plan">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build_query_plan</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">term</span><span class="p">:</span> <span class="n">Term</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">QueryContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">VectorSearchPlan</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
 
     <span class="nd">@abstractmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vectors</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Vector</span><span class="p">]</span> <span class="o">|</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Iterable</span><span class="p">[</span><span class="nb">float</span><span class="p">]],</span> <span class="n">ids</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span>
@@ -321,6 +345,42 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_params</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;M&#39;</span><span class="p">:</span> <span class="n">M</span><span class="p">,</span> <span class="s1">&#39;efConstruction&#39;</span><span class="p">:</span> <span class="n">efConstruction</span><span class="p">,</span> <span class="s1">&#39;efSearch&#39;</span><span class="p">:</span> <span class="n">efSearch</span><span class="p">}</span>
         <span class="c1"># Fallback exact index if hnswlib (or numpy) is not present</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_fallback</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="p">(</span><span class="n">hnswlib</span> <span class="ow">and</span> <span class="n">_np</span><span class="p">)</span> <span class="k">else</span> <span class="n">ExactVectorIndex</span><span class="p">(</span><span class="n">metric</span><span class="o">=</span><span class="n">metric</span><span class="p">)</span>
+
+    <span class="c1"># QueryableIndex implementation: build a VectorSearchPlan for Near terms</span>
+<div class="viewcode-block" id="HNSWVectorIndex.build_query_plan">
+<a class="viewcode-back" href="../../api/vectors.html#proto_db.vector_index.HNSWVectorIndex.build_query_plan">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build_query_plan</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">term</span><span class="p">:</span> <span class="n">Term</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">QueryContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">VectorSearchPlan</span><span class="p">]:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="n">Term</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">operation</span><span class="p">,</span> <span class="n">Near</span><span class="p">):</span>
+                <span class="k">return</span> <span class="kc">None</span>
+            <span class="c1"># Extract query vector and either threshold or k from term.value</span>
+            <span class="n">qv</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">k</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">threshold</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+                <span class="c1"># Common shapes: (query_vec, threshold) or (query_vec, threshold, k)</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="n">qv</span> <span class="o">=</span> <span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">2</span> <span class="ow">and</span> <span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">threshold</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">k</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+                    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                        <span class="n">k</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="n">qv</span> <span class="o">=</span> <span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;query&#39;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;vector&#39;</span><span class="p">)</span>
+                <span class="n">k</span> <span class="o">=</span> <span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;k&#39;</span><span class="p">)</span>
+                <span class="n">threshold</span> <span class="o">=</span> <span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;threshold&#39;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">qv</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span>
+            <span class="k">return</span> <span class="n">VectorSearchPlan</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">query_vector</span><span class="o">=</span><span class="n">qv</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="n">k</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="n">threshold</span><span class="p">,</span>
+                                    <span class="n">metric</span><span class="o">=</span><span class="nb">getattr</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">operation</span><span class="p">,</span> <span class="s1">&#39;metric&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+                                    <span class="n">based_on</span><span class="o">=</span><span class="n">context</span><span class="o">.</span><span class="n">transaction</span> <span class="ow">and</span> <span class="kc">None</span><span class="p">,</span>
+                                    <span class="n">transaction</span><span class="o">=</span><span class="n">context</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span></div>
+
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_to_vector</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="p">:</span> <span class="n">Vector</span> <span class="o">|</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">float</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Vector</span><span class="p">:</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">Vector</span><span class="p">):</span>
@@ -1103,7 +1163,7 @@
   <hr/>
 
   <div role="contentinfo">
-    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+    <p>&#169; Copyright 2025, ProtoBase Team.</p>
   </div>
 
   Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a

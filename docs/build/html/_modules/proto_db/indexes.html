@@ -44,9 +44,17 @@
 <li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../concepts.html">ProtoDB Fundamental Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../performance.html">Performance</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../storage_cloud.html">Cloud and Cluster Storage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
 </ul>
 
@@ -92,9 +100,13 @@
 <span class="sd">        - a single key value (applies to this index name), or</span>
 <span class="sd">        - an iterable of key values (applies to this index name), or</span>
 <span class="sd">        - an iterable of (index_name, key_value) tuples to feed multiple indexes</span>
+<span class="sd">    - index_class: the concrete index class to instantiate (e.g., RepeatedKeysDictionary, HNSWVectorIndex)</span>
+<span class="sd">    - index_params: optional constructor params for the index class</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
-    <span class="n">extractor</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Any</span><span class="p">],</span> <span class="n">Any</span><span class="p">]</span></div>
+    <span class="n">extractor</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Any</span><span class="p">],</span> <span class="n">Any</span><span class="p">]</span>
+    <span class="n">index_class</span><span class="p">:</span> <span class="nb">type</span>
+    <span class="n">index_params</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="kc">None</span></div>
 
 
 
@@ -213,7 +225,7 @@
   <hr/>
 
   <div role="contentinfo">
-    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+    <p>&#169; Copyright 2025, ProtoBase Team.</p>
   </div>
 
   Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a

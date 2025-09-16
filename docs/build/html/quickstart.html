@@ -55,6 +55,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#working-with-sets">Working with Sets</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#using-queries">Using Queries</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#next-steps">Next Steps</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#vector-similarity-search-ann">Vector Similarity Search (ANN)</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
@@ -361,6 +362,39 @@
 <section id="next-steps">
 <h2>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading"></a></h2>
 <p>This quickstart guide covered the basics of using ProtoBase. For more detailed information, see the <a class="reference internal" href="api/index.html"><span class="doc">API Reference</span></a> documentation.</p>
+</section>
+<section id="vector-similarity-search-ann">
+<h2>Vector Similarity Search (ANN)<a class="headerlink" href="#vector-similarity-search-ann" title="Link to this heading"></a></h2>
+<p>ProtoBase can perform vector similarity queries natively when a vector index is attached to a collection. The optimizer pushes <code class="docutils literal notranslate"><span class="pre">Near</span></code> terms to the index via a <code class="docutils literal notranslate"><span class="pre">VectorSearchPlan</span></code>.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.indexes</span><span class="w"> </span><span class="kn">import</span> <span class="n">IndexDefinition</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.vector_index</span><span class="w"> </span><span class="kn">import</span> <span class="n">HNSWVectorIndex</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">WherePlan</span><span class="p">,</span> <span class="n">Expression</span>
+
+<span class="c1"># Each record has an embedding at key &#39;emb&#39;</span>
+<span class="n">idx_def</span> <span class="o">=</span> <span class="n">IndexDefinition</span><span class="p">(</span>
+    <span class="n">name</span><span class="o">=</span><span class="s1">&#39;emb&#39;</span><span class="p">,</span>
+    <span class="n">extractor</span><span class="o">=</span><span class="k">lambda</span> <span class="n">rec</span><span class="p">:</span> <span class="n">rec</span><span class="p">[</span><span class="s1">&#39;emb&#39;</span><span class="p">],</span>  <span class="c1"># return the vector for each record</span>
+    <span class="n">index_class</span><span class="o">=</span><span class="n">HNSWVectorIndex</span><span class="p">,</span>
+    <span class="n">index_params</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;metric&#39;</span><span class="p">:</span> <span class="s1">&#39;cosine&#39;</span><span class="p">,</span> <span class="s1">&#39;M&#39;</span><span class="p">:</span> <span class="mi">16</span><span class="p">,</span> <span class="s1">&#39;efConstruction&#39;</span><span class="p">:</span> <span class="mi">200</span><span class="p">,</span> <span class="s1">&#39;efSearch&#39;</span><span class="p">:</span> <span class="mi">64</span><span class="p">},</span>
+<span class="p">)</span>
+
+<span class="c1"># Attach the index to a List or Set</span>
+<span class="n">items</span> <span class="o">=</span> <span class="n">items</span><span class="o">.</span><span class="n">add_index</span><span class="p">(</span><span class="n">idx_def</span><span class="p">)</span>
+
+<span class="c1"># Build a Near expression: cosine similarity &gt;= 0.8</span>
+<span class="n">expr</span> <span class="o">=</span> <span class="n">Expression</span><span class="o">.</span><span class="n">compile</span><span class="p">([</span><span class="s1">&#39;emb&#39;</span><span class="p">,</span> <span class="s1">&#39;near[]&#39;</span><span class="p">,</span> <span class="p">[</span><span class="mf">0.12</span><span class="p">,</span> <span class="mf">0.87</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">],</span> <span class="mf">0.8</span><span class="p">])</span>
+<span class="n">plan</span> <span class="o">=</span> <span class="n">WherePlan</span><span class="p">(</span><span class="nb">filter</span><span class="o">=</span><span class="n">expr</span><span class="p">,</span> <span class="n">based_on</span><span class="o">=</span><span class="n">items</span><span class="o">.</span><span class="n">as_query_plan</span><span class="p">(),</span> <span class="n">transaction</span><span class="o">=</span><span class="n">tr</span><span class="p">)</span>
+
+<span class="c1"># Optimize and execute: returns a DBCollections (e.g., List)</span>
+<span class="n">opt</span> <span class="o">=</span> <span class="n">plan</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span>
+<span class="n">coll</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
+
+<span class="c1"># Paginate efficiently using slice() without recomputing the query</span>
+<span class="n">page</span> <span class="o">=</span> <span class="n">coll</span><span class="o">.</span><span class="n">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">page</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">rec</span><span class="p">)</span>
+</pre></div>
+</div>
 </section>
 </section>
 
