@@ -270,7 +270,7 @@ ProtoBase provides a powerful query system:
     )
     
     # Execute the query
-    for user in where_plan.execute():
+    for user in where_plan.execute().as_iterable():
         print(user["name"])  # Output: John, Bob
     
     # Group users by city
@@ -280,7 +280,7 @@ ProtoBase provides a powerful query system:
     )
     
     # Execute the group query
-    for city, users_in_city in group_plan.execute():
+    for city, users_in_city in group_plan.execute().as_iterable():
         print(f"{city}: {len(users_in_city)} users")
         # Output: New York: 2 users, Boston: 1 user
 

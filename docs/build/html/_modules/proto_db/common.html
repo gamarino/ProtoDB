@@ -1028,6 +1028,12 @@
                 <span class="k">continue</span></div>
 
 
+    <span class="k">def</span><span class="w"> </span><span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">iter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">())</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">iter</span><span class="p">(())</span>
+
 <div class="viewcode-block" id="DBCollections.as_query_plan">
 <a class="viewcode-back" href="../../api/core.html#proto_db.common.DBCollections.as_query_plan">[docs]</a>
     <span class="nd">@abstractmethod</span>
@@ -1076,15 +1082,16 @@
 <div class="viewcode-block" id="QueryPlan.execute">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.common.QueryPlan.execute">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DBCollections</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Executes the query plan and returns the results.</span>
+<span class="sd">        Executes the query plan and returns the results as a DBCollections instance.</span>
 
 <span class="sd">        This method processes the query plan and retrieves the data according to</span>
 <span class="sd">        the plan&#39;s specifications. Implementations should define the specific</span>
-<span class="sd">        execution logic based on the query plan type.</span>
+<span class="sd">        execution logic based on the query plan type and return a concrete</span>
+<span class="sd">        collection (e.g., List) to enable efficient pagination via slice().</span>
 
-<span class="sd">        :return: A list of results from executing the query plan.</span>
+<span class="sd">        :return: A DBCollections object containing the results.</span>
 <span class="sd">        &quot;&quot;&quot;</span></div>
 
 
@@ -1103,14 +1110,59 @@
 <span class="sd">        &quot;&quot;&quot;</span></div>
 
 
+<div class="viewcode-block" id="QueryPlan.get_cardinality_estimate">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.common.QueryPlan.get_cardinality_estimate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_cardinality_estimate</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Estimate the expected number of records produced by this plan.</span>
+<span class="sd">        Lower values mean higher selectivity.</span>
+
+<span class="sd">        Default: worst case based on the underlying source if available.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;based_on&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># Fallback to counting the underlying plan as a crude estimate</span>
+                <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="c1"># Unknown base: use a very large number to denote worst case</span>
+        <span class="k">return</span> <span class="mi">2</span><span class="o">**</span><span class="mi">63</span> <span class="o">-</span> <span class="mi">1</span></div>
+
+
+<div class="viewcode-block" id="QueryPlan.get_cost_estimate">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.common.QueryPlan.get_cost_estimate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_cost_estimate</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Estimate the relative computational cost to execute this plan.</span>
+<span class="sd">        Lower is better. This is not time, but a unit to compare plans.</span>
+
+<span class="sd">        Default: infinity to indicate non-optimized/unknown cost.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;inf&#39;</span><span class="p">)</span></div>
+
+
 <div class="viewcode-block" id="QueryPlan.count">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.common.QueryPlan.count">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">count</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Default count implementation: iterate through execute() and count the results.</span>
-<span class="sd">        Subclasses can override for more efficient counting.</span>
+<span class="sd">        Default count implementation: ask the returned collection for its count.</span>
+<span class="sd">        Falls back to iterating if the collection does not expose count.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">execute</span><span class="p">())</span></div>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">coll</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
+            <span class="n">c</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">coll</span><span class="p">,</span> <span class="s1">&#39;count&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">c</span>
+            <span class="c1"># Some collections may expose count as a property without type check</span>
+            <span class="k">if</span> <span class="n">c</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,)):</span>
+                <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+            <span class="c1"># Try len over iterable proxy</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">coll</span><span class="p">,</span> <span class="s1">&#39;as_iterable&#39;</span><span class="p">):</span>
+                <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">coll</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">())</span>
+            <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">coll</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="c1"># Last resort</span>
+            <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">())</span></div>
 
 
 <div class="viewcode-block" id="QueryPlan.explain">

@@ -194,8 +194,9 @@ You can create a custom query plan by extending the ``QueryPlan`` class:
             self.my_param = my_param
 
         def execute(self):
-            # Implement query execution
-            for item in self.based_on.execute():
+            # Implement query execution and return a collection
+            base_coll = self.based_on.execute()
+            for item in base_coll.as_iterable():
                 # Process item based on my_param
                 yield processed_item
 

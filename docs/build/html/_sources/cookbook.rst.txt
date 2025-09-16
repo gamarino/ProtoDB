@@ -49,7 +49,7 @@ Add a secondary index to a collection and use it in a query plan.
 
    plan = WherePlan(base=people.as_query_plan(), expr=Expression(field="city", op="==", value="NY"))
    print(plan.explain())  # Expect to see that an IndexedSearchPlan is used
-   result = list(plan.execute())
+   result = list(plan.execute().as_iterable())
 
 3. The Right Way to Use Sets and Hashing
 ----------------------------------------
@@ -113,7 +113,7 @@ Use Sets for intermediate work without persisting them.
    # Simple filter
    p1 = WherePlan(base=orders.as_query_plan(), expr=Expression(field="user", op="==", value="alice"))
    print(p1.explain())
-   rows = list(p1.execute())
+   rows = list(p1.execute().as_iterable())
 
    # AndMerge: combine two indexed filters (user == 'alice' AND amount == 20)
    p2 = AndMerge(
@@ -121,7 +121,7 @@ Use Sets for intermediate work without persisting them.
        WherePlan(base=orders.as_query_plan(), expr=Expression(field="amount", op="==", value=20)),
    )
    print(p2.explain())
-   rows2 = list(p2.execute())
+   rows2 = list(p2.execute().as_iterable())
 
    # GroupBy: aggregate total amount by user
    group_plan = GroupByPlan(
@@ -129,4 +129,4 @@ Use Sets for intermediate work without persisting them.
        key_field="user",
        agg={"total": ("amount", "sum")}
    )
-   summary = list(group_plan.execute())
+   summary = list(group_plan.execute().as_iterable())

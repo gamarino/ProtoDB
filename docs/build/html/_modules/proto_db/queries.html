@@ -87,10 +87,11 @@
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">ABC</span><span class="p">,</span> <span class="n">abstractmethod</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast</span><span class="p">,</span> <span class="n">TYPE_CHECKING</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">cast</span><span class="p">,</span> <span class="n">TYPE_CHECKING</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atom</span><span class="p">,</span> <span class="n">QueryPlan</span><span class="p">,</span> <span class="n">AtomPointer</span><span class="p">,</span> <span class="n">DBObject</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atom</span><span class="p">,</span> <span class="n">QueryPlan</span><span class="p">,</span> <span class="n">AtomPointer</span><span class="p">,</span> <span class="n">DBObject</span><span class="p">,</span> <span class="n">AbstractTransaction</span><span class="p">,</span> <span class="n">DBCollections</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProtoValidationException</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.hybrid_executor</span><span class="w"> </span><span class="kn">import</span> <span class="n">HybridExecutor</span>
 
@@ -98,6 +99,33 @@
     <span class="kn">from</span><span class="w"> </span><span class="nn">.db_access</span><span class="w"> </span><span class="kn">import</span> <span class="n">ObjectTransaction</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">.dictionaries</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dictionary</span><span class="p">,</span> <span class="n">DictionaryItem</span><span class="p">,</span> <span class="n">RepeatedKeysDictionary</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">.sets</span><span class="w"> </span><span class="kn">import</span> <span class="n">Set</span>
+
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">QueryContext</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Lightweight context passed from the planner to indices while building plans.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        transaction: Optional transaction to be used during planning/execution.</span>
+<span class="sd">        (Future fields like limit, offset can be added here.)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">transaction</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">AbstractTransaction</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">QueryableIndex</span><span class="p">(</span><span class="n">DBCollections</span><span class="p">,</span> <span class="n">ABC</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract interface for pluggable indices that can contribute specialized</span>
+<span class="sd">    query plans for particular terms.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build_query_plan</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">term</span><span class="p">:</span> <span class="s1">&#39;Term&#39;</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">QueryContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">QueryPlan</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return a specialized QueryPlan for the given term if this index can</span>
+<span class="sd">        handle it efficiently; otherwise return None.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span>
 
 <span class="c1"># Executor for async operations</span>
 <span class="n">max_workers</span> <span class="o">=</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">cpu_count</span><span class="p">()</span> <span class="ow">or</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mi">5</span>
@@ -677,9 +705,12 @@
 
 <div class="viewcode-block" id="ListPlan.execute">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.queries.ListPlan.execute">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DBCollections</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.lists</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span> <span class="k">as</span> <span class="n">_List</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">_List</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">base_list</span><span class="p">:</span>
-            <span class="k">yield</span> <span class="n">item</span></div>
+            <span class="n">res</span> <span class="o">=</span> <span class="n">res</span><span class="o">.</span><span class="n">append_last</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">res</span></div>
 
 
 <div class="viewcode-block" id="ListPlan.optimize">
@@ -718,12 +749,12 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span> <span class="o">=</span> <span class="n">indexes</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DBCollections</span><span class="p">:</span>
         <span class="c1"># Delegate execution to the underlying plan; indexes are only metadata for optimization</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">return</span> <span class="p">[]</span>
-        <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
-            <span class="k">yield</span> <span class="n">rec</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">.lists</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span> <span class="k">as</span> <span class="n">_List</span>
+            <span class="k">return</span> <span class="n">_List</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">IndexedQueryPlan</span><span class="p">(</span>
@@ -1108,6 +1139,29 @@
             <span class="n">refs</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">_ref_of</span><span class="p">(</span><span class="n">rec</span><span class="p">))</span>
         <span class="k">return</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">refs</span><span class="p">)</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_cardinality_estimate</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Exact O(1) estimate for equality lookups using the underlying index bucket size.</span>
+<span class="sd">        Returns 0 when the key is absent or index is unavailable.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">operator</span><span class="p">,</span> <span class="n">Equal</span><span class="p">)</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">field_to_scan</span><span class="p">):</span>
+                <span class="n">idx_dict</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Dictionary</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">field_to_scan</span><span class="p">))</span>
+                <span class="k">if</span> <span class="n">idx_dict</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="mi">0</span>
+                <span class="n">value_set</span> <span class="o">=</span> <span class="n">idx_dict</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+                <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">value_set</span><span class="o">.</span><span class="n">count</span><span class="p">)</span> <span class="k">if</span> <span class="n">value_set</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mi">0</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="c1"># Fallback to base class heuristic</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">get_cardinality_estimate</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_cost_estimate</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Equality lookup on an index is very cheap.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="mf">1.0</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">explain</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
         <span class="n">op_name</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">operator</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span>
         <span class="k">return</span> <span class="p">{</span>
@@ -1388,6 +1442,32 @@
 <a class="viewcode-back" href="../../api/queries.html#proto_db.queries.IndexedRangeSearchPlan.count">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">count</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
         <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">execute</span><span class="p">())</span></div>
+
+
+<div class="viewcode-block" id="IndexedRangeSearchPlan.get_cardinality_estimate">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.queries.IndexedRangeSearchPlan.get_cardinality_estimate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_cardinality_estimate</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Heuristic estimate for range scans. Use 25% of based_on count when available; otherwise a small constant.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;based_on&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">total</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">total</span> <span class="o">=</span> <span class="mi">100</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="n">total</span> <span class="o">=</span> <span class="mi">100</span>
+        <span class="n">est</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">total</span> <span class="o">*</span> <span class="mf">0.25</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">est</span> <span class="k">if</span> <span class="n">est</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="mi">1</span></div>
+
+
+<div class="viewcode-block" id="IndexedRangeSearchPlan.get_cost_estimate">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.queries.IndexedRangeSearchPlan.get_cost_estimate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_cost_estimate</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Range scans are more expensive than point lookups. Cost grows with estimated cardinality.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="mf">10.0</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_cardinality_estimate</span><span class="p">()</span> <span class="o">*</span> <span class="mf">0.1</span></div>
 
 
 <div class="viewcode-block" id="IndexedRangeSearchPlan.get_references">
@@ -1731,141 +1811,33 @@
 
 <div class="viewcode-block" id="WherePlan.execute">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.queries.WherePlan.execute">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DBCollections</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Execute the filtering logic over the input records.</span>
-
-<span class="sd">        Optimized path:</span>
-
-<span class="sd">        - If the filter is an AndExpression and the underlying plan exposes indexes</span>
-<span class="sd">          (IndexedQueryPlan), build candidate sets for indexable terms (==, in, contains,</span>
-<span class="sd">          between, &lt;, &lt;=, &gt;, &gt;=) using the index, sort by selectivity (len), and intersect</span>
-<span class="sd">          progressively. Then apply residual filtering on the reduced set only.</span>
-<span class="sd">        - Otherwise, fallback to linear scan.</span>
-
-<span class="sd">        :return: A generator yielding filtered records.</span>
-<span class="sd">        :rtype: list</span>
+<span class="sd">        Execute the filtering logic over the input records and return a DBCollections.</span>
+<span class="sd">        This implementation performs a linear scan over the base records applying the filter,</span>
+<span class="sd">        and materializes the result into a List to enable slicing/pagination.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-
-        <span class="c1"># Attempt index-aware evaluation</span>
-        <span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">Term</span> <span class="k">as</span> <span class="n">_Term</span>
-        <span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">AndExpression</span> <span class="k">as</span> <span class="n">_AndExpression</span>
-        <span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">IndexedQueryPlan</span> <span class="k">as</span> <span class="n">_IQP</span>
-        <span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">Between</span> <span class="k">as</span> <span class="n">_Between</span>
-        <span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">Equal</span> <span class="k">as</span> <span class="n">_Equal</span><span class="p">,</span> <span class="n">In</span> <span class="k">as</span> <span class="n">_In</span><span class="p">,</span> <span class="n">Contains</span> <span class="k">as</span> <span class="n">_Contains</span>
-        <span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">Greater</span> <span class="k">as</span> <span class="n">_Greater</span><span class="p">,</span> <span class="n">GreaterOrEqual</span> <span class="k">as</span> <span class="n">_GreaterOrEqual</span>
-        <span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">Lower</span> <span class="k">as</span> <span class="n">_Lower</span><span class="p">,</span> <span class="n">LowerOrEqual</span> <span class="k">as</span> <span class="n">_LowerOrEqual</span>
-        <span class="n">base</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span>
-        <span class="n">flt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">filter</span>
-
-        <span class="n">reasons</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">def</span><span class="w"> </span><span class="nf">build_candidate_set</span><span class="p">(</span><span class="n">term</span><span class="p">:</span> <span class="n">_Term</span><span class="p">):</span>
-            <span class="c1"># Only terms with target attribute present in indexes are eligible</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.lists</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span> <span class="k">as</span> <span class="n">_List</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">_List</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+        <span class="c1"># Prefer direct Python list if based_on is a ListPlan (common in tests)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">ListPlan</span> <span class="k">as</span> <span class="n">_ListPlan</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="p">,</span> <span class="n">_ListPlan</span><span class="p">):</span>
+                <span class="n">iterable</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">base_list</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">base_coll</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="n">_List</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+                <span class="n">iterable</span> <span class="o">=</span> <span class="n">base_coll</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="n">base_coll</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="n">_List</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+            <span class="n">iterable</span> <span class="o">=</span> <span class="n">base_coll</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">iterable</span><span class="p">:</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="n">field</span> <span class="o">=</span> <span class="n">term</span><span class="o">.</span><span class="n">target_attribute</span>
-                <span class="c1"># Ensure we have an IndexedQueryPlan and an index for the field</span>
-                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="n">_IQP</span><span class="p">):</span>
-                    <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;base is not IndexedQueryPlan&#39;</span><span class="p">)</span>
-                    <span class="k">return</span> <span class="kc">None</span>
-                <span class="n">idxs</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="s1">&#39;indexes&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-                <span class="k">if</span> <span class="ow">not</span> <span class="n">idxs</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">idxs</span><span class="p">,</span> <span class="s1">&#39;has&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">idxs</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">field</span><span class="p">):</span>
-                    <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;no index for &#39;</span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
-                    <span class="k">return</span> <span class="kc">None</span>
-                <span class="n">op</span> <span class="o">=</span> <span class="n">term</span><span class="o">.</span><span class="n">operation</span>
-                <span class="n">idx_dict</span> <span class="o">=</span> <span class="n">idxs</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
-                <span class="c1"># Equality</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">_Equal</span><span class="p">):</span>
-                    <span class="n">item</span> <span class="o">=</span> <span class="n">idx_dict</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
-                    <span class="k">if</span> <span class="ow">not</span> <span class="n">item</span><span class="p">:</span>
-                        <span class="k">return</span> <span class="nb">set</span><span class="p">()</span>
-                    <span class="c1"># item is a Set; turn into Python set of records</span>
-                    <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">())</span>
-                <span class="c1"># IN operator: union of equalities</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">_In</span><span class="p">):</span>
-                    <span class="n">result</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
-                    <span class="k">try</span><span class="p">:</span>
-                        <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">:</span>
-                            <span class="n">it</span> <span class="o">=</span> <span class="n">idx_dict</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
-                            <span class="k">if</span> <span class="n">it</span><span class="p">:</span>
-                                <span class="n">result</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">it</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">())</span>
-                    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-                        <span class="c1"># invalid IN value</span>
-                        <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;invalid IN value&#39;</span><span class="p">)</span>
-                        <span class="k">return</span> <span class="kc">None</span>
-                    <span class="k">return</span> <span class="n">result</span>
-                <span class="c1"># CONTAINS: treat as equality on elements if index was built for contained elements</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">_Contains</span><span class="p">):</span>
-                    <span class="n">it</span> <span class="o">=</span> <span class="n">idx_dict</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
-                    <span class="k">if</span> <span class="n">it</span><span class="p">:</span>
-                        <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="n">it</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">())</span>
-                    <span class="k">return</span> <span class="nb">set</span><span class="p">()</span>
-                <span class="c1"># BETWEEN (range) — avoid materializing large range sets; leave as residual filter</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="p">(</span><span class="n">_Between</span><span class="p">,</span> <span class="n">_Greater</span><span class="p">,</span> <span class="n">_GreaterOrEqual</span><span class="p">,</span> <span class="n">_Lower</span><span class="p">,</span> <span class="n">_LowerOrEqual</span><span class="p">)):</span>
-                    <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;range or inequality operator; defer to range plan&#39;</span><span class="p">)</span>
-                    <span class="k">return</span> <span class="kc">None</span>
-                <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;operator not indexable: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">op</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
-                <span class="k">return</span> <span class="kc">None</span>
-            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
-                <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;error building candidate: </span><span class="si">{</span><span class="n">ex</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
-                <span class="k">return</span> <span class="kc">None</span>
-
-        <span class="c1"># Generalize fast path for single Term and AndExpression</span>
-        <span class="n">indexable_term_sets</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">set</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="n">residual_filters</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Expression</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="n">can_use_fast_path</span> <span class="o">=</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="n">_IQP</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">flt</span><span class="p">,</span> <span class="p">(</span><span class="n">_AndExpression</span><span class="p">,</span> <span class="n">_Term</span><span class="p">)))</span>
-
-        <span class="k">if</span> <span class="n">can_use_fast_path</span><span class="p">:</span>
-            <span class="n">terms_in_filter</span> <span class="o">=</span> <span class="n">flt</span><span class="o">.</span><span class="n">terms</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">flt</span><span class="p">,</span> <span class="n">_AndExpression</span><span class="p">)</span> <span class="k">else</span> <span class="p">[</span><span class="n">flt</span><span class="p">]</span>
-
-            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">terms_in_filter</span><span class="p">:</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">_Term</span><span class="p">):</span>
-                    <span class="n">cand_set</span> <span class="o">=</span> <span class="n">build_candidate_set</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
-                    <span class="k">if</span> <span class="n">cand_set</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                        <span class="n">indexable_term_sets</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cand_set</span><span class="p">)</span>
-                    <span class="k">else</span><span class="p">:</span>
-                        <span class="n">residual_filters</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
-                <span class="k">else</span><span class="p">:</span>
-                    <span class="n">residual_filters</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
-
-            <span class="k">if</span> <span class="n">indexable_term_sets</span><span class="p">:</span>
-                <span class="c1"># Order by selectivity (ascending size)</span>
-                <span class="n">indexable_term_sets</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="nb">len</span><span class="p">)</span>
-                <span class="c1"># Progressive intersection with early exit</span>
-                <span class="n">current</span> <span class="o">=</span> <span class="n">indexable_term_sets</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-                <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">indexable_term_sets</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
-                    <span class="k">if</span> <span class="ow">not</span> <span class="n">current</span><span class="p">:</span>
-                        <span class="k">break</span>
-                    <span class="n">current</span><span class="o">.</span><span class="n">intersection_update</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
-                <span class="k">if</span> <span class="ow">not</span> <span class="n">current</span><span class="p">:</span>
-                    <span class="k">return</span>  <span class="c1"># empty generator</span>
-
-                <span class="c1"># Apply residual filters on the reduced set</span>
-                <span class="k">def</span><span class="w"> </span><span class="nf">_matches_residual</span><span class="p">(</span><span class="n">rec</span><span class="p">):</span>
-                    <span class="k">if</span> <span class="ow">not</span> <span class="n">residual_filters</span><span class="p">:</span>
-                        <span class="k">return</span> <span class="kc">True</span>
-                    <span class="k">try</span><span class="p">:</span>
-                        <span class="k">for</span> <span class="n">expr</span> <span class="ow">in</span> <span class="n">residual_filters</span><span class="p">:</span>
-                            <span class="k">if</span> <span class="ow">not</span> <span class="n">expr</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">rec</span><span class="p">):</span>
-                                <span class="k">return</span> <span class="kc">False</span>
-                        <span class="k">return</span> <span class="kc">True</span>
-                    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-                        <span class="k">return</span> <span class="kc">False</span>
-
-                <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">current</span><span class="p">:</span>
-                    <span class="k">if</span> <span class="n">_matches_residual</span><span class="p">(</span><span class="n">rec</span><span class="p">):</span>
-                        <span class="k">yield</span> <span class="n">rec</span>
-                <span class="k">return</span>
-
-        <span class="c1"># Fallback: linear scan</span>
-        <span class="k">if</span> <span class="n">PROTODB_WARN_LINEAR_FALLBACK</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="n">_IQP</span><span class="p">):</span>
-            <span class="k">try</span><span class="p">:</span>
-                <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">reasons</span><span class="p">)</span> <span class="k">if</span> <span class="n">reasons</span> <span class="k">else</span> <span class="s2">&quot;unknown reason&quot;</span>
-                <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;WherePlan fell back to linear: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">msg</span><span class="p">)</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">filter</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">rec</span><span class="p">):</span>
+                    <span class="n">res</span> <span class="o">=</span> <span class="n">res</span><span class="o">.</span><span class="n">append_last</span><span class="p">(</span><span class="n">rec</span><span class="p">)</span>
             <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-                <span class="k">pass</span>
-        <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">base</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
-            <span class="k">if</span> <span class="n">flt</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">record</span><span class="p">):</span>
-                <span class="k">yield</span> <span class="n">record</span></div>
+                <span class="c1"># Ignore records that error during matching</span>
+                <span class="k">continue</span>
+        <span class="k">return</span> <span class="n">res</span></div>
 
 
 <div class="viewcode-block" id="WherePlan.optimize">

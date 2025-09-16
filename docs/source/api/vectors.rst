@@ -51,7 +51,7 @@ Example:
     # Filter records with cosine similarity >= 0.8 to query vector
     expr = Expression.compile(['emb', 'near[]', [1.0, 0.0, 0.0], 0.8])
     plan = WherePlan(filter=expr, based_on=base_plan, transaction=tr)
-    out = list(plan.execute())
+    out = list(plan.execute().as_iterable())
 
 Notes
 -----

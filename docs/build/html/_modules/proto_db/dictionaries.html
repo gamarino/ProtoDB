@@ -45,6 +45,8 @@
 <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../concepts.html">ProtoDB Fundamental Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cookbook.html">ProtoDB Cookbook</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
@@ -89,7 +91,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atom</span><span class="p">,</span> <span class="n">DBCollections</span><span class="p">,</span> <span class="n">QueryPlan</span><span class="p">,</span> <span class="n">Literal</span><span class="p">,</span> <span class="n">AbstractTransaction</span><span class="p">,</span> <span class="n">AtomPointer</span><span class="p">,</span> <span class="n">ConcurrentOptimized</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProtoNotSupportedException</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.lists</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">IndexedQueryPlan</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.queries</span><span class="w"> </span><span class="kn">import</span> <span class="n">IndexedQueryPlan</span><span class="p">,</span> <span class="n">QueryableIndex</span><span class="p">,</span> <span class="n">QueryContext</span><span class="p">,</span> <span class="n">Term</span><span class="p">,</span> <span class="n">Equal</span><span class="p">,</span> <span class="n">Between</span><span class="p">,</span> <span class="n">Greater</span><span class="p">,</span> <span class="n">GreaterOrEqual</span><span class="p">,</span> <span class="n">Lower</span><span class="p">,</span> <span class="n">LowerOrEqual</span><span class="p">,</span> <span class="n">IndexedSearchPlan</span><span class="p">,</span> <span class="n">IndexedRangeSearchPlan</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.sets</span><span class="w"> </span><span class="kn">import</span> <span class="n">Set</span><span class="p">,</span> <span class="n">CountedSet</span>
 
 <span class="n">_logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
@@ -452,7 +454,7 @@
 
 <div class="viewcode-block" id="RepeatedKeysDictionary">
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.RepeatedKeysDictionary">[docs]</a>
-<span class="k">class</span><span class="w"> </span><span class="nc">RepeatedKeysDictionary</span><span class="p">(</span><span class="n">Dictionary</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">RepeatedKeysDictionary</span><span class="p">(</span><span class="n">Dictionary</span><span class="p">,</span> <span class="n">QueryableIndex</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents a dictionary-like data structure allowing multiple records</span>
 <span class="sd">    associated with a single key, with support for concurrent modifications.</span>
@@ -607,6 +609,97 @@
                 <span class="p">)</span>
 
             <span class="k">return</span> <span class="bp">self</span></div>
+
+
+<div class="viewcode-block" id="RepeatedKeysDictionary.build_query_plan">
+<a class="viewcode-back" href="../../api/data_structures.html#proto_db.dictionaries.RepeatedKeysDictionary.build_query_plan">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build_query_plan</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">term</span><span class="p">:</span> <span class="n">Term</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">QueryContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Implement QueryableIndex: produce an index-backed plan for supported operations.</span>
+<span class="sd">        This dictionary represents an ordered index over a single field (the caller passes the Term).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># Ensure we have a valid Term</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="n">Term</span><span class="p">):</span>
+                <span class="k">return</span> <span class="kc">None</span>
+            <span class="n">field</span> <span class="o">=</span> <span class="n">term</span><span class="o">.</span><span class="n">target_attribute</span>
+            <span class="n">op</span> <span class="o">=</span> <span class="n">term</span><span class="o">.</span><span class="n">operation</span>
+
+            <span class="c1"># Build a minimal index mapping for the planner: {field: this_index}</span>
+            <span class="n">idxs</span> <span class="o">=</span> <span class="n">Dictionary</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">context</span><span class="o">.</span><span class="n">transaction</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+            <span class="n">idxs</span> <span class="o">=</span> <span class="n">idxs</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span>
+            <span class="n">tx</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">transaction</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">Equal</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">IndexedSearchPlan</span><span class="p">(</span>
+                    <span class="n">field_to_scan</span><span class="o">=</span><span class="n">field</span><span class="p">,</span>
+                    <span class="n">operator</span><span class="o">=</span><span class="n">op</span><span class="p">,</span>
+                    <span class="n">value</span><span class="o">=</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+                    <span class="n">indexes</span><span class="o">=</span><span class="n">idxs</span><span class="p">,</span>
+                    <span class="n">based_on</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                    <span class="n">transaction</span><span class="o">=</span><span class="n">tx</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">Between</span><span class="p">):</span>
+                <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span> <span class="o">=</span> <span class="n">term</span><span class="o">.</span><span class="n">value</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span> <span class="k">else</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">lo</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">hi</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="kc">None</span>
+                <span class="k">return</span> <span class="n">IndexedRangeSearchPlan</span><span class="p">(</span>
+                    <span class="n">field_to_scan</span><span class="o">=</span><span class="n">field</span><span class="p">,</span>
+                    <span class="n">lo</span><span class="o">=</span><span class="n">lo</span><span class="p">,</span>
+                    <span class="n">hi</span><span class="o">=</span><span class="n">hi</span><span class="p">,</span>
+                    <span class="n">include_lower</span><span class="o">=</span><span class="n">op</span><span class="o">.</span><span class="n">include_lower</span><span class="p">,</span>
+                    <span class="n">include_upper</span><span class="o">=</span><span class="n">op</span><span class="o">.</span><span class="n">include_upper</span><span class="p">,</span>
+                    <span class="n">indexes</span><span class="o">=</span><span class="n">idxs</span><span class="p">,</span>
+                    <span class="n">based_on</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                    <span class="n">transaction</span><span class="o">=</span><span class="n">tx</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">Greater</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">IndexedRangeSearchPlan</span><span class="p">(</span>
+                    <span class="n">field_to_scan</span><span class="o">=</span><span class="n">field</span><span class="p">,</span>
+                    <span class="n">lo</span><span class="o">=</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+                    <span class="n">hi</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="s1">&#39;inf&#39;</span><span class="p">),</span>
+                    <span class="n">include_lower</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                    <span class="n">include_upper</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="n">indexes</span><span class="o">=</span><span class="n">idxs</span><span class="p">,</span>
+                    <span class="n">based_on</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                    <span class="n">transaction</span><span class="o">=</span><span class="n">tx</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">GreaterOrEqual</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">IndexedRangeSearchPlan</span><span class="p">(</span>
+                    <span class="n">field_to_scan</span><span class="o">=</span><span class="n">field</span><span class="p">,</span>
+                    <span class="n">lo</span><span class="o">=</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+                    <span class="n">hi</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="s1">&#39;inf&#39;</span><span class="p">),</span>
+                    <span class="n">include_lower</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="n">include_upper</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="n">indexes</span><span class="o">=</span><span class="n">idxs</span><span class="p">,</span>
+                    <span class="n">based_on</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                    <span class="n">transaction</span><span class="o">=</span><span class="n">tx</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">Lower</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">IndexedRangeSearchPlan</span><span class="p">(</span>
+                    <span class="n">field_to_scan</span><span class="o">=</span><span class="n">field</span><span class="p">,</span>
+                    <span class="n">lo</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">),</span>
+                    <span class="n">hi</span><span class="o">=</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+                    <span class="n">include_lower</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="n">include_upper</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                    <span class="n">indexes</span><span class="o">=</span><span class="n">idxs</span><span class="p">,</span>
+                    <span class="n">based_on</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                    <span class="n">transaction</span><span class="o">=</span><span class="n">tx</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">LowerOrEqual</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">IndexedRangeSearchPlan</span><span class="p">(</span>
+                    <span class="n">field_to_scan</span><span class="o">=</span><span class="n">field</span><span class="p">,</span>
+                    <span class="n">lo</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">),</span>
+                    <span class="n">hi</span><span class="o">=</span><span class="n">term</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+                    <span class="n">include_lower</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="n">include_upper</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="n">indexes</span><span class="o">=</span><span class="n">idxs</span><span class="p">,</span>
+                    <span class="n">based_on</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                    <span class="n">transaction</span><span class="o">=</span><span class="n">tx</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_rebase_on_concurrent_update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">current_db_object</span><span class="p">:</span> <span class="n">Atom</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atom</span><span class="p">:</span>

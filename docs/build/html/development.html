@@ -47,6 +47,8 @@
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="concepts.html">ProtoDB Fundamental Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cookbook.html">ProtoDB Cookbook</a></li>
 <li class="toctree-l1"><a class="reference internal" href="performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
@@ -273,8 +275,9 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">my_param</span> <span class="o">=</span> <span class="n">my_param</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="c1"># Implement query execution</span>
-        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
+        <span class="c1"># Implement query execution and return a collection</span>
+        <span class="n">base_coll</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">base_coll</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
             <span class="c1"># Process item based on my_param</span>
             <span class="k">yield</span> <span class="n">processed_item</span>
 </pre></div>

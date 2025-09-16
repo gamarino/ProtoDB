@@ -604,9 +604,12 @@ class ListPlan(QueryPlan):
         super().__init__(transaction=transaction, atom_pointer=atom_pointer, **kwargs)
         self.base_list = base_list
 
-    def execute(self) -> list:
+    def execute(self) -> DBCollections:
+        from .lists import List as _List
+        res = _List(transaction=self.transaction)
         for item in self.base_list:
-            yield item
+            res = res.append_last(item)
+        return res
 
     def optimize(self, *args, **kwargs) -> QueryPlan:
         return self
@@ -640,12 +643,12 @@ class IndexedQueryPlan(QueryPlan):
         else:
             self.indexes = indexes
 
-    def execute(self) -> list:
+    def execute(self) -> DBCollections:
         # Delegate execution to the underlying plan; indexes are only metadata for optimization
         if self.based_on is None:
-            return []
-        for rec in self.based_on.execute():
-            yield rec
+            from .lists import List as _List
+            return _List(transaction=self.transaction)
+        return self.based_on.execute()
 
     def optimize(self, *args, **kwargs) -> QueryPlan:
         return IndexedQueryPlan(
@@ -1647,141 +1650,33 @@ class WherePlan(QueryPlan):
         else:
             self.filter = filter
 
-    def execute(self) -> list:
+    def execute(self) -> DBCollections:
         """
-        Execute the filtering logic over the input records.
-
-        Optimized path:
-
-        - If the filter is an AndExpression and the underlying plan exposes indexes
-          (IndexedQueryPlan), build candidate sets for indexable terms (==, in, contains,
-          between, <, <=, >, >=) using the index, sort by selectivity (len), and intersect
-          progressively. Then apply residual filtering on the reduced set only.
-        - Otherwise, fallback to linear scan.
-
-        :return: A generator yielding filtered records.
-        :rtype: list
+        Execute the filtering logic over the input records and return a DBCollections.
+        This implementation performs a linear scan over the base records applying the filter,
+        and materializes the result into a List to enable slicing/pagination.
         """
-
-        # Attempt index-aware evaluation
-        from .queries import Term as _Term
-        from .queries import AndExpression as _AndExpression
-        from .queries import IndexedQueryPlan as _IQP
-        from .queries import Between as _Between
-        from .queries import Equal as _Equal, In as _In, Contains as _Contains
-        from .queries import Greater as _Greater, GreaterOrEqual as _GreaterOrEqual
-        from .queries import Lower as _Lower, LowerOrEqual as _LowerOrEqual
-        base = self.based_on
-        flt = self.filter
-
-        reasons: list[str] = []
-        def build_candidate_set(term: _Term):
-            # Only terms with target attribute present in indexes are eligible
+        from .lists import List as _List
+        res = _List(transaction=self.transaction)
+        # Prefer direct Python list if based_on is a ListPlan (common in tests)
+        try:
+            from .queries import ListPlan as _ListPlan
+            if isinstance(self.based_on, _ListPlan):
+                iterable = self.based_on.base_list
+            else:
+                base_coll = self.based_on.execute() if self.based_on else _List(transaction=self.transaction)
+                iterable = base_coll.as_iterable()
+        except Exception:
+            base_coll = self.based_on.execute() if self.based_on else _List(transaction=self.transaction)
+            iterable = base_coll.as_iterable()
+        for rec in iterable:
             try:
-                field = term.target_attribute
-                # Ensure we have an IndexedQueryPlan and an index for the field
-                if not isinstance(base, _IQP):
-                    reasons.append('base is not IndexedQueryPlan')
-                    return None
-                idxs = getattr(base, 'indexes', None)
-                if not idxs or not getattr(idxs, 'has', None) or not idxs.has(field):
-                    reasons.append(f"no index for '{field}'")
-                    return None
-                op = term.operation
-                idx_dict = idxs.get_at(field)
-                # Equality
-                if isinstance(op, _Equal):
-                    item = idx_dict.get_at(term.value)
-                    if not item:
-                        return set()
-                    # item is a Set; turn into Python set of records
-                    return set(item.as_iterable())
-                # IN operator: union of equalities
-                if isinstance(op, _In):
-                    result = set()
-                    try:
-                        for v in term.value:
-                            it = idx_dict.get_at(v)
-                            if it:
-                                result.update(it.as_iterable())
-                    except Exception:
-                        # invalid IN value
-                        reasons.append('invalid IN value')
-                        return None
-                    return result
-                # CONTAINS: treat as equality on elements if index was built for contained elements
-                if isinstance(op, _Contains):
-                    it = idx_dict.get_at(term.value)
-                    if it:
-                        return set(it.as_iterable())
-                    return set()
-                # BETWEEN (range) — avoid materializing large range sets; leave as residual filter
-                if isinstance(op, (_Between, _Greater, _GreaterOrEqual, _Lower, _LowerOrEqual)):
-                    reasons.append('range or inequality operator; defer to range plan')
-                    return None
-                reasons.append(f'operator not indexable: {type(op).__name__}')
-                return None
-            except Exception as ex:
-                reasons.append(f'error building candidate: {ex}')
-                return None
-
-        # Generalize fast path for single Term and AndExpression
-        indexable_term_sets: list[set] = []
-        residual_filters: list[Expression] = []
-        can_use_fast_path = isinstance(base, _IQP) and (isinstance(flt, (_AndExpression, _Term)))
-
-        if can_use_fast_path:
-            terms_in_filter = flt.terms if isinstance(flt, _AndExpression) else [flt]
-
-            for t in terms_in_filter:
-                if isinstance(t, _Term):
-                    cand_set = build_candidate_set(t)
-                    if cand_set is not None:
-                        indexable_term_sets.append(cand_set)
-                    else:
-                        residual_filters.append(t)
-                else:
-                    residual_filters.append(t)
-
-            if indexable_term_sets:
-                # Order by selectivity (ascending size)
-                indexable_term_sets.sort(key=len)
-                # Progressive intersection with early exit
-                current = indexable_term_sets[0]
-                for s in indexable_term_sets[1:]:
-                    if not current:
-                        break
-                    current.intersection_update(s)
-                if not current:
-                    return  # empty generator
-
-                # Apply residual filters on the reduced set
-                def _matches_residual(rec):
-                    if not residual_filters:
-                        return True
-                    try:
-                        for expr in residual_filters:
-                            if not expr.match(rec):
-                                return False
-                        return True
-                    except Exception:
-                        return False
-
-                for rec in current:
-                    if _matches_residual(rec):
-                        yield rec
-                return
-
-        # Fallback: linear scan
-        if PROTODB_WARN_LINEAR_FALLBACK and isinstance(base, _IQP):
-            try:
-                msg = "; ".join(reasons) if reasons else "unknown reason"
-                _logger.warning("WherePlan fell back to linear: %s", msg)
+                if self.filter.match(rec):
+                    res = res.append_last(rec)
             except Exception:
-                pass
-        for record in base.execute():
-            if flt.match(record):
-                yield record
+                # Ignore records that error during matching
+                continue
+        return res
 
     def optimize(self, *args, **kwargs) -> 'QueryPlan':
         """

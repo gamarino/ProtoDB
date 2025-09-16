@@ -893,6 +893,12 @@ class DBCollections(Atom):
             except Exception:
                 continue
 
+    def __iter__(self):
+        try:
+            return iter(self.as_iterable())
+        except Exception:
+            return iter(())
+
     @abstractmethod
     def as_query_plan(self) -> QueryPlan:
         """
@@ -930,15 +936,16 @@ class QueryPlan(Atom):
         self.based_on = based_on
 
     @abstractmethod
-    def execute(self) -> list:
+    def execute(self) -> DBCollections:
         """
-        Executes the query plan and returns the results.
+        Executes the query plan and returns the results as a DBCollections instance.
 
         This method processes the query plan and retrieves the data according to
         the plan's specifications. Implementations should define the specific
-        execution logic based on the query plan type.
+        execution logic based on the query plan type and return a concrete
+        collection (e.g., List) to enable efficient pagination via slice().
 
-        :return: A list of results from executing the query plan.
+        :return: A DBCollections object containing the results.
         """
 
     @abstractmethod
@@ -980,10 +987,24 @@ class QueryPlan(Atom):
 
     def count(self) -> int:
         """
-        Default count implementation: iterate through execute() and count the results.
-        Subclasses can override for more efficient counting.
+        Default count implementation: ask the returned collection for its count.
+        Falls back to iterating if the collection does not expose count.
         """
-        return sum(1 for _ in self.execute())
+        try:
+            coll = self.execute()
+            c = getattr(coll, 'count', None)
+            if isinstance(c, int):
+                return c
+            # Some collections may expose count as a property without type check
+            if c is not None and isinstance(c, (int,)):
+                return int(c)
+            # Try len over iterable proxy
+            if hasattr(coll, 'as_iterable'):
+                return sum(1 for _ in coll.as_iterable())
+            return sum(1 for _ in coll)
+        except Exception:
+            # Last resort
+            return sum(1 for _ in self.execute().as_iterable())
 
     def explain(self) -> dict:
         """

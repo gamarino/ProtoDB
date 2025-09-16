@@ -209,16 +209,17 @@ implement for their respective functionality.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.common.QueryPlan.execute">
 <em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#QueryPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.QueryPlan.execute" title="Link to this definition"></a></dt>
-<dd><p>Executes the query plan and returns the results.</p>
+<dd><p>Executes the query plan and returns the results as a DBCollections instance.</p>
 <p>This method processes the query plan and retrieves the data according to
 the plan’s specifications. Implementations should define the specific
-execution logic based on the query plan type.</p>
+execution logic based on the query plan type and return a concrete
+collection (e.g., List) to enable efficient pagination via slice().</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A list of results from executing the query plan.</p>
+<dd class="field-odd"><p>A DBCollections object containing the results.</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>list</p>
+<dd class="field-even"><p><a class="reference internal" href="core.html#proto_db.common.DBCollections" title="proto_db.common.DBCollections"><em>DBCollections</em></a></p>
 </dd>
 </dl>
 </dd></dl>
@@ -241,10 +242,36 @@ No external context parameter is required.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.QueryPlan.get_cardinality_estimate">
+<span class="sig-name descname"><span class="pre">get_cardinality_estimate</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#QueryPlan.get_cardinality_estimate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.QueryPlan.get_cardinality_estimate" title="Link to this definition"></a></dt>
+<dd><p>Estimate the expected number of records produced by this plan.
+Lower values mean higher selectivity.</p>
+<p>Default: worst case based on the underlying source if available.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.QueryPlan.get_cost_estimate">
+<span class="sig-name descname"><span class="pre">get_cost_estimate</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#QueryPlan.get_cost_estimate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.QueryPlan.get_cost_estimate" title="Link to this definition"></a></dt>
+<dd><p>Estimate the relative computational cost to execute this plan.
+Lower is better. This is not time, but a unit to compare plans.</p>
+<p>Default: infinity to indicate non-optimized/unknown cost.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="proto_db.common.QueryPlan.count">
 <span class="sig-name descname"><span class="pre">count</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#QueryPlan.count"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.QueryPlan.count" title="Link to this definition"></a></dt>
-<dd><p>Default count implementation: iterate through execute() and count the results.
-Subclasses can override for more efficient counting.</p>
+<dd><p>Default count implementation: ask the returned collection for its count.
+Falls back to iterating if the collection does not expose count.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>int</p>
@@ -303,13 +330,14 @@ Subclasses should override to add more details.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.queries.FromPlan.execute">
 <span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#FromPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.FromPlan.execute" title="Link to this definition"></a></dt>
-<dd><p>Executes the query plan and returns the results.</p>
+<dd><p>Executes the query plan and returns the results as a DBCollections instance.</p>
 <p>This method processes the query plan and retrieves the data according to
 the plan’s specifications. Implementations should define the specific
-execution logic based on the query plan type.</p>
+execution logic based on the query plan type and return a concrete
+collection (e.g., List) to enable efficient pagination via slice().</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A list of results from executing the query plan.</p>
+<dd class="field-odd"><p>A DBCollections object containing the results.</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
 <dd class="field-even"><p>list</p>
@@ -379,21 +407,12 @@ are passed downstream.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.queries.WherePlan.execute">
 <span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#WherePlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.WherePlan.execute" title="Link to this definition"></a></dt>
-<dd><p>Execute the filtering logic over the input records.</p>
-<p>Optimized path:</p>
-<ul class="simple">
-<li><p>If the filter is an AndExpression and the underlying plan exposes indexes
-(IndexedQueryPlan), build candidate sets for indexable terms (==, in, contains,
-between, &lt;, &lt;=, &gt;, &gt;=) using the index, sort by selectivity (len), and intersect
-progressively. Then apply residual filtering on the reduced set only.</p></li>
-<li><p>Otherwise, fallback to linear scan.</p></li>
-</ul>
+<dd><p>Execute the filtering logic over the input records and return a DBCollections.
+This implementation performs a linear scan over the base records applying the filter,
+and materializes the result into a List to enable slicing/pagination.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A generator yielding filtered records.</p>
-</dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>list</p>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="core.html#proto_db.common.DBCollections" title="proto_db.common.DBCollections"><em>DBCollections</em></a></p>
 </dd>
 </dl>
 </dd></dl>
@@ -471,13 +490,14 @@ Otherwise, fallback to keeping the original WherePlan (with optimized base).</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.queries.JoinPlan.execute">
 <span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#JoinPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.JoinPlan.execute" title="Link to this definition"></a></dt>
-<dd><p>Executes the query plan and returns the results.</p>
+<dd><p>Executes the query plan and returns the results as a DBCollections instance.</p>
 <p>This method processes the query plan and retrieves the data according to
 the plan’s specifications. Implementations should define the specific
-execution logic based on the query plan type.</p>
+execution logic based on the query plan type and return a concrete
+collection (e.g., List) to enable efficient pagination via slice().</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A list of results from executing the query plan.</p>
+<dd class="field-odd"><p>A DBCollections object containing the results.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -538,13 +558,14 @@ No external context parameter is required.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.queries.GroupByPlan.execute">
 <span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#GroupByPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.GroupByPlan.execute" title="Link to this definition"></a></dt>
-<dd><p>Executes the query plan and returns the results.</p>
+<dd><p>Executes the query plan and returns the results as a DBCollections instance.</p>
 <p>This method processes the query plan and retrieves the data according to
 the plan’s specifications. Implementations should define the specific
-execution logic based on the query plan type.</p>
+execution logic based on the query plan type and return a concrete
+collection (e.g., List) to enable efficient pagination via slice().</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A list of results from executing the query plan.</p>
+<dd class="field-odd"><p>A DBCollections object containing the results.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -742,13 +763,14 @@ This is the result of an optimized CountPlan.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.queries.CountResultPlan.execute">
 <span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#CountResultPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.CountResultPlan.execute" title="Link to this definition"></a></dt>
-<dd><p>Executes the query plan and returns the results.</p>
+<dd><p>Executes the query plan and returns the results as a DBCollections instance.</p>
 <p>This method processes the query plan and retrieves the data according to
 the plan’s specifications. Implementations should define the specific
-execution logic based on the query plan type.</p>
+execution logic based on the query plan type and return a concrete
+collection (e.g., List) to enable efficient pagination via slice().</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A list of results from executing the query plan.</p>
+<dd class="field-odd"><p>A DBCollections object containing the results.</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
 <dd class="field-even"><p>list[dict]</p>
@@ -809,16 +831,17 @@ No external context parameter is required.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.queries.ListPlan.execute">
 <span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#ListPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.ListPlan.execute" title="Link to this definition"></a></dt>
-<dd><p>Executes the query plan and returns the results.</p>
+<dd><p>Executes the query plan and returns the results as a DBCollections instance.</p>
 <p>This method processes the query plan and retrieves the data according to
 the plan’s specifications. Implementations should define the specific
-execution logic based on the query plan type.</p>
+execution logic based on the query plan type and return a concrete
+collection (e.g., List) to enable efficient pagination via slice().</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A list of results from executing the query plan.</p>
+<dd class="field-odd"><p>A DBCollections object containing the results.</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>list</p>
+<dd class="field-even"><p><a class="reference internal" href="core.html#proto_db.common.DBCollections" title="proto_db.common.DBCollections"><em>DBCollections</em></a></p>
 </dd>
 </dl>
 </dd></dl>
@@ -880,13 +903,14 @@ No external context parameter is required.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.queries.UnnestPlan.execute">
 <span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#UnnestPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.UnnestPlan.execute" title="Link to this definition"></a></dt>
-<dd><p>Executes the query plan and returns the results.</p>
+<dd><p>Executes the query plan and returns the results as a DBCollections instance.</p>
 <p>This method processes the query plan and retrieves the data according to
 the plan’s specifications. Implementations should define the specific
-execution logic based on the query plan type.</p>
+execution logic based on the query plan type and return a concrete
+collection (e.g., List) to enable efficient pagination via slice().</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A list of results from executing the query plan.</p>
+<dd class="field-odd"><p>A DBCollections object containing the results.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -946,13 +970,14 @@ No external context parameter is required.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.queries.CollectionFieldPlan.execute">
 <span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#CollectionFieldPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.CollectionFieldPlan.execute" title="Link to this definition"></a></dt>
-<dd><p>Executes the query plan and returns the results.</p>
+<dd><p>Executes the query plan and returns the results as a DBCollections instance.</p>
 <p>This method processes the query plan and retrieves the data according to
 the plan’s specifications. Implementations should define the specific
-execution logic based on the query plan type.</p>
+execution logic based on the query plan type and return a concrete
+collection (e.g., List) to enable efficient pagination via slice().</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A list of results from executing the query plan.</p>
+<dd class="field-odd"><p>A DBCollections object containing the results.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -1019,13 +1044,14 @@ No external context parameter is required.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.queries.IndexedRangeSearchPlan.execute">
 <span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#IndexedRangeSearchPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.IndexedRangeSearchPlan.execute" title="Link to this definition"></a></dt>
-<dd><p>Executes the query plan and returns the results.</p>
+<dd><p>Executes the query plan and returns the results as a DBCollections instance.</p>
 <p>This method processes the query plan and retrieves the data according to
 the plan’s specifications. Implementations should define the specific
-execution logic based on the query plan type.</p>
+execution logic based on the query plan type and return a concrete
+collection (e.g., List) to enable efficient pagination via slice().</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A list of results from executing the query plan.</p>
+<dd class="field-odd"><p>A DBCollections object containing the results.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -1050,11 +1076,33 @@ No external context parameter is required.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.queries.IndexedRangeSearchPlan.count">
 <span class="sig-name descname"><span class="pre">count</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#IndexedRangeSearchPlan.count"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.IndexedRangeSearchPlan.count" title="Link to this definition"></a></dt>
-<dd><p>Default count implementation: iterate through execute() and count the results.
-Subclasses can override for more efficient counting.</p>
+<dd><p>Default count implementation: ask the returned collection for its count.
+Falls back to iterating if the collection does not expose count.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.queries.IndexedRangeSearchPlan.get_cardinality_estimate">
+<span class="sig-name descname"><span class="pre">get_cardinality_estimate</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#IndexedRangeSearchPlan.get_cardinality_estimate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.IndexedRangeSearchPlan.get_cardinality_estimate" title="Link to this definition"></a></dt>
+<dd><p>Heuristic estimate for range scans. Use 25% of based_on count when available; otherwise a small constant.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.queries.IndexedRangeSearchPlan.get_cost_estimate">
+<span class="sig-name descname"><span class="pre">get_cost_estimate</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#IndexedRangeSearchPlan.get_cost_estimate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.IndexedRangeSearchPlan.get_cost_estimate" title="Link to this definition"></a></dt>
+<dd><p>Range scans are more expensive than point lookups. Cost grows with estimated cardinality.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
 </dd>
 </dl>
 </dd></dl>
@@ -1199,8 +1247,8 @@ in the subclass.</p>
 <span class="c1"># Create a query plan</span>
 <span class="n">from_plan</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">FromPlan</span><span class="p">(</span><span class="n">users</span><span class="p">)</span>
 
-<span class="c1"># Execute the query</span>
-<span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">from_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
+<span class="c1"># Execute the query (execute() returns a collection)</span>
+<span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">from_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
     <span class="nb">print</span><span class="p">(</span><span class="n">user</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">])</span>  <span class="c1"># Output: John, Jane, Bob</span>
 </pre></div>
 </div>
@@ -1213,8 +1261,8 @@ in the subclass.</p>
     <span class="n">based_on</span><span class="o">=</span><span class="n">from_plan</span>
 <span class="p">)</span>
 
-<span class="c1"># Execute the query</span>
-<span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">where_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
+<span class="c1"># Execute the query (collections are iterable; you can also use .as_iterable())</span>
+<span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">where_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
     <span class="nb">print</span><span class="p">(</span><span class="n">user</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">])</span>  <span class="c1"># Output: John, Bob</span>
 </pre></div>
 </div>
@@ -1228,7 +1276,7 @@ in the subclass.</p>
 <span class="p">)</span>
 
 <span class="c1"># Execute the query</span>
-<span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">select_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
+<span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">select_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">user</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">user</span><span class="p">[</span><span class="s1">&#39;age&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>  <span class="c1"># Output: John: 30, Jane: 25, Bob: 35</span>
 </pre></div>
 </div>
@@ -1242,7 +1290,7 @@ in the subclass.</p>
 <span class="p">)</span>
 
 <span class="c1"># Execute the query</span>
-<span class="k">for</span> <span class="n">city</span><span class="p">,</span> <span class="n">users_in_city</span> <span class="ow">in</span> <span class="n">group_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
+<span class="k">for</span> <span class="n">city</span><span class="p">,</span> <span class="n">users_in_city</span> <span class="ow">in</span> <span class="n">group_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">city</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">users_in_city</span><span class="p">)</span><span class="si">}</span><span class="s2"> users&quot;</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">users_in_city</span><span class="p">:</span>
         <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">user</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
@@ -1283,7 +1331,7 @@ in the subclass.</p>
 <span class="p">)</span>
 
 <span class="c1"># Execute the query</span>
-<span class="k">for</span> <span class="n">user</span><span class="p">,</span> <span class="n">city</span> <span class="ow">in</span> <span class="n">join_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
+<span class="k">for</span> <span class="n">user</span><span class="p">,</span> <span class="n">city</span> <span class="ow">in</span> <span class="n">join_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">user</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> lives in </span><span class="si">{</span><span class="n">city</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">city</span><span class="p">[</span><span class="s1">&#39;country&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
 <span class="c1"># Output:</span>
@@ -1302,7 +1350,7 @@ in the subclass.</p>
 <span class="p">)</span>
 
 <span class="c1"># Execute the query</span>
-<span class="n">result</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">count_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">())</span>
+<span class="n">result</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">count_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">())</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Total users: </span><span class="si">{</span><span class="n">result</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">&#39;count&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>  <span class="c1"># Output: Total users: 3</span>
 
 <span class="c1"># Count users from New York</span>
@@ -1316,7 +1364,7 @@ in the subclass.</p>
 <span class="p">)</span>
 
 <span class="c1"># Execute the query</span>
-<span class="n">result</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">filtered_count_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">())</span>
+<span class="n">result</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">filtered_count_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">())</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Users from New York: </span><span class="si">{</span><span class="n">result</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">&#39;count&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>  <span class="c1"># Output: Users from New York: 2</span>
 </pre></div>
 </div>
@@ -1336,7 +1384,7 @@ in the subclass.</p>
 <span class="p">)</span>
 
 <span class="c1"># Execute the query</span>
-<span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">chain_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
+<span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">chain_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
     <span class="nb">print</span><span class="p">(</span><span class="n">user</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">])</span>  <span class="c1"># Output: Bob, John</span>
 </pre></div>
 </div>

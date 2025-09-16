@@ -210,8 +210,8 @@ Basic Query
     # Create a query plan
     from_plan = proto_db.FromPlan(users)
 
-    # Execute the query
-    for user in from_plan.execute():
+    # Execute the query (execute() returns a collection)
+    for user in from_plan.execute().as_iterable():
         print(user["name"])  # Output: John, Jane, Bob
 
 Filtering
@@ -225,8 +225,8 @@ Filtering
         based_on=from_plan
     )
 
-    # Execute the query
-    for user in where_plan.execute():
+    # Execute the query (collections are iterable; you can also use .as_iterable())
+    for user in where_plan.execute().as_iterable():
         print(user["name"])  # Output: John, Bob
 
 Projection
@@ -241,7 +241,7 @@ Projection
     )
 
     # Execute the query
-    for user in select_plan.execute():
+    for user in select_plan.execute().as_iterable():
         print(f"{user['name']}: {user['age']}")  # Output: John: 30, Jane: 25, Bob: 35
 
 
@@ -257,7 +257,7 @@ Grouping
     )
 
     # Execute the query
-    for city, users_in_city in group_plan.execute():
+    for city, users_in_city in group_plan.execute().as_iterable():
         print(f"{city}: {len(users_in_city)} users")
         for user in users_in_city:
             print(f"  {user['name']}")
@@ -299,7 +299,7 @@ Joining
     )
 
     # Execute the query
-    for user, city in join_plan.execute():
+    for user, city in join_plan.execute().as_iterable():
         print(f"{user['name']} lives in {city['name']}, {city['country']}")
 
     # Output:
@@ -320,7 +320,7 @@ Counting
     )
 
     # Execute the query
-    result = list(count_plan.execute())
+    result = list(count_plan.execute().as_iterable())
     print(f"Total users: {result[0]['count']}")  # Output: Total users: 3
 
     # Count users from New York
@@ -334,7 +334,7 @@ Counting
     )
 
     # Execute the query
-    result = list(filtered_count_plan.execute())
+    result = list(filtered_count_plan.execute().as_iterable())
     print(f"Users from New York: {result[0]['count']}")  # Output: Users from New York: 2
 
 Chaining
@@ -355,5 +355,5 @@ Chaining
     )
 
     # Execute the query
-    for user in chain_plan.execute():
+    for user in chain_plan.execute().as_iterable():
         print(user["name"])  # Output: Bob, John

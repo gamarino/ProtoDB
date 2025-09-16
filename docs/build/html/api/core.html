@@ -633,16 +633,17 @@ implement for their respective functionality.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.common.QueryPlan.execute">
 <em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#QueryPlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.QueryPlan.execute" title="Link to this definition"></a></dt>
-<dd><p>Executes the query plan and returns the results.</p>
+<dd><p>Executes the query plan and returns the results as a DBCollections instance.</p>
 <p>This method processes the query plan and retrieves the data according to
 the plan’s specifications. Implementations should define the specific
-execution logic based on the query plan type.</p>
+execution logic based on the query plan type and return a concrete
+collection (e.g., List) to enable efficient pagination via slice().</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A list of results from executing the query plan.</p>
+<dd class="field-odd"><p>A DBCollections object containing the results.</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>list</p>
+<dd class="field-even"><p><a class="reference internal" href="#proto_db.common.DBCollections" title="proto_db.common.DBCollections"><em>DBCollections</em></a></p>
 </dd>
 </dl>
 </dd></dl>
@@ -665,10 +666,36 @@ No external context parameter is required.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.QueryPlan.get_cardinality_estimate">
+<span class="sig-name descname"><span class="pre">get_cardinality_estimate</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#QueryPlan.get_cardinality_estimate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.QueryPlan.get_cardinality_estimate" title="Link to this definition"></a></dt>
+<dd><p>Estimate the expected number of records produced by this plan.
+Lower values mean higher selectivity.</p>
+<p>Default: worst case based on the underlying source if available.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.QueryPlan.get_cost_estimate">
+<span class="sig-name descname"><span class="pre">get_cost_estimate</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#QueryPlan.get_cost_estimate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.QueryPlan.get_cost_estimate" title="Link to this definition"></a></dt>
+<dd><p>Estimate the relative computational cost to execute this plan.
+Lower is better. This is not time, but a unit to compare plans.</p>
+<p>Default: infinity to indicate non-optimized/unknown cost.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="proto_db.common.QueryPlan.count">
 <span class="sig-name descname"><span class="pre">count</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#QueryPlan.count"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.QueryPlan.count" title="Link to this definition"></a></dt>
-<dd><p>Default count implementation: iterate through execute() and count the results.
-Subclasses can override for more efficient counting.</p>
+<dd><p>Default count implementation: ask the returned collection for its count.
+Falls back to iterating if the collection does not expose count.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>int</p>

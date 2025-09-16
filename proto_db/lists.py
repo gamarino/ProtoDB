@@ -23,12 +23,9 @@ class ListQueryPlan(QueryPlan):
 
     def execute(self) -> DBCollections:
         """
-        Executes the query plan and returns the results as a collection.
-
-        :return: An iterable collection of items from the list.
+        Executes the query plan and returns the underlying List collection.
         """
-        for item in self.base.as_iterable():
-            yield item
+        return self.base
 
     def optimize(self, *args, **kwargs) -> QueryPlan:
         """

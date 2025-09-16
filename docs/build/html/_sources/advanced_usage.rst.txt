@@ -366,8 +366,8 @@ When working with large datasets, use the query system to filter, project, and a
         based_on=where_plan
     )
 
-    # Execute the query
-    for item in select_plan.execute():
+    # Execute the query (execute() returns a collection)
+    for item in select_plan.execute().as_iterable():
         # Process only the filtered and projected items
         print(item)
 

@@ -58,6 +58,8 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="concepts.html">ProtoDB Fundamental Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cookbook.html">ProtoDB Cookbook</a></li>
 <li class="toctree-l1"><a class="reference internal" href="performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
@@ -340,7 +342,7 @@
 <span class="p">)</span>
 
 <span class="c1"># Execute the query</span>
-<span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">where_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
+<span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">where_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
     <span class="nb">print</span><span class="p">(</span><span class="n">user</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">])</span>  <span class="c1"># Output: John, Bob</span>
 
 <span class="c1"># Group users by city</span>
@@ -350,7 +352,7 @@
 <span class="p">)</span>
 
 <span class="c1"># Execute the group query</span>
-<span class="k">for</span> <span class="n">city</span><span class="p">,</span> <span class="n">users_in_city</span> <span class="ow">in</span> <span class="n">group_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
+<span class="k">for</span> <span class="n">city</span><span class="p">,</span> <span class="n">users_in_city</span> <span class="ow">in</span> <span class="n">group_plan</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">city</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">users_in_city</span><span class="p">)</span><span class="si">}</span><span class="s2"> users&quot;</span><span class="p">)</span>
     <span class="c1"># Output: New York: 2 users, Boston: 1 user</span>
 </pre></div>

@@ -60,7 +60,85 @@ Notes
 - On small datasets, index overhead can dominate, occasionally performing worse than a linear scan. As dataset size grows (for example, 100k–1M), indexed evaluation is expected to outperform linear scans due to selective candidate‑set intersections.
 - This benchmark uses in‑memory data and focuses on query time. Performance with persisted storage may differ.
 
-## Latest results (2025-09-13)
+## Latest results (2025-09-16)
+
+This run was executed after the internal API change where QueryPlan.execute() now returns a DBCollections instance (e.g., List) instead of a bare iterator. All benchmarks and examples have been adapted accordingly. A key benefit is that result pagination is now O(1) via collection.slice().
+
+Small sanity run with default parameters from examples/indexed_benchmark.py:
+
+```json
+{
+  "config": {
+    "n_items": 1000,
+    "n_queries": 50,
+    "window": 100,
+    "warmup": 10
+  },
+  "timings_seconds": {
+    "python_list_baseline": 0.0018532276153564453,
+    "protodb_linear_where": 0.023308992385864258,
+    "protodb_indexed_where": 0.01840066909790039,
+    "python_list_pk_lookup": 0.0017228126525878906,
+    "protodb_linear_pk_lookup": 0.019257068634033203,
+    "protodb_indexed_pk_lookup": 0.007046937942504883
+  },
+  "latency_ms": {
+    "python_list_baseline": {
+      "avg_ms": 0.035686492919921875,
+      "p50_ms": 0.034809112548828125,
+      "p95_ms": 0.04401206970214843,
+      "p99_ms": 0.049886703491210924,
+      "qps": 26979.95625884472
+    },
+    "protodb_linear_where": {
+      "avg_ms": 0.46471595764160156,
+      "p50_ms": 0.4622936248779297,
+      "p95_ms": 0.5010485649108887,
+      "p99_ms": 0.5215215682983398,
+      "qps": 2145.0948703523754
+    },
+    "protodb_indexed_where": {
+      "avg_ms": 0.3661823272705078,
+      "p50_ms": 0.23746490478515625,
+      "p95_ms": 0.2925276756286621,
+      "p99_ms": 3.390884399414061,
+      "qps": 2717.2924926792607
+    },
+    "python_list_pk_lookup": {
+      "avg_ms": 0.033020973205566406,
+      "p50_ms": 0.03266334533691406,
+      "p95_ms": 0.034058094024658196,
+      "p99_ms": 0.03856420516967772,
+      "qps": 29022.30833102685
+    },
+    "protodb_linear_pk_lookup": {
+      "avg_ms": 0.38355350494384766,
+      "p50_ms": 0.3777742385864258,
+      "p95_ms": 0.4053473472595215,
+      "p99_ms": 0.43926715850830067,
+      "qps": 2596.4491766745077
+    },
+    "protodb_indexed_pk_lookup": {
+      "avg_ms": 0.13885498046875,
+      "p50_ms": 0.125885009765625,
+      "p95_ms": 0.2017498016357422,
+      "p99_ms": 0.3876543045043938,
+      "qps": 7095.280305849714
+    }
+  },
+  "speedups": {
+    "indexed_over_linear": 1.2667470004405401,
+    "indexed_over_python": 0.10071522972867916,
+    "indexed_pk_over_linear": 2.7326859965490407
+  }
+}
+```
+
+Notes
+- On tiny datasets, overhead from adapters dominates; the goal here is functional verification after the API change. For 50k–1M items, expect much larger gains for indexed paths.
+- Because execute() now returns a collection, any pagination in benchmarks should use coll.slice(offset, offset+limit) instead of re-running queries; this pattern is now O(1) and avoids recomputation.
+
+## Historical results (2025-09-13)
 
 Two recent runs focused on indexed collections. Hardware/environment: Python 3.11, in-memory ListPlan, default interpreter (no PyPy), warm cache.
 

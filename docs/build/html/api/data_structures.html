@@ -403,6 +403,24 @@ preserve reference counts when the same record is added multiple times.</p>
 </dl>
 </dd></dl>
 
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.dictionaries.RepeatedKeysDictionary.build_query_plan">
+<span class="sig-name descname"><span class="pre">build_query_plan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">term</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">context</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/dictionaries.html#RepeatedKeysDictionary.build_query_plan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.dictionaries.RepeatedKeysDictionary.build_query_plan" title="Link to this definition"></a></dt>
+<dd><p>Implement QueryableIndex: produce an index-backed plan for supported operations.
+This dictionary represents an ordered index over a single field (the caller passes the Term).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>term</strong> (<em>Term</em>)</p></li>
+<li><p><strong>context</strong> (<em>QueryContext</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="queries.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a> | None</p>
+</dd>
+</dl>
+</dd></dl>
+
 </dd></dl>
 
 <p>A <code class="docutils literal notranslate"><span class="pre">RepeatedKeysDictionary</span></code> is a dictionary that allows multiple values for the same key. It is useful for representing one-to-many relationships. Each key in the dictionary is associated with a <code class="docutils literal notranslate"><span class="pre">Set</span></code> of values, allowing efficient storage and retrieval of multiple values per key.</p>

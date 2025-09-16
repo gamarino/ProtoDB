@@ -4,8 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Added foundational interfaces for pluggable query planning in proto_db. Introduced QueryContext dataclass and QueryableIndex abstract interface with build_query_plan method. Enhanced QueryPlan with get_cardinality_estimate and get_cost_estimate concrete methods providing default estimates; unit tests for WherePlan passed.">
-      <change beforePath="$PROJECT_DIR$/proto_db/dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/dictionaries.py" afterDir="false" />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="RepeatedKeysDictionary was refactored to implement QueryableIndex and generate query plans based on term operators. IndexedSearchPlan and IndexedRangeSearchPlan now include get_cardinality_estimate and get_cost_estimate methods with defined heuristics. Targeted tests for WherePlan passed, confirming no regressions due to these changes.">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/lists.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -81,7 +83,7 @@
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
     &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
     &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;ml.llm.LLMConfigurable&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;ml.llm.LLMThirdPartyAiProvidersConfigurable&quot;,
     &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
     &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   },
@@ -279,15 +281,9 @@
       <workItem from="1757781886166" duration="18715000" />
       <workItem from="1757807568113" duration="16660000" />
       <workItem from="1757895377114" duration="6936000" />
-      <workItem from="1757947628681" duration="7115000" />
-    </task>
-    <task id="LOCAL-00085" summary="The performance suite was refocused on indexed collections and a runtime bug in IndexedQueryPlan.execute was fixed. Benchmark scripts and documentation were updated to emphasize index-aware evaluation and improve clarity. Unit tests passed and updated benchmark results were saved successfully.">
-      <option name="closed" value="true" />
-      <created>1757736613011</created>
-      <option name="number" value="00085" />
-      <option name="presentableId" value="LOCAL-00085" />
-      <option name="project" value="LOCAL" />
-      <updated>1757736613011</updated>
+      <workItem from="1757947628681" duration="10786000" />
+      <workItem from="1758056235372" duration="937000" />
+      <workItem from="1758057990140" duration="937000" />
     </task>
     <task id="LOCAL-00086" summary="The key bug preventing index usage was fixed by correctly using Dictionary methods and normalizing keys. Performance improved slightly, with indexed queries now faster than linear scans, achieving about 56 queries per second on 50k items. Unit tests passed, and further optimizations are needed to meet the expected performance targets.">
       <option name="closed" value="true" />
@@ -673,14 +669,21 @@
       <option name="project" value="LOCAL" />
       <updated>1757955026830</updated>
     </task>
-    <option name="localTasksCounter" value="134" />
+    <task id="LOCAL-00134" summary="RepeatedKeysDictionary was refactored to implement QueryableIndex and generate query plans based on term operators. IndexedSearchPlan and IndexedRangeSearchPlan now include get_cardinality_estimate and get_cost_estimate methods with defined heuristics. Targeted tests for WherePlan passed, confirming no regressions due to these changes.">
+      <option name="closed" value="true" />
+      <created>1757963527835</created>
+      <option name="number" value="00134" />
+      <option name="presentableId" value="LOCAL-00134" />
+      <option name="project" value="LOCAL" />
+      <updated>1757963527836</updated>
+    </task>
+    <option name="localTasksCounter" value="135" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="The indexed performance suite was executed on a dataset of 20,000 items with 50 queries. Results showed the indexed path outperforms linear scan by ~3.5× and primary key lookups are ~72× faster than linear plans. Documentation was updated with the findings and a JSON results file was generated; a larger run with 100k items timed out." />
     <MESSAGE value="Executed indexed collections performance benchmarks with two dataset sizes. Collected timing and latency metrics demonstrating significant speedups over linear scans. Updated the documentation with detailed results and observations without modifying source code." />
     <MESSAGE value="Updated README.md to show current project performance with benchmarks. Replaced outdated indexed query results with summaries of two runs including times and speedups. Added links to detailed performance documentation without altering source code." />
     <MESSAGE value="Updated commercial_positioning.md with new 2025-09-13 performance data. Replaced outdated query summaries with two benchmark runs and included speedup metrics. Added artifact references and reproducible commands without source code changes." />
@@ -705,7 +708,8 @@
     <MESSAGE value="El README.md se actualizó para reflejar el estado actual del proyecto. Se eliminaron referencias obsoletas y se añadieron descripciones precisas de funcionalidades, instalación, ejemplos y documentación. El archivo quedó alineado con el código y la documentación vigente." />
     <MESSAGE value="Updated README.md to accurately describe LINQ-like features, ANN functions, and parallel work stealing. Added new example sections and corrected outdated disclaimers. Documentation and examples were also updated accordingly." />
     <MESSAGE value="Added foundational interfaces for pluggable query planning in proto_db. Introduced QueryContext dataclass and QueryableIndex abstract interface with build_query_plan method. Enhanced QueryPlan with get_cardinality_estimate and get_cost_estimate concrete methods providing default estimates; unit tests for WherePlan passed." />
-    <option name="LAST_COMMIT_MESSAGE" value="Added foundational interfaces for pluggable query planning in proto_db. Introduced QueryContext dataclass and QueryableIndex abstract interface with build_query_plan method. Enhanced QueryPlan with get_cardinality_estimate and get_cost_estimate concrete methods providing default estimates; unit tests for WherePlan passed." />
+    <MESSAGE value="RepeatedKeysDictionary was refactored to implement QueryableIndex and generate query plans based on term operators. IndexedSearchPlan and IndexedRangeSearchPlan now include get_cardinality_estimate and get_cost_estimate methods with defined heuristics. Targeted tests for WherePlan passed, confirming no regressions due to these changes." />
+    <option name="LAST_COMMIT_MESSAGE" value="RepeatedKeysDictionary was refactored to implement QueryableIndex and generate query plans based on term operators. IndexedSearchPlan and IndexedRangeSearchPlan now include get_cardinality_estimate and get_cost_estimate methods with defined heuristics. Targeted tests for WherePlan passed, confirming no regressions due to these changes." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
