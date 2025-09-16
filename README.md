@@ -3,6 +3,9 @@
 [![PyPI version](https://img.shields.io/pypi/v/proto_db.svg)](https://pypi.org/project/proto_db/)
 [![Python Version](https://img.shields.io/pypi/pyversions/proto_db.svg)](https://pypi.org/project/proto_db/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Project Status](https://img.shields.io/badge/status-0.1%20alpha-orange.svg)](#status)
+
+> Status: 0.1 alpha (2025-09-16). Early preview — APIs may change before the first stable release. See CHANGELOG.md for details.
 
 ProtoBase is an embedded, transactional, object‑oriented database for Python. It provides immutable collections, secondary indexes, and a simple, index‑aware query planner — all running in‑process without a separate server.
 

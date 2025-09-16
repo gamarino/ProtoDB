@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Rewrote WherePlan.optimize to delegate query planning to QueryableIndex implementations. Managed index-backed and residual filters, returning optimized AndMerge or OrMerge plans where applicable. Verified AndMerge.execute correctly applies residual filters; tests pass successfully." />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Integrated vector similarity search into the optimizer by generalizing index creation and updating add_index methods. Created VectorSearchPlan to execute vector searches and adapted vector indexes for query planning. Unit tests passed, confirming correct integration without breaking existing behavior." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -278,15 +278,7 @@
       <workItem from="1757895377114" duration="6936000" />
       <workItem from="1757947628681" duration="10786000" />
       <workItem from="1758056235372" duration="937000" />
-      <workItem from="1758057990140" duration="2051000" />
-    </task>
-    <task id="LOCAL-00088" summary="Implemented a reference-first execution pipeline reducing object materialization by using stable reference hashes for index queries and removing string key conversions. Rewrote AndMerge to intersect reference sets before materializing objects, ensuring efficient AND predicate evaluation. Verified functionality with unit tests and maintained existing AVL-based data structures and immutability.">
-      <option name="closed" value="true" />
-      <created>1757739628240</created>
-      <option name="number" value="00088" />
-      <option name="presentableId" value="LOCAL-00088" />
-      <option name="project" value="LOCAL" />
-      <updated>1757739628240</updated>
+      <workItem from="1758057990140" duration="2738000" />
     </task>
     <task id="LOCAL-00089" summary="Implemented a reference-first execution pipeline reducing object materialization by using stable reference hashes for index queries and removing string key conversions. Rewrote AndMerge to intersect reference sets before materializing objects, ensuring efficient AND predicate evaluation. Verified functionality with unit tests and maintained existing AVL-based data structures and immutability.">
       <option name="closed" value="true" />
@@ -672,14 +664,21 @@
       <option name="project" value="LOCAL" />
       <updated>1758060041349</updated>
     </task>
-    <option name="localTasksCounter" value="137" />
+    <task id="LOCAL-00137" summary="Integrated vector similarity search into the optimizer by generalizing index creation and updating add_index methods. Created VectorSearchPlan to execute vector searches and adapted vector indexes for query planning. Unit tests passed, confirming correct integration without breaking existing behavior.">
+      <option name="closed" value="true" />
+      <created>1758060729021</created>
+      <option name="number" value="00137" />
+      <option name="presentableId" value="LOCAL-00137" />
+      <option name="project" value="LOCAL" />
+      <updated>1758060729021</updated>
+    </task>
+    <option name="localTasksCounter" value="138" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Updated commercial_positioning.md with new 2025-09-13 performance data. Replaced outdated query summaries with two benchmark runs and included speedup metrics. Added artifact references and reproducible commands without source code changes." />
     <MESSAGE value="Updated commercial_positioning.md" />
     <MESSAGE value="Implemented LINQ integration with index-aware optimizer ensuring compatibility and fast-path execution. Added tests validating indexed equality, IN, range, AND/OR merges, and explain diagnostics. Public LINQ API remains backward compatible with no Python set materialization for index buckets." />
     <MESSAGE value="Removed full_plan parameter from all QueryPlan.optimize methods and calls. Updated signatures and calls across multiple files including common.py, queries.py, lists.py, hash_dictionaries.py, and linq.py. Adjusted examples and tests accordingly." />
@@ -704,7 +703,8 @@
     <MESSAGE value="RepeatedKeysDictionary was refactored to implement QueryableIndex and generate query plans based on term operators. IndexedSearchPlan and IndexedRangeSearchPlan now include get_cardinality_estimate and get_cost_estimate methods with defined heuristics. Targeted tests for WherePlan passed, confirming no regressions due to these changes." />
     <MESSAGE value="QueryPlan.execute now returns DBCollections for efficient pagination. Subclasses updated accordingly and tests fixed to use the new API. WherePlan.execute was adjusted to correctly filter results, restoring test passing." />
     <MESSAGE value="Rewrote WherePlan.optimize to delegate query planning to QueryableIndex implementations. Managed index-backed and residual filters, returning optimized AndMerge or OrMerge plans where applicable. Verified AndMerge.execute correctly applies residual filters; tests pass successfully." />
-    <option name="LAST_COMMIT_MESSAGE" value="Rewrote WherePlan.optimize to delegate query planning to QueryableIndex implementations. Managed index-backed and residual filters, returning optimized AndMerge or OrMerge plans where applicable. Verified AndMerge.execute correctly applies residual filters; tests pass successfully." />
+    <MESSAGE value="Integrated vector similarity search into the optimizer by generalizing index creation and updating add_index methods. Created VectorSearchPlan to execute vector searches and adapted vector indexes for query planning. Unit tests passed, confirming correct integration without breaking existing behavior." />
+    <option name="LAST_COMMIT_MESSAGE" value="Integrated vector similarity search into the optimizer by generalizing index creation and updating add_index methods. Created VectorSearchPlan to execute vector searches and adapted vector indexes for query planning. Unit tests passed, confirming correct integration without breaking existing behavior." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
