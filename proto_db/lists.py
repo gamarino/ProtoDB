@@ -87,33 +87,101 @@ class List(DBCollections):
         else:
             self.height = 0
 
-    def add_index(self, field_name: str):
-        # Local import to avoid circular dependency at module import time
+    def add_index(self, index_def):
+        """
+        Add a secondary index to this List.
+        Backward compatible: if a string is provided, builds a RepeatedKeysDictionary on that field.
+        If an IndexDefinition is provided, uses its index_class and extractor to populate the index.
+        For vector indexes (with a `build` method), uses the extractor to get vectors and assigns an id→object map
+        to enable mapping search results back to records.
+        """
+        # Local imports to avoid circular dependencies
         from .dictionaries import RepeatedKeysDictionary, Dictionary as _Dictionary
-        new_index = RepeatedKeysDictionary(transaction=self.transaction)
-        # Build index: key -> Set(records) using native keys
-        if not self.empty:
-            for rec in self.as_iterable():
+        from .indexes import IndexDefinition as _IndexDef
+        from .common import canonical_hash as _canonical_hash
+
+        # Backward compatibility path for simple string field name
+        if isinstance(index_def, str):
+            field_name = index_def
+            new_index = RepeatedKeysDictionary(transaction=self.transaction)
+            if not self.empty:
+                for rec in self.as_iterable():
+                    try:
+                        key = getattr(rec, field_name)
+                    except Exception:
+                        key = None
+                    if key is not None:
+                        new_index = new_index.set_at(key, rec)
+            index_name = field_name
+        else:
+            # Generalized path using IndexDefinition
+            if not isinstance(index_def, _IndexDef):
+                raise TypeError("add_index expects a field name (str) or IndexDefinition")
+            index_name = index_def.name
+            params = index_def.index_params or {}
+            # Instantiate the index
+            new_index = index_def.index_class(transaction=self.transaction, **params) if 'transaction' in getattr(index_def.index_class.__init__, '__code__', ()).co_varnames else index_def.index_class(**params)
+            # Populate
+            if hasattr(new_index, 'set_at'):
+                if not self.empty:
+                    for rec in self.as_iterable():
+                        keys = index_def.extractor(rec)
+                        try:
+                            it = iter(keys)
+                            for k in it:
+                                # If extractor yields (name,key) pairs, take key
+                                if isinstance(k, tuple) and len(k) == 2:
+                                    k = k[1]
+                                if k is not None:
+                                    new_index = new_index.set_at(k, rec)
+                        except TypeError:
+                            # single key
+                            k = keys
+                            if k is not None:
+                                new_index = new_index.set_at(k, rec)
+            elif hasattr(new_index, 'build'):
+                # Vector-like index with bulk build
+                vecs = []
+                ids = []
+                id_to_obj = {}
+                if not self.empty:
+                    for rec in self.as_iterable():
+                        v = index_def.extractor(rec)
+                        if v is None:
+                            continue
+                        vid = _canonical_hash(rec)
+                        ids.append(vid)
+                        vecs.append(v)
+                        id_to_obj[vid] = rec
                 try:
-                    key = getattr(rec, field_name)
+                    # Some implementations accept metric or other params via constructor; just call build
+                    new_index.build(vectors=vecs, ids=ids)
+                except TypeError:
+                    # Fallback to positional args
+                    new_index.build(vecs, ids)
+                # Attach mapping for query plans
+                try:
+                    setattr(new_index, '_id_to_obj', id_to_obj)
                 except Exception:
-                    key = None
-                if key is not None:
-                    new_index = new_index.set_at(key, rec)
-        
+                    pass
+            else:
+                # Unknown index API
+                raise TypeError("Unsupported index type: missing set_at/build")
+
+        # Register index into the per-collection index dictionary
         if self.indexes is None:
             indexes_dict = _Dictionary(transaction=self.transaction)
-            new_indexes = indexes_dict.set_at(field_name, new_index)
+            new_indexes = indexes_dict.set_at(index_name, new_index)
         else:
-            new_indexes = self.indexes.set_at(field_name, new_index)
+            new_indexes = self.indexes.set_at(index_name, new_index)
 
         return List(
-            value = self.value,
-            empty = self.empty,
-            next = self.next,
-            previous = self.previous,
-            indexes = new_indexes,
-            transaction = self.transaction
+            value=self.value,
+            empty=self.empty,
+            next=self.next,
+            previous=self.previous,
+            indexes=new_indexes,
+            transaction=self.transaction
         )
 
     def remove_index(self, field_name: str):

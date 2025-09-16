@@ -13,9 +13,13 @@ class IndexDefinition:
         - a single key value (applies to this index name), or
         - an iterable of key values (applies to this index name), or
         - an iterable of (index_name, key_value) tuples to feed multiple indexes
+    - index_class: the concrete index class to instantiate (e.g., RepeatedKeysDictionary, HNSWVectorIndex)
+    - index_params: optional constructor params for the index class
     """
     name: str
     extractor: Callable[[Any], Any]
+    index_class: type
+    index_params: dict = None
 
 
 class IndexRegistry:

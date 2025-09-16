@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="QueryPlan.execute now returns DBCollections for efficient pagination. Subclasses updated accordingly and tests fixed to use the new API. WherePlan.execute was adjusted to correctly filter results, restoring test passing." />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Rewrote WherePlan.optimize to delegate query planning to QueryableIndex implementations. Managed index-backed and residual filters, returning optimized AndMerge or OrMerge plans where applicable. Verified AndMerge.execute correctly applies residual filters; tests pass successfully." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -278,15 +278,7 @@
       <workItem from="1757895377114" duration="6936000" />
       <workItem from="1757947628681" duration="10786000" />
       <workItem from="1758056235372" duration="937000" />
-      <workItem from="1758057990140" duration="1656000" />
-    </task>
-    <task id="LOCAL-00087" summary="La documentación de performance fue actualizada incluyendo clarificaciones sobre el uso actual de índices y una nueva sección con resultados recientes de benchmarks con interpretaciones y consejos. No se realizaron cambios en el código; solo en la documentación. El README ya enlazaba a la documentación actualizada, por lo que no fue necesario modificarlo.">
-      <option name="closed" value="true" />
-      <created>1757737885334</created>
-      <option name="number" value="00087" />
-      <option name="presentableId" value="LOCAL-00087" />
-      <option name="project" value="LOCAL" />
-      <updated>1757737885334</updated>
+      <workItem from="1758057990140" duration="2051000" />
     </task>
     <task id="LOCAL-00088" summary="Implemented a reference-first execution pipeline reducing object materialization by using stable reference hashes for index queries and removing string key conversions. Rewrote AndMerge to intersect reference sets before materializing objects, ensuring efficient AND predicate evaluation. Verified functionality with unit tests and maintained existing AVL-based data structures and immutability.">
       <option name="closed" value="true" />
@@ -672,14 +664,21 @@
       <option name="project" value="LOCAL" />
       <updated>1758059646554</updated>
     </task>
-    <option name="localTasksCounter" value="136" />
+    <task id="LOCAL-00136" summary="Rewrote WherePlan.optimize to delegate query planning to QueryableIndex implementations. Managed index-backed and residual filters, returning optimized AndMerge or OrMerge plans where applicable. Verified AndMerge.execute correctly applies residual filters; tests pass successfully.">
+      <option name="closed" value="true" />
+      <created>1758060041349</created>
+      <option name="number" value="00136" />
+      <option name="presentableId" value="LOCAL-00136" />
+      <option name="project" value="LOCAL" />
+      <updated>1758060041349</updated>
+    </task>
+    <option name="localTasksCounter" value="137" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Updated README.md to show current project performance with benchmarks. Replaced outdated indexed query results with summaries of two runs including times and speedups. Added links to detailed performance documentation without altering source code." />
     <MESSAGE value="Updated commercial_positioning.md with new 2025-09-13 performance data. Replaced outdated query summaries with two benchmark runs and included speedup metrics. Added artifact references and reproducible commands without source code changes." />
     <MESSAGE value="Updated commercial_positioning.md" />
     <MESSAGE value="Implemented LINQ integration with index-aware optimizer ensuring compatibility and fast-path execution. Added tests validating indexed equality, IN, range, AND/OR merges, and explain diagnostics. Public LINQ API remains backward compatible with no Python set materialization for index buckets." />
@@ -704,7 +703,8 @@
     <MESSAGE value="Added foundational interfaces for pluggable query planning in proto_db. Introduced QueryContext dataclass and QueryableIndex abstract interface with build_query_plan method. Enhanced QueryPlan with get_cardinality_estimate and get_cost_estimate concrete methods providing default estimates; unit tests for WherePlan passed." />
     <MESSAGE value="RepeatedKeysDictionary was refactored to implement QueryableIndex and generate query plans based on term operators. IndexedSearchPlan and IndexedRangeSearchPlan now include get_cardinality_estimate and get_cost_estimate methods with defined heuristics. Targeted tests for WherePlan passed, confirming no regressions due to these changes." />
     <MESSAGE value="QueryPlan.execute now returns DBCollections for efficient pagination. Subclasses updated accordingly and tests fixed to use the new API. WherePlan.execute was adjusted to correctly filter results, restoring test passing." />
-    <option name="LAST_COMMIT_MESSAGE" value="QueryPlan.execute now returns DBCollections for efficient pagination. Subclasses updated accordingly and tests fixed to use the new API. WherePlan.execute was adjusted to correctly filter results, restoring test passing." />
+    <MESSAGE value="Rewrote WherePlan.optimize to delegate query planning to QueryableIndex implementations. Managed index-backed and residual filters, returning optimized AndMerge or OrMerge plans where applicable. Verified AndMerge.execute correctly applies residual filters; tests pass successfully." />
+    <option name="LAST_COMMIT_MESSAGE" value="Rewrote WherePlan.optimize to delegate query planning to QueryableIndex implementations. Managed index-backed and residual filters, returning optimized AndMerge or OrMerge plans where applicable. Verified AndMerge.execute correctly applies residual filters; tests pass successfully." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

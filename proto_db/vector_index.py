@@ -1,16 +1,26 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Dict, Iterable, List, Tuple, Any
+from typing import Dict, Iterable, List, Tuple, Any, Optional
 
 from .vectors import Vector, cosine_similarity, l2_distance
+from .queries import QueryableIndex, QueryContext, Term, Near, VectorSearchPlan
 
 
-class VectorIndex(ABC):
+class VectorIndex(QueryableIndex, ABC):
     """
-    Abstract vector index interface.
+    Abstract vector index interface and QueryableIndex participant.
     Concrete implementations may be ANN structures (e.g., HNSW) or exact.
     """
+
+    # Satisfy DBCollections API minimally; indices are not iterated as collections.
+    def as_query_plan(self):
+        from .queries import ListPlan as _ListPlan
+        return _ListPlan(base_list=[], transaction=getattr(self, 'transaction', None))
+
+    # Cooperative planner hook: default to not handling any term
+    def build_query_plan(self, term: Term, context: QueryContext) -> Optional[VectorSearchPlan]:
+        return None
 
     @abstractmethod
     def build(self, vectors: Iterable[Vector] | Iterable[Iterable[float]], ids: Iterable[Any],
@@ -230,6 +240,39 @@ class HNSWVectorIndex(VectorIndex):
         self._params = {'M': M, 'efConstruction': efConstruction, 'efSearch': efSearch}
         # Fallback exact index if hnswlib (or numpy) is not present
         self._fallback = None if (hnswlib and _np) else ExactVectorIndex(metric=metric)
+
+    # QueryableIndex implementation: build a VectorSearchPlan for Near terms
+    def build_query_plan(self, term: Term, context: QueryContext) -> Optional[VectorSearchPlan]:
+        try:
+            if not isinstance(term, Term) or not isinstance(term.operation, Near):
+                return None
+            # Extract query vector and either threshold or k from term.value
+            qv = None
+            k = None
+            threshold = None
+            if isinstance(term.value, tuple) or isinstance(term.value, list):
+                # Common shapes: (query_vec, threshold) or (query_vec, threshold, k)
+                if len(term.value) >= 1:
+                    qv = term.value[0]
+                if len(term.value) >= 2 and term.value[1] is not None:
+                    threshold = float(term.value[1])
+                if len(term.value) >= 3 and term.value[2] is not None:
+                    try:
+                        k = int(term.value[2])
+                    except Exception:
+                        k = None
+            elif isinstance(term.value, dict):
+                qv = term.value.get('query') or term.value.get('vector')
+                k = term.value.get('k')
+                threshold = term.value.get('threshold')
+            if qv is None:
+                return None
+            return VectorSearchPlan(index=self, query_vector=qv, k=k, threshold=threshold,
+                                    metric=getattr(term.operation, 'metric', None),
+                                    based_on=context.transaction and None,
+                                    transaction=context.transaction)
+        except Exception:
+            return None
 
     def _to_vector(self, v: Vector | Iterable[float]) -> Vector:
         if isinstance(v, Vector):

@@ -615,6 +615,69 @@ class ListPlan(QueryPlan):
         return self
 
 
+class VectorSearchPlan(QueryPlan):
+    """
+    Query plan that delegates to a vector index implementing a search API.
+    It supports either top-k or threshold (range) searches.
+    The index is expected to either return Atom objects directly or (id, score) pairs.
+    If pairs are returned, an id→object map can be provided via index._id_to_obj.
+    """
+    def __init__(self, index, query_vector, k: int | None = None, threshold: float | None = None,
+                 metric: str | None = None, based_on: QueryPlan | None = None, transaction: ObjectTransaction | None = None,
+                 atom_pointer: AtomPointer | None = None, **kwargs):
+        super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
+        self.index = index
+        self.query_vector = query_vector
+        self.k = k
+        self.threshold = threshold
+        self.metric = metric
+
+    def execute(self) -> DBCollections:
+        from .lists import List as _List
+        res = _List(transaction=self.transaction)
+        try:
+            if self.k is not None:
+                results = self.index.search(self.query_vector, self.k, metric=self.metric)
+            else:
+                # Fallback to range_search when threshold is provided
+                results = self.index.range_search(self.query_vector, self.threshold, metric=self.metric)
+        except Exception:
+            results = []
+        id_map = getattr(self.index, '_id_to_obj', None)
+        # Normalize to objects
+        if results and not isinstance(results[0], tuple):
+            objs = results
+        else:
+            objs = []
+            for item in results:
+                try:
+                    rid = item[0]
+                    if id_map is not None and rid in id_map:
+                        objs.append(id_map[rid])
+                    else:
+                        # If rid is already an Atom/record, use it
+                        objs.append(rid)
+                except Exception:
+                    continue
+        for obj in objs:
+            res = res.append_last(obj)
+        return res
+
+    def get_cardinality_estimate(self) -> int:
+        if self.k is not None and isinstance(self.k, int) and self.k > 0:
+            return self.k
+        # Heuristic: 1% of base, if available
+        try:
+            base_cnt = int(self.based_on.count()) if self.based_on else 0
+        except Exception:
+            base_cnt = 0
+        return max(1, base_cnt // 100) if base_cnt > 0 else 100
+
+    def get_cost_estimate(self) -> float:
+        # Cheaper than full scan, more expensive than exact key lookup
+        return 25.0
+
+
 class IndexedQueryPlan(QueryPlan):
     """
     IndexedQueryPlan is a specialized version of QueryPlan.

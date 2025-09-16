@@ -127,19 +127,79 @@ class Set(Atom):
         else:
             return QueryPlan(base=self)
 
-    def add_index(self, field_name: str):
-        # Local import to avoid circular dependency at module import time
+    def add_index(self, index_def):
+        """
+        Add an index over the elements of the Set.
+        Backward compatible: if given a string, builds a RepeatedKeysDictionary whose key is the element itself.
+        If given an IndexDefinition, uses its index_class and extractor.
+        For vector indexes, uses bulk build with an id→object map.
+        """
         from .dictionaries import RepeatedKeysDictionary
-        new_index = RepeatedKeysDictionary(self.transaction)
-        # Regenerate index on creation
-        if not self.empty:
-            for v in self.as_iterable():
-                new_index = new_index.common_add(v)
+        from .indexes import IndexDefinition as _IndexDef
+        from .common import canonical_hash as _canonical_hash
 
-        new_indexes = self.indexes.set_at(field_name, new_index)
+        if isinstance(index_def, str):
+            field_name = index_def
+            new_index = RepeatedKeysDictionary(self.transaction)
+            if not self.empty:
+                for v in self.as_iterable():
+                    # For Set, the element is the key
+                    new_index = new_index.common_add(v)
+            index_name = field_name
+        else:
+            if not isinstance(index_def, _IndexDef):
+                raise TypeError("add_index expects a field name (str) or IndexDefinition")
+            index_name = index_def.name
+            params = index_def.index_params or {}
+            new_index = index_def.index_class(transaction=self.transaction, **params) if 'transaction' in getattr(index_def.index_class.__init__, '__code__', ()).co_varnames else index_def.index_class(**params)
+
+            if hasattr(new_index, 'set_at'):
+                if not self.empty:
+                    for rec in self.as_iterable():
+                        keys = index_def.extractor(rec)
+                        try:
+                            it = iter(keys)
+                            for k in it:
+                                if isinstance(k, tuple) and len(k) == 2:
+                                    k = k[1]
+                                if k is not None:
+                                    new_index = new_index.set_at(k, rec)
+                        except TypeError:
+                            k = keys
+                            if k is not None:
+                                new_index = new_index.set_at(k, rec)
+            elif hasattr(new_index, 'build'):
+                vecs = []
+                ids = []
+                id_to_obj = {}
+                if not self.empty:
+                    for rec in self.as_iterable():
+                        v = index_def.extractor(rec)
+                        if v is None:
+                            continue
+                        vid = _canonical_hash(rec)
+                        ids.append(vid)
+                        vecs.append(v)
+                        id_to_obj[vid] = rec
+                try:
+                    new_index.build(vectors=vecs, ids=ids)
+                except TypeError:
+                    new_index.build(vecs, ids)
+                try:
+                    setattr(new_index, '_id_to_obj', id_to_obj)
+                except Exception:
+                    pass
+            else:
+                raise TypeError("Unsupported index type: missing set_at/build")
+
+        new_indexes = self.indexes.set_at(index_name, new_index) if self.indexes else None
+        if self.indexes is None:
+            from .dictionaries import Dictionary as _Dictionary
+            new_indexes = _Dictionary(transaction=self.transaction).set_at(index_name, new_index)
 
         return Set(
             content=self.content,
+            new_objects=self._new_objects,
             indexes=new_indexes,
             transaction=self.transaction
         )
