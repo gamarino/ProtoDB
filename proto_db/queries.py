@@ -1680,140 +1680,115 @@ class WherePlan(QueryPlan):
 
     def optimize(self, *args, **kwargs) -> 'QueryPlan':
         """
-        Optimizer rewrite to leverage indexes for:
-        - Single Term expressions over an IndexedQueryPlan
-        - AndExpression: intersect multiple indexable terms via AndMerge with residual filters
-        - OrExpression: union multiple indexable terms via OrMerge when all terms are indexable
-        Otherwise, fallback to keeping the original WherePlan (with optimized base).
+        Cooperative optimization: delegate term planning to QueryableIndex.
+        - If the base is not an IndexedQueryPlan, return self (linear scan fallback).
+        - If the filter is a Term or an AndExpression of Terms, ask each field's index
+          (if it implements QueryableIndex) to build a specialized plan for the term.
+        - Combine all index-backed plans with AndMerge, and keep non-indexable terms
+          as residual_filters to be applied after intersection.
         """
-        optimized_based_on = self.based_on.optimize() if self.based_on else None
-        current_filter = self.filter
+        # 1) Ensure we have an index-aware base plan
+        base_plan = self.based_on.optimize() if self.based_on else None
+        if not isinstance(base_plan, IndexedQueryPlan):
+            # No indexes available → keep the plan as-is over optimized base
+            self.based_on = base_plan
+            return self
 
-        # Preserve predicate pushdown when supported by the underlying plan
-        if hasattr(optimized_based_on, 'accept_filter'):
-            return optimized_based_on.accept_filter(current_filter)
+        # 2) Normalize/validate the filter shape we handle now (Term or AndExpression)
+        flt = self.filter
+        terms: list[Expression] = []
+        if isinstance(flt, Term):
+            terms = [flt]
+        elif isinstance(flt, AndExpression):
+            terms = list(flt.terms)
+        elif isinstance(flt, OrExpression):
+            # We'll handle OR below using index-backed plans if all terms are indexable
+            terms = list(flt.terms)
+        else:
+            # Not handled in this phase; return self (linear WherePlan over base)
+            self.based_on = base_plan
+            return self
 
-        # Helper: construct an index-backed plan for a term if possible
-        def plan_for_term(expr: Expression) -> QueryPlan | None:
-            if not isinstance(optimized_based_on, IndexedQueryPlan):
-                return None
+        # 3) For each term, consult the corresponding index if it is QueryableIndex
+        try:
+            from .dictionaries import Dictionary  # type: ignore
+        except Exception:
+            Dictionary = None  # type: ignore
+        indexes = getattr(base_plan, 'indexes', None)
+        if not indexes:
+            self.based_on = base_plan
+            return self
+
+        from .queries import QueryContext, QueryableIndex  # self-module safe import
+        context = QueryContext(transaction=self.transaction)
+
+        index_plans: list[QueryPlan] = []
+        residual_filters: list[Expression] = []
+        built_plans: list[QueryPlan | None] = []
+        for expr in terms:
             if not isinstance(expr, Term):
-                return None
-            idxs = getattr(optimized_based_on, 'indexes', None)
-            if not idxs or not idxs.has(expr.target_attribute):
-                return None
+                residual_filters.append(expr)
+                continue
             field = expr.target_attribute
-            op = expr.operation
-            if isinstance(op, Equal):
-                return IndexedSearchPlan(
-                    field_to_scan=field,
-                    operator=op,
-                    value=expr.value,
-                    indexes=idxs,
-                    based_on=optimized_based_on,
-                    transaction=self.transaction
-                )
-            if isinstance(op, Between):
-                lo, hi = expr.value if isinstance(expr.value, tuple) else (None, None)
-                if lo is None or hi is None:
-                    return None
-                return IndexedRangeSearchPlan(
-                    field_to_scan=field,
-                    lo=lo,
-                    hi=hi,
-                    include_lower=op.include_lower,
-                    include_upper=op.include_upper,
-                    indexes=idxs,
-                    based_on=optimized_based_on,
-                    transaction=self.transaction
-                )
-            if isinstance(op, Greater):
-                return IndexedRangeSearchPlan(
-                    field_to_scan=field,
-                    lo=expr.value,
-                    hi=float('inf'),
-                    include_lower=False,
-                    include_upper=True,
-                    indexes=idxs,
-                    based_on=optimized_based_on,
-                    transaction=self.transaction
-                )
-            if isinstance(op, GreaterOrEqual):
-                return IndexedRangeSearchPlan(
-                    field_to_scan=field,
-                    lo=expr.value,
-                    hi=float('inf'),
-                    include_lower=True,
-                    include_upper=True,
-                    indexes=idxs,
-                    based_on=optimized_based_on,
-                    transaction=self.transaction
-                )
-            if isinstance(op, Lower):
-                return IndexedRangeSearchPlan(
-                    field_to_scan=field,
-                    lo=float('-inf'),
-                    hi=expr.value,
-                    include_lower=True,
-                    include_upper=False,
-                    indexes=idxs,
-                    based_on=optimized_based_on,
-                    transaction=self.transaction
-                )
-            if isinstance(op, LowerOrEqual):
-                return IndexedRangeSearchPlan(
-                    field_to_scan=field,
-                    lo=float('-inf'),
-                    hi=expr.value,
-                    include_lower=True,
-                    include_upper=True,
-                    indexes=idxs,
-                    based_on=optimized_based_on,
-                    transaction=self.transaction
-                )
-            return None
-
-        # 1) Single Term over an IndexedQueryPlan
-        if isinstance(current_filter, Term):
-            plan = plan_for_term(current_filter)
+            try:
+                has_idx = indexes.has(field)
+            except Exception:
+                has_idx = False
+            if not has_idx:
+                residual_filters.append(expr)
+                continue
+            try:
+                idx = indexes.get_at(field)
+            except Exception:
+                idx = None
+            if idx is None or not isinstance(idx, QueryableIndex):
+                residual_filters.append(expr)
+                continue
+            try:
+                plan = idx.build_query_plan(expr, context)
+            except Exception:
+                plan = None
+            built_plans.append(plan)
             if plan is not None:
-                return plan
+                index_plans.append(plan)
+            else:
+                residual_filters.append(expr)
 
-        # 2) AND expression: existing behavior with intersection
-        if isinstance(current_filter, AndExpression) and isinstance(optimized_based_on, IndexedQueryPlan):
-            idxs = getattr(optimized_based_on, 'indexes', None)
-            if idxs:
-                index_plans: list[QueryPlan] = []
-                residuals: list[Expression] = []
-                for expr in current_filter.terms:
-                    p = plan_for_term(expr)
-                    if p is not None:
-                        index_plans.append(p)
-                    else:
-                        residuals.append(expr)
-                if index_plans:
-                    return AndMerge(and_queries=index_plans,
-                                    based_on=optimized_based_on,
-                                    transaction=self.transaction,
-                                    residual_filters=residuals)
+        # 4) If no index-backed plans, decide fallback based on filter type
+        if not index_plans:
+            self.based_on = base_plan
+            return self
 
-        # 3) OR expression: only if all sub-terms are indexable
-        if isinstance(current_filter, OrExpression) and isinstance(optimized_based_on, IndexedQueryPlan):
-            idx_plans: list[QueryPlan] = []
-            all_indexable = True
-            for expr in current_filter.terms:
-                p = plan_for_term(expr)
-                if p is None:
-                    all_indexable = False
-                    break
-                idx_plans.append(p)
-            if all_indexable and idx_plans:
-                return OrMerge(or_queries=idx_plans, based_on=optimized_based_on, transaction=self.transaction)
+        # 5) If the original filter was a single Term and we have a single plan and no residuals → return it directly
+        if isinstance(flt, Term) and len(index_plans) == 1 and not residual_filters:
+            return index_plans[0]
 
-        # Default: keep as WherePlan with optimized base
-        self.based_on = optimized_based_on
-        self.filter = current_filter
-        return self
+        # 6) If it was an OR, only succeed when all terms produced plans
+        if isinstance(flt, OrExpression):
+            # Success only if we built a plan for every term and none is None
+            if built_plans and len(built_plans) == len(terms) and all(p is not None for p in built_plans):
+                return OrMerge(or_queries=cast(list[QueryPlan], built_plans), based_on=base_plan, transaction=self.transaction)
+            else:
+                self.based_on = base_plan
+                return self
+
+        # 7) AND-path: order by estimated cardinality (more selective first)
+        try:
+            index_plans.sort(key=lambda p: int(p.get_cardinality_estimate()))
+        except Exception:
+            pass
+
+        # 8) If exactly one index plan and no residuals, return the plan directly
+        if len(index_plans) == 1 and not residual_filters:
+            return index_plans[0]
+
+        # 9) Build AndMerge with residual filters; base is preserved only for explain chaining
+        return AndMerge(
+            and_queries=index_plans,
+            residual_filters=residual_filters,
+            based_on=base_plan,
+            transaction=self.transaction,
+        )
 
     def _reorder_and_expression(self, and_expression: 'AndExpression') -> 'AndExpression':
         """

@@ -4,12 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="RepeatedKeysDictionary was refactored to implement QueryableIndex and generate query plans based on term operators. IndexedSearchPlan and IndexedRangeSearchPlan now include get_cardinality_estimate and get_cost_estimate methods with defined heuristics. Targeted tests for WherePlan passed, confirming no regressions due to these changes.">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/lists.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
-    </list>
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="QueryPlan.execute now returns DBCollections for efficient pagination. Subclasses updated accordingly and tests fixed to use the new API. WherePlan.execute was adjusted to correctly filter results, restoring test passing." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -283,15 +278,7 @@
       <workItem from="1757895377114" duration="6936000" />
       <workItem from="1757947628681" duration="10786000" />
       <workItem from="1758056235372" duration="937000" />
-      <workItem from="1758057990140" duration="937000" />
-    </task>
-    <task id="LOCAL-00086" summary="The key bug preventing index usage was fixed by correctly using Dictionary methods and normalizing keys. Performance improved slightly, with indexed queries now faster than linear scans, achieving about 56 queries per second on 50k items. Unit tests passed, and further optimizations are needed to meet the expected performance targets.">
-      <option name="closed" value="true" />
-      <created>1757737725535</created>
-      <option name="number" value="00086" />
-      <option name="presentableId" value="LOCAL-00086" />
-      <option name="project" value="LOCAL" />
-      <updated>1757737725535</updated>
+      <workItem from="1758057990140" duration="1656000" />
     </task>
     <task id="LOCAL-00087" summary="La documentación de performance fue actualizada incluyendo clarificaciones sobre el uso actual de índices y una nueva sección con resultados recientes de benchmarks con interpretaciones y consejos. No se realizaron cambios en el código; solo en la documentación. El README ya enlazaba a la documentación actualizada, por lo que no fue necesario modificarlo.">
       <option name="closed" value="true" />
@@ -677,14 +664,21 @@
       <option name="project" value="LOCAL" />
       <updated>1757963527836</updated>
     </task>
-    <option name="localTasksCounter" value="135" />
+    <task id="LOCAL-00135" summary="QueryPlan.execute now returns DBCollections for efficient pagination. Subclasses updated accordingly and tests fixed to use the new API. WherePlan.execute was adjusted to correctly filter results, restoring test passing.">
+      <option name="closed" value="true" />
+      <created>1758059646554</created>
+      <option name="number" value="00135" />
+      <option name="presentableId" value="LOCAL-00135" />
+      <option name="project" value="LOCAL" />
+      <updated>1758059646554</updated>
+    </task>
+    <option name="localTasksCounter" value="136" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Executed indexed collections performance benchmarks with two dataset sizes. Collected timing and latency metrics demonstrating significant speedups over linear scans. Updated the documentation with detailed results and observations without modifying source code." />
     <MESSAGE value="Updated README.md to show current project performance with benchmarks. Replaced outdated indexed query results with summaries of two runs including times and speedups. Added links to detailed performance documentation without altering source code." />
     <MESSAGE value="Updated commercial_positioning.md with new 2025-09-13 performance data. Replaced outdated query summaries with two benchmark runs and included speedup metrics. Added artifact references and reproducible commands without source code changes." />
     <MESSAGE value="Updated commercial_positioning.md" />
@@ -709,7 +703,8 @@
     <MESSAGE value="Updated README.md to accurately describe LINQ-like features, ANN functions, and parallel work stealing. Added new example sections and corrected outdated disclaimers. Documentation and examples were also updated accordingly." />
     <MESSAGE value="Added foundational interfaces for pluggable query planning in proto_db. Introduced QueryContext dataclass and QueryableIndex abstract interface with build_query_plan method. Enhanced QueryPlan with get_cardinality_estimate and get_cost_estimate concrete methods providing default estimates; unit tests for WherePlan passed." />
     <MESSAGE value="RepeatedKeysDictionary was refactored to implement QueryableIndex and generate query plans based on term operators. IndexedSearchPlan and IndexedRangeSearchPlan now include get_cardinality_estimate and get_cost_estimate methods with defined heuristics. Targeted tests for WherePlan passed, confirming no regressions due to these changes." />
-    <option name="LAST_COMMIT_MESSAGE" value="RepeatedKeysDictionary was refactored to implement QueryableIndex and generate query plans based on term operators. IndexedSearchPlan and IndexedRangeSearchPlan now include get_cardinality_estimate and get_cost_estimate methods with defined heuristics. Targeted tests for WherePlan passed, confirming no regressions due to these changes." />
+    <MESSAGE value="QueryPlan.execute now returns DBCollections for efficient pagination. Subclasses updated accordingly and tests fixed to use the new API. WherePlan.execute was adjusted to correctly filter results, restoring test passing." />
+    <option name="LAST_COMMIT_MESSAGE" value="QueryPlan.execute now returns DBCollections for efficient pagination. Subclasses updated accordingly and tests fixed to use the new API. WherePlan.execute was adjusted to correctly filter results, restoring test passing." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
