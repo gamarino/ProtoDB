@@ -4,7 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Integrated vector similarity search into the optimizer by generalizing index creation and updating add_index methods. Created VectorSearchPlan to execute vector searches and adapted vector indexes for query planning. Unit tests passed, confirming correct integration without breaking existing behavior." />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="La documentación de Sphinx se actualizó para incluir nuevas funcionalidades de búsqueda vectorial. Se añadieron explicaciones, ejemplos y referencias API en varios archivos reStructuredText. La compilación HTML se completó con éxito y se generaron los archivos en docs/build/html.">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -278,23 +282,7 @@
       <workItem from="1757895377114" duration="6936000" />
       <workItem from="1757947628681" duration="10786000" />
       <workItem from="1758056235372" duration="937000" />
-      <workItem from="1758057990140" duration="2738000" />
-    </task>
-    <task id="LOCAL-00089" summary="Implemented a reference-first execution pipeline reducing object materialization by using stable reference hashes for index queries and removing string key conversions. Rewrote AndMerge to intersect reference sets before materializing objects, ensuring efficient AND predicate evaluation. Verified functionality with unit tests and maintained existing AVL-based data structures and immutability.">
-      <option name="closed" value="true" />
-      <created>1757739850475</created>
-      <option name="number" value="00089" />
-      <option name="presentableId" value="LOCAL-00089" />
-      <option name="project" value="LOCAL" />
-      <updated>1757739850475</updated>
-    </task>
-    <task id="LOCAL-00090" summary="Implemented a reference-centric indexed query strategy using efficient AVL range traversal and intersection without premature object materialization. Added deterministic native comparisons for DictionaryItem, removed string coercions, and optimized AndMerge to intersect reference sets before materialization. Passed focused unit tests confirming correctness and performance improvements.">
-      <option name="closed" value="true" />
-      <created>1757740917876</created>
-      <option name="number" value="00090" />
-      <option name="presentableId" value="LOCAL-00090" />
-      <option name="project" value="LOCAL" />
-      <updated>1757740917876</updated>
+      <workItem from="1758057990140" duration="23316000" />
     </task>
     <task id="LOCAL-00091" summary="The performance suite was rerun after fixing blockers related to native key comparisons. The indexed benchmark with 50,000 items completed successfully and produced a JSON report with timings and latency metrics. The indexed path was slower than the linear path, meeting the objective to evaluate improvements with results saved at examples/benchmark_results_indexed.json.">
       <option name="closed" value="true" />
@@ -672,15 +660,29 @@
       <option name="project" value="LOCAL" />
       <updated>1758060729021</updated>
     </task>
-    <option name="localTasksCounter" value="138" />
+    <task id="LOCAL-00138" summary="README.md was updated to mark the project version as 0.1 alpha with a status badge and note. A pointer to the CHANGELOG.md was added. No code changes were made, only README modifications.">
+      <option name="closed" value="true" />
+      <created>1758060838352</created>
+      <option name="number" value="00138" />
+      <option name="presentableId" value="LOCAL-00138" />
+      <option name="project" value="LOCAL" />
+      <updated>1758060838352</updated>
+    </task>
+    <task id="LOCAL-00139" summary="La documentación de Sphinx se actualizó para incluir nuevas funcionalidades de búsqueda vectorial. Se añadieron explicaciones, ejemplos y referencias API en varios archivos reStructuredText. La compilación HTML se completó con éxito y se generaron los archivos en docs/build/html.">
+      <option name="closed" value="true" />
+      <created>1758061024583</created>
+      <option name="number" value="00139" />
+      <option name="presentableId" value="LOCAL-00139" />
+      <option name="project" value="LOCAL" />
+      <updated>1758061024584</updated>
+    </task>
+    <option name="localTasksCounter" value="140" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Updated commercial_positioning.md" />
-    <MESSAGE value="Implemented LINQ integration with index-aware optimizer ensuring compatibility and fast-path execution. Added tests validating indexed equality, IN, range, AND/OR merges, and explain diagnostics. Public LINQ API remains backward compatible with no Python set materialization for index buckets." />
     <MESSAGE value="Removed full_plan parameter from all QueryPlan.optimize methods and calls. Updated signatures and calls across multiple files including common.py, queries.py, lists.py, hash_dictionaries.py, and linq.py. Adjusted examples and tests accordingly." />
     <MESSAGE value="Implemented CountedSet as a multiset-style Atom preserving Set semantics with immutability and correct index updates. Exposed CountedSet in the public API via proto_db/common.py and added comprehensive tests covering duplicates, removals, counts, iteration, mixed types, immutability, and persistence. Existing modules and tests remain unaffected, and all tests pass." />
     <MESSAGE value="RepeatedKeysDictionary was updated to use CountedSet instead of Set with correct index update logic. Code duplication issues causing syntax errors were fixed. Targeted tests for CountedSet and indexed fast paths pass, while pre-existing unrelated test failures remain." />
@@ -704,7 +706,9 @@
     <MESSAGE value="QueryPlan.execute now returns DBCollections for efficient pagination. Subclasses updated accordingly and tests fixed to use the new API. WherePlan.execute was adjusted to correctly filter results, restoring test passing." />
     <MESSAGE value="Rewrote WherePlan.optimize to delegate query planning to QueryableIndex implementations. Managed index-backed and residual filters, returning optimized AndMerge or OrMerge plans where applicable. Verified AndMerge.execute correctly applies residual filters; tests pass successfully." />
     <MESSAGE value="Integrated vector similarity search into the optimizer by generalizing index creation and updating add_index methods. Created VectorSearchPlan to execute vector searches and adapted vector indexes for query planning. Unit tests passed, confirming correct integration without breaking existing behavior." />
-    <option name="LAST_COMMIT_MESSAGE" value="Integrated vector similarity search into the optimizer by generalizing index creation and updating add_index methods. Created VectorSearchPlan to execute vector searches and adapted vector indexes for query planning. Unit tests passed, confirming correct integration without breaking existing behavior." />
+    <MESSAGE value="README.md was updated to mark the project version as 0.1 alpha with a status badge and note. A pointer to the CHANGELOG.md was added. No code changes were made, only README modifications." />
+    <MESSAGE value="La documentación de Sphinx se actualizó para incluir nuevas funcionalidades de búsqueda vectorial. Se añadieron explicaciones, ejemplos y referencias API en varios archivos reStructuredText. La compilación HTML se completó con éxito y se generaron los archivos en docs/build/html." />
+    <option name="LAST_COMMIT_MESSAGE" value="La documentación de Sphinx se actualizó para incluir nuevas funcionalidades de búsqueda vectorial. Se añadieron explicaciones, ejemplos y referencias API en varios archivos reStructuredText. La compilación HTML se completó con éxito y se generaron los archivos en docs/build/html." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

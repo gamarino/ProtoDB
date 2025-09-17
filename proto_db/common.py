@@ -1008,17 +1008,24 @@ class QueryPlan(Atom):
 
     def explain(self) -> dict:
         """
-        Lightweight structured explanation of the plan.
-        Subclasses should override to add more details.
+        Structured recursive explanation of this plan node.
+        Returns a JSON-serializable dictionary. Subclasses should override
+        and call super().explain() or construct their own dictionaries, but
+        the convention is to include a nested "source_plan" when based_on exists.
         """
-        try:
-            base_type = type(self.based_on).__name__ if getattr(self, 'based_on', None) is not None else None
-        except Exception:
-            base_type = None
-        return {
+        node = {
             'plan_type': type(self).__name__,
-            'based_on': base_type,
         }
+        try:
+            if getattr(self, 'based_on', None) is not None:
+                # Recurse into the source plan
+                try:
+                    node['source_plan'] = self.based_on.explain()
+                except Exception:
+                    node['source_plan'] = {'plan_type': type(self.based_on).__name__}
+        except Exception:
+            pass
+        return node
 
 
 class Literal(Atom):

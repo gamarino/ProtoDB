@@ -677,6 +677,21 @@ class VectorSearchPlan(QueryPlan):
         # Cheaper than full scan, more expensive than exact key lookup
         return 25.0
 
+    def explain(self) -> dict:
+        idx_name = getattr(self.index, 'field_name', None) or getattr(self.index, 'name', None) or type(self.index).__name__
+        if self.k is not None:
+            qp = f"k={self.k}"
+        else:
+            qp = f"threshold={self.threshold}"
+        return {
+            'plan_type': 'VectorSearchPlan',
+            'index_used': idx_name,
+            'lookup_type': 'ANN Search',
+            'query_params': qp,
+            'estimated_cardinality': self.get_cardinality_estimate(),
+            'estimated_cost': self.get_cost_estimate(),
+        }
+
 
 class IndexedQueryPlan(QueryPlan):
     """
@@ -1120,13 +1135,14 @@ class IndexedSearchPlan(IndexedQueryPlan):
         return 1.0
 
     def explain(self) -> dict:
-        op_name = type(self.operator).__name__
+        # Detailed explain for indexed equality lookup
         return {
-            'plan_type': type(self).__name__,
-            'field': self.field_to_scan,
-            'operator': op_name,
+            'plan_type': 'IndexedSearchPlan',
+            'index_used': self.field_to_scan,
+            'lookup_type': 'Exact (Equality)',
             'value': self.value,
-            'used_index': True,
+            'estimated_cardinality': self.get_cardinality_estimate(),
+            'estimated_cost': self.get_cost_estimate(),
         }
 
 
@@ -1206,6 +1222,13 @@ class OrMerge(QueryPlan):
             except Exception:
                 continue
         return len(uniq)
+
+    def explain(self) -> dict:
+        return {
+            'plan_type': 'OrMerge',
+            'strategy': 'Union of index plans',
+            'child_plans': [q.explain() for q in (self.or_queries or [])]
+        }
 
 
 class AndMerge(QueryPlan):
@@ -1304,6 +1327,14 @@ class AndMerge(QueryPlan):
                     yield rec
             except Exception:
                 continue
+
+    def explain(self) -> dict:
+        return {
+            'plan_type': 'AndMerge',
+            'strategy': 'Intersecting sorted index plans',
+            'child_plans': [q.explain() for q in (self.and_queries or [])],
+            'residual_filters': [str(expr) for expr in (self.residual_filters or [])]
+        }
 
     def optimize(self, *args, **kwargs) -> QueryPlan:
         return AndMerge(
@@ -1477,7 +1508,19 @@ class IndexedRangeSearchPlan(IndexedQueryPlan):
         except Exception:
             return frozenset()
 
-
+    def explain(self) -> dict:
+        # Build inclusive/exclusive range string
+        lb = '[' if self.include_lower else '('
+        ub = ']' if self.include_upper else ')'
+        rng = f"{lb}{self.lo}, {self.hi}{ub}"
+        return {
+            'plan_type': 'IndexedRangeSearchPlan',
+            'index_used': self.field_to_scan,
+            'lookup_type': 'Range Scan',
+            'range': rng,
+            'estimated_cardinality': self.get_cardinality_estimate(),
+            'estimated_cost': self.get_cost_estimate(),
+        }
 
 
 class FromPlan(IndexedQueryPlan):
@@ -1740,6 +1783,21 @@ class WherePlan(QueryPlan):
                 # Ignore records that error during matching
                 continue
         return res
+
+    def explain(self) -> dict:
+        # Fallback explanation when WherePlan is not optimized into an index-backed plan
+        node = {
+            'plan_type': 'WherePlan',
+            'strategy': 'Linear Scan (Full Table Scan)',
+            'reason': 'No suitable index found for the filter expression.',
+            'filter': str(getattr(self, 'filter', None))
+        }
+        try:
+            if getattr(self, 'based_on', None) is not None:
+                node['source_plan'] = self.based_on.explain()
+        except Exception:
+            pass
+        return node
 
     def optimize(self, *args, **kwargs) -> 'QueryPlan':
         """
