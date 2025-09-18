@@ -44,9 +44,20 @@
 <li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../concepts.html">ProtoDB Fundamental Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cookbook_traverse.html">Hierarchical and Graph Traversal with .traverse()</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../performance.html">Performance</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../root_locking.html">Root locking and root_context_manager</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../storage_cloud.html">Cloud and Cluster Storage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html#correlated-subqueries-with-select-many-lateral-join">Correlated Subqueries with .select_many() (LATERAL JOIN)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
 </ul>
 
@@ -660,16 +671,18 @@
 
         <span class="c1"># Wait for responses with timeout</span>
         <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-        <span class="n">majority</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">total_nodes</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">majority</span> <span class="o">=</span> <span class="n">total_nodes</span> <span class="o">//</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span>
 
         <span class="k">while</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time</span> <span class="o">&lt;</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">vote_timeout_ms</span> <span class="o">/</span> <span class="mi">1000</span><span class="p">):</span>
             <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">vote_lock</span><span class="p">:</span>
                 <span class="n">responses</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">vote_responses</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">request_id</span><span class="p">,</span> <span class="p">{})</span>
                 <span class="n">positive_votes</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">vote</span> <span class="ow">in</span> <span class="n">responses</span><span class="o">.</span><span class="n">values</span><span class="p">()</span> <span class="k">if</span> <span class="n">vote</span><span class="p">)</span>
+                <span class="n">effective_votes</span> <span class="o">=</span> <span class="n">positive_votes</span> <span class="o">+</span> <span class="mi">1</span>  <span class="c1"># include self-vote</span>
 
-                <span class="k">if</span> <span class="n">positive_votes</span> <span class="o">&gt;=</span> <span class="n">majority</span><span class="p">:</span>
-                    <span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Received majority of votes: </span><span class="si">{</span><span class="n">positive_votes</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-                    <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">positive_votes</span>
+                <span class="k">if</span> <span class="n">effective_votes</span> <span class="o">&gt;=</span> <span class="n">majority</span><span class="p">:</span>
+                    <span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Received majority of votes: </span><span class="si">{</span><span class="n">effective_votes</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">total_nodes</span><span class="si">}</span><span class="s2"> (including self)&quot;</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">effective_votes</span>
 
             <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
 
@@ -677,6 +690,7 @@
         <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">vote_lock</span><span class="p">:</span>
             <span class="n">responses</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">vote_responses</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">request_id</span><span class="p">,</span> <span class="p">{})</span>
             <span class="n">positive_votes</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">vote</span> <span class="ow">in</span> <span class="n">responses</span><span class="o">.</span><span class="n">values</span><span class="p">()</span> <span class="k">if</span> <span class="n">vote</span><span class="p">)</span>
+            <span class="n">effective_votes</span> <span class="o">=</span> <span class="n">positive_votes</span> <span class="o">+</span> <span class="mi">1</span>  <span class="c1"># include self-vote</span>
 
             <span class="c1"># Clean up this request</span>
             <span class="k">if</span> <span class="n">request_id</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">vote_requests</span><span class="p">:</span>
@@ -684,8 +698,8 @@
             <span class="k">if</span> <span class="n">request_id</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">vote_responses</span><span class="p">:</span>
                 <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">vote_responses</span><span class="p">[</span><span class="n">request_id</span><span class="p">]</span>
 
-        <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Vote request timed out. Received </span><span class="si">{</span><span class="n">positive_votes</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">)</span><span class="si">}</span><span class="s2"> votes&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">positive_votes</span> <span class="o">&gt;=</span> <span class="n">majority</span><span class="p">,</span> <span class="n">positive_votes</span></div>
+        <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Vote request timed out. Received </span><span class="si">{</span><span class="n">effective_votes</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">total_nodes</span><span class="si">}</span><span class="s2"> votes (including self)&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">effective_votes</span> <span class="o">&gt;=</span> <span class="n">majority</span><span class="p">,</span> <span class="n">effective_votes</span></div>
 
 
 <div class="viewcode-block" id="ClusterNetworkManager.request_page">
@@ -935,6 +949,8 @@
 
         <span class="c1"># Additional locks for cluster operations</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">root_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+        <span class="c1"># Active provider context manager held by read_lock_current_root/unlock_current_root</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_active_root_provider_cm</span> <span class="o">=</span> <span class="kc">None</span>
 
         <span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Initialized ClusterFileStorage for server </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">server_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
 
@@ -955,25 +971,80 @@
 <a class="viewcode-back" href="../../api/storage.html#proto_db.cluster_file_storage.ClusterFileStorage.read_lock_current_root">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">read_lock_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Read and lock the current root object.</span>
-
-<span class="sd">        This method acquires a distributed lock on the root object before reading it.</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            AtomPointer: The current root object pointer</span>
+<span class="sd">        Acquire a distributed lock (majority including self) and also a local provider lock,</span>
+<span class="sd">        then read and return the current root pointer.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># Acquire distributed lock through voting</span>
         <span class="n">success</span><span class="p">,</span> <span class="n">votes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">network_manager</span><span class="o">.</span><span class="n">request_vote</span><span class="p">()</span>
-
         <span class="k">if</span> <span class="ow">not</span> <span class="n">success</span><span class="p">:</span>
-            <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to acquire distributed lock for root update (received </span><span class="si">{</span><span class="n">votes</span><span class="si">}</span><span class="s2"> votes)&quot;</span><span class="p">)</span>
-            <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Failed to acquire distributed lock for root update&quot;</span><span class="p">)</span>
+            <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to acquire distributed lock for root read (received </span><span class="si">{</span><span class="n">votes</span><span class="si">}</span><span class="s2"> votes)&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Failed to acquire distributed lock for root read&quot;</span><span class="p">)</span>
+        <span class="c1"># Acquire provider-level lock</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="p">,</span> <span class="s1">&#39;root_context_manager&#39;</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_active_root_provider_cm</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">root_context_manager</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_active_root_provider_cm</span><span class="o">.</span><span class="fm">__enter__</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_active_root_provider_cm</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">get_current_root_object</span><span class="p">()</span></div>
 
-        <span class="c1"># Read the root object</span>
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">root_lock</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_current_root</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="ClusterFileStorage.unlock_current_root">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cluster_file_storage.ClusterFileStorage.unlock_current_root">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">unlock_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Release the provider-level lock if held. Distributed lock auto-expires.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active_root_provider_cm</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_active_root_provider_cm</span><span class="o">.</span><span class="fm">__exit__</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_active_root_provider_cm</span> <span class="o">=</span> <span class="kc">None</span></div>
 
 
+<div class="viewcode-block" id="ClusterFileStorage.root_context_manager">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.cluster_file_storage.ClusterFileStorage.root_context_manager">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">root_context_manager</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span><span class="w"> </span><span class="nc">ContextManager</span><span class="p">:</span>
+            <span class="n">cfs</span><span class="p">:</span> <span class="n">ClusterFileStorage</span>
+            <span class="n">provider_cm</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cfs</span><span class="p">:</span> <span class="n">ClusterFileStorage</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">cfs</span> <span class="o">=</span> <span class="n">cfs</span>
+    
+            <span class="k">def</span><span class="w"> </span><span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+                <span class="c1"># Acquire distributed lock by majority (includes self-vote)</span>
+                <span class="n">success</span><span class="p">,</span> <span class="n">votes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cfs</span><span class="o">.</span><span class="n">network_manager</span><span class="o">.</span><span class="n">request_vote</span><span class="p">()</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">success</span><span class="p">:</span>
+                    <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to acquire distributed lock for root update (received </span><span class="si">{</span><span class="n">votes</span><span class="si">}</span><span class="s2"> votes)&quot;</span><span class="p">)</span>
+                    <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Failed to acquire distributed lock for root update&quot;</span><span class="p">)</span>
+                <span class="c1"># After distributed consensus, also acquire provider-level CM for local exclusion</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cfs</span><span class="o">.</span><span class="n">block_provider</span><span class="p">,</span> <span class="s1">&#39;root_context_manager&#39;</span><span class="p">):</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">provider_cm</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cfs</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">root_context_manager</span><span class="p">()</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">provider_cm</span><span class="o">.</span><span class="fm">__enter__</span><span class="p">()</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="c1"># If provider CM acquisition fails, best-effort: continue to avoid deadlock</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">provider_cm</span> <span class="o">=</span> <span class="kc">None</span>
+    
+            <span class="k">def</span><span class="w"> </span><span class="fm">__exit__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">traceback</span><span class="p">):</span>
+<span class="w">                </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">                Unlock the current root object.</span>
+<span class="sd">    </span>
+<span class="sd">                Release provider CM first; distributed lock is time-based/no-op here.</span>
+<span class="sd">                &quot;&quot;&quot;</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">provider_cm</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">provider_cm</span><span class="o">.</span><span class="fm">__exit__</span><span class="p">(</span><span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">traceback</span><span class="p">)</span>
+                <span class="k">finally</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">provider_cm</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="c1"># Distributed lock auto-expires; no explicit action taken here</span>
+                <span class="k">return</span> <span class="kc">False</span>
+            
+            <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+                <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;ClusterFileStorage.RootContextManager(cfs=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cfs</span><span class="si">}</span><span class="s2">)&quot;</span>
+
+        <span class="k">return</span> <span class="n">ContextManager</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div>
+
+    
 <div class="viewcode-block" id="ClusterFileStorage.set_current_root">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.cluster_file_storage.ClusterFileStorage.set_current_root">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">root_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">):</span>
@@ -995,19 +1066,6 @@
         <span class="p">)</span>
 
         <span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Updated root object and notified </span><span class="si">{</span><span class="n">servers_updated</span><span class="si">}</span><span class="s2"> servers&quot;</span><span class="p">)</span></div>
-
-
-<div class="viewcode-block" id="ClusterFileStorage.unlock_current_root">
-<a class="viewcode-back" href="../../api/storage.html#proto_db.cluster_file_storage.ClusterFileStorage.unlock_current_root">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">unlock_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Unlock the current root object.</span>
-
-<span class="sd">        This method releases the distributed lock on the root object.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># In this implementation, the lock is automatically released when the vote timeout expires</span>
-        <span class="c1"># No explicit action needed</span>
-        <span class="k">pass</span></div>
 
 
 <div class="viewcode-block" id="ClusterFileStorage.get_reader">
@@ -1079,7 +1137,7 @@
   <hr/>
 
   <div role="contentinfo">
-    <p>&#169; Copyright 2023, ProtoBase Team.</p>
+    <p>&#169; Copyright 2025, ProtoBase Team.</p>
   </div>
 
   Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a

@@ -47,13 +47,16 @@
 <li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../concepts.html">ProtoDB Fundamental Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cookbook_traverse.html">Hierarchical and Graph Traversal with .traverse()</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../root_locking.html">Root locking and root_context_manager</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../storage_cloud.html">Cloud and Cluster Storage</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html#correlated-subqueries-with-select-many-lateral-join">Correlated Subqueries with .select_many() (LATERAL JOIN)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
 </ul>
@@ -159,17 +162,46 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span> <span class="o">=</span> <span class="n">indexes</span></div>
 
 
-    <span class="c1"># Unified hashing using canonical_hash for identity stability</span>
+    <span class="c1"># Unified hashing that avoids cross-type collisions and unstable process salts</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_hash_of</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Compute the identity hash used for membership and indexing.</span>
-
-<span class="sd">        This method delegates to :func:`proto_db.common.canonical_hash` to ensure that:</span>
-<span class="sd">        - Persisted Atoms use their ``AtomPointer``-derived stable hash.</span>
-<span class="sd">        - Ephemeral Atoms do not force persistence and fall back to a non-persistent identity.</span>
-<span class="sd">        - Plain Python objects use their built-in ``hash``.</span>
+<span class="sd">        Compute a stable identity/code for membership and indexing that minimizes collisions:</span>
+<span class="sd">        - Atoms: if persisted, use AtomPointer.hash(); else fall back to id(obj) to avoid forcing persistence.</span>
+<span class="sd">        - str: use transaction._get_string_hash (sha256-based) for stability and low collision.</span>
+<span class="sd">        - Numbers/bool: compute a SHA-256 over a typed string &quot;&lt;type&gt;:&lt;value&gt;&quot; for deterministic hashing.</span>
+<span class="sd">        - Other objects: compute SHA-256 over a typed repr to reduce collisions; if repr fails, use built-in hash.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="n">canonical_hash</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atom</span> <span class="k">as</span> <span class="n">_Atom</span><span class="p">,</span> <span class="n">AtomPointer</span> <span class="k">as</span> <span class="n">_AtomPointer</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">_Atom</span><span class="p">):</span>
+                <span class="n">ap</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="s1">&#39;atom_pointer&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">ap</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">ap</span><span class="p">,</span> <span class="s1">&#39;transaction_id&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">):</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="k">return</span> <span class="n">ap</span><span class="o">.</span><span class="n">hash</span><span class="p">()</span>
+                    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                        <span class="k">pass</span>
+                <span class="c1"># Ephemeral atom: avoid persisting just for hashing</span>
+                <span class="k">return</span> <span class="nb">id</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                <span class="n">tr</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;transaction&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">tr</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">tr</span><span class="p">,</span> <span class="s1">&#39;_get_string_hash&#39;</span><span class="p">):</span>
+                    <span class="k">return</span> <span class="n">tr</span><span class="o">.</span><span class="n">_get_string_hash</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+                <span class="c1"># Fallback: stable sha256</span>
+                <span class="kn">import</span><span class="w"> </span><span class="nn">hashlib</span>
+                <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">(</span><span class="n">key</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span class="p">))</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">(),</span> <span class="mi">16</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)):</span>
+                <span class="kn">import</span><span class="w"> </span><span class="nn">hashlib</span>
+                <span class="n">s</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">key</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">(</span><span class="n">s</span><span class="p">)</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">(),</span> <span class="mi">16</span><span class="p">)</span>
+            <span class="c1"># Generic object: try a typed repr</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">hashlib</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">s</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">key</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="nb">repr</span><span class="p">(</span><span class="n">key</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">(</span><span class="n">s</span><span class="p">)</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">(),</span> <span class="mi">16</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">return</span> <span class="nb">hash</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">hash</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_save</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_saved</span><span class="p">:</span>
@@ -180,6 +212,14 @@
 
             <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+
+            <span class="c1"># Ensure indexes are persisted along with the Set</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">pass</span>
 
             <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
 
@@ -238,11 +278,21 @@
 
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">index_def</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
             <span class="n">field_name</span> <span class="o">=</span> <span class="n">index_def</span>
-            <span class="n">new_index</span> <span class="o">=</span> <span class="n">RepeatedKeysDictionary</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
-                <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
-                    <span class="c1"># For Set, the element is the key</span>
-                    <span class="n">new_index</span> <span class="o">=</span> <span class="n">new_index</span><span class="o">.</span><span class="n">common_add</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+            <span class="n">new_index</span> <span class="o">=</span> <span class="n">RepeatedKeysDictionary</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">key</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">rec</span><span class="p">,</span> <span class="n">field_name</span><span class="p">)</span>
+                    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                        <span class="n">key</span> <span class="o">=</span> <span class="kc">None</span>
+                    <span class="k">if</span> <span class="n">key</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="c1"># Unwrap Literal-like objects to raw values</span>
+                        <span class="k">try</span><span class="p">:</span>
+                            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="s1">&#39;string&#39;</span><span class="p">):</span>
+                                <span class="n">key</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="s1">&#39;string&#39;</span><span class="p">)</span>
+                        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                            <span class="k">pass</span>
+                        <span class="n">new_index</span> <span class="o">=</span> <span class="n">new_index</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">rec</span><span class="p">)</span>
             <span class="n">index_name</span> <span class="o">=</span> <span class="n">field_name</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">index_def</span><span class="p">,</span> <span class="n">_IndexDef</span><span class="p">):</span>

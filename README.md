@@ -219,3 +219,29 @@ The suite includes concurrency stress tests, property‑based tests (Hypothesis,
 ## License
 
 MIT License. See LICENSE for details.
+
+
+## Root locking and atomic root updates
+
+ProtoBase coordinates concurrent root updates via a storage‑provided context manager. Use this pattern when
+performing low‑level operations that update the space root directly (regular transactions manage this internally):
+
+```python
+from proto_db.file_block_provider import FileBlockProvider
+from proto_db.standalone_file_storage import StandaloneFileStorage
+
+storage = StandaloneFileStorage(FileBlockProvider('/path/to/db'))
+with storage.root_context_manager():
+    ptr = storage.read_current_root()  # optional read under lock
+    # compute new_ptr ...
+    storage.set_current_root(new_ptr)
+```
+
+Notes:
+- StandaloneFileStorage delegates locking to FileBlockProvider which uses an OS‑level lock and atomic replace (tmp+fsync+rename+fsync dir).
+- ClusterFileStorage first obtains a distributed majority (including self for single‑node clusters) and then also
+  acquires the provider’s local lock for filesystem exclusion.
+- Under heavy contention, operations may raise ProtoLockingException; callers can retry. You can bound executor waits via
+  environment variables STORAGE_PUSH_TIMEOUT_SEC and STORAGE_LOAD_TIMEOUT_SEC.
+
+See docs/root_locking.rst (or the generated HTML docs under docs/build/html) for details and examples.

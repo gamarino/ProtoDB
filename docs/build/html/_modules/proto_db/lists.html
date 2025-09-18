@@ -47,13 +47,16 @@
 <li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../concepts.html">ProtoDB Fundamental Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cookbook_traverse.html">Hierarchical and Graph Traversal with .traverse()</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../root_locking.html">Root locking and root_context_manager</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../storage_cloud.html">Cloud and Cluster Storage</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html#correlated-subqueries-with-select-many-lateral-join">Correlated Subqueries with .select_many() (LATERAL JOIN)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
 </ul>
@@ -148,7 +151,8 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">value</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">next</span> <span class="o">=</span> <span class="nb">next</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">previous</span> <span class="o">=</span> <span class="n">previous</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">empty</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">value</span> <span class="ow">and</span> <span class="n">empty</span>
+        <span class="c1"># Empty status is an explicit flag; must not depend on the truthiness of value (e.g., 0 or &quot;&quot;)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">empty</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">empty</span><span class="p">)</span>
         <span class="c1"># Do not auto-create a Dictionary for indexes here to avoid circular initialization</span>
         <span class="c1"># Leave indexes as provided (can be None). Index structures will be created lazily when needed.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">indexes</span> <span class="o">=</span> <span class="n">indexes</span>
@@ -203,6 +207,11 @@
                     <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
                         <span class="n">key</span> <span class="o">=</span> <span class="kc">None</span>
                     <span class="k">if</span> <span class="n">key</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="k">try</span><span class="p">:</span>
+                            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="s1">&#39;string&#39;</span><span class="p">):</span>
+                                <span class="n">key</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="s1">&#39;string&#39;</span><span class="p">)</span>
+                        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                            <span class="k">pass</span>
                         <span class="n">new_index</span> <span class="o">=</span> <span class="n">new_index</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">rec</span><span class="p">)</span>
             <span class="n">index_name</span> <span class="o">=</span> <span class="n">field_name</span>
         <span class="k">else</span><span class="p">:</span>
@@ -811,11 +820,14 @@
             <span class="c1"># Remove from the right subtree.</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+                <span class="n">new_next</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">offset</span> <span class="o">-</span> <span class="n">node_offset</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">new_next</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">new_next</span><span class="p">,</span> <span class="s1">&#39;empty&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+                    <span class="n">new_next</span> <span class="o">=</span> <span class="kc">None</span>
                 <span class="n">new_node</span> <span class="o">=</span> <span class="n">List</span><span class="p">(</span>
                     <span class="n">value</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
                     <span class="n">empty</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
                     <span class="n">previous</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="p">,</span>
-                    <span class="nb">next</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">offset</span> <span class="o">-</span> <span class="n">node_offset</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),</span>
+                    <span class="nb">next</span><span class="o">=</span><span class="n">new_next</span><span class="p">,</span>
                     <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
                 <span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
@@ -841,28 +853,47 @@
             <span class="c1"># Remove this node</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
-                <span class="n">first_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-                <span class="n">new_next</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="o">.</span><span class="n">remove_first</span><span class="p">()</span>
-                <span class="n">new_node</span> <span class="o">=</span> <span class="n">List</span><span class="p">(</span>
-                    <span class="n">value</span><span class="o">=</span><span class="n">first_value</span><span class="p">,</span>
-                    <span class="n">empty</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-                    <span class="n">previous</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">previous</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-                    <span class="nb">next</span><span class="o">=</span><span class="n">new_next</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">new_next</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-                    <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
-                <span class="p">)</span>
+                <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="p">,</span> <span class="s1">&#39;empty&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+                    <span class="c1"># Treat as no right child</span>
+                    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+                        <span class="n">last_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+                        <span class="n">new_previous</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="o">.</span><span class="n">remove_last</span><span class="p">()</span>
+                        <span class="n">new_node</span> <span class="o">=</span> <span class="n">List</span><span class="p">(</span>
+                            <span class="n">value</span><span class="o">=</span><span class="n">last_value</span><span class="p">,</span>
+                            <span class="n">empty</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                            <span class="n">previous</span><span class="o">=</span><span class="n">new_previous</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">new_previous</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                            <span class="nb">next</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                            <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+                        <span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="k">return</span> <span class="n">List</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">first_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+                    <span class="n">new_next</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="o">.</span><span class="n">remove_first</span><span class="p">()</span>
+                    <span class="n">new_node</span> <span class="o">=</span> <span class="n">List</span><span class="p">(</span>
+                        <span class="n">value</span><span class="o">=</span><span class="n">first_value</span><span class="p">,</span>
+                        <span class="n">empty</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                        <span class="n">previous</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">previous</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                        <span class="nb">next</span><span class="o">=</span><span class="n">new_next</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">new_next</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                        <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+                    <span class="p">)</span>
             <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+                <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="p">,</span> <span class="s1">&#39;empty&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+                    <span class="k">return</span> <span class="n">List</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
                 <span class="n">last_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
                 <span class="n">new_previous</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="o">.</span><span class="n">remove_last</span><span class="p">()</span>
                 <span class="n">new_node</span> <span class="o">=</span> <span class="n">List</span><span class="p">(</span>
                     <span class="n">value</span><span class="o">=</span><span class="n">last_value</span><span class="p">,</span>
                     <span class="n">empty</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
                     <span class="n">previous</span><span class="o">=</span><span class="n">new_previous</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">new_previous</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-                    <span class="nb">next</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="p">,</span>
+                    <span class="nb">next</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                     <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
                 <span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="k">return</span> <span class="kc">None</span>
+                <span class="c1"># Return an empty List when removing the sole element</span>
+                <span class="k">return</span> <span class="n">List</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
 
         <span class="n">result</span> <span class="o">=</span> <span class="n">new_node</span><span class="o">.</span><span class="n">_rebalance</span><span class="p">()</span>
 
@@ -885,46 +916,30 @@
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.lists.List.remove_first">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">remove_first</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Removes the first element from the list. If the list is empty, the operation</span>
-<span class="sd">        returns the current list instance. Otherwise, it modifies the list by removing</span>
-<span class="sd">        the first element, re-balancing the structure if required.</span>
-
-<span class="sd">        :return: A new list instance where the first element has been removed, or the</span>
-<span class="sd">            original list instance if the list was empty.</span>
-<span class="sd">        :rtype: List</span>
+<span class="sd">        Removes the first (leftmost) element from the list. If the list is empty, returns self.</span>
+<span class="sd">        Correctly preserves the right subtree when removing the leftmost node.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
 
-        <span class="n">node_offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="o">.</span><span class="n">count</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span> <span class="k">else</span> <span class="mi">0</span>
-
-        <span class="c1"># Case: Removing from an empty List.</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span>
 
         <span class="n">current_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
 
-        <span class="k">if</span> <span class="n">node_offset</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="c1"># Remove from the left subtree.</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
-                <span class="n">previous_removed</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="o">.</span><span class="n">remove_first</span><span class="p">()</span>
-                <span class="n">new_node</span> <span class="o">=</span> <span class="n">List</span><span class="p">(</span>
-                    <span class="n">value</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
-                    <span class="n">previous</span><span class="o">=</span><span class="n">previous_removed</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">previous_removed</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-                    <span class="nb">next</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="p">,</span>
-                    <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
-                <span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="n">new_node</span> <span class="o">=</span> <span class="bp">self</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="c1"># Remove this node.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="p">:</span>
+            <span class="c1"># Recurse into left subtree and rebuild</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+            <span class="n">previous_removed</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="o">.</span><span class="n">remove_first</span><span class="p">()</span>
             <span class="n">new_node</span> <span class="o">=</span> <span class="n">List</span><span class="p">(</span>
-                <span class="n">value</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                <span class="n">empty</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-                <span class="n">previous</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                <span class="nb">next</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                <span class="n">value</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+                <span class="n">empty</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="n">previous</span><span class="o">=</span><span class="n">previous_removed</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">previous_removed</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="nb">next</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="p">,</span>
                 <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
             <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># This node is the leftmost; drop it and promote the right subtree</span>
+            <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">next</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">next</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">List</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">))</span>
 
         <span class="n">result</span> <span class="o">=</span> <span class="n">new_node</span><span class="o">.</span><span class="n">_rebalance</span><span class="p">()</span>
 
@@ -947,18 +962,11 @@
 <a class="viewcode-back" href="../../api/data_structures.html#proto_db.lists.List.remove_last">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">remove_last</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Removes the last element from the list.</span>
-
-<span class="sd">        If the list is empty, the operation returns the current list instance. </span>
-<span class="sd">        Otherwise, it modifies the list by removing the last element, re-balancing </span>
-<span class="sd">        the structure if required.</span>
-
-<span class="sd">        :return: A new list instance with the last element removed, or the original</span>
-<span class="sd">                list if it was empty.</span>
+<span class="sd">        Removes the last (rightmost) element from the list. If the list is empty, returns self.</span>
+<span class="sd">        Correctly preserves the left subtree when removing the rightmost node.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
 
-        <span class="c1"># Case: Removing from an empty List.</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span>
 
@@ -966,23 +974,18 @@
 
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
-            <span class="c1"># Remove from the right subtree</span>
+            <span class="c1"># Remove from the right subtree and rebuild</span>
             <span class="n">next_removed</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">next</span><span class="o">.</span><span class="n">remove_last</span><span class="p">()</span>
             <span class="n">new_node</span> <span class="o">=</span> <span class="n">List</span><span class="p">(</span>
                 <span class="n">value</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+                <span class="n">empty</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
                 <span class="n">previous</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">previous</span><span class="p">,</span>
                 <span class="nb">next</span><span class="o">=</span><span class="n">next_removed</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">next_removed</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
                 <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="c1"># Remove this node.</span>
-            <span class="n">new_node</span> <span class="o">=</span> <span class="n">List</span><span class="p">(</span>
-                <span class="n">value</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                <span class="n">empty</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-                <span class="n">previous</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                <span class="nb">next</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
-            <span class="p">)</span>
+            <span class="c1"># This node is the rightmost; drop it and promote the left subtree</span>
+            <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">previous</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">List</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">))</span>
 
         <span class="n">result</span> <span class="o">=</span> <span class="n">new_node</span><span class="o">.</span><span class="n">_rebalance</span><span class="p">()</span>
 

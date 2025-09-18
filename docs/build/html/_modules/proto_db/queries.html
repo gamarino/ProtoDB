@@ -51,6 +51,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../root_locking.html">Root locking and root_context_manager</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../storage_cloud.html">Cloud and Cluster Storage</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
@@ -481,6 +482,17 @@
     <span class="n">parameter_count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">match</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">source</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="c1"># Normalize Literal-like objects exposing &#39;string&#39; to raw values</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="s1">&#39;string&#39;</span><span class="p">):</span>
+                <span class="n">source</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="s1">&#39;string&#39;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s1">&#39;string&#39;</span><span class="p">):</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s1">&#39;string&#39;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
         <span class="k">return</span> <span class="n">source</span> <span class="o">==</span> <span class="n">value</span>
 
 
@@ -679,7 +691,19 @@
                         <span class="k">return</span> <span class="kc">None</span>
             <span class="k">return</span> <span class="n">cur</span>
         <span class="n">source_value</span> <span class="o">=</span> <span class="n">resolve</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">target_attribute</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">operation</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">source_value</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+        <span class="c1"># Unwrap ProtoBase Literal or similar to raw Python value for ergonomic comparisons</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">source_value</span><span class="p">,</span> <span class="s1">&#39;string&#39;</span><span class="p">):</span>
+                <span class="n">source_value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">source_value</span><span class="p">,</span> <span class="s1">&#39;string&#39;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="n">val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="s1">&#39;string&#39;</span><span class="p">):</span>
+                <span class="n">val</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="s1">&#39;string&#39;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">operation</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">source_value</span><span class="p">,</span> <span class="n">val</span><span class="p">)</span>
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">TrueTerm</span><span class="p">(</span><span class="n">Expression</span><span class="p">):</span>
@@ -2154,10 +2178,18 @@
 <span class="sd">        - Combine all index-backed plans with AndMerge, and keep non-indexable terms</span>
 <span class="sd">          as residual_filters to be applied after intersection.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># 1) Ensure we have an index-aware base plan</span>
+        <span class="c1"># 1) Optimize base plan first and attempt predicate pushdown if supported</span>
         <span class="n">base_plan</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">base_plan</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">base_plan</span><span class="p">,</span> <span class="s1">&#39;accept_filter&#39;</span><span class="p">):</span>
+                <span class="n">pushed</span> <span class="o">=</span> <span class="n">base_plan</span><span class="o">.</span><span class="n">accept_filter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filter</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">pushed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">pushed</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="c1"># If pushdown fails, continue with standard optimization</span>
+            <span class="k">pass</span>
+        <span class="c1"># If no index-awareness, keep linear WherePlan over optimized base</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">base_plan</span><span class="p">,</span> <span class="n">IndexedQueryPlan</span><span class="p">):</span>
-            <span class="c1"># No indexes available → keep the plan as-is over optimized base</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="o">=</span> <span class="n">base_plan</span>
             <span class="k">return</span> <span class="bp">self</span>
 

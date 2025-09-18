@@ -19,6 +19,7 @@ ProtoBase is an embedded, transactional, object‑oriented data platform for Pyt
    performance
    testing
    architecture
+   root_locking
    storage_cloud
    vectors_arrow
    api/index

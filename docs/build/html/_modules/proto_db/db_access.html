@@ -47,13 +47,16 @@
 <li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../concepts.html">ProtoDB Fundamental Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cookbook_traverse.html">Hierarchical and Graph Traversal with .traverse()</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../root_locking.html">Root locking and root_context_manager</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../storage_cloud.html">Cloud and Cluster Storage</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html#correlated-subqueries-with-select-many-lateral-join">Correlated Subqueries with .select_many() (LATERAL JOIN)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
 </ul>
@@ -118,35 +121,24 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span> <span class="o">=</span> <span class="n">Lock</span><span class="p">()</span></div>
 
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_read_db_catalog</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">:</span><span class="n">Dictionary</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_read_db_catalog</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dictionary</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Read the current database catalog from the space root in a robust way.</span>
 <span class="sd">        Falls back to an empty catalog if the space or root is not yet initialized.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">space_root</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_space_root</span><span class="p">(</span><span class="n">lock</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="k">except</span> <span class="n">ProtoValidationException</span><span class="p">:</span>
-            <span class="k">return</span> <span class="p">{}</span>
+        <span class="n">space_root</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_space_root</span><span class="p">()</span>
 
         <span class="k">if</span> <span class="ow">not</span> <span class="n">space_root</span><span class="p">:</span>
-            <span class="k">return</span> <span class="p">{}</span>
+            <span class="k">return</span> <span class="n">Dictionary</span><span class="p">()</span>
 
-        <span class="c1"># Ensure we load the root to materialize object_root/literal_root attributes</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">space_root</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
-        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-            <span class="k">pass</span>
+        <span class="n">space_root</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
 
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">space_root</span><span class="p">,</span> <span class="s1">&#39;object_root&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">):</span>
-            <span class="k">return</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">space_root</span><span class="o">.</span><span class="n">object_root</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Dictionary</span><span class="p">()</span>
 
-        <span class="k">try</span><span class="p">:</span>
-            <span class="c1"># Ensure dictionary is loaded before iterating to materialize its content</span>
-            <span class="n">space_root</span><span class="o">.</span><span class="n">object_root</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
-            <span class="k">return</span> <span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="n">value</span> <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">space_root</span><span class="o">.</span><span class="n">object_root</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">()}</span>
-        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-            <span class="c1"># If anything goes wrong reading the catalog, treat it as empty to avoid crashes</span>
-            <span class="k">return</span> <span class="p">{}</span>
+        <span class="c1"># Ensure dictionary is loaded before iterating to materialize its content</span>
+        <span class="n">database_catalog</span><span class="p">:</span> <span class="n">Dictionary</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Dictionary</span><span class="p">,</span> <span class="n">space_root</span><span class="o">.</span><span class="n">object_root</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">database_catalog</span>
 
 <div class="viewcode-block" id="ObjectSpace.open_database">
 <a class="viewcode-back" href="../../api/core.html#proto_db.db_access.ObjectSpace.open_database">[docs]</a>
@@ -162,7 +154,7 @@
                 <span class="p">)</span>
 
             <span class="n">databases</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_db_catalog</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">database_name</span> <span class="ow">in</span> <span class="n">databases</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">databases</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">database_name</span><span class="p">):</span>
                 <span class="k">return</span> <span class="n">Database</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">database_name</span><span class="p">)</span>
 
             <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
@@ -183,13 +175,28 @@
                     <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Object space is not running!&#39;</span>
                 <span class="p">)</span>
 
-            <span class="n">databases</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_db_catalog</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">database_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">databases</span><span class="p">:</span>
-                <span class="k">return</span> <span class="n">Database</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">database_name</span><span class="p">)</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">root_context_manager</span><span class="p">():</span>
+                <span class="n">update_tr</span> <span class="o">=</span> <span class="n">ObjectTransaction</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">object_space</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">storage</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="p">)</span>
 
-        <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
-            <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Database </span><span class="si">{</span><span class="n">database_name</span><span class="si">}</span><span class="s1"> already exists!&#39;</span>
-        <span class="p">)</span></div>
+                <span class="n">current_hist</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_space_history</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">current_hist</span><span class="o">.</span><span class="n">count</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">current_root</span><span class="p">:</span><span class="n">RootObject</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">RootObject</span><span class="p">,</span> <span class="n">current_hist</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">current_root</span><span class="p">:</span><span class="n">RootObject</span> <span class="o">=</span> <span class="n">RootObject</span><span class="p">()</span>
+                <span class="n">databases</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Dictionary</span><span class="p">,</span> <span class="n">current_root</span><span class="o">.</span><span class="n">object_root</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">databases</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">database_name</span><span class="p">):</span>
+                    <span class="c1"># Create the new database with an empty roots catalog</span>
+                    <span class="n">databases</span> <span class="o">=</span> <span class="n">databases</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">database_name</span><span class="p">,</span> <span class="n">Dictionary</span><span class="p">())</span>
+                    <span class="n">current_root</span> <span class="o">=</span> <span class="n">current_root</span><span class="o">.</span><span class="n">_setattr</span><span class="p">(</span><span class="s1">&#39;object_root&#39;</span><span class="p">,</span> <span class="n">databases</span><span class="p">)</span>
+                    <span class="n">space_history</span> <span class="o">=</span> <span class="n">current_hist</span><span class="o">.</span><span class="n">insert_at</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">current_root</span><span class="p">)</span>
+                    <span class="n">space_history</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">set_current_root</span><span class="p">(</span><span class="n">space_history</span><span class="o">.</span><span class="n">atom_pointer</span><span class="p">)</span>
+
+                    <span class="k">return</span> <span class="n">Database</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">database_name</span><span class="p">)</span>
+
+                <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
+                    <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Database </span><span class="si">{</span><span class="n">database_name</span><span class="si">}</span><span class="s1"> already exists!&#39;</span>
+                <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="ObjectSpace.rename_database">
@@ -206,13 +213,34 @@
                     <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Object space is not running!&#39;</span>
                 <span class="p">)</span>
 
-            <span class="n">databases</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_db_catalog</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">old_name</span> <span class="ow">in</span> <span class="n">databases</span> <span class="ow">and</span> <span class="n">new_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">databases</span><span class="p">:</span>
-                <span class="k">return</span> <span class="n">Database</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_name</span><span class="p">)</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">root_context_manager</span><span class="p">():</span>
+                <span class="n">update_tr</span> <span class="o">=</span> <span class="n">ObjectTransaction</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">object_space</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">storage</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="p">)</span>
 
-            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
-                <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Database </span><span class="si">{</span><span class="n">old_name</span><span class="si">}</span><span class="s1"> does not exist or </span><span class="si">{</span><span class="n">new_name</span><span class="si">}</span><span class="s1"> already exists!&#39;</span>
-            <span class="p">)</span></div>
+                <span class="n">current_hist</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_space_history</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">current_hist</span><span class="o">.</span><span class="n">count</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">current_root</span><span class="p">:</span><span class="n">RootObject</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">RootObject</span><span class="p">,</span> <span class="n">current_hist</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">current_root</span><span class="p">:</span><span class="n">RootObject</span> <span class="o">=</span> <span class="n">RootObject</span><span class="p">()</span>
+                <span class="n">databases</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Dictionary</span><span class="p">,</span> <span class="n">current_root</span><span class="o">.</span><span class="n">object_root</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">databases</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">old_name</span><span class="p">):</span>
+                    <span class="n">database</span> <span class="o">=</span> <span class="n">databases</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">old_name</span><span class="p">)</span>
+                    <span class="n">databases</span> <span class="o">=</span> <span class="n">databases</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">old_name</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">database</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">new_name</span><span class="p">):</span>
+                        <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
+                            <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Database </span><span class="si">{</span><span class="n">new_name</span><span class="si">}</span><span class="s1"> already exists!&#39;</span>
+                        <span class="p">)</span>
+
+                    <span class="n">databases</span> <span class="o">=</span> <span class="n">databases</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">new_name</span><span class="p">,</span> <span class="n">database</span><span class="p">)</span>
+
+                    <span class="n">current_root</span> <span class="o">=</span> <span class="n">current_root</span><span class="o">.</span><span class="n">_setattr</span><span class="p">(</span><span class="s1">&#39;object_root&#39;</span><span class="p">,</span> <span class="n">databases</span><span class="p">)</span>
+                    <span class="n">space_history</span> <span class="o">=</span> <span class="n">current_hist</span><span class="o">.</span><span class="n">insert_at</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">current_root</span><span class="p">)</span>
+                    <span class="n">space_history</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+
+                    <span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">set_current_root</span><span class="p">(</span><span class="n">space_history</span><span class="o">.</span><span class="n">atom_pointer</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
+                        <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Database </span><span class="si">{</span><span class="n">old_name</span><span class="si">}</span><span class="s1"> does not exist!&#39;</span>
+                    <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="ObjectSpace.remove_database">
@@ -223,12 +251,34 @@
 <span class="sd">        If database is already opened, it will not commit anymore! Be carefull</span>
 <span class="sd">        :return:</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># TODO</span>
-        <span class="k">pass</span></div>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">!=</span> <span class="s1">&#39;Running&#39;</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
+                    <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Object space is not running!&#39;</span>
+                <span class="p">)</span>
 
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">root_context_manager</span><span class="p">():</span>
+                <span class="n">update_tr</span> <span class="o">=</span> <span class="n">ObjectTransaction</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">object_space</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">storage</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">finish_update</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">unlock_current_root</span><span class="p">()</span>
+                <span class="n">current_hist</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_space_history</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">current_hist</span><span class="o">.</span><span class="n">count</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">current_root</span><span class="p">:</span><span class="n">RootObject</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">RootObject</span><span class="p">,</span> <span class="n">current_hist</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">current_root</span><span class="p">:</span><span class="n">RootObject</span> <span class="o">=</span> <span class="n">RootObject</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">update_tr</span><span class="p">)</span>
+                <span class="n">databases</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Dictionary</span><span class="p">,</span> <span class="n">current_root</span><span class="o">.</span><span class="n">object_root</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">databases</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+                    <span class="n">databases</span> <span class="o">=</span> <span class="n">databases</span><span class="o">.</span><span class="n">remove_at</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
+                    <span class="n">current_root</span> <span class="o">=</span> <span class="n">current_root</span><span class="o">.</span><span class="n">_setattr</span><span class="p">(</span><span class="s1">&#39;object_root&#39;</span><span class="p">,</span> <span class="n">databases</span><span class="p">)</span>
+                    <span class="n">space_history</span> <span class="o">=</span> <span class="n">current_hist</span><span class="o">.</span><span class="n">insert_at</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">current_root</span><span class="p">)</span>
+                    <span class="n">space_history</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+
+                    <span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">set_current_root</span><span class="p">(</span><span class="n">space_history</span><span class="o">.</span><span class="n">atom_pointer</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span>
+                        <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Database </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s1"> does not exist!&#39;</span>
+                    <span class="p">)</span></div>
+
 
     <span class="k">def</span><span class="w"> </span><span class="nf">get_space_history</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lock</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">:</span>
         <span class="n">read_tr</span> <span class="o">=</span> <span class="n">ObjectTransaction</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">object_space</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">storage</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="p">)</span>
@@ -249,10 +299,10 @@
 
         <span class="k">return</span> <span class="n">space_history</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_space_root</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lock</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RootObject</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_space_root</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RootObject</span><span class="p">:</span>
         <span class="n">read_tr</span> <span class="o">=</span> <span class="n">ObjectTransaction</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">object_space</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">storage</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="p">)</span>
 
-        <span class="n">space_history</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_space_history</span><span class="p">(</span><span class="n">lock</span><span class="p">)</span>
+        <span class="n">space_history</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_space_history</span><span class="p">()</span>
 
         <span class="k">if</span> <span class="n">space_history</span><span class="o">.</span><span class="n">count</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="n">space_root</span> <span class="o">=</span> <span class="n">RootObject</span><span class="p">(</span>
@@ -267,6 +317,18 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">set_space_root</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_space_root</span><span class="p">:</span> <span class="n">RootObject</span><span class="p">):</span>
         <span class="n">update_tr</span> <span class="o">=</span> <span class="n">ObjectTransaction</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">object_space</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">storage</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="p">)</span>
+
+        <span class="c1"># CAS check against the expected root pointer installed at lock time</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">current_hist</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_space_history</span><span class="p">(</span><span class="n">lock</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="n">current_ptr</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">current_hist</span><span class="p">,</span> <span class="s1">&#39;atom_pointer&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">expected_ptr</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="p">,</span> <span class="s1">&#39;_locked_expected_root&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">current_ptr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">expected_ptr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">current_ptr</span><span class="o">.</span><span class="n">transaction_id</span> <span class="o">!=</span> <span class="n">expected_ptr</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">current_ptr</span><span class="o">.</span><span class="n">offset</span> <span class="o">!=</span> <span class="n">expected_ptr</span><span class="o">.</span><span class="n">offset</span><span class="p">):</span>
+                    <span class="k">raise</span> <span class="n">ProtoLockingException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s1">&#39;Concurrent root update detected (space history changed)&#39;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="c1"># If anything goes wrong, proceed; storage.set_current_root will enforce CAS too</span>
+            <span class="k">pass</span>
 
         <span class="n">space_history</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_space_history</span><span class="p">()</span>
 
@@ -420,8 +482,20 @@
 <span class="sd">        :return:</span>
 <span class="sd">        &quot;&quot;&quot;</span>
 
+        <span class="c1"># Capture the current space root pointer for CAS during commit</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">space_hist</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">object_space</span><span class="o">.</span><span class="n">get_space_history</span><span class="p">(</span><span class="n">lock</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="n">expected_ptr</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">space_hist</span><span class="p">,</span> <span class="s1">&#39;atom_pointer&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="n">expected_ptr</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="n">current_root</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_db_root</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">database_name</span> <span class="o">!=</span> <span class="s1">&#39;_sysdb&#39;</span> <span class="k">else</span> <span class="kc">None</span>
-        <span class="k">return</span> <span class="n">ObjectTransaction</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db_root</span><span class="o">=</span><span class="n">current_root</span><span class="p">)</span></div>
+        <span class="n">tx</span> <span class="o">=</span> <span class="n">ObjectTransaction</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db_root</span><span class="o">=</span><span class="n">current_root</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># Stash expected root pointer on the transaction for later CAS check</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="n">tx</span><span class="p">,</span> <span class="s1">&#39;_expected_root_pointer&#39;</span><span class="p">,</span> <span class="n">expected_ptr</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="k">return</span> <span class="n">tx</span></div>
 
 
 <div class="viewcode-block" id="Database.new_branch_database">
@@ -603,13 +677,24 @@
 <a class="viewcode-back" href="../../api/core.html#proto_db.db_access.ObjectTransaction.get_root_object">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_root_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">object</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Get a root object from the database root catalog</span>
+<span class="sd">        Get a root object from the database root catalog and record a read lock snapshot</span>
+<span class="sd">        of its pointer to detect concurrent modifications at commit time.</span>
 
 <span class="sd">        :param name:</span>
 <span class="sd">        :return:</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction_root</span><span class="p">:</span>
+                <span class="c1"># Capture original pointer for CAS-on-object at commit</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction_root</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+                        <span class="n">obj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction_root</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+                        <span class="n">original_ptr</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="s1">&#39;atom_pointer&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                        <span class="c1"># Store snapshot if not already present</span>
+                        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_lock_objects</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">read_lock_objects</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_lock_objects</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">original_ptr</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">pass</span>
                 <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction_root</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
             <span class="k">return</span> <span class="kc">None</span></div>
 
@@ -669,7 +754,11 @@
             <span class="k">return</span>
 
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">original_object_pointer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_lock_objects</span><span class="o">.</span><span class="n">as_iterable</span><span class="p">():</span>
-            <span class="n">current_object_pointer</span> <span class="o">=</span> <span class="n">current_root</span><span class="o">.</span><span class="n">object_root</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">as_pointer</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">current_obj</span> <span class="o">=</span> <span class="n">current_root</span><span class="o">.</span><span class="n">object_root</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+                <span class="n">current_object_pointer</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">current_obj</span><span class="p">,</span> <span class="s1">&#39;atom_pointer&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="n">current_object_pointer</span> <span class="o">=</span> <span class="kc">None</span>
             <span class="k">if</span> <span class="n">original_object_pointer</span> <span class="o">!=</span> <span class="n">current_object_pointer</span><span class="p">:</span>
                 <span class="c1"># CONCURRENT MODIFICATION DETECTED</span>
                 <span class="n">new_object</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">new_roots</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
@@ -888,15 +977,16 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">RootContextManager</span><span class="p">:</span>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">object_transaction</span><span class="p">:</span> <span class="n">ObjectTransaction</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">object_transaction</span> <span class="o">=</span> <span class="n">object_transaction</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">storage</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">object_transaction</span><span class="o">.</span><span class="n">storage</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">root_cm</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">root_context_manager</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">object_transaction</span><span class="o">.</span><span class="n">database</span><span class="o">.</span><span class="n">read_db_root</span><span class="p">(</span><span class="n">lock</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">root_cm</span><span class="o">.</span><span class="fm">__enter__</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">read_current_root</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__exit__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">traceback</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">object_transaction</span><span class="o">.</span><span class="n">database</span><span class="o">.</span><span class="n">finish_update</span><span class="p">()</span>
-        <span class="c1"># let the exception follows the try chain</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">root_cm</span><span class="o">.</span><span class="fm">__exit__</span><span class="p">(</span><span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">traceback</span><span class="p">)</span>
         <span class="k">return</span> <span class="kc">False</span>
-
 
 <div class="viewcode-block" id="BytesAtom">
 <a class="viewcode-back" href="../../api/core.html#proto_db.db_access.BytesAtom">[docs]</a>

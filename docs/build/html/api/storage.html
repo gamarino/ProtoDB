@@ -48,9 +48,13 @@
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../concepts.html">ProtoDB Fundamental Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../cookbook_traverse.html">Hierarchical and Graph Traversal with .traverse()</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../root_locking.html">Root locking and root_context_manager</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../storage_cloud.html">Cloud and Cluster Storage</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a><ul class="current">
@@ -98,8 +102,9 @@
 <li class="toctree-l2"><a class="reference internal" href="data_structures.html">Data Structures</a></li>
 <li class="toctree-l2"><a class="reference internal" href="indexes.html">Secondary Indexes</a></li>
 <li class="toctree-l2"><a class="reference internal" href="queries.html">Query System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html#vector-search-plans">Vector Search Plans</a></li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html#queryableindex-interface">QueryableIndex Interface</a></li>
 <li class="toctree-l2"><a class="reference internal" href="vectors.html">Vector Support</a></li>
-<li class="toctree-l2"><a class="reference internal" href="vectors.html#module-0">Vectors</a></li>
 <li class="toctree-l2"><a class="reference internal" href="arrow_parquet.html">Arrow / Parquet Bridge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="linq.html">LINQ-like API</a></li>
 <li class="toctree-l2"><a class="reference internal" href="exceptions.html">Exceptions</a></li>
@@ -126,6 +131,7 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced_usage.html#correlated-subqueries-with-select-many-lateral-join">Correlated Subqueries with .select_many() (LATERAL JOIN)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../development.html">Development</a></li>
 </ul>
@@ -222,18 +228,6 @@ ideal for testing and simulation purposes.</p>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="proto_db.memory_storage.MemoryStorage.read_lock_current_root">
-<span class="sig-name descname"><span class="pre">read_lock_current_root</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/memory_storage.html#MemoryStorage.read_lock_current_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.memory_storage.MemoryStorage.read_lock_current_root" title="Link to this definition"></a></dt>
-<dd><p>Read the current root object
-:return:</p>
-<dl class="field-list simple">
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a></p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
 <dt class="sig sig-object py" id="proto_db.memory_storage.MemoryStorage.set_current_root">
 <span class="sig-name descname"><span class="pre">set_current_root</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_root_history_pointer</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/memory_storage.html#MemoryStorage.set_current_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.memory_storage.MemoryStorage.set_current_root" title="Link to this definition"></a></dt>
 <dd><p>Set a new root history object for the storage, replacing any existing one.
@@ -243,14 +237,6 @@ ideal for testing and simulation purposes.</p>
 <dd class="field-odd"><p><strong>new_root_history_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p>
 </dd>
 </dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="proto_db.memory_storage.MemoryStorage.unlock_current_root">
-<span class="sig-name descname"><span class="pre">unlock_current_root</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/memory_storage.html#MemoryStorage.unlock_current_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.memory_storage.MemoryStorage.unlock_current_root" title="Link to this definition"></a></dt>
-<dd><p>Unlock the current root by performing necessary operations based
-on the implementation. This method typically interacts with the state or
-systems associated with this object to achieve the unlocking process.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -419,15 +405,14 @@ The provider may return a raw JSON dict; normalize it into an AtomPointer.</p>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="proto_db.standalone_file_storage.StandaloneFileStorage.read_lock_current_root">
-<span class="sig-name descname"><span class="pre">read_lock_current_root</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#StandaloneFileStorage.read_lock_current_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage.read_lock_current_root" title="Link to this definition"></a></dt>
-<dd><p>Read the current root object
-In this provider, there is no difference with
-a simple root reading
-:return:</p>
+<dt class="sig sig-object py" id="proto_db.standalone_file_storage.StandaloneFileStorage.root_context_manager">
+<span class="sig-name descname"><span class="pre">root_context_manager</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#StandaloneFileStorage.root_context_manager"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage.root_context_manager" title="Link to this definition"></a></dt>
+<dd><blockquote>
+<div><p>Get a context manager for space root update</p>
+</div></blockquote>
 <dl class="field-list simple">
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a></p>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>a context manager</p>
 </dd>
 </dl>
 </dd></dl>
@@ -442,14 +427,6 @@ a simple root reading
 <dd class="field-odd"><p><strong>root_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p>
 </dd>
 </dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="proto_db.standalone_file_storage.StandaloneFileStorage.unlock_current_root">
-<span class="sig-name descname"><span class="pre">unlock_current_root</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/standalone_file_storage.html#StandaloneFileStorage.unlock_current_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.standalone_file_storage.StandaloneFileStorage.unlock_current_root" title="Link to this definition"></a></dt>
-<dd><p>Abort root update process
-Nothing to do for this provider
-:return:</p>
 </dd></dl>
 
 <dl class="py method">
@@ -866,6 +843,19 @@ It could be an old one, or a new one.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="proto_db.file_block_provider.FileBlockProvider.root_context_manager">
+<span class="sig-name descname"><span class="pre">root_context_manager</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/file_block_provider.html#FileBlockProvider.root_context_manager"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.file_block_provider.FileBlockProvider.root_context_manager" title="Link to this definition"></a></dt>
+<dd><blockquote>
+<div><p>Get a context manager for space root update</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>a context manager</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="proto_db.file_block_provider.FileBlockProvider.get_current_root_object">
 <span class="sig-name descname"><span class="pre">get_current_root_object</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/file_block_provider.html#FileBlockProvider.get_current_root_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.file_block_provider.FileBlockProvider.get_current_root_object" title="Link to this definition"></a></dt>
 <dd><p>Read current root object from storage
@@ -875,8 +865,9 @@ It could be an old one, or a new one.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.file_block_provider.FileBlockProvider.update_root_object">
 <span class="sig-name descname"><span class="pre">update_root_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_root</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/file_block_provider.html#FileBlockProvider.update_root_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.file_block_provider.FileBlockProvider.update_root_object" title="Link to this definition"></a></dt>
-<dd><p>Updates or creates the root object in storage.
+<dd><p>Updates or creates the root object in storage in an atomic and durable way.
 Accepts either a plain dict (tests) or an AtomPointer (runtime code).</p>
+<p>Enforces an OS-level exclusive lock during the update to provide cross-process safety.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>new_root</strong> – dict or AtomPointer</p>
@@ -979,14 +970,30 @@ and cached page retrieval between servers.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.cluster_file_storage.ClusterFileStorage.read_lock_current_root">
 <span class="sig-name descname"><span class="pre">read_lock_current_root</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cluster_file_storage.html#ClusterFileStorage.read_lock_current_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cluster_file_storage.ClusterFileStorage.read_lock_current_root" title="Link to this definition"></a></dt>
-<dd><p>Read and lock the current root object.</p>
-<p>This method acquires a distributed lock on the root object before reading it.</p>
+<dd><p>Acquire a distributed lock (majority including self) and also a local provider lock,
+then read and return the current root pointer.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.cluster_file_storage.ClusterFileStorage.unlock_current_root">
+<span class="sig-name descname"><span class="pre">unlock_current_root</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cluster_file_storage.html#ClusterFileStorage.unlock_current_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cluster_file_storage.ClusterFileStorage.unlock_current_root" title="Link to this definition"></a></dt>
+<dd><p>Release the provider-level lock if held. Distributed lock auto-expires.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.cluster_file_storage.ClusterFileStorage.root_context_manager">
+<span class="sig-name descname"><span class="pre">root_context_manager</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cluster_file_storage.html#ClusterFileStorage.root_context_manager"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cluster_file_storage.ClusterFileStorage.root_context_manager" title="Link to this definition"></a></dt>
+<dd><blockquote>
+<div><p>Get a context manager for space root update</p>
+</div></blockquote>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>The current root object pointer</p>
-</dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer">AtomPointer</a></p>
+<dd class="field-odd"><p>a context manager</p>
 </dd>
 </dl>
 </dd></dl>
@@ -1001,13 +1008,6 @@ and cached page retrieval between servers.</p>
 <dd class="field-odd"><p><strong>root_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>) – The new root object pointer</p>
 </dd>
 </dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="proto_db.cluster_file_storage.ClusterFileStorage.unlock_current_root">
-<span class="sig-name descname"><span class="pre">unlock_current_root</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/cluster_file_storage.html#ClusterFileStorage.unlock_current_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.cluster_file_storage.ClusterFileStorage.unlock_current_root" title="Link to this definition"></a></dt>
-<dd><p>Unlock the current root object.</p>
-<p>This method releases the distributed lock on the root object.</p>
 </dd></dl>
 
 <dl class="py method">

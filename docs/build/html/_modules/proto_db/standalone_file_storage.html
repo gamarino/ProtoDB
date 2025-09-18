@@ -45,12 +45,18 @@
 <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../concepts.html">ProtoDB Fundamental Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cookbook_traverse.html">Hierarchical and Graph Traversal with .traverse()</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../root_locking.html">Root locking and root_context_manager</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../storage_cloud.html">Cloud and Cluster Storage</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html#correlated-subqueries-with-select-many-lateral-join">Correlated Subqueries with .select_many() (LATERAL JOIN)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
 </ul>
@@ -251,62 +257,39 @@
         <span class="k">if</span> <span class="ow">not</span> <span class="n">root</span><span class="p">:</span>
             <span class="c1"># Signal uninitialized root as validation error (handled by callers)</span>
             <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Root object is not initialized&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">AtomPointer</span><span class="p">):</span>
-            <span class="k">return</span> <span class="n">root</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-            <span class="c1"># Accept formats: {&#39;transaction_id&#39;: str|hex, &#39;offset&#39;: int} optionally with &#39;className&#39;</span>
-            <span class="n">tid_val</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;transaction_id&#39;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">root</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;tx&#39;</span><span class="p">)</span>
-            <span class="n">off</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;offset&#39;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">tid_val</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Invalid root object format: missing transaction_id&quot;</span><span class="p">)</span>
-            <span class="k">try</span><span class="p">:</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">tid_val</span><span class="p">,</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">):</span>
-                    <span class="n">txid</span> <span class="o">=</span> <span class="n">tid_val</span>
-                <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">tid_val</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
-                    <span class="k">try</span><span class="p">:</span>
-                        <span class="n">txid</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">(</span><span class="n">tid_val</span><span class="p">)</span>
-                    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-                        <span class="n">txid</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">(</span><span class="nb">hex</span><span class="o">=</span><span class="n">tid_val</span><span class="p">)</span>
-                <span class="k">else</span><span class="p">:</span>
-                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Unsupported transaction_id type&quot;</span><span class="p">)</span>
-            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Invalid root transaction_id: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">AtomPointer</span><span class="p">(</span><span class="n">transaction_id</span><span class="o">=</span><span class="n">txid</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="n">off</span><span class="p">)</span>
-        <span class="c1"># Unknown format</span>
-        <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Unsupported root object format&quot;</span><span class="p">)</span></div>
+
+        <span class="k">return</span> <span class="n">root</span></div>
 
 
-<div class="viewcode-block" id="StandaloneFileStorage.read_lock_current_root">
-<a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.read_lock_current_root">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">read_lock_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Read the current root object</span>
-<span class="sd">        In this provider, there is no difference with</span>
-<span class="sd">        a simple root reading</span>
-<span class="sd">        :return:</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_current_root</span><span class="p">()</span></div>
+<div class="viewcode-block" id="StandaloneFileStorage.root_context_manager">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.root_context_manager">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">root_context_manager</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span><span class="w"> </span><span class="nc">RootContextManager</span><span class="p">:</span>
+            <span class="n">sfs</span><span class="p">:</span> <span class="n">StandaloneFileStorage</span>
+            <span class="n">blk_cm</span> <span class="o">=</span> <span class="kc">None</span>
+
+            <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sfs</span><span class="p">:</span> <span class="n">StandaloneFileStorage</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">sfs</span> <span class="o">=</span> <span class="n">sfs</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">blk_cm</span> <span class="o">=</span> <span class="n">sfs</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">root_context_manager</span><span class="p">()</span>
+
+            <span class="k">def</span><span class="w"> </span><span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">blk_cm</span><span class="o">.</span><span class="fm">__enter__</span><span class="p">()</span>
+
+            <span class="k">def</span><span class="w"> </span><span class="fm">__exit__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">traceback</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">blk_cm</span><span class="o">.</span><span class="fm">__exit__</span><span class="p">(</span><span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">traceback</span><span class="p">)</span>
+
+            <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+                <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;StandAloneFileStorage.RootContextManager(sfs=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">sfs</span><span class="si">}</span><span class="s2">, blk_cm=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">blk_cm</span><span class="si">}</span><span class="s2">)&quot;</span>
+
+            <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="fm">__repr__</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">RootContextManager</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="StandaloneFileStorage.set_current_root">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.set_current_root">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">root_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Set the current root object</span>
-<span class="sd">        :return:</span>
-<span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">update_root_object</span><span class="p">(</span><span class="n">root_pointer</span><span class="p">)</span></div>
-
-
-<div class="viewcode-block" id="StandaloneFileStorage.unlock_current_root">
-<a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.unlock_current_root">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">unlock_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Abort root update process</span>
-<span class="sd">        Nothing to do for this provider</span>
-<span class="sd">        :return:</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">pass</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_get_new_wal</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>

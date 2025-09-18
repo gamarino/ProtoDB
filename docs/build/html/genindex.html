@@ -51,6 +51,7 @@
 <li class="toctree-l1"><a class="reference internal" href="performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="root_locking.html">Root locking and root_context_manager</a></li>
 <li class="toctree-l1"><a class="reference internal" href="storage_cloud.html">Cloud and Cluster Storage</a></li>
 <li class="toctree-l1"><a class="reference internal" href="vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
@@ -1082,12 +1083,6 @@
       <ul>
         <li><a href="api/storage.html#proto_db.cluster_file_storage.ClusterFileStorage.read_lock_current_root">(proto_db.cluster_file_storage.ClusterFileStorage method)</a>
 </li>
-        <li><a href="api/core.html#proto_db.common.SharedStorage.read_lock_current_root">(proto_db.common.SharedStorage method)</a>
-</li>
-        <li><a href="api/storage.html#proto_db.memory_storage.MemoryStorage.read_lock_current_root">(proto_db.memory_storage.MemoryStorage method)</a>
-</li>
-        <li><a href="api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.read_lock_current_root">(proto_db.standalone_file_storage.StandaloneFileStorage method)</a>
-</li>
       </ul></li>
       <li><a href="api/core.html#proto_db.db_access.ObjectTransaction.read_lock_objects">read_lock_objects (proto_db.db_access.ObjectTransaction attribute)</a>
 </li>
@@ -1097,8 +1092,6 @@
 </li>
       <li><a href="api/vectors.html#proto_db.vector_index.HNSWVectorIndex.rebuild">rebuild() (proto_db.vector_index.HNSWVectorIndex method)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/queries.html#proto_db.queries.RecursivePlan">RecursivePlan (class in proto_db.queries)</a>
 </li>
       <li><a href="api/data_structures.html#proto_db.dictionaries.Dictionary.remove_at">remove_at() (proto_db.dictionaries.Dictionary method)</a>
@@ -1111,6 +1104,8 @@
         <li><a href="api/data_structures.html#proto_db.sets.Set.remove_at">(proto_db.sets.Set method)</a>
 </li>
       </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/core.html#proto_db.db_access.ObjectSpace.remove_database">remove_database() (proto_db.db_access.ObjectSpace method)</a>
 </li>
       <li><a href="api/data_structures.html#proto_db.lists.List.remove_first">remove_first() (proto_db.lists.List method)</a>
@@ -1129,6 +1124,18 @@
 </li>
       <li><a href="api/storage.html#proto_db.cluster_file_storage.ClusterNetworkManager.request_vote">request_vote() (proto_db.cluster_file_storage.ClusterNetworkManager method)</a>
 </li>
+      <li><a href="api/storage.html#proto_db.cluster_file_storage.ClusterFileStorage.root_context_manager">root_context_manager() (proto_db.cluster_file_storage.ClusterFileStorage method)</a>
+
+      <ul>
+        <li><a href="api/core.html#proto_db.common.BlockProvider.root_context_manager">(proto_db.common.BlockProvider method)</a>
+</li>
+        <li><a href="api/core.html#proto_db.common.SharedStorage.root_context_manager">(proto_db.common.SharedStorage method)</a>
+</li>
+        <li><a href="api/storage.html#proto_db.file_block_provider.FileBlockProvider.root_context_manager">(proto_db.file_block_provider.FileBlockProvider method)</a>
+</li>
+        <li><a href="api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.root_context_manager">(proto_db.standalone_file_storage.StandaloneFileStorage method)</a>
+</li>
+      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -1238,19 +1245,11 @@
       <li><a href="api/data_structures.html#proto_db.sets.Set.union">union() (proto_db.sets.Set method)</a>
 </li>
       <li><a href="api/storage.html#proto_db.cluster_file_storage.ClusterFileStorage.unlock_current_root">unlock_current_root() (proto_db.cluster_file_storage.ClusterFileStorage method)</a>
-
-      <ul>
-        <li><a href="api/core.html#proto_db.common.SharedStorage.unlock_current_root">(proto_db.common.SharedStorage method)</a>
 </li>
-        <li><a href="api/storage.html#proto_db.memory_storage.MemoryStorage.unlock_current_root">(proto_db.memory_storage.MemoryStorage method)</a>
-</li>
-        <li><a href="api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.unlock_current_root">(proto_db.standalone_file_storage.StandaloneFileStorage method)</a>
-</li>
-      </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/queries.html#proto_db.queries.UnnestPlan">UnnestPlan (class in proto_db.queries)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/storage.html#proto_db.cloud_file_storage.CloudBlockProvider.update_root_object">update_root_object() (proto_db.cloud_file_storage.CloudBlockProvider method)</a>
 
       <ul>

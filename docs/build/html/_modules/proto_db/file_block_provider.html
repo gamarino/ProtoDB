@@ -45,12 +45,18 @@
 <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../concepts.html">ProtoDB Fundamental Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cookbook_traverse.html">Hierarchical and Graph Traversal with .traverse()</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../root_locking.html">Root locking and root_context_manager</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../storage_cloud.html">Cloud and Cluster Storage</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html#correlated-subqueries-with-select-many-lateral-join">Correlated Subqueries with .select_many() (LATERAL JOIN)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
 </ul>
@@ -415,7 +421,9 @@
             <span class="k">pass</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">reader_factory</span> <span class="o">=</span> <span class="n">FileReaderFactory</span><span class="p">(</span><span class="n">space_path</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">page_cache</span> <span class="o">=</span> <span class="n">PageCache</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">maximun_cache_size</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">reader_factory</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">page_cache</span> <span class="o">=</span> <span class="n">PageCache</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">maximun_cache_size</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">reader_factory</span><span class="p">)</span>
+        <span class="c1"># Root lock file descriptor (for OS-level exclusive locks)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_root_lock_fd</span> <span class="o">=</span> <span class="kc">None</span></div>
 
 
 <div class="viewcode-block" id="FileBlockProvider.get_config_data">
@@ -488,6 +496,26 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_wal</span></div>
 
 
+<div class="viewcode-block" id="FileBlockProvider.root_context_manager">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider.root_context_manager">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">root_context_manager</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span><span class="w"> </span><span class="nc">ContextManager</span><span class="p">:</span>
+            <span class="n">bp</span><span class="p">:</span> <span class="n">FileBlockProvider</span>
+            <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bp</span><span class="p">:</span> <span class="n">FileBlockProvider</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">bp</span> <span class="o">=</span> <span class="n">bp</span>
+
+            <span class="k">def</span><span class="w"> </span><span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">bp</span><span class="o">.</span><span class="n">_acquire_root_lock</span><span class="p">()</span>
+
+            <span class="k">def</span><span class="w"> </span><span class="fm">__exit__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">traceback</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">bp</span><span class="o">.</span><span class="n">_release_root_lock</span><span class="p">()</span>
+
+            <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+                <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;FileBlockProvider.RootContextManager(bp=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">bp</span><span class="si">}</span><span class="s2">)&quot;</span>
+
+        <span class="k">return</span> <span class="n">ContextManager</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div>
+
+
 <div class="viewcode-block" id="FileBlockProvider.get_current_root_object">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider.get_current_root_object">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_current_root_object</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -497,38 +525,115 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">,</span> <span class="s1">&#39;space_root&#39;</span><span class="p">),</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">root_file</span><span class="p">:</span>
-                <span class="n">root_dict</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">root_file</span><span class="p">)</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">root_dict</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">root_file</span><span class="p">)</span>
+                <span class="k">except</span> <span class="n">json</span><span class="o">.</span><span class="n">JSONDecodeError</span><span class="p">:</span>
+                    <span class="c1"># Empty or partially written file: treat as no root set yet</span>
+                    <span class="k">return</span> <span class="kc">None</span>
                 <span class="c1"># Tests expect the raw JSON content (a dict) to be returned</span>
                 <span class="k">return</span> <span class="n">root_dict</span>
         <span class="k">except</span> <span class="ne">FileNotFoundError</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
             <span class="n">_logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
-            <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Unexpected exception </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s1"> reading root&#39;</span><span class="p">)</span></div>
+            <span class="k">return</span> <span class="kc">None</span></div>
 
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_acquire_root_lock</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Acquire an OS-level exclusive lock on the root lock file to serialize root updates</span>
+<span class="sd">        across processes/threads. Best-effort on platforms without fcntl.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">lock_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">,</span> <span class="s1">&#39;space_root.lock&#39;</span><span class="p">)</span>
+            <span class="c1"># Ensure lock file exists</span>
+            <span class="n">fd</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">lock_path</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">O_CREAT</span> <span class="o">|</span> <span class="n">os</span><span class="o">.</span><span class="n">O_RDWR</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_root_lock_fd</span> <span class="o">=</span> <span class="n">fd</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="kn">import</span><span class="w"> </span><span class="nn">fcntl</span>  <span class="c1"># type: ignore</span>
+                <span class="n">fcntl</span><span class="o">.</span><span class="n">flock</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">fcntl</span><span class="o">.</span><span class="n">LOCK_EX</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="kn">import</span><span class="w"> </span><span class="nn">msvcrt</span>  <span class="c1"># type: ignore</span>
+                    <span class="c1"># Lock entire file (dummy length)</span>
+                    <span class="n">msvcrt</span><span class="o">.</span><span class="n">locking</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">msvcrt</span><span class="o">.</span><span class="n">LK_LOCK</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="c1"># If locking is unavailable, proceed without it</span>
+                    <span class="k">pass</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="c1"># Do not fail the operation due to lock acquisition problems</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_root_lock_fd</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_release_root_lock</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">fd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_root_lock_fd</span>
+            <span class="k">if</span> <span class="n">fd</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="kn">import</span><span class="w"> </span><span class="nn">fcntl</span>  <span class="c1"># type: ignore</span>
+                    <span class="n">fcntl</span><span class="o">.</span><span class="n">flock</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">fcntl</span><span class="o">.</span><span class="n">LOCK_UN</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="kn">import</span><span class="w"> </span><span class="nn">msvcrt</span>  <span class="c1"># type: ignore</span>
+                        <span class="n">msvcrt</span><span class="o">.</span><span class="n">locking</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">msvcrt</span><span class="o">.</span><span class="n">LK_UNLCK</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+                    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                        <span class="k">pass</span>
+            <span class="k">finally</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">os</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fd</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">pass</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_root_lock_fd</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_root_lock_fd</span> <span class="o">=</span> <span class="kc">None</span>
 
 <div class="viewcode-block" id="FileBlockProvider.update_root_object">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.file_block_provider.FileBlockProvider.update_root_object">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">update_root_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_root</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Updates or creates the root object in storage.</span>
+<span class="sd">        Updates or creates the root object in storage in an atomic and durable way.</span>
 <span class="sd">        Accepts either a plain dict (tests) or an AtomPointer (runtime code).</span>
+
+<span class="sd">        Enforces an OS-level exclusive lock during the update to provide cross-process safety.</span>
 
 <span class="sd">        :param new_root: dict or AtomPointer</span>
 <span class="sd">        :return: None</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">,</span> <span class="s1">&#39;space_root&#39;</span><span class="p">),</span> <span class="s1">&#39;w&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">root_file</span><span class="p">:</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">new_root</span><span class="p">,</span> <span class="n">AtomPointer</span><span class="p">):</span>
-                    <span class="c1"># Write a neutral pointer dict; className is not required and can be misleading</span>
-                    <span class="n">new_root_dict</span> <span class="o">=</span> <span class="p">{</span>
-                        <span class="s1">&#39;transaction_id&#39;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">new_root</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">),</span>
-                        <span class="s1">&#39;offset&#39;</span><span class="p">:</span> <span class="n">new_root</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span>
-                    <span class="p">}</span>
-                    <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">new_root_dict</span><span class="p">,</span> <span class="n">root_file</span><span class="p">)</span>
-                <span class="k">else</span><span class="p">:</span>
-                    <span class="c1"># Assume it&#39;s already a JSON-serializable dict</span>
-                    <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">new_root</span><span class="p">,</span> <span class="n">root_file</span><span class="p">)</span>
+            <span class="c1"># Prepare JSON payload</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">new_root</span><span class="p">,</span> <span class="n">AtomPointer</span><span class="p">):</span>
+                <span class="n">new_root_dict</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s1">&#39;transaction_id&#39;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">new_root</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">),</span>
+                    <span class="s1">&#39;offset&#39;</span><span class="p">:</span> <span class="n">new_root</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span>
+                <span class="p">}</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">new_root_dict</span> <span class="o">=</span> <span class="n">new_root</span>
+
+            <span class="c1"># Serialize writes with OS lock</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_acquire_root_lock</span><span class="p">()</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="c1"># Write atomically: space_root.tmp -&gt; fsync -&gt; rename -&gt; fsync dir</span>
+                <span class="n">tmp_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">,</span> <span class="s1">&#39;space_root.tmp&#39;</span><span class="p">)</span>
+                <span class="n">final_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">,</span> <span class="s1">&#39;space_root&#39;</span><span class="p">)</span>
+                <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">tmp_path</span><span class="p">,</span> <span class="s1">&#39;w&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                    <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">new_root_dict</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span>
+                    <span class="n">f</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+                    <span class="n">os</span><span class="o">.</span><span class="n">fsync</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">fileno</span><span class="p">())</span>
+                <span class="c1"># Atomic replace</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tmp_path</span><span class="p">,</span> <span class="n">final_path</span><span class="p">)</span>
+                <span class="c1"># Fsync directory to persist the rename on crash-prone filesystems</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">dir_fd</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">space_path</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">O_DIRECTORY</span><span class="p">)</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">os</span><span class="o">.</span><span class="n">fsync</span><span class="p">(</span><span class="n">dir_fd</span><span class="p">)</span>
+                    <span class="k">finally</span><span class="p">:</span>
+                        <span class="n">os</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">dir_fd</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="c1"># Not all platforms/filesystems support directory fsync</span>
+                    <span class="k">pass</span>
+            <span class="k">finally</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_release_root_lock</span><span class="p">()</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
             <span class="n">_logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
             <span class="k">raise</span> <span class="n">ProtoUnexpectedException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Unexpected exception </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s1"> writing root&#39;</span><span class="p">)</span></div>

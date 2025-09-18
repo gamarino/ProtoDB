@@ -54,6 +54,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../root_locking.html">Root locking and root_context_manager</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../storage_cloud.html">Cloud and Cluster Storage</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a><ul class="current">
@@ -833,6 +834,19 @@ associated with the given WAL ID.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="proto_db.common.BlockProvider.root_context_manager">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">root_context_manager</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#BlockProvider.root_context_manager"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.BlockProvider.root_context_manager" title="Link to this definition"></a></dt>
+<dd><blockquote>
+<div><p>Get a context manager for space root update</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>a context manager</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="proto_db.common.BlockProvider.get_current_root_object">
 <em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_current_root_object</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#BlockProvider.get_current_root_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.BlockProvider.get_current_root_object" title="Link to this definition"></a></dt>
 <dd><p>Read current root object from storage
@@ -898,21 +912,22 @@ provides a level of paralellism to the system
 SharedStorage object should support multithreaded and multiprocessed uses, and can be safe in a multiserver
 environment, depending on the implementation</p>
 <dl class="py method">
-<dt class="sig sig-object py" id="proto_db.common.SharedStorage.read_current_root">
-<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">read_current_root</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#SharedStorage.read_current_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.SharedStorage.read_current_root" title="Link to this definition"></a></dt>
-<dd><p>Read the current root object
-:return:</p>
+<dt class="sig sig-object py" id="proto_db.common.SharedStorage.root_context_manager">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">root_context_manager</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#SharedStorage.root_context_manager"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.SharedStorage.root_context_manager" title="Link to this definition"></a></dt>
+<dd><blockquote>
+<div><p>Get a context manager for space root update</p>
+</div></blockquote>
 <dl class="field-list simple">
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a></p>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>a context manager</p>
 </dd>
 </dl>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="proto_db.common.SharedStorage.read_lock_current_root">
-<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">read_lock_current_root</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#SharedStorage.read_lock_current_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.SharedStorage.read_lock_current_root" title="Link to this definition"></a></dt>
-<dd><p>Read the current root object
+<dt class="sig sig-object py" id="proto_db.common.SharedStorage.read_current_root">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">read_current_root</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#SharedStorage.read_current_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.SharedStorage.read_current_root" title="Link to this definition"></a></dt>
+<dd><p>Read the current root object. Nonblocking
 :return:</p>
 <dl class="field-list simple">
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
@@ -931,14 +946,6 @@ environment, depending on the implementation</p>
 <dd class="field-odd"><p><strong>new_root_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p>
 </dd>
 </dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="proto_db.common.SharedStorage.unlock_current_root">
-<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">unlock_current_root</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#SharedStorage.unlock_current_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.SharedStorage.unlock_current_root" title="Link to this definition"></a></dt>
-<dd><p>Unlock the current root by performing necessary operations based
-on the implementation. This method typically interacts with the state or
-systems associated with this object to achieve the unlocking process.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -1248,7 +1255,8 @@ already been processed in this transaction, or create a new one if needed.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.db_access.ObjectTransaction.get_root_object">
 <span class="sig-name descname"><span class="pre">get_root_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectTransaction.get_root_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectTransaction.get_root_object" title="Link to this definition"></a></dt>
-<dd><p>Get a root object from the database root catalog</p>
+<dd><p>Get a root object from the database root catalog and record a read lock snapshot
+of its pointer to detect concurrent modifications at commit time.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>name</strong> (<em>str</em>)</p>

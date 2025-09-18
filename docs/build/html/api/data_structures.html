@@ -50,9 +50,11 @@
 <li class="toctree-l1"><a class="reference internal" href="../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../concepts.html">ProtoDB Fundamental Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../cookbook_traverse.html">Hierarchical and Graph Traversal with .traverse()</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../root_locking.html">Root locking and root_context_manager</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../storage_cloud.html">Cloud and Cluster Storage</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a><ul class="current">
@@ -116,6 +118,7 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced_usage.html#correlated-subqueries-with-select-many-lateral-join">Correlated Subqueries with .select_many() (LATERAL JOIN)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../development.html">Development</a></li>
 </ul>
@@ -729,16 +732,11 @@ from the end of the list. If the offset is out of bounds, the list remains uncha
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.lists.List.remove_first">
 <span class="sig-name descname"><span class="pre">remove_first</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/lists.html#List.remove_first"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.lists.List.remove_first" title="Link to this definition"></a></dt>
-<dd><p>Removes the first element from the list. If the list is empty, the operation
-returns the current list instance. Otherwise, it modifies the list by removing
-the first element, re-balancing the structure if required.</p>
+<dd><p>Removes the first (leftmost) element from the list. If the list is empty, returns self.
+Correctly preserves the right subtree when removing the leftmost node.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A new list instance where the first element has been removed, or the
-original list instance if the list was empty.</p>
-</dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference internal" href="#proto_db.lists.List" title="proto_db.lists.List">List</a></p>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#proto_db.lists.List" title="proto_db.lists.List"><em>List</em></a></p>
 </dd>
 </dl>
 </dd></dl>
@@ -746,17 +744,11 @@ original list instance if the list was empty.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.lists.List.remove_last">
 <span class="sig-name descname"><span class="pre">remove_last</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/lists.html#List.remove_last"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.lists.List.remove_last" title="Link to this definition"></a></dt>
-<dd><p>Removes the last element from the list.</p>
-<p>If the list is empty, the operation returns the current list instance.
-Otherwise, it modifies the list by removing the last element, re-balancing
-the structure if required.</p>
+<dd><p>Removes the last (rightmost) element from the list. If the list is empty, returns self.
+Correctly preserves the left subtree when removing the rightmost node.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A new list instance with the last element removed, or the original
-list if it was empty.</p>
-</dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference internal" href="#proto_db.lists.List" title="proto_db.lists.List"><em>List</em></a></p>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#proto_db.lists.List" title="proto_db.lists.List"><em>List</em></a></p>
 </dd>
 </dl>
 </dd></dl>
