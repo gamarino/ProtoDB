@@ -485,7 +485,7 @@ class HashDictionary(DBCollections):
                     transaction=self.transaction
                 )
             else:
-                return None
+                return HashDictionary(transaction=self.transaction)
 
         return new_node._rebalance()
 
