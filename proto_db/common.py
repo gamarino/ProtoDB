@@ -688,7 +688,24 @@ class DBObject(Atom):
         for key, value in kwargs.items():
             object.__setattr__(self, key, value)
 
+    def __getattribute__(self, name: str):
+        # Fast-path internal attributes and wiring to avoid recursion and unnecessary loads
+        if name.startswith('_') or name in ('transaction', 'atom_pointer', '__class__', '__dict__'):
+            return object.__getattribute__(self, name)
+        d = object.__getattribute__(self, '__dict__')
+        # If attribute exists and is not None, return it (avoid triggering load repeatedly)
+        if name in d and d.get(name, None) is not None:
+            return d[name]
+        # Otherwise force a load and try again
+        self._load()
+        d = object.__getattribute__(self, '__dict__')
+        if name in d:
+            return d.get(name, None)
+        # Align with Python semantics: signal missing attribute for hasattr()
+        raise AttributeError(name)
+
     def __getattr__(self, name: str):
+        # Kept for backward compatibility; __getattribute__ now handles most cases
         if name == '_loaded':  # Prevent recursion when checking _loaded
             return False
         self._load()
@@ -1063,6 +1080,10 @@ class Literal(Atom):
 
     def __str__(self) -> str:
         return self.string
+
+    def __hash__(self) -> int:
+        # Hash by underlying string to be usable in Python sets/dicts
+        return hash(self.string)
 
     def __add__(self, other: str | Literal) -> Literal:
         if isinstance(other, Literal):

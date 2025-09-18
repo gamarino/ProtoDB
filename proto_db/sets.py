@@ -91,6 +91,14 @@ class Set(Atom):
             self.content.transaction = self.transaction
             self.content._save()
 
+            # Ensure indexes are persisted along with the Set
+            try:
+                if self.indexes is not None:
+                    self.indexes.transaction = self.transaction
+                    self.indexes._save()
+            except Exception:
+                pass
+
             super()._save()
 
     def as_iterable(self) -> Iterable:
@@ -141,7 +149,7 @@ class Set(Atom):
         if isinstance(index_def, str):
             field_name = index_def
             new_index = RepeatedKeysDictionary(transaction=self.transaction)
-            if not self.empty:
+            if self.count > 0:
                 for v in self.as_iterable():
                     # For Set, the element is the key
                     new_index = new_index.common_add(v)

@@ -14,6 +14,24 @@ from ..sets import Set, CountedSet
 from ..lists import List
 
 
+if not HYP_AVAILABLE:
+    # Define no-op decorators and minimal st to avoid NameError at import time
+    def given(*args, **kwargs):
+        def _wrap(fn):
+            return fn
+        return _wrap
+    def settings(*args, **kwargs):
+        def _wrap(fn):
+            return fn
+        return _wrap
+    class _DummySt:
+        def lists(self, *a, **k): return []
+        def tuples(self, *a, **k): return []
+        def sampled_from(self, *a, **k): return []
+        def integers(self, *a, **k): return []
+        def text(self, *a, **k): return []
+    st = _DummySt()
+
 @unittest.skipUnless(HYP_AVAILABLE, "hypothesis not installed")
 class TestCollectionsProperties(unittest.TestCase):
     def setUp(self):

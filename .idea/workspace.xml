@@ -4,7 +4,12 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="La documentación de Sphinx fue actualizada con nuevas funcionalidades de consultas jerárquicas, incluyendo una sección de cookbook y referencias API actualizadas. Se integró la nueva página al índice principal y se generó el HTML con éxito. Los archivos HTML generados se encuentran en docs/build." />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Implemented select_many feature with API, engine support via SelectManyPlan, tests, and documentation. Added collection_selector and optional result_selector handling with correlated subquery execution. Documented usage and performance aspects.">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/file_block_provider.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/file_block_provider.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/sets.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/sets.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_collections_properties.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_collections_properties.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -279,15 +284,7 @@
       <workItem from="1757947628681" duration="10786000" />
       <workItem from="1758056235372" duration="937000" />
       <workItem from="1758057990140" duration="24385000" />
-      <workItem from="1758156790567" duration="1162000" />
-    </task>
-    <task id="LOCAL-00094" summary="Implemented write-through caching in Atom._save to populate caches after persistence. Modified ObjectTransaction to expose the AtomCacheBundle from storage. Added a unit test verifying cache hits on read-after-write scenarios, all tests passed successfully.">
-      <option name="closed" value="true" />
-      <created>1757775423159</created>
-      <option name="number" value="00094" />
-      <option name="presentableId" value="LOCAL-00094" />
-      <option name="project" value="LOCAL" />
-      <updated>1757775423159</updated>
+      <workItem from="1758156790567" duration="4115000" />
     </task>
     <task id="LOCAL-00095" summary="Implemented flattening of nested AND and OR expressions in Expression.compile and a recursive optimize method in proto_db/queries.py. The solution ensures that nested logical expressions are canonically flattened, including top-level implicit ANDs. All related unit tests in proto_db.tests passed successfully.">
       <option name="closed" value="true" />
@@ -673,14 +670,21 @@
       <option name="project" value="LOCAL" />
       <updated>1758157952354</updated>
     </task>
-    <option name="localTasksCounter" value="143" />
+    <task id="LOCAL-00143" summary="Implemented select_many feature with API, engine support via SelectManyPlan, tests, and documentation. Added collection_selector and optional result_selector handling with correlated subquery execution. Documented usage and performance aspects.">
+      <option name="closed" value="true" />
+      <created>1758159466876</created>
+      <option name="number" value="00143" />
+      <option name="presentableId" value="LOCAL-00143" />
+      <option name="project" value="LOCAL" />
+      <updated>1758159466877</updated>
+    </task>
+    <option name="localTasksCounter" value="144" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="The code and tests were updated to replace all occurrences of optimize(None) with optimize(). Unit tests were adjusted to match the new optimize() signature and successfully passed without errors. A full test suite run confirmed no regressions and no remaining optimize(None) calls." />
     <MESSAGE value="Created a requirements.txt listing optional dependencies and tooling suggestions. Core has no mandatory dependencies, and tests pass without extras. No source code modifications were made." />
     <MESSAGE value="The project was prepared for PyPI publication with complete metadata, packaging, optional extras support, and automated CI release workflows. A version export was added, MANIFEST.in refined, README updated for extras installation, and a GitHub Actions workflow created for tagged releases. Build, twine checks, and install tests were verified with no changes to core runtime behavior or test requirements." />
     <MESSAGE value="Se corrigieron errores y warnings en la generación de la documentación con Sphinx. Se eliminaron referencias a clases inexistentes y se ajustaron los docstrings para cumplir con reStructuredText. La compilación final de la documentación se realiza sin advertencias ni errores." />
@@ -705,14 +709,15 @@
     <MESSAGE value="Implemented a detailed, recursive EXPLAIN system producing a JSON tree. Modified QueryPlan and various plan nodes for structured diagnostics with nested plans and estimated metrics. All related unit tests passed successfully, enabling complete and transparent query plan visualization." />
     <MESSAGE value="The task implemented the `RecursivePlan` class for native hierarchical graph traversal in ProtoDB, added the `.traverse()` method to the `Queryable` API, and integrated it within query execution. Comprehensive tests covering traversal directions, depth limits, cycles, and chaining were created. Documentation was updated to explain the new feature and parameters." />
     <MESSAGE value="La documentación de Sphinx fue actualizada con nuevas funcionalidades de consultas jerárquicas, incluyendo una sección de cookbook y referencias API actualizadas. Se integró la nueva página al índice principal y se generó el HTML con éxito. Los archivos HTML generados se encuentran en docs/build." />
-    <option name="LAST_COMMIT_MESSAGE" value="La documentación de Sphinx fue actualizada con nuevas funcionalidades de consultas jerárquicas, incluyendo una sección de cookbook y referencias API actualizadas. Se integró la nueva página al índice principal y se generó el HTML con éxito. Los archivos HTML generados se encuentran en docs/build." />
+    <MESSAGE value="Implemented select_many feature with API, engine support via SelectManyPlan, tests, and documentation. Added collection_selector and optional result_selector handling with correlated subquery execution. Documented usage and performance aspects." />
+    <option name="LAST_COMMIT_MESSAGE" value="Implemented select_many feature with API, engine support via SelectManyPlan, tests, and documentation. Added collection_selector and optional result_selector handling with correlated subquery execution. Documented usage and performance aspects." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
       <breakpoints>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/file_block_provider.py</url>
-          <line>401</line>
+          <line>405</line>
           <option name="timeStamp" value="112" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">

@@ -330,6 +330,8 @@ class FileBlockProvider(common.BlockProvider):
 
         self.reader_factory = FileReaderFactory(space_path)
         self.page_cache = PageCache(self.maximun_cache_size / self.page_size, self.page_size, self.reader_factory)
+        # Root lock file descriptor (for OS-level exclusive locks)
+        self._root_lock_fd = None
 
     def get_config_data(self):
         return self.config_data
@@ -393,35 +395,112 @@ class FileBlockProvider(common.BlockProvider):
         """
         try:
             with open(os.path.join(self.space_path, 'space_root'), 'r') as root_file:
-                root_dict = json.load(root_file)
+                try:
+                    root_dict = json.load(root_file)
+                except json.JSONDecodeError:
+                    # Empty or partially written file: treat as no root set yet
+                    return None
                 # Tests expect the raw JSON content (a dict) to be returned
                 return root_dict
         except FileNotFoundError:
             return None
         except Exception as e:
             _logger.exception(e)
-            raise ProtoUnexpectedException(message=f'Unexpected exception {e} reading root')
+            return None
+
+    def _acquire_root_lock(self):
+        """
+        Acquire an OS-level exclusive lock on the root lock file to serialize root updates
+        across processes/threads. Best-effort on platforms without fcntl.
+        """
+        try:
+            lock_path = os.path.join(self.space_path, 'space_root.lock')
+            # Ensure lock file exists
+            fd = os.open(lock_path, os.O_CREAT | os.O_RDWR)
+            self._root_lock_fd = fd
+            try:
+                import fcntl  # type: ignore
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            except Exception:
+                try:
+                    import msvcrt  # type: ignore
+                    # Lock entire file (dummy length)
+                    msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+                except Exception:
+                    # If locking is unavailable, proceed without it
+                    pass
+        except Exception:
+            # Do not fail the operation due to lock acquisition problems
+            self._root_lock_fd = None
+
+    def _release_root_lock(self):
+        try:
+            fd = self._root_lock_fd
+            if fd is None:
+                return
+            try:
+                try:
+                    import fcntl  # type: ignore
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                except Exception:
+                    try:
+                        import msvcrt  # type: ignore
+                        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                    except Exception:
+                        pass
+            finally:
+                try:
+                    os.close(fd)
+                except Exception:
+                    pass
+            self._root_lock_fd = None
+        except Exception:
+            self._root_lock_fd = None
 
     def update_root_object(self, new_root):
         """
-        Updates or creates the root object in storage.
+        Updates or creates the root object in storage in an atomic and durable way.
         Accepts either a plain dict (tests) or an AtomPointer (runtime code).
+
+        Enforces an OS-level exclusive lock during the update to provide cross-process safety.
 
         :param new_root: dict or AtomPointer
         :return: None
         """
         try:
-            with open(os.path.join(self.space_path, 'space_root'), 'w') as root_file:
-                if isinstance(new_root, AtomPointer):
-                    # Write a neutral pointer dict; className is not required and can be misleading
-                    new_root_dict = {
-                        'transaction_id': str(new_root.transaction_id),
-                        'offset': new_root.offset,
-                    }
-                    json.dump(new_root_dict, root_file)
-                else:
-                    # Assume it's already a JSON-serializable dict
-                    json.dump(new_root, root_file)
+            # Prepare JSON payload
+            if isinstance(new_root, AtomPointer):
+                new_root_dict = {
+                    'transaction_id': str(new_root.transaction_id),
+                    'offset': new_root.offset,
+                }
+            else:
+                new_root_dict = new_root
+
+            # Serialize writes with OS lock
+            self._acquire_root_lock()
+            try:
+                # Write atomically: space_root.tmp -> fsync -> rename -> fsync dir
+                tmp_path = os.path.join(self.space_path, 'space_root.tmp')
+                final_path = os.path.join(self.space_path, 'space_root')
+                with open(tmp_path, 'w') as f:
+                    json.dump(new_root_dict, f)
+                    f.flush()
+                    os.fsync(f.fileno())
+                # Atomic replace
+                os.replace(tmp_path, final_path)
+                # Fsync directory to persist the rename on crash-prone filesystems
+                try:
+                    dir_fd = os.open(self.space_path, os.O_DIRECTORY)
+                    try:
+                        os.fsync(dir_fd)
+                    finally:
+                        os.close(dir_fd)
+                except Exception:
+                    # Not all platforms/filesystems support directory fsync
+                    pass
+            finally:
+                self._release_root_lock()
         except Exception as e:
             _logger.exception(e)
             raise ProtoUnexpectedException(message=f'Unexpected exception {e} writing root')

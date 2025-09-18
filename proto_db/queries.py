@@ -388,6 +388,17 @@ class Equal(Operator):
     parameter_count: int = 2
 
     def match(self, source, value=None):
+        # Normalize Literal-like objects exposing 'string' to raw values
+        try:
+            if hasattr(source, 'string'):
+                source = getattr(source, 'string')
+        except Exception:
+            pass
+        try:
+            if hasattr(value, 'string'):
+                value = getattr(value, 'string')
+        except Exception:
+            pass
         return source == value
 
 
@@ -577,7 +588,19 @@ class Term(Expression):
                         return None
             return cur
         source_value = resolve(record, self.target_attribute)
-        return self.operation.match(source_value, self.value)
+        # Unwrap ProtoBase Literal or similar to raw Python value for ergonomic comparisons
+        try:
+            if hasattr(source_value, 'string'):
+                source_value = getattr(source_value, 'string')
+        except Exception:
+            pass
+        val = self.value
+        try:
+            if hasattr(val, 'string'):
+                val = getattr(val, 'string')
+        except Exception:
+            pass
+        return self.operation.match(source_value, val)
 
 
 class TrueTerm(Expression):

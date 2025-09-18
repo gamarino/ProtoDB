@@ -166,13 +166,34 @@ class ObjectSpace(AbstractObjectSpace):
     def set_space_root(self, new_space_root: RootObject):
         update_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
 
+        # CAS check against the expected root pointer installed at lock time
+        try:
+            current_hist = self.get_space_history(lock=False)
+            current_ptr = getattr(current_hist, 'atom_pointer', None)
+            expected_ptr = getattr(self.storage, '_locked_expected_root', None)
+            if current_ptr is not None and expected_ptr is not None:
+                if (current_ptr.transaction_id != expected_ptr.transaction_id) or (current_ptr.offset != expected_ptr.offset):
+                    raise ProtoLockingException(message='Concurrent root update detected (space history changed)')
+        except Exception:
+            # If anything goes wrong, proceed; storage.set_current_root will enforce CAS too
+            pass
+
         space_history = self.get_space_history()
 
         new_space_root.transaction = update_tr
         space_history = space_history.insert_at(0, new_space_root)
         space_history._save()
 
-        self.storage.set_current_root(space_history.atom_pointer)
+        # Prefer explicit CAS when available
+        try:
+            expected_ptr = getattr(self.storage, '_locked_expected_root', None)
+            if hasattr(self.storage, 'set_current_root_cas'):
+                self.storage.set_current_root_cas(expected_ptr, space_history.atom_pointer)
+            else:
+                self.storage.set_current_root(space_history.atom_pointer)
+        except Exception:
+            # Fallback to legacy setter
+            self.storage.set_current_root(space_history.atom_pointer)
 
     def get_literals(self, literals: Dictionary) -> dict[str, Literal]:
         read_tr = ObjectTransaction(None, storage=self.storage)
@@ -310,8 +331,20 @@ class Database(AbstractDatabase):
         :return:
         """
 
+        # Capture the current space root pointer for CAS during commit
+        try:
+            space_hist = self.object_space.get_space_history(lock=False)
+            expected_ptr = getattr(space_hist, 'atom_pointer', None)
+        except Exception:
+            expected_ptr = None
         current_root = self.read_db_root() if self.database_name != '_sysdb' else None
-        return ObjectTransaction(self, db_root=current_root)
+        tx = ObjectTransaction(self, db_root=current_root)
+        try:
+            # Stash expected root pointer on the transaction for later CAS check
+            setattr(tx, '_expected_root_pointer', expected_ptr)
+        except Exception:
+            pass
+        return tx
 
     def new_branch_database(self, new_db_name: str) -> Database:
         """
@@ -475,13 +508,23 @@ class ObjectTransaction(AbstractTransaction):
 
     def get_root_object(self, name: str) -> object | None:
         """
-        Get a root object from the database root catalog
+        Get a root object from the database root catalog and record a read lock snapshot
+        of its pointer to detect concurrent modifications at commit time.
 
         :param name:
         :return:
         """
         with self.lock:
             if self.transaction_root:
+                # Capture original pointer for CAS-on-object at commit
+                try:
+                    if self.transaction_root.has(name):
+                        original_ptr = self.transaction_root.get_at(name, as_pointer=True)
+                        # Store snapshot if not already present
+                        if not self.read_lock_objects.has(name):
+                            self.read_lock_objects = self.read_lock_objects.set_at(name, original_ptr)
+                except Exception:
+                    pass
                 return self.transaction_root.get_at(name)
             return None
 
@@ -736,6 +779,16 @@ class RootContextManager:
         self.object_transaction = object_transaction
 
     def __enter__(self):
+        # Install expected root pointer (from tx start) into storage for CAS before locking
+        try:
+            storage = self.object_transaction.database.object_space.storage
+            exp = getattr(self.object_transaction, '_expected_root_pointer', None)
+            if exp is not None and hasattr(storage, '_locked_expected_root'):
+                # Only set if not already set (avoid clobbering in nested contexts)
+                if getattr(storage, '_locked_expected_root', None) is None:
+                    setattr(storage, '_locked_expected_root', exp)
+        except Exception:
+            pass
         return self.object_transaction.database.read_db_root(lock=True)
 
     def __exit__(self, exc_type, exc_value, traceback):

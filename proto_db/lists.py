@@ -111,6 +111,11 @@ class List(DBCollections):
                     except Exception:
                         key = None
                     if key is not None:
+                        try:
+                            if hasattr(key, 'string'):
+                                key = getattr(key, 'string')
+                        except Exception:
+                            pass
                         new_index = new_index.set_at(key, rec)
             index_name = field_name
         else:
