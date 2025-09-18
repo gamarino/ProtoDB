@@ -59,7 +59,8 @@ class List(DBCollections):
         self.value = value
         self.next = next
         self.previous = previous
-        self.empty = not value and empty
+        # Empty status is an explicit flag; must not depend on the truthiness of value (e.g., 0 or "")
+        self.empty = bool(empty)
         # Do not auto-create a Dictionary for indexes here to avoid circular initialization
         # Leave indexes as provided (can be None). Index structures will be created lazily when needed.
         self.indexes = indexes
@@ -799,46 +800,30 @@ class List(DBCollections):
 
     def remove_first(self) -> List:
         """
-        Removes the first element from the list. If the list is empty, the operation
-        returns the current list instance. Otherwise, it modifies the list by removing
-        the first element, re-balancing the structure if required.
-
-        :return: A new list instance where the first element has been removed, or the
-            original list instance if the list was empty.
-        :rtype: List
+        Removes the first (leftmost) element from the list. If the list is empty, returns self.
+        Correctly preserves the right subtree when removing the leftmost node.
         """
         self._load()
 
-        node_offset = self.previous.count if self.previous else 0
-
-        # Case: Removing from an empty List.
         if self.empty:
             return self
 
         current_value = self.get_at(0)
 
-        if node_offset > 0:
-            # Remove from the left subtree.
-            if self.previous:
-                self.previous._load()
-                previous_removed = self.previous.remove_first()
-                new_node = List(
-                    value=self.value,
-                    previous=previous_removed if not previous_removed.empty else None,
-                    next=self.next,
-                    transaction=self.transaction
-                )
-            else:
-                new_node = self
-        else:
-            # Remove this node.
+        if self.previous:
+            # Recurse into left subtree and rebuild
+            self.previous._load()
+            previous_removed = self.previous.remove_first()
             new_node = List(
-                value=None,
-                empty=True,
-                previous=None,
-                next=None,
+                value=self.value,
+                empty=False,
+                previous=previous_removed if not previous_removed.empty else None,
+                next=self.next,
                 transaction=self.transaction
             )
+        else:
+            # This node is the leftmost; drop it and promote the right subtree
+            return (self.next if self.next is not None else List(transaction=self.transaction))
 
         result = new_node._rebalance()
 
@@ -858,18 +843,11 @@ class List(DBCollections):
 
     def remove_last(self) -> List:
         """
-        Removes the last element from the list.
-
-        If the list is empty, the operation returns the current list instance. 
-        Otherwise, it modifies the list by removing the last element, re-balancing 
-        the structure if required.
-
-        :return: A new list instance with the last element removed, or the original
-                list if it was empty.
+        Removes the last (rightmost) element from the list. If the list is empty, returns self.
+        Correctly preserves the left subtree when removing the rightmost node.
         """
         self._load()
 
-        # Case: Removing from an empty List.
         if self.empty:
             return self
 
@@ -877,23 +855,18 @@ class List(DBCollections):
 
         if self.next:
             self.next._load()
-            # Remove from the right subtree
+            # Remove from the right subtree and rebuild
             next_removed = self.next.remove_last()
             new_node = List(
                 value=self.value,
+                empty=False,
                 previous=self.previous,
                 next=next_removed if not next_removed.empty else None,
                 transaction=self.transaction
             )
         else:
-            # Remove this node.
-            new_node = List(
-                value=None,
-                empty=True,
-                previous=None,
-                next=None,
-                transaction=self.transaction
-            )
+            # This node is the rightmost; drop it and promote the left subtree
+            return (self.previous if self.previous is not None else List(transaction=self.transaction))
 
         result = new_node._rebalance()
 
