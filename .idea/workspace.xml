@@ -4,11 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Implemented a detailed, recursive EXPLAIN system producing a JSON tree. Modified QueryPlan and various plan nodes for structured diagnostics with nested plans and estimated metrics. All related unit tests passed successfully, enabling complete and transparent query plan visualization.">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/linq.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/linq.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
-    </list>
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="The task implemented the `RecursivePlan` class for native hierarchical graph traversal in ProtoDB, added the `.traverse()` method to the `Queryable` API, and integrated it within query execution. Comprehensive tests covering traversal directions, depth limits, cycles, and chaining were created. Documentation was updated to explain the new feature and parameters." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -283,14 +279,7 @@
       <workItem from="1757947628681" duration="10786000" />
       <workItem from="1758056235372" duration="937000" />
       <workItem from="1758057990140" duration="24385000" />
-    </task>
-    <task id="LOCAL-00092" summary="The performance documentation was updated with a new section titled &quot;Latest Results (2025-09-13)&quot;. This section includes details of two recent benchmark runs, their commands, artifact paths, key metrics, speedups, and tuning tips. The updates align the documentation with current improvements in the indexed query engine.">
-      <option name="closed" value="true" />
-      <created>1757744045648</created>
-      <option name="number" value="00092" />
-      <option name="presentableId" value="LOCAL-00092" />
-      <option name="project" value="LOCAL" />
-      <updated>1757744045648</updated>
+      <workItem from="1758156790567" duration="732000" />
     </task>
     <task id="LOCAL-00093" summary="Implemented write-through caching in Atom._save to populate caches after persistence. Modified ObjectTransaction to expose the AtomCacheBundle from storage. Added a unit test verifying cache hits on read-after-write scenarios, all tests passed successfully.">
       <option name="closed" value="true" />
@@ -676,14 +665,21 @@
       <option name="project" value="LOCAL" />
       <updated>1758143481073</updated>
     </task>
-    <option name="localTasksCounter" value="141" />
+    <task id="LOCAL-00141" summary="The task implemented the `RecursivePlan` class for native hierarchical graph traversal in ProtoDB, added the `.traverse()` method to the `Queryable` API, and integrated it within query execution. Comprehensive tests covering traversal directions, depth limits, cycles, and chaining were created. Documentation was updated to explain the new feature and parameters.">
+      <option name="closed" value="true" />
+      <created>1758157521265</created>
+      <option name="number" value="00141" />
+      <option name="presentableId" value="LOCAL-00141" />
+      <option name="project" value="LOCAL" />
+      <updated>1758157521265</updated>
+    </task>
+    <option name="localTasksCounter" value="142" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Implemented CountedSet as a multiset-style Atom preserving Set semantics with immutability and correct index updates. Exposed CountedSet in the public API via proto_db/common.py and added comprehensive tests covering duplicates, removals, counts, iteration, mixed types, immutability, and persistence. Existing modules and tests remain unaffected, and all tests pass." />
     <MESSAGE value="RepeatedKeysDictionary was updated to use CountedSet instead of Set with correct index update logic. Code duplication issues causing syntax errors were fixed. Targeted tests for CountedSet and indexed fast paths pass, while pre-existing unrelated test failures remain." />
     <MESSAGE value="The code and tests were updated to replace all occurrences of optimize(None) with optimize(). Unit tests were adjusted to match the new optimize() signature and successfully passed without errors. A full test suite run confirmed no regressions and no remaining optimize(None) calls." />
     <MESSAGE value="Created a requirements.txt listing optional dependencies and tooling suggestions. Core has no mandatory dependencies, and tests pass without extras. No source code modifications were made." />
@@ -708,7 +704,8 @@
     <MESSAGE value="README.md was updated to mark the project version as 0.1 alpha with a status badge and note. A pointer to the CHANGELOG.md was added. No code changes were made, only README modifications." />
     <MESSAGE value="La documentación de Sphinx se actualizó para incluir nuevas funcionalidades de búsqueda vectorial. Se añadieron explicaciones, ejemplos y referencias API en varios archivos reStructuredText. La compilación HTML se completó con éxito y se generaron los archivos en docs/build/html." />
     <MESSAGE value="Implemented a detailed, recursive EXPLAIN system producing a JSON tree. Modified QueryPlan and various plan nodes for structured diagnostics with nested plans and estimated metrics. All related unit tests passed successfully, enabling complete and transparent query plan visualization." />
-    <option name="LAST_COMMIT_MESSAGE" value="Implemented a detailed, recursive EXPLAIN system producing a JSON tree. Modified QueryPlan and various plan nodes for structured diagnostics with nested plans and estimated metrics. All related unit tests passed successfully, enabling complete and transparent query plan visualization." />
+    <MESSAGE value="The task implemented the `RecursivePlan` class for native hierarchical graph traversal in ProtoDB, added the `.traverse()` method to the `Queryable` API, and integrated it within query execution. Comprehensive tests covering traversal directions, depth limits, cycles, and chaining were created. Documentation was updated to explain the new feature and parameters." />
+    <option name="LAST_COMMIT_MESSAGE" value="The task implemented the `RecursivePlan` class for native hierarchical graph traversal in ProtoDB, added the `.traverse()` method to the `Queryable` API, and integrated it within query execution. Comprehensive tests covering traversal directions, depth limits, cycles, and chaining were created. Documentation was updated to explain the new feature and parameters." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

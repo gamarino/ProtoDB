@@ -55,6 +55,15 @@ JoinPlan
 
 ``JoinPlan`` joins multiple data sources. It takes two plans and a join condition, returns records that satisfy the join condition, and supports inner, left, right, and full joins.
 
+RecursivePlan
+~~~~~~~~~~~~~
+
+.. autoclass:: RecursivePlan
+   :members:
+   :special-members: __init__
+
+``RecursivePlan`` performs hierarchical/graph traversal starting from the records produced by the base plan. It supports upward traversal of a single reference attribute or downward traversal over an iterable attribute, in DFS or BFS order. It de-duplicates visited nodes using a canonical identity hash and optionally includes start nodes.
+
 GroupByPlan
 ~~~~~~~~~~~~
 

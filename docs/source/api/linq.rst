@@ -54,6 +54,26 @@ Grouping with aggregates:
          .take(10))
     top = q.to_list()
 
+Hierarchical traversal with traverse()
+--------------------------------------
+
+Use traverse() to recursively walk object graphs either following an upward reference or expanding a collection downward. Parameters:
+
+- relation_attr: attribute name to follow
+- direction: 'up' (single reference) or 'down' (iterate collection)
+- strategy: 'dfs' or 'bfs'
+- max_depth: limit depth (-1 = unlimited)
+- include_start_node: include starting nodes in output
+
+Example:
+
+.. code-block:: python
+
+    chain = (from_collection(employees)
+             .where(F.name == 'Employee1')
+             .traverse('manager', direction='up', strategy='dfs'))
+    names = [e.name for e in chain]
+
 Between and lambda chained comparisons
 --------------------------------------
 
@@ -113,7 +133,7 @@ API surface
 -----------
 
 - Queryable[T]
-  - where, select, select_many, order_by, then_by, distinct, take, skip, group_by
+  - where, select, select_many, order_by, then_by, distinct, take, skip, group_by, traverse
   - to_list, to_set, to_dict, first, first_or_default, any, all, count, sum, min, max, average
   - with_policy, on_unsupported, explain
 - F: field/expressions with operators ==, !=, >, >=, <, <=, in_(), contains(), startswith(), endswith(),
