@@ -4,8 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Implemented select_many feature with API, engine support via SelectManyPlan, tests, and documentation. Added collection_selector and optional result_selector handling with correlated subquery execution. Documented usage and performance aspects.">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[WIP] tests">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/lists.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/sets.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/sets.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -282,14 +285,6 @@
       <workItem from="1758056235372" duration="937000" />
       <workItem from="1758057990140" duration="24385000" />
       <workItem from="1758156790567" duration="4115000" />
-    </task>
-    <task id="LOCAL-00095" summary="Implemented flattening of nested AND and OR expressions in Expression.compile and a recursive optimize method in proto_db/queries.py. The solution ensures that nested logical expressions are canonically flattened, including top-level implicit ANDs. All related unit tests in proto_db.tests passed successfully.">
-      <option name="closed" value="true" />
-      <created>1757776356325</created>
-      <option name="number" value="00095" />
-      <option name="presentableId" value="LOCAL-00095" />
-      <option name="project" value="LOCAL" />
-      <updated>1757776356325</updated>
     </task>
     <task id="LOCAL-00096" summary="Added a primary key lookup benchmark comparing Python list, ProtoDB linear, and ProtoDB indexed searches. Updated indexed_benchmark.py with new query functions, integrated timings and latency calculations, and included speedup metrics. Documentation was enhanced in performance.md with explanations of the new benchmark and its expected outcome.">
       <option name="closed" value="true" />
@@ -675,14 +670,21 @@
       <option name="project" value="LOCAL" />
       <updated>1758159466877</updated>
     </task>
-    <option name="localTasksCounter" value="144" />
+    <task id="LOCAL-00144" summary="[WIP] tests">
+      <option name="closed" value="true" />
+      <created>1758166633858</created>
+      <option name="number" value="00144" />
+      <option name="presentableId" value="LOCAL-00144" />
+      <option name="project" value="LOCAL" />
+      <updated>1758166633858</updated>
+    </task>
+    <option name="localTasksCounter" value="145" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Created a requirements.txt listing optional dependencies and tooling suggestions. Core has no mandatory dependencies, and tests pass without extras. No source code modifications were made." />
     <MESSAGE value="The project was prepared for PyPI publication with complete metadata, packaging, optional extras support, and automated CI release workflows. A version export was added, MANIFEST.in refined, README updated for extras installation, and a GitHub Actions workflow created for tagged releases. Build, twine checks, and install tests were verified with no changes to core runtime behavior or test requirements." />
     <MESSAGE value="Se corrigieron errores y warnings en la generación de la documentación con Sphinx. Se eliminaron referencias a clases inexistentes y se ajustaron los docstrings para cumplir con reStructuredText. La compilación final de la documentación se realiza sin advertencias ni errores." />
     <MESSAGE value="Added canonical_hash helper and adopted in sets for stable hashing. Enhanced LINQ with optimize() calls, alias normalization, and operator token unification. Implemented explain() with optional warnings on linear fallback and added extensive tests." />
@@ -707,7 +709,8 @@
     <MESSAGE value="The task implemented the `RecursivePlan` class for native hierarchical graph traversal in ProtoDB, added the `.traverse()` method to the `Queryable` API, and integrated it within query execution. Comprehensive tests covering traversal directions, depth limits, cycles, and chaining were created. Documentation was updated to explain the new feature and parameters." />
     <MESSAGE value="La documentación de Sphinx fue actualizada con nuevas funcionalidades de consultas jerárquicas, incluyendo una sección de cookbook y referencias API actualizadas. Se integró la nueva página al índice principal y se generó el HTML con éxito. Los archivos HTML generados se encuentran en docs/build." />
     <MESSAGE value="Implemented select_many feature with API, engine support via SelectManyPlan, tests, and documentation. Added collection_selector and optional result_selector handling with correlated subquery execution. Documented usage and performance aspects." />
-    <option name="LAST_COMMIT_MESSAGE" value="Implemented select_many feature with API, engine support via SelectManyPlan, tests, and documentation. Added collection_selector and optional result_selector handling with correlated subquery execution. Documented usage and performance aspects." />
+    <MESSAGE value="[WIP] tests" />
+    <option name="LAST_COMMIT_MESSAGE" value="[WIP] tests" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

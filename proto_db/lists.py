@@ -706,11 +706,14 @@ class List(DBCollections):
             # Remove from the right subtree.
             if self.next:
                 self.next._load()
+                new_next = self.next.remove_at(offset - node_offset - 1)
+                if new_next is not None and getattr(new_next, 'empty', False):
+                    new_next = None
                 new_node = List(
                     value=self.value,
                     empty=False,
                     previous=self.previous,
-                    next=self.next.remove_at(offset - node_offset - 1),
+                    next=new_next,
                     transaction=self.transaction
                 )
             else:
@@ -736,28 +739,47 @@ class List(DBCollections):
             # Remove this node
             if self.next:
                 self.next._load()
-                first_value = self.next.get_at(0)
-                new_next = self.next.remove_first()
-                new_node = List(
-                    value=first_value,
-                    empty=False,
-                    previous=self.previous if self.previous and not self.previous.empty else None,
-                    next=new_next if not new_next.empty else None,
-                    transaction=self.transaction
-                )
+                if getattr(self.next, 'empty', False):
+                    # Treat as no right child
+                    if self.previous:
+                        self.previous._load()
+                        last_value = self.previous.get_at(-1)
+                        new_previous = self.previous.remove_last()
+                        new_node = List(
+                            value=last_value,
+                            empty=False,
+                            previous=new_previous if not new_previous.empty else None,
+                            next=None,
+                            transaction=self.transaction
+                        )
+                    else:
+                        return List(transaction=self.transaction)
+                else:
+                    first_value = self.next.get_at(0)
+                    new_next = self.next.remove_first()
+                    new_node = List(
+                        value=first_value,
+                        empty=False,
+                        previous=self.previous if self.previous and not self.previous.empty else None,
+                        next=new_next if not new_next.empty else None,
+                        transaction=self.transaction
+                    )
             elif self.previous:
                 self.previous._load()
+                if getattr(self.previous, 'empty', False):
+                    return List(transaction=self.transaction)
                 last_value = self.previous.get_at(-1)
                 new_previous = self.previous.remove_last()
                 new_node = List(
                     value=last_value,
                     empty=False,
                     previous=new_previous if not new_previous.empty else None,
-                    next=self.next,
+                    next=None,
                     transaction=self.transaction
                 )
             else:
-                return None
+                # Return an empty List when removing the sole element
+                return List(transaction=self.transaction)
 
         result = new_node._rebalance()
 

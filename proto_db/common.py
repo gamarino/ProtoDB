@@ -690,8 +690,15 @@ class DBObject(Atom):
 
     def __getattribute__(self, name: str):
         # Fast-path internal attributes and wiring to avoid recursion and unnecessary loads
-        if name.startswith('_') or name in ('transaction', 'atom_pointer', '__class__', '__dict__'):
+        if name.startswith('_') or name in ('transaction', 'atom_pointer', '__class__', '__dict__', 'after_load'):
             return object.__getattribute__(self, name)
+        # If name is a method/descriptor on the class, return it directly (do not trigger load)
+        try:
+            cls_attr = object.__getattribute__(type(self), name)
+            # Access via base to honor descriptors (e.g., properties)
+            return object.__getattribute__(self, name)
+        except Exception:
+            pass
         d = object.__getattribute__(self, '__dict__')
         # If attribute exists and is not None, return it (avoid triggering load repeatedly)
         if name in d and d.get(name, None) is not None:

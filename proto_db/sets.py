@@ -179,9 +179,19 @@ class Set(Atom):
             field_name = index_def
             new_index = RepeatedKeysDictionary(transaction=self.transaction)
             if self.count > 0:
-                for v in self.as_iterable():
-                    # For Set, the element is the key
-                    new_index = new_index.common_add(v)
+                for rec in self.as_iterable():
+                    try:
+                        key = getattr(rec, field_name)
+                    except Exception:
+                        key = None
+                    if key is not None:
+                        # Unwrap Literal-like objects to raw values
+                        try:
+                            if hasattr(key, 'string'):
+                                key = getattr(key, 'string')
+                        except Exception:
+                            pass
+                        new_index = new_index.set_at(key, rec)
             index_name = field_name
         else:
             if not isinstance(index_def, _IndexDef):
