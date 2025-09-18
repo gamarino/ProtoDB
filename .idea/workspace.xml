@@ -4,9 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="La documentación de Sphinx se actualizó para incluir nuevas funcionalidades de búsqueda vectorial. Se añadieron explicaciones, ejemplos y referencias API en varios archivos reStructuredText. La compilación HTML se completó con éxito y se generaron los archivos en docs/build/html.">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Implemented a detailed, recursive EXPLAIN system producing a JSON tree. Modified QueryPlan and various plan nodes for structured diagnostics with nested plans and estimated metrics. All related unit tests passed successfully, enabling complete and transparent query plan visualization.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/linq.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/linq.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -282,15 +282,7 @@
       <workItem from="1757895377114" duration="6936000" />
       <workItem from="1757947628681" duration="10786000" />
       <workItem from="1758056235372" duration="937000" />
-      <workItem from="1758057990140" duration="23316000" />
-    </task>
-    <task id="LOCAL-00091" summary="The performance suite was rerun after fixing blockers related to native key comparisons. The indexed benchmark with 50,000 items completed successfully and produced a JSON report with timings and latency metrics. The indexed path was slower than the linear path, meeting the objective to evaluate improvements with results saved at examples/benchmark_results_indexed.json.">
-      <option name="closed" value="true" />
-      <created>1757741459057</created>
-      <option name="number" value="00091" />
-      <option name="presentableId" value="LOCAL-00091" />
-      <option name="project" value="LOCAL" />
-      <updated>1757741459057</updated>
+      <workItem from="1758057990140" duration="24385000" />
     </task>
     <task id="LOCAL-00092" summary="The performance documentation was updated with a new section titled &quot;Latest Results (2025-09-13)&quot;. This section includes details of two recent benchmark runs, their commands, artifact paths, key metrics, speedups, and tuning tips. The updates align the documentation with current improvements in the indexed query engine.">
       <option name="closed" value="true" />
@@ -676,14 +668,21 @@
       <option name="project" value="LOCAL" />
       <updated>1758061024584</updated>
     </task>
-    <option name="localTasksCounter" value="140" />
+    <task id="LOCAL-00140" summary="Implemented a detailed, recursive EXPLAIN system producing a JSON tree. Modified QueryPlan and various plan nodes for structured diagnostics with nested plans and estimated metrics. All related unit tests passed successfully, enabling complete and transparent query plan visualization.">
+      <option name="closed" value="true" />
+      <created>1758143481073</created>
+      <option name="number" value="00140" />
+      <option name="presentableId" value="LOCAL-00140" />
+      <option name="project" value="LOCAL" />
+      <updated>1758143481073</updated>
+    </task>
+    <option name="localTasksCounter" value="141" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Removed full_plan parameter from all QueryPlan.optimize methods and calls. Updated signatures and calls across multiple files including common.py, queries.py, lists.py, hash_dictionaries.py, and linq.py. Adjusted examples and tests accordingly." />
     <MESSAGE value="Implemented CountedSet as a multiset-style Atom preserving Set semantics with immutability and correct index updates. Exposed CountedSet in the public API via proto_db/common.py and added comprehensive tests covering duplicates, removals, counts, iteration, mixed types, immutability, and persistence. Existing modules and tests remain unaffected, and all tests pass." />
     <MESSAGE value="RepeatedKeysDictionary was updated to use CountedSet instead of Set with correct index update logic. Code duplication issues causing syntax errors were fixed. Targeted tests for CountedSet and indexed fast paths pass, while pre-existing unrelated test failures remain." />
     <MESSAGE value="The code and tests were updated to replace all occurrences of optimize(None) with optimize(). Unit tests were adjusted to match the new optimize() signature and successfully passed without errors. A full test suite run confirmed no regressions and no remaining optimize(None) calls." />
@@ -708,7 +707,8 @@
     <MESSAGE value="Integrated vector similarity search into the optimizer by generalizing index creation and updating add_index methods. Created VectorSearchPlan to execute vector searches and adapted vector indexes for query planning. Unit tests passed, confirming correct integration without breaking existing behavior." />
     <MESSAGE value="README.md was updated to mark the project version as 0.1 alpha with a status badge and note. A pointer to the CHANGELOG.md was added. No code changes were made, only README modifications." />
     <MESSAGE value="La documentación de Sphinx se actualizó para incluir nuevas funcionalidades de búsqueda vectorial. Se añadieron explicaciones, ejemplos y referencias API en varios archivos reStructuredText. La compilación HTML se completó con éxito y se generaron los archivos en docs/build/html." />
-    <option name="LAST_COMMIT_MESSAGE" value="La documentación de Sphinx se actualizó para incluir nuevas funcionalidades de búsqueda vectorial. Se añadieron explicaciones, ejemplos y referencias API en varios archivos reStructuredText. La compilación HTML se completó con éxito y se generaron los archivos en docs/build/html." />
+    <MESSAGE value="Implemented a detailed, recursive EXPLAIN system producing a JSON tree. Modified QueryPlan and various plan nodes for structured diagnostics with nested plans and estimated metrics. All related unit tests passed successfully, enabling complete and transparent query plan visualization." />
+    <option name="LAST_COMMIT_MESSAGE" value="Implemented a detailed, recursive EXPLAIN system producing a JSON tree. Modified QueryPlan and various plan nodes for structured diagnostics with nested plans and estimated metrics. All related unit tests passed successfully, enabling complete and transparent query plan visualization." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

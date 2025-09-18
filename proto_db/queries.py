@@ -1729,6 +1729,144 @@ class JoinPlan(QueryPlan):
         )
 
 
+class RecursivePlan(QueryPlan):
+    """
+    Executes a recursive traversal starting from the records produced by `based_on`.
+    It supports 'up' (single reference attribute) and 'down' (iterable attribute) directions
+    and DFS or BFS strategies. Returns results as a List collection for efficient slicing.
+    """
+    def __init__(self,
+                 based_on: QueryPlan,
+                 relation_attr: str,
+                 direction: str = 'up',
+                 max_depth: int = -1,
+                 strategy: str = 'dfs',
+                 include_start_node: bool = False,
+                 transaction: Optional[AbstractTransaction] = None,
+                 atom_pointer: AtomPointer | None = None,
+                 **kwargs):
+        super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
+        self.relation_attr = relation_attr
+        self.direction = (direction or 'up')
+        self.max_depth = int(max_depth) if max_depth is not None else -1
+        self.strategy = (strategy or 'dfs').lower()
+        self.include_start_node = bool(include_start_node)
+
+    def execute(self) -> DBCollections:
+        # Build a materialized List of results
+        from .lists import List as _List
+        from .common import canonical_hash as _canonical_hash
+        res = _List(transaction=self.transaction)
+
+        # Gather start nodes by iterating the base plan directly (avoid assuming as_iterable)
+        start_nodes: list = []
+        if self.based_on is not None:
+            try:
+                for x in self.based_on.execute():
+                    start_nodes.append(x)
+            except Exception:
+                # Fallback: try to coerce to list
+                try:
+                    base_coll = self.based_on.execute()
+                    start_nodes = list(getattr(base_coll, 'as_iterable', lambda: base_coll)())
+                except Exception:
+                    start_nodes = []
+
+        # Visited set by canonical identity to avoid cycles; do NOT pre-seed with start nodes
+        visited: set[int] = set()
+
+        # Worklist stores (node, depth)
+        if self.strategy == 'bfs':
+            from collections import deque
+            work = deque((n, 0) for n in start_nodes)
+            pop_fn = work.popleft
+            push_fn = work.append
+        else:
+            work = [(n, 0) for n in start_nodes]
+            pop_fn = work.pop
+            push_fn = work.append
+
+        # Optionally include starting nodes (and mark as visited if we include them)
+        if self.include_start_node:
+            for n in start_nodes:
+                try:
+                    h = _canonical_hash(n)
+                    if h not in visited:
+                        visited.add(h)
+                except Exception:
+                    pass
+                res = res.append_last(n)
+
+        # Traverse
+        while work:
+            try:
+                cur, depth = pop_fn()
+            except Exception:
+                # empty or error
+                break
+            if self.max_depth != -1 and depth >= self.max_depth:
+                continue
+
+            # Compute next nodes
+            next_nodes: list = []
+            try:
+                related = getattr(cur, self.relation_attr)
+            except Exception:
+                # Missing attribute → no expansion
+                related = None
+            if self.direction == 'up':
+                if related is not None:
+                    next_nodes.append(related)
+            else:  # down
+                try:
+                    it = iter(related) if related is not None else iter(())
+                    next_nodes.extend(list(it))
+                except Exception:
+                    pass
+
+            for nn in next_nodes:
+                try:
+                    h = _canonical_hash(nn)
+                except Exception:
+                    # If we cannot hash, still emit and continue traversal (best-effort)
+                    res = res.append_last(nn)
+                    push_fn((nn, depth + 1))
+                    continue
+                if h in visited:
+                    continue
+                visited.add(h)
+                res = res.append_last(nn)
+                push_fn((nn, depth + 1))
+
+        return res
+
+    def optimize(self) -> 'QueryPlan':
+        # Optimize the base plan; if changed, return a new RecursivePlan with optimized base
+        optimized_base = self.based_on.optimize() if self.based_on else None
+        if optimized_base is not None and optimized_base is not self.based_on:
+            return RecursivePlan(
+                based_on=optimized_base,
+                relation_attr=self.relation_attr,
+                direction=self.direction,
+                max_depth=self.max_depth,
+                strategy=self.strategy,
+                include_start_node=self.include_start_node,
+                transaction=self.transaction,
+            )
+        return self
+
+    def explain(self) -> dict:
+        node = super().explain()
+        node.update({
+            'plan_type': 'RecursivePlan',
+            'traversal_strategy': self.strategy.upper(),
+            'relation_attribute': self.relation_attr,
+            'direction': self.direction,
+            'max_depth': 'unlimited' if self.max_depth == -1 else self.max_depth,
+        })
+        return node
+
+
 class WherePlan(QueryPlan):
     """
     Query plan for filtering records based on an expression.

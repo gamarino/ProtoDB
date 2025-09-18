@@ -8,8 +8,8 @@ import inspect
 import ast
 
 # ProtoBase query infrastructure
-from .common import QueryPlan, DBCollections
-from .queries import ListPlan, WherePlan, SelectPlan, Expression as PBExpression, FromPlan as PBFromPlan
+from .common import QueryPlan, DBCollections, Literal
+from .queries import ListPlan, WherePlan, SelectPlan, Expression as PBExpression, FromPlan as PBFromPlan, RecursivePlan
 
 T = TypeVar('T')
 K = TypeVar('K')
@@ -105,6 +105,12 @@ class _Field:
                 cur = cur.get(p)
             else:
                 cur = getattr(cur, p, None)
+        # Unwrap ProtoBase Literal to raw Python value for user-friendly predicates
+        try:
+            if isinstance(cur, Literal):
+                return cur.string
+        except Exception:
+            pass
         return cur
 
     # comparison and boolean operators build callables and PB tokens for pushdown
@@ -464,6 +470,9 @@ class Queryable(Generic[T]):
         self._ops: list[tuple[str, tuple, dict]] = plan[:] if plan else []
         self._policy = policy or Policy()
 
+    def __iter__(self) -> Iterator[T]:
+        return iter(self._execute())
+
     def with_policy(self, policy: Policy) -> 'Queryable[T]':
         q = Queryable(self._base_plan or self._source, self._ops, policy)
         return q
@@ -508,6 +517,20 @@ class Queryable(Generic[T]):
     def group_by(self, key_selector: Callable[[T], K] | Any, element_selector: Optional[Callable[[T], U] | Any] = None) -> 'Queryable[Grouping[K, U]]':
         self._ops.append(("group_by", (key_selector, element_selector), {}))
         return self  # type: ignore
+
+    def traverse(self,
+                 relation_attr: str,
+                 direction: str = 'up',
+                 max_depth: int = -1,
+                 strategy: str = 'dfs',
+                 include_start_node: bool = False) -> 'Queryable[T]':
+        self._ops.append(("traverse", (relation_attr,), {
+            "direction": direction,
+            "max_depth": max_depth,
+            "strategy": strategy,
+            "include_start_node": include_start_node,
+        }))
+        return self
 
     # Terminal operators
     def _execute(self) -> Iterator[Any]:
@@ -583,13 +606,30 @@ class Queryable(Generic[T]):
         # Execute plan prefix if built
         remaining_ops = ops_in_order
         if current_plan is not None and plan_prefix_len > 0:
+            # Before executing, consume plan-generating ops like 'traverse'
+            remaining_ops = ops_in_order[plan_prefix_len:]
+            new_remaining: list[tuple[str, tuple, dict]] = []
+            for (name, args, kwargs) in remaining_ops:
+                if name == 'traverse' and current_plan is not None:
+                    current_plan = RecursivePlan(
+                        based_on=current_plan,
+                        relation_attr=args[0],
+                        direction=kwargs.get('direction', 'up'),
+                        max_depth=kwargs.get('max_depth', -1),
+                        strategy=kwargs.get('strategy', 'dfs'),
+                        include_start_node=kwargs.get('include_start_node', False),
+                        transaction=getattr(current_plan, 'transaction', None)
+                    )
+                    # consumed
+                else:
+                    new_remaining.append((name, args, kwargs))
+            remaining_ops = new_remaining
             # Execute the plan prefix to an iterable and continue locally with the rest
             try:
                 it = current_plan.optimize().execute()
             except Exception:
                 # In case of any issue, fallback to local execution over base iterable
                 it = self._source if self._source is not None else []
-            remaining_ops = ops_in_order[plan_prefix_len:]
         else:
             # No plan or nothing translatable: start with source iterable
             it = self._source if self._source is not None else (self._base_plan.execute() if self._base_plan else [])
@@ -672,6 +712,69 @@ class Queryable(Generic[T]):
                     v = elem_fn(x) if elem_fn else x
                     groups.setdefault(k, []).append(v)
                 it = (Grouping(k, v) for k, v in groups.items())
+            elif name == 'traverse':
+                relation_attr = args[0]
+                direction = kwargs.get('direction', 'up')
+                max_depth = kwargs.get('max_depth', -1)
+                strategy = kwargs.get('strategy', 'dfs').lower()
+                include_start_node = kwargs.get('include_start_node', False)
+                # Materialize current iterable as start nodes
+                start_nodes = list(it)
+                from .common import canonical_hash as _canonical_hash
+                # Initialize visited with start nodes (by identity) to prevent echoing
+                visited: set[int] = set()
+                for n in start_nodes:
+                    try:
+                        visited.add(_canonical_hash(n))
+                    except Exception:
+                        pass
+                # Prepare worklist
+                if strategy == 'bfs':
+                    from collections import deque
+                    work = deque((n, 0) for n in start_nodes)
+                    def pop():
+                        return work.popleft()
+                    def push(v):
+                        work.append(v)
+                else:
+                    work = [(n, 0) for n in start_nodes]
+                    def pop():
+                        return work.pop()
+                    def push(v):
+                        work.append(v)
+                def _traverse_gen():
+                    if include_start_node:
+                        for n in start_nodes:
+                            yield n
+                    while work:
+                        cur, depth = pop()
+                        if max_depth != -1 and depth >= max_depth:
+                            continue
+                        try:
+                            related = getattr(cur, relation_attr)
+                        except Exception:
+                            related = None
+                        next_nodes = []
+                        if direction == 'up':
+                            if related is not None:
+                                next_nodes.append(related)
+                        else:
+                            try:
+                                for z in (related or []):
+                                    next_nodes.append(z)
+                            except Exception:
+                                pass
+                        for nn in next_nodes:
+                            try:
+                                h = _canonical_hash(nn)
+                            except Exception:
+                                continue
+                            if h in visited:
+                                continue
+                            visited.add(h)
+                            yield nn
+                            push((nn, depth + 1))
+                it = _traverse_gen()
             else:
                 raise NotImplementedError(name)
 
