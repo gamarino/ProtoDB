@@ -6,9 +6,6 @@
   <component name="ChangeListManager">
     <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Implemented select_many feature with API, engine support via SelectManyPlan, tests, and documentation. Added collection_selector and optional result_selector handling with correlated subquery execution. Documented usage and performance aspects.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/file_block_provider.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/file_block_provider.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/sets.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/sets.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_collections_properties.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_collections_properties.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -716,11 +713,6 @@
     <breakpoint-manager>
       <breakpoints>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/proto_db/file_block_provider.py</url>
-          <line>405</line>
-          <option name="timeStamp" value="112" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/tests/test_db_access_with_standalone_file_storage.py</url>
           <line>70</line>
           <option name="timeStamp" value="154" />
@@ -729,11 +721,6 @@
           <url>file://$PROJECT_DIR$/proto_db/queries.py</url>
           <line>361</line>
           <option name="timeStamp" value="188" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/proto_db/db_access.py</url>
-          <line>416</line>
-          <option name="timeStamp" value="255" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/proto_db/tests/test_dictionaries.py</url>

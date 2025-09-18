@@ -519,7 +519,8 @@ class ObjectTransaction(AbstractTransaction):
                 # Capture original pointer for CAS-on-object at commit
                 try:
                     if self.transaction_root.has(name):
-                        original_ptr = self.transaction_root.get_at(name, as_pointer=True)
+                        obj = self.transaction_root.get_at(name)
+                        original_ptr = getattr(obj, 'atom_pointer', None)
                         # Store snapshot if not already present
                         if not self.read_lock_objects.has(name):
                             self.read_lock_objects = self.read_lock_objects.set_at(name, original_ptr)
@@ -577,7 +578,11 @@ class ObjectTransaction(AbstractTransaction):
             return
 
         for name, original_object_pointer in self.read_lock_objects.as_iterable():
-            current_object_pointer = current_root.object_root.get_at(name, as_pointer=True)
+            try:
+                current_obj = current_root.object_root.get_at(name)
+                current_object_pointer = getattr(current_obj, 'atom_pointer', None)
+            except Exception:
+                current_object_pointer = None
             if original_object_pointer != current_object_pointer:
                 # CONCURRENT MODIFICATION DETECTED
                 new_object = self.new_roots.get_at(name)

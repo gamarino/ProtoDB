@@ -69,17 +69,46 @@ class Set(Atom):
         else:
             self.indexes = indexes
 
-    # Unified hashing using canonical_hash for identity stability
+    # Unified hashing that avoids cross-type collisions and unstable process salts
     def _hash_of(self, key: object) -> int:
         """
-        Compute the identity hash used for membership and indexing.
-
-        This method delegates to :func:`proto_db.common.canonical_hash` to ensure that:
-        - Persisted Atoms use their ``AtomPointer``-derived stable hash.
-        - Ephemeral Atoms do not force persistence and fall back to a non-persistent identity.
-        - Plain Python objects use their built-in ``hash``.
+        Compute a stable identity/code for membership and indexing that minimizes collisions:
+        - Atoms: if persisted, use AtomPointer.hash(); else fall back to id(obj) to avoid forcing persistence.
+        - str: use transaction._get_string_hash (sha256-based) for stability and low collision.
+        - Numbers/bool: compute a SHA-256 over a typed string "<type>:<value>" for deterministic hashing.
+        - Other objects: compute SHA-256 over a typed repr to reduce collisions; if repr fails, use built-in hash.
         """
-        return canonical_hash(key)
+        try:
+            from .common import Atom as _Atom, AtomPointer as _AtomPointer
+            if isinstance(key, _Atom):
+                ap = getattr(key, 'atom_pointer', None)
+                if ap and getattr(ap, 'transaction_id', None):
+                    try:
+                        return ap.hash()
+                    except Exception:
+                        pass
+                # Ephemeral atom: avoid persisting just for hashing
+                return id(key)
+            if isinstance(key, str):
+                tr = getattr(self, 'transaction', None)
+                if tr and hasattr(tr, '_get_string_hash'):
+                    return tr._get_string_hash(key)
+                # Fallback: stable sha256
+                import hashlib
+                return int(hashlib.sha256(key.encode('utf-8')).hexdigest(), 16)
+            if isinstance(key, (int, float, bool)):
+                import hashlib
+                s = f"{type(key).__name__}:{key}".encode('utf-8')
+                return int(hashlib.sha256(s).hexdigest(), 16)
+            # Generic object: try a typed repr
+            import hashlib
+            try:
+                s = f"{type(key).__name__}:{repr(key)}".encode('utf-8')
+                return int(hashlib.sha256(s).hexdigest(), 16)
+            except Exception:
+                return hash(key)
+        except Exception:
+            return hash(key)
 
     def _save(self):
         if not self._saved:
