@@ -28,35 +28,24 @@ class ObjectSpace(AbstractObjectSpace):
         self.state = 'Running'
         self._lock = Lock()
 
-    def _read_db_catalog(self) -> dict[str:Dictionary]:
+    def _read_db_catalog(self) -> Dictionary:
         """
         Read the current database catalog from the space root in a robust way.
         Falls back to an empty catalog if the space or root is not yet initialized.
         """
-        try:
-            space_root = self.get_space_root(lock=False)
-        except ProtoValidationException:
-            return {}
+        space_root = self.get_space_root()
 
         if not space_root:
-            return {}
+            return Dictionary()
 
-        # Ensure we load the root to materialize object_root/literal_root attributes
-        try:
-            space_root._load()
-        except Exception:
-            pass
+        space_root._load()
 
-        if not getattr(space_root, 'object_root', None):
-            return {}
+        if not space_root.object_root:
+            return Dictionary()
 
-        try:
-            # Ensure dictionary is loaded before iterating to materialize its content
-            space_root.object_root._load()
-            return {key: value for key, value in space_root.object_root.as_iterable()}
-        except Exception:
-            # If anything goes wrong reading the catalog, treat it as empty to avoid crashes
-            return {}
+        # Ensure dictionary is loaded before iterating to materialize its content
+        database_catalog: Dictionary = cast(Dictionary, space_root.object_root)
+        return database_catalog
 
     def open_database(self, database_name: str) -> Database:
         """
@@ -70,7 +59,7 @@ class ObjectSpace(AbstractObjectSpace):
                 )
 
             databases = self._read_db_catalog()
-            if database_name in databases:
+            if databases.has(database_name):
                 return Database(self, database_name)
 
             raise ProtoValidationException(
@@ -88,13 +77,28 @@ class ObjectSpace(AbstractObjectSpace):
                     message=f'Object space is not running!'
                 )
 
-            databases = self._read_db_catalog()
-            if database_name not in databases:
-                return Database(self, database_name)
+            with self.storage.root_context_manager():
+                update_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
 
-        raise ProtoValidationException(
-            message=f'Database {database_name} already exists!'
-        )
+                current_hist = self.get_space_history()
+                if current_hist.count > 0:
+                    current_root:RootObject = cast(RootObject, current_hist.get_at(0))
+                else:
+                    current_root:RootObject = RootObject()
+                databases = cast(Dictionary, current_root.object_root)
+                if not databases.has(database_name):
+                    # Create the new database with an empty roots catalog
+                    databases = databases.set_at(database_name, Dictionary())
+                    current_root = current_root._setattr('object_root', databases)
+                    space_history = current_hist.insert_at(0, current_root)
+                    space_history._save()
+                    self.storage.set_current_root(space_history.atom_pointer)
+
+                    return Database(self, database_name)
+
+                raise ProtoValidationException(
+                    message=f'Database {database_name} already exists!'
+                )
 
     def rename_database(self, old_name: str, new_name: str):
         """
@@ -108,13 +112,34 @@ class ObjectSpace(AbstractObjectSpace):
                     message=f'Object space is not running!'
                 )
 
-            databases = self._read_db_catalog()
-            if old_name in databases and new_name not in databases:
-                return Database(self, new_name)
+            with self.storage.root_context_manager():
+                update_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
 
-            raise ProtoValidationException(
-                message=f'Database {old_name} does not exist or {new_name} already exists!'
-            )
+                current_hist = self.get_space_history()
+                if current_hist.count > 0:
+                    current_root:RootObject = cast(RootObject, current_hist.get_at(0))
+                else:
+                    current_root:RootObject = RootObject()
+                databases = cast(Dictionary, current_root.object_root)
+                if databases.has(old_name):
+                    database = databases.get_at(old_name)
+                    databases = databases.remove_at(old_name)
+                    if database.has(new_name):
+                        raise ProtoValidationException(
+                            message=f'Database {new_name} already exists!'
+                        )
+
+                    databases = databases.set_at(new_name, database)
+
+                    current_root = current_root._setattr('object_root', databases)
+                    space_history = current_hist.insert_at(0, current_root)
+                    space_history._save()
+
+                    self.storage.set_current_root(space_history.atom_pointer)
+                else:
+                    raise ProtoValidationException(
+                        message=f'Database {old_name} does not exist!'
+                    )
 
     def remove_database(self, name: str):
         """
@@ -122,11 +147,33 @@ class ObjectSpace(AbstractObjectSpace):
         If database is already opened, it will not commit anymore! Be carefull
         :return:
         """
-        # TODO
-        pass
+        with self._lock:
+            if self.state != 'Running':
+                raise ProtoValidationException(
+                    message=f'Object space is not running!'
+                )
 
-    def finish_update(self):
-        return self.storage.unlock_current_root()
+            with self.storage.root_context_manager():
+                update_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
+
+                current_hist = self.get_space_history()
+                if current_hist.count > 0:
+                    current_root:RootObject = cast(RootObject, current_hist.get_at(0))
+                else:
+                    current_root:RootObject = RootObject(transaction=update_tr)
+                databases = cast(Dictionary, current_root.object_root)
+                if databases.has(name):
+                    databases = databases.remove_at(name)
+
+                    current_root = current_root._setattr('object_root', databases)
+                    space_history = current_hist.insert_at(0, current_root)
+                    space_history._save()
+
+                    self.storage.set_current_root(space_history.atom_pointer)
+                else:
+                    raise ProtoValidationException(
+                        message=f'Database {name} does not exist!'
+                    )
 
     def get_space_history(self, lock=False) -> List:
         read_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
@@ -147,10 +194,10 @@ class ObjectSpace(AbstractObjectSpace):
 
         return space_history
 
-    def get_space_root(self, lock=False) -> RootObject:
+    def get_space_root(self) -> RootObject:
         read_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
 
-        space_history = self.get_space_history(lock)
+        space_history = self.get_space_history()
 
         if space_history.count == 0:
             space_root = RootObject(
@@ -184,16 +231,7 @@ class ObjectSpace(AbstractObjectSpace):
         space_history = space_history.insert_at(0, new_space_root)
         space_history._save()
 
-        # Prefer explicit CAS when available
-        try:
-            expected_ptr = getattr(self.storage, '_locked_expected_root', None)
-            if hasattr(self.storage, 'set_current_root_cas'):
-                self.storage.set_current_root_cas(expected_ptr, space_history.atom_pointer)
-            else:
-                self.storage.set_current_root(space_history.atom_pointer)
-        except Exception:
-            # Fallback to legacy setter
-            self.storage.set_current_root(space_history.atom_pointer)
+        self.storage.set_current_root(space_history.atom_pointer)
 
     def get_literals(self, literals: Dictionary) -> dict[str, Literal]:
         read_tr = ObjectTransaction(None, storage=self.storage)
@@ -782,25 +820,16 @@ class ObjectTransaction(AbstractTransaction):
 class RootContextManager:
     def __init__(self, object_transaction: ObjectTransaction):
         self.object_transaction = object_transaction
+        self.storage = self.object_transaction.storage
+        self.root_cm = self.storage.root_context_manager()
 
     def __enter__(self):
-        # Install expected root pointer (from tx start) into storage for CAS before locking
-        try:
-            storage = self.object_transaction.database.object_space.storage
-            exp = getattr(self.object_transaction, '_expected_root_pointer', None)
-            if exp is not None and hasattr(storage, '_locked_expected_root'):
-                # Only set if not already set (avoid clobbering in nested contexts)
-                if getattr(storage, '_locked_expected_root', None) is None:
-                    setattr(storage, '_locked_expected_root', exp)
-        except Exception:
-            pass
-        return self.object_transaction.database.read_db_root(lock=True)
+        self.root_cm.__enter__()
+        return self.storage.read_current_root()
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.object_transaction.database.finish_update()
-        # let the exception follows the try chain
+        self.root_cm.__exit__(exc_type, exc_value, traceback)
         return False
-
 
 class BytesAtom(Atom):
     """

@@ -1176,6 +1176,13 @@ class BlockProvider(ABC):
         """
 
     @abstractmethod
+    def root_context_manager(self):
+        """
+            Get a context manager for space root update
+        :return: a context manager
+        """
+
+    @abstractmethod
     def get_current_root_object(self) -> AtomPointer:
         """
         Read current root object from storage
@@ -1222,16 +1229,17 @@ class SharedStorage(AbstractSharedStorage):
     """
 
     @abstractmethod
-    def read_current_root(self) -> AtomPointer:
+    def root_context_manager(self):
         """
-        Read the current root object
-        :return:
+            Get a context manager for space root update
+        :return: a context manager
         """
 
+
     @abstractmethod
-    def read_lock_current_root(self) -> AtomPointer:
+    def read_current_root(self) -> AtomPointer:
         """
-        Read the current root object
+        Read the current root object. Nonblocking
         :return:
         """
 
@@ -1240,15 +1248,6 @@ class SharedStorage(AbstractSharedStorage):
         """
         Set the current root object
         :return:
-        """
-
-    @abstractmethod
-    def unlock_current_root(self):
-        """
-        Unlock the current root by performing necessary operations based
-        on the implementation. This method typically interacts with the state or
-        systems associated with this object to achieve the unlocking process.
-
         """
 
     @abstractmethod

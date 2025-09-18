@@ -388,6 +388,23 @@ class FileBlockProvider(common.BlockProvider):
         """
         return self.current_wal
 
+    def root_context_manager(self):
+        class ContextManager:
+            bp: FileBlockProvider
+            def __init__(self, bp: FileBlockProvider):
+                self.bp = bp
+
+            def __enter__(self):
+                self.bp._acquire_root_lock()
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                self.bp._release_root_lock()
+
+            def __repr__(self):
+                return f"FileBlockProvider.RootContextManager(bp={self.bp})"
+
+        return ContextManager(self)
+
     def get_current_root_object(self):
         """
         Read current root object from storage

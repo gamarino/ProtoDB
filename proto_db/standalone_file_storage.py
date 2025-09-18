@@ -128,10 +128,6 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
 
         self._get_new_wal()
 
-        # Root update CAS state
-        self._root_update_lock = Lock()
-        self._locked_expected_root: AtomPointer | None = None
-
         # Atom-level caches
         self._atom_caches = AtomCacheBundle(
             enable_object_cache=enable_atom_object_cache,
@@ -154,85 +150,33 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
         if not root:
             # Signal uninitialized root as validation error (handled by callers)
             raise ProtoValidationException(message="Root object is not initialized")
-        if isinstance(root, AtomPointer):
-            return root
-        if isinstance(root, dict):
-            # Accept formats: {'transaction_id': str|hex, 'offset': int} optionally with 'className'
-            tid_val = root.get('transaction_id') or root.get('tx')
-            off = root.get('offset', 0)
-            if tid_val is None:
-                raise ProtoValidationException(message="Invalid root object format: missing transaction_id")
-            try:
-                if isinstance(tid_val, uuid.UUID):
-                    txid = tid_val
-                elif isinstance(tid_val, str):
-                    try:
-                        txid = uuid.UUID(tid_val)
-                    except Exception:
-                        txid = uuid.UUID(hex=tid_val)
-                else:
-                    raise ValueError("Unsupported transaction_id type")
-            except Exception as e:
-                raise ProtoValidationException(message=f"Invalid root transaction_id: {e}")
-            return AtomPointer(transaction_id=txid, offset=off)
-        # Unknown format
-        raise ProtoValidationException(message="Unsupported root object format")
 
-    def read_lock_current_root(self) -> AtomPointer:
-        """
-        Acquire an in-process lock for root updates and return the current root pointer.
-        Stores the expected root that must match at set_current_root time.
-        """
-        self._root_update_lock.acquire()
-        ptr = self.read_current_root()
-        # If caller pre-installed an expected root (from tx start), keep it; otherwise use current
-        if getattr(self, '_locked_expected_root', None) is None:
-            self._locked_expected_root = ptr
-        return ptr
+        return root
+
+    def root_context_manager(self):
+        class RootContextManager:
+            sfs: StandaloneFileStorage
+            blk_cm = None
+
+            def __init__(self, sfs: StandaloneFileStorage):
+                self.sfs = sfs
+                self.blk_cm = sfs.block_provider.root_context_manager()
+
+            def __enter__(self):
+                self.blk_cm.__enter__()
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                self.blk_cm.__exit__(exc_type, exc_value, traceback)
+
+            def __repr__(self):
+                return f"StandAloneFileStorage.RootContextManager(sfs={self.sfs}, blk_cm={self.blk_cm})"
+
+            def __str__(self):
+                return self.__repr__()
+        return RootContextManager(self)
 
     def set_current_root(self, root_pointer: AtomPointer):
-        """
-        Strict setter that always enforces CAS semantics. Uses the expected root captured
-        at transaction start (installed into _locked_expected_root by RootContextManager).
-        If no expected is available and a current root exists, raise ProtoLockingException.
-        """
-        exp = getattr(self, '_locked_expected_root', None)
-        self.set_current_root_cas(exp, root_pointer)
-
-    def set_current_root_cas(self, expected: AtomPointer | None, new_pointer: AtomPointer):
-        """
-        Atomic compare-and-swap on the root pointer using OS-level file lock plus in-process lock.
-        If the current root differs from 'expected', raise ProtoLockingException.
-        """
-        from .exceptions import ProtoLockingException
-        # Compare current vs expected
-        current = None
-        try:
-            current = self.read_current_root()
-        except Exception:
-            current = None
-        if expected is None:
-            # If there's already a current root and no expected was provided, do not allow blind writes
-            if current is not None:
-                raise ProtoLockingException(message='Missing expected root for CAS update')
-            # No current root (fresh DB): allow initialization write
-            self.block_provider.update_root_object(new_pointer)
-            return
-        if current is not None:
-            if (current.transaction_id != expected.transaction_id) or (current.offset != expected.offset):
-                raise ProtoLockingException(message='Concurrent root update detected (CAS)')
-        # Proceed to update
-        self.block_provider.update_root_object(new_pointer)
-
-    def unlock_current_root(self):
-        """
-        Release the in-process lock for root updates.
-        """
-        self._locked_expected_root = None
-        try:
-            self._root_update_lock.release()
-        except Exception:
-            pass
+        self.block_provider.update_root_object(root_pointer)
 
     def _get_new_wal(self):
         """

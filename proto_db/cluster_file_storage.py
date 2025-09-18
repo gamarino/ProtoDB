@@ -570,16 +570,18 @@ class ClusterNetworkManager:
 
         # Wait for responses with timeout
         start_time = time.time()
-        majority = len(self.servers) // 2 + 1
+        total_nodes = len(self.servers) + 1
+        majority = total_nodes // 2 + 1
 
         while time.time() - start_time < (self.vote_timeout_ms / 1000):
             with self.vote_lock:
                 responses = self.vote_responses.get(request_id, {})
                 positive_votes = sum(1 for vote in responses.values() if vote)
+                effective_votes = positive_votes + 1  # include self-vote
 
-                if positive_votes >= majority:
-                    _logger.info(f"Received majority of votes: {positive_votes}/{len(self.servers)}")
-                    return True, positive_votes
+                if effective_votes >= majority:
+                    _logger.info(f"Received majority of votes: {effective_votes}/{total_nodes} (including self)")
+                    return True, effective_votes
 
             time.sleep(0.1)
 
@@ -587,6 +589,7 @@ class ClusterNetworkManager:
         with self.vote_lock:
             responses = self.vote_responses.get(request_id, {})
             positive_votes = sum(1 for vote in responses.values() if vote)
+            effective_votes = positive_votes + 1  # include self-vote
 
             # Clean up this request
             if request_id in self.vote_requests:
@@ -594,8 +597,8 @@ class ClusterNetworkManager:
             if request_id in self.vote_responses:
                 del self.vote_responses[request_id]
 
-        _logger.warning(f"Vote request timed out. Received {positive_votes}/{len(self.servers)} votes")
-        return positive_votes >= majority, positive_votes
+        _logger.warning(f"Vote request timed out. Received {effective_votes}/{total_nodes} votes (including self)")
+        return effective_votes >= majority, effective_votes
 
     def request_page(self, wal_id: uuid.UUID, offset: int, size: int = 4096) -> Optional[bytes]:
         """
@@ -830,6 +833,8 @@ class ClusterFileStorage(StandaloneFileStorage):
 
         # Additional locks for cluster operations
         self.root_lock = threading.Lock()
+        # Active provider context manager held by read_lock_current_root/unlock_current_root
+        self._active_root_provider_cm = None
 
         _logger.info(f"Initialized ClusterFileStorage for server {self.server_id}")
 
@@ -844,24 +849,73 @@ class ClusterFileStorage(StandaloneFileStorage):
 
     def read_lock_current_root(self) -> AtomPointer:
         """
-        Read and lock the current root object.
-
-        This method acquires a distributed lock on the root object before reading it.
-
-        Returns:
-            AtomPointer: The current root object pointer
+        Acquire a distributed lock (majority including self) and also a local provider lock,
+        then read and return the current root pointer.
         """
-        # Acquire distributed lock through voting
         success, votes = self.network_manager.request_vote()
-
         if not success:
-            _logger.warning(f"Failed to acquire distributed lock for root update (received {votes} votes)")
-            raise ProtoUnexpectedException(message=f"Failed to acquire distributed lock for root update")
+            _logger.warning(f"Failed to acquire distributed lock for root read (received {votes} votes)")
+            raise ProtoUnexpectedException(message="Failed to acquire distributed lock for root read")
+        # Acquire provider-level lock
+        try:
+            if hasattr(self.block_provider, 'root_context_manager'):
+                self._active_root_provider_cm = self.block_provider.root_context_manager()
+                self._active_root_provider_cm.__enter__()
+        except Exception:
+            self._active_root_provider_cm = None
+        return self.block_provider.get_current_root_object()
 
-        # Read the root object
-        with self.root_lock:
-            return self.read_current_root()
+    def unlock_current_root(self):
+        """
+        Release the provider-level lock if held. Distributed lock auto-expires.
+        """
+        try:
+            if self._active_root_provider_cm is not None:
+                self._active_root_provider_cm.__exit__(None, None, None)
+        finally:
+            self._active_root_provider_cm = None
 
+    def root_context_manager(self):
+        class ContextManager:
+            cfs: ClusterFileStorage
+            provider_cm = None
+            def __init__(self, cfs: ClusterFileStorage):
+                self.cfs = cfs
+    
+            def __enter__(self):
+                # Acquire distributed lock by majority (includes self-vote)
+                success, votes = self.cfs.network_manager.request_vote()
+                if not success:
+                    _logger.warning(f"Failed to acquire distributed lock for root update (received {votes} votes)")
+                    raise ProtoUnexpectedException(message=f"Failed to acquire distributed lock for root update")
+                # After distributed consensus, also acquire provider-level CM for local exclusion
+                try:
+                    if hasattr(self.cfs.block_provider, 'root_context_manager'):
+                        self.provider_cm = self.cfs.block_provider.root_context_manager()
+                        self.provider_cm.__enter__()
+                except Exception:
+                    # If provider CM acquisition fails, best-effort: continue to avoid deadlock
+                    self.provider_cm = None
+    
+            def __exit__(self, exc_type, exc_value, traceback):
+                """
+                Unlock the current root object.
+    
+                Release provider CM first; distributed lock is time-based/no-op here.
+                """
+                try:
+                    if self.provider_cm is not None:
+                        self.provider_cm.__exit__(exc_type, exc_value, traceback)
+                finally:
+                    self.provider_cm = None
+                # Distributed lock auto-expires; no explicit action taken here
+                return False
+            
+            def __repr__(self):
+                return f"ClusterFileStorage.RootContextManager(cfs={self.cfs})"
+
+        return ContextManager(self)
+    
     def set_current_root(self, root_pointer: AtomPointer):
         """
         Set the current root object.
@@ -881,16 +935,6 @@ class ClusterFileStorage(StandaloneFileStorage):
         )
 
         _logger.info(f"Updated root object and notified {servers_updated} servers")
-
-    def unlock_current_root(self):
-        """
-        Unlock the current root object.
-
-        This method releases the distributed lock on the root object.
-        """
-        # In this implementation, the lock is automatically released when the vote timeout expires
-        # No explicit action needed
-        pass
 
     def get_reader(self, wal_id: uuid.UUID, position: int) -> io.BytesIO:
         """

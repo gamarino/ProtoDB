@@ -6,7 +6,11 @@
   <component name="ChangeListManager">
     <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[WIP] tests">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/lists.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/cluster_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/cluster_file_storage.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/db_access.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/file_block_provider.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/file_block_provider.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/standalone_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/standalone_file_storage.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
