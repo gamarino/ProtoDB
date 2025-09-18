@@ -140,7 +140,7 @@ class Set(Atom):
 
         if isinstance(index_def, str):
             field_name = index_def
-            new_index = RepeatedKeysDictionary(self.transaction)
+            new_index = RepeatedKeysDictionary(transaction=self.transaction)
             if not self.empty:
                 for v in self.as_iterable():
                     # For Set, the element is the key

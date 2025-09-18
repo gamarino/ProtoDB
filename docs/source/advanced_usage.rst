@@ -410,3 +410,68 @@ Always close the storage when you're done with it to release resources:
         storage.close()
 
 This is especially important for ``ClusterFileStorage``, ``CloudFileStorage``, and ``CloudClusterFileStorage``, which may have background threads and network connections that need to be properly closed.
+
+
+Correlated Subqueries with .select_many() (LATERAL JOIN)
+=======================================================
+
+ProtoDB's LINQ provider includes a powerful ``.select_many()`` method, which is the functional
+equivalent of a ``CROSS JOIN LATERAL`` in SQL. This allows you to execute a dynamic, correlated
+subquery for each element of a source collection, enabling sophisticated query patterns that are
+otherwise cumbersome or inefficient to express.
+
+Use Case 1: Un-nesting Collections
+----------------------------------
+
+A common use case is to "un-nest" or flatten an attribute that is a collection. For example, to get
+a flat list of all tags associated with products:
+
+.. code-block:: python
+
+    # Assuming 'products' is a Queryable of objects with a 'tags' list attribute
+    flat_tags_query = products.select_many(
+        collection_selector=lambda product: product.tags,
+        result_selector=lambda product, tag: {
+            'product_name': product.name,
+            'tag': tag
+        }
+    )
+
+    # Result: [{'product_name': 'Laptop', 'tag': 'tech'}, {'product_name': 'Laptop', 'tag': 'work'}, ...]
+
+Use Case 2: Top-N per Category
+------------------------------
+
+A classic problem solved elegantly by ``select_many`` is finding the "Top N" items within groups. For
+instance, to find the two most expensive products in each category:
+
+.. code-block:: python
+
+    top_2_per_category = (
+        categories.select_many(
+            # For each category, run this subquery:
+            collection_selector=lambda cat: (
+                products.where(F.category_id == cat.id)
+                        .order_by(F.price, ascending=False)
+                        .take(2)
+            ),
+            # Combine the category with its top product
+            result_selector=lambda cat, prod: {
+                'category': cat.name,
+                'product': prod.name
+            }
+        )
+    )
+
+Performance Considerations
+--------------------------
+
+The ``select_many`` operator is extremely powerful, but it executes a new subquery for every element in the
+source collection. This can lead to poor performance (an "N+1 query" problem) if the correlated subquery is not
+efficient.
+
+Golden Rule: Ensure that the ``where`` clause inside your ``collection_selector`` operates on an indexed field.
+In the Top-N example above, performance is excellent because ``products.category_id`` is indexed. Without an index,
+ProtoDB would have to perform a full scan of the ``products`` collection for each category.
+
+Always use the ``.explain()`` method on your final query to verify that subqueries are being optimized as expected.

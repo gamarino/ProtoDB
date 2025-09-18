@@ -47,6 +47,7 @@
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="concepts.html">ProtoDB Fundamental Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cookbook_traverse.html">Hierarchical and Graph Traversal with .traverse()</a></li>
 <li class="toctree-l1"><a class="reference internal" href="performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
@@ -54,6 +55,7 @@
 <li class="toctree-l1"><a class="reference internal" href="vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="advanced_usage.html#correlated-subqueries-with-select-many-lateral-join">Correlated Subqueries with .select_many() (LATERAL JOIN)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="development.html">Development</a></li>
 </ul>
@@ -217,6 +219,8 @@
         <li><a href="api/queries.html#proto_db.queries.JoinPlan.__init__">(proto_db.queries.JoinPlan method)</a>
 </li>
         <li><a href="api/queries.html#proto_db.queries.ListPlan.__init__">(proto_db.queries.ListPlan method)</a>
+</li>
+        <li><a href="api/queries.html#proto_db.queries.RecursivePlan.__init__">(proto_db.queries.RecursivePlan method)</a>
 </li>
         <li><a href="api/queries.html#proto_db.queries.SelectPlan.__init__">(proto_db.queries.SelectPlan method)</a>
 </li>
@@ -458,6 +462,8 @@
 </li>
         <li><a href="api/queries.html#proto_db.queries.ListPlan.execute">(proto_db.queries.ListPlan method)</a>
 </li>
+        <li><a href="api/queries.html#proto_db.queries.RecursivePlan.execute">(proto_db.queries.RecursivePlan method)</a>
+</li>
         <li><a href="api/queries.html#proto_db.queries.SelectPlan.execute">(proto_db.queries.SelectPlan method)</a>
 </li>
         <li><a href="api/queries.html#proto_db.queries.UnnestPlan.execute">(proto_db.queries.UnnestPlan method)</a>
@@ -470,7 +476,17 @@
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/core.html#proto_db.common.QueryPlan.explain">explain() (proto_db.common.QueryPlan method)</a>, <a href="api/queries.html#proto_db.common.QueryPlan.explain">[1]</a>
+
+      <ul>
+        <li><a href="api/queries.html#proto_db.queries.IndexedRangeSearchPlan.explain">(proto_db.queries.IndexedRangeSearchPlan method)</a>
 </li>
+        <li><a href="api/queries.html#proto_db.queries.RecursivePlan.explain">(proto_db.queries.RecursivePlan method)</a>
+</li>
+        <li><a href="api/queries.html#proto_db.queries.VectorSearchPlan.explain">(proto_db.queries.VectorSearchPlan method)</a>
+</li>
+        <li><a href="api/queries.html#proto_db.queries.WherePlan.explain">(proto_db.queries.WherePlan method)</a>
+</li>
+      </ul></li>
       <li><a href="api/data_structures.html#proto_db.lists.List.extend">extend() (proto_db.lists.List method)</a>
 </li>
   </ul></td>
@@ -821,6 +837,8 @@
 </li>
         <li><a href="api/queries.html#proto_db.queries.ListPlan.optimize">(proto_db.queries.ListPlan method)</a>
 </li>
+        <li><a href="api/queries.html#proto_db.queries.RecursivePlan.optimize">(proto_db.queries.RecursivePlan method)</a>
+</li>
         <li><a href="api/queries.html#proto_db.queries.SelectPlan.optimize">(proto_db.queries.SelectPlan method)</a>
 </li>
         <li><a href="api/queries.html#proto_db.queries.UnnestPlan.optimize">(proto_db.queries.UnnestPlan method)</a>
@@ -1081,6 +1099,8 @@
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/queries.html#proto_db.queries.RecursivePlan">RecursivePlan (class in proto_db.queries)</a>
+</li>
       <li><a href="api/data_structures.html#proto_db.dictionaries.Dictionary.remove_at">remove_at() (proto_db.dictionaries.Dictionary method)</a>
 
       <ul>

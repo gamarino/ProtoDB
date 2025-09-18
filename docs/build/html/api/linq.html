@@ -48,6 +48,9 @@
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../concepts.html">ProtoDB Fundamental Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../cookbook_traverse.html">Hierarchical and Graph Traversal with .traverse()</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
@@ -59,12 +62,14 @@
 <li class="toctree-l2"><a class="reference internal" href="data_structures.html">Data Structures</a></li>
 <li class="toctree-l2"><a class="reference internal" href="indexes.html">Secondary Indexes</a></li>
 <li class="toctree-l2"><a class="reference internal" href="queries.html">Query System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html#vector-search-plans">Vector Search Plans</a></li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html#queryableindex-interface">QueryableIndex Interface</a></li>
 <li class="toctree-l2"><a class="reference internal" href="vectors.html">Vector Support</a></li>
-<li class="toctree-l2"><a class="reference internal" href="vectors.html#module-0">Vectors</a></li>
 <li class="toctree-l2"><a class="reference internal" href="arrow_parquet.html">Arrow / Parquet Bridge</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">LINQ-like API</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#overview">Overview</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#quick-examples">Quick examples</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#hierarchical-traversal-with-traverse">Hierarchical traversal with traverse()</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#between-and-lambda-chained-comparisons">Between and lambda chained comparisons</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#execution-optimization-and-explain">Execution, optimization and explain</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#policies-and-safety-limits">Policies and safety limits</a></li>
@@ -84,6 +89,7 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced_usage.html#correlated-subqueries-with-select-many-lateral-join">Correlated Subqueries with .select_many() (LATERAL JOIN)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../development.html">Development</a></li>
 </ul>
@@ -163,6 +169,24 @@ It allows filtering, projection, ordering, grouping and aggregation with an intr
 </pre></div>
 </div>
 </section>
+<section id="hierarchical-traversal-with-traverse">
+<h2>Hierarchical traversal with traverse()<a class="headerlink" href="#hierarchical-traversal-with-traverse" title="Link to this heading"></a></h2>
+<p>Use traverse() to recursively walk object graphs either following an upward reference or expanding a collection downward. Parameters:</p>
+<ul class="simple">
+<li><p>relation_attr: attribute name to follow</p></li>
+<li><p>direction: ‘up’ (single reference) or ‘down’ (iterate collection)</p></li>
+<li><p>strategy: ‘dfs’ or ‘bfs’</p></li>
+<li><p>max_depth: limit depth (-1 = unlimited)</p></li>
+<li><p>include_start_node: include starting nodes in output</p></li>
+</ul>
+<p>Example:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">chain</span> <span class="o">=</span> <span class="p">(</span><span class="n">from_collection</span><span class="p">(</span><span class="n">employees</span><span class="p">)</span>
+         <span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;Employee1&#39;</span><span class="p">)</span>
+         <span class="o">.</span><span class="n">traverse</span><span class="p">(</span><span class="s1">&#39;manager&#39;</span><span class="p">,</span> <span class="n">direction</span><span class="o">=</span><span class="s1">&#39;up&#39;</span><span class="p">,</span> <span class="n">strategy</span><span class="o">=</span><span class="s1">&#39;dfs&#39;</span><span class="p">))</span>
+<span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">e</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">chain</span><span class="p">]</span>
+</pre></div>
+</div>
+</section>
 <section id="between-and-lambda-chained-comparisons">
 <h2>Between and lambda chained comparisons<a class="headerlink" href="#between-and-lambda-chained-comparisons" title="Link to this heading"></a></h2>
 <p>The DSL supports ranges via between/ range bounds and also detects simple chained comparisons in lambdas:</p>
@@ -216,7 +240,7 @@ ProtoBase WherePlan/SelectPlan. Index-aware filtering is leveraged by the underl
 <h2>API surface<a class="headerlink" href="#api-surface" title="Link to this heading"></a></h2>
 <ul class="simple">
 <li><p>Queryable[T]
-- where, select, select_many, order_by, then_by, distinct, take, skip, group_by
+- where, select, select_many, order_by, then_by, distinct, take, skip, group_by, traverse
 - to_list, to_set, to_dict, first, first_or_default, any, all, count, sum, min, max, average
 - with_policy, on_unsupported, explain</p></li>
 <li><dl class="simple">

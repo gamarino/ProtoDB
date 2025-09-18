@@ -209,7 +209,19 @@ class _Field:
 
     def contains(self, sub: Any):
         pb = [_prefix_alias('.'.join(self._path)), 'contains', sub]
-        return _Pred(lambda x: (self._resolve(x) or "").__contains__(sub), pb)
+        def _fn(x):
+            v = self._resolve(x)
+            try:
+                # Unwrap ProtoBase Literal or similar objects exposing a 'string' field
+                if hasattr(v, 'string'):
+                    v = getattr(v, 'string')
+            except Exception:
+                pass
+            try:
+                return (v or "").__contains__(sub)
+            except Exception:
+                return False
+        return _Pred(_fn, pb)
 
     def startswith(self, prefix: str):
         return _Pred(lambda x: (self._resolve(x) or "").startswith(prefix))
@@ -490,8 +502,16 @@ class Queryable(Generic[T]):
         self._ops.append(("select", (selector,), {}))
         return self  # type: ignore
 
-    def select_many(self, selector: Callable[[T], Iterable[U]] | Any) -> 'Queryable[U]':
-        self._ops.append(("select_many", (selector,), {}))
+    def select_many(
+        self,
+        collection_selector: Callable[[T], 'Queryable[Any] | Iterable[Any]'],
+        result_selector: Optional[Callable[[T, Any], Any]] = None
+    ) -> 'Queryable[Any]':
+        """
+        Projects each element of a sequence to a new queryable or iterable and
+        flattens the resulting sequences into one sequence. Equivalent to CROSS JOIN LATERAL or flatMap.
+        """
+        self._ops.append(("select_many", (collection_selector, result_selector), {}))
         return self  # type: ignore
 
     def order_by(self, key_selector: Callable[[T], K] | Any, ascending: bool = True, nulls_last: bool = True) -> 'Queryable[T]':
@@ -534,10 +554,8 @@ class Queryable(Generic[T]):
 
     # Terminal operators
     def _execute(self) -> Iterator[Any]:
-        # Apply simple optimizations: push where early
-        where_ops = [(i, op) for i, op in enumerate(self._ops) if op[0] == 'where']
-        others = [op for op in self._ops if op[0] != 'where']
-        ops_in_order = [* [op for _, op in where_ops], *others]
+        # Preserve operator order for correctness (do not hoist where() across plan-generating ops)
+        ops_in_order = list(self._ops)
 
         # If we have a base QueryPlan, translate the prefix of ops into a QueryPlan chain
         it: Iterable[Any]
@@ -621,6 +639,15 @@ class Queryable(Generic[T]):
                         transaction=getattr(current_plan, 'transaction', None)
                     )
                     # consumed
+                elif name == 'select_many' and current_plan is not None:
+                    collection_selector, result_selector = args
+                    from .queries import SelectManyPlan as _SelectManyPlan
+                    current_plan = _SelectManyPlan(
+                        based_on=current_plan,
+                        collection_selector=collection_selector,
+                        result_selector=result_selector,
+                        transaction=getattr(current_plan, 'transaction', None)
+                    )
                 else:
                     new_remaining.append((name, args, kwargs))
             remaining_ops = new_remaining
@@ -679,11 +706,22 @@ class Queryable(Generic[T]):
                 sel = _to_callable(args[0]) or (lambda x: x)
                 it = (sel(x) for x in it)
             elif name == 'select_many':
-                selm = _to_callable(args[0]) or (lambda x: x)
+                collection_selector = _to_callable(args[0]) or (lambda x: ())
+                result_selector = _to_callable(args[1]) if len(args) > 1 else None
                 def _flat(_it):
-                    for x in _it:
-                        for y in selm(x):
-                            yield y
+                    for left in _it:
+                        right_coll = collection_selector(left)
+                        # If selector returns a Queryable, execute it locally
+                        try:
+                            from .linq import Queryable as _Queryable
+                            if isinstance(right_coll, _Queryable):
+                                right_iter = right_coll._execute()
+                            else:
+                                right_iter = right_coll
+                        except Exception:
+                            right_iter = right_coll
+                        for right in right_iter:
+                            yield result_selector(left, right) if result_selector else right
                 it = _flat(it)
             elif name in ('order_by', 'then_by'):
                 key_fn = _to_callable(args[0]) or (lambda x: x)

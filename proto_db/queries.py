@@ -1946,10 +1946,18 @@ class WherePlan(QueryPlan):
         - Combine all index-backed plans with AndMerge, and keep non-indexable terms
           as residual_filters to be applied after intersection.
         """
-        # 1) Ensure we have an index-aware base plan
+        # 1) Optimize base plan first and attempt predicate pushdown if supported
         base_plan = self.based_on.optimize() if self.based_on else None
+        try:
+            if base_plan is not None and hasattr(base_plan, 'accept_filter'):
+                pushed = base_plan.accept_filter(self.filter)
+                if pushed is not None:
+                    return pushed
+        except Exception:
+            # If pushdown fails, continue with standard optimization
+            pass
+        # If no index-awareness, keep linear WherePlan over optimized base
         if not isinstance(base_plan, IndexedQueryPlan):
-            # No indexes available → keep the plan as-is over optimized base
             self.based_on = base_plan
             return self
 
@@ -2514,3 +2522,71 @@ class CountResultPlan(QueryPlan):
 
     def optimize(self, *args, **kwargs) -> 'QueryPlan':
         return self
+
+
+class SelectManyPlan(QueryPlan):
+    """
+    Implements a correlated subquery for each element of a source plan,
+    equivalent to CROSS JOIN LATERAL or LINQ's SelectMany.
+    """
+    def __init__(self,
+                 based_on: QueryPlan,
+                 collection_selector,
+                 result_selector=None,
+                 transaction: Optional[AbstractTransaction] = None,
+                 atom_pointer: AtomPointer | None = None,
+                 **kwargs):
+        super().__init__(based_on=based_on, transaction=transaction, atom_pointer=atom_pointer, **kwargs)
+        self.collection_selector = collection_selector
+        self.result_selector = result_selector
+
+    def execute(self):
+        # Execute left side
+        left_iter = self.based_on.execute() if self.based_on is not None else []
+        for left_record in left_iter:
+            # Build right side for each left
+            try:
+                right_collection = self.collection_selector(left_record)
+            except Exception:
+                right_collection = []
+
+            # If it's a Queryable, execute its plan; avoid top-level import to reduce cycles
+            try:
+                from .linq import Queryable as _Queryable
+                if isinstance(right_collection, _Queryable):
+                    right_plan = right_collection._execute()
+                    right_iterable = right_plan
+                else:
+                    right_iterable = right_collection
+            except Exception:
+                right_iterable = right_collection
+
+            # Iterate and yield
+            for right_record in right_iterable:
+                if self.result_selector:
+                    try:
+                        yield self.result_selector(left_record, right_record)
+                    except Exception:
+                        # Skip records that fail the selector
+                        continue
+                else:
+                    yield right_record
+
+    def optimize(self, *args, **kwargs) -> 'QueryPlan':
+        optimized_base = self.based_on.optimize() if self.based_on else None
+        if optimized_base is not None and optimized_base is not self.based_on:
+            return SelectManyPlan(
+                based_on=optimized_base,
+                collection_selector=self.collection_selector,
+                result_selector=self.result_selector,
+                transaction=self.transaction
+            )
+        return self
+
+    def explain(self) -> dict:
+        node = super().explain()
+        node.update({
+            'plan_type': 'SelectManyPlan (LATERAL JOIN)',
+            'description': 'For each record from the source plan, a correlated sub-query is dynamically generated and executed.'
+        })
+        return node

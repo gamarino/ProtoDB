@@ -24,12 +24,14 @@ class TestRecursivePlan(unittest.TestCase):
         emp1 = DBObject(transaction=tr, name='Employee1')
 
         # Create hierarchy: emp1 -> mgr1 -> dir1 -> vp1 -> ceo
-        emp1 = emp1._setattr('manager', mgr1)
-        mgr1 = mgr1._setattr('manager', dir1)
-        dir1 = dir1._setattr('manager', vp1)
+        # Build from top to bottom ensuring references point to updated copies
         vp1 = vp1._setattr('manager', ceo)
-        ceo = ceo._setattr('reports', List(transaction=tr).append_last(vp1).append_last(vp2))
+        dir1 = dir1._setattr('manager', vp1)
+        mgr1 = mgr1._setattr('manager', dir1)
+        emp1 = emp1._setattr('manager', mgr1)
+        # First set vp1.reports, then point ceo.reports to the updated vp1
         vp1 = vp1._setattr('reports', List(transaction=tr).append_last(dir1))
+        ceo = ceo._setattr('reports', List(transaction=tr).append_last(vp1).append_last(vp2))
 
         # Cycle peer <-> peer
         cyclic1 = DBObject(transaction=tr, name='Cyclic1')
@@ -98,7 +100,10 @@ class TestRecursivePlan(unittest.TestCase):
         q = (from_collection(collection)
              .where(F.name == 'Manager1')
              .traverse('manager', include_start_node=True))
-        results = [e.name for e in q]
+        def _nm(e):
+            v = getattr(e, 'name', None)
+            return v.string if hasattr(v, 'string') else v
+        results = [_nm(e) for e in q]
         self.assertIn('Manager1', results)
         self.assertIn('Director1', results)
         # Manager1, Director1, VP1, CEO
@@ -111,7 +116,10 @@ class TestRecursivePlan(unittest.TestCase):
              .where(F.name == 'Employee1')
              .traverse('manager')
              .where(F.name.contains('VP')))
-        results = [e.name for e in q]
+        def _nm(e):
+            v = getattr(e, 'name', None)
+            return v.string if hasattr(v, 'string') else v
+        results = [_nm(e) for e in q]
         self.assertEqual(results, ['VP1'])
 
 

@@ -50,6 +50,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../concepts.html">ProtoDB Fundamental Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../cookbook_traverse.html">Hierarchical and Graph Traversal with .traverse()</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
@@ -67,6 +68,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#fromplan">FromPlan</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#whereplan">WherePlan</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#joinplan">JoinPlan</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#recursiveplan">RecursivePlan</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#groupbyplan">GroupByPlan</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#selectplan">SelectPlan</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#countplan">CountPlan</a></li>
@@ -100,6 +102,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#proto_db.queries.VectorSearchPlan.execute"><code class="docutils literal notranslate"><span class="pre">VectorSearchPlan.execute()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#proto_db.queries.VectorSearchPlan.get_cardinality_estimate"><code class="docutils literal notranslate"><span class="pre">VectorSearchPlan.get_cardinality_estimate()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#proto_db.queries.VectorSearchPlan.get_cost_estimate"><code class="docutils literal notranslate"><span class="pre">VectorSearchPlan.get_cost_estimate()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#proto_db.queries.VectorSearchPlan.explain"><code class="docutils literal notranslate"><span class="pre">VectorSearchPlan.explain()</span></code></a></li>
 </ul>
 </li>
 </ul>
@@ -148,6 +151,7 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced_usage.html#correlated-subqueries-with-select-many-lateral-join">Correlated Subqueries with .select_many() (LATERAL JOIN)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../development.html">Development</a></li>
 </ul>
@@ -307,8 +311,10 @@ Falls back to iterating if the collection does not expose count.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.common.QueryPlan.explain">
 <span class="sig-name descname"><span class="pre">explain</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#QueryPlan.explain"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.QueryPlan.explain" title="Link to this definition"></a></dt>
-<dd><p>Lightweight structured explanation of the plan.
-Subclasses should override to add more details.</p>
+<dd><p>Structured recursive explanation of this plan node.
+Returns a JSON-serializable dictionary. Subclasses should override
+and call super().explain() or construct their own dictionaries, but
+the convention is to include a nested “source_plan” when based_on exists.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>dict</p>
@@ -443,6 +449,20 @@ and materializes the result into a List to enable slicing/pagination.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="proto_db.queries.WherePlan.explain">
+<span class="sig-name descname"><span class="pre">explain</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#WherePlan.explain"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.WherePlan.explain" title="Link to this definition"></a></dt>
+<dd><p>Structured recursive explanation of this plan node.
+Returns a JSON-serializable dictionary. Subclasses should override
+and call super().explain() or construct their own dictionaries, but
+the convention is to include a nested “source_plan” when based_on exists.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="proto_db.queries.WherePlan.optimize">
 <span class="sig-name descname"><span class="pre">optimize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#WherePlan.optimize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.WherePlan.optimize" title="Link to this definition"></a></dt>
 <dd><p>Cooperative optimization: delegate term planning to QueryableIndex.
@@ -552,6 +572,100 @@ No external context parameter is required.</p>
 </dd></dl>
 
 <p><code class="docutils literal notranslate"><span class="pre">JoinPlan</span></code> joins multiple data sources. It takes two plans and a join condition, returns records that satisfy the join condition, and supports inner, left, right, and full joins.</p>
+</section>
+<section id="recursiveplan">
+<h3>RecursivePlan<a class="headerlink" href="#recursiveplan" title="Link to this heading"></a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="proto_db.queries.RecursivePlan">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.queries.</span></span><span class="sig-name descname"><span class="pre">RecursivePlan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">based_on</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">relation_attr</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">direction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'up'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_depth</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">-1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">strategy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'dfs'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">include_start_node</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#RecursivePlan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.RecursivePlan" title="Link to this definition"></a></dt>
+<dd><p>Executes a recursive traversal starting from the records produced by <cite>based_on</cite>.
+It supports ‘up’ (single reference attribute) and ‘down’ (iterable attribute) directions
+and DFS or BFS strategies. Returns results as a List collection for efficient slicing.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>based_on</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
+<li><p><strong>relation_attr</strong> (<em>str</em>)</p></li>
+<li><p><strong>direction</strong> (<em>str</em>)</p></li>
+<li><p><strong>max_depth</strong> (<em>int</em>)</p></li>
+<li><p><strong>strategy</strong> (<em>str</em>)</p></li>
+<li><p><strong>include_start_node</strong> (<em>bool</em>)</p></li>
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.queries.RecursivePlan.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">based_on</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">relation_attr</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">direction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'up'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_depth</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">-1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">strategy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'dfs'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">include_start_node</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#RecursivePlan.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.RecursivePlan.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>based_on</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
+<li><p><strong>relation_attr</strong> (<em>str</em>)</p></li>
+<li><p><strong>direction</strong> (<em>str</em>)</p></li>
+<li><p><strong>max_depth</strong> (<em>int</em>)</p></li>
+<li><p><strong>strategy</strong> (<em>str</em>)</p></li>
+<li><p><strong>include_start_node</strong> (<em>bool</em>)</p></li>
+<li><p><strong>transaction</strong> (<em>AbstractTransaction</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>atom_pointer</strong> (<a class="reference internal" href="core.html#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.queries.RecursivePlan.execute">
+<span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#RecursivePlan.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.RecursivePlan.execute" title="Link to this definition"></a></dt>
+<dd><p>Executes the query plan and returns the results as a DBCollections instance.</p>
+<p>This method processes the query plan and retrieves the data according to
+the plan’s specifications. Implementations should define the specific
+execution logic based on the query plan type and return a concrete
+collection (e.g., List) to enable efficient pagination via slice().</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A DBCollections object containing the results.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="core.html#proto_db.common.DBCollections" title="proto_db.common.DBCollections"><em>DBCollections</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.queries.RecursivePlan.optimize">
+<span class="sig-name descname"><span class="pre">optimize</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#RecursivePlan.optimize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.RecursivePlan.optimize" title="Link to this definition"></a></dt>
+<dd><p>Optimizes the query plan for better performance.</p>
+<p>Implementations should analyze the current node (and recursively its
+children via based_on) to create a more efficient execution strategy.
+No external context parameter is required.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The optimized query plan.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.queries.RecursivePlan.explain">
+<span class="sig-name descname"><span class="pre">explain</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#RecursivePlan.explain"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.RecursivePlan.explain" title="Link to this definition"></a></dt>
+<dd><p>Structured recursive explanation of this plan node.
+Returns a JSON-serializable dictionary. Subclasses should override
+and call super().explain() or construct their own dictionaries, but
+the convention is to include a nested “source_plan” when based_on exists.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p><code class="docutils literal notranslate"><span class="pre">RecursivePlan</span></code> performs hierarchical/graph traversal starting from the records produced by the base plan. It supports upward traversal of a single reference attribute or downward traversal over an iterable attribute, in DFS or BFS order. It de-duplicates visited nodes using a canonical identity hash and optionally includes start nodes.</p>
 </section>
 <section id="groupbyplan">
 <h3>GroupByPlan<a class="headerlink" href="#groupbyplan" title="Link to this heading"></a></h3>
@@ -1151,6 +1265,20 @@ scans sequentially until the upper bound is exceeded, collecting AtomPointer has
 </dl>
 </dd></dl>
 
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.queries.IndexedRangeSearchPlan.explain">
+<span class="sig-name descname"><span class="pre">explain</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#IndexedRangeSearchPlan.explain"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.IndexedRangeSearchPlan.explain" title="Link to this definition"></a></dt>
+<dd><p>Structured recursive explanation of this plan node.
+Returns a JSON-serializable dictionary. Subclasses should override
+and call super().explain() or construct their own dictionaries, but
+the convention is to include a nested “source_plan” when based_on exists.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
 </dd></dl>
 
 <p>This plan iterates only the index buckets whose keys fall within a specified range, respecting inclusive/exclusive bounds. It is produced by WherePlan.optimize when a Between operator applies to an indexed field.</p>
@@ -1482,6 +1610,20 @@ Lower is better. This is not time, but a unit to compare plans.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.queries.VectorSearchPlan.explain">
+<span class="sig-name descname"><span class="pre">explain</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/queries.html#VectorSearchPlan.explain"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.queries.VectorSearchPlan.explain" title="Link to this definition"></a></dt>
+<dd><p>Structured recursive explanation of this plan node.
+Returns a JSON-serializable dictionary. Subclasses should override
+and call super().explain() or construct their own dictionaries, but
+the convention is to include a nested “source_plan” when based_on exists.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
 </dd>
 </dl>
 </dd></dl>

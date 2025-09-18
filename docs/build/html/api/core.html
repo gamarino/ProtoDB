@@ -50,6 +50,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../concepts.html">ProtoDB Fundamental Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../cookbook_traverse.html">Hierarchical and Graph Traversal with .traverse()</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
@@ -115,8 +116,9 @@
 <li class="toctree-l2"><a class="reference internal" href="data_structures.html">Data Structures</a></li>
 <li class="toctree-l2"><a class="reference internal" href="indexes.html">Secondary Indexes</a></li>
 <li class="toctree-l2"><a class="reference internal" href="queries.html">Query System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html#vector-search-plans">Vector Search Plans</a></li>
+<li class="toctree-l2"><a class="reference internal" href="queries.html#queryableindex-interface">QueryableIndex Interface</a></li>
 <li class="toctree-l2"><a class="reference internal" href="vectors.html">Vector Support</a></li>
-<li class="toctree-l2"><a class="reference internal" href="vectors.html#module-0">Vectors</a></li>
 <li class="toctree-l2"><a class="reference internal" href="arrow_parquet.html">Arrow / Parquet Bridge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="linq.html">LINQ-like API</a></li>
 <li class="toctree-l2"><a class="reference internal" href="exceptions.html">Exceptions</a></li>
@@ -150,6 +152,7 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced_usage.html#correlated-subqueries-with-select-many-lateral-join">Correlated Subqueries with .select_many() (LATERAL JOIN)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../development.html">Development</a></li>
 </ul>
@@ -706,8 +709,10 @@ Falls back to iterating if the collection does not expose count.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="proto_db.common.QueryPlan.explain">
 <span class="sig-name descname"><span class="pre">explain</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/common.html#QueryPlan.explain"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.common.QueryPlan.explain" title="Link to this definition"></a></dt>
-<dd><p>Lightweight structured explanation of the plan.
-Subclasses should override to add more details.</p>
+<dd><p>Structured recursive explanation of this plan node.
+Returns a JSON-serializable dictionary. Subclasses should override
+and call super().explain() or construct their own dictionaries, but
+the convention is to include a nested “source_plan” when based_on exists.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>dict</p>

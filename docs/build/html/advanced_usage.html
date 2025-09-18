@@ -50,6 +50,7 @@
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="concepts.html">ProtoDB Fundamental Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cookbook_traverse.html">Hierarchical and Graph Traversal with .traverse()</a></li>
 <li class="toctree-l1"><a class="reference internal" href="performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
@@ -83,6 +84,12 @@
 <li class="toctree-l3"><a class="reference internal" href="#close-storage-when-done">Close Storage When Done</a></li>
 </ul>
 </li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="#correlated-subqueries-with-select-many-lateral-join">Correlated Subqueries with .select_many() (LATERAL JOIN)</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#use-case-1-un-nesting-collections">Use Case 1: Un-nesting Collections</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#use-case-2-top-n-per-category">Use Case 2: Top-N per Category</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#performance-considerations">Performance Considerations</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
@@ -483,6 +490,62 @@ serializer changes.</p>
 </div>
 <p>This is especially important for <code class="docutils literal notranslate"><span class="pre">ClusterFileStorage</span></code>, <code class="docutils literal notranslate"><span class="pre">CloudFileStorage</span></code>, and <code class="docutils literal notranslate"><span class="pre">CloudClusterFileStorage</span></code>, which may have background threads and network connections that need to be properly closed.</p>
 </section>
+</section>
+</section>
+<section id="correlated-subqueries-with-select-many-lateral-join">
+<h1>Correlated Subqueries with .select_many() (LATERAL JOIN)<a class="headerlink" href="#correlated-subqueries-with-select-many-lateral-join" title="Link to this heading"></a></h1>
+<p>ProtoDB’s LINQ provider includes a powerful <code class="docutils literal notranslate"><span class="pre">.select_many()</span></code> method, which is the functional
+equivalent of a <code class="docutils literal notranslate"><span class="pre">CROSS</span> <span class="pre">JOIN</span> <span class="pre">LATERAL</span></code> in SQL. This allows you to execute a dynamic, correlated
+subquery for each element of a source collection, enabling sophisticated query patterns that are
+otherwise cumbersome or inefficient to express.</p>
+<section id="use-case-1-un-nesting-collections">
+<h2>Use Case 1: Un-nesting Collections<a class="headerlink" href="#use-case-1-un-nesting-collections" title="Link to this heading"></a></h2>
+<p>A common use case is to “un-nest” or flatten an attribute that is a collection. For example, to get
+a flat list of all tags associated with products:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Assuming &#39;products&#39; is a Queryable of objects with a &#39;tags&#39; list attribute</span>
+<span class="n">flat_tags_query</span> <span class="o">=</span> <span class="n">products</span><span class="o">.</span><span class="n">select_many</span><span class="p">(</span>
+    <span class="n">collection_selector</span><span class="o">=</span><span class="k">lambda</span> <span class="n">product</span><span class="p">:</span> <span class="n">product</span><span class="o">.</span><span class="n">tags</span><span class="p">,</span>
+    <span class="n">result_selector</span><span class="o">=</span><span class="k">lambda</span> <span class="n">product</span><span class="p">,</span> <span class="n">tag</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">&#39;product_name&#39;</span><span class="p">:</span> <span class="n">product</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+        <span class="s1">&#39;tag&#39;</span><span class="p">:</span> <span class="n">tag</span>
+    <span class="p">}</span>
+<span class="p">)</span>
+
+<span class="c1"># Result: [{&#39;product_name&#39;: &#39;Laptop&#39;, &#39;tag&#39;: &#39;tech&#39;}, {&#39;product_name&#39;: &#39;Laptop&#39;, &#39;tag&#39;: &#39;work&#39;}, ...]</span>
+</pre></div>
+</div>
+</section>
+<section id="use-case-2-top-n-per-category">
+<h2>Use Case 2: Top-N per Category<a class="headerlink" href="#use-case-2-top-n-per-category" title="Link to this heading"></a></h2>
+<p>A classic problem solved elegantly by <code class="docutils literal notranslate"><span class="pre">select_many</span></code> is finding the “Top N” items within groups. For
+instance, to find the two most expensive products in each category:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">top_2_per_category</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="n">categories</span><span class="o">.</span><span class="n">select_many</span><span class="p">(</span>
+        <span class="c1"># For each category, run this subquery:</span>
+        <span class="n">collection_selector</span><span class="o">=</span><span class="k">lambda</span> <span class="n">cat</span><span class="p">:</span> <span class="p">(</span>
+            <span class="n">products</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">category_id</span> <span class="o">==</span> <span class="n">cat</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+                    <span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">price</span><span class="p">,</span> <span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+                    <span class="o">.</span><span class="n">take</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+        <span class="p">),</span>
+        <span class="c1"># Combine the category with its top product</span>
+        <span class="n">result_selector</span><span class="o">=</span><span class="k">lambda</span> <span class="n">cat</span><span class="p">,</span> <span class="n">prod</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s1">&#39;category&#39;</span><span class="p">:</span> <span class="n">cat</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="s1">&#39;product&#39;</span><span class="p">:</span> <span class="n">prod</span><span class="o">.</span><span class="n">name</span>
+        <span class="p">}</span>
+    <span class="p">)</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="performance-considerations">
+<h2>Performance Considerations<a class="headerlink" href="#performance-considerations" title="Link to this heading"></a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">select_many</span></code> operator is extremely powerful, but it executes a new subquery for every element in the
+source collection. This can lead to poor performance (an “N+1 query” problem) if the correlated subquery is not
+efficient.</p>
+<p>Golden Rule: Ensure that the <code class="docutils literal notranslate"><span class="pre">where</span></code> clause inside your <code class="docutils literal notranslate"><span class="pre">collection_selector</span></code> operates on an indexed field.
+In the Top-N example above, performance is excellent because <code class="docutils literal notranslate"><span class="pre">products.category_id</span></code> is indexed. Without an index,
+ProtoDB would have to perform a full scan of the <code class="docutils literal notranslate"><span class="pre">products</span></code> collection for each category.</p>
+<p>Always use the <code class="docutils literal notranslate"><span class="pre">.explain()</span></code> method on your final query to verify that subqueries are being optimized as expected.</p>
 </section>
 </section>
 

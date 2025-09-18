@@ -49,6 +49,7 @@
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="concepts.html">ProtoDB Fundamental Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cookbook_traverse.html">Hierarchical and Graph Traversal with .traverse()</a></li>
 <li class="toctree-l1"><a class="reference internal" href="performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
@@ -56,6 +57,7 @@
 <li class="toctree-l1"><a class="reference internal" href="vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="advanced_usage.html#correlated-subqueries-with-select-many-lateral-join">Correlated Subqueries with .select_many() (LATERAL JOIN)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="development.html">Development</a></li>
 </ul>
@@ -138,6 +140,18 @@
 <li class="toctree-l2"><a class="reference internal" href="cookbook.html#querying-from-simple-filters-to-aggregations">4. Querying: From Simple Filters to Aggregations</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="cookbook_traverse.html">Hierarchical and Graph Traversal with .traverse()</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="cookbook_traverse.html#when-to-use-it">When to use it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cookbook_traverse.html#basic-model-example">Basic model example</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cookbook_traverse.html#traversing-upward-manager-chain">Traversing upward (manager chain)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cookbook_traverse.html#traversing-downward-reports-tree-breadth-first">Traversing downward (reports tree, breadth-first)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cookbook_traverse.html#limiting-depth-and-including-the-start-node">Limiting depth and including the start node</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cookbook_traverse.html#cycle-safety">Cycle safety</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cookbook_traverse.html#parameters">Parameters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cookbook_traverse.html#chaining-after-traversal">Chaining after traversal</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cookbook_traverse.html#implementation-notes">Implementation notes</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="performance.html">Performance</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="performance.html#prerequisites">Prerequisites</a></li>
 <li class="toctree-l2"><a class="reference internal" href="performance.html#indexed-queries-benchmark">Indexed queries benchmark</a></li>
@@ -208,6 +222,12 @@
 <li class="toctree-l2"><a class="reference internal" href="advanced_usage.html#cloud-storage-with-cloudfilestorage">Cloud Storage with CloudFileStorage</a></li>
 <li class="toctree-l2"><a class="reference internal" href="advanced_usage.html#combined-cluster-and-cloud-storage-with-cloudclusterfilestorage">Combined Cluster and Cloud Storage with CloudClusterFileStorage</a></li>
 <li class="toctree-l2"><a class="reference internal" href="advanced_usage.html#performance-optimization">Performance Optimization</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="advanced_usage.html#correlated-subqueries-with-select-many-lateral-join">Correlated Subqueries with .select_many() (LATERAL JOIN)</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="advanced_usage.html#use-case-1-un-nesting-collections">Use Case 1: Un-nesting Collections</a></li>
+<li class="toctree-l2"><a class="reference internal" href="advanced_usage.html#use-case-2-top-n-per-category">Use Case 2: Top-N per Category</a></li>
+<li class="toctree-l2"><a class="reference internal" href="advanced_usage.html#performance-considerations">Performance Considerations</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a><ul>

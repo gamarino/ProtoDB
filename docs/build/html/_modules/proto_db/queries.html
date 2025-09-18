@@ -47,6 +47,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../concepts.html">ProtoDB Fundamental Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cookbook_traverse.html">Hierarchical and Graph Traversal with .traverse()</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
@@ -54,6 +55,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html#correlated-subqueries-with-select-many-lateral-join">Correlated Subqueries with .select_many() (LATERAL JOIN)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
 </ul>
@@ -798,6 +800,24 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">get_cost_estimate</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
         <span class="c1"># Cheaper than full scan, more expensive than exact key lookup</span>
         <span class="k">return</span> <span class="mf">25.0</span></div>
+
+
+<div class="viewcode-block" id="VectorSearchPlan.explain">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.queries.VectorSearchPlan.explain">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">explain</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="n">idx_name</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="s1">&#39;field_name&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="s1">&#39;name&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">qp</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;k=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">k</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">qp</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;threshold=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">threshold</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s1">&#39;plan_type&#39;</span><span class="p">:</span> <span class="s1">&#39;VectorSearchPlan&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;index_used&#39;</span><span class="p">:</span> <span class="n">idx_name</span><span class="p">,</span>
+            <span class="s1">&#39;lookup_type&#39;</span><span class="p">:</span> <span class="s1">&#39;ANN Search&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;query_params&#39;</span><span class="p">:</span> <span class="n">qp</span><span class="p">,</span>
+            <span class="s1">&#39;estimated_cardinality&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_cardinality_estimate</span><span class="p">(),</span>
+            <span class="s1">&#39;estimated_cost&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_cost_estimate</span><span class="p">(),</span>
+        <span class="p">}</span></div>
 </div>
 
 
@@ -1244,13 +1264,14 @@
         <span class="k">return</span> <span class="mf">1.0</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">explain</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
-        <span class="n">op_name</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">operator</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span>
+        <span class="c1"># Detailed explain for indexed equality lookup</span>
         <span class="k">return</span> <span class="p">{</span>
-            <span class="s1">&#39;plan_type&#39;</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
-            <span class="s1">&#39;field&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">field_to_scan</span><span class="p">,</span>
-            <span class="s1">&#39;operator&#39;</span><span class="p">:</span> <span class="n">op_name</span><span class="p">,</span>
+            <span class="s1">&#39;plan_type&#39;</span><span class="p">:</span> <span class="s1">&#39;IndexedSearchPlan&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;index_used&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">field_to_scan</span><span class="p">,</span>
+            <span class="s1">&#39;lookup_type&#39;</span><span class="p">:</span> <span class="s1">&#39;Exact (Equality)&#39;</span><span class="p">,</span>
             <span class="s1">&#39;value&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
-            <span class="s1">&#39;used_index&#39;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="s1">&#39;estimated_cardinality&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_cardinality_estimate</span><span class="p">(),</span>
+            <span class="s1">&#39;estimated_cost&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_cost_estimate</span><span class="p">(),</span>
         <span class="p">}</span>
 
 
@@ -1330,6 +1351,13 @@
             <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
                 <span class="k">continue</span>
         <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">uniq</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">explain</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s1">&#39;plan_type&#39;</span><span class="p">:</span> <span class="s1">&#39;OrMerge&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;strategy&#39;</span><span class="p">:</span> <span class="s1">&#39;Union of index plans&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;child_plans&#39;</span><span class="p">:</span> <span class="p">[</span><span class="n">q</span><span class="o">.</span><span class="n">explain</span><span class="p">()</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">or_queries</span> <span class="ow">or</span> <span class="p">[])]</span>
+        <span class="p">}</span>
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">AndMerge</span><span class="p">(</span><span class="n">QueryPlan</span><span class="p">):</span>
@@ -1428,6 +1456,14 @@
                     <span class="k">yield</span> <span class="n">rec</span>
             <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
                 <span class="k">continue</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">explain</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s1">&#39;plan_type&#39;</span><span class="p">:</span> <span class="s1">&#39;AndMerge&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;strategy&#39;</span><span class="p">:</span> <span class="s1">&#39;Intersecting sorted index plans&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;child_plans&#39;</span><span class="p">:</span> <span class="p">[</span><span class="n">q</span><span class="o">.</span><span class="n">explain</span><span class="p">()</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">and_queries</span> <span class="ow">or</span> <span class="p">[])],</span>
+            <span class="s1">&#39;residual_filters&#39;</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">expr</span><span class="p">)</span> <span class="k">for</span> <span class="n">expr</span> <span class="ow">in</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">residual_filters</span> <span class="ow">or</span> <span class="p">[])]</span>
+        <span class="p">}</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryPlan</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">AndMerge</span><span class="p">(</span>
@@ -1622,9 +1658,24 @@
             <span class="k">return</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">refs</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
             <span class="k">return</span> <span class="nb">frozenset</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="IndexedRangeSearchPlan.explain">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.queries.IndexedRangeSearchPlan.explain">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">explain</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="c1"># Build inclusive/exclusive range string</span>
+        <span class="n">lb</span> <span class="o">=</span> <span class="s1">&#39;[&#39;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">include_lower</span> <span class="k">else</span> <span class="s1">&#39;(&#39;</span>
+        <span class="n">ub</span> <span class="o">=</span> <span class="s1">&#39;]&#39;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">include_upper</span> <span class="k">else</span> <span class="s1">&#39;)&#39;</span>
+        <span class="n">rng</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">lb</span><span class="si">}{</span><span class="bp">self</span><span class="o">.</span><span class="n">lo</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">hi</span><span class="si">}{</span><span class="n">ub</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s1">&#39;plan_type&#39;</span><span class="p">:</span> <span class="s1">&#39;IndexedRangeSearchPlan&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;index_used&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">field_to_scan</span><span class="p">,</span>
+            <span class="s1">&#39;lookup_type&#39;</span><span class="p">:</span> <span class="s1">&#39;Range Scan&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;range&#39;</span><span class="p">:</span> <span class="n">rng</span><span class="p">,</span>
+            <span class="s1">&#39;estimated_cardinality&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_cardinality_estimate</span><span class="p">(),</span>
+            <span class="s1">&#39;estimated_cost&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_cost_estimate</span><span class="p">(),</span>
+        <span class="p">}</span></div>
 </div>
-
-
 
 
 
@@ -1858,6 +1909,159 @@
 
 
 
+<div class="viewcode-block" id="RecursivePlan">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.queries.RecursivePlan">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RecursivePlan</span><span class="p">(</span><span class="n">QueryPlan</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Executes a recursive traversal starting from the records produced by `based_on`.</span>
+<span class="sd">    It supports &#39;up&#39; (single reference attribute) and &#39;down&#39; (iterable attribute) directions</span>
+<span class="sd">    and DFS or BFS strategies. Returns results as a List collection for efficient slicing.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="RecursivePlan.__init__">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.queries.RecursivePlan.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
+                 <span class="n">based_on</span><span class="p">:</span> <span class="n">QueryPlan</span><span class="p">,</span>
+                 <span class="n">relation_attr</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+                 <span class="n">direction</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;up&#39;</span><span class="p">,</span>
+                 <span class="n">max_depth</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span>
+                 <span class="n">strategy</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;dfs&#39;</span><span class="p">,</span>
+                 <span class="n">include_start_node</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+                 <span class="n">transaction</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">AbstractTransaction</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">based_on</span><span class="o">=</span><span class="n">based_on</span><span class="p">,</span> <span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">relation_attr</span> <span class="o">=</span> <span class="n">relation_attr</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">direction</span> <span class="o">=</span> <span class="p">(</span><span class="n">direction</span> <span class="ow">or</span> <span class="s1">&#39;up&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">max_depth</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">max_depth</span><span class="p">)</span> <span class="k">if</span> <span class="n">max_depth</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="o">-</span><span class="mi">1</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span> <span class="o">=</span> <span class="p">(</span><span class="n">strategy</span> <span class="ow">or</span> <span class="s1">&#39;dfs&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">include_start_node</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">include_start_node</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RecursivePlan.execute">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.queries.RecursivePlan.execute">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DBCollections</span><span class="p">:</span>
+        <span class="c1"># Build a materialized List of results</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.lists</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span> <span class="k">as</span> <span class="n">_List</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="n">canonical_hash</span> <span class="k">as</span> <span class="n">_canonical_hash</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">_List</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
+
+        <span class="c1"># Gather start nodes by iterating the base plan directly (avoid assuming as_iterable)</span>
+        <span class="n">start_nodes</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">execute</span><span class="p">():</span>
+                    <span class="n">start_nodes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="c1"># Fallback: try to coerce to list</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">base_coll</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
+                    <span class="n">start_nodes</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">base_coll</span><span class="p">,</span> <span class="s1">&#39;as_iterable&#39;</span><span class="p">,</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">base_coll</span><span class="p">)())</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="n">start_nodes</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># Visited set by canonical identity to avoid cycles; do NOT pre-seed with start nodes</span>
+        <span class="n">visited</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+
+        <span class="c1"># Worklist stores (node, depth)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span> <span class="o">==</span> <span class="s1">&#39;bfs&#39;</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">deque</span>
+            <span class="n">work</span> <span class="o">=</span> <span class="n">deque</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">start_nodes</span><span class="p">)</span>
+            <span class="n">pop_fn</span> <span class="o">=</span> <span class="n">work</span><span class="o">.</span><span class="n">popleft</span>
+            <span class="n">push_fn</span> <span class="o">=</span> <span class="n">work</span><span class="o">.</span><span class="n">append</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">work</span> <span class="o">=</span> <span class="p">[(</span><span class="n">n</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">start_nodes</span><span class="p">]</span>
+            <span class="n">pop_fn</span> <span class="o">=</span> <span class="n">work</span><span class="o">.</span><span class="n">pop</span>
+            <span class="n">push_fn</span> <span class="o">=</span> <span class="n">work</span><span class="o">.</span><span class="n">append</span>
+
+        <span class="c1"># Optionally include starting nodes (and mark as visited if we include them)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">include_start_node</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">start_nodes</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">h</span> <span class="o">=</span> <span class="n">_canonical_hash</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">h</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">visited</span><span class="p">:</span>
+                        <span class="n">visited</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">pass</span>
+                <span class="n">res</span> <span class="o">=</span> <span class="n">res</span><span class="o">.</span><span class="n">append_last</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+
+        <span class="c1"># Traverse</span>
+        <span class="k">while</span> <span class="n">work</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">cur</span><span class="p">,</span> <span class="n">depth</span> <span class="o">=</span> <span class="n">pop_fn</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="c1"># empty or error</span>
+                <span class="k">break</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_depth</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span> <span class="ow">and</span> <span class="n">depth</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_depth</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="c1"># Compute next nodes</span>
+            <span class="n">next_nodes</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">related</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cur</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">relation_attr</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="c1"># Missing attribute → no expansion</span>
+                <span class="n">related</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">direction</span> <span class="o">==</span> <span class="s1">&#39;up&#39;</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">related</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">next_nodes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">related</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>  <span class="c1"># down</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">it</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">(</span><span class="n">related</span><span class="p">)</span> <span class="k">if</span> <span class="n">related</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">iter</span><span class="p">(())</span>
+                    <span class="n">next_nodes</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">it</span><span class="p">))</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">pass</span>
+
+            <span class="k">for</span> <span class="n">nn</span> <span class="ow">in</span> <span class="n">next_nodes</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">h</span> <span class="o">=</span> <span class="n">_canonical_hash</span><span class="p">(</span><span class="n">nn</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="c1"># If we cannot hash, still emit and continue traversal (best-effort)</span>
+                    <span class="n">res</span> <span class="o">=</span> <span class="n">res</span><span class="o">.</span><span class="n">append_last</span><span class="p">(</span><span class="n">nn</span><span class="p">)</span>
+                    <span class="n">push_fn</span><span class="p">((</span><span class="n">nn</span><span class="p">,</span> <span class="n">depth</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+                    <span class="k">continue</span>
+                <span class="k">if</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">visited</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="n">visited</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
+                <span class="n">res</span> <span class="o">=</span> <span class="n">res</span><span class="o">.</span><span class="n">append_last</span><span class="p">(</span><span class="n">nn</span><span class="p">)</span>
+                <span class="n">push_fn</span><span class="p">((</span><span class="n">nn</span><span class="p">,</span> <span class="n">depth</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">res</span></div>
+
+
+<div class="viewcode-block" id="RecursivePlan.optimize">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.queries.RecursivePlan.optimize">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;QueryPlan&#39;</span><span class="p">:</span>
+        <span class="c1"># Optimize the base plan; if changed, return a new RecursivePlan with optimized base</span>
+        <span class="n">optimized_base</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">optimized_base</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">optimized_base</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">RecursivePlan</span><span class="p">(</span>
+                <span class="n">based_on</span><span class="o">=</span><span class="n">optimized_base</span><span class="p">,</span>
+                <span class="n">relation_attr</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">relation_attr</span><span class="p">,</span>
+                <span class="n">direction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">direction</span><span class="p">,</span>
+                <span class="n">max_depth</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">max_depth</span><span class="p">,</span>
+                <span class="n">strategy</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="p">,</span>
+                <span class="n">include_start_node</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">include_start_node</span><span class="p">,</span>
+                <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span></div>
+
+
+<div class="viewcode-block" id="RecursivePlan.explain">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.queries.RecursivePlan.explain">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">explain</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="n">node</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">explain</span><span class="p">()</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">update</span><span class="p">({</span>
+            <span class="s1">&#39;plan_type&#39;</span><span class="p">:</span> <span class="s1">&#39;RecursivePlan&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;traversal_strategy&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">upper</span><span class="p">(),</span>
+            <span class="s1">&#39;relation_attribute&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">relation_attr</span><span class="p">,</span>
+            <span class="s1">&#39;direction&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">direction</span><span class="p">,</span>
+            <span class="s1">&#39;max_depth&#39;</span><span class="p">:</span> <span class="s1">&#39;unlimited&#39;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_depth</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_depth</span><span class="p">,</span>
+        <span class="p">})</span>
+        <span class="k">return</span> <span class="n">node</span></div>
+</div>
+
+
+
 <div class="viewcode-block" id="WherePlan">
 <a class="viewcode-back" href="../../api/queries.html#proto_db.queries.WherePlan">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">WherePlan</span><span class="p">(</span><span class="n">QueryPlan</span><span class="p">):</span>
@@ -1919,6 +2123,24 @@
                 <span class="c1"># Ignore records that error during matching</span>
                 <span class="k">continue</span>
         <span class="k">return</span> <span class="n">res</span></div>
+
+
+<div class="viewcode-block" id="WherePlan.explain">
+<a class="viewcode-back" href="../../api/queries.html#proto_db.queries.WherePlan.explain">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">explain</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="c1"># Fallback explanation when WherePlan is not optimized into an index-backed plan</span>
+        <span class="n">node</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s1">&#39;plan_type&#39;</span><span class="p">:</span> <span class="s1">&#39;WherePlan&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;strategy&#39;</span><span class="p">:</span> <span class="s1">&#39;Linear Scan (Full Table Scan)&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;reason&#39;</span><span class="p">:</span> <span class="s1">&#39;No suitable index found for the filter expression.&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;filter&#39;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;filter&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+        <span class="p">}</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;based_on&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">node</span><span class="p">[</span><span class="s1">&#39;source_plan&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">explain</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="k">return</span> <span class="n">node</span></div>
 
 
 <div class="viewcode-block" id="WherePlan.optimize">
@@ -2574,6 +2796,74 @@
         <span class="k">return</span> <span class="bp">self</span></div>
 </div>
 
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">SelectManyPlan</span><span class="p">(</span><span class="n">QueryPlan</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Implements a correlated subquery for each element of a source plan,</span>
+<span class="sd">    equivalent to CROSS JOIN LATERAL or LINQ&#39;s SelectMany.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
+                 <span class="n">based_on</span><span class="p">:</span> <span class="n">QueryPlan</span><span class="p">,</span>
+                 <span class="n">collection_selector</span><span class="p">,</span>
+                 <span class="n">result_selector</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                 <span class="n">transaction</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">AbstractTransaction</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">atom_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">based_on</span><span class="o">=</span><span class="n">based_on</span><span class="p">,</span> <span class="n">transaction</span><span class="o">=</span><span class="n">transaction</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="o">=</span><span class="n">atom_pointer</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">collection_selector</span> <span class="o">=</span> <span class="n">collection_selector</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">result_selector</span> <span class="o">=</span> <span class="n">result_selector</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Execute left side</span>
+        <span class="n">left_iter</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">left_record</span> <span class="ow">in</span> <span class="n">left_iter</span><span class="p">:</span>
+            <span class="c1"># Build right side for each left</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">right_collection</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">collection_selector</span><span class="p">(</span><span class="n">left_record</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="n">right_collection</span> <span class="o">=</span> <span class="p">[]</span>
+
+            <span class="c1"># If it&#39;s a Queryable, execute its plan; avoid top-level import to reduce cycles</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">.linq</span><span class="w"> </span><span class="kn">import</span> <span class="n">Queryable</span> <span class="k">as</span> <span class="n">_Queryable</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">right_collection</span><span class="p">,</span> <span class="n">_Queryable</span><span class="p">):</span>
+                    <span class="n">right_plan</span> <span class="o">=</span> <span class="n">right_collection</span><span class="o">.</span><span class="n">_execute</span><span class="p">()</span>
+                    <span class="n">right_iterable</span> <span class="o">=</span> <span class="n">right_plan</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">right_iterable</span> <span class="o">=</span> <span class="n">right_collection</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="n">right_iterable</span> <span class="o">=</span> <span class="n">right_collection</span>
+
+            <span class="c1"># Iterate and yield</span>
+            <span class="k">for</span> <span class="n">right_record</span> <span class="ow">in</span> <span class="n">right_iterable</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">result_selector</span><span class="p">:</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">result_selector</span><span class="p">(</span><span class="n">left_record</span><span class="p">,</span> <span class="n">right_record</span><span class="p">)</span>
+                    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                        <span class="c1"># Skip records that fail the selector</span>
+                        <span class="k">continue</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">yield</span> <span class="n">right_record</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;QueryPlan&#39;</span><span class="p">:</span>
+        <span class="n">optimized_base</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">optimized_base</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">optimized_base</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">based_on</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">SelectManyPlan</span><span class="p">(</span>
+                <span class="n">based_on</span><span class="o">=</span><span class="n">optimized_base</span><span class="p">,</span>
+                <span class="n">collection_selector</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">collection_selector</span><span class="p">,</span>
+                <span class="n">result_selector</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">result_selector</span><span class="p">,</span>
+                <span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">explain</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="n">node</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">explain</span><span class="p">()</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">update</span><span class="p">({</span>
+            <span class="s1">&#39;plan_type&#39;</span><span class="p">:</span> <span class="s1">&#39;SelectManyPlan (LATERAL JOIN)&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;description&#39;</span><span class="p">:</span> <span class="s1">&#39;For each record from the source plan, a correlated sub-query is dynamically generated and executed.&#39;</span>
+        <span class="p">})</span>
+        <span class="k">return</span> <span class="n">node</span>
 </pre></div>
 
            </div>
