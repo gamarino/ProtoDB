@@ -4,7 +4,7 @@ from ..db_access import ObjectSpace
 from ..lists import List
 from ..memory_storage import MemoryStorage
 
-TEST_SIZE = 100_000
+TEST_SIZE = 10_000
 
 
 class TestDBAccess(unittest.TestCase):

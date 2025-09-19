@@ -57,7 +57,7 @@ class ObjectSpace(AbstractObjectSpace):
                 self.storage_context.__enter__()
 
             def __exit__(self, exc_type, exc_value, traceback):
-                self.storage_context.__exit_(exc_type, exc_value, traceback)
+                self.storage_context.__exit__(exc_type, exc_value, traceback)
 
         return SpaceContext(self)
 
@@ -213,13 +213,7 @@ class ObjectSpace(AbstractObjectSpace):
     def get_space_history(self, lock=False) -> List:
         read_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
 
-        try:
-            if lock:
-                root_pointer = self.storage.read_lock_current_root()
-            else:
-                root_pointer = self.storage.read_current_root()
-        except ProtoValidationException:
-            root_pointer = None
+        root_pointer = self.storage.read_current_root()
 
         if root_pointer:
             space_history = List(transaction=read_tr, atom_pointer=root_pointer)
@@ -241,7 +235,7 @@ class ObjectSpace(AbstractObjectSpace):
                 transaction=read_tr
             )
         else:
-            space_root = space_history.get_at(0)
+            space_root = cast(RootObject, space_history.get_at(0))
 
         return space_root
 
@@ -257,46 +251,51 @@ class ObjectSpace(AbstractObjectSpace):
         self.storage.set_current_root(space_history.atom_pointer)
 
     def get_literals(self, literals: Dictionary) -> dict[str, Literal]:
-        read_tr = ObjectTransaction(None, storage=self.storage)
+        update_tr = ObjectTransaction(None, storage=self.storage)
 
         with self._lock:
             root = self.get_space_root()
-            literal_catalog: Dictionary = cast(Dictionary, root.literal_root)
-            new_literals = list()
+            literal_catalog: RootObject = root.literal_root
+            literal_catalog.transaction = update_tr
+            result = dict()
+            new_literals = dict()
             for literal_string, literal in literals.as_iterable():
                 if literal.atom_pointer:
-                    continue
-                if literal_catalog.has(literal_string):
+                    result[literal_string] = literal
+                elif literal_catalog.has(literal_string):
                     existing_literal = literal_catalog.get_at(literal_string)
-                    literal.atom_pointer = existing_literal.atom_pointer
+                    new_literals[literal_string] = existing_literal
+                    result[literal_string] = existing_literal
                 else:
-                    new_literals.append(literal)
+                    new_literals[literal_string] = literal_catalog.get_at(literal_string)
 
             if new_literals:
                 # There are non resolved literals still
 
                 with self._space_context():
                     root = self.get_space_root()
-                    literal_catalog: Dictionary = cast(Dictionary, root.literal_root)
-                    literal_catalog.transaction = read_tr
+                    literal_catalog: Dictionary = root.literal_root
+                    literal_catalog.transaction = update_tr
                     update_catalog = False
-                    for literal in new_literals:
-                        if not literal_catalog.has(literal.string):
-                            literal._save()
+                    for literal_string, literal in new_literals.items():
+                        if not literal_catalog.has(literal_string):
                             literal_catalog = literal_catalog.set_at(literal.string, literal)
+                            result[literal_string] = literal
                             update_catalog = True
                         else:
                             existing_literal = literal_catalog.get_at(literal.string)
-                            literal.atom_pointer = existing_literal.atom_pointer
+                            result[literal_string] = literal
 
                     if update_catalog:
                         literal_catalog._save()
                         root = RootObject(
                             object_root=root.object_root,
                             literal_root=literal_catalog,
-                            transaction=read_tr
+                            transaction=update_tr
                         )
                         self.set_space_root(root)
+
+            return new_literals
 
     def close(self):
         with self._lock:
@@ -332,9 +331,9 @@ class Database(AbstractDatabase):
     def update_literals(self, new_literals: Dictionary) -> Dictionary:
         return self.object_space.get_literals(new_literals)
 
-    def read_db_root(self, lock=False) -> Dictionary:
+    def read_db_root(self) -> Dictionary:
         read_tr = ObjectTransaction(self)
-        space_root = self.object_space.get_space_root(lock)
+        space_root = self.object_space.get_space_root()
         if space_root.object_root:
             db_catalog = space_root.object_root
         else:
@@ -388,18 +387,8 @@ class Database(AbstractDatabase):
         """
 
         # Capture the current space root pointer for CAS during commit
-        try:
-            space_hist = self.object_space.get_space_history(lock=False)
-            expected_ptr = getattr(space_hist, 'atom_pointer', None)
-        except Exception:
-            expected_ptr = None
         current_root = self.read_db_root() if self.database_name != '_sysdb' else None
         tx = ObjectTransaction(self, db_root=current_root)
-        try:
-            # Stash expected root pointer on the transaction for later CAS check
-            setattr(tx, '_expected_root_pointer', expected_ptr)
-        except Exception:
-            pass
         return tx
 
     def new_branch_database(self, new_db_name: str) -> Database:

@@ -55,9 +55,6 @@ class MemoryStorage(common.SharedStorage):
             ProtoValidationException: If no root object has been set yet.
         """
         with self.lock:  # Ensure thread-safety when accessing `current_root`.
-            if self.current_root_history_pointer is None:
-                from .exceptions import ProtoValidationException
-                raise ProtoValidationException(message='Root object is not set')
             return self.current_root_history_pointer
 
     def read_lock_current_root(self) -> AtomPointer:

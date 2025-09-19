@@ -4,21 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[WIP] La documentación fue actualizada para incluir una nueva sección sobre locking de root con ejemplos y notas de troubleshooting. Se enlazó en el índice principal y se añadió una sección al README.md. La documentación HTML fue generada exitosamente con Sphinx.">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[WIP] locking en get_literals">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/simple_example.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/simple_example.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/proto_db/db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/db_access.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/proto_db/memory_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/memory_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/standalone_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/standalone_file_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_dbobject_recursion.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_dbobject_recursion.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_expressions.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_expressions.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_group_by_plan.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_group_by_plan.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_join_plan.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_join_plan.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_recursive_plan.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_recursive_plan.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_where_plan.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_where_plan.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_db_access.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -62,54 +52,54 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ASKED_MARK_IGNORED_FILES_AS_EXCLUDED&quot;: &quot;true&quot;,
-    &quot;Makefile Target.Makefile (1).executor&quot;: &quot;Run&quot;,
-    &quot;Makefile Target.Makefile (3).executor&quot;: &quot;Run&quot;,
-    &quot;Makefile Target.Makefile.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests in test_db_access.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests in test_file_block_provider.py.executor&quot;: &quot;Debug&quot;,
-    &quot;Python tests.Python tests in test_standalone_file_storage.py.executor&quot;: &quot;Debug&quot;,
-    &quot;Python.collection_indexing_example.executor&quot;: &quot;Run&quot;,
-    &quot;Python.comprehensive_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.db_performance_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.indexed_benchmark.executor&quot;: &quot;Debug&quot;,
-    &quot;Python.minimal_benchmark.executor&quot;: &quot;Debug&quot;,
-    &quot;Python.performance_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.run_tests.executor&quot;: &quot;Run&quot;,
-    &quot;Python.simple_example.executor&quot;: &quot;Debug&quot;,
-    &quot;Python.simple_performance_benchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Python.task_manager.executor&quot;: &quot;Debug&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;com.google.cloudcode.ide_session_index&quot;: &quot;20250803_0001&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/home/gamarino/odoo/mrgroup-18.0&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;ml.llm.LLMThirdPartyAiProvidersConfigurable&quot;,
-    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
+    "Makefile Target.Makefile (1).executor": "Run",
+    "Makefile Target.Makefile (3).executor": "Run",
+    "Makefile Target.Makefile.executor": "Run",
+    "Python tests.Python tests in test_db_access.py.executor": "Run",
+    "Python tests.Python tests in test_db_access_with_standalone_file_storage.py.executor": "Run",
+    "Python tests.Python tests in test_file_block_provider.py.executor": "Debug",
+    "Python tests.Python tests in test_standalone_file_storage.py.executor": "Debug",
+    "Python.collection_indexing_example.executor": "Run",
+    "Python.comprehensive_benchmark.executor": "Run",
+    "Python.db_performance_benchmark.executor": "Run",
+    "Python.indexed_benchmark.executor": "Debug",
+    "Python.minimal_benchmark.executor": "Debug",
+    "Python.performance_benchmark.executor": "Run",
+    "Python.run_tests.executor": "Debug",
+    "Python.simple_example.executor": "Debug",
+    "Python.simple_performance_benchmark.executor": "Run",
+    "Python.task_manager.executor": "Debug",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "com.google.cloudcode.ide_session_index": "20250803_0001",
+    "git-widget-placeholder": "master",
+    "junie.onboarding.icon.badge.shown": "true",
+    "last_opened_file_path": "/home/gamarino/odoo/mrgroup-18.0",
+    "node.js.detected.package.eslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "ml.llm.LLMThirdPartyAiProvidersConfigurable",
+    "to.speed.mode.migration.done": "true",
+    "vue.rearranger.settings.migration": "true"
   },
-  &quot;keyToStringList&quot;: {
-    &quot;com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File&quot;: [
-      &quot;Requirements&quot;
+  "keyToStringList": {
+    "com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File": [
+      "Requirements"
     ]
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/proto_db/tests" />
       <recent name="$PROJECT_DIR$/proto_db" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.collection_indexing_example">
+  <component name="RunManager" selected="Python.run_tests">
     <configuration name="Makefile (2)" type="MAKEFILE_TARGET_RUN_CONFIGURATION" factoryName="Makefile">
       <makefile filename="$PROJECT_DIR$/docs/Makefile" target="" workingDirectory="$PROJECT_DIR$/docs/source" arguments="">
         <envs />
@@ -242,10 +232,10 @@
     </list>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.run_tests" />
         <item itemvalue="Python.collection_indexing_example" />
         <item itemvalue="Python.indexed_benchmark" />
         <item itemvalue="Python.minimal_benchmark" />
-        <item itemvalue="Python.run_tests" />
         <item itemvalue="Python.comprehensive_benchmark" />
       </list>
     </recent_temporary>
@@ -295,15 +285,7 @@
       <workItem from="1758056235372" duration="937000" />
       <workItem from="1758057990140" duration="24385000" />
       <workItem from="1758156790567" duration="4115000" />
-      <workItem from="1758290115211" duration="1004000" />
-    </task>
-    <task id="LOCAL-00099" summary="Updated commercial_positioning.md with ProtoBase’s new near-memory performance and features. Added new title, slogan, key characteristics, use cases, and analogy. Aligned document with recent improvements.">
-      <option name="closed" value="true" />
-      <created>1757779513572</created>
-      <option name="number" value="00099" />
-      <option name="presentableId" value="LOCAL-00099" />
-      <option name="project" value="LOCAL" />
-      <updated>1757779513572</updated>
+      <workItem from="1758290115211" duration="9578000" />
     </task>
     <task id="LOCAL-00100" summary="The commercial_positioning.md was translated into professional English. A new Competitive Landscape &amp; Positioning section was added, contrasting ProtoBase with various technologies. The update fulfills the task requirements fully.">
       <option name="closed" value="true" />
@@ -689,14 +671,21 @@
       <option name="project" value="LOCAL" />
       <updated>1758220836469</updated>
     </task>
-    <option name="localTasksCounter" value="148" />
+    <task id="LOCAL-00148" summary="[WIP] locking en get_literals">
+      <option name="closed" value="true" />
+      <created>1758292316987</created>
+      <option name="number" value="00148" />
+      <option name="presentableId" value="LOCAL-00148" />
+      <option name="project" value="LOCAL" />
+      <updated>1758292316987</updated>
+    </task>
+    <option name="localTasksCounter" value="149" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Added canonical_hash helper and adopted in sets for stable hashing. Enhanced LINQ with optimize() calls, alias normalization, and operator token unification. Implemented explain() with optional warnings on linear fallback and added extensive tests." />
     <MESSAGE value="clean up testing cache" />
     <MESSAGE value="All 259 tests passed after fixing failing tests and improving query handling. Enhanced warnings, explain() support, LINQ behavior, and hashing consistency were implemented. The project test suite ran cleanly with no errors remaining." />
     <MESSAGE value="[IMP] future_vision.md" />
@@ -721,7 +710,8 @@
     <MESSAGE value="[WIP] tests" />
     <MESSAGE value="[WIP] Root locking was implemented and consolidated for Standalone and Cluster storage backends with passing cluster locking tests. Single-node cluster lock and provider context manager usage were enabled and verified. Unrelated test failures outside locking scope remain and documentation updates are pending." />
     <MESSAGE value="[WIP] La documentación fue actualizada para incluir una nueva sección sobre locking de root con ejemplos y notas de troubleshooting. Se enlazó en el índice principal y se añadió una sección al README.md. La documentación HTML fue generada exitosamente con Sphinx." />
-    <option name="LAST_COMMIT_MESSAGE" value="[WIP] La documentación fue actualizada para incluir una nueva sección sobre locking de root con ejemplos y notas de troubleshooting. Se enlazó en el índice principal y se añadió una sección al README.md. La documentación HTML fue generada exitosamente con Sphinx." />
+    <MESSAGE value="[WIP] locking en get_literals" />
+    <option name="LAST_COMMIT_MESSAGE" value="[WIP] locking en get_literals" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -737,9 +727,14 @@
           <option name="timeStamp" value="188" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/proto_db/tests/test_dictionaries.py</url>
-          <line>11</line>
-          <option name="timeStamp" value="257" />
+          <url>file://$PROJECT_DIR$/proto_db/tests/test_linq_indexed_fastpath.py</url>
+          <line>59</line>
+          <option name="timeStamp" value="266" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/proto_db/tests/test_atom_cache_write_through.py</url>
+          <line>13</line>
+          <option name="timeStamp" value="267" />
         </line-breakpoint>
       </breakpoints>
       <default-breakpoints>
@@ -754,7 +749,7 @@
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/ProtoBase$task_manager.coverage" NAME="task_manager Coverage Results" MODIFIED="1754259207052" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$.coverage" NAME=" Coverage Results" MODIFIED="1736352327720" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/ProtoBase$run_tests.coverage" NAME="run_tests Coverage Results" MODIFIED="1757682167480" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/ProtoBase$run_tests.coverage" NAME="run_tests Coverage Results" MODIFIED="1758316807698" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/ProtoBase$performance_benchmark.coverage" NAME="performance_benchmark Coverage Results" MODIFIED="1754260400708" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$indexed_benchmark.coverage" NAME="indexed_benchmark Coverage Results" MODIFIED="1757791235937" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$collection_indexing_example.coverage" NAME="collection_indexing_example Coverage Results" MODIFIED="1757792976890" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
