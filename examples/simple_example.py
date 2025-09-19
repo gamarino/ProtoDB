@@ -76,7 +76,7 @@ def main():
     users = users.append_last(user3)
 
     # DBObjects are inmutable. You can create a new one with changed attribute
-    user4 = user3.get_at('email', 'dan4@example_com')
+    user4 = user3.set_at('email', 'dan4@example_com')
     users = users.append_last(user4)
 
     tr.set_root_object('users', users)

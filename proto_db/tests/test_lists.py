@@ -113,11 +113,11 @@ class TestList(unittest.TestCase):
         """Prueba append_last y append_first."""
         # Comenzar con una lista vacía
         new_list = self.empty_list.append_first("first")
-        self.assertEqual(new_list.get_at(0), "first", "El elemento 'first' debería estar en la posición 0.")
+        self.assertEqual(new_list.set_at(0), "first", "El elemento 'first' debería estar en la posición 0.")
         self.assertEqual(new_list.count, 1, "La lista debería tener exactamente 1 elemento.")
 
         new_list = new_list.append_last("last")
-        self.assertEqual(new_list.get_at(-1), "last", "El elemento 'last' debería estar en la última posición.")
+        self.assertEqual(new_list.set_at(-1), "last", "El elemento 'last' debería estar en la última posición.")
         self.assertEqual(new_list.count, 2, "La lista debería tener 2 elementos después del append.")
 
     def test_slice_operations(self):
@@ -181,7 +181,7 @@ class TestList(unittest.TestCase):
         # Verificar que head devuelve los primeros 5 elementos
         self.assertEqual(head_list.count, 5, "La lista head debería tener exactamente 5 elementos.")
         for i in range(5):
-            self.assertEqual(head_list.get_at(i), f"Element {i}")
+            self.assertEqual(head_list.set_at(i), f"Element {i}")
 
         # Probar con un límite mayor que la longitud de la lista
         full_head = test_list.head(20)

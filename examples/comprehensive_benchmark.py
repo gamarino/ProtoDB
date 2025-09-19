@@ -128,7 +128,7 @@ def benchmark_read(database, count=1000):
 
     # Read items
     for item_id in selected_ids:
-        item = items_dict.get_at(item_id)
+        item = items_dict.set_at(item_id)
         # Access some attributes to ensure they're loaded
         _ = item.name
         _ = item.value

@@ -4,11 +4,25 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[WIP] locking en get_literals">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[WIP] tests">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/examples/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/comprehensive_benchmark.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/comprehensive_benchmark.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/db_performance_benchmark.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/db_performance_benchmark.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/simple_example.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/simple_example.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/proto_db/db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/db_access.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/memory_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/memory_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_db_access.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/sets.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/sets.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/standalone_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/standalone_file_storage.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_dbobject_recursion.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_dbobject_recursion.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_expressions.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_expressions.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_group_by_plan.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_group_by_plan.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_hash_dictionary.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_hash_dictionary.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_join_plan.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_join_plan.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_lists.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_recursive_plan.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_recursive_plan.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_where_plan.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_where_plan.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -285,15 +299,7 @@
       <workItem from="1758056235372" duration="937000" />
       <workItem from="1758057990140" duration="24385000" />
       <workItem from="1758156790567" duration="4115000" />
-      <workItem from="1758290115211" duration="9578000" />
-    </task>
-    <task id="LOCAL-00100" summary="The commercial_positioning.md was translated into professional English. A new Competitive Landscape &amp; Positioning section was added, contrasting ProtoBase with various technologies. The update fulfills the task requirements fully.">
-      <option name="closed" value="true" />
-      <created>1757779904202</created>
-      <option name="number" value="00100" />
-      <option name="presentableId" value="LOCAL-00100" />
-      <option name="project" value="LOCAL" />
-      <updated>1757779904202</updated>
+      <workItem from="1758290115211" duration="12785000" />
     </task>
     <task id="LOCAL-00101" summary="The README.md was updated to reflect the current state of ProtoBase. Key Features were enhanced with new index-aware optimizer details and caching behavior. The Benchmarks section and performance snapshot were revised with updated parameters and results.">
       <option name="closed" value="true" />
@@ -679,7 +685,15 @@
       <option name="project" value="LOCAL" />
       <updated>1758292316987</updated>
     </task>
-    <option name="localTasksCounter" value="149" />
+    <task id="LOCAL-00149" summary="[WIP] tests">
+      <option name="closed" value="true" />
+      <created>1758316871713</created>
+      <option name="number" value="00149" />
+      <option name="presentableId" value="LOCAL-00149" />
+      <option name="project" value="LOCAL" />
+      <updated>1758316871713</updated>
+    </task>
+    <option name="localTasksCounter" value="150" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -707,11 +721,11 @@
     <MESSAGE value="The task implemented the `RecursivePlan` class for native hierarchical graph traversal in ProtoDB, added the `.traverse()` method to the `Queryable` API, and integrated it within query execution. Comprehensive tests covering traversal directions, depth limits, cycles, and chaining were created. Documentation was updated to explain the new feature and parameters." />
     <MESSAGE value="La documentación de Sphinx fue actualizada con nuevas funcionalidades de consultas jerárquicas, incluyendo una sección de cookbook y referencias API actualizadas. Se integró la nueva página al índice principal y se generó el HTML con éxito. Los archivos HTML generados se encuentran en docs/build." />
     <MESSAGE value="Implemented select_many feature with API, engine support via SelectManyPlan, tests, and documentation. Added collection_selector and optional result_selector handling with correlated subquery execution. Documented usage and performance aspects." />
-    <MESSAGE value="[WIP] tests" />
     <MESSAGE value="[WIP] Root locking was implemented and consolidated for Standalone and Cluster storage backends with passing cluster locking tests. Single-node cluster lock and provider context manager usage were enabled and verified. Unrelated test failures outside locking scope remain and documentation updates are pending." />
     <MESSAGE value="[WIP] La documentación fue actualizada para incluir una nueva sección sobre locking de root con ejemplos y notas de troubleshooting. Se enlazó en el índice principal y se añadió una sección al README.md. La documentación HTML fue generada exitosamente con Sphinx." />
     <MESSAGE value="[WIP] locking en get_literals" />
-    <option name="LAST_COMMIT_MESSAGE" value="[WIP] locking en get_literals" />
+    <MESSAGE value="[WIP] tests" />
+    <option name="LAST_COMMIT_MESSAGE" value="[WIP] tests" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -726,16 +740,6 @@
           <line>361</line>
           <option name="timeStamp" value="188" />
         </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/proto_db/tests/test_linq_indexed_fastpath.py</url>
-          <line>59</line>
-          <option name="timeStamp" value="266" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/proto_db/tests/test_atom_cache_write_through.py</url>
-          <line>13</line>
-          <option name="timeStamp" value="267" />
-        </line-breakpoint>
       </breakpoints>
       <default-breakpoints>
         <breakpoint type="python-exception">
@@ -749,7 +753,7 @@
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/ProtoBase$task_manager.coverage" NAME="task_manager Coverage Results" MODIFIED="1754259207052" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$.coverage" NAME=" Coverage Results" MODIFIED="1736352327720" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/ProtoBase$run_tests.coverage" NAME="run_tests Coverage Results" MODIFIED="1758316807698" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/ProtoBase$run_tests.coverage" NAME="run_tests Coverage Results" MODIFIED="1758317669195" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/ProtoBase$performance_benchmark.coverage" NAME="performance_benchmark Coverage Results" MODIFIED="1754260400708" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$indexed_benchmark.coverage" NAME="indexed_benchmark Coverage Results" MODIFIED="1757791235937" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/ProtoBase$collection_indexing_example.coverage" NAME="collection_indexing_example Coverage Results" MODIFIED="1757792976890" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />

@@ -36,10 +36,10 @@ class TestWherePlan(unittest.TestCase):
         self.mock_data = []
         for i in range(1, 6):
             obj = DBObject(transaction=self.transaction)
-            obj = obj.get_at('id', i)
-            obj = obj.get_at('name', f'Person {i}')
-            obj = obj.get_at('age', 20 + i * 2)
-            obj = obj.get_at('active', i % 2 == 0)  # Even IDs are active
+            obj = obj.set_at('id', i)
+            obj = obj.set_at('name', f'Person {i}')
+            obj = obj.set_at('age', 20 + i * 2)
+            obj = obj.set_at('active', i % 2 == 0)  # Even IDs are active
             self.mock_data.append(obj)
 
         self.base_plan = ListPlan(base_list=self.mock_data, transaction=self.transaction)

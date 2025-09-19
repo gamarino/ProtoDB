@@ -36,37 +36,37 @@ class TestGroupByPlan(unittest.TestCase):
         # Department A, Product X
         for i in range(1, 4):
             obj = DBObject(transaction=self.transaction)
-            obj = obj.get_at('id', i)
-            obj = obj.get_at('department', 'A')
-            obj = obj.get_at('product', 'X')
-            obj = obj.get_at('amount', 100 * i)
+            obj = obj.set_at('id', i)
+            obj = obj.set_at('department', 'A')
+            obj = obj.set_at('product', 'X')
+            obj = obj.set_at('amount', 100 * i)
             self.mock_data.append(obj)
 
         # Department A, Product Y
         for i in range(4, 7):
             obj = DBObject(transaction=self.transaction)
-            obj = obj.get_at('id', i)
-            obj = obj.get_at('department', 'A')
-            obj = obj.get_at('product', 'Y')
-            obj = obj.get_at('amount', 50 * i)
+            obj = obj.set_at('id', i)
+            obj = obj.set_at('department', 'A')
+            obj = obj.set_at('product', 'Y')
+            obj = obj.set_at('amount', 50 * i)
             self.mock_data.append(obj)
 
         # Department B, Product X
         for i in range(7, 10):
             obj = DBObject(transaction=self.transaction)
-            obj = obj.get_at('id', i)
-            obj = obj.get_at('department', 'B')
-            obj = obj.get_at('product', 'X')
-            obj = obj.get_at('amount', 75 * i)
+            obj = obj.set_at('id', i)
+            obj = obj.set_at('department', 'B')
+            obj = obj.set_at('product', 'X')
+            obj = obj.set_at('amount', 75 * i)
             self.mock_data.append(obj)
 
         # Department B, Product Z
         for i in range(10, 13):
             obj = DBObject(transaction=self.transaction)
-            obj = obj.get_at('id', i)
-            obj = obj.get_at('department', 'B')
-            obj = obj.get_at('product', 'Z')
-            obj = obj.get_at('amount', 60 * i)
+            obj = obj.set_at('id', i)
+            obj = obj.set_at('department', 'B')
+            obj = obj.set_at('product', 'Z')
+            obj = obj.set_at('amount', 60 * i)
             self.mock_data.append(obj)
 
         self.base_plan = ListPlan(base_list=self.mock_data, transaction=self.transaction)
@@ -242,21 +242,21 @@ class TestGroupByPlan(unittest.TestCase):
 
         # Complete record
         obj1 = DBObject(transaction=self.transaction)
-        obj1 = obj1.get_at('id', 1)
-        obj1 = obj1.get_at('department', 'A')
-        obj1 = obj1.get_at('amount', 100)
+        obj1 = obj1.set_at('id', 1)
+        obj1 = obj1.set_at('department', 'A')
+        obj1 = obj1.set_at('amount', 100)
         mixed_data.append(obj1)
 
         # Record missing amount
         obj2 = DBObject(transaction=self.transaction)
-        obj2 = obj2.get_at('id', 2)
-        obj2 = obj2.get_at('department', 'A')
+        obj2 = obj2.set_at('id', 2)
+        obj2 = obj2.set_at('department', 'A')
         mixed_data.append(obj2)
 
         # Record missing department
         obj3 = DBObject(transaction=self.transaction)
-        obj3 = obj3.get_at('id', 3)
-        obj3 = obj3.get_at('amount', 300)
+        obj3 = obj3.set_at('id', 3)
+        obj3 = obj3.set_at('amount', 300)
         mixed_data.append(obj3)
 
         mixed_plan = ListPlan(base_list=mixed_data, transaction=self.transaction)

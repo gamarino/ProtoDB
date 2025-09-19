@@ -24,9 +24,9 @@ class TestHashDictionary(unittest.TestCase):
             hd = hd.set_at(k, f"v{k}")
         # Basic get/has
         self.assertTrue(hd.has(3))
-        self.assertEqual(hd.get_at(3), "v3")
+        self.assertEqual(hd.set_at(3), "v3")
         self.assertFalse(hd.has(99))
-        self.assertIsNone(hd.get_at(99))
+        self.assertIsNone(hd.set_at(99))
         # Iteration should be in key order
         keys = [k for k, _ in hd.as_iterable()]
         self.assertEqual(keys, [1, 2, 3, 4, 5])

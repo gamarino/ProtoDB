@@ -26,8 +26,8 @@ class TestDBObjectRecursion(unittest.TestCase):
         obj = DBObject(transaction=self.transaction)
 
         # Set attributes using _setattr
-        obj = obj.get_at('name', 'Test Object')
-        obj = obj.get_at('value', 42)
+        obj = obj.set_at('name', 'Test Object')
+        obj = obj.set_at('value', 42)
 
         # Verify attributes were set correctly
         self.assertEqual(obj.name, 'Test Object')
@@ -64,10 +64,10 @@ class TestDBObjectRecursion(unittest.TestCase):
 
         # Create child DBObject
         child = DBObject(transaction=self.transaction)
-        child = child.get_at('name', 'Child Object')
+        child = child.set_at('name', 'Child Object')
 
         # Set child as attribute of parent
-        parent = parent.get_at('child', child)
+        parent = parent.set_at('child', child)
 
         # Save parent (should also save child)
         parent._save()

@@ -690,7 +690,7 @@ class DBObject(Atom):
 
     def __getattribute__(self, name: str):
         # Semantics of DBObjects
-        # Get the attribute. If it doesn't exists, return None.
+        # Get the attribute. If it doesn't exist, return None.
         # NO EXCEPTION THROWN
 
         # Fast-path internal attributes and wiring to avoid recursion and unnecessary loads
@@ -710,17 +710,18 @@ class DBObject(Atom):
         # Otherwise force a load and try again
         self._load()
         d = object.__getattribute__(self, '__dict__')
-        if name in d:
-            return d.get(name, None)
+        if name in d and d.get(name, None) is not None:
+            return d[name]
+        # Attribute truly not present; signal absence for hasattr by raising
         return None
 
     def __getattr__(self, name: str):
-        # Kept for backward compatibility; __getattribute__ now handles most cases
-        # None returned if it doesn't exist
-        # NO EXCEPTTION THROWN
-
+        # Kept for backward compatibility; __getattribute__ handles most cases.
+        # To ensure hasattr() semantics, return None for missing names.
         if name == '_loaded':  # Prevent recursion when checking _loaded
+            # _loaded defaults to False when missing
             return False
+        # After attempting a load, if still missing, return None
         self._load()
         if name in self.__dict__:
             return self.__dict__[name]
@@ -741,13 +742,19 @@ class DBObject(Atom):
                 message=f'ProtoBase DBObjects are immutable! You are trying to set attribute {key}'
             )
 
-    def get_at(self, name: str, value: object) -> DBObject:
+    def set_at(self, name: str, value: object) -> DBObject:
         new_object = DBObject(transaction=self.transaction)
         for attr_name, attr_value in self.__dict__.items():
             if attr_name != '_loaded':  # Skip _loaded flag to avoid recursion
                 object.__setattr__(new_object, attr_name, attr_value)
         object.__setattr__(new_object, name, value)
         return new_object
+
+    def has_defined_attr(self, name: str) -> bool:
+        self._load()
+        if name in self.__dict__:
+            return True
+        return False
 
     def _load(self):
         if not self._loaded:
@@ -808,7 +815,7 @@ class MutableObject(Atom):
             )
 
         current_object = cast(DBObject, self.transaction.get_mutable(self.hash_key))
-        new_object = current_object.get_at(key, value)
+        new_object = current_object.set_at(key, value)
         self.transaction.set_mutable(self.hash_key, new_object)
         if self.atom_pointer and self.atom_pointer.transaction_id:
             # Object is stored in DB and it is going to be modified.

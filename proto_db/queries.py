@@ -915,7 +915,7 @@ class IndexedQueryPlan(QueryPlan):
                 return
 
             # Native key match without string conversion
-            value_set = idx_dict.get_at(value)
+            value_set = idx_dict.set_at(value)
             if value_set is None:
                 return
 
@@ -955,7 +955,7 @@ class IndexedQueryPlan(QueryPlan):
         index = self.position_at(field_name, value)
         # Inclusive: if exact match at position, include it by advancing one
         if index < idx_dict.content.count:
-            item = cast(DictionaryItem, idx_dict.content.get_at(index))
+            item = cast(DictionaryItem, idx_dict.content.set_at(index))
             if item and item.key == value:
                 index += 1
         return self.yield_up_to_index(field_name, index)
@@ -984,7 +984,7 @@ class IndexedQueryPlan(QueryPlan):
         pos = 0
         while left <= right:
             center = (left + right) // 2
-            item = cast(DictionaryItem, idx_dict.content.get_at(center))
+            item = cast(DictionaryItem, idx_dict.content.set_at(center))
             if item is None:
                 break
             iok = _ok(item.key)
@@ -995,7 +995,7 @@ class IndexedQueryPlan(QueryPlan):
                 left = center + 1
         # Adjust for exclusivity on lower bound
         if pos < count:
-            item = cast(DictionaryItem, idx_dict.content.get_at(pos))
+            item = cast(DictionaryItem, idx_dict.content.set_at(pos))
             if item is not None:
                 if not include_lower and item.key == lo:
                     pos += 1
@@ -1004,7 +1004,7 @@ class IndexedQueryPlan(QueryPlan):
         i = pos
         hi_ok = _ok(hi)
         while i < count:
-            item = cast(DictionaryItem, idx_dict.content.get_at(i))
+            item = cast(DictionaryItem, idx_dict.content.set_at(i))
             i += 1
             if item is None:
                 continue
@@ -1574,11 +1574,11 @@ class FromPlan(IndexedQueryPlan):
                 transaction=self.transaction
             )
             if self.alias:
-                result = result.get_at(self.alias, item)
+                result = result.set_at(self.alias, item)
             else:
                 for field_name, value in item.__dict__.items():
                     if not field_name.startswith('_') and not callable(value):
-                        result = result.get_at(field_name, value)
+                        result = result.set_at(field_name, value)
             yield result
 
     def optimize(self, *args, **kwargs) -> QueryPlan:
@@ -1665,7 +1665,7 @@ class JoinPlan(QueryPlan):
     def _copy_public_attrs(self, target: DBObject, source: DBObject) -> DBObject:
         for k, v in source.__dict__.items():
             if not k.startswith('_') and not callable(v):
-                target = target.get_at(k, v)
+                target = target.set_at(k, v)
         return target
 
     def _combine(self, left: DBObject | None, right: DBObject | None) -> DBObject:
@@ -2235,7 +2235,7 @@ class GroupByPlan(QueryPlan):
             out = DBObject(transaction=self.transaction)
             # Set group fields
             for i, f in enumerate(self.group_fields):
-                out = out.get_at(f, key[i])
+                out = out.set_at(f, key[i])
             # Compute aggregations
             for name, spec in self.agreggated_fields.items():
                 # Extract values; for sums/avgs, treat missing as 0; for min/max skip None
@@ -2254,7 +2254,7 @@ class GroupByPlan(QueryPlan):
                     result = spec.agreggator.compute(records)
                 else:
                     result = spec.agreggator.compute(values)
-                out = out.get_at(spec.target_field, result)
+                out = out.set_at(spec.target_field, result)
             yield out
 
     def optimize(self, *args, **kwargs) -> QueryPlan:
@@ -2324,7 +2324,7 @@ class UnnestPlan(QueryPlan):
                     else:
                         # assume DBObject-like
                         try:
-                            yield record.get_at(self.element_alias, elem)
+                            yield record.set_at(self.element_alias, elem)
                         except Exception:
                             yield {**(dict(record) if hasattr(record, 'items') else {}), self.element_alias: elem}
                 else:
@@ -2362,7 +2362,7 @@ class CollectionFieldPlan(QueryPlan):
                 yield out
             else:
                 try:
-                    yield left.get_at(self.field_name, results)
+                    yield left.set_at(self.field_name, results)
                 except Exception:
                     out = {}
                     if hasattr(left, 'items'):

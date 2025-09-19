@@ -242,7 +242,7 @@ tr.commit()
 tr = database.new_transaction()
 items_dict = tr.get_root_object('items')
 for item_id in selected_ids:
-    item = items_dict.get_at(item_id)
+    item = items_dict.set_at(item_id)
     # Access attributes to ensure they're loaded
     _ = item.name
     _ = item.value

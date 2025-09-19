@@ -14,11 +14,12 @@ from unittest.mock import Mock, MagicMock
 import msgpack
 
 from . import common
-from .common import Future, BlockProvider, AtomPointer
+from .common import Future, BlockProvider, AtomPointer, RootObject
 from .common import MB, GB
 from .exceptions import ProtoUnexpectedException, ProtoValidationException
 from .hybrid_executor import HybridExecutor
 from .atom_cache import AtomCacheBundle
+from .dictionaries import Dictionary
 
 # Format indicators for data serialization
 FORMAT_RAW_BINARY = 0x00  # Raw binary data (no serialization)
@@ -141,17 +142,12 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
             schema_epoch=schema_epoch,
         )
 
-    def read_current_root(self) -> AtomPointer:
+    def read_current_root(self) -> AtomPointer | None:
         """
         Read the current root object pointer from the underlying provider.
-        The provider may return a raw JSON dict; normalize it into an AtomPointer.
+        The provider may return different types; normalize to AtomPointer or a fresh empty RootObject when missing.
         """
-        root = self.block_provider.get_current_root_object()
-        if not root:
-            # Signal uninitialized root as validation error (handled by callers)
-            raise ProtoValidationException(message="Root object is not initialized")
-
-        return root
+        return self.block_provider.get_current_root_object()
 
     def root_context_manager(self):
         class RootContextManager:
@@ -537,6 +533,20 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
             len_data = struct.pack('Q', len(data))
 
             transaction_id, offset = self.push_bytes_to_wal(len_data + format_indicator + data)
+
+            # Write-through caches: payload bytes and deserialized object
+            caches = self._atom_caches
+            if caches:
+                try:
+                    if caches.bytes_cache:
+                        caches.bytes_cache.put(transaction_id, offset, data)
+                    if caches.obj_cache:
+                        # We already have the Python object as `atom`
+                        caches.obj_cache.put(transaction_id, offset, atom, caches.schema_epoch)
+                except Exception:
+                    # Cache failures must not affect persistence path
+                    pass
+
             return AtomPointer(transaction_id, offset)
 
         return self.executor_pool.submit(task_push_atom)
@@ -655,6 +665,14 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
             # Combine length, format indicator, and data and push to WAL
             combined_data = len_data + format_indicator + data
             transaction_id, offset = self.push_bytes_to_wal(combined_data)
+
+            # Write-through to bytes cache (store only payload without header/indicator)
+            caches = self._atom_caches
+            if caches and caches.bytes_cache:
+                try:
+                    caches.bytes_cache.put(transaction_id, offset, data)
+                except Exception:
+                    pass
             return transaction_id, offset
 
         return self.executor_pool.submit(task_push_bytes)
