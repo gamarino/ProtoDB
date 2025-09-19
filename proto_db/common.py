@@ -689,6 +689,10 @@ class DBObject(Atom):
             object.__setattr__(self, key, value)
 
     def __getattribute__(self, name: str):
+        # Semantics of DBObjects
+        # Get the attribute. If it doesn't exists, return None.
+        # NO EXCEPTION THROWN
+
         # Fast-path internal attributes and wiring to avoid recursion and unnecessary loads
         if name.startswith('_') or name in ('transaction', 'atom_pointer', '__class__', '__dict__', 'after_load'):
             return object.__getattribute__(self, name)
@@ -708,18 +712,19 @@ class DBObject(Atom):
         d = object.__getattribute__(self, '__dict__')
         if name in d:
             return d.get(name, None)
-        # Align with Python semantics: signal missing attribute for hasattr()
-        raise AttributeError(name)
+        return None
 
     def __getattr__(self, name: str):
         # Kept for backward compatibility; __getattribute__ now handles most cases
+        # None returned if it doesn't exist
+        # NO EXCEPTTION THROWN
+
         if name == '_loaded':  # Prevent recursion when checking _loaded
             return False
         self._load()
         if name in self.__dict__:
             return self.__dict__[name]
-        # Align with Python semantics: signal missing attribute for hasattr()
-        raise AttributeError(name)
+        return None
 
     def __setattr__(self, key, value):
         # Allow internal/private attributes and critical wiring attributes without immutability checks
@@ -736,7 +741,7 @@ class DBObject(Atom):
                 message=f'ProtoBase DBObjects are immutable! You are trying to set attribute {key}'
             )
 
-    def _setattr(self, name: str, value: object) -> DBObject:
+    def get_at(self, name: str, value: object) -> DBObject:
         new_object = DBObject(transaction=self.transaction)
         for attr_name, attr_value in self.__dict__.items():
             if attr_name != '_loaded':  # Skip _loaded flag to avoid recursion
@@ -803,7 +808,7 @@ class MutableObject(Atom):
             )
 
         current_object = cast(DBObject, self.transaction.get_mutable(self.hash_key))
-        new_object = current_object._setattr(key, value)
+        new_object = current_object.get_at(key, value)
         self.transaction.set_mutable(self.hash_key, new_object)
         if self.atom_pointer and self.atom_pointer.transaction_id:
             # Object is stored in DB and it is going to be modified.

@@ -25,19 +25,19 @@ class TestRecursivePlan(unittest.TestCase):
 
         # Create hierarchy: emp1 -> mgr1 -> dir1 -> vp1 -> ceo
         # Build from top to bottom ensuring references point to updated copies
-        vp1 = vp1._setattr('manager', ceo)
-        dir1 = dir1._setattr('manager', vp1)
-        mgr1 = mgr1._setattr('manager', dir1)
-        emp1 = emp1._setattr('manager', mgr1)
+        vp1 = vp1.get_at('manager', ceo)
+        dir1 = dir1.get_at('manager', vp1)
+        mgr1 = mgr1.get_at('manager', dir1)
+        emp1 = emp1.get_at('manager', mgr1)
         # First set vp1.reports, then point ceo.reports to the updated vp1
-        vp1 = vp1._setattr('reports', List(transaction=tr).append_last(dir1))
-        ceo = ceo._setattr('reports', List(transaction=tr).append_last(vp1).append_last(vp2))
+        vp1 = vp1.get_at('reports', List(transaction=tr).append_last(dir1))
+        ceo = ceo.get_at('reports', List(transaction=tr).append_last(vp1).append_last(vp2))
 
         # Cycle peer <-> peer
         cyclic1 = DBObject(transaction=tr, name='Cyclic1')
         cyclic2 = DBObject(transaction=tr, name='Cyclic2')
-        cyclic1 = cyclic1._setattr('peer', cyclic2)
-        cyclic2 = cyclic2._setattr('peer', cyclic1)
+        cyclic1 = cyclic1.get_at('peer', cyclic2)
+        cyclic2 = cyclic2.get_at('peer', cyclic1)
 
         # Add all to collection
         for item in [ceo, vp1, vp2, dir1, mgr1, emp1, cyclic1, cyclic2]:

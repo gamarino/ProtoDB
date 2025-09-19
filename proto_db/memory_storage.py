@@ -1,5 +1,5 @@
 import uuid
-from threading import Lock  # Import threading lock to ensure thread safety
+from threading import RLock as Lock  # Use re-entrant lock to avoid deadlocks under nested root operations
 
 from . import common
 from .common import Future, AtomPointer
@@ -73,6 +73,23 @@ class MemoryStorage(common.SharedStorage):
 
     def unlock_current_root(self):
         pass
+
+    def root_context_manager(self):
+        class ContextManager:
+            ms: "MemoryStorage"
+            def __init__(self, ms: "MemoryStorage"):
+                self.ms = ms
+                self._acquired = False
+            def __enter__(self):
+                self.ms.lock.acquire()
+                self._acquired = True
+            def __exit__(self, exc_type, exc_value, traceback):
+                if self._acquired:
+                    self.ms.lock.release()
+                self._acquired = False
+            def __repr__(self):
+                return f"MemoryStorage.RootContextManager(ms={self.ms})"
+        return ContextManager(self)
 
     def flush_wal(self):
         """

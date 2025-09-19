@@ -47,6 +47,20 @@ class ObjectSpace(AbstractObjectSpace):
         database_catalog: Dictionary = cast(Dictionary, space_root.object_root)
         return database_catalog
 
+    def _space_context(self):
+        class SpaceContext:
+            def __init__(self, space):
+                self.space = space
+                self.storage_context = space.storage.root_context_manager()
+
+            def __enter__(self):
+                self.storage_context.__enter__()
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                self.storage_context.__exit_(exc_type, exc_value, traceback)
+
+        return SpaceContext(self)
+
     def open_database(self, database_name: str) -> Database:
         """
         Opens a database
@@ -77,7 +91,7 @@ class ObjectSpace(AbstractObjectSpace):
                     message=f'Object space is not running!'
                 )
 
-            with self.storage.root_context_manager():
+            with self._space_context():
                 update_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
 
                 current_hist = self.get_space_history()
@@ -86,10 +100,17 @@ class ObjectSpace(AbstractObjectSpace):
                 else:
                     current_root:RootObject = RootObject()
                 databases = cast(Dictionary, current_root.object_root)
+                if not databases:
+                    databases = Dictionary()
                 if not databases.has(database_name):
                     # Create the new database with an empty roots catalog
                     databases = databases.set_at(database_name, Dictionary())
-                    current_root = current_root._setattr('object_root', databases)
+                    # Build a new RootObject with updated object_root
+                    current_root = RootObject(
+                        object_root=databases,
+                        literal_root=current_root.literal_root,
+                        transaction=update_tr
+                    )
                     space_history = current_hist.insert_at(0, current_root)
                     space_history._save()
                     self.storage.set_current_root(space_history.atom_pointer)
@@ -112,7 +133,7 @@ class ObjectSpace(AbstractObjectSpace):
                     message=f'Object space is not running!'
                 )
 
-            with self.storage.root_context_manager():
+            with self._space_context():
                 update_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
 
                 current_hist = self.get_space_history()
@@ -121,6 +142,8 @@ class ObjectSpace(AbstractObjectSpace):
                 else:
                     current_root:RootObject = RootObject()
                 databases = cast(Dictionary, current_root.object_root)
+                if not databases:
+                    databases = Dictionary()
                 if databases.has(old_name):
                     database = databases.get_at(old_name)
                     databases = databases.remove_at(old_name)
@@ -131,7 +154,12 @@ class ObjectSpace(AbstractObjectSpace):
 
                     databases = databases.set_at(new_name, database)
 
-                    current_root = current_root._setattr('object_root', databases)
+                    # Build a new RootObject with updated object_root
+                    current_root = RootObject(
+                        object_root=databases,
+                        literal_root=current_root.literal_root,
+                        transaction=update_tr
+                    )
                     space_history = current_hist.insert_at(0, current_root)
                     space_history._save()
 
@@ -153,7 +181,7 @@ class ObjectSpace(AbstractObjectSpace):
                     message=f'Object space is not running!'
                 )
 
-            with self.storage.root_context_manager():
+            with self._space_context():
                 update_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
 
                 current_hist = self.get_space_history()
@@ -162,10 +190,17 @@ class ObjectSpace(AbstractObjectSpace):
                 else:
                     current_root:RootObject = RootObject(transaction=update_tr)
                 databases = cast(Dictionary, current_root.object_root)
+                if not databases:
+                    databases = Dictionary()
                 if databases.has(name):
                     databases = databases.remove_at(name)
 
-                    current_root = current_root._setattr('object_root', databases)
+                    # Build a new RootObject with updated object_root
+                    current_root = RootObject(
+                        object_root=databases,
+                        literal_root=current_root.literal_root,
+                        transaction=update_tr
+                    )
                     space_history = current_hist.insert_at(0, current_root)
                     space_history._save()
 
@@ -213,18 +248,6 @@ class ObjectSpace(AbstractObjectSpace):
     def set_space_root(self, new_space_root: RootObject):
         update_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
 
-        # CAS check against the expected root pointer installed at lock time
-        try:
-            current_hist = self.get_space_history(lock=False)
-            current_ptr = getattr(current_hist, 'atom_pointer', None)
-            expected_ptr = getattr(self.storage, '_locked_expected_root', None)
-            if current_ptr is not None and expected_ptr is not None:
-                if (current_ptr.transaction_id != expected_ptr.transaction_id) or (current_ptr.offset != expected_ptr.offset):
-                    raise ProtoLockingException(message='Concurrent root update detected (space history changed)')
-        except Exception:
-            # If anything goes wrong, proceed; storage.set_current_root will enforce CAS too
-            pass
-
         space_history = self.get_space_history()
 
         new_space_root.transaction = update_tr
@@ -236,10 +259,8 @@ class ObjectSpace(AbstractObjectSpace):
     def get_literals(self, literals: Dictionary) -> dict[str, Literal]:
         read_tr = ObjectTransaction(None, storage=self.storage)
 
-        print("Entrando a update de literales\n")
-
         with self._lock:
-            root = self.get_space_root(lock=False)
+            root = self.get_space_root()
             literal_catalog: Dictionary = cast(Dictionary, root.literal_root)
             new_literals = list()
             for literal_string, literal in literals.as_iterable():
@@ -254,31 +275,28 @@ class ObjectSpace(AbstractObjectSpace):
             if new_literals:
                 # There are non resolved literals still
 
-                root = self.get_space_root(lock=True)
-                literal_catalog: Dictionary = cast(Dictionary, root.literal_root)
-                literal_catalog.transaction = read_tr
-                update_catalog = False
-                for literal in new_literals:
-                    if not literal_catalog.has(literal.string):
-                        literal._save()
-                        literal_catalog = literal_catalog.set_at(literal.string, literal)
-                        update_catalog = True
-                    else:
-                        existing_literal = literal_catalog.get_at(literal.string)
-                        literal.atom_pointer = existing_literal.atom_pointer
+                with self._space_context():
+                    root = self.get_space_root()
+                    literal_catalog: Dictionary = cast(Dictionary, root.literal_root)
+                    literal_catalog.transaction = read_tr
+                    update_catalog = False
+                    for literal in new_literals:
+                        if not literal_catalog.has(literal.string):
+                            literal._save()
+                            literal_catalog = literal_catalog.set_at(literal.string, literal)
+                            update_catalog = True
+                        else:
+                            existing_literal = literal_catalog.get_at(literal.string)
+                            literal.atom_pointer = existing_literal.atom_pointer
 
-                if update_catalog:
-                    literal_catalog._save()
-                    root = RootObject(
-                        object_root=root.object_root,
-                        literal_root=literal_catalog,
-                        transaction=read_tr
-                    )
-                    self.set_space_root(root)
-
-                self.storage.unlock_current_root()
-
-        print("Seliendo de update de literales\n")
+                    if update_catalog:
+                        literal_catalog._save()
+                        root = RootObject(
+                            object_root=root.object_root,
+                            literal_root=literal_catalog,
+                            transaction=read_tr
+                        )
+                        self.set_space_root(root)
 
     def close(self):
         with self._lock:
@@ -825,7 +843,14 @@ class RootContextManager:
 
     def __enter__(self):
         self.root_cm.__enter__()
-        return self.storage.read_current_root()
+        # Return the current database root under the acquired root lock
+        try:
+            if self.object_transaction and self.object_transaction.database:
+                return self.object_transaction.database.read_db_root(lock=True)
+        except Exception:
+            pass
+        # Fallback: return an empty Dictionary if database context is unavailable
+        return Dictionary()
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.root_cm.__exit__(exc_type, exc_value, traceback)

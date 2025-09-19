@@ -30,20 +30,20 @@ class TestExpressions(unittest.TestCase):
 
         # Create test records
         self.record1 = DBObject(transaction=self.transaction)
-        self.record1 = self.record1._setattr('id', 1)
-        self.record1 = self.record1._setattr('name', 'Alice')
-        self.record1 = self.record1._setattr('age', 30)
-        self.record1 = self.record1._setattr('active', True)
-        self.record1 = self.record1._setattr('tags', ['user', 'admin'])
-        self.record1 = self.record1._setattr('manager', None)
+        self.record1 = self.record1.get_at('id', 1)
+        self.record1 = self.record1.get_at('name', 'Alice')
+        self.record1 = self.record1.get_at('age', 30)
+        self.record1 = self.record1.get_at('active', True)
+        self.record1 = self.record1.get_at('tags', ['user', 'admin'])
+        self.record1 = self.record1.get_at('manager', None)
 
         self.record2 = DBObject(transaction=self.transaction)
-        self.record2 = self.record2._setattr('id', 2)
-        self.record2 = self.record2._setattr('name', 'Bob')
-        self.record2 = self.record2._setattr('age', 25)
-        self.record2 = self.record2._setattr('active', False)
-        self.record2 = self.record2._setattr('tags', ['user'])
-        self.record2 = self.record2._setattr('manager', 'Alice')
+        self.record2 = self.record2.get_at('id', 2)
+        self.record2 = self.record2.get_at('name', 'Bob')
+        self.record2 = self.record2.get_at('age', 25)
+        self.record2 = self.record2.get_at('active', False)
+        self.record2 = self.record2.get_at('tags', ['user'])
+        self.record2 = self.record2.get_at('manager', 'Alice')
 
     def test_term_with_equal_operator(self):
         """

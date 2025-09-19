@@ -31,26 +31,26 @@ class TestJoinPlan(unittest.TestCase):
         self.employees = []
         for i in range(1, 6):
             obj = DBObject(transaction=self.transaction)
-            obj = obj._setattr('id', i)
-            obj = obj._setattr('name', f'Employee {i}')
-            obj = obj._setattr('department_id', i % 3 + 1)  # Departments 1, 2, 3
+            obj = obj.get_at('id', i)
+            obj = obj.get_at('name', f'Employee {i}')
+            obj = obj.get_at('department_id', i % 3 + 1)  # Departments 1, 2, 3
             self.employees.append(obj)
 
         # Create test data - departments
         self.departments = []
         for i in range(1, 4):
             obj = DBObject(transaction=self.transaction)
-            obj = obj._setattr('id', i)
-            obj = obj._setattr('name', f'Department {i}')
+            obj = obj.get_at('id', i)
+            obj = obj.get_at('name', f'Department {i}')
             self.departments.append(obj)
 
         # Create test data - projects (for testing right joins)
         self.projects = []
         for i in range(1, 5):
             obj = DBObject(transaction=self.transaction)
-            obj = obj._setattr('id', i)
-            obj = obj._setattr('name', f'Project {i}')
-            obj = obj._setattr('department_id', i % 4 + 1)  # Departments 1, 2, 3, 4 (4 doesn't exist)
+            obj = obj.get_at('id', i)
+            obj = obj.get_at('name', f'Project {i}')
+            obj = obj.get_at('department_id', i % 4 + 1)  # Departments 1, 2, 3, 4 (4 doesn't exist)
             self.projects.append(obj)
 
         # Create query plans
@@ -99,9 +99,9 @@ class TestJoinPlan(unittest.TestCase):
         """
         # Create an employee with a non-existent department
         obj = DBObject(transaction=self.transaction)
-        obj = obj._setattr('id', 6)
-        obj = obj._setattr('name', 'Employee 6')
-        obj = obj._setattr('department_id', 99)  # Non-existent department
+        obj = obj.get_at('id', 6)
+        obj = obj.get_at('name', 'Employee 6')
+        obj = obj.get_at('department_id', 99)  # Non-existent department
         self.employees.append(obj)
 
         # Update the employees plan
@@ -170,9 +170,9 @@ class TestJoinPlan(unittest.TestCase):
         """
         # Create an employee with a non-existent department
         obj = DBObject(transaction=self.transaction)
-        obj = obj._setattr('id', 6)
-        obj = obj._setattr('name', 'Employee 6')
-        obj = obj._setattr('department_id', 99)  # Non-existent department
+        obj = obj.get_at('id', 6)
+        obj = obj.get_at('name', 'Employee 6')
+        obj = obj.get_at('department_id', 99)  # Non-existent department
         self.employees.append(obj)
 
         # Update the employees plan
@@ -216,9 +216,9 @@ class TestJoinPlan(unittest.TestCase):
         """
         # Create an employee with a non-existent department
         obj = DBObject(transaction=self.transaction)
-        obj = obj._setattr('id', 6)
-        obj = obj._setattr('name', 'Employee 6')
-        obj = obj._setattr('department_id', 99)  # Non-existent department
+        obj = obj.get_at('id', 6)
+        obj = obj.get_at('name', 'Employee 6')
+        obj = obj.get_at('department_id', 99)  # Non-existent department
         self.employees.append(obj)
 
         # Update the employees plan

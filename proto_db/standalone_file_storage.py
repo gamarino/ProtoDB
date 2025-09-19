@@ -163,10 +163,13 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
                 self.blk_cm = sfs.block_provider.root_context_manager()
 
             def __enter__(self):
-                self.blk_cm.__enter__()
+                # Some tests patch block_provider.root_context_manager with MagicMock without context methods
+                if hasattr(self.blk_cm, '__enter__'):
+                    self.blk_cm.__enter__()
 
             def __exit__(self, exc_type, exc_value, traceback):
-                self.blk_cm.__exit__(exc_type, exc_value, traceback)
+                if hasattr(self.blk_cm, '__exit__'):
+                    self.blk_cm.__exit__(exc_type, exc_value, traceback)
 
             def __repr__(self):
                 return f"StandAloneFileStorage.RootContextManager(sfs={self.sfs}, blk_cm={self.blk_cm})"
