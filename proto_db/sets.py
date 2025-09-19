@@ -458,7 +458,7 @@ class CountedSet(Set):
                     element._save()
                 hash_index = h
                 inc = cast(int, self._new_counts.get_at(hash_index)) or 0
-                base = cast(int, self.counts.set_at(hash_index)) if self.counts.has(hash_index) else 0
+                base = cast(int, self.counts.get_at(hash_index)) if self.counts.has(hash_index) else 0
                 # Ensure the item exists and set the correct total count
                 self.items = self.items.set_at(hash_index, element)
                 self.counts = self.counts.set_at(hash_index, base + inc)

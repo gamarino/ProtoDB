@@ -9,7 +9,7 @@
 
 ProtoBase is an embedded, transactional, object‑oriented database for Python. It provides immutable collections, secondary indexes, and a simple, index‑aware query planner — all running in‑process without a separate server.
 
-This README reflects the current state of the codebase (2025‑09‑14). For deeper docs, see the Sphinx site under docs/ (Concepts and Cookbook included).
+This README reflects the current state of the codebase (2025‑09‑19). For deeper docs, see the Sphinx site under docs/ (Concepts and Cookbook included).
 
 ## Why ProtoBase?
 

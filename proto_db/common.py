@@ -438,10 +438,15 @@ class Atom(metaclass=CombinedMeta):
                 if not value.transaction:
                     value.transaction = self.transaction
                 value._save()
+                ap = getattr(value, 'atom_pointer', None)
+                if not ap:
+                    raise ProtoCorruptionException(
+                        message=f'Corruption saving nested Atom: attr={name}, type={type(value).__name__} in holder={type(self).__name__}'
+                    )
                 json_value[name] = {
                     'className': type(value).__name__,
-                    'transaction_id': str(value.atom_pointer.transaction_id),
-                    'offset': value.atom_pointer.offset,
+                    'transaction_id': str(ap.transaction_id),
+                    'offset': ap.offset,
                 }
             elif isinstance(value, str):
                 json_value[name] = value
@@ -519,10 +524,16 @@ class Atom(metaclass=CombinedMeta):
                                     object.__setattr__(value, 'transaction', self.__dict__['transaction'])
                                 value._save()
 
+                                ap = getattr(value, 'atom_pointer', None)
+                                if not ap:
+                                    print(f"[DEBUG] Missing atom_pointer after save: holder={type(self).__name__}, attr={name}, child_type={type(value).__name__}")
+                                    raise ProtoCorruptionException(
+                                        message=f'Corruption saving nested Atom: attr={name}, type={type(value).__name__} in holder={type(self).__name__}'
+                                    )
                                 json_value[name] = {
                                     'className': type(value).__name__,
-                                    'transaction_id': str(value.__dict__['atom_pointer'].transaction_id),
-                                    'offset': value.__dict__['atom_pointer'].offset
+                                    'transaction_id': str(ap.transaction_id),
+                                    'offset': ap.offset
                                 }
 
                             elif isinstance(value, str):
@@ -712,12 +723,12 @@ class DBObject(Atom):
         d = object.__getattribute__(self, '__dict__')
         if name in d and d.get(name, None) is not None:
             return d[name]
-        # Attribute truly not present; signal absence for hasattr by raising
+        # Missing attribute: DBObjects return None instead of raising
         return None
 
     def __getattr__(self, name: str):
         # Kept for backward compatibility; __getattribute__ handles most cases.
-        # To ensure hasattr() semantics, return None for missing names.
+        # Return None for missing attributes to honor DBObject semantics.
         if name == '_loaded':  # Prevent recursion when checking _loaded
             # _loaded defaults to False when missing
             return False

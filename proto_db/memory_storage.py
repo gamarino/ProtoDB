@@ -97,49 +97,23 @@ class MemoryStorage(common.SharedStorage):
 
     def push_atom(self, atom: dict) -> Future[AtomPointer]:
         """
-        Save an atom in the in-memory storage.
-        - If the atom has no pointer or its offset is None, assign a new pointer.
-        - If the atom already has an offset that exists in storage, raise ProtoCorruptionException.
-        :param atom: The `Atom` (or dict-like) object to be stored.
-        :return: A `Future` containing the corresponding `AtomPointer` of the stored atom.
-        :raises:
-            ProtoCorruptionException: If an atom with the same offset already exists.
+        Save an atom payload (JSON-serializable dict) in the in-memory storage.
+        Always assigns a fresh offset and returns an AtomPointer. The input is not mutated.
+        :param atom: The atom payload to be stored (dict produced by Atom._save()).
+        :return: A Future containing the AtomPointer of the stored atom.
+        :raises ProtoCorruptionException: If a randomly chosen offset collides (extremely unlikely).
         """
-        with self.lock:  # Ensure thread-safety for operations on `atoms`.
-            # Try to access an existing AtomPointer if the object looks like an Atom
-            ap = getattr(atom, 'atom_pointer', None)
-
-            # Assign new offset if none present
-            if ap is None or getattr(ap, 'offset', None) is None:
+        with self.lock:
+            # Allocate a fresh unique offset
+            offset = uuid.uuid4().int
+            while offset in self.atoms:
                 offset = uuid.uuid4().int
-                atom_pointer = AtomPointer(transaction_id=self.transaction_id, offset=offset)
-                # If the object supports setting atom_pointer, set it
-                try:
-                    setattr(atom, 'atom_pointer', atom_pointer)
-                except Exception:
-                    # Ignore if not settable (e.g., plain dict). We'll store using local pointer.
-                    pass
-            else:
-                # Use existing offset
-                offset = ap.offset
-                # Ensure transaction_id is set
-                tx_id = getattr(ap, 'transaction_id', None) or self.transaction_id
-                atom_pointer = AtomPointer(transaction_id=tx_id, offset=offset)
-                try:
-                    setattr(atom, 'atom_pointer', atom_pointer)
-                except Exception:
-                    pass
+            atom_pointer = AtomPointer(transaction_id=self.transaction_id, offset=offset)
 
-            # Check for duplicates
-            if offset in self.atoms:
-                raise ProtoCorruptionException(
-                    message=f'You are trying to push an already existing atom: {atom}'
-                )
-
-            # Add the atom to the storage.
+            # Store the payload dict at the offset
             self.atoms[offset] = atom
 
-            # Create and return a Future with the atom's pointer.
+            # Return the pointer
             result = Future()
             result.set_result(atom_pointer)
             return result

@@ -145,7 +145,11 @@ class ObjectSpace(AbstractObjectSpace):
                 if current_hist.count > 0:
                     current_root:RootObject = cast(RootObject, current_hist.get_at(0))
                 else:
-                    current_root:RootObject = RootObject()
+                    current_root:RootObject = RootObject(
+                        object_root=Dictionary(transaction=update_tr),
+                        literal_root=Dictionary(transaction=update_tr),
+                        transaction=update_tr
+                    )
                 databases = cast(Dictionary, current_root.object_root)
                 if not databases:
                     databases = Dictionary()
