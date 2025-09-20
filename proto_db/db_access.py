@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import logging
 from threading import Lock
 from threading import RLock
 from typing import cast
@@ -15,6 +16,8 @@ from .exceptions import ProtoValidationException, ProtoLockingException
 from .hash_dictionaries import HashDictionary
 from .lists import List
 from .sets import Set
+
+logger = logging.getLogger(__name__)
 
 
 class ObjectSpace(AbstractObjectSpace):
@@ -235,7 +238,7 @@ class ObjectSpace(AbstractObjectSpace):
             import os as _os
             if _os.environ.get('PB_DEBUG_CONC'):
                 ap = getattr(space_history, 'atom_pointer', None)
-                print(f"[DEBUG] ObjectSpace.get_space_history read pointer: {getattr(ap,'transaction_id',None)}/{getattr(ap,'offset',None)}")
+                logger.debug("ObjectSpace.get_space_history read pointer: %s/%s", getattr(ap,'transaction_id',None), getattr(ap,'offset',None))
         except Exception:
             pass
 
@@ -279,7 +282,7 @@ class ObjectSpace(AbstractObjectSpace):
             import os as _os
             if _os.environ.get('PB_DEBUG_CONC'):
                 ap = getattr(space_history, 'atom_pointer', None)
-                print(f"[DEBUG] ObjectSpace.set_space_root writing pointer: {getattr(ap,'transaction_id',None)}/{getattr(ap,'offset',None)}")
+                logger.debug("ObjectSpace.set_space_root writing pointer: %s/%s", getattr(ap,'transaction_id',None), getattr(ap,'offset',None))
         except Exception:
             pass
 
@@ -315,7 +318,7 @@ class ObjectSpace(AbstractObjectSpace):
             if _os.environ.get('PB_DEBUG_CONC'):
                 ap = getattr(space_history, 'atom_pointer', None)
                 ap_ro = getattr(getattr(new_space_root, 'object_root', None), 'atom_pointer', None)
-                print(f"[DEBUG] Writing space_root pointer: {getattr(ap,'transaction_id',None)}/{getattr(ap,'offset',None)} with object_root_ptr={getattr(ap_ro,'transaction_id',None)}/{getattr(ap_ro,'offset',None)}")
+                logger.debug("Writing space_root pointer: %s/%s with object_root_ptr=%s/%s", getattr(ap,'transaction_id',None), getattr(ap,'offset',None), getattr(ap_ro,'transaction_id',None), getattr(ap_ro,'offset',None))
         except Exception:
             pass
         self.storage.set_current_root(space_history.atom_pointer)
@@ -325,7 +328,7 @@ class ObjectSpace(AbstractObjectSpace):
             if _os.environ.get('PB_DEBUG_CONC'):
                 try:
                     hp = getattr(space_history, 'atom_pointer', None)
-                    print(f"[DEBUG] ObjectSpace.set_space_root_locked wrote history_ptr={getattr(hp,'transaction_id',None)}/{getattr(hp,'offset',None)}")
+                    logger.debug("ObjectSpace.set_space_root_locked wrote history_ptr=%s/%s", getattr(hp,'transaction_id',None), getattr(hp,'offset',None))
                     stg = self.storage
                     if hp and stg:
                         lst_json = stg.get_atom(hp).result()
@@ -333,7 +336,7 @@ class ObjectSpace(AbstractObjectSpace):
                         if isinstance(head, dict):
                             ro_tid = head.get('transaction_id')
                             ro_off = head.get('offset')
-                            print(f"[DEBUG] History head RootObject ptr in JSON: {ro_tid}/{ro_off}")
+                            logger.debug("History head RootObject ptr in JSON: %s/%s", ro_tid, ro_off)
                 except Exception:
                     pass
         except Exception:
@@ -490,7 +493,7 @@ class Database(AbstractDatabase):
                         cnt_root = db_root.get_at('counter_root')
                         cnt_val = cnt_root.get_at('counter') if cnt_root else None
                         ap = getattr(db_root, 'atom_pointer', None)
-                        print(f"[DEBUG] Read db_root pointer={getattr(ap,'transaction_id',None)}/{getattr(ap,'offset',None)} counter={cnt_val}")
+                        logger.debug("Read db_root pointer=%s/%s counter=%s", getattr(ap,'transaction_id',None), getattr(ap,'offset',None), cnt_val)
                     except Exception:
                         pass
             except Exception:
@@ -547,7 +550,7 @@ class Database(AbstractDatabase):
                     cur_db_root = new_space_root.object_root.get_at(self.database_name)
                     cnt_root = cur_db_root.get_at('counter_root') if cur_db_root else None
                     cnt_val = cnt_root.get_at('counter') if cnt_root else None
-                    print(f"[DEBUG] set_db_root persist: counter={cnt_val}")
+                    logger.debug("set_db_root persist: counter=%s", cnt_val)
                 except Exception:
                     pass
         except Exception:
@@ -677,7 +680,7 @@ class Database(AbstractDatabase):
             if _os.environ.get('PB_DEBUG_CONC'):
                 ap_base = getattr(getattr(base_root, 'object_root', None), 'atom_pointer', None)
                 ap_cat = getattr(updated_catalog, 'atom_pointer', None)
-                print(f"[DEBUG] set_db_root_locked pre-root: base_catalog_ptr={getattr(ap_base,'transaction_id',None)}/{getattr(ap_base,'offset',None)} updated_catalog_ptr={getattr(ap_cat,'transaction_id',None)}/{getattr(ap_cat,'offset',None)}")
+                logger.debug("set_db_root_locked pre-root: base_catalog_ptr=%s/%s updated_catalog_ptr=%s/%s", getattr(ap_base,'transaction_id',None), getattr(ap_base,'offset',None), getattr(ap_cat,'transaction_id',None), getattr(ap_cat,'offset',None))
         except Exception:
             pass
         new_space_root = RootObject(
@@ -697,7 +700,7 @@ class Database(AbstractDatabase):
                     ap_db = getattr(cur_db_root, 'atom_pointer', None)
                     ap_sr = getattr(new_space_root, 'atom_pointer', None)
                     ap_or = getattr(getattr(new_space_root, 'object_root', None), 'atom_pointer', None)
-                    print(f"[DEBUG] set_db_root_locked about to persist: db='{self.database_name}' db_root_ptr={getattr(ap_db,'transaction_id',None)}/{getattr(ap_db,'offset',None)} space_root_ptr={getattr(ap_sr,'transaction_id',None)}/{getattr(ap_sr,'offset',None)} object_root_ptr={getattr(ap_or,'transaction_id',None)}/{getattr(ap_or,'offset',None)} counter={cnt_val}")
+                    logger.debug("set_db_root_locked about to persist: db='%s' db_root_ptr=%s/%s space_root_ptr=%s/%s object_root_ptr=%s/%s counter=%s", self.database_name, getattr(ap_db,'transaction_id',None), getattr(ap_db,'offset',None), getattr(ap_sr,'transaction_id',None), getattr(ap_sr,'offset',None), getattr(ap_or,'transaction_id',None), getattr(ap_or,'offset',None), cnt_val)
                 except Exception:
                     pass
         except Exception:
@@ -719,17 +722,17 @@ class Database(AbstractDatabase):
                     latest_db_root = latest_catalog.get_at(self.database_name) if latest_catalog else None
                     ap_latest = getattr(latest_db_root, 'atom_pointer', None)
                     ap_cat = getattr(latest_catalog, 'atom_pointer', None)
-                    print(f"[DEBUG] set_db_root_locked post-persist mapping: db='{self.database_name}' db_root_ptr={getattr(ap_latest,'transaction_id',None)}/{getattr(ap_latest,'offset',None)}")
+                    logger.debug("set_db_root_locked post-persist mapping: db='%s' db_root_ptr=%s/%s", self.database_name, getattr(ap_latest,'transaction_id',None), getattr(ap_latest,'offset',None))
                     # Deep-inspect latest catalog content to verify STDB mapping
                     try:
                         tx = getattr(latest_sr, 'transaction', None)
                         storage = getattr(tx, 'storage', None) if tx else self.object_space.storage
                         ap_lr = getattr(latest_sr, 'atom_pointer', None)
-                        print(f"[DEBUG] latest space_root_ptr={getattr(ap_lr,'transaction_id',None)}/{getattr(ap_lr,'offset',None)} latest object_root_ptr={getattr(ap_cat,'transaction_id',None)}/{getattr(ap_cat,'offset',None)}")
+                        logger.debug("latest space_root_ptr=%s/%s latest object_root_ptr=%s/%s", getattr(ap_lr,'transaction_id',None), getattr(ap_lr,'offset',None), getattr(ap_cat,'transaction_id',None), getattr(ap_cat,'offset',None))
                         if storage and ap_cat:
                             cat_json = storage.get_atom(ap_cat).result()
                             # The catalog is a Dictionary serialized as {'className':'Dictionary', 'content': ...}
-                            print(f"[DEBUG] latest_catalog JSON keys: {list(cat_json.keys())}")
+                            logger.debug("latest_catalog JSON keys: %s", list(cat_json.keys()))
                     except Exception:
                         pass
                 except Exception:
@@ -999,9 +1002,9 @@ class ObjectTransaction(AbstractTransaction):
         # Debug snapshot count
         if debug:
             try:
-                print(f"[DEBUG] read_lock_roots count: {self.read_lock_roots.count}")
+                logger.debug("read_lock_roots count: %s", self.read_lock_roots.count)
                 for n, p in self.read_lock_roots.as_iterable():
-                    print(f"[DEBUG] Locked root '{n}' original ptr: {getattr(p,'transaction_id',None)}/{getattr(p,'offset',None)}")
+                    logger.debug("Locked root '%s' original ptr: %s/%s", n, getattr(p,'transaction_id',None), getattr(p,'offset',None))
             except Exception:
                 pass
         for name, original_object_pointer in self.read_lock_roots.as_iterable():
@@ -1012,12 +1015,12 @@ class ObjectTransaction(AbstractTransaction):
                 current_object_pointer = None
             if debug:
                 try:
-                    print(f"[DEBUG] Current ptr for '{name}': {getattr(current_object_pointer,'transaction_id',None)}/{getattr(current_object_pointer,'offset',None)}")
+                    logger.debug("Current ptr for '%s': %s/%s", name, getattr(current_object_pointer,'transaction_id',None), getattr(current_object_pointer,'offset',None))
                 except Exception:
                     pass
             if original_object_pointer != current_object_pointer:
                 if debug:
-                    print(f"[DEBUG] Conflict on '{name}': original={original_object_pointer} current={current_object_pointer}")
+                    logger.debug("Conflict on '%s': original=%s current=%s", name, original_object_pointer, current_object_pointer)
                 # CONCURRENT MODIFICATION DETECTED
                 new_object = self.new_roots.get_at(name)
 
@@ -1031,7 +1034,7 @@ class ObjectTransaction(AbstractTransaction):
                         # If successful, replace the object in our transaction with the merged one
                         self.new_roots = self.new_roots.set_at(name, rebased_object)
                         if debug:
-                            print(f"[DEBUG] Rebased '{name}' and continuing commit")
+                            logger.debug("Rebased '%s' and continuing commit", name)
                         # Mark this root as rebased to avoid double-reconciliation later
                         try:
                             self._rebased_root_names.add(name)
@@ -1105,14 +1108,14 @@ class ObjectTransaction(AbstractTransaction):
                                 curr_v = None
                             if dbg:
                                 try:
-                                    print(f"[DEBUG] Merge key '{root_name}.{k}': staged={type(v).__name__} curr={type(curr_v).__name__ if curr_v is not None else None}")
+                                    logger.debug("Merge key '%s.%s': staged=%s curr=%s", root_name, k, type(v).__name__, (type(curr_v).__name__ if curr_v is not None else None))
                                 except Exception:
                                     pass
                             # 1) Integer counters: treat a staged change as +1 increment on the fresh current value
                             if isinstance(v, int) and isinstance(curr_v, int):
                                 merged = merged.set_at(k, int(curr_v) + 1)
                                 if dbg:
-                                    print(f"[DEBUG] Counter increment for '{root_name}.{k}': {curr_v} -> {int(curr_v) + 1}")
+                                    logger.debug("Counter increment for '%s.%s': %s -> %s", root_name, k, curr_v, int(curr_v) + 1)
                                 continue
                             # 2) Set/CountedSet buckets: union staged elements into the current bucket
                             try:
@@ -1131,7 +1134,7 @@ class ObjectTransaction(AbstractTransaction):
                                         bucket = bucket.add(e)
                                     merged = merged.set_at(k, bucket)
                                     if dbg:
-                                        print(f"[DEBUG] Unioned bucket for '{root_name}.{k}'")
+                                        logger.debug("Unioned bucket for '%s.%s'", root_name, k)
                                     continue
                                 except Exception:
                                     pass
@@ -1203,7 +1206,7 @@ class ObjectTransaction(AbstractTransaction):
                                 try:
                                     cr = db_root.get_at('counter_root')
                                     cv = cr.get_at('counter') if cr else None
-                                    print(f"[DEBUG] Final counter before save: {cv}")
+                                    logger.debug("Final counter before save: %s", cv)
                                 except Exception:
                                     pass
                         except Exception:
@@ -1327,10 +1330,10 @@ class RootContextManager:
     def __enter__(self):
         import os
         if os.environ.get('PB_DEBUG_CONC'):
-            print('[DEBUG] Entering RootContextManager: acquiring provider root lock')
+            logger.debug('Entering RootContextManager: acquiring provider root lock')
         self.root_cm.__enter__()
         if os.environ.get('PB_DEBUG_CONC'):
-            print('[DEBUG] Entered RootContextManager: lock acquired, reading db root')
+            logger.debug('Entered RootContextManager: lock acquired, reading db root')
         # Capture the full space_root and history once under the lock for downstream operations
         try:
             os_obj = getattr(self.object_transaction, 'object_space', None)
@@ -1384,7 +1387,7 @@ class RootContextManager:
         import os
         self.root_cm.__exit__(exc_type, exc_value, traceback)
         if os.environ.get('PB_DEBUG_CONC'):
-            print('[DEBUG] Exiting RootContextManager: provider root lock released')
+            logger.debug('Exiting RootContextManager: provider root lock released')
         return False
 
 class BytesAtom(Atom):

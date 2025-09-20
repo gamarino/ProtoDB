@@ -180,7 +180,7 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
             import os as _os
             if _os.environ.get('PB_DEBUG_CONC'):
                 try:
-                    print(f"[DEBUG] Storage.set_current_root: {getattr(root_pointer,'transaction_id',None)}/{getattr(root_pointer,'offset',None)}")
+                    _logger.debug("Storage.set_current_root: %s/%s", getattr(root_pointer,'transaction_id',None), getattr(root_pointer,'offset',None))
                 except Exception:
                     pass
         except Exception:

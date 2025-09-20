@@ -1,8 +1,11 @@
 from __future__ import annotations
+import logging
 from typing import cast, TYPE_CHECKING
 from .common import Atom, QueryPlan, DBCollections, AbstractTransaction, AtomPointer
 from .indexes import IndexRegistry, IndexDefinition
 from .queries import IndexedQueryPlan
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     # For type checking only to avoid circular imports at runtime
