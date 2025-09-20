@@ -54,7 +54,8 @@ class TestRecursivePlan(unittest.TestCase):
              .traverse('manager', direction='up', strategy='dfs'))
         def _nm(e):
             v = getattr(e, 'name', None)
-            return v.string if hasattr(v, 'string') else v
+            s = getattr(v, 'string', None)
+            return s if s is not None else v
         results = [_nm(e) for e in q]
         self.assertEqual(results, ['Manager1', 'Director1', 'VP1', 'CEO'])
 
@@ -66,7 +67,8 @@ class TestRecursivePlan(unittest.TestCase):
              .traverse('reports', direction='down', strategy='bfs'))
         def _nm(e):
             v = getattr(e, 'name', None)
-            return v.string if hasattr(v, 'string') else v
+            s = getattr(v, 'string', None)
+            return s if s is not None else v
         results = [_nm(e) for e in q]
         self.assertIn('VP1', results)
         self.assertIn('VP2', results)
@@ -81,7 +83,8 @@ class TestRecursivePlan(unittest.TestCase):
              .traverse('manager', max_depth=2))
         def _nm(e):
             v = getattr(e, 'name', None)
-            return v.string if hasattr(v, 'string') else v
+            s = getattr(v, 'string', None)
+            return s if s is not None else v
         results = [_nm(e) for e in q]
         self.assertEqual(results, ['Manager1', 'Director1'])
 
@@ -102,7 +105,8 @@ class TestRecursivePlan(unittest.TestCase):
              .traverse('manager', include_start_node=True))
         def _nm(e):
             v = getattr(e, 'name', None)
-            return v.string if hasattr(v, 'string') else v
+            s = getattr(v, 'string', None)
+            return s if s is not None else v
         results = [_nm(e) for e in q]
         self.assertIn('Manager1', results)
         self.assertIn('Director1', results)
@@ -118,7 +122,8 @@ class TestRecursivePlan(unittest.TestCase):
              .where(F.name.contains('VP')))
         def _nm(e):
             v = getattr(e, 'name', None)
-            return v.string if hasattr(v, 'string') else v
+            s = getattr(v, 'string', None)
+            return s if s is not None else v
         results = [_nm(e) for e in q]
         self.assertEqual(results, ['VP1'])
 

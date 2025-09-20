@@ -67,8 +67,9 @@ class List(DBCollections):
             next = None
         self.next = next
         self.previous = previous
-        # Empty status is an explicit flag; must not depend on the truthiness of value (e.g., 0 or "")
-        self.empty = bool(empty)
+        # Determine emptiness: if any content (value or children) is provided, it's not empty
+        has_content = (value is not None) or (previous is not None) or (next is not None)
+        self.empty = False if has_content else bool(empty)
         # Do not auto-create a Dictionary for indexes here to avoid circular initialization
         # Leave indexes as provided (can be None). Index structures will be created lazily when needed.
         self.indexes = indexes

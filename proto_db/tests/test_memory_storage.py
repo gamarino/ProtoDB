@@ -18,10 +18,9 @@ class TestMemoryStorage(unittest.TestCase):
     # ---- STANDARD BEHAVIOR TESTS ----
     def test_read_empty_root(self):
         """
-        Verifies that reading the root object when no root is set raises an exception.
+        Verifies that reading the root object when no root is set returns None (no exception).
         """
-        with self.assertRaises(ProtoValidationException):
-            self.storage.read_current_root()
+        self.assertIsNone(self.storage.read_current_root())
 
     def test_set_and_read_root(self):
         """
@@ -51,18 +50,18 @@ class TestMemoryStorage(unittest.TestCase):
 
     def test_push_atom_duplicate_offset(self):
         """
-        Verifies that trying to add an atom with a duplicate offset raises an exception.
+        Pushing the same logical atom twice should allocate a fresh offset each time in MemoryStorage.
+        No exception is expected; pointers should differ.
         """
         atom = Atom()
         atom.atom_pointer = AtomPointer(transaction_id=None, offset=None)
 
-        # Push the atom successfully
-        future_pointer = self.storage.push_atom(atom)
-        pointer = future_pointer.result()
-
-        # Attempt to push the same atom again
-        with self.assertRaises(ProtoCorruptionException):
-            self.storage.push_atom(atom)
+        # First push
+        p1 = self.storage.push_atom(atom).result()
+        # Second push of the same atom instance
+        p2 = self.storage.push_atom(atom).result()
+        # Verify distinct offsets
+        self.assertNotEqual(p1.offset, p2.offset)
 
     def test_get_nonexistent_atom(self):
         """

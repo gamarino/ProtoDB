@@ -915,7 +915,7 @@ class IndexedQueryPlan(QueryPlan):
                 return
 
             # Native key match without string conversion
-            value_set = idx_dict.set_at(value)
+            value_set = idx_dict.get_at(value)
             if value_set is None:
                 return
 
@@ -955,7 +955,7 @@ class IndexedQueryPlan(QueryPlan):
         index = self.position_at(field_name, value)
         # Inclusive: if exact match at position, include it by advancing one
         if index < idx_dict.content.count:
-            item = cast(DictionaryItem, idx_dict.content.set_at(index))
+            item = cast(DictionaryItem, idx_dict.content.get_at(index))
             if item and item.key == value:
                 index += 1
         return self.yield_up_to_index(field_name, index)
@@ -984,7 +984,7 @@ class IndexedQueryPlan(QueryPlan):
         pos = 0
         while left <= right:
             center = (left + right) // 2
-            item = cast(DictionaryItem, idx_dict.content.set_at(center))
+            item = cast(DictionaryItem, idx_dict.content.get_at(center))
             if item is None:
                 break
             iok = _ok(item.key)
@@ -995,7 +995,7 @@ class IndexedQueryPlan(QueryPlan):
                 left = center + 1
         # Adjust for exclusivity on lower bound
         if pos < count:
-            item = cast(DictionaryItem, idx_dict.content.set_at(pos))
+            item = cast(DictionaryItem, idx_dict.content.get_at(pos))
             if item is not None:
                 if not include_lower and item.key == lo:
                     pos += 1
