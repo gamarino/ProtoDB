@@ -398,10 +398,28 @@ class FileBlockProvider(common.BlockProvider):
                 self.bp = bp
 
             def __enter__(self):
+                try:
+                    import os as _os
+                    if _os.environ.get('PB_DEBUG_CONC'):
+                        print('[DEBUG][IO] FileBlockProvider.RootContextManager enter: acquiring root lock')
+                except Exception:
+                    pass
                 self.bp._acquire_root_lock()
+                try:
+                    import os as _os
+                    if _os.environ.get('PB_DEBUG_CONC'):
+                        print('[DEBUG][IO] FileBlockProvider.RootContextManager entered: root lock acquired')
+                except Exception:
+                    pass
 
             def __exit__(self, exc_type, exc_value, traceback):
                 self.bp._release_root_lock()
+                try:
+                    import os as _os
+                    if _os.environ.get('PB_DEBUG_CONC'):
+                        print('[DEBUG][IO] FileBlockProvider.RootContextManager exit: root lock released')
+                except Exception:
+                    pass
 
             def __repr__(self):
                 return f"FileBlockProvider.RootContextManager(bp={self.bp})"

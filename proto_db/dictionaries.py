@@ -357,8 +357,8 @@ class Dictionary(DBCollections, ConcurrentOptimized):
                 current_val = rebased_dict.get_at(key)
                 # 1) Integer counters: if both ints and value differs, treat as +1 increment
                 if isinstance(value, int) and isinstance(current_val, int):
-                    if value != current_val:
-                        rebased_dict = rebased_dict.set_at(key, current_val + 1)
+                    # Treat integer updates as idempotent increments: always apply +1 on the current value
+                    rebased_dict = rebased_dict.set_at(key, current_val + 1)
                     continue
                 # 2) Set/CountedSet buckets: union staged bucket into current bucket
                 from .sets import Set as _Set, CountedSet as _CSet

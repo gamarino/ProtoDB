@@ -57,6 +57,11 @@ class List(DBCollections):
 
         # Initialize the current node's key, value, and child references.
         self.value = value
+        # Normalize empty child nodes to None to avoid placeholder empties in the tree
+        if previous is not None and getattr(previous, 'empty', False):
+            previous = None
+        if next is not None and getattr(next, 'empty', False):
+            next = None
         self.next = next
         self.previous = previous
         # Empty status is an explicit flag; must not depend on the truthiness of value (e.g., 0 or "")
@@ -631,7 +636,7 @@ class List(DBCollections):
                 new_node = List(
                     value=self.value,
                     empty=False,
-                    previous=self.previous.insert_at(cmp, value),
+                    previous=self.previous.insert_at(offset, value),
                     next=self.next,
                     transaction=self.transaction
                 )
@@ -734,10 +739,11 @@ class List(DBCollections):
             # Remove from the left subtree.
             if self.previous:
                 self.previous._load()
+                prev_removed = self.previous.remove_at(offset)
                 new_node = List(
                     value=self.value,
                     empty=False,
-                    previous=self.previous.remove_at(offset),
+                    previous=prev_removed if not getattr(prev_removed, 'empty', False) else None,
                     next=self.next,
                     transaction=self.transaction
                 )
@@ -751,7 +757,7 @@ class List(DBCollections):
                 self.next._load()
                 if getattr(self.next, 'empty', False):
                     # Treat as no right child
-                    if self.previous:
+                    if self.previous and not getattr(self.previous, 'empty', False):
                         self.previous._load()
                         last_value = self.previous.get_at(-1)
                         new_previous = self.previous.remove_last()
@@ -819,7 +825,7 @@ class List(DBCollections):
 
         current_value = self.get_at(0)
 
-        if self.previous:
+        if self.previous and not getattr(self.previous, 'empty', False):
             # Recurse into left subtree and rebuild
             self.previous._load()
             previous_removed = self.previous.remove_first()
@@ -862,7 +868,7 @@ class List(DBCollections):
 
         current_value = self.get_at(-1)
 
-        if self.next:
+        if self.next and not getattr(self.next, 'empty', False):
             self.next._load()
             # Remove from the right subtree and rebuild
             next_removed = self.next.remove_last()

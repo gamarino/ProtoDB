@@ -35,6 +35,21 @@ class AtomPointer(object):
     def hash(self):
         return self.transaction_id.int ^ self.offset
 
+    # Value-based equality to avoid false conflict detection on pointer snapshots
+    def __eq__(self, other):
+        if not isinstance(other, AtomPointer):
+            return False
+        try:
+            return (self.transaction_id == other.transaction_id) and (self.offset == other.offset)
+        except Exception:
+            return False
+
+    def __hash__(self):
+        try:
+            return hash((self.transaction_id, self.offset))
+        except Exception:
+            return 0
+
 
 atom_class_registry = dict()
 

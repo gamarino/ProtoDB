@@ -4,16 +4,13 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] test revised (except concurrency)">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[WIP] tests concurrency">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/proto_db/db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/db_access.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/proto_db/dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/dictionaries.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/proto_db/file_block_provider.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/file_block_provider.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/lists.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/sets.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/sets.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/standalone_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/standalone_file_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_concurrency.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_concurrency.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/memory_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/memory_storage.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -290,15 +287,7 @@
       <workItem from="1758056235372" duration="937000" />
       <workItem from="1758057990140" duration="24385000" />
       <workItem from="1758156790567" duration="4115000" />
-      <workItem from="1758290115211" duration="24480000" />
-    </task>
-    <task id="LOCAL-00103" summary="Se corrigió y depuró collection_indexing_example.py para asegurar ejecución sin errores. El ejemplo ahora crea 50k usuarios, ejecuta búsquedas con y sin índice, y reporta una mejora de rendimiento. Se verificó que las pruebas clave pasen correctamente.">
-      <option name="closed" value="true" />
-      <created>1757782622426</created>
-      <option name="number" value="00103" />
-      <option name="presentableId" value="LOCAL-00103" />
-      <option name="project" value="LOCAL" />
-      <updated>1757782622427</updated>
+      <workItem from="1758290115211" duration="30254000" />
     </task>
     <task id="LOCAL-00104" summary="All example scripts in the examples directory run without errors after adding sys.path bootstrapping and fixing a LINQ select bug. The fixes ensure proper dict projection evaluation and eliminate import issues. Unit tests confirmed the correctness of the LINQ-like behavior.">
       <option name="closed" value="true" />
@@ -684,14 +673,21 @@
       <option name="project" value="LOCAL" />
       <updated>1758321425951</updated>
     </task>
-    <option name="localTasksCounter" value="152" />
+    <task id="LOCAL-00152" summary="[WIP] tests concurrency">
+      <option name="closed" value="true" />
+      <created>1758333085063</created>
+      <option name="number" value="00152" />
+      <option name="presentableId" value="LOCAL-00152" />
+      <option name="project" value="LOCAL" />
+      <updated>1758333085063</updated>
+    </task>
+    <option name="localTasksCounter" value="153" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="All 259 tests passed after fixing failing tests and improving query handling. Enhanced warnings, explain() support, LINQ behavior, and hashing consistency were implemented. The project test suite ran cleanly with no errors remaining." />
     <MESSAGE value="[IMP] future_vision.md" />
     <MESSAGE value="[IMP] sets.py: implementation of Sets and CountedSet with lazy save to avoid persisting a set if it is finally not part of the persisted graph at commit. It allows limitless creation of intermediate sets during transaction processing, persisting only referred objects" />
     <MESSAGE value="The Sets and CountedSet tests were re-run and fixed, resolving issues in CountedSet.remove_at and count calculations. DBObject immutability errors during save were addressed by allowing certain internal attributes to be set. The full test suite completed successfully with all 259 tests passing." />
@@ -716,7 +712,8 @@
     <MESSAGE value="[WIP] locking en get_literals" />
     <MESSAGE value="[WIP] tests" />
     <MESSAGE value="[FIX] test revised (except concurrency)" />
-    <option name="LAST_COMMIT_MESSAGE" value="[FIX] test revised (except concurrency)" />
+    <MESSAGE value="[WIP] tests concurrency" />
+    <option name="LAST_COMMIT_MESSAGE" value="[WIP] tests concurrency" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

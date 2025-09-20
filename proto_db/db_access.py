@@ -291,20 +291,53 @@ class ObjectSpace(AbstractObjectSpace):
         Persist a new space root using the already-read current_history. This avoids
         re-reading the root or re-entering any locks and must be called while the
         provider root lock is held.
+        Now that List.insert_at is fixed, prepend the new root directly with insert_at(0)
+        without reconstructing the history.
         """
         update_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
         new_space_root.transaction = update_tr
-        space_history = current_history.insert_at(0, new_space_root)
+        # Directly prepend the new root to the existing history
+        try:
+            # Ensure the history uses the same transaction for persistence
+            try:
+                current_history.transaction = update_tr
+            except Exception:
+                pass
+            space_history = current_history.insert_at(0, new_space_root)
+        except Exception:
+            # As a fallback, create a minimal list with the new head
+            from .lists import List as _List
+            space_history = _List(transaction=update_tr).insert_at(0, new_space_root)
         space_history._save()
-        # Debug: pointer being written for space_history
+        # Debug: pointer being written for space_history and embedded object_root pointer
         try:
             import os as _os
             if _os.environ.get('PB_DEBUG_CONC'):
                 ap = getattr(space_history, 'atom_pointer', None)
-                print(f"[DEBUG] Writing space_root pointer: {getattr(ap,'transaction_id',None)}/{getattr(ap,'offset',None)}")
+                ap_ro = getattr(getattr(new_space_root, 'object_root', None), 'atom_pointer', None)
+                print(f"[DEBUG] Writing space_root pointer: {getattr(ap,'transaction_id',None)}/{getattr(ap,'offset',None)} with object_root_ptr={getattr(ap_ro,'transaction_id',None)}/{getattr(ap_ro,'offset',None)}")
         except Exception:
             pass
         self.storage.set_current_root(space_history.atom_pointer)
+        # Deep-verify the just written history head points to the intended RootObject
+        try:
+            import os as _os
+            if _os.environ.get('PB_DEBUG_CONC'):
+                try:
+                    hp = getattr(space_history, 'atom_pointer', None)
+                    print(f"[DEBUG] ObjectSpace.set_space_root_locked wrote history_ptr={getattr(hp,'transaction_id',None)}/{getattr(hp,'offset',None)}")
+                    stg = self.storage
+                    if hp and stg:
+                        lst_json = stg.get_atom(hp).result()
+                        head = lst_json.get('value') if isinstance(lst_json, dict) else None
+                        if isinstance(head, dict):
+                            ro_tid = head.get('transaction_id')
+                            ro_off = head.get('offset')
+                            print(f"[DEBUG] History head RootObject ptr in JSON: {ro_tid}/{ro_off}")
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def get_literals(self, literals: Dictionary) -> dict[str, Literal]:
         update_tr = ObjectTransaction(None, storage=self.storage)
@@ -344,12 +377,37 @@ class ObjectSpace(AbstractObjectSpace):
 
                     if update_catalog:
                         literal_catalog._save()
-                        root = RootObject(
-                            object_root=root.object_root,
-                            literal_root=literal_catalog,
-                            transaction=update_tr
-                        )
-                        self.set_space_root(root)
+                        # Persist only the literal_root under the provider lock, preserving the freshest object_root
+                        try:
+                            # Re-enter provider root context to serialize with other root updates
+                            with self._space_context():
+                                locked_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
+                                # Read the freshest space history and root under the lock
+                                current_hist = self.get_space_history()
+                                fresh_root = self.get_space_root()
+                                current_object_root = fresh_root.object_root if fresh_root and fresh_root.object_root else root.object_root
+                                # Build and save a new RootObject with the updated literal_root and current object_root
+                                locked_root = RootObject(
+                                    object_root=current_object_root,
+                                    literal_root=literal_catalog,
+                                    transaction=locked_tr
+                                )
+                                locked_root._save()
+                                # Write using locked history to avoid re-reads and prevent overwrites of object_root
+                                self.set_space_root_locked(locked_root, current_hist)
+                        except Exception:
+                            # As a last resort, fall back to non-locked update but still preserve object_root from the freshest head
+                            try:
+                                fresh_space_root = self.get_space_root()
+                                current_object_root = fresh_space_root.object_root if fresh_space_root and fresh_space_root.object_root else root.object_root
+                            except Exception:
+                                current_object_root = root.object_root
+                            root = RootObject(
+                                object_root=current_object_root,
+                                literal_root=literal_catalog,
+                                transaction=update_tr
+                            )
+                            self.set_space_root(root)
 
             return new_literals
 
@@ -401,7 +459,14 @@ class Database(AbstractDatabase):
                 except Exception:
                     pass
             # Non-blocking read of space root (do not acquire provider lock to preserve concurrency)
-            space_root = self.object_space.get_space_root()
+            # Read the space history pointer directly to avoid any intermediate cache effects
+            root_pointer = self.object_space.storage.read_current_root()
+            if root_pointer:
+                space_history = List(transaction=read_tr, atom_pointer=root_pointer)
+                space_history._load()
+                space_root = space_history.get_at(0) if space_history.count > 0 else RootObject(transaction=read_tr)
+            else:
+                space_root = RootObject(object_root=Dictionary(transaction=read_tr), literal_root=Dictionary(transaction=read_tr), transaction=read_tr)
 
             if space_root.object_root:
                 db_catalog = space_root.object_root
@@ -456,11 +521,37 @@ class Database(AbstractDatabase):
                 transaction=update_tr
             )
 
+        # Build an initial new_space_root from the current snapshot
         new_space_root = RootObject(
             object_root=initial_root.object_root.set_at(self.database_name, new_db_root),
             literal_root=initial_root.literal_root,
             transaction=update_tr
         )
+        # Just before saving, refresh the object_root from the freshest head to avoid lost updates
+        try:
+            freshest = self.object_space.get_space_root()
+            fresh_catalog = freshest.object_root if freshest and freshest.object_root else initial_root.object_root
+            fresh_catalog = fresh_catalog.set_at(self.database_name, new_db_root)
+            new_space_root = RootObject(
+                object_root=fresh_catalog,
+                literal_root=new_space_root.literal_root,
+                transaction=update_tr
+            )
+        except Exception:
+            pass
+        # Debug persist info
+        try:
+            import os as _os
+            if _os.environ.get('PB_DEBUG_CONC'):
+                try:
+                    cur_db_root = new_space_root.object_root.get_at(self.database_name)
+                    cnt_root = cur_db_root.get_at('counter_root') if cur_db_root else None
+                    cnt_val = cnt_root.get_at('counter') if cnt_root else None
+                    print(f"[DEBUG] set_db_root persist: counter={cnt_val}")
+                except Exception:
+                    pass
+        except Exception:
+            pass
         new_space_root._save()
 
         self.object_space.set_space_root(new_space_root)
@@ -511,8 +602,12 @@ class Database(AbstractDatabase):
             except Exception:
                 pass
             new_space_root._save()
-            # Persist: re-read current history under the lock to prepend fresh head
-            self.object_space.set_space_root(new_space_root)
+            # Persist using the already-captured history under the same lock to avoid re-reads
+            try:
+                self.object_space.set_space_root_locked(new_space_root, locked_space_history)
+            except Exception:
+                # Fallback to non-locked variant if locked API is unavailable
+                self.object_space.set_space_root(new_space_root)
             update_tr.abort()
             return
 
@@ -563,13 +658,35 @@ class Database(AbstractDatabase):
                 literal_root=Dictionary(transaction=update_tr),
                 transaction=update_tr
             )
+        # Ensure object_root dictionary is bound to this update transaction
+        try:
+            if getattr(base_root, 'object_root', None):
+                base_root.object_root.transaction = update_tr
+        except Exception:
+            pass
+        # Update the catalog mapping to the new db_root and persist object_root explicitly
+        updated_catalog = base_root.object_root.set_at(self.database_name, new_db_root)
+        try:
+            updated_catalog.transaction = update_tr
+            updated_catalog._save()
+        except Exception:
+            pass
+        # Debug: log catalog/root pointers prior to RootObject creation
+        try:
+            import os as _os
+            if _os.environ.get('PB_DEBUG_CONC'):
+                ap_base = getattr(getattr(base_root, 'object_root', None), 'atom_pointer', None)
+                ap_cat = getattr(updated_catalog, 'atom_pointer', None)
+                print(f"[DEBUG] set_db_root_locked pre-root: base_catalog_ptr={getattr(ap_base,'transaction_id',None)}/{getattr(ap_base,'offset',None)} updated_catalog_ptr={getattr(ap_cat,'transaction_id',None)}/{getattr(ap_cat,'offset',None)}")
+        except Exception:
+            pass
         new_space_root = RootObject(
-            object_root=base_root.object_root.set_at(self.database_name, new_db_root),
+            object_root=updated_catalog,
             literal_root=base_root.literal_root,
             transaction=update_tr
         )
         new_space_root._save()
-        # Debug: show counter just before persisting the new root pointer
+        # Debug: show counter and pointers just before persisting the new root pointer
         try:
             import os as _os
             if _os.environ.get('PB_DEBUG_CONC'):
@@ -577,13 +694,48 @@ class Database(AbstractDatabase):
                     cur_db_root = new_space_root.object_root.get_at(self.database_name)
                     cnt_root = cur_db_root.get_at('counter_root') if cur_db_root else None
                     cnt_val = cnt_root.get_at('counter') if cnt_root else None
-                    print(f"[DEBUG] Persisting db_root: counter={cnt_val}")
+                    ap_db = getattr(cur_db_root, 'atom_pointer', None)
+                    ap_sr = getattr(new_space_root, 'atom_pointer', None)
+                    ap_or = getattr(getattr(new_space_root, 'object_root', None), 'atom_pointer', None)
+                    print(f"[DEBUG] set_db_root_locked about to persist: db='{self.database_name}' db_root_ptr={getattr(ap_db,'transaction_id',None)}/{getattr(ap_db,'offset',None)} space_root_ptr={getattr(ap_sr,'transaction_id',None)}/{getattr(ap_sr,'offset',None)} object_root_ptr={getattr(ap_or,'transaction_id',None)}/{getattr(ap_or,'offset',None)} counter={cnt_val}")
                 except Exception:
                     pass
         except Exception:
             pass
-        # Persist: re-read current history under the lock to prepend fresh head
-        self.object_space.set_space_root(new_space_root)
+        # Persist using the provided locked history under the same lock to avoid re-reads
+        try:
+            self.object_space.set_space_root_locked(new_space_root, locked_space_history)
+        except Exception:
+            # Fallback to non-locked variant if locked API is unavailable
+            self.object_space.set_space_root(new_space_root)
+        # Debug: immediately read under lock to log current mapping (no retry)
+        try:
+            import os as _os
+            if _os.environ.get('PB_DEBUG_CONC'):
+                try:
+                    latest_hist = self.object_space.get_space_history()
+                    latest_sr = self.object_space.get_space_root()
+                    latest_catalog = getattr(latest_sr, 'object_root', None)
+                    latest_db_root = latest_catalog.get_at(self.database_name) if latest_catalog else None
+                    ap_latest = getattr(latest_db_root, 'atom_pointer', None)
+                    ap_cat = getattr(latest_catalog, 'atom_pointer', None)
+                    print(f"[DEBUG] set_db_root_locked post-persist mapping: db='{self.database_name}' db_root_ptr={getattr(ap_latest,'transaction_id',None)}/{getattr(ap_latest,'offset',None)}")
+                    # Deep-inspect latest catalog content to verify STDB mapping
+                    try:
+                        tx = getattr(latest_sr, 'transaction', None)
+                        storage = getattr(tx, 'storage', None) if tx else self.object_space.storage
+                        ap_lr = getattr(latest_sr, 'atom_pointer', None)
+                        print(f"[DEBUG] latest space_root_ptr={getattr(ap_lr,'transaction_id',None)}/{getattr(ap_lr,'offset',None)} latest object_root_ptr={getattr(ap_cat,'transaction_id',None)}/{getattr(ap_cat,'offset',None)}")
+                        if storage and ap_cat:
+                            cat_json = storage.get_atom(ap_cat).result()
+                            # The catalog is a Dictionary serialized as {'className':'Dictionary', 'content': ...}
+                            print(f"[DEBUG] latest_catalog JSON keys: {list(cat_json.keys())}")
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
         update_tr.abort()
 
     def finish_update(self):
@@ -714,9 +866,14 @@ class ObjectTransaction(AbstractTransaction):
         # Expose atom cache bundle from the underlying storage (if available)
         self.atom_cache_bundle = getattr(self.storage, '_atom_caches', None)
         self.new_roots = Dictionary()
+        # Track read-locked mutable objects (by integer key)
         self.read_lock_objects = HashDictionary()
+        # Track read-locked database roots (by string name)
+        self.read_lock_roots = Dictionary()
         self.new_mutable_objects = HashDictionary()
         self.modified_mutable_objects = HashDictionary()
+        # Track which roots were successfully rebased due to concurrent updates
+        self._rebased_root_names = set()
 
         if self.transaction_root and self.transaction_root.has('_mutable_root'):
             self.initial_mutable_objects = cast(HashDictionary, self.transaction_root.get_at('_mutable_root'))
@@ -775,9 +932,9 @@ class ObjectTransaction(AbstractTransaction):
                     if self.transaction_root.has(name):
                         obj = self.transaction_root.get_at(name)
                         original_ptr = getattr(obj, 'atom_pointer', None)
-                        # Store snapshot if not already present
-                        if not self.read_lock_objects.has(name):
-                            self.read_lock_objects = self.read_lock_objects.set_at(name, original_ptr)
+                        # Store snapshot if not already present (track roots by name)
+                        if not self.read_lock_roots.has(name):
+                            self.read_lock_roots = self.read_lock_roots.set_at(name, original_ptr)
                 except Exception:
                     pass
                 return self.transaction_root.get_at(name)
@@ -801,6 +958,11 @@ class ObjectTransaction(AbstractTransaction):
         with self.lock:
             if self.transaction_root:
                 self.new_roots = self.new_roots.set_at(name, value)
+                # Also reflect the change in the transaction snapshot so merges see staged values
+                try:
+                    self.transaction_root = self.transaction_root.set_at(name, value)
+                except Exception:
+                    pass
             else:
                 self.new_roots = Dictionary(transaction=self)
                 self.new_roots = self.new_roots.set_at(name, value)
@@ -824,22 +986,35 @@ class ObjectTransaction(AbstractTransaction):
 
     def _check_read_locked_objects(self, current_root: Dictionary):
         """
-        Check if any of the read-locked objects have been modified by another transaction.
+        Check if any of the read-locked objects (roots by name) have been modified by another transaction.
 
         :param current_root: The current database root (Dictionary) at commit time.
         """
-        if not self.read_lock_objects:
+        if not self.read_lock_roots:
             return
 
         import os
         debug = os.environ.get('PB_DEBUG_CONC')
 
-        for name, original_object_pointer in self.read_lock_objects.as_iterable():
+        # Debug snapshot count
+        if debug:
+            try:
+                print(f"[DEBUG] read_lock_roots count: {self.read_lock_roots.count}")
+                for n, p in self.read_lock_roots.as_iterable():
+                    print(f"[DEBUG] Locked root '{n}' original ptr: {getattr(p,'transaction_id',None)}/{getattr(p,'offset',None)}")
+            except Exception:
+                pass
+        for name, original_object_pointer in self.read_lock_roots.as_iterable():
             try:
                 current_obj = current_root.get_at(name)
                 current_object_pointer = getattr(current_obj, 'atom_pointer', None)
             except Exception:
                 current_object_pointer = None
+            if debug:
+                try:
+                    print(f"[DEBUG] Current ptr for '{name}': {getattr(current_object_pointer,'transaction_id',None)}/{getattr(current_object_pointer,'offset',None)}")
+                except Exception:
+                    pass
             if original_object_pointer != current_object_pointer:
                 if debug:
                     print(f"[DEBUG] Conflict on '{name}': original={original_object_pointer} current={current_object_pointer}")
@@ -857,6 +1032,11 @@ class ObjectTransaction(AbstractTransaction):
                         self.new_roots = self.new_roots.set_at(name, rebased_object)
                         if debug:
                             print(f"[DEBUG] Rebased '{name}' and continuing commit")
+                        # Mark this root as rebased to avoid double-reconciliation later
+                        try:
+                            self._rebased_root_names.add(name)
+                        except Exception:
+                            pass
                         # And continue to the next locked object
                         continue
                     except Exception as e:
@@ -910,6 +1090,8 @@ class ObjectTransaction(AbstractTransaction):
                 except Exception:
                     existing_root = None
                 # Per-entry reconciliation when both sides are Dictionary
+                # Always perform per-entry reconciliation against the freshest current values to avoid
+                # relying on prior rebase outcomes, ensuring idempotent increments under contention.
                 if isinstance(staged_root, Dictionary) and isinstance(existing_root, Dictionary):
                     merged = existing_root
                     try:
@@ -1008,7 +1190,8 @@ class ObjectTransaction(AbstractTransaction):
                     # The following block will be synchronized among all transactions
                     # for this database
                     with RootContextManager(object_transaction=self) as db_root:
-                        # Skip explicit read-locked conflict checking; reconcile deterministically under the lock
+                        # Re-check read-locked objects under the root lock; raise on conflicts to allow retry
+                        self._check_read_locked_objects(db_root)
                         db_root = self._update_mutable_indexes(db_root)
                         db_root = self._update_database_roots(db_root)
                         db_root.transaction = self
@@ -1028,22 +1211,16 @@ class ObjectTransaction(AbstractTransaction):
 
                         db_root._save()
 
-                        # Avoid re-entering the root lock while already inside RootContextManager
-                        # to prevent deadlocks with non-reentrant provider locks.
-                        # Prefer locked-context path that uses pre-captured space_root/history
-                        if hasattr(self, '_locked_space_root') and hasattr(self, '_locked_space_history') and \
-                                getattr(self, '_locked_space_root') is not None and \
-                                getattr(self, '_locked_space_history') is not None and \
-                                hasattr(self.database, 'set_db_root_with_locked_context'):
-                            self.database.set_db_root_with_locked_context(
-                                db_root,
-                                getattr(self, '_locked_space_root'),
-                                getattr(self, '_locked_space_history')
-                            )
-                        elif hasattr(self.database, 'set_db_root_locked'):
+                        # Persist db_root under the provider root lock using captured locked context when available.
+                        try:
+                            lsr = getattr(self, '_locked_space_root', None)
+                            lsh = getattr(self, '_locked_space_history', None)
+                            if lsr is not None and lsh is not None:
+                                self.database.set_db_root_with_locked_context(db_root, lsr, lsh)
+                            else:
+                                self.database.set_db_root_locked(db_root)
+                        except Exception:
                             self.database.set_db_root_locked(db_root)
-                        else:
-                            self.database.set_db_root(db_root)
 
                         # Note: removed read-after-write second pass to avoid double-applying merges
                         # under high contention (which led to over-incrementing counters). The primary
@@ -1165,11 +1342,39 @@ class RootContextManager:
                 setattr(self.object_transaction, '_locked_space_root', space_root)
         except Exception:
             pass
-        # Return the current database root under the acquired root lock
+        # Return the current database root under the acquired root lock using the locked snapshot
         try:
-            if self.object_transaction and self.object_transaction.database:
-                # Do not pass unknown parameters; read while under the lock
-                return self.object_transaction.database.read_db_root()
+            ot = self.object_transaction
+            db = getattr(ot, 'database', None)
+            os_obj = getattr(ot, 'object_space', None)
+            if db is not None and os_obj is not None:
+                # Build current db_root from the locked space_root captured above
+                locked_space_root = getattr(ot, '_locked_space_root', None)
+                if locked_space_root is None:
+                    # As a fallback (should not happen), read via database API
+                    return db.read_db_root()
+                # Ensure the locked space_root is loaded and bound to this transaction
+                tx = ot
+                # Extract the catalog and get this database's root
+                catalog = getattr(locked_space_root, 'object_root', None)
+                if catalog is None:
+                    return Dictionary(transaction=tx)
+                try:
+                    db_root = catalog.get_at(db.database_name)
+                except Exception:
+                    db_root = None
+                if db_root is None:
+                    return Dictionary(transaction=tx)
+                # Bind transaction for subsequent saves in this critical section
+                try:
+                    db_root.transaction = tx
+                except Exception:
+                    pass
+                try:
+                    db_root._load()
+                except Exception:
+                    pass
+                return db_root
         except Exception:
             pass
         # Fallback: return an empty Dictionary if database context is unavailable

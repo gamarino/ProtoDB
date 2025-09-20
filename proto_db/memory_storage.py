@@ -55,7 +55,17 @@ class MemoryStorage(common.SharedStorage):
             ProtoValidationException: If no root object has been set yet.
         """
         with self.lock:  # Ensure thread-safety when accessing `current_root`.
-            return self.current_root_history_pointer
+            ptr = self.current_root_history_pointer
+            # Debug instrumentation
+            try:
+                import os as _os
+                if _os.environ.get('PB_DEBUG_CONC'):
+                    tid = getattr(ptr, 'transaction_id', None)
+                    off = getattr(ptr, 'offset', None)
+                    print(f"[DEBUG][MEM] read_current_root -> {tid}/{off}")
+            except Exception:
+                pass
+            return ptr
 
     def read_lock_current_root(self) -> AtomPointer:
         return self.read_current_root()
@@ -66,6 +76,15 @@ class MemoryStorage(common.SharedStorage):
         :param new_root_history_pointer: The pointer to the new `RootObject` to be set.
         """
         with self.lock:  # Ensure thread-safety when modifying `current_root`.
+            # Debug instrumentation
+            try:
+                import os as _os
+                if _os.environ.get('PB_DEBUG_CONC'):
+                    tid = getattr(new_root_history_pointer, 'transaction_id', None)
+                    off = getattr(new_root_history_pointer, 'offset', None)
+                    print(f"[DEBUG][MEM] set_current_root <- {tid}/{off}")
+            except Exception:
+                pass
             self.current_root_history_pointer = new_root_history_pointer
 
     def unlock_current_root(self):
@@ -78,12 +97,31 @@ class MemoryStorage(common.SharedStorage):
                 self.ms = ms
                 self._acquired = False
             def __enter__(self):
+                # Debug
+                try:
+                    import os as _os
+                    if _os.environ.get('PB_DEBUG_CONC'):
+                        print("[DEBUG][MEM] RootContextManager enter: acquiring lock")
+                except Exception:
+                    pass
                 self.ms.lock.acquire()
                 self._acquired = True
+                try:
+                    import os as _os
+                    if _os.environ.get('PB_DEBUG_CONC'):
+                        print("[DEBUG][MEM] RootContextManager entered: lock acquired")
+                except Exception:
+                    pass
             def __exit__(self, exc_type, exc_value, traceback):
                 if self._acquired:
                     self.ms.lock.release()
                 self._acquired = False
+                try:
+                    import os as _os
+                    if _os.environ.get('PB_DEBUG_CONC'):
+                        print("[DEBUG][MEM] RootContextManager exit: lock released")
+                except Exception:
+                    pass
             def __repr__(self):
                 return f"MemoryStorage.RootContextManager(ms={self.ms})"
         return ContextManager(self)
