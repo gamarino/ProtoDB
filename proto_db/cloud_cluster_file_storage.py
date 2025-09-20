@@ -12,12 +12,15 @@ from typing import List, Optional, Tuple
 from unittest.mock import MagicMock
 
 from . import common
-from .cloud_file_storage import CloudFileStorage, CloudBlockProvider
+from .cloud_file_storage import CloudFileStorage
 from .cluster_file_storage import MSG_TYPE_PAGE_RESPONSE
 from .common import MB, AtomPointer
 from .exceptions import ProtoUnexpectedException
 from .file_block_provider import FileBlockProvider
 from .standalone_file_storage import StandaloneFileStorage
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .cloud_file_storage import CloudBlockProvider
 
 _logger = logging.getLogger(__name__)
 
@@ -61,7 +64,7 @@ class CloudClusterFileStorage(CloudFileStorage):
     """
 
     def __init__(self,
-                 block_provider: CloudBlockProvider,
+                 block_provider: 'CloudBlockProvider',
                  server_id: str = None,
                  host: str = None,
                  port: int = None,

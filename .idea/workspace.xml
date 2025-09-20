@@ -5,7 +5,9 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[WIP] full tests">
-      <change beforePath="$PROJECT_DIR$/proto_db/db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/db_access.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/cloud_cluster_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/cloud_cluster_file_storage.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/cloud_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/cloud_file_storage.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -282,15 +284,8 @@
       <workItem from="1758056235372" duration="937000" />
       <workItem from="1758057990140" duration="24385000" />
       <workItem from="1758156790567" duration="4115000" />
-      <workItem from="1758290115211" duration="39741000" />
-    </task>
-    <task id="LOCAL-00113" summary="Updated commercial_positioning.md">
-      <option name="closed" value="true" />
-      <created>1757794520547</created>
-      <option name="number" value="00113" />
-      <option name="presentableId" value="LOCAL-00113" />
-      <option name="project" value="LOCAL" />
-      <updated>1757794520547</updated>
+      <workItem from="1758290115211" duration="41123000" />
+      <workItem from="1758372899949" duration="1763000" />
     </task>
     <task id="LOCAL-00114" summary="Implemented LINQ integration with index-aware optimizer ensuring compatibility and fast-path execution. Added tests validating indexed equality, IN, range, AND/OR merges, and explain diagnostics. Public LINQ API remains backward compatible with no Python set materialization for index buckets.">
       <option name="closed" value="true" />
@@ -676,7 +671,15 @@
       <option name="project" value="LOCAL" />
       <updated>1758348909641</updated>
     </task>
-    <option name="localTasksCounter" value="162" />
+    <task id="LOCAL-00162" summary="[WIP] full tests">
+      <option name="closed" value="true" />
+      <created>1758349328420</created>
+      <option name="number" value="00162" />
+      <option name="presentableId" value="LOCAL-00162" />
+      <option name="project" value="LOCAL" />
+      <updated>1758349328420</updated>
+    </task>
+    <option name="localTasksCounter" value="163" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
