@@ -237,7 +237,7 @@ class List(DBCollections):
                 import os as _os
                 if _os.environ.get('PB_DEBUG_CONC'):
                     ap = getattr(self, 'atom_pointer', None)
-                    print(f"[DEBUG] List._save persisted pointer: {getattr(ap,'transaction_id',None)}/{getattr(ap,'offset',None)}")
+                    logger.debug("List._save persisted pointer: %s/%s", getattr(ap,'transaction_id',None), getattr(ap,'offset',None))
             except Exception:
                 pass
             self._saved = True

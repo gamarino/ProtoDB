@@ -741,16 +741,17 @@ class DBObject(Atom):
             object.__setattr__(self, key, value)
 
     def __getattribute__(self, name: str):
-        # Semantics of DBObjects
-        # Get the attribute. If it doesn't exist, return None.
-        # NO EXCEPTION THROWN
+        # DBObject semantics for attribute access:
+        # - Fast-path internal/wiring attributes without triggering loads.
+        # - For public attributes, load lazily and return the value when present.
+        # - If the attribute is not present after load, raise AttributeError so hasattr() works as expected.
 
         # Fast-path internal attributes and wiring to avoid recursion and unnecessary loads
         if name.startswith('_') or name in ('transaction', 'atom_pointer', '__class__', '__dict__', 'after_load'):
             return object.__getattribute__(self, name)
         # If name is a method/descriptor on the class, return it directly (do not trigger load)
         try:
-            cls_attr = object.__getattribute__(type(self), name)
+            object.__getattribute__(type(self), name)
             # Access via base to honor descriptors (e.g., properties)
             return object.__getattribute__(self, name)
         except Exception:
@@ -764,8 +765,8 @@ class DBObject(Atom):
         d = object.__getattribute__(self, '__dict__')
         if name in d and d.get(name, None) is not None:
             return d[name]
-        # Missing attribute: DBObjects return None instead of raising
-        return None
+        # Missing attribute: raise AttributeError so hasattr returns False
+        raise AttributeError(name)
 
     def __getattr__(self, name: str):
         # Kept for backward compatibility; __getattribute__ handles most cases.

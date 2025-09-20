@@ -129,7 +129,7 @@ class TestJoinPlan(unittest.TestCase):
         self.assertIsNotNone(emp6)
 
         # Verify that the department is None for the employee with a non-existent department
-        self.assertFalse(hasattr(emp6, 'department'))
+        self.assertIsNone(getattr(emp6, 'department', None))
 
     def test_right_join(self):
         """
@@ -159,7 +159,7 @@ class TestJoinPlan(unittest.TestCase):
         self.assertIsNotNone(proj4)
 
         # Verify that the department is None for the project with a non-existent department
-        self.assertFalse(hasattr(proj4, 'department'))
+        self.assertIsNone(getattr(proj4, 'department', None))
 
     def test_external_join(self):
         """
@@ -196,15 +196,15 @@ class TestJoinPlan(unittest.TestCase):
         self.assertEqual(len(result), 27)
 
         # Count results with only employee data
-        emp_only = sum(1 for r in result if hasattr(r, 'employee') and not hasattr(r, 'department'))
+        emp_only = sum(1 for r in result if hasattr(r, 'employee') and getattr(r, 'department', None) is None)
         self.assertEqual(emp_only, 6)
 
         # Count results with only department data
-        dept_only = sum(1 for r in result if hasattr(r, 'department') and not hasattr(r, 'employee'))
+        dept_only = sum(1 for r in result if hasattr(r, 'department') and getattr(r, 'employee', None) is None)
         self.assertEqual(dept_only, 3)
 
         # Count results with both employee and department data
-        both = sum(1 for r in result if hasattr(r, 'employee') and hasattr(r, 'department'))
+        both = sum(1 for r in result if getattr(r, 'employee', None) is not None and getattr(r, 'department', None) is not None)
         self.assertEqual(both, 18)
 
     def test_external_left_join(self):
@@ -241,11 +241,11 @@ class TestJoinPlan(unittest.TestCase):
         self.assertEqual(len(result), 24)
 
         # Count results with only employee data
-        emp_only = sum(1 for r in result if hasattr(r, 'employee') and not hasattr(r, 'department'))
+        emp_only = sum(1 for r in result if hasattr(r, 'employee') and getattr(r, 'department', None) is None)
         self.assertEqual(emp_only, 6)
 
         # Count results with both employee and department data
-        both = sum(1 for r in result if hasattr(r, 'employee') and hasattr(r, 'department'))
+        both = sum(1 for r in result if getattr(r, 'employee', None) is not None and getattr(r, 'department', None) is not None)
         self.assertEqual(both, 18)
 
     def test_external_right_join(self):
@@ -271,11 +271,11 @@ class TestJoinPlan(unittest.TestCase):
         self.assertEqual(len(result), 16)
 
         # Count results with only project data
-        proj_only = sum(1 for r in result if hasattr(r, 'project') and not hasattr(r, 'department'))
+        proj_only = sum(1 for r in result if hasattr(r, 'project') and getattr(r, 'department', None) is None)
         self.assertEqual(proj_only, 4)
 
         # Count results with both department and project data
-        both = sum(1 for r in result if hasattr(r, 'department') and hasattr(r, 'project'))
+        both = sum(1 for r in result if getattr(r, 'department', None) is not None and getattr(r, 'project', None) is not None)
         self.assertEqual(both, 12)
 
     def test_outer_join(self):
@@ -300,15 +300,15 @@ class TestJoinPlan(unittest.TestCase):
         self.assertEqual(len(result), 8)
 
         # Count results with only employee data
-        emp_only = sum(1 for r in result if hasattr(r, 'employee') and not hasattr(r, 'department'))
+        emp_only = sum(1 for r in result if hasattr(r, 'employee') and getattr(r, 'department', None) is None)
         self.assertEqual(emp_only, 5)
 
         # Count results with only department data
-        dept_only = sum(1 for r in result if hasattr(r, 'department') and not hasattr(r, 'employee'))
+        dept_only = sum(1 for r in result if hasattr(r, 'department') and getattr(r, 'employee', None) is None)
         self.assertEqual(dept_only, 3)
 
         # Count results with both employee and department data
-        both = sum(1 for r in result if hasattr(r, 'employee') and hasattr(r, 'department'))
+        both = sum(1 for r in result if getattr(r, 'employee', None) is not None and getattr(r, 'department', None) is not None)
         self.assertEqual(both, 0)  # Outer join doesn't combine records
 
     def test_optimize(self):
