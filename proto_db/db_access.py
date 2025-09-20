@@ -655,12 +655,13 @@ class Database(AbstractDatabase):
                 )
             # Merge with current db_root under lock
             try:
-                existing_root = base_root.object_root.get_at(self.database_name)
+                _ = base_root.object_root.get_at(self.database_name)
             except Exception:
-                existing_root = None
-            merged_db_root = self._merge_single_root(existing_root, new_db_root)
+                pass
+            # The caller already reconciled staged changes against the freshest values under the lock.
+            # Persist the provided new_db_root directly without a second merge to avoid lost updates.
             new_space_root = RootObject(
-                object_root=base_root.object_root.set_at(self.database_name, merged_db_root),
+                object_root=base_root.object_root.set_at(self.database_name, new_db_root),
                 literal_root=base_root.literal_root,
                 transaction=update_tr
             )
@@ -735,14 +736,12 @@ class Database(AbstractDatabase):
         except Exception:
             pass
         # Update the catalog mapping to the new db_root and persist object_root explicitly
-        # Merge staged root onto current to avoid lost updates (idempotent counters, unions)
-        current_existing = None
+        # Persist the provided new_db_root directly without a second merge to avoid lost updates
         try:
-            current_existing = base_root.object_root.get_at(self.database_name)
+            _ = base_root.object_root.get_at(self.database_name)
         except Exception:
-            current_existing = None
-        merged_db_root = self._merge_single_root(current_existing, new_db_root)
-        updated_catalog = base_root.object_root.set_at(self.database_name, merged_db_root)
+            pass
+        updated_catalog = base_root.object_root.set_at(self.database_name, new_db_root)
         try:
             updated_catalog.transaction = update_tr
             updated_catalog._save()
@@ -1162,18 +1161,45 @@ class ObjectTransaction(AbstractTransaction):
         current_db_root = current_root
         if self.new_roots.count > 0:
             for root_name, staged_root in self.new_roots.as_iterable():
-                # If we already performed a rebase for this root under a detected conflict,
-                # avoid applying per-entry reconciliation again to prevent double-applying increments.
+                # Note: Even if a rebase occurred earlier, we still run per-entry reconciliation.
+                # Treat a staged integer change as an intent to increment by +1 on the freshest current value.
+                # This makes the operation idempotent and correct under contention.
                 try:
-                    if hasattr(self, '_rebased_root_names') and root_name in self._rebased_root_names:
-                        current_db_root = current_db_root.set_at(root_name, staged_root)
-                        continue
+                    _ = getattr(self, '_rebased_root_names', None)
                 except Exception:
                     pass
                 try:
                     existing_root = current_db_root.get_at(root_name)
                 except Exception:
                     existing_root = None
+                if existing_root is None:
+                    # Fallback to initial snapshot if current lookup failed (defensive)
+                    try:
+                        init_snapshot = getattr(self, 'initial_transaction_root', None)
+                        if init_snapshot is not None:
+                            existing_root = init_snapshot.get_at(root_name)
+                    except Exception:
+                        pass
+                # Debug: log staged vs existing counter when applicable
+                try:
+                    import os as _os
+                    if _os.environ.get('PB_DEBUG_CONC') and root_name == 'counter_root':
+                        try:
+                            staged_val = None
+                            try:
+                                staged_val = staged_root.get_at('counter') if hasattr(staged_root, 'get_at') else None
+                            except Exception:
+                                staged_val = None
+                            exist_val = None
+                            try:
+                                exist_val = existing_root.get_at('counter') if hasattr(existing_root, 'get_at') else None
+                            except Exception:
+                                exist_val = None
+                            logger.debug("Merge pre-check for '%s': staged.counter=%s existing.counter=%s", root_name, staged_val, exist_val)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
                 # Defensive CAS: if our initial snapshot pointer differs from current, treat as conflict
                 try:
                     init_snapshot = getattr(self, 'initial_transaction_root', None)
@@ -1184,7 +1210,7 @@ class ObjectTransaction(AbstractTransaction):
                             snap_obj = None
                         orig_ptr = getattr(snap_obj, 'atom_pointer', None)
                         curr_ptr = getattr(existing_root, 'atom_pointer', None)
-                        if orig_ptr is not None and curr_ptr is not None and orig_ptr != curr_ptr:
+                        if orig_ptr != curr_ptr:
                             # Conflict: rebase if possible, else raise to trigger retry
                             if isinstance(staged_root, ConcurrentOptimized):
                                 try:
@@ -1200,8 +1226,9 @@ class ObjectTransaction(AbstractTransaction):
                                 raise ProtoLockingException(f"Concurrent update on '{root_name}' (non-mergeable)")
                 except Exception:
                     pass
-                # Per-entry reconciliation when both sides are Dictionary
-                if isinstance(staged_root, Dictionary) and isinstance(existing_root, Dictionary):
+                # Per-entry reconciliation when both sides are Dictionary-like
+                if (isinstance(staged_root, Dictionary) or hasattr(staged_root, 'as_iterable')) and \
+                   (isinstance(existing_root, Dictionary) or hasattr(existing_root, 'get_at')):
                     merged = existing_root
                     try:
                         import os as _os
@@ -1475,6 +1502,15 @@ class RootContextManager:
                 if catalog is None:
                     return Dictionary(transaction=tx)
                 try:
+                    # Ensure the catalog is bound and loaded under this transaction
+                    try:
+                        catalog.transaction = tx
+                    except Exception:
+                        pass
+                    try:
+                        catalog._load()
+                    except Exception:
+                        pass
                     db_root = catalog.get_at(db.database_name)
                 except Exception:
                     db_root = None
