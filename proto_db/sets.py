@@ -295,6 +295,18 @@ class Set(Atom):
         # Create and return a new `Set` with the updated `HashDictionary`.
         self._load()
 
+        # Defensive: avoid adding Set/CountedSet objects as elements (would be unhashable and semantically invalid)
+        try:
+            from .sets import CountedSet as _CSet  # local import to avoid circulars in type checkers
+            if isinstance(key, (Set, _CSet)):
+                return self
+        except Exception:
+            try:
+                if isinstance(key, Set):
+                    return self
+            except Exception:
+                pass
+
         if self.has(key):
             return self
 
@@ -519,6 +531,12 @@ class CountedSet(Set):
         return total
 
     def add(self, key: object) -> 'CountedSet':
+        # Defensive: avoid adding Set/CountedSet objects as elements
+        try:
+            if isinstance(key, (Set, CountedSet)):
+                return self
+        except Exception:
+            pass
         h = self._hash_of(key)
         self._load()
         if self.counts.has(h):

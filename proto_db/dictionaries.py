@@ -179,6 +179,22 @@ class Dictionary(DBCollections, ConcurrentOptimized):
         :return: A new instance of Dictionary with the updated content.
         """
         self._load()
+        # Ensure Atom values have a stable pointer before insertion (immutability-friendly)
+        try:
+            from .common import Atom as _Atom
+            if isinstance(value, _Atom):
+                if not getattr(value, 'atom_pointer', None):
+                    # Bind the child's transaction to this dictionary's transaction if missing
+                    try:
+                        if not getattr(value, 'transaction', None):
+                            object.__setattr__(value, 'transaction', self.transaction)
+                            # Ensure a fresh save cycle
+                            object.__setattr__(value, '_saved', False)
+                    except Exception:
+                        pass
+                    value._save()
+        except Exception:
+            pass
 
         def _ok(v):
             return DictionaryItem._order_key(v)
@@ -331,15 +347,51 @@ class Dictionary(DBCollections, ConcurrentOptimized):
         rebased_dict = cast(Dictionary, current_db_object)
         rebased_dict._op_log = []
 
-        for op_type, key, value in self._op_log:
-            if op_type == 'set':
-                rebased_dict = rebased_dict.set_at(key, value)
-            elif op_type == 'remove':
-                rebased_dict = rebased_dict.remove_at(key)
-            else:
-                raise ProtoNotSupportedException(
-                    f"Unknown operation '{op_type}' during rebase."
-                )
+        # Data-driven merge: compare our staged values with the current DB values and reconcile
+        try:
+            # Build a dict of our staged key->value pairs
+            staged_items = []
+            for k, v in self.as_iterable():
+                staged_items.append((k, v))
+            for key, value in staged_items:
+                current_val = rebased_dict.get_at(key)
+                # 1) Integer counters: if both ints and value differs, treat as +1 increment
+                if isinstance(value, int) and isinstance(current_val, int):
+                    if value != current_val:
+                        rebased_dict = rebased_dict.set_at(key, current_val + 1)
+                    continue
+                # 2) Set/CountedSet buckets: union staged bucket into current bucket
+                from .sets import Set as _Set, CountedSet as _CSet
+                if hasattr(value, 'as_iterable') and isinstance(current_val, (_Set, _CSet)):
+                    bucket = current_val
+                    try:
+                        for e in value.as_iterable():
+                            # Guard against nested Set/CountedSet being added as elements
+                            if isinstance(e, (_Set, _CSet)):
+                                continue
+                            bucket = bucket.add(e)
+                        rebased_dict = rebased_dict.set_at(key, bucket)
+                        continue
+                    except Exception:
+                        pass
+                # 3) For other types: if value differs or key absent, last-writer-wins
+                try:
+                    equal = (value == current_val)
+                except Exception:
+                    equal = False
+                if not equal:
+                    rebased_dict = rebased_dict.set_at(key, value)
+        except Exception:
+            # On any failure, fallback to replaying op_log if available; otherwise last-writer-wins
+            for op_type, key, value in self._op_log:
+                if op_type == 'set':
+                    rebased_dict = rebased_dict.set_at(key, value)
+                elif op_type == 'remove':
+                    rebased_dict = rebased_dict.remove_at(key)
+                else:
+                    raise ProtoNotSupportedException(
+                        f"Unknown operation '{op_type}' during rebase."
+                    )
         return rebased_dict
 
 

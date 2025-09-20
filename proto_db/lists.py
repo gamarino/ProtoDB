@@ -224,6 +224,15 @@ class List(DBCollections):
                 self.value._save()
 
             super()._save()
+            # Mark as saved and instrument pointer for diagnostics
+            try:
+                import os as _os
+                if _os.environ.get('PB_DEBUG_CONC'):
+                    ap = getattr(self, 'atom_pointer', None)
+                    print(f"[DEBUG] List._save persisted pointer: {getattr(ap,'transaction_id',None)}/{getattr(ap,'offset',None)}")
+            except Exception:
+                pass
+            self._saved = True
 
     def as_iterable(self) -> list[tuple[int, object]]:
         """

@@ -175,6 +175,16 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
         return RootContextManager(self)
 
     def set_current_root(self, root_pointer: AtomPointer):
+        # Debug: log pointer written at storage level
+        try:
+            import os as _os
+            if _os.environ.get('PB_DEBUG_CONC'):
+                try:
+                    print(f"[DEBUG] Storage.set_current_root: {getattr(root_pointer,'transaction_id',None)}/{getattr(root_pointer,'offset',None)}")
+                except Exception:
+                    pass
+        except Exception:
+            pass
         self.block_provider.update_root_object(root_pointer)
 
     def _get_new_wal(self):
@@ -420,17 +430,22 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
 
         def task_read_atom():
             key = (pointer.transaction_id, pointer.offset, caches.schema_epoch if caches else None)
-            # Single-flight: only one thread does the load+deserialize
-            leader_event = caches.singleflight.begin(key) if caches else None
+            # Single-flight disabled to avoid potential deadlocks under heavy concurrency
+            sf = getattr(caches, 'singleflight', None) if caches else None
+            leader_event = sf.begin(key) if sf else object()  # any non-None sentinel means we are the leader
             if leader_event is None and caches:
-                # Follower: wait for leader to finish and then try caches again
-                caches.singleflight.wait(key)
+                # Follower path (should not happen with sf disabled), but keep as safe fallback
+                if hasattr(sf, 'wait'):
+                    sf.wait(key)
                 if caches.obj_cache:
                     t0 = time.time()
                     obj2 = caches.obj_cache.get(pointer.transaction_id, pointer.offset, caches.schema_epoch)
                     caches.record_latency("object_cache_ms", (time.time() - t0) * 1000.0)
                     if obj2 is not None:
-                        caches.obj_cache._stats.singleflight_dedup += 1
+                        try:
+                            caches.obj_cache._stats.singleflight_dedup += 1
+                        except Exception:
+                            pass
                         return obj2
                 if caches.bytes_cache:
                     t0 = time.time()
@@ -440,8 +455,6 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
                         # Deserialize
                         tds0 = time.time()
                         mv = raw2
-                        # Peek first byte for format when coming from bytes cache: we expect length+indicator already stripped,
-                        # but bytes cache stores the raw payload (we will cache only payload below). Here, for safety, just try JSON then MsgPack.
                         try:
                             atom_data = json.loads(mv.tobytes().decode('UTF-8'))
                         except Exception:

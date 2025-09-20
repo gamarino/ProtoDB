@@ -4,25 +4,16 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[WIP] tests">
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] test revised (except concurrency)">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/examples/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/comprehensive_benchmark.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/comprehensive_benchmark.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/db_performance_benchmark.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/db_performance_benchmark.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/simple_example.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/simple_example.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/proto_db/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/common.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/proto_db/db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/db_access.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/dictionaries.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/file_block_provider.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/file_block_provider.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/lists.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/proto_db/sets.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/sets.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/proto_db/standalone_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/standalone_file_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_dbobject_recursion.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_dbobject_recursion.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_expressions.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_expressions.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_group_by_plan.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_group_by_plan.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_hash_dictionary.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_hash_dictionary.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_join_plan.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_join_plan.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_lists.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_recursive_plan.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_recursive_plan.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_where_plan.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_where_plan.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_concurrency.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_concurrency.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -299,23 +290,7 @@
       <workItem from="1758056235372" duration="937000" />
       <workItem from="1758057990140" duration="24385000" />
       <workItem from="1758156790567" duration="4115000" />
-      <workItem from="1758290115211" duration="12785000" />
-    </task>
-    <task id="LOCAL-00101" summary="The README.md was updated to reflect the current state of ProtoBase. Key Features were enhanced with new index-aware optimizer details and caching behavior. The Benchmarks section and performance snapshot were revised with updated parameters and results.">
-      <option name="closed" value="true" />
-      <created>1757780237565</created>
-      <option name="number" value="00101" />
-      <option name="presentableId" value="LOCAL-00101" />
-      <option name="project" value="LOCAL" />
-      <updated>1757780237565</updated>
-    </task>
-    <task id="LOCAL-00102" summary="Added an example script showing collection indexing. Demonstrated faster searches using add_index('email') with timing and speedup output. as_query_plan() returns IndexedQueryPlan enabling optimized queries.">
-      <option name="closed" value="true" />
-      <created>1757780765016</created>
-      <option name="number" value="00102" />
-      <option name="presentableId" value="LOCAL-00102" />
-      <option name="project" value="LOCAL" />
-      <updated>1757780765016</updated>
+      <workItem from="1758290115211" duration="24480000" />
     </task>
     <task id="LOCAL-00103" summary="Se corrigió y depuró collection_indexing_example.py para asegurar ejecución sin errores. El ejemplo ahora crea 50k usuarios, ejecuta búsquedas con y sin índice, y reporta una mejora de rendimiento. Se verificó que las pruebas clave pasen correctamente.">
       <option name="closed" value="true" />
@@ -693,14 +668,29 @@
       <option name="project" value="LOCAL" />
       <updated>1758316871713</updated>
     </task>
-    <option name="localTasksCounter" value="150" />
+    <task id="LOCAL-00150" summary="[WIP] tests">
+      <option name="closed" value="true" />
+      <created>1758320187569</created>
+      <option name="number" value="00150" />
+      <option name="presentableId" value="LOCAL-00150" />
+      <option name="project" value="LOCAL" />
+      <updated>1758320187569</updated>
+    </task>
+    <task id="LOCAL-00151" summary="[FIX] test revised (except concurrency)">
+      <option name="closed" value="true" />
+      <created>1758321425951</created>
+      <option name="number" value="00151" />
+      <option name="presentableId" value="LOCAL-00151" />
+      <option name="project" value="LOCAL" />
+      <updated>1758321425951</updated>
+    </task>
+    <option name="localTasksCounter" value="152" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="clean up testing cache" />
     <MESSAGE value="All 259 tests passed after fixing failing tests and improving query handling. Enhanced warnings, explain() support, LINQ behavior, and hashing consistency were implemented. The project test suite ran cleanly with no errors remaining." />
     <MESSAGE value="[IMP] future_vision.md" />
     <MESSAGE value="[IMP] sets.py: implementation of Sets and CountedSet with lazy save to avoid persisting a set if it is finally not part of the persisted graph at commit. It allows limitless creation of intermediate sets during transaction processing, persisting only referred objects" />
@@ -725,7 +715,8 @@
     <MESSAGE value="[WIP] La documentación fue actualizada para incluir una nueva sección sobre locking de root con ejemplos y notas de troubleshooting. Se enlazó en el índice principal y se añadió una sección al README.md. La documentación HTML fue generada exitosamente con Sphinx." />
     <MESSAGE value="[WIP] locking en get_literals" />
     <MESSAGE value="[WIP] tests" />
-    <option name="LAST_COMMIT_MESSAGE" value="[WIP] tests" />
+    <MESSAGE value="[FIX] test revised (except concurrency)" />
+    <option name="LAST_COMMIT_MESSAGE" value="[FIX] test revised (except concurrency)" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

@@ -374,7 +374,20 @@ class Atom(metaclass=CombinedMeta):
             return False
 
     def _push_to_storage(self, json_value: dict) -> AtomPointer:
-        return self.transaction.storage.push_atom(json_value).result()
+        # Instrument push path for diagnosing save-path corruption
+        try:
+            import os as _os
+            if _os.environ.get('PB_DEBUG_CONC'):
+                print(f"[DEBUG] Atom._push_to_storage: tx={self.transaction} storage={getattr(self.transaction,'storage',None)}")
+        except Exception:
+            pass
+        ptr = self.transaction.storage.push_atom(json_value).result()
+        try:
+            if _os.environ.get('PB_DEBUG_CONC'):
+                print(f"[DEBUG] Atom._push_to_storage result: {getattr(ptr,'transaction_id',None)}/{getattr(ptr,'offset',None)} for class={json_value.get('className')}")
+        except Exception:
+            pass
+        return ptr
 
     def _json_to_dict(self, json_data: dict) -> dict:
         data = {}
@@ -514,19 +527,32 @@ class Atom(metaclass=CombinedMeta):
                                 continue
 
                             if isinstance(value, Atom):
+                                # Ensure child has a transaction bound to allow persistence
                                 if 'transaction' not in value.__dict__ or not value.__dict__['transaction']:
-                                    # it is a newly created atom
-                                    # it should not happen, but try to solve the misbehaviour
-                                    # capture it for this transaction
                                     object.__setattr__(value, 'transaction', self.__dict__['transaction'])
+                                    # Force a fresh save cycle on the child
                                     object.__setattr__(value, '_saved', False)
-                                if '_saved' not in value.__dict__ or not value.__dict__['_saved']:
-                                    object.__setattr__(value, 'transaction', self.__dict__['transaction'])
-                                value._save()
+                                # Attempt to save the child
+                                try:
+                                    value._save()
+                                except Exception:
+                                    # Retry once after forcing transaction and resetting _saved
+                                    try:
+                                        object.__setattr__(value, 'transaction', self.__dict__['transaction'])
+                                        object.__setattr__(value, '_saved', False)
+                                        value._save()
+                                    except Exception:
+                                        pass
 
                                 ap = getattr(value, 'atom_pointer', None)
                                 if not ap:
-                                    print(f"[DEBUG] Missing atom_pointer after save: holder={type(self).__name__}, attr={name}, child_type={type(value).__name__}")
+                                    # Instrumentation to diagnose save-path corruption
+                                    try:
+                                        import os as _os
+                                        if _os.environ.get('PB_DEBUG_CONC'):
+                                            print(f"[DEBUG] Nested save missing pointer: holder={type(self).__name__}, attr={name}, child_type={type(value).__name__}, tx={getattr(getattr(value,'transaction',None),'__class__',None)}")
+                                    except Exception:
+                                        pass
                                     raise ProtoCorruptionException(
                                         message=f'Corruption saving nested Atom: attr={name}, type={type(value).__name__} in holder={type(self).__name__}'
                                     )

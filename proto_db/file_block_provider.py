@@ -5,7 +5,7 @@ import logging
 import os
 import uuid
 from io import BytesIO, SEEK_SET, SEEK_CUR, SEEK_END
-from threading import Lock
+from threading import Lock, get_ident
 from typing import BinaryIO
 
 import psutil
@@ -330,8 +330,11 @@ class FileBlockProvider(common.BlockProvider):
 
         self.reader_factory = FileReaderFactory(space_path)
         self.page_cache = PageCache(self.maximun_cache_size / self.page_size, self.page_size, self.reader_factory)
-        # Root lock file descriptor (for OS-level exclusive locks)
+        # Root lock state (for OS-level exclusive locks with reentrancy awareness)
         self._root_lock_fd = None
+        self._root_lock_owner = None
+        self._root_lock_count = 0
+        self._root_lock_guard = Lock()
 
     def get_config_data(self):
         return self.config_data
@@ -407,52 +410,148 @@ class FileBlockProvider(common.BlockProvider):
 
     def get_current_root_object(self):
         """
-        Read current root object from storage
-        :return: the current root object as a dict, or None if missing
+        Read current root object from storage with robustness under concurrent writers.
+        Returns dict or None if not available/valid yet.
+        Lowest-level path: uses os.open/os.read and os.fstat to avoid higher-level buffering
+        and to instrument exact bytes, inode and timestamps read from disk.
         """
-        try:
-            with open(os.path.join(self.space_path, 'space_root'), 'r') as root_file:
+        path = os.path.join(self.space_path, 'space_root')
+        # Retry a few times to avoid transient races while another thread/process is replacing the file
+        for _ in range(10):
+            try:
+                # Low-level open and read
+                fd = os.open(path, os.O_RDONLY)
                 try:
-                    root_dict = json.load(root_file)
-                except json.JSONDecodeError:
-                    # Empty or partially written file: treat as no root set yet
-                    return None
-                # Tests expect the raw JSON content (a dict) to be returned
-                return root_dict
-        except FileNotFoundError:
-            return None
-        except Exception as e:
-            _logger.exception(e)
-            return None
+                    st = os.fstat(fd)
+                    chunks = []
+                    while True:
+                        b = os.read(fd, 8192)
+                        if not b:
+                            break
+                        chunks.append(b)
+                    raw = b"".join(chunks)
+                    # Decode and parse
+                    try:
+                        text = raw.decode('utf-8')
+                    except Exception:
+                        # If decoding fails, fall back to BytesIO+json for diagnostics
+                        text = ''
+                    try:
+                        data = json.loads(text) if text else json.loads(raw.decode('utf-8', 'ignore'))
+                    except json.JSONDecodeError:
+                        # Empty or partially written file: try again shortly
+                        import time as _time
+                        _time.sleep(0.001)
+                        continue
+                    # Debug: log pointer and file stats at lowest level
+                    try:
+                        import os as _os
+                        if _os.environ.get('PB_DEBUG_IO') or _os.environ.get('PB_DEBUG_CONC'):
+                            prefix = text[:200] if text else ''
+                            print(
+                                f"[DEBUG][IO] READ space_root fd={fd} inode={st.st_ino} size={st.st_size} "
+                                f"mtime_ns={st.st_mtime_ns} ctime_ns={st.st_ctime_ns} bytes_prefix={prefix!r}")
+                            try:
+                                print(f"[DEBUG] Provider.read space_root -> {data.get('transaction_id')}/{data.get('offset')}")
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    return data
+                finally:
+                    try:
+                        os.close(fd)
+                    except Exception:
+                        pass
+            except FileNotFoundError:
+                return None
+            except OSError:
+                # Bad file descriptor or similar transient errors; retry briefly
+                import time as _time
+                _time.sleep(0.001)
+                continue
+            except Exception:
+                # Unknown error: break and return None
+                break
+        return None
 
-    def _acquire_root_lock(self):
+    def _acquire_root_lock(self, timeout_sec: float = 5.0):
         """
         Acquire an OS-level exclusive lock on the root lock file to serialize root updates
         across processes/threads. Best-effort on platforms without fcntl.
+        Re-entrant for the same thread: nested calls will be counted and not re-lock.
+        A small timeout prevents indefinite blocking; on timeout, a ProtoValidationException is raised.
         """
         try:
-            lock_path = os.path.join(self.space_path, 'space_root.lock')
-            # Ensure lock file exists
-            fd = os.open(lock_path, os.O_CREAT | os.O_RDWR)
-            self._root_lock_fd = fd
+            tid = get_ident()
+            with self._root_lock_guard:
+                if self._root_lock_owner == tid and self._root_lock_fd is not None:
+                    # Re-entrant acquisition by the same thread
+                    self._root_lock_count += 1
+                    return
+                lock_path = os.path.join(self.space_path, 'space_root.lock')
+                # Ensure lock file exists
+                fd = os.open(lock_path, os.O_CREAT | os.O_RDWR)
+                self._root_lock_fd = fd
+            # Try non-blocking flock with retries to avoid deadlock
+            start = None
             try:
                 import fcntl  # type: ignore
-                fcntl.flock(fd, fcntl.LOCK_EX)
+                import errno, time as _time
+                if start is None:
+                    start = _time.time()
+                while True:
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except OSError as e:
+                        if e.errno in (errno.EAGAIN, errno.EACCES):
+                            if (_time.time() - start) >= timeout_sec:
+                                raise ProtoValidationException(message="Timeout acquiring root lock")
+                            _time.sleep(0.01)
+                        else:
+                            raise
+                with self._root_lock_guard:
+                    self._root_lock_owner = tid
+                    self._root_lock_count = 1
             except Exception:
+                # Windows fallback
                 try:
                     import msvcrt  # type: ignore
-                    # Lock entire file (dummy length)
-                    msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+                    import time as _time
+                    if start is None:
+                        start = _time.time()
+                    while True:
+                        try:
+                            msvcrt.locking(fd, msvcrt.LK_NBRLCK, 1)
+                            break
+                        except OSError:
+                            if (_time.time() - start) >= timeout_sec:
+                                raise ProtoValidationException(message="Timeout acquiring root lock (msvcrt)")
+                            _time.sleep(0.01)
+                    with self._root_lock_guard:
+                        self._root_lock_owner = tid
+                        self._root_lock_count = 1
                 except Exception:
                     # If locking is unavailable, proceed without it
-                    pass
+                    with self._root_lock_guard:
+                        self._root_lock_owner = tid
+                        self._root_lock_count = 1
         except Exception:
-            # Do not fail the operation due to lock acquisition problems
-            self._root_lock_fd = None
+            # Do not fail the operation due to lock acquisition problems (but we attempted)
+            with self._root_lock_guard:
+                if self._root_lock_owner is None:
+                    self._root_lock_fd = None
 
     def _release_root_lock(self):
         try:
-            fd = self._root_lock_fd
+            tid = get_ident()
+            with self._root_lock_guard:
+                if self._root_lock_owner == tid and self._root_lock_count > 1:
+                    # Nested lock: just decrement
+                    self._root_lock_count -= 1
+                    return
+                fd = self._root_lock_fd
             if fd is None:
                 return
             try:
@@ -470,16 +569,28 @@ class FileBlockProvider(common.BlockProvider):
                     os.close(fd)
                 except Exception:
                     pass
-            self._root_lock_fd = None
+            with self._root_lock_guard:
+                self._root_lock_fd = None
+                self._root_lock_owner = None
+                self._root_lock_count = 0
         except Exception:
-            self._root_lock_fd = None
+            with self._root_lock_guard:
+                self._root_lock_fd = None
+                self._root_lock_owner = None
+                self._root_lock_count = 0
 
     def update_root_object(self, new_root):
         """
         Updates or creates the root object in storage in an atomic and durable way.
         Accepts either a plain dict (tests) or an AtomPointer (runtime code).
 
-        Enforces an OS-level exclusive lock during the update to provide cross-process safety.
+        This method assumes the caller has already acquired the provider's root lock via
+        root_context_manager(). It performs an atomic replace of the root file without
+        attempting to acquire/release the lock itself to avoid re-entrant or cross-thread
+        deadlocks under high concurrency.
+
+        Includes low-level instrumentation (PB_DEBUG_IO) that logs tmp/final file inodes,
+        sizes, and timestamps; and verifies read-back after rename using os.open/os.read.
 
         :param new_root: dict or AtomPointer
         :return: None
@@ -494,30 +605,67 @@ class FileBlockProvider(common.BlockProvider):
             else:
                 new_root_dict = new_root
 
-            # Serialize writes with OS lock
-            self._acquire_root_lock()
-            try:
-                # Write atomically: space_root.tmp -> fsync -> rename -> fsync dir
-                tmp_path = os.path.join(self.space_path, 'space_root.tmp')
-                final_path = os.path.join(self.space_path, 'space_root')
-                with open(tmp_path, 'w') as f:
-                    json.dump(new_root_dict, f)
-                    f.flush()
-                    os.fsync(f.fileno())
-                # Atomic replace
-                os.replace(tmp_path, final_path)
-                # Fsync directory to persist the rename on crash-prone filesystems
+            import uuid as _uuid
+            from threading import get_ident as _get_ident
+            tid = _get_ident()
+            tmp_path = os.path.join(self.space_path, f'space_root.{tid}.{_uuid.uuid4().hex}.tmp')
+            final_path = os.path.join(self.space_path, 'space_root')
+
+            # Write tmp with explicit fsync
+            with open(tmp_path, 'w') as f:
+                json.dump(new_root_dict, f)
+                f.flush()
+                os.fsync(f.fileno())
+                # Instrument tmp stats
                 try:
-                    dir_fd = os.open(self.space_path, os.O_DIRECTORY)
-                    try:
-                        os.fsync(dir_fd)
-                    finally:
-                        os.close(dir_fd)
+                    import os as _os
+                    if _os.environ.get('PB_DEBUG_IO') or _os.environ.get('PB_DEBUG_CONC'):
+                        st = os.fstat(f.fileno())
+                        print(f"[DEBUG][IO] WRITE tmp fd={f.fileno()} inode={st.st_ino} size={st.st_size} mtime_ns={st.st_mtime_ns} ctime_ns={st.st_ctime_ns} payload={new_root_dict}")
                 except Exception:
-                    # Not all platforms/filesystems support directory fsync
                     pass
-            finally:
-                self._release_root_lock()
+
+            # Atomic replace
+            os.replace(tmp_path, final_path)
+
+            # Fsync directory to persist the rename on crash-prone filesystems
+            try:
+                dir_fd = os.open(self.space_path, os.O_DIRECTORY)
+                try:
+                    os.fsync(dir_fd)
+                finally:
+                    os.close(dir_fd)
+            except Exception:
+                # Not all platforms/filesystems support directory fsync
+                pass
+
+            # Instrument final file stats and verify contents via low-level read
+            try:
+                import os as _os
+                if _os.environ.get('PB_DEBUG_IO') or _os.environ.get('PB_DEBUG_CONC'):
+                    fd = os.open(final_path, os.O_RDONLY)
+                    try:
+                        st = os.fstat(fd)
+                        chunks = []
+                        while True:
+                            b = os.read(fd, 8192)
+                            if not b:
+                                break
+                            chunks.append(b)
+                        raw = b"".join(chunks)
+                        txt = ''
+                        try:
+                            txt = raw.decode('utf-8')
+                        except Exception:
+                            pass
+                        print(f"[DEBUG][IO] POST-RENAME READ space_root fd={fd} inode={st.st_ino} size={st.st_size} mtime_ns={st.st_mtime_ns} ctime_ns={st.st_ctime_ns} bytes_prefix={txt[:200]!r}")
+                    finally:
+                        try:
+                            os.close(fd)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
         except Exception as e:
             _logger.exception(e)
             raise ProtoUnexpectedException(message=f'Unexpected exception {e} writing root')
