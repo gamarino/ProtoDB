@@ -7,11 +7,14 @@ import configparser
 import datetime
 import io
 import uuid
+import logging
 from abc import ABC, abstractmethod, ABCMeta
 from concurrent.futures import Future
 from typing import cast, BinaryIO, TYPE_CHECKING
 
 from .exceptions import ProtoValidationException, ProtoCorruptionException
+
+_logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     # Only for type checking to avoid circular imports at runtime
@@ -393,13 +396,13 @@ class Atom(metaclass=CombinedMeta):
         try:
             import os as _os
             if _os.environ.get('PB_DEBUG_CONC'):
-                print(f"[DEBUG] Atom._push_to_storage: tx={self.transaction} storage={getattr(self.transaction,'storage',None)}")
+                _logger.debug("Atom._push_to_storage: tx=%s storage=%s", self.transaction, getattr(self.transaction, 'storage', None))
         except Exception:
             pass
         ptr = self.transaction.storage.push_atom(json_value).result()
         try:
             if _os.environ.get('PB_DEBUG_CONC'):
-                print(f"[DEBUG] Atom._push_to_storage result: {getattr(ptr,'transaction_id',None)}/{getattr(ptr,'offset',None)} for class={json_value.get('className')}")
+                _logger.debug("Atom._push_to_storage result: %s/%s for class=%s", getattr(ptr, 'transaction_id', None), getattr(ptr, 'offset', None), json_value.get('className'))
         except Exception:
             pass
         return ptr
@@ -565,7 +568,7 @@ class Atom(metaclass=CombinedMeta):
                                     try:
                                         import os as _os
                                         if _os.environ.get('PB_DEBUG_CONC'):
-                                            print(f"[DEBUG] Nested save missing pointer: holder={type(self).__name__}, attr={name}, child_type={type(value).__name__}, tx={getattr(getattr(value,'transaction',None),'__class__',None)}")
+                                            _logger.debug("Nested save missing pointer: holder=%s, attr=%s, child_type=%s, tx=%s", type(self).__name__, name, type(value).__name__, getattr(getattr(value, 'transaction', None), '__class__', None))
                                     except Exception:
                                         pass
                                     raise ProtoCorruptionException(

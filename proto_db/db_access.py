@@ -1085,9 +1085,9 @@ class ObjectTransaction(AbstractTransaction):
                 if _os.environ.get('PB_DEBUG_CONC'):
                     try:
                         cnt = getattr(self.new_roots, 'count', None)
-                        print(f"[TRACE] set_root_object stage tx={id(self)} thr={_th.get_ident()} name={name} new_roots.count={cnt}")
+                        logger.debug("[TRACE] set_root_object stage tx=%s thr=%s name=%s new_roots.count=%s", id(self), _th.get_ident(), name, cnt)
                     except Exception:
-                        print(f"[TRACE] set_root_object stage tx={id(self)} thr={_th.get_ident()} name={name} (count unavailable)")
+                        logger.debug("[TRACE] set_root_object stage tx=%s thr=%s name=%s (count unavailable)", id(self), _th.get_ident(), name)
             except Exception:
                 pass
 
@@ -1311,9 +1311,9 @@ class ObjectTransaction(AbstractTransaction):
                                 try:
                                     cr = db_root.get_at('counter_root')
                                     cv = cr.get_at('counter') if cr else None
-                                    print(f"[TRACE] commit pre-save tx={id(self)} thr={_th.get_ident()} counter={cv}")
+                                    logger.debug("[TRACE] commit pre-save tx=%s thr=%s counter=%s", id(self), _th.get_ident(), cv)
                                 except Exception:
-                                    print(f"[TRACE] commit pre-save tx={id(self)} thr={_th.get_ident()} (counter N/A)")
+                                    logger.debug("[TRACE] commit pre-save tx=%s thr=%s (counter N/A)", id(self), _th.get_ident())
                         except Exception:
                             pass
 
@@ -1327,7 +1327,7 @@ class ObjectTransaction(AbstractTransaction):
                                 try:
                                     import os as _os, threading as _th
                                     if _os.environ.get('PB_DEBUG_CONC'):
-                                        print(f"[TRACE] persist locked tx={id(self)} thr={_th.get_ident()} start")
+                                        logger.debug("[TRACE] persist locked tx=%s thr=%s start", id(self), _th.get_ident())
                                 except Exception:
                                     pass
                                 self.database.set_db_root_with_locked_context(db_root, lsr, lsh)
@@ -1335,7 +1335,7 @@ class ObjectTransaction(AbstractTransaction):
                                 try:
                                     import os as _os, threading as _th
                                     if _os.environ.get('PB_DEBUG_CONC'):
-                                        print(f"[TRACE] persist unlocked tx={id(self)} thr={_th.get_ident()} start")
+                                        logger.debug("[TRACE] persist unlocked tx=%s thr=%s start", id(self), _th.get_ident())
                                 except Exception:
                                     pass
                                 self.database.set_db_root_locked(db_root)
@@ -1345,7 +1345,7 @@ class ObjectTransaction(AbstractTransaction):
                         try:
                             import os as _os, threading as _th
                             if _os.environ.get('PB_DEBUG_CONC'):
-                                print(f"[TRACE] persist done tx={id(self)} thr={_th.get_ident()}")
+                                logger.debug("[TRACE] persist done tx=%s thr=%s", id(self), _th.get_ident())
                         except Exception:
                             pass
 

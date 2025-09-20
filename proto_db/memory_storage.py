@@ -1,4 +1,5 @@
 import uuid
+import logging
 from threading import RLock as Lock  # Use re-entrant lock to avoid deadlocks under nested root operations
 
 from . import common
@@ -6,6 +7,8 @@ from .common import Future, AtomPointer
 from .db_access import BytesAtom
 from .atom_cache import AtomCacheBundle
 from .exceptions import ProtoCorruptionException
+
+_logger = logging.getLogger(__name__)
 
 
 class MemoryStorage(common.SharedStorage):
@@ -62,7 +65,7 @@ class MemoryStorage(common.SharedStorage):
                 if _os.environ.get('PB_DEBUG_CONC'):
                     tid = getattr(ptr, 'transaction_id', None)
                     off = getattr(ptr, 'offset', None)
-                    print(f"[DEBUG][MEM] read_current_root -> {tid}/{off}")
+                    _logger.debug("[MEM] read_current_root -> %s/%s", tid, off)
             except Exception:
                 pass
             return ptr
@@ -82,7 +85,7 @@ class MemoryStorage(common.SharedStorage):
                 if _os.environ.get('PB_DEBUG_CONC'):
                     tid = getattr(new_root_history_pointer, 'transaction_id', None)
                     off = getattr(new_root_history_pointer, 'offset', None)
-                    print(f"[DEBUG][MEM] set_current_root <- {tid}/{off}")
+                    _logger.debug("[MEM] set_current_root <- %s/%s", tid, off)
             except Exception:
                 pass
             self.current_root_history_pointer = new_root_history_pointer
@@ -101,7 +104,7 @@ class MemoryStorage(common.SharedStorage):
                 try:
                     import os as _os
                     if _os.environ.get('PB_DEBUG_CONC'):
-                        print("[DEBUG][MEM] RootContextManager enter: acquiring lock")
+                        _logger.debug("[MEM] RootContextManager enter: acquiring lock")
                 except Exception:
                     pass
                 self.ms.lock.acquire()
@@ -109,7 +112,7 @@ class MemoryStorage(common.SharedStorage):
                 try:
                     import os as _os
                     if _os.environ.get('PB_DEBUG_CONC'):
-                        print("[DEBUG][MEM] RootContextManager entered: lock acquired")
+                        _logger.debug("[MEM] RootContextManager entered: lock acquired")
                 except Exception:
                     pass
             def __exit__(self, exc_type, exc_value, traceback):
@@ -119,7 +122,7 @@ class MemoryStorage(common.SharedStorage):
                 try:
                     import os as _os
                     if _os.environ.get('PB_DEBUG_CONC'):
-                        print("[DEBUG][MEM] RootContextManager exit: lock released")
+                        _logger.debug("[MEM] RootContextManager exit: lock released")
                 except Exception:
                     pass
             def __repr__(self):

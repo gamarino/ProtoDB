@@ -401,14 +401,14 @@ class FileBlockProvider(common.BlockProvider):
                 try:
                     import os as _os
                     if _os.environ.get('PB_DEBUG_CONC'):
-                        print('[DEBUG][IO] FileBlockProvider.RootContextManager enter: acquiring root lock')
+                        _logger.debug('[IO] FileBlockProvider.RootContextManager enter: acquiring root lock')
                 except Exception:
                     pass
                 self.bp._acquire_root_lock()
                 try:
                     import os as _os
                     if _os.environ.get('PB_DEBUG_CONC'):
-                        print('[DEBUG][IO] FileBlockProvider.RootContextManager entered: root lock acquired')
+                        _logger.debug('[IO] FileBlockProvider.RootContextManager entered: root lock acquired')
                 except Exception:
                     pass
 
@@ -417,7 +417,7 @@ class FileBlockProvider(common.BlockProvider):
                 try:
                     import os as _os
                     if _os.environ.get('PB_DEBUG_CONC'):
-                        print('[DEBUG][IO] FileBlockProvider.RootContextManager exit: root lock released')
+                        _logger.debug('[IO] FileBlockProvider.RootContextManager exit: root lock released')
                 except Exception:
                     pass
 
@@ -466,11 +466,9 @@ class FileBlockProvider(common.BlockProvider):
                         import os as _os
                         if _os.environ.get('PB_DEBUG_IO') or _os.environ.get('PB_DEBUG_CONC'):
                             prefix = text[:200] if text else ''
-                            print(
-                                f"[DEBUG][IO] READ space_root fd={fd} inode={st.st_ino} size={st.st_size} "
-                                f"mtime_ns={st.st_mtime_ns} ctime_ns={st.st_ctime_ns} bytes_prefix={prefix!r}")
+                            _logger.debug("[IO] READ space_root fd=%s inode=%s size=%s mtime_ns=%s ctime_ns=%s bytes_prefix=%r", fd, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns, prefix)
                             try:
-                                print(f"[DEBUG] Provider.read space_root -> {data.get('transaction_id')}/{data.get('offset')}")
+                                _logger.debug("Provider.read space_root -> %s/%s", data.get('transaction_id'), data.get('offset'))
                             except Exception:
                                 pass
                     except Exception:
@@ -639,7 +637,7 @@ class FileBlockProvider(common.BlockProvider):
                     import os as _os
                     if _os.environ.get('PB_DEBUG_IO') or _os.environ.get('PB_DEBUG_CONC'):
                         st = os.fstat(f.fileno())
-                        print(f"[DEBUG][IO] WRITE tmp fd={f.fileno()} inode={st.st_ino} size={st.st_size} mtime_ns={st.st_mtime_ns} ctime_ns={st.st_ctime_ns} payload={new_root_dict}")
+                        _logger.debug("[IO] WRITE tmp fd=%s inode=%s size=%s mtime_ns=%s ctime_ns=%s payload=%s", f.fileno(), st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns, new_root_dict)
                 except Exception:
                     pass
 
@@ -676,7 +674,7 @@ class FileBlockProvider(common.BlockProvider):
                             txt = raw.decode('utf-8')
                         except Exception:
                             pass
-                        print(f"[DEBUG][IO] POST-RENAME READ space_root fd={fd} inode={st.st_ino} size={st.st_size} mtime_ns={st.st_mtime_ns} ctime_ns={st.st_ctime_ns} bytes_prefix={txt[:200]!r}")
+                        _logger.debug("[IO] POST-RENAME READ space_root fd=%s inode=%s size=%s mtime_ns=%s ctime_ns=%s bytes_prefix=%r", fd, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns, txt[:200])
                     finally:
                         try:
                             os.close(fd)
