@@ -1,8 +1,8 @@
 import unittest
 
-from ..db_access import ObjectSpace
-from ..lists import List
-from ..memory_storage import MemoryStorage
+from proto_db.db_access import ObjectSpace
+from proto_db.lists import List
+from proto_db.memory_storage import MemoryStorage
 
 TEST_SIZE = 10_000
 

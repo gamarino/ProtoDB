@@ -1088,13 +1088,45 @@ class ObjectTransaction(AbstractTransaction):
         current_db_root = current_root
         if self.new_roots.count > 0:
             for root_name, staged_root in self.new_roots.as_iterable():
+                # If we already performed a rebase for this root under a detected conflict,
+                # avoid applying per-entry reconciliation again to prevent double-applying increments.
+                try:
+                    if hasattr(self, '_rebased_root_names') and root_name in self._rebased_root_names:
+                        current_db_root = current_db_root.set_at(root_name, staged_root)
+                        continue
+                except Exception:
+                    pass
                 try:
                     existing_root = current_db_root.get_at(root_name)
                 except Exception:
                     existing_root = None
+                # Defensive CAS: if our initial snapshot pointer differs from current, treat as conflict
+                try:
+                    init_snapshot = getattr(self, 'initial_transaction_root', None)
+                    if init_snapshot is not None and existing_root is not None:
+                        try:
+                            snap_obj = init_snapshot.get_at(root_name)
+                        except Exception:
+                            snap_obj = None
+                        orig_ptr = getattr(snap_obj, 'atom_pointer', None)
+                        curr_ptr = getattr(existing_root, 'atom_pointer', None)
+                        if orig_ptr is not None and curr_ptr is not None and orig_ptr != curr_ptr:
+                            # Conflict: rebase if possible, else raise to trigger retry
+                            if isinstance(staged_root, ConcurrentOptimized):
+                                try:
+                                    staged_root = staged_root._rebase_on_concurrent_update(existing_root)
+                                    # Mark as rebased to avoid double-apply rules below
+                                    try:
+                                        self._rebased_root_names.add(root_name)
+                                    except Exception:
+                                        pass
+                                except Exception as _e:
+                                    raise ProtoLockingException(f"Concurrent update on '{root_name}' and automatic rebase failed: {_e}")
+                            else:
+                                raise ProtoLockingException(f"Concurrent update on '{root_name}' (non-mergeable)")
+                except Exception:
+                    pass
                 # Per-entry reconciliation when both sides are Dictionary
-                # Always perform per-entry reconciliation against the freshest current values to avoid
-                # relying on prior rebase outcomes, ensuring idempotent increments under contention.
                 if isinstance(staged_root, Dictionary) and isinstance(existing_root, Dictionary):
                     merged = existing_root
                     try:
@@ -1150,6 +1182,12 @@ class ObjectTransaction(AbstractTransaction):
                             if not equal:
                                 merged = merged.set_at(k, v)
                         current_db_root = current_db_root.set_at(root_name, merged)
+                        try:
+                            import os as _os
+                            if _os.environ.get('PB_DEBUG_CONC'):
+                                logger.debug("Per-entry merged root '%s'", root_name)
+                        except Exception:
+                            pass
                         continue
                     except Exception:
                         # If anything goes wrong, fall back to overwrite of the whole root

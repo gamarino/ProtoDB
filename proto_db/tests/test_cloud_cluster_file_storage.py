@@ -5,8 +5,8 @@ import unittest
 import uuid
 from unittest.mock import MagicMock, patch
 
-from ..cloud_cluster_file_storage import CloudClusterFileStorage
-from ..cloud_file_storage import CloudBlockProvider, MockS3Client
+from proto_db.cloud_cluster_file_storage import CloudClusterFileStorage
+from proto_db.cloud_file_storage import CloudBlockProvider, MockS3Client
 
 
 class TestCloudClusterFileStorage(unittest.TestCase):

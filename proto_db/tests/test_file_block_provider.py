@@ -6,7 +6,7 @@ import uuid
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from ..file_block_provider import FileReaderFactory, PageCache, FileBlockProvider, ProtoUnexpectedException
+from proto_db.file_block_provider import FileReaderFactory, PageCache, FileBlockProvider, ProtoUnexpectedException
 
 
 class TestFileReaderFactory(unittest.TestCase):

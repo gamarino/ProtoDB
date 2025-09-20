@@ -3,11 +3,11 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tempfile import TemporaryDirectory
 
-from ..db_access import ObjectSpace
-from ..exceptions import ProtoLockingException
-from ..file_block_provider import FileBlockProvider
-from ..standalone_file_storage import StandaloneFileStorage
-from ..dictionaries import Dictionary, RepeatedKeysDictionary
+from proto_db.db_access import ObjectSpace
+from proto_db.exceptions import ProtoLockingException
+from proto_db.file_block_provider import FileBlockProvider
+from proto_db.standalone_file_storage import StandaloneFileStorage
+from proto_db.dictionaries import Dictionary, RepeatedKeysDictionary
 
 
 class TestConcurrency(unittest.TestCase):

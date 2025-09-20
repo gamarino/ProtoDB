@@ -1,6 +1,6 @@
 import unittest
 import time
-from ..parallel import AdaptiveChunkController, ParallelConfig, WorkStealingPool, parallel_scan
+from proto_db.parallel import AdaptiveChunkController, ParallelConfig, WorkStealingPool, parallel_scan
 
 
 class TestAdaptiveChunking(unittest.TestCase):

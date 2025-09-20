@@ -7,11 +7,11 @@ try:
 except Exception:  # pragma: no cover
     HYP_AVAILABLE = False
 
-from ..db_access import ObjectSpace
-from ..memory_storage import MemoryStorage
-from ..dictionaries import Dictionary
-from ..sets import Set, CountedSet
-from ..lists import List
+from proto_db.db_access import ObjectSpace
+from proto_db.memory_storage import MemoryStorage
+from proto_db.dictionaries import Dictionary
+from proto_db.sets import Set, CountedSet
+from proto_db.lists import List
 
 
 if not HYP_AVAILABLE:

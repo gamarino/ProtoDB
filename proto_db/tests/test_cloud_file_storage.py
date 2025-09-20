@@ -3,8 +3,8 @@ import unittest
 from unittest.mock import Mock, MagicMock, patch
 from uuid import uuid4
 
-from ..cloud_file_storage import CloudFileStorage, CloudBlockProvider, S3Client
-from ..standalone_file_storage import AtomPointer
+from proto_db.cloud_file_storage import CloudFileStorage, CloudBlockProvider, S3Client
+from proto_db.standalone_file_storage import AtomPointer
 
 
 class TestCloudFileStorage(unittest.TestCase):

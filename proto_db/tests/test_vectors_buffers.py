@@ -1,6 +1,6 @@
 import unittest
 
-from ..vectors import Vector
+from proto_db.vectors import Vector
 
 try:
     import numpy as np

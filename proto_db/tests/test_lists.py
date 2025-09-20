@@ -1,7 +1,7 @@
 import unittest
 
-from ..common import Atom
-from ..lists import List, ListQueryPlan  # Importamos las clases que queremos probar
+from proto_db.common import Atom
+from proto_db.lists import List, ListQueryPlan  # Importamos las clases que queremos probar
 
 
 class TestList(unittest.TestCase):

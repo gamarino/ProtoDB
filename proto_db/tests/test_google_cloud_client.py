@@ -5,7 +5,7 @@ import unittest
 import uuid
 from unittest.mock import patch
 
-from ..cloud_file_storage import MockGoogleCloudClient, CloudStorageError, CloudBlockProvider
+from proto_db.cloud_file_storage import MockGoogleCloudClient, CloudStorageError, CloudBlockProvider
 
 
 class TestGoogleCloudClient(unittest.TestCase):

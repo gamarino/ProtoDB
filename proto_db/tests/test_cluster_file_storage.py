@@ -3,9 +3,9 @@ import unittest
 from unittest.mock import Mock, MagicMock, patch
 from uuid import uuid4
 
-from ..cluster_file_storage import ClusterFileStorage
-from ..exceptions import ProtoUnexpectedException
-from ..standalone_file_storage import AtomPointer
+from proto_db.cluster_file_storage import ClusterFileStorage
+from proto_db.exceptions import ProtoUnexpectedException
+from proto_db.standalone_file_storage import AtomPointer
 
 
 class TestClusterFileStorage(unittest.TestCase):

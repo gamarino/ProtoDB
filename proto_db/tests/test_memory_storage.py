@@ -2,9 +2,9 @@ import unittest
 import uuid
 from threading import Thread
 
-from ..common import Atom, AtomPointer, RootObject
-from ..exceptions import ProtoValidationException, ProtoCorruptionException
-from ..memory_storage import MemoryStorage
+from proto_db.common import Atom, AtomPointer, RootObject
+from proto_db.exceptions import ProtoValidationException, ProtoCorruptionException
+from proto_db.memory_storage import MemoryStorage
 
 
 class TestMemoryStorage(unittest.TestCase):

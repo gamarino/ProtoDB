@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import Mock, MagicMock, patch
 from uuid import uuid4
 
-from ..standalone_file_storage import StandaloneFileStorage, WALState, AtomPointer, ProtoValidationException
+from proto_db.standalone_file_storage import StandaloneFileStorage, WALState, AtomPointer, ProtoValidationException
 
 
 class TestStandaloneFileStorage(unittest.TestCase):

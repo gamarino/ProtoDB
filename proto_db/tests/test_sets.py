@@ -1,6 +1,6 @@
 import unittest
 
-from ..sets import Set  # Import the Set class
+from proto_db.sets import Set  # Import the Set class
 
 
 class TestSet(unittest.TestCase):

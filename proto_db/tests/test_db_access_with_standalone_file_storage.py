@@ -2,10 +2,10 @@ import os
 import unittest
 from tempfile import TemporaryDirectory
 
-from ..db_access import ObjectSpace
-from ..file_block_provider import FileBlockProvider
-from ..lists import List
-from ..standalone_file_storage import StandaloneFileStorage
+from proto_db.db_access import ObjectSpace
+from proto_db.file_block_provider import FileBlockProvider
+from proto_db.lists import List
+from proto_db.standalone_file_storage import StandaloneFileStorage
 
 TEST_SIZE = 100_000
 

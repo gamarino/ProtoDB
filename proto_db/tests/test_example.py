@@ -1,6 +1,6 @@
 import unittest
 
-from ..common import Atom, Literal
+from proto_db.common import Atom, Literal
 
 
 class TestExample(unittest.TestCase):

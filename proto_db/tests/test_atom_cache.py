@@ -3,7 +3,7 @@ import time
 import uuid
 import unittest
 
-from ..atom_cache import AtomObjectCache, AtomBytesCache, AtomCacheBundle
+from proto_db.atom_cache import AtomObjectCache, AtomBytesCache, AtomCacheBundle
 
 
 class TestAtomCaches(unittest.TestCase):

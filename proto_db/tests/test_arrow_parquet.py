@@ -6,7 +6,7 @@ try:
 except Exception:  # pragma: no cover
     have_arrow = False
 
-from ..arrow_bridge import to_arrow, table_to_parquet, ArrowNotAvailable
+from proto_db.arrow_bridge import to_arrow, table_to_parquet, ArrowNotAvailable
 
 
 class TestArrowParquetBridge(unittest.TestCase):

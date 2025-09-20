@@ -1,7 +1,7 @@
 import unittest
 
-from ..dictionaries import Dictionary, Atom
-from ..hash_dictionaries import HashDictionary
+from proto_db.dictionaries import Dictionary, Atom
+from proto_db.hash_dictionaries import HashDictionary
 
 
 class TestHashDictionary(unittest.TestCase):

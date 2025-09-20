@@ -6,10 +6,10 @@ import unittest
 import uuid
 from unittest.mock import MagicMock, patch
 
-from ..cloud_file_storage import (
+from proto_db.cloud_file_storage import (
     CloudFileStorage, CloudBlockProvider, MockGoogleCloudClient
 )
-from ..common import AtomPointer
+from proto_db.common import AtomPointer
 
 
 class TestCloudFileStorageWithGCS(unittest.TestCase):

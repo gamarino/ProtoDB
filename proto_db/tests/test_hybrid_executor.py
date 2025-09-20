@@ -3,7 +3,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from ..hybrid_executor import HybridExecutor, sync_task, async_task
+from proto_db.hybrid_executor import HybridExecutor, sync_task, async_task
 
 
 class TestHybridExecutor(unittest.TestCase):

@@ -1,6 +1,6 @@
 import unittest
 
-from ..dictionaries import Dictionary, RepeatedKeysDictionary, Atom  # Sustituye 'your_module' por el nombre del módulo correcto
+from proto_db.dictionaries import Dictionary, RepeatedKeysDictionary, Atom  # Using absolute import for unittest discover
 
 
 class TestDictionary(unittest.TestCase):

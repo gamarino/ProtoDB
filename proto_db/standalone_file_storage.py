@@ -144,10 +144,28 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
 
     def read_current_root(self) -> AtomPointer | None:
         """
-        Read the current root object pointer from the underlying provider.
-        The provider may return different types; normalize to AtomPointer or a fresh empty RootObject when missing.
+        Read the current root object pointer from the underlying provider and normalize to AtomPointer.
+        Providers may return a raw dict like {"transaction_id": str, "offset": int} for tests/backward-compat.
+        Return an AtomPointer or None.
         """
-        return self.block_provider.get_current_root_object()
+        raw = self.block_provider.get_current_root_object()
+        try:
+            # Already an AtomPointer
+            if isinstance(raw, AtomPointer):
+                return raw
+            # Dict form
+            if isinstance(raw, dict):
+                tid = raw.get('transaction_id')
+                off = raw.get('offset')
+                if tid is not None and off is not None:
+                    try:
+                        tid_val = tid if isinstance(tid, uuid.UUID) else uuid.UUID(str(tid))
+                    except Exception:
+                        return None
+                    return AtomPointer(transaction_id=tid_val, offset=int(off))
+        except Exception:
+            pass
+        return None
 
     def root_context_manager(self):
         class RootContextManager:

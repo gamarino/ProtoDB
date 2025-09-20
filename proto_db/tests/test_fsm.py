@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from ..fsm import FSM, ProtoValidationException
+from proto_db.fsm import FSM, ProtoValidationException
 
 _logger = logging.getLogger(__name__)
 

@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import msgpack
 
-from ..standalone_file_storage import StandaloneFileStorage, AtomPointer, ProtoValidationException, \
+from proto_db.standalone_file_storage import StandaloneFileStorage, AtomPointer, ProtoValidationException, \
     FORMAT_JSON_UTF8, FORMAT_MSGPACK
 
 

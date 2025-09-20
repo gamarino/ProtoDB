@@ -2,13 +2,13 @@ import os
 import unittest
 from tempfile import TemporaryDirectory
 
-from ..db_access import ObjectSpace
-from ..file_block_provider import FileBlockProvider
-from ..standalone_file_storage import StandaloneFileStorage
-from ..common import DBObject
-from ..lists import List
-from ..dictionaries import Dictionary
-from ..queries import WherePlan, Term, Equal, ListPlan
+from proto_db.db_access import ObjectSpace
+from proto_db.file_block_provider import FileBlockProvider
+from proto_db.standalone_file_storage import StandaloneFileStorage
+from proto_db.common import DBObject
+from proto_db.lists import List
+from proto_db.dictionaries import Dictionary
+from proto_db.queries import WherePlan, Term, Equal, ListPlan
 
 
 class Person(DBObject):
@@ -40,7 +40,7 @@ class TestIntegrationRoundTrip(unittest.TestCase):
         people = tr.new_list()
 
         # Build object graph: a list of Person objects, each has a Set of tags
-        from ..sets import Set
+        from proto_db.sets import Set
         tags1 = Set(transaction=tr)
         tags1 = tags1.add("team")
         tags1 = tags1.add("blue")
