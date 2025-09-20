@@ -216,6 +216,17 @@ The suite includes concurrency stress tests, property‑based tests (Hypothesis,
 - CPython 3.11+ supported.
 - Core features have no mandatory third‑party dependencies.
 
+## Attribute Access Style
+
+- Prefer direct attribute access with dot notation: obj.field
+- For dynamic attribute names or explicit fallbacks, use getattr(obj, name, default)
+- For DBObject instances:
+  - Access attributes with dot notation (obj.field) — missing attributes return None when accessed
+  - To test if an attribute is defined without triggering errors, use obj.has_defined_attr("field")
+  - For dynamic names, use getattr(obj, name, None) to receive None when missing
+- Do not change or replace domain collection APIs such as get_at/set_at/remove_at, insert_at, add, has, build, etc.
+- Keep dictionary-style key access (obj["key"]) for mappings; do not replace with dot notation.
+
 ## License
 
 MIT License. See LICENSE for details.

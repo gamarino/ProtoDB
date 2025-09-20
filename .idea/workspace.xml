@@ -5,13 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[WIP] atributos inexistente -&gt; None">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/lists.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/queries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/queries.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_hash_dictionary.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_hash_dictionary.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_lists.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_memory_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_memory_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_recursive_plan.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_recursive_plan.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/CHANGELOG.md" beforeDir="false" afterPath="$PROJECT_DIR$/CHANGELOG.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -288,15 +283,7 @@
       <workItem from="1758056235372" duration="937000" />
       <workItem from="1758057990140" duration="24385000" />
       <workItem from="1758156790567" duration="4115000" />
-      <workItem from="1758290115211" duration="35037000" />
-    </task>
-    <task id="LOCAL-00107" summary="All Sphinx &quot;Title underline too short&quot; warnings in multiple reStructuredText files were fixed by extending the underline lengths to exceed the title lengths. This was done for headings in advanced_usage.rst, quickstart.rst, and api/queries.rst files through systematic search-and-replace edits. Multiple rebuilds were run to verify that no remaining warnings persisted.">
-      <option name="closed" value="true" />
-      <created>1757785569916</created>
-      <option name="number" value="00107" />
-      <option name="presentableId" value="LOCAL-00107" />
-      <option name="project" value="LOCAL" />
-      <updated>1757785569916</updated>
+      <workItem from="1758290115211" duration="35790000" />
     </task>
     <task id="LOCAL-00108" summary="The performance benchmark suite was executed, showing a 6.44× speedup using indexed queries over linear scans on large datasets. CRUD and LINQ benchmarks completed successfully with detailed timing metrics collected. Results and JSON artifacts were saved without any code changes required.">
       <option name="closed" value="true" />
@@ -682,7 +669,15 @@
       <option name="project" value="LOCAL" />
       <updated>1758341565729</updated>
     </task>
-    <option name="localTasksCounter" value="156" />
+    <task id="LOCAL-00156" summary="[WIP] atributos inexistente -&gt; None">
+      <option name="closed" value="true" />
+      <created>1758344230479</created>
+      <option name="number" value="00156" />
+      <option name="presentableId" value="LOCAL-00156" />
+      <option name="project" value="LOCAL" />
+      <updated>1758344230479</updated>
+    </task>
+    <option name="localTasksCounter" value="157" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
