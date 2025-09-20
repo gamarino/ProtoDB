@@ -126,7 +126,22 @@
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">hash</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span><span class="o">.</span><span class="n">int</span> <span class="o">^</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span><span class="o">.</span><span class="n">int</span> <span class="o">^</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset</span>
+
+    <span class="c1"># Value-based equality to avoid false conflict detection on pointer snapshots</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__eq__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="n">AtomPointer</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">offset</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">offset</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__hash__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">hash</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span></div>
 
 
 
@@ -476,7 +491,20 @@
             <span class="k">return</span> <span class="kc">False</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_push_to_storage</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">json_value</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">push_atom</span><span class="p">(</span><span class="n">json_value</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+        <span class="c1"># Instrument push path for diagnosing save-path corruption</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">os</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">_os</span>
+            <span class="k">if</span> <span class="n">_os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;PB_DEBUG_CONC&#39;</span><span class="p">):</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[DEBUG] Atom._push_to_storage: tx=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="si">}</span><span class="s2"> storage=</span><span class="si">{</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">,</span><span class="s1">&#39;storage&#39;</span><span class="p">,</span><span class="kc">None</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="n">ptr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">push_atom</span><span class="p">(</span><span class="n">json_value</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">_os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;PB_DEBUG_CONC&#39;</span><span class="p">):</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[DEBUG] Atom._push_to_storage result: </span><span class="si">{</span><span class="nb">getattr</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span><span class="s1">&#39;transaction_id&#39;</span><span class="p">,</span><span class="kc">None</span><span class="p">)</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="nb">getattr</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span><span class="s1">&#39;offset&#39;</span><span class="p">,</span><span class="kc">None</span><span class="p">)</span><span class="si">}</span><span class="s2"> for class=</span><span class="si">{</span><span class="n">json_value</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;className&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="k">return</span> <span class="n">ptr</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_json_to_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">json_data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
         <span class="n">data</span> <span class="o">=</span> <span class="p">{}</span>
@@ -540,10 +568,15 @@
                 <span class="k">if</span> <span class="ow">not</span> <span class="n">value</span><span class="o">.</span><span class="n">transaction</span><span class="p">:</span>
                     <span class="n">value</span><span class="o">.</span><span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span>
                 <span class="n">value</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+                <span class="n">ap</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s1">&#39;atom_pointer&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">ap</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">ProtoCorruptionException</span><span class="p">(</span>
+                        <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Corruption saving nested Atom: attr=</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s1">, type=</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s1"> in holder=</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s1">&#39;</span>
+                    <span class="p">)</span>
                 <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
                     <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
-                    <span class="s1">&#39;transaction_id&#39;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">),</span>
-                    <span class="s1">&#39;offset&#39;</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span>
+                    <span class="s1">&#39;transaction_id&#39;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">ap</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">),</span>
+                    <span class="s1">&#39;offset&#39;</span><span class="p">:</span> <span class="n">ap</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span>
                 <span class="p">}</span>
             <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
                 <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
@@ -611,20 +644,39 @@
                                 <span class="k">continue</span>
 
                             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">Atom</span><span class="p">):</span>
+                                <span class="c1"># Ensure child has a transaction bound to allow persistence</span>
                                 <span class="k">if</span> <span class="s1">&#39;transaction&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">value</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">value</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;transaction&#39;</span><span class="p">]:</span>
-                                    <span class="c1"># it is a newly created atom</span>
-                                    <span class="c1"># it should not happen, but try to solve the misbehaviour</span>
-                                    <span class="c1"># capture it for this transaction</span>
                                     <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s1">&#39;transaction&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;transaction&#39;</span><span class="p">])</span>
+                                    <span class="c1"># Force a fresh save cycle on the child</span>
                                     <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s1">&#39;_saved&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
-                                <span class="k">if</span> <span class="s1">&#39;_saved&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">value</span><span class="o">.</span><span class="vm">__dict__</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">value</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;_saved&#39;</span><span class="p">]:</span>
-                                    <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s1">&#39;transaction&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;transaction&#39;</span><span class="p">])</span>
-                                <span class="n">value</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+                                <span class="c1"># Attempt to save the child</span>
+                                <span class="k">try</span><span class="p">:</span>
+                                    <span class="n">value</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+                                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                                    <span class="c1"># Retry once after forcing transaction and resetting _saved</span>
+                                    <span class="k">try</span><span class="p">:</span>
+                                        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s1">&#39;transaction&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;transaction&#39;</span><span class="p">])</span>
+                                        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s1">&#39;_saved&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+                                        <span class="n">value</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span>
+                                    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                                        <span class="k">pass</span>
 
+                                <span class="n">ap</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s1">&#39;atom_pointer&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                                <span class="k">if</span> <span class="ow">not</span> <span class="n">ap</span><span class="p">:</span>
+                                    <span class="c1"># Instrumentation to diagnose save-path corruption</span>
+                                    <span class="k">try</span><span class="p">:</span>
+                                        <span class="kn">import</span><span class="w"> </span><span class="nn">os</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">_os</span>
+                                        <span class="k">if</span> <span class="n">_os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;PB_DEBUG_CONC&#39;</span><span class="p">):</span>
+                                            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[DEBUG] Nested save missing pointer: holder=</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">, attr=</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">, child_type=</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">, tx=</span><span class="si">{</span><span class="nb">getattr</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span><span class="s1">&#39;transaction&#39;</span><span class="p">,</span><span class="kc">None</span><span class="p">),</span><span class="s1">&#39;__class__&#39;</span><span class="p">,</span><span class="kc">None</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                                    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                                        <span class="k">pass</span>
+                                    <span class="k">raise</span> <span class="n">ProtoCorruptionException</span><span class="p">(</span>
+                                        <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Corruption saving nested Atom: attr=</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s1">, type=</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s1"> in holder=</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s1">&#39;</span>
+                                    <span class="p">)</span>
                                 <span class="n">json_value</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
                                     <span class="s1">&#39;className&#39;</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
-                                    <span class="s1">&#39;transaction_id&#39;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">),</span>
-                                    <span class="s1">&#39;offset&#39;</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="s1">&#39;atom_pointer&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">offset</span>
+                                    <span class="s1">&#39;transaction_id&#39;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">ap</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">),</span>
+                                    <span class="s1">&#39;offset&#39;</span><span class="p">:</span> <span class="n">ap</span><span class="o">.</span><span class="n">offset</span>
                                 <span class="p">}</span>
 
                             <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
@@ -800,12 +852,17 @@
 
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__getattribute__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="c1"># DBObject semantics for attribute access:</span>
+        <span class="c1"># - Fast-path internal/wiring attributes without triggering loads.</span>
+        <span class="c1"># - For public attributes, load lazily and return the value when present.</span>
+        <span class="c1"># - If the attribute is not present after load, raise AttributeError so hasattr() works as expected.</span>
+
         <span class="c1"># Fast-path internal attributes and wiring to avoid recursion and unnecessary loads</span>
         <span class="k">if</span> <span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;_&#39;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span><span class="s1">&#39;transaction&#39;</span><span class="p">,</span> <span class="s1">&#39;atom_pointer&#39;</span><span class="p">,</span> <span class="s1">&#39;__class__&#39;</span><span class="p">,</span> <span class="s1">&#39;__dict__&#39;</span><span class="p">,</span> <span class="s1">&#39;after_load&#39;</span><span class="p">):</span>
             <span class="k">return</span> <span class="nb">object</span><span class="o">.</span><span class="fm">__getattribute__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
         <span class="c1"># If name is a method/descriptor on the class, return it directly (do not trigger load)</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">cls_attr</span> <span class="o">=</span> <span class="nb">object</span><span class="o">.</span><span class="fm">__getattribute__</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">),</span> <span class="n">name</span><span class="p">)</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__getattribute__</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">),</span> <span class="n">name</span><span class="p">)</span>
             <span class="c1"># Access via base to honor descriptors (e.g., properties)</span>
             <span class="k">return</span> <span class="nb">object</span><span class="o">.</span><span class="fm">__getattribute__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
@@ -817,20 +874,22 @@
         <span class="c1"># Otherwise force a load and try again</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
         <span class="n">d</span> <span class="o">=</span> <span class="nb">object</span><span class="o">.</span><span class="fm">__getattribute__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;__dict__&#39;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">d</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-        <span class="c1"># Align with Python semantics: signal missing attribute for hasattr()</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">d</span> <span class="ow">and</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">d</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+        <span class="c1"># Missing attribute: raise AttributeError so hasattr returns False</span>
         <span class="k">raise</span> <span class="ne">AttributeError</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__getattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-        <span class="c1"># Kept for backward compatibility; __getattribute__ now handles most cases</span>
+        <span class="c1"># Kept for backward compatibility; __getattribute__ handles most cases.</span>
+        <span class="c1"># Return None for missing attributes to honor DBObject semantics.</span>
         <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;_loaded&#39;</span><span class="p">:</span>  <span class="c1"># Prevent recursion when checking _loaded</span>
+            <span class="c1"># _loaded defaults to False when missing</span>
             <span class="k">return</span> <span class="kc">False</span>
+        <span class="c1"># After attempting a load, if still missing, return None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
-        <span class="c1"># Align with Python semantics: signal missing attribute for hasattr()</span>
-        <span class="k">raise</span> <span class="ne">AttributeError</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
         <span class="c1"># Allow internal/private attributes and critical wiring attributes without immutability checks</span>
@@ -847,13 +906,19 @@
                 <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;ProtoBase DBObjects are immutable! You are trying to set attribute </span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s1">&#39;</span>
             <span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DBObject</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DBObject</span><span class="p">:</span>
         <span class="n">new_object</span> <span class="o">=</span> <span class="n">DBObject</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">attr_name</span><span class="p">,</span> <span class="n">attr_value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">if</span> <span class="n">attr_name</span> <span class="o">!=</span> <span class="s1">&#39;_loaded&#39;</span><span class="p">:</span>  <span class="c1"># Skip _loaded flag to avoid recursion</span>
                 <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">new_object</span><span class="p">,</span> <span class="n">attr_name</span><span class="p">,</span> <span class="n">attr_value</span><span class="p">)</span>
         <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">new_object</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">new_object</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">has_defined_attr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="kc">False</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_load</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_loaded</span><span class="p">:</span>
@@ -920,7 +985,7 @@
             <span class="p">)</span>
 
         <span class="n">current_object</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">DBObject</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">get_mutable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hash_key</span><span class="p">))</span>
-        <span class="n">new_object</span> <span class="o">=</span> <span class="n">current_object</span><span class="o">.</span><span class="n">_setattr</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+        <span class="n">new_object</span> <span class="o">=</span> <span class="n">current_object</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">transaction</span><span class="o">.</span><span class="n">set_mutable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hash_key</span><span class="p">,</span> <span class="n">new_object</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">atom_pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">:</span>
             <span class="c1"># Object is stored in DB and it is going to be modified.</span>

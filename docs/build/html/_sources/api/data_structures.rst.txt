@@ -4,7 +4,7 @@ Data Structures
 This module provides the data structures of ProtoBase, which are built on top of the core components.
 
 Dictionary
----------
+----------
 
 .. module:: proto_db.dictionaries
 
@@ -29,7 +29,7 @@ The class provides methods for:
 * Handling concurrent modifications with ``_rebase_on_concurrent_update``
 
 Hash Dictionary
---------------
+---------------
 
 .. module:: proto_db.hash_dictionaries
 
@@ -62,10 +62,10 @@ Set
 A ``Set`` is an unordered collection of unique items. It supports adding and removing items, provides efficient membership testing, and ensures uniqueness of items.
 
 Usage Examples
--------------
+--------------
 
 Dictionary Example
-~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 
@@ -99,7 +99,7 @@ Dictionary Example
         print(f"{key}: {value}")
 
 RepeatedKeysDictionary Example
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 
@@ -149,7 +149,7 @@ RepeatedKeysDictionary Example
     tr.commit()
 
 Hash Dictionary Example
-~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 
@@ -175,7 +175,7 @@ Hash Dictionary Example
         print(f"{key}: {value}")
 
 List Example
-~~~~~~~~~~
+~~~~~~~~~~~~
 
 .. code-block:: python
 
@@ -206,7 +206,7 @@ List Example
     print(l[1:])  # Output: ["blueberry", "cherry"]
 
 Set Example
-~~~~~~~~~
+~~~~~~~~~~~
 
 .. code-block:: python
 

@@ -69,7 +69,7 @@ QueryPlan
 The ``QueryPlan`` class is the base class for all query plans in ProtoBase. It provides methods for query execution and chaining.
 
 BlockProvider
-------------
+-------------
 
 .. autoclass:: BlockProvider
    :members:
@@ -78,7 +78,7 @@ BlockProvider
 The ``BlockProvider`` interface defines the contract for block providers, which are responsible for providing storage blocks for the storage layer.
 
 SharedStorage
-------------
+-------------
 
 .. autoclass:: SharedStorage
    :members:

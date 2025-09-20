@@ -61,12 +61,12 @@
 <li class="toctree-l2"><a class="reference internal" href="core.html">Core Components</a></li>
 <li class="toctree-l2"><a class="reference internal" href="storage.html">Storage Layer</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Data Structures</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#dictionary">Dictionary</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#module-proto_db.dictionaries">Dictionary</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#proto_db.dictionaries.Dictionary"><code class="docutils literal notranslate"><span class="pre">Dictionary</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#proto_db.dictionaries.RepeatedKeysDictionary"><code class="docutils literal notranslate"><span class="pre">RepeatedKeysDictionary</span></code></a></li>
 </ul>
 </li>
-<li class="toctree-l3"><a class="reference internal" href="#hash-dictionary">Hash Dictionary</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#module-proto_db.hash_dictionaries">Hash Dictionary</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#proto_db.hash_dictionaries.HashDictionary"><code class="docutils literal notranslate"><span class="pre">HashDictionary</span></code></a></li>
 </ul>
 </li>
@@ -103,8 +103,8 @@
 <li class="toctree-l2"><a class="reference internal" href="index.html#storage-layer">Storage Layer</a></li>
 <li class="toctree-l2 current"><a class="reference internal" href="index.html#data-structures">Data Structures</a><ul class="current">
 <li class="toctree-l3 current"><a class="current reference internal" href="#">Data Structures</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#dictionary">Dictionary</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#hash-dictionary">Hash Dictionary</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#module-proto_db.dictionaries">Dictionary</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#module-proto_db.hash_dictionaries">Hash Dictionary</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#module-proto_db.lists">List</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#module-proto_db.sets">Set</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#usage-examples">Usage Examples</a></li>
@@ -151,9 +151,9 @@
   <section id="data-structures">
 <h1>Data Structures<a class="headerlink" href="#data-structures" title="Link to this heading"></a></h1>
 <p>This module provides the data structures of ProtoBase, which are built on top of the core components.</p>
-<section id="dictionary">
-<h2>Dictionary<a class="headerlink" href="#dictionary" title="Link to this heading"></a></h2>
-<dl class="py class" id="module-proto_db.dictionaries">
+<section id="module-proto_db.dictionaries">
+<span id="dictionary"></span><h2>Dictionary<a class="headerlink" href="#module-proto_db.dictionaries" title="Link to this heading"></a></h2>
+<dl class="py class">
 <dt class="sig sig-object py" id="proto_db.dictionaries.Dictionary">
 <em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.dictionaries.</span></span><span class="sig-name descname"><span class="pre">Dictionary</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">content</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">op_log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">indexes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/dictionaries.html#Dictionary"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.dictionaries.Dictionary" title="Link to this definition"></a></dt>
 <dd><p>Represents a durable, transaction-safe dictionary-like mapping between strings and values,
@@ -208,7 +208,7 @@ Mixing other objects is not supported, and no warnings will be issued for doing 
 :return: The dictionary’s query plan.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="queries.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
+<dd class="field-odd"><p><a class="reference internal" href="core.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
 </dd>
 </dl>
 </dd></dl>
@@ -420,7 +420,7 @@ This dictionary represents an ordered index over a single field (the caller pass
 </ul>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference internal" href="queries.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a> | None</p>
+<dd class="field-even"><p><a class="reference internal" href="core.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a> | None</p>
 </dd>
 </dl>
 </dd></dl>
@@ -437,9 +437,9 @@ This dictionary represents an ordered index over a single field (the caller pass
 <li><p>Handling concurrent modifications with <code class="docutils literal notranslate"><span class="pre">_rebase_on_concurrent_update</span></code></p></li>
 </ul>
 </section>
-<section id="hash-dictionary">
-<h2>Hash Dictionary<a class="headerlink" href="#hash-dictionary" title="Link to this heading"></a></h2>
-<dl class="py class" id="module-proto_db.hash_dictionaries">
+<section id="module-proto_db.hash_dictionaries">
+<span id="hash-dictionary"></span><h2>Hash Dictionary<a class="headerlink" href="#module-proto_db.hash_dictionaries" title="Link to this heading"></a></h2>
+<dl class="py class">
 <dt class="sig sig-object py" id="proto_db.hash_dictionaries.HashDictionary">
 <em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">proto_db.hash_dictionaries.</span></span><span class="sig-name descname"><span class="pre">HashDictionary</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">next</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">previous</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transaction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atom_pointer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/hash_dictionaries.html#HashDictionary"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.hash_dictionaries.HashDictionary" title="Link to this definition"></a></dt>
 <dd><dl class="field-list simple">
@@ -489,7 +489,7 @@ This dictionary represents an ordered index over a single field (the caller pass
 :return:</p>
 <dl class="field-list simple">
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="queries.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
+<dd class="field-odd"><p><a class="reference internal" href="core.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
 </dd>
 </dl>
 </dd></dl>
@@ -647,7 +647,7 @@ queries against the list’s data.</p>
 <dd class="field-odd"><p>A QueryPlan object for this list.</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference internal" href="queries.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
+<dd class="field-even"><p><a class="reference internal" href="core.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
 </dd>
 </dl>
 </dd></dl>
@@ -956,7 +956,7 @@ execution frameworks. Delegates the conversion to the underlying <cite>HashDicti
 <dd class="field-odd"><p>A <cite>QueryPlan</cite> representation of the current Set.</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference internal" href="queries.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
+<dd class="field-even"><p><a class="reference internal" href="core.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
 </dd>
 </dl>
 </dd></dl>

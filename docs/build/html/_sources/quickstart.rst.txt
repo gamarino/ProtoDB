@@ -10,36 +10,31 @@ The first step is to create a storage instance, an object space, and a database:
 
 .. code-block:: python
 
-    import proto_db
+    from proto_db.db_access import ObjectSpace
+    from proto_db.memory_storage import MemoryStorage
     
     # Create a memory storage (for testing and development)
-    storage = proto_db.MemoryStorage()
+    storage = MemoryStorage()
     
     # Create an object space
-    space = proto_db.ObjectSpace(storage)
+    space = ObjectSpace(storage)
     
-    # Get a database (creates it if it doesn't exist)
-    db = space.get_database("my_database")
+    # Create a database
+    db = space.new_database("my_database")
 
 For production use, you might want to use a file-based storage instead:
 
 .. code-block:: python
 
-    import proto_db
     import os
+    from proto_db.db_access import ObjectSpace
+    from proto_db.standalone_file_storage import StandaloneFileStorage
     
-    # Create a directory for the database files
-    os.makedirs("my_db_files", exist_ok=True)
-    
-    # Create a file block provider
-    block_provider = proto_db.FileBlockProvider("my_db_files")
-    
-    # Create a file storage
-    storage = proto_db.StandaloneFileStorage(block_provider)
-    
-    # Create an object space and database as before
-    space = proto_db.ObjectSpace(storage)
-    db = space.get_database("my_database")
+    # Block provider should be provided by your environment; in tests it is often mocked.
+    # Here we assume a valid block provider instance named `block_provider`.
+    storage = StandaloneFileStorage(block_provider)
+    space = ObjectSpace(storage)
+    db = space.new_database("my_database")
 
 Working with Transactions
 ---------------------------
@@ -61,42 +56,29 @@ If you need to abort a transaction, you can simply let it go out of scope withou
 Working with Dictionaries
 --------------------------
 
-Dictionaries are one of the basic data structures in ProtoBase:
+Dictionaries are one of the basic durable data structures in ProtoBase. They are immutable: updates return a new instance.
 
 .. code-block:: python
 
-    # Create a transaction
+    from proto_db.dictionaries import Dictionary
+    
     tr = db.new_transaction()
     
-    # Create a dictionary
-    d = proto_db.Dictionary()
-    
-    # Add some key-value pairs
-    d["name"] = "John Doe"
-    d["age"] = 30
-    d["email"] = "john.doe@example.com"
+    # Create a dictionary and set fields (returns new instances)
+    d = Dictionary(transaction=tr)
+    d = d.set_at("name", "John Doe")
+    d = d.set_at("age", 30)
+    d = d.set_at("email", "john.doe@example.com")
     
     # Store the dictionary as a root object
     tr.set_root_object("user", d)
-    
-    # Commit the transaction
     tr.commit()
     
-    # Create a new transaction
+    # Read back
     tr2 = db.new_transaction()
-    
-    # Retrieve the dictionary
     user = tr2.get_root_object("user")
-    
-    # Access values
-    print(user["name"])  # Output: John Doe
-    print(user["age"])   # Output: 30
-    
-    # Modify values
-    user["age"] = 31
-    
-    # Commit the changes
-    tr2.commit()
+    print(user.get_at("name"))  # John Doe
+    print(user.get_at("age"))   # 30
 
 LINQ-like Queries (Phase 1)
 ---------------------------

@@ -4,7 +4,7 @@ Storage Layer
 This module provides the storage layer of ProtoBase, which is responsible for persisting data to disk, memory, or cloud storage.
 
 Memory Storage
--------------
+--------------
 
 .. module:: proto_db.memory_storage
 
@@ -15,7 +15,7 @@ Memory Storage
 ``MemoryStorage`` is an in-memory storage implementation. It stores Atoms in memory, does not persist data across process restarts, and is useful for testing and development.
 
 Standalone File Storage
-----------------------
+------------------------
 
 .. module:: proto_db.standalone_file_storage
 
@@ -67,7 +67,7 @@ The ``WALState`` class represents the state of a Write-Ahead Log (WAL). It track
 The ``WALWriteOperation`` class represents a write operation in the WAL. It contains the transaction ID, offset, and segments to be written.
 
 File Block Provider
-------------------
+-------------------
 
 .. module:: proto_db.file_block_provider
 
@@ -78,7 +78,7 @@ File Block Provider
 The ``FileBlockProvider`` class is a block provider implementation that uses files on disk for storage. It is used by ``StandaloneFileStorage`` to read and write blocks.
 
 Cluster File Storage
--------------------
+--------------------
 
 .. module:: proto_db.cluster_file_storage
 
@@ -95,7 +95,7 @@ Cluster File Storage
 The ``ClusterNetworkManager`` class manages network communication between nodes in a cluster. It handles vote requests, page requests, and root object broadcasts.
 
 Cloud File Storage
------------------
+------------------
 
 .. module:: proto_db.cloud_file_storage
 
@@ -160,7 +160,7 @@ The ``S3ObjectMetadata`` class is an alias for ``CloudObjectMetadata`` for backw
 The ``CloudStorageError`` class is an exception raised for cloud storage specific errors.
 
 Cloud Cluster File Storage
--------------------------
+--------------------------
 
 .. module:: proto_db.cloud_cluster_file_storage
 

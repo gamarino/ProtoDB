@@ -588,7 +588,7 @@ how the collection’s specific structure is translated into a query plan.</p>
 <dd class="field-odd"><p>A QueryPlan object for this collection.</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference internal" href="queries.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
+<dd class="field-even"><p><a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
 </dd>
 </dl>
 </dd></dl>
@@ -614,7 +614,7 @@ implement for their respective functionality.</p>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
 <dd class="field-even"><ul class="simple">
-<li><p><strong>based_on</strong> (<a class="reference internal" href="queries.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
+<li><p><strong>based_on</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
 <li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
 <li><p><strong>atom_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
 </ul>
@@ -626,7 +626,7 @@ implement for their respective functionality.</p>
 <dd><dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>based_on</strong> (<a class="reference internal" href="queries.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
+<li><p><strong>based_on</strong> (<a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a>)</p></li>
 <li><p><strong>transaction</strong> (<em>AbstractTransaction</em>)</p></li>
 <li><p><strong>atom_pointer</strong> (<a class="reference internal" href="#proto_db.common.AtomPointer" title="proto_db.common.AtomPointer"><em>AtomPointer</em></a>)</p></li>
 </ul>
@@ -664,7 +664,7 @@ No external context parameter is required.</p>
 <dd class="field-odd"><p>The optimized query plan.</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference internal" href="queries.html#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
+<dd class="field-even"><p><a class="reference internal" href="#proto_db.common.QueryPlan" title="proto_db.common.QueryPlan"><em>QueryPlan</em></a></p>
 </dd>
 </dl>
 </dd></dl>
@@ -1050,6 +1050,39 @@ If database is already opened, it will not commit anymore! Be carefull
 </dl>
 </dd></dl>
 
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectSpace.set_space_root">
+<span class="sig-name descname"><span class="pre">set_space_root</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_space_root</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectSpace.set_space_root"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectSpace.set_space_root" title="Link to this definition"></a></dt>
+<dd><p>Persist a new space root version by prepending it to the space history and
+updating the provider root pointer. This method assumes the caller is already
+executing under the provider’s root context manager (via _space_context()).</p>
+<p>Note: This variant re-reads the current history to prepend the new root. Prefer
+set_space_root_locked when you already have the current history object.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>new_space_root</strong> (<em>RootObject</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.ObjectSpace.set_space_root_locked">
+<span class="sig-name descname"><span class="pre">set_space_root_locked</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_space_root</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">current_history</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#ObjectSpace.set_space_root_locked"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.ObjectSpace.set_space_root_locked" title="Link to this definition"></a></dt>
+<dd><p>Persist a new space root using the already-read current_history. This avoids
+re-reading the root or re-entering any locks and must be called while the
+provider root lock is held.
+Now that List.insert_at is fixed, prepend the new root directly with insert_at(0)
+without reconstructing the history.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>new_space_root</strong> (<em>RootObject</em>)</p></li>
+<li><p><strong>current_history</strong> (<a class="reference internal" href="data_structures.html#proto_db.lists.List" title="proto_db.lists.List"><em>List</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
 </dd></dl>
 
 <p>An <code class="docutils literal notranslate"><span class="pre">ObjectSpace</span></code> is a container for multiple databases. It manages the lifecycle of databases, provides access to databases by name, and ensures proper isolation between databases.</p>
@@ -1075,6 +1108,39 @@ If database is already opened, it will not commit anymore! Be carefull
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>object_space</strong> (<a class="reference internal" href="#proto_db.db_access.ObjectSpace" title="proto_db.db_access.ObjectSpace"><em>ObjectSpace</em></a>)</p></li>
 <li><p><strong>database_name</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.Database.set_db_root_locked">
+<span class="sig-name descname"><span class="pre">set_db_root_locked</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_db_root</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#Database.set_db_root_locked"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.Database.set_db_root_locked" title="Link to this definition"></a></dt>
+<dd><p>Same as set_db_root(), but intended to be called while already holding
+the storage root lock via RootContextManager. Avoids any nested attempts
+to (re)acquire the provider lock, preventing deadlocks on non-reentrant locks.
+If RootContextManager captured the current space root/history for this
+transaction, use them to avoid re-reading anything under the lock.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>new_db_root</strong> (<a class="reference internal" href="data_structures.html#proto_db.dictionaries.Dictionary" title="proto_db.dictionaries.Dictionary"><em>Dictionary</em></a>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="proto_db.db_access.Database.set_db_root_with_locked_context">
+<span class="sig-name descname"><span class="pre">set_db_root_with_locked_context</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_db_root</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">locked_space_root</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">locked_space_history</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/proto_db/db_access.html#Database.set_db_root_with_locked_context"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#proto_db.db_access.Database.set_db_root_with_locked_context" title="Link to this definition"></a></dt>
+<dd><p>Persist a new DB root using the space_root and space_history captured by RootContextManager
+upon entering the commit critical section. This avoids any re-reads and guarantees we are
+updating exactly the history we observed under the same provider root lock.
+Must be called while the provider root lock is held.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>new_db_root</strong> (<a class="reference internal" href="data_structures.html#proto_db.dictionaries.Dictionary" title="proto_db.dictionaries.Dictionary"><em>Dictionary</em></a>)</p></li>
+<li><p><strong>locked_space_root</strong> (<em>RootObject</em>)</p></li>
+<li><p><strong>locked_space_history</strong> (<a class="reference internal" href="data_structures.html#proto_db.lists.List" title="proto_db.lists.List"><em>List</em></a>)</p></li>
 </ul>
 </dd>
 </dl>

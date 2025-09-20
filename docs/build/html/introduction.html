@@ -46,7 +46,7 @@
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Introduction</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#what-is-protobase">What is ProtoBase?</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#key-capabilities">Key Capabilities</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#key-capabilities-current">Key Capabilities (current)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#ideal-use-cases">Ideal Use Cases</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#architecture-overview">Architecture Overview</a></li>
 </ul>
@@ -96,19 +96,21 @@
              
   <section id="introduction">
 <h1>Introduction<a class="headerlink" href="#introduction" title="Link to this heading"></a></h1>
+<p>Updated: 2025-09-19</p>
 <section id="what-is-protobase">
 <h2>What is ProtoBase?<a class="headerlink" href="#what-is-protobase" title="Link to this heading"></a></h2>
 <p>ProtoBase is an embedded, transactional, object‑oriented data platform for Python. It operates directly on native Python objects at memory speed using copy‑on‑write, while a decoupled persistence engine ensures durability in the background. You get the ergonomics of Python data structures with ACID guarantees, immutable secondary indexes, and an index‑aware query optimizer.</p>
 </section>
-<section id="key-capabilities">
-<h2>Key Capabilities<a class="headerlink" href="#key-capabilities" title="Link to this heading"></a></h2>
+<section id="key-capabilities-current">
+<h2>Key Capabilities (current)<a class="headerlink" href="#key-capabilities-current" title="Link to this heading"></a></h2>
 <ul class="simple">
 <li><p>Near in‑memory performance: reads and writes within a transaction execute over in‑memory, immutable structures; persistence runs on background threads.</p></li>
-<li><p>Intelligent write‑through cache: newly persisted atoms are immediately published to object and bytes caches for instant read‑after‑write.</p></li>
+<li><p>Write‑through atom caches: newly persisted atoms are immediately published to object and bytes caches for instant read‑after‑write; single‑flight avoids duplicated loads under concurrency.</p></li>
 <li><p>Advanced query optimizer: exploits secondary indexes for single‑term, AND, and OR predicates (AndMerge, OrMerge, IndexedSearchPlan, IndexedRangeSearchPlan) and performs efficient range traversal without premature materialization.</p></li>
-<li><p>Rich data structures: Dictionary, List, Set, and HashDictionary with durable semantics.</p></li>
-<li><p>Multiple storage backends: in‑memory, file‑based with WAL, cluster/cloud variants.</p></li>
-<li><p>Vector search (optional): exact and ANN (IVF‑Flat) under the same query framework.</p></li>
+<li><p>Rich data structures: Dictionary, RepeatedKeysDictionary, List (AVL‑backed), Set, and CountedSet with durable semantics.</p></li>
+<li><p>Query composition: JoinPlan (inner/left/right/outer/external variants), FromPlan for aliasing, and a LINQ‑like API including select_many for lateral joins.</p></li>
+<li><p>Multiple storage backends: in‑memory, file‑based with WAL; cloud/cluster integrations are optional and gated by dependencies.</p></li>
+<li><p>Vector and Arrow integration (optional): helpers live behind optional dependencies and are mocked during docs build.</p></li>
 </ul>
 </section>
 <section id="ideal-use-cases">
@@ -125,9 +127,9 @@
 <p>ProtoBase is organized around several key abstractions:</p>
 <ul class="simple">
 <li><p>Atom: the base class for all durable objects.</p></li>
-<li><p>Storage layer: persistence engines for memory, files (WAL), clusters, and cloud.</p></li>
+<li><p>Storage layer: persistence engines for memory, files (WAL), clusters, and cloud (optional).</p></li>
 <li><p>Data structures: durable collections built on Atoms.</p></li>
-<li><p>Query system: expression compiler, optimizer, and execution plans.</p></li>
+<li><p>Query system: expression compiler, optimizer, and execution plans, plus LINQ‑like API.</p></li>
 </ul>
 <p>For a deeper dive, see the <a class="reference internal" href="architecture.html"><span class="doc">Architecture</span></a> section.</p>
 </section>

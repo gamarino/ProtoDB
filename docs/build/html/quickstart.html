@@ -105,34 +105,29 @@
 <section id="creating-a-database">
 <h2>Creating a Database<a class="headerlink" href="#creating-a-database" title="Link to this heading"></a></h2>
 <p>The first step is to create a storage instance, an object space, and a database:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">proto_db</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.db_access</span><span class="w"> </span><span class="kn">import</span> <span class="n">ObjectSpace</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.memory_storage</span><span class="w"> </span><span class="kn">import</span> <span class="n">MemoryStorage</span>
 
 <span class="c1"># Create a memory storage (for testing and development)</span>
-<span class="n">storage</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">MemoryStorage</span><span class="p">()</span>
+<span class="n">storage</span> <span class="o">=</span> <span class="n">MemoryStorage</span><span class="p">()</span>
 
 <span class="c1"># Create an object space</span>
-<span class="n">space</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">ObjectSpace</span><span class="p">(</span><span class="n">storage</span><span class="p">)</span>
+<span class="n">space</span> <span class="o">=</span> <span class="n">ObjectSpace</span><span class="p">(</span><span class="n">storage</span><span class="p">)</span>
 
-<span class="c1"># Get a database (creates it if it doesn&#39;t exist)</span>
-<span class="n">db</span> <span class="o">=</span> <span class="n">space</span><span class="o">.</span><span class="n">get_database</span><span class="p">(</span><span class="s2">&quot;my_database&quot;</span><span class="p">)</span>
+<span class="c1"># Create a database</span>
+<span class="n">db</span> <span class="o">=</span> <span class="n">space</span><span class="o">.</span><span class="n">new_database</span><span class="p">(</span><span class="s2">&quot;my_database&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>For production use, you might want to use a file-based storage instead:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">proto_db</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.db_access</span><span class="w"> </span><span class="kn">import</span> <span class="n">ObjectSpace</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.standalone_file_storage</span><span class="w"> </span><span class="kn">import</span> <span class="n">StandaloneFileStorage</span>
 
-<span class="c1"># Create a directory for the database files</span>
-<span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="s2">&quot;my_db_files&quot;</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-
-<span class="c1"># Create a file block provider</span>
-<span class="n">block_provider</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">FileBlockProvider</span><span class="p">(</span><span class="s2">&quot;my_db_files&quot;</span><span class="p">)</span>
-
-<span class="c1"># Create a file storage</span>
-<span class="n">storage</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">StandaloneFileStorage</span><span class="p">(</span><span class="n">block_provider</span><span class="p">)</span>
-
-<span class="c1"># Create an object space and database as before</span>
-<span class="n">space</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">ObjectSpace</span><span class="p">(</span><span class="n">storage</span><span class="p">)</span>
-<span class="n">db</span> <span class="o">=</span> <span class="n">space</span><span class="o">.</span><span class="n">get_database</span><span class="p">(</span><span class="s2">&quot;my_database&quot;</span><span class="p">)</span>
+<span class="c1"># Block provider should be provided by your environment; in tests it is often mocked.</span>
+<span class="c1"># Here we assume a valid block provider instance named `block_provider`.</span>
+<span class="n">storage</span> <span class="o">=</span> <span class="n">StandaloneFileStorage</span><span class="p">(</span><span class="n">block_provider</span><span class="p">)</span>
+<span class="n">space</span> <span class="o">=</span> <span class="n">ObjectSpace</span><span class="p">(</span><span class="n">storage</span><span class="p">)</span>
+<span class="n">db</span> <span class="o">=</span> <span class="n">space</span><span class="o">.</span><span class="n">new_database</span><span class="p">(</span><span class="s2">&quot;my_database&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>
@@ -152,39 +147,26 @@
 </section>
 <section id="working-with-dictionaries">
 <h2>Working with Dictionaries<a class="headerlink" href="#working-with-dictionaries" title="Link to this heading"></a></h2>
-<p>Dictionaries are one of the basic data structures in ProtoBase:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create a transaction</span>
+<p>Dictionaries are one of the basic durable data structures in ProtoBase. They are immutable: updates return a new instance.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">proto_db.dictionaries</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dictionary</span>
+
 <span class="n">tr</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span class="p">()</span>
 
-<span class="c1"># Create a dictionary</span>
-<span class="n">d</span> <span class="o">=</span> <span class="n">proto_db</span><span class="o">.</span><span class="n">Dictionary</span><span class="p">()</span>
-
-<span class="c1"># Add some key-value pairs</span>
-<span class="n">d</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;John Doe&quot;</span>
-<span class="n">d</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">30</span>
-<span class="n">d</span><span class="p">[</span><span class="s2">&quot;email&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;john.doe@example.com&quot;</span>
+<span class="c1"># Create a dictionary and set fields (returns new instances)</span>
+<span class="n">d</span> <span class="o">=</span> <span class="n">Dictionary</span><span class="p">(</span><span class="n">transaction</span><span class="o">=</span><span class="n">tr</span><span class="p">)</span>
+<span class="n">d</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;John Doe&quot;</span><span class="p">)</span>
+<span class="n">d</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="mi">30</span><span class="p">)</span>
+<span class="n">d</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">set_at</span><span class="p">(</span><span class="s2">&quot;email&quot;</span><span class="p">,</span> <span class="s2">&quot;john.doe@example.com&quot;</span><span class="p">)</span>
 
 <span class="c1"># Store the dictionary as a root object</span>
 <span class="n">tr</span><span class="o">.</span><span class="n">set_root_object</span><span class="p">(</span><span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>
-
-<span class="c1"># Commit the transaction</span>
 <span class="n">tr</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
 
-<span class="c1"># Create a new transaction</span>
+<span class="c1"># Read back</span>
 <span class="n">tr2</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">new_transaction</span><span class="p">()</span>
-
-<span class="c1"># Retrieve the dictionary</span>
 <span class="n">user</span> <span class="o">=</span> <span class="n">tr2</span><span class="o">.</span><span class="n">get_root_object</span><span class="p">(</span><span class="s2">&quot;user&quot;</span><span class="p">)</span>
-
-<span class="c1"># Access values</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">user</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">])</span>  <span class="c1"># Output: John Doe</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">user</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">])</span>   <span class="c1"># Output: 30</span>
-
-<span class="c1"># Modify values</span>
-<span class="n">user</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">31</span>
-
-<span class="c1"># Commit the changes</span>
-<span class="n">tr2</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">user</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">))</span>  <span class="c1"># John Doe</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">user</span><span class="o">.</span><span class="n">get_at</span><span class="p">(</span><span class="s2">&quot;age&quot;</span><span class="p">))</span>   <span class="c1"># 30</span>
 </pre></div>
 </div>
 </section>

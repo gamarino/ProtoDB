@@ -45,12 +45,18 @@
 <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../concepts.html">ProtoDB Fundamental Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cookbook.html">ProtoDB Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cookbook_traverse.html">Hierarchical and Graph Traversal with .traverse()</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../performance.html">Performance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../testing.html">Testing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../root_locking.html">Root locking and root_context_manager</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../storage_cloud.html">Cloud and Cluster Storage</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../vectors_arrow.html">Vectors and Arrow Bridge</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html">Advanced Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../advanced_usage.html#correlated-subqueries-with-select-many-lateral-join">Correlated Subqueries with .select_many() (LATERAL JOIN)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../parallel_scans.html">Parallel Scans: Adaptive Chunking and Work-Stealing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../development.html">Development</a></li>
 </ul>
@@ -81,7 +87,7 @@
              
   <h1>Source code for proto_db.memory_storage</h1><div class="highlight"><pre>
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">threading</span><span class="w"> </span><span class="kn">import</span> <span class="n">Lock</span>  <span class="c1"># Import threading lock to ensure thread safety</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">threading</span><span class="w"> </span><span class="kn">import</span> <span class="n">RLock</span> <span class="k">as</span> <span class="n">Lock</span>  <span class="c1"># Use re-entrant lock to avoid deadlocks under nested root operations</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">common</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="n">Future</span><span class="p">,</span> <span class="n">AtomPointer</span>
@@ -144,17 +150,21 @@
 <span class="sd">            ProtoValidationException: If no root object has been set yet.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>  <span class="c1"># Ensure thread-safety when accessing `current_root`.</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_root_history_pointer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="kn">from</span><span class="w"> </span><span class="nn">.exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProtoValidationException</span>
-                <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s1">&#39;Root object is not set&#39;</span><span class="p">)</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_root_history_pointer</span></div>
+            <span class="n">ptr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_root_history_pointer</span>
+            <span class="c1"># Debug instrumentation</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="kn">import</span><span class="w"> </span><span class="nn">os</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">_os</span>
+                <span class="k">if</span> <span class="n">_os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;PB_DEBUG_CONC&#39;</span><span class="p">):</span>
+                    <span class="n">tid</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="s1">&#39;transaction_id&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                    <span class="n">off</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="s1">&#39;offset&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[DEBUG][MEM] read_current_root -&gt; </span><span class="si">{</span><span class="n">tid</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">off</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">pass</span>
+            <span class="k">return</span> <span class="n">ptr</span></div>
 
 
-<div class="viewcode-block" id="MemoryStorage.read_lock_current_root">
-<a class="viewcode-back" href="../../api/storage.html#proto_db.memory_storage.MemoryStorage.read_lock_current_root">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">read_lock_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_current_root</span><span class="p">()</span></div>
-
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_current_root</span><span class="p">()</span>
 
 <div class="viewcode-block" id="MemoryStorage.set_current_root">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.memory_storage.MemoryStorage.set_current_root">[docs]</a>
@@ -164,13 +174,58 @@
 <span class="sd">        :param new_root_history_pointer: The pointer to the new `RootObject` to be set.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>  <span class="c1"># Ensure thread-safety when modifying `current_root`.</span>
+            <span class="c1"># Debug instrumentation</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="kn">import</span><span class="w"> </span><span class="nn">os</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">_os</span>
+                <span class="k">if</span> <span class="n">_os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;PB_DEBUG_CONC&#39;</span><span class="p">):</span>
+                    <span class="n">tid</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">new_root_history_pointer</span><span class="p">,</span> <span class="s1">&#39;transaction_id&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                    <span class="n">off</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">new_root_history_pointer</span><span class="p">,</span> <span class="s1">&#39;offset&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[DEBUG][MEM] set_current_root &lt;- </span><span class="si">{</span><span class="n">tid</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">off</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">pass</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">current_root_history_pointer</span> <span class="o">=</span> <span class="n">new_root_history_pointer</span></div>
 
 
-<div class="viewcode-block" id="MemoryStorage.unlock_current_root">
-<a class="viewcode-back" href="../../api/storage.html#proto_db.memory_storage.MemoryStorage.unlock_current_root">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">unlock_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">pass</span></div>
+        <span class="k">pass</span>
+
+<div class="viewcode-block" id="MemoryStorage.root_context_manager">
+<a class="viewcode-back" href="../../api/storage.html#proto_db.memory_storage.MemoryStorage.root_context_manager">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">root_context_manager</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span><span class="w"> </span><span class="nc">ContextManager</span><span class="p">:</span>
+            <span class="n">ms</span><span class="p">:</span> <span class="s2">&quot;MemoryStorage&quot;</span>
+            <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ms</span><span class="p">:</span> <span class="s2">&quot;MemoryStorage&quot;</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">ms</span> <span class="o">=</span> <span class="n">ms</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_acquired</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="k">def</span><span class="w"> </span><span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+                <span class="c1"># Debug</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="kn">import</span><span class="w"> </span><span class="nn">os</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">_os</span>
+                    <span class="k">if</span> <span class="n">_os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;PB_DEBUG_CONC&#39;</span><span class="p">):</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[DEBUG][MEM] RootContextManager enter: acquiring lock&quot;</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">pass</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">ms</span><span class="o">.</span><span class="n">lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_acquired</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="kn">import</span><span class="w"> </span><span class="nn">os</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">_os</span>
+                    <span class="k">if</span> <span class="n">_os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;PB_DEBUG_CONC&#39;</span><span class="p">):</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[DEBUG][MEM] RootContextManager entered: lock acquired&quot;</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">pass</span>
+            <span class="k">def</span><span class="w"> </span><span class="fm">__exit__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">traceback</span><span class="p">):</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_acquired</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">ms</span><span class="o">.</span><span class="n">lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_acquired</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="kn">import</span><span class="w"> </span><span class="nn">os</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">_os</span>
+                    <span class="k">if</span> <span class="n">_os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;PB_DEBUG_CONC&#39;</span><span class="p">):</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[DEBUG][MEM] RootContextManager exit: lock released&quot;</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">pass</span>
+            <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+                <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;MemoryStorage.RootContextManager(ms=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">ms</span><span class="si">}</span><span class="s2">)&quot;</span>
+        <span class="k">return</span> <span class="n">ContextManager</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="MemoryStorage.flush_wal">
@@ -187,49 +242,23 @@
 <a class="viewcode-back" href="../../api/storage.html#proto_db.memory_storage.MemoryStorage.push_atom">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">push_atom</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">atom</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="n">AtomPointer</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Save an atom in the in-memory storage.</span>
-<span class="sd">        - If the atom has no pointer or its offset is None, assign a new pointer.</span>
-<span class="sd">        - If the atom already has an offset that exists in storage, raise ProtoCorruptionException.</span>
-<span class="sd">        :param atom: The `Atom` (or dict-like) object to be stored.</span>
-<span class="sd">        :return: A `Future` containing the corresponding `AtomPointer` of the stored atom.</span>
-<span class="sd">        :raises:</span>
-<span class="sd">            ProtoCorruptionException: If an atom with the same offset already exists.</span>
+<span class="sd">        Save an atom payload (JSON-serializable dict) in the in-memory storage.</span>
+<span class="sd">        Always assigns a fresh offset and returns an AtomPointer. The input is not mutated.</span>
+<span class="sd">        :param atom: The atom payload to be stored (dict produced by Atom._save()).</span>
+<span class="sd">        :return: A Future containing the AtomPointer of the stored atom.</span>
+<span class="sd">        :raises ProtoCorruptionException: If a randomly chosen offset collides (extremely unlikely).</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>  <span class="c1"># Ensure thread-safety for operations on `atoms`.</span>
-            <span class="c1"># Try to access an existing AtomPointer if the object looks like an Atom</span>
-            <span class="n">ap</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">atom</span><span class="p">,</span> <span class="s1">&#39;atom_pointer&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-
-            <span class="c1"># Assign new offset if none present</span>
-            <span class="k">if</span> <span class="n">ap</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">ap</span><span class="p">,</span> <span class="s1">&#39;offset&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
+            <span class="c1"># Allocate a fresh unique offset</span>
+            <span class="n">offset</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="o">.</span><span class="n">int</span>
+            <span class="k">while</span> <span class="n">offset</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">atoms</span><span class="p">:</span>
                 <span class="n">offset</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="o">.</span><span class="n">int</span>
-                <span class="n">atom_pointer</span> <span class="o">=</span> <span class="n">AtomPointer</span><span class="p">(</span><span class="n">transaction_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="n">offset</span><span class="p">)</span>
-                <span class="c1"># If the object supports setting atom_pointer, set it</span>
-                <span class="k">try</span><span class="p">:</span>
-                    <span class="nb">setattr</span><span class="p">(</span><span class="n">atom</span><span class="p">,</span> <span class="s1">&#39;atom_pointer&#39;</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="p">)</span>
-                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-                    <span class="c1"># Ignore if not settable (e.g., plain dict). We&#39;ll store using local pointer.</span>
-                    <span class="k">pass</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="c1"># Use existing offset</span>
-                <span class="n">offset</span> <span class="o">=</span> <span class="n">ap</span><span class="o">.</span><span class="n">offset</span>
-                <span class="c1"># Ensure transaction_id is set</span>
-                <span class="n">tx_id</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">ap</span><span class="p">,</span> <span class="s1">&#39;transaction_id&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span>
-                <span class="n">atom_pointer</span> <span class="o">=</span> <span class="n">AtomPointer</span><span class="p">(</span><span class="n">transaction_id</span><span class="o">=</span><span class="n">tx_id</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="n">offset</span><span class="p">)</span>
-                <span class="k">try</span><span class="p">:</span>
-                    <span class="nb">setattr</span><span class="p">(</span><span class="n">atom</span><span class="p">,</span> <span class="s1">&#39;atom_pointer&#39;</span><span class="p">,</span> <span class="n">atom_pointer</span><span class="p">)</span>
-                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-                    <span class="k">pass</span>
+            <span class="n">atom_pointer</span> <span class="o">=</span> <span class="n">AtomPointer</span><span class="p">(</span><span class="n">transaction_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="n">offset</span><span class="p">)</span>
 
-            <span class="c1"># Check for duplicates</span>
-            <span class="k">if</span> <span class="n">offset</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">atoms</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="n">ProtoCorruptionException</span><span class="p">(</span>
-                    <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;You are trying to push an already existing atom: </span><span class="si">{</span><span class="n">atom</span><span class="si">}</span><span class="s1">&#39;</span>
-                <span class="p">)</span>
-
-            <span class="c1"># Add the atom to the storage.</span>
+            <span class="c1"># Store the payload dict at the offset</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">atoms</span><span class="p">[</span><span class="n">offset</span><span class="p">]</span> <span class="o">=</span> <span class="n">atom</span>
 
-            <span class="c1"># Create and return a Future with the atom&#39;s pointer.</span>
+            <span class="c1"># Return the pointer</span>
             <span class="n">result</span> <span class="o">=</span> <span class="n">Future</span><span class="p">()</span>
             <span class="n">result</span><span class="o">.</span><span class="n">set_result</span><span class="p">(</span><span class="n">atom_pointer</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">result</span></div>

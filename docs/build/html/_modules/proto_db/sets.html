@@ -402,6 +402,18 @@
         <span class="c1"># Create and return a new `Set` with the updated `HashDictionary`.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
 
+        <span class="c1"># Defensive: avoid adding Set/CountedSet objects as elements (would be unhashable and semantically invalid)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">.sets</span><span class="w"> </span><span class="kn">import</span> <span class="n">CountedSet</span> <span class="k">as</span> <span class="n">_CSet</span>  <span class="c1"># local import to avoid circulars in type checkers</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="p">(</span><span class="n">Set</span><span class="p">,</span> <span class="n">_CSet</span><span class="p">)):</span>
+                <span class="k">return</span> <span class="bp">self</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">Set</span><span class="p">):</span>
+                    <span class="k">return</span> <span class="bp">self</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">pass</span>
+
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
             <span class="k">return</span> <span class="bp">self</span>
 
@@ -640,6 +652,12 @@
         <span class="k">return</span> <span class="n">total</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;CountedSet&#39;</span><span class="p">:</span>
+        <span class="c1"># Defensive: avoid adding Set/CountedSet objects as elements</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="p">(</span><span class="n">Set</span><span class="p">,</span> <span class="n">CountedSet</span><span class="p">)):</span>
+                <span class="k">return</span> <span class="bp">self</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
         <span class="n">h</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_hash_of</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">()</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">has</span><span class="p">(</span><span class="n">h</span><span class="p">):</span>

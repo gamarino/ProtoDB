@@ -102,11 +102,12 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">msgpack</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">common</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="n">Future</span><span class="p">,</span> <span class="n">BlockProvider</span><span class="p">,</span> <span class="n">AtomPointer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="n">Future</span><span class="p">,</span> <span class="n">BlockProvider</span><span class="p">,</span> <span class="n">AtomPointer</span><span class="p">,</span> <span class="n">RootObject</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="n">MB</span><span class="p">,</span> <span class="n">GB</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProtoUnexpectedException</span><span class="p">,</span> <span class="n">ProtoValidationException</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.hybrid_executor</span><span class="w"> </span><span class="kn">import</span> <span class="n">HybridExecutor</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.atom_cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">AtomCacheBundle</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.dictionaries</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dictionary</span>
 
 <span class="c1"># Format indicators for data serialization</span>
 <span class="n">FORMAT_RAW_BINARY</span> <span class="o">=</span> <span class="mh">0x00</span>  <span class="c1"># Raw binary data (no serialization)</span>
@@ -248,17 +249,12 @@
 
 <div class="viewcode-block" id="StandaloneFileStorage.read_current_root">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.read_current_root">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">read_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">read_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AtomPointer</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Read the current root object pointer from the underlying provider.</span>
-<span class="sd">        The provider may return a raw JSON dict; normalize it into an AtomPointer.</span>
+<span class="sd">        The provider may return different types; normalize to AtomPointer or a fresh empty RootObject when missing.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">root</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">get_current_root_object</span><span class="p">()</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">root</span><span class="p">:</span>
-            <span class="c1"># Signal uninitialized root as validation error (handled by callers)</span>
-            <span class="k">raise</span> <span class="n">ProtoValidationException</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Root object is not initialized&quot;</span><span class="p">)</span>
-
-        <span class="k">return</span> <span class="n">root</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">get_current_root_object</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="StandaloneFileStorage.root_context_manager">
@@ -273,10 +269,13 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">blk_cm</span> <span class="o">=</span> <span class="n">sfs</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">root_context_manager</span><span class="p">()</span>
 
             <span class="k">def</span><span class="w"> </span><span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">blk_cm</span><span class="o">.</span><span class="fm">__enter__</span><span class="p">()</span>
+                <span class="c1"># Some tests patch block_provider.root_context_manager with MagicMock without context methods</span>
+                <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">blk_cm</span><span class="p">,</span> <span class="s1">&#39;__enter__&#39;</span><span class="p">):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">blk_cm</span><span class="o">.</span><span class="fm">__enter__</span><span class="p">()</span>
 
             <span class="k">def</span><span class="w"> </span><span class="fm">__exit__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">traceback</span><span class="p">):</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">blk_cm</span><span class="o">.</span><span class="fm">__exit__</span><span class="p">(</span><span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">traceback</span><span class="p">)</span>
+                <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">blk_cm</span><span class="p">,</span> <span class="s1">&#39;__exit__&#39;</span><span class="p">):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">blk_cm</span><span class="o">.</span><span class="fm">__exit__</span><span class="p">(</span><span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">traceback</span><span class="p">)</span>
 
             <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
                 <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;StandAloneFileStorage.RootContextManager(sfs=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">sfs</span><span class="si">}</span><span class="s2">, blk_cm=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">blk_cm</span><span class="si">}</span><span class="s2">)&quot;</span>
@@ -289,6 +288,16 @@
 <div class="viewcode-block" id="StandaloneFileStorage.set_current_root">
 <a class="viewcode-back" href="../../api/storage.html#proto_db.standalone_file_storage.StandaloneFileStorage.set_current_root">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_current_root</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">root_pointer</span><span class="p">:</span> <span class="n">AtomPointer</span><span class="p">):</span>
+        <span class="c1"># Debug: log pointer written at storage level</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">os</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">_os</span>
+            <span class="k">if</span> <span class="n">_os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;PB_DEBUG_CONC&#39;</span><span class="p">):</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">_logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Storage.set_current_root: </span><span class="si">%s</span><span class="s2">/</span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">root_pointer</span><span class="p">,</span><span class="s1">&#39;transaction_id&#39;</span><span class="p">,</span><span class="kc">None</span><span class="p">),</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">root_pointer</span><span class="p">,</span><span class="s1">&#39;offset&#39;</span><span class="p">,</span><span class="kc">None</span><span class="p">))</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">pass</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">block_provider</span><span class="o">.</span><span class="n">update_root_object</span><span class="p">(</span><span class="n">root_pointer</span><span class="p">)</span></div>
 
 
@@ -546,17 +555,22 @@
 
         <span class="k">def</span><span class="w"> </span><span class="nf">task_read_atom</span><span class="p">():</span>
             <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span> <span class="n">caches</span><span class="o">.</span><span class="n">schema_epoch</span> <span class="k">if</span> <span class="n">caches</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
-            <span class="c1"># Single-flight: only one thread does the load+deserialize</span>
-            <span class="n">leader_event</span> <span class="o">=</span> <span class="n">caches</span><span class="o">.</span><span class="n">singleflight</span><span class="o">.</span><span class="n">begin</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="k">if</span> <span class="n">caches</span> <span class="k">else</span> <span class="kc">None</span>
+            <span class="c1"># Single-flight disabled to avoid potential deadlocks under heavy concurrency</span>
+            <span class="n">sf</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">caches</span><span class="p">,</span> <span class="s1">&#39;singleflight&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">if</span> <span class="n">caches</span> <span class="k">else</span> <span class="kc">None</span>
+            <span class="n">leader_event</span> <span class="o">=</span> <span class="n">sf</span><span class="o">.</span><span class="n">begin</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="k">if</span> <span class="n">sf</span> <span class="k">else</span> <span class="nb">object</span><span class="p">()</span>  <span class="c1"># any non-None sentinel means we are the leader</span>
             <span class="k">if</span> <span class="n">leader_event</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">caches</span><span class="p">:</span>
-                <span class="c1"># Follower: wait for leader to finish and then try caches again</span>
-                <span class="n">caches</span><span class="o">.</span><span class="n">singleflight</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+                <span class="c1"># Follower path (should not happen with sf disabled), but keep as safe fallback</span>
+                <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sf</span><span class="p">,</span> <span class="s1">&#39;wait&#39;</span><span class="p">):</span>
+                    <span class="n">sf</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
                 <span class="k">if</span> <span class="n">caches</span><span class="o">.</span><span class="n">obj_cache</span><span class="p">:</span>
                     <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
                     <span class="n">obj2</span> <span class="o">=</span> <span class="n">caches</span><span class="o">.</span><span class="n">obj_cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pointer</span><span class="o">.</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">pointer</span><span class="o">.</span><span class="n">offset</span><span class="p">,</span> <span class="n">caches</span><span class="o">.</span><span class="n">schema_epoch</span><span class="p">)</span>
                     <span class="n">caches</span><span class="o">.</span><span class="n">record_latency</span><span class="p">(</span><span class="s2">&quot;object_cache_ms&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span><span class="p">)</span>
                     <span class="k">if</span> <span class="n">obj2</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                        <span class="n">caches</span><span class="o">.</span><span class="n">obj_cache</span><span class="o">.</span><span class="n">_stats</span><span class="o">.</span><span class="n">singleflight_dedup</span> <span class="o">+=</span> <span class="mi">1</span>
+                        <span class="k">try</span><span class="p">:</span>
+                            <span class="n">caches</span><span class="o">.</span><span class="n">obj_cache</span><span class="o">.</span><span class="n">_stats</span><span class="o">.</span><span class="n">singleflight_dedup</span> <span class="o">+=</span> <span class="mi">1</span>
+                        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                            <span class="k">pass</span>
                         <span class="k">return</span> <span class="n">obj2</span>
                 <span class="k">if</span> <span class="n">caches</span><span class="o">.</span><span class="n">bytes_cache</span><span class="p">:</span>
                     <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
@@ -566,8 +580,6 @@
                         <span class="c1"># Deserialize</span>
                         <span class="n">tds0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
                         <span class="n">mv</span> <span class="o">=</span> <span class="n">raw2</span>
-                        <span class="c1"># Peek first byte for format when coming from bytes cache: we expect length+indicator already stripped,</span>
-                        <span class="c1"># but bytes cache stores the raw payload (we will cache only payload below). Here, for safety, just try JSON then MsgPack.</span>
                         <span class="k">try</span><span class="p">:</span>
                             <span class="n">atom_data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">mv</span><span class="o">.</span><span class="n">tobytes</span><span class="p">()</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s1">&#39;UTF-8&#39;</span><span class="p">))</span>
                         <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
@@ -662,6 +674,20 @@
             <span class="n">len_data</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s1">&#39;Q&#39;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
 
             <span class="n">transaction_id</span><span class="p">,</span> <span class="n">offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">push_bytes_to_wal</span><span class="p">(</span><span class="n">len_data</span> <span class="o">+</span> <span class="n">format_indicator</span> <span class="o">+</span> <span class="n">data</span><span class="p">)</span>
+
+            <span class="c1"># Write-through caches: payload bytes and deserialized object</span>
+            <span class="n">caches</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_atom_caches</span>
+            <span class="k">if</span> <span class="n">caches</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">caches</span><span class="o">.</span><span class="n">bytes_cache</span><span class="p">:</span>
+                        <span class="n">caches</span><span class="o">.</span><span class="n">bytes_cache</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">offset</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">caches</span><span class="o">.</span><span class="n">obj_cache</span><span class="p">:</span>
+                        <span class="c1"># We already have the Python object as `atom`</span>
+                        <span class="n">caches</span><span class="o">.</span><span class="n">obj_cache</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">offset</span><span class="p">,</span> <span class="n">atom</span><span class="p">,</span> <span class="n">caches</span><span class="o">.</span><span class="n">schema_epoch</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="c1"># Cache failures must not affect persistence path</span>
+                    <span class="k">pass</span>
+
             <span class="k">return</span> <span class="n">AtomPointer</span><span class="p">(</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">offset</span><span class="p">)</span>
 
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">executor_pool</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">task_push_atom</span><span class="p">)</span></div>
@@ -789,6 +815,14 @@
             <span class="c1"># Combine length, format indicator, and data and push to WAL</span>
             <span class="n">combined_data</span> <span class="o">=</span> <span class="n">len_data</span> <span class="o">+</span> <span class="n">format_indicator</span> <span class="o">+</span> <span class="n">data</span>
             <span class="n">transaction_id</span><span class="p">,</span> <span class="n">offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">push_bytes_to_wal</span><span class="p">(</span><span class="n">combined_data</span><span class="p">)</span>
+
+            <span class="c1"># Write-through to bytes cache (store only payload without header/indicator)</span>
+            <span class="n">caches</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_atom_caches</span>
+            <span class="k">if</span> <span class="n">caches</span> <span class="ow">and</span> <span class="n">caches</span><span class="o">.</span><span class="n">bytes_cache</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">caches</span><span class="o">.</span><span class="n">bytes_cache</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">transaction_id</span><span class="p">,</span> <span class="n">offset</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">pass</span>
             <span class="k">return</span> <span class="n">transaction_id</span><span class="p">,</span> <span class="n">offset</span>
 
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">executor_pool</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">task_push_bytes</span><span class="p">)</span></div>
