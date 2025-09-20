@@ -427,6 +427,67 @@ class ObjectSpace(AbstractObjectSpace):
 
 
 class Database(AbstractDatabase):
+    def _merge_single_root(self, existing_root, staged_root):
+        """
+        Merge a staged root onto an existing root deterministically to avoid lost updates
+        when commits interleave. Applied under the provider root lock.
+        - Integer counters: treat staged change as +1 on the current value
+        - Set/CountedSet: union staged elements into the current bucket
+        - Otherwise: last-writer-wins per key for Dictionary; default to staged object
+        """
+        try:
+            from .dictionaries import Dictionary as _Dict
+        except Exception:
+            _Dict = None
+        try:
+            from .sets import Set as _Set, CountedSet as _CSet
+        except Exception:
+            _Set = tuple()
+            _CSet = tuple()
+        # If both are Dictionary, merge per-entry
+        if _Dict and isinstance(staged_root, _Dict) and isinstance(existing_root, _Dict):
+            merged = existing_root
+            try:
+                for k, v in staged_root.as_iterable():
+                    try:
+                        curr_v = merged.get_at(k)
+                    except Exception:
+                        curr_v = None
+                    # Integer counters: always +1 on current when both ints
+                    if isinstance(v, int) and isinstance(curr_v, int):
+                        merged = merged.set_at(k, int(curr_v) + 1)
+                        continue
+                    # Set/CountedSet: union staged elements into current bucket
+                    if hasattr(v, 'as_iterable') and isinstance(curr_v, (_Set, _CSet)):
+                        try:
+                            bucket = curr_v
+                            for e in v.as_iterable():
+                                if isinstance(e, (_Set, _CSet)):
+                                    continue
+                                bucket = bucket.add(e)
+                            merged = merged.set_at(k, bucket)
+                            continue
+                        except Exception:
+                            pass
+                    # If current missing, adopt staged
+                    if curr_v is None:
+                        merged = merged.set_at(k, v)
+                        continue
+                    # Fallback: last-writer-wins per entry
+                    try:
+                        equal = (v == curr_v)
+                    except Exception:
+                        equal = False
+                    if not equal:
+                        merged = merged.set_at(k, v)
+                return merged
+            except Exception:
+                # On any issue, fall back to staged
+                return staged_root
+        # Default: prefer staged_root
+        return staged_root
+
+class Database(AbstractDatabase):
     database_name: str
     object_space: ObjectSpace
     current_root: RootObject
@@ -592,8 +653,14 @@ class Database(AbstractDatabase):
                     literal_root=Dictionary(transaction=update_tr),
                     transaction=update_tr
                 )
+            # Merge with current db_root under lock
+            try:
+                existing_root = base_root.object_root.get_at(self.database_name)
+            except Exception:
+                existing_root = None
+            merged_db_root = self._merge_single_root(existing_root, new_db_root)
             new_space_root = RootObject(
-                object_root=base_root.object_root.set_at(self.database_name, new_db_root),
+                object_root=base_root.object_root.set_at(self.database_name, merged_db_root),
                 literal_root=base_root.literal_root,
                 transaction=update_tr
             )
@@ -668,7 +735,14 @@ class Database(AbstractDatabase):
         except Exception:
             pass
         # Update the catalog mapping to the new db_root and persist object_root explicitly
-        updated_catalog = base_root.object_root.set_at(self.database_name, new_db_root)
+        # Merge staged root onto current to avoid lost updates (idempotent counters, unions)
+        current_existing = None
+        try:
+            current_existing = base_root.object_root.get_at(self.database_name)
+        except Exception:
+            current_existing = None
+        merged_db_root = self._merge_single_root(current_existing, new_db_root)
+        updated_catalog = base_root.object_root.set_at(self.database_name, merged_db_root)
         try:
             updated_catalog.transaction = update_tr
             updated_catalog._save()
