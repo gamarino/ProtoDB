@@ -1013,6 +1013,33 @@ class CloudBlockProvider(BlockProvider):
 
         return CloudWriter(self, wal_id, temp_file)
 
+    def root_context_manager(self):
+        """
+        Provide a simple lock-based context manager to serialize root pointer
+        reads/updates for this CloudBlockProvider. This mirrors the API expected
+        by StandaloneFileStorage/ClusterFileStorage and satisfies the BlockProvider
+        abstract interface so tests can instantiate this provider.
+        """
+        provider = self
+
+        class _RootContext:
+            def __init__(self, prov: 'CloudBlockProvider'):
+                self._prov = prov
+            def __enter__(self):
+                # Serialize root read/update operations
+                self._prov.root_lock.acquire()
+                # Return the provider itself for potential direct calls if needed
+                return self._prov
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                try:
+                    self._prov.root_lock.release()
+                except Exception:
+                    pass
+                # Do not suppress exceptions
+                return False
+
+        return _RootContext(provider)
+
     def get_current_root_object(self) -> AtomPointer:
         """
         Read current root object from storage.

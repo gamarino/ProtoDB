@@ -4,12 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] circular import">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/db_access.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/dictionaries.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_singlethread_concurrency.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_singlethread_concurrency.py" afterDir="false" />
-    </list>
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[FIX] Implemented conflict-resolution for nested concurrent objects to fix nondeterministic concurrency test failures. Dictionary._rebase_on_concurrent_update now delegates rebasing for ConcurrentOptimized values to child objects. Concurrency tests and deterministic single-thread tests pass consistently after the fix." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -286,15 +281,7 @@
       <workItem from="1758057990140" duration="24385000" />
       <workItem from="1758156790567" duration="4115000" />
       <workItem from="1758290115211" duration="41123000" />
-      <workItem from="1758372899949" duration="6206000" />
-    </task>
-    <task id="LOCAL-00115" summary="Removed full_plan parameter from all QueryPlan.optimize methods and calls. Updated signatures and calls across multiple files including common.py, queries.py, lists.py, hash_dictionaries.py, and linq.py. Adjusted examples and tests accordingly.">
-      <option name="closed" value="true" />
-      <created>1757803716829</created>
-      <option name="number" value="00115" />
-      <option name="presentableId" value="LOCAL-00115" />
-      <option name="project" value="LOCAL" />
-      <updated>1757803716830</updated>
+      <workItem from="1758372899949" duration="6722000" />
     </task>
     <task id="LOCAL-00116" summary="Implemented CountedSet as a multiset-style Atom preserving Set semantics with immutability and correct index updates. Exposed CountedSet in the public API via proto_db/common.py and added comprehensive tests covering duplicates, removals, counts, iteration, mixed types, immutability, and persistence. Existing modules and tests remain unaffected, and all tests pass.">
       <option name="closed" value="true" />
@@ -680,14 +667,21 @@
       <option name="project" value="LOCAL" />
       <updated>1758375148145</updated>
     </task>
-    <option name="localTasksCounter" value="164" />
+    <task id="LOCAL-00164" summary="[FIX] Implemented conflict-resolution for nested concurrent objects to fix nondeterministic concurrency test failures. Dictionary._rebase_on_concurrent_update now delegates rebasing for ConcurrentOptimized values to child objects. Concurrency tests and deterministic single-thread tests pass consistently after the fix.">
+      <option name="closed" value="true" />
+      <created>1758379927164</created>
+      <option name="number" value="00164" />
+      <option name="presentableId" value="LOCAL-00164" />
+      <option name="project" value="LOCAL" />
+      <updated>1758379927164</updated>
+    </task>
+    <option name="localTasksCounter" value="165" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="El README.md se actualizó para reflejar el estado actual del proyecto. Se eliminaron referencias obsoletas y se añadieron descripciones precisas de funcionalidades, instalación, ejemplos y documentación. El archivo quedó alineado con el código y la documentación vigente." />
     <MESSAGE value="Updated README.md to accurately describe LINQ-like features, ANN functions, and parallel work stealing. Added new example sections and corrected outdated disclaimers. Documentation and examples were also updated accordingly." />
     <MESSAGE value="Added foundational interfaces for pluggable query planning in proto_db. Introduced QueryContext dataclass and QueryableIndex abstract interface with build_query_plan method. Enhanced QueryPlan with get_cardinality_estimate and get_cost_estimate concrete methods providing default estimates; unit tests for WherePlan passed." />
     <MESSAGE value="RepeatedKeysDictionary was refactored to implement QueryableIndex and generate query plans based on term operators. IndexedSearchPlan and IndexedRangeSearchPlan now include get_cardinality_estimate and get_cost_estimate methods with defined heuristics. Targeted tests for WherePlan passed, confirming no regressions due to these changes." />
@@ -712,7 +706,8 @@
     <MESSAGE value="The Sphinx documentation was updated to fix heading underline mismatches and improve formatting. The HTML site was successfully built with warnings reduced from 69 to 24. README instructions remain accurate, and the output is located at docs/build/html." />
     <MESSAGE value="[WIP] full tests" />
     <MESSAGE value="[FIX] circular import" />
-    <option name="LAST_COMMIT_MESSAGE" value="[FIX] circular import" />
+    <MESSAGE value="[FIX] Implemented conflict-resolution for nested concurrent objects to fix nondeterministic concurrency test failures. Dictionary._rebase_on_concurrent_update now delegates rebasing for ConcurrentOptimized values to child objects. Concurrency tests and deterministic single-thread tests pass consistently after the fix." />
+    <option name="LAST_COMMIT_MESSAGE" value="[FIX] Implemented conflict-resolution for nested concurrent objects to fix nondeterministic concurrency test failures. Dictionary._rebase_on_concurrent_update now delegates rebasing for ConcurrentOptimized values to child objects. Concurrency tests and deterministic single-thread tests pass consistently after the fix." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
