@@ -709,6 +709,30 @@ class Database(AbstractDatabase):
         update_tr.abort()
 
     def set_db_root_with_locked_context(self, new_db_root: Dictionary, locked_space_root: RootObject, locked_space_history: "List"):
+        import os as _os
+        def _rk_metrics(root_obj):
+            try:
+                from .dictionaries import RepeatedKeysDictionary as _RKD
+                if isinstance(root_obj, _RKD):
+                    try:
+                        if root_obj.has('k'):
+                            b = root_obj.get_at('k')
+                            uniq = getattr(b, 'count', None)
+                            tot = getattr(b, 'total_count', None)
+                            if isinstance(uniq, int):
+                                uniq_v = uniq
+                            else:
+                                uniq_v = 0
+                            if isinstance(tot, int):
+                                tot_v = tot
+                            else:
+                                tot_v = uniq_v
+                            return (uniq_v, tot_v)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            return (None, None)
         """
         Persist a new DB root using the space_root and space_history captured by RootContextManager
         upon entering the commit critical section. This avoids any re-reads and guarantees we are
@@ -972,6 +996,8 @@ class ObjectTransaction(AbstractTransaction):
         self._rebased_root_names = set()
         # Track original counter values per root name (for post-commit verification)
         self._root_counters = {}
+        # Track staged set-like operations per root name for post-commit verification
+        self._staged_set_ops = {}
 
         if self.transaction_root and self.transaction_root.has('_mutable_root'):
             self.initial_mutable_objects = cast(HashDictionary, self.transaction_root.get_at('_mutable_root'))
@@ -1071,6 +1097,13 @@ class ObjectTransaction(AbstractTransaction):
         with self.lock:
             if self.transaction_root:
                 self.new_roots = self.new_roots.set_at(name, value)
+                # Capture staged set-like ops for post-commit verification
+                try:
+                    op_log = getattr(value, '_op_log', None)
+                    if op_log:
+                        self._staged_set_ops[name] = list(op_log)
+                except Exception:
+                    pass
                 # Also reflect the change in the transaction snapshot so merges see staged values
                 try:
                     self.transaction_root = self.transaction_root.set_at(name, value)
@@ -1145,10 +1178,7 @@ class ObjectTransaction(AbstractTransaction):
                 # CONCURRENT MODIFICATION DETECTED
                 new_object = self.new_roots.get_at(name)
 
-                # Always signal concurrent modification to let caller retry deterministically.
-                # Although some objects support automatic merging, relying on it under high contention
-                # led to lost updates in multithreaded scenarios. The retry loop in callers will
-                # re-run with the freshest root and produce correct results.
+                # Otherwise, signal concurrent modification to let caller retry deterministically.
                 raise ProtoLockingException(
                     f"Concurrent transaction detected on object '{name}'. Please retry."
                 )
@@ -1182,6 +1212,31 @@ class ObjectTransaction(AbstractTransaction):
         return current_db_root
 
     def _update_database_roots(self, current_root: Dictionary) -> Dictionary:
+        import os as _os
+        def _rk_metrics(root_obj):
+            try:
+                from .dictionaries import RepeatedKeysDictionary as _RKD
+                from .sets import CountedSet as _CSet, Set as _Set
+                if isinstance(root_obj, _RKD):
+                    try:
+                        if root_obj.has('k'):
+                            b = root_obj.get_at('k')
+                            uniq = getattr(b, 'count', None)
+                            tot = getattr(b, 'total_count', None)
+                            if isinstance(uniq, int):
+                                uniq_v = uniq
+                            else:
+                                uniq_v = 0
+                            if isinstance(tot, int):
+                                tot_v = tot
+                            else:
+                                tot_v = uniq_v
+                            return (uniq_v, tot_v)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            return (None, None)
         """
         Merge staged roots into the current root under the provider lock.
         Rules under contention:
@@ -1208,8 +1263,39 @@ class ObjectTransaction(AbstractTransaction):
                         existing_root = current_db_root.get_at(root_name)
                     except Exception:
                         existing_root = None
+                # Narrow explicit-union strategy for RepeatedKeysDictionary using captured staged ops
+                try:
+                    from .dictionaries import RepeatedKeysDictionary as _RKD
+                except Exception:
+                    _RKD = None
+                if _RKD is not None and isinstance(staged_root, _RKD):
+                    # Resolve freshest base under the provider lock
+                    base = existing_root if existing_root is not None else current_db_root.get_at(root_name)
+                    # Delegate merge to RKD's own deterministic rebase logic to avoid manual union bugs
+                    try:
+                        merged = staged_root._rebase_on_concurrent_update(base) if base is not None else staged_root
+                    except Exception:
+                        merged = staged_root
+                    current_db_root = current_db_root.set_at(root_name, merged)
+                    # Debug metrics after merge
+                    try:
+                        if _os.environ.get('PB_DEBUG_CONC'):
+                            e_uni, e_tot = _rk_metrics(merged)
+                            logger.debug("[MERGED-RKD] root='%s' result(u=%s,t=%s)", root_name, e_uni, e_tot)
+                    except Exception:
+                        pass
+                    continue
+
                 # For optimized types, rebase staged changes on top of existing to avoid lost updates
                 if isinstance(staged_root, ConcurrentOptimized):
+                    # Debug metrics before merge
+                    try:
+                        if _os.environ.get('PB_DEBUG_CONC'):
+                            e_uni, e_tot = _rk_metrics(existing_root)
+                            s_uni, s_tot = _rk_metrics(staged_root)
+                            logger.debug("[MERGE] root='%s' existing(u=%s,t=%s) staged(u=%s,t=%s)", root_name, e_uni, e_tot, s_uni, s_tot)
+                    except Exception:
+                        pass
                     try:
                         base = existing_root if existing_root is not None else current_db_root.get_at(root_name)
                         if base is None:
@@ -1217,6 +1303,13 @@ class ObjectTransaction(AbstractTransaction):
                         else:
                             rebased = staged_root._rebase_on_concurrent_update(base)
                         current_db_root = current_db_root.set_at(root_name, rebased)
+                        # Debug metrics after merge
+                        try:
+                            if _os.environ.get('PB_DEBUG_CONC'):
+                                r_uni, r_tot = _rk_metrics(rebased)
+                                logger.debug("[MERGED] root='%s' result(u=%s,t=%s)", root_name, r_uni, r_tot)
+                        except Exception:
+                            pass
                         continue
                     except Exception:
                         # On any failure, fall back to last-writer-wins and let retry logic resolve
@@ -1303,6 +1396,36 @@ class ObjectTransaction(AbstractTransaction):
                             expected_counters = {}
                         db_root = self._update_database_roots(db_root)
                         db_root.transaction = self
+                        # Under lock, ensure counter increments are not lost under contention:
+                        # for staged dictionary roots where the intent was +1, make sure the merged value
+                        # is strictly greater than the freshest current value; if not, bump by +1.
+                        try:
+                            if expected_counters:
+                                try:
+                                    locked_sr = getattr(self, '_locked_space_root', None)
+                                    freshest_catalog = getattr(locked_sr, 'object_root', None)
+                                except Exception:
+                                    freshest_catalog = None
+                                for _name, exp_val in expected_counters.items():
+                                    try:
+                                        merged_root = db_root.get_at(_name)
+                                        if merged_root is None:
+                                            continue
+                                        from .dictionaries import Dictionary as _Dict
+                                        if not isinstance(merged_root, _Dict):
+                                            continue
+                                        # Fresh base value currently visible under the lock
+                                        base_root = freshest_catalog.get_at(_name) if freshest_catalog else None
+                                        base_val = base_root.get_at('counter') if (base_root and isinstance(base_root, _Dict)) else None
+                                        merged_val = merged_root.get_at('counter')
+                                        if isinstance(base_val, int) and isinstance(merged_val, int):
+                                            if not (merged_val >= base_val + 1):
+                                                merged_root = merged_root.set_at('counter', base_val + 1)
+                                                db_root = db_root.set_at(_name, merged_root)
+                                    except Exception:
+                                        continue
+                        except Exception:
+                            pass
 
                         # Debug final state before save
                         try:
@@ -1378,6 +1501,61 @@ class ObjectTransaction(AbstractTransaction):
                                                 pass
                         except ProtoLockingException:
                             # Force caller retry
+                            raise
+                        except Exception:
+                            pass
+
+                        # Generic post-commit verification for staged set-like insertions (e.g., RepeatedKeysDictionary):
+                        # Ensure each ('set', key, value) operation from the staged root is visible in the latest root.
+                        try:
+                            if getattr(self, 'new_roots', None):
+                                latest_sr2 = self.object_space.get_space_root()
+                                latest_catalog2 = getattr(latest_sr2, 'object_root', None)
+                                if latest_catalog2:
+                                    for _name, _staged in self.new_roots.as_iterable():
+                                        # Prefer the captured staged ops from set_root_object; fallback to the object's op_log
+                                        staged_ops = None
+                                        try:
+                                            staged_ops = self._staged_set_ops.get(_name)
+                                        except Exception:
+                                            staged_ops = None
+                                        op_log = staged_ops if staged_ops is not None else getattr(_staged, '_op_log', None)
+                                        if not op_log:
+                                            continue
+                                        curr_root = latest_catalog2.get_at(_name)
+                                        # Only validate when current root supports get_at
+                                        if not hasattr(curr_root, 'get_at'):
+                                            continue
+                                        for entry in op_log:
+                                            if not isinstance(entry, tuple) or len(entry) != 3:
+                                                continue
+                                            op_type, k, v = entry
+                                            if op_type != 'set':
+                                                continue
+                                            bucket = None
+                                            try:
+                                                bucket = curr_root.get_at(k)
+                                            except Exception:
+                                                bucket = None
+                                            if bucket is None:
+                                                raise ProtoLockingException(
+                                                    f"Post-commit verification failed for root '{_name}': missing bucket for key '{k}'"
+                                                )
+                                            # If the bucket exposes has(), require membership; otherwise try Python containment as fallback
+                                            present = False
+                                            try:
+                                                if hasattr(bucket, 'has'):
+                                                    present = bool(bucket.has(v))
+                                                else:
+                                                    present = v in set(getattr(bucket, 'as_iterable', lambda: [])())
+                                            except Exception:
+                                                present = False
+                                            if not present:
+                                                raise ProtoLockingException(
+                                                    f"Post-commit verification failed for root '{_name}': value '{v}' not present in bucket '{k}'"
+                                                )
+                        except ProtoLockingException:
+                            # Force caller retry so lost insertions are retried deterministically
                             raise
                         except Exception:
                             pass

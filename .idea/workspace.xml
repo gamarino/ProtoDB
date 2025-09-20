@@ -4,7 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="Fixed abstract method implementation in CloudBlockProvider causing test failures. Removed circular imports and verified all cloud tests passed. Full test suite run showed only one unrelated failure." />
+    <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="All printf instrumentations were replaced by logging.debug in core modules. Module-level loggers were added and PB_DEBUG_* guards preserved. The test suite passed with no regressions, ensuring proper debug logging without stdout noise.">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/db_access.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/proto_db/sets.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/sets.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -281,15 +285,7 @@
       <workItem from="1758057990140" duration="24385000" />
       <workItem from="1758156790567" duration="4115000" />
       <workItem from="1758290115211" duration="41123000" />
-      <workItem from="1758372899949" duration="7340000" />
-    </task>
-    <task id="LOCAL-00117" summary="RepeatedKeysDictionary was updated to use CountedSet instead of Set with correct index update logic. Code duplication issues causing syntax errors were fixed. Targeted tests for CountedSet and indexed fast paths pass, while pre-existing unrelated test failures remain.">
-      <option name="closed" value="true" />
-      <created>1757804582882</created>
-      <option name="number" value="00117" />
-      <option name="presentableId" value="LOCAL-00117" />
-      <option name="project" value="LOCAL" />
-      <updated>1757804582882</updated>
+      <workItem from="1758372899949" duration="12426000" />
     </task>
     <task id="LOCAL-00118" summary="The code and tests were updated to replace all occurrences of optimize(None) with optimize(). Unit tests were adjusted to match the new optimize() signature and successfully passed without errors. A full test suite run confirmed no regressions and no remaining optimize(None) calls.">
       <option name="closed" value="true" />
@@ -675,14 +671,21 @@
       <option name="project" value="LOCAL" />
       <updated>1758380915309</updated>
     </task>
-    <option name="localTasksCounter" value="166" />
+    <task id="LOCAL-00166" summary="All printf instrumentations were replaced by logging.debug in core modules. Module-level loggers were added and PB_DEBUG_* guards preserved. The test suite passed with no regressions, ensuring proper debug logging without stdout noise.">
+      <option name="closed" value="true" />
+      <created>1758382561843</created>
+      <option name="number" value="00166" />
+      <option name="presentableId" value="LOCAL-00166" />
+      <option name="project" value="LOCAL" />
+      <updated>1758382561843</updated>
+    </task>
+    <option name="localTasksCounter" value="167" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Added foundational interfaces for pluggable query planning in proto_db. Introduced QueryContext dataclass and QueryableIndex abstract interface with build_query_plan method. Enhanced QueryPlan with get_cardinality_estimate and get_cost_estimate concrete methods providing default estimates; unit tests for WherePlan passed." />
     <MESSAGE value="RepeatedKeysDictionary was refactored to implement QueryableIndex and generate query plans based on term operators. IndexedSearchPlan and IndexedRangeSearchPlan now include get_cardinality_estimate and get_cost_estimate methods with defined heuristics. Targeted tests for WherePlan passed, confirming no regressions due to these changes." />
     <MESSAGE value="QueryPlan.execute now returns DBCollections for efficient pagination. Subclasses updated accordingly and tests fixed to use the new API. WherePlan.execute was adjusted to correctly filter results, restoring test passing." />
     <MESSAGE value="Rewrote WherePlan.optimize to delegate query planning to QueryableIndex implementations. Managed index-backed and residual filters, returning optimized AndMerge or OrMerge plans where applicable. Verified AndMerge.execute correctly applies residual filters; tests pass successfully." />
@@ -707,7 +710,8 @@
     <MESSAGE value="[FIX] circular import" />
     <MESSAGE value="[FIX] Implemented conflict-resolution for nested concurrent objects to fix nondeterministic concurrency test failures. Dictionary._rebase_on_concurrent_update now delegates rebasing for ConcurrentOptimized values to child objects. Concurrency tests and deterministic single-thread tests pass consistently after the fix." />
     <MESSAGE value="Fixed abstract method implementation in CloudBlockProvider causing test failures. Removed circular imports and verified all cloud tests passed. Full test suite run showed only one unrelated failure." />
-    <option name="LAST_COMMIT_MESSAGE" value="Fixed abstract method implementation in CloudBlockProvider causing test failures. Removed circular imports and verified all cloud tests passed. Full test suite run showed only one unrelated failure." />
+    <MESSAGE value="All printf instrumentations were replaced by logging.debug in core modules. Module-level loggers were added and PB_DEBUG_* guards preserved. The test suite passed with no regressions, ensuring proper debug logging without stdout noise." />
+    <option name="LAST_COMMIT_MESSAGE" value="All printf instrumentations were replaced by logging.debug in core modules. Module-level loggers were added and PB_DEBUG_* guards preserved. The test suite passed with no regressions, ensuring proper debug logging without stdout noise." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

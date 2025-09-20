@@ -457,8 +457,41 @@ class CountedSet(Set):
 
     # Hashing strategy identical to Set
     def _hash_of(self, key: object) -> int:
-        # Use canonical identity hashing for stability (AtomPointer.hash when available)
-        return canonical_hash(key)
+        """
+        Compute a stable integer identity for membership that minimizes collisions:
+        - Atoms: if persisted, use AtomPointer.hash(); else use id(obj) to avoid forcing persistence.
+        - str: use transaction._get_string_hash (sha256-based) or fallback to sha256 of the string.
+        - Numbers/bool: sha256 over a typed string "<type>:<value>" for deterministic hashing.
+        - Other objects: sha256 over a typed repr; fallback to built-in hash on failure.
+        """
+        try:
+            from .common import Atom as _Atom, AtomPointer as _AtomPointer
+            if isinstance(key, _Atom):
+                ap = getattr(key, 'atom_pointer', None)
+                if ap and getattr(ap, 'transaction_id', None):
+                    try:
+                        return ap.hash()
+                    except Exception:
+                        pass
+                return id(key)
+            if isinstance(key, str):
+                tr = getattr(self, 'transaction', None)
+                if tr and hasattr(tr, '_get_string_hash'):
+                    return tr._get_string_hash(key)
+                import hashlib
+                return int(hashlib.sha256(key.encode('utf-8')).hexdigest(), 16)
+            if isinstance(key, (int, float, bool)):
+                import hashlib
+                s = f"{type(key).__name__}:{key}".encode('utf-8')
+                return int(hashlib.sha256(s).hexdigest(), 16)
+            import hashlib
+            try:
+                s = f"{type(key).__name__}:{repr(key)}".encode('utf-8')
+                return int(hashlib.sha256(s).hexdigest(), 16)
+            except Exception:
+                return hash(key)
+        except Exception:
+            return hash(key)
 
     def _save(self):
         if not self._saved:
