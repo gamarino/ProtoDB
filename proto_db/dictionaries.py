@@ -374,7 +374,20 @@ class Dictionary(DBCollections, ConcurrentOptimized):
                         continue
                     except Exception:
                         pass
-                # 3) For other types: if value differs or key absent, last-writer-wins
+                # 3) Nested concurrent-optimized objects (e.g., RepeatedKeysDictionary): delegate rebase to child
+                try:
+                    from .common import ConcurrentOptimized as _CO
+                except Exception:
+                    _CO = None
+                if _CO is not None and isinstance(value, _CO) and isinstance(current_val, _CO):
+                    try:
+                        merged = value._rebase_on_concurrent_update(current_val)
+                        rebased_dict = rebased_dict.set_at(key, merged)
+                        continue
+                    except Exception:
+                        # If child-level rebase fails, fall through to last-writer-wins
+                        pass
+                # 4) For other types: if value differs or key absent, last-writer-wins
                 try:
                     equal = (value == current_val)
                 except Exception:
