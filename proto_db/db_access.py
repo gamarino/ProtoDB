@@ -341,6 +341,40 @@ class ObjectSpace(AbstractObjectSpace):
                     pass
         except Exception:
             pass
+        # Post-write verification: ensure the latest space root's object_root pointer matches the intended one.
+        try:
+            intended_ptr = getattr(getattr(new_space_root, 'object_root', None), 'atom_pointer', None)
+            latest_sr = self.get_space_root()
+            latest_ptr = getattr(getattr(latest_sr, 'object_root', None), 'atom_pointer', None)
+            mismatch = (intended_ptr != latest_ptr)
+            if mismatch:
+                try:
+                    if _os.environ.get('PB_DEBUG_CONC'):
+                        logger.debug("Post-write mismatch detected: intended object_root_ptr=%s/%s latest_ptr=%s/%s — retrying once",
+                                     getattr(intended_ptr,'transaction_id',None), getattr(intended_ptr,'offset',None),
+                                     getattr(latest_ptr,'transaction_id',None), getattr(latest_ptr,'offset',None))
+                except Exception:
+                    pass
+                # Retry once: re-save and re-point the history head to the same new_space_root
+                try:
+                    # Bind a fresh transaction for the retry
+                    retry_tr = ObjectTransaction(None, object_space=self, storage=self.storage)
+                    try:
+                        new_space_root.transaction = retry_tr
+                    except Exception:
+                        pass
+                    # Prepend again to the provided current_history (still valid under lock)
+                    try:
+                        current_history.transaction = retry_tr
+                    except Exception:
+                        pass
+                    retry_hist = current_history.insert_at(0, new_space_root)
+                    retry_hist._save()
+                    self.storage.set_current_root(retry_hist.atom_pointer)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def get_literals(self, literals: Dictionary) -> dict[str, Literal]:
         update_tr = ObjectTransaction(None, storage=self.storage)
@@ -784,7 +818,39 @@ class Database(AbstractDatabase):
         except Exception:
             # Fallback to non-locked variant if locked API is unavailable
             self.object_space.set_space_root(new_space_root)
-        # Debug: immediately read under lock to log current mapping (no retry)
+        # CAS verification: ensure the latest catalog maps this database to the just-saved root; on mismatch, retry once under the same lock
+        try:
+            latest_sr = self.object_space.get_space_root()
+            latest_catalog = getattr(latest_sr, 'object_root', None)
+            latest_db_root = latest_catalog.get_at(self.database_name) if latest_catalog else None
+            intended_ptr = getattr(new_db_root, 'atom_pointer', None)
+            latest_ptr = getattr(latest_db_root, 'atom_pointer', None)
+            if intended_ptr != latest_ptr:
+                # Re-merge staged_root (new_db_root) against freshest and retry once
+                try:
+                    fresh_current = latest_catalog.get_at(self.database_name) if latest_catalog else None
+                except Exception:
+                    fresh_current = None
+                merged_root = new_db_root
+                try:
+                    if isinstance(new_db_root, ConcurrentOptimized) and fresh_current is not None:
+                        merged_root = new_db_root._rebase_on_concurrent_update(fresh_current)
+                except Exception:
+                    merged_root = new_db_root
+                # Build a new space_root with the merged mapping and persist again
+                retry_sr = RootObject(
+                    object_root=latest_catalog.set_at(self.database_name, merged_root) if latest_catalog else new_db_root,
+                    literal_root=getattr(latest_sr, 'literal_root', None),
+                    transaction=update_tr,
+                )
+                try:
+                    # Best effort: persist via locked history again
+                    self.object_space.set_space_root_locked(retry_sr, locked_space_history)
+                except Exception:
+                    self.object_space.set_space_root(retry_sr)
+        except Exception:
+            pass
+        # Debug: immediately read under lock to log current mapping after verification
         try:
             import os as _os
             if _os.environ.get('PB_DEBUG_CONC'):
@@ -795,19 +861,7 @@ class Database(AbstractDatabase):
                     latest_db_root = latest_catalog.get_at(self.database_name) if latest_catalog else None
                     ap_latest = getattr(latest_db_root, 'atom_pointer', None)
                     ap_cat = getattr(latest_catalog, 'atom_pointer', None)
-                    logger.debug("set_db_root_locked post-persist mapping: db='%s' db_root_ptr=%s/%s", self.database_name, getattr(ap_latest,'transaction_id',None), getattr(ap_latest,'offset',None))
-                    # Deep-inspect latest catalog content to verify STDB mapping
-                    try:
-                        tx = getattr(latest_sr, 'transaction', None)
-                        storage = getattr(tx, 'storage', None) if tx else self.object_space.storage
-                        ap_lr = getattr(latest_sr, 'atom_pointer', None)
-                        logger.debug("latest space_root_ptr=%s/%s latest object_root_ptr=%s/%s", getattr(ap_lr,'transaction_id',None), getattr(ap_lr,'offset',None), getattr(ap_cat,'transaction_id',None), getattr(ap_cat,'offset',None))
-                        if storage and ap_cat:
-                            cat_json = storage.get_atom(ap_cat).result()
-                            # The catalog is a Dictionary serialized as {'className':'Dictionary', 'content': ...}
-                            logger.debug("latest_catalog JSON keys: %s", list(cat_json.keys()))
-                    except Exception:
-                        pass
+                    logger.debug("set_db_root_locked post-verify mapping: db='%s' db_root_ptr=%s/%s", self.database_name, getattr(ap_latest,'transaction_id',None), getattr(ap_latest,'offset',None))
                 except Exception:
                     pass
         except Exception:

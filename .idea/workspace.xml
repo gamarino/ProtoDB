@@ -5,35 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="888f95b0-bed6-417d-8e1c-b6b99808cb8b" name="Changes" comment="[WIP] full tests">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/proto_db/db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/db_access.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/standalone_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/standalone_file_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_arrow_parquet.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_arrow_parquet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_atom_cache.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_atom_cache.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_cloud_cluster_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_cloud_cluster_file_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_cloud_cluster_file_storage_with_gcs.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_cloud_cluster_file_storage_with_gcs.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_cloud_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_cloud_file_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_cloud_file_storage_with_gcs.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_cloud_file_storage_with_gcs.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_cluster_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_cluster_file_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_collections_properties.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_collections_properties.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_concurrency.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_concurrency.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_db_access.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_db_access.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_db_access_with_standalone_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_db_access_with_standalone_file_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_dictionaries.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_example.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_example.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_file_block_provider.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_file_block_provider.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_format_indicators.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_format_indicators.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_fsm.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_fsm.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_google_cloud_client.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_google_cloud_client.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_hash_dictionaries.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_hash_dictionaries.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_hybrid_executor.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_hybrid_executor.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_integration.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_integration.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_lists.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_lists.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_memory_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_memory_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_parallel.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_parallel.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_sets.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_sets.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_standalone_file_storage.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_standalone_file_storage.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/proto_db/tests/test_vectors_buffers.py" beforeDir="false" afterPath="$PROJECT_DIR$/proto_db/tests/test_vectors_buffers.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -310,23 +282,7 @@
       <workItem from="1758056235372" duration="937000" />
       <workItem from="1758057990140" duration="24385000" />
       <workItem from="1758156790567" duration="4115000" />
-      <workItem from="1758290115211" duration="38419000" />
-    </task>
-    <task id="LOCAL-00111" summary="Updated README.md to show current project performance with benchmarks. Replaced outdated indexed query results with summaries of two runs including times and speedups. Added links to detailed performance documentation without altering source code.">
-      <option name="closed" value="true" />
-      <created>1757793768206</created>
-      <option name="number" value="00111" />
-      <option name="presentableId" value="LOCAL-00111" />
-      <option name="project" value="LOCAL" />
-      <updated>1757793768206</updated>
-    </task>
-    <task id="LOCAL-00112" summary="Updated commercial_positioning.md with new 2025-09-13 performance data. Replaced outdated query summaries with two benchmark runs and included speedup metrics. Added artifact references and reproducible commands without source code changes.">
-      <option name="closed" value="true" />
-      <created>1757793902147</created>
-      <option name="number" value="00112" />
-      <option name="presentableId" value="LOCAL-00112" />
-      <option name="project" value="LOCAL" />
-      <updated>1757793902148</updated>
+      <workItem from="1758290115211" duration="39741000" />
     </task>
     <task id="LOCAL-00113" summary="Updated commercial_positioning.md">
       <option name="closed" value="true" />
@@ -704,7 +660,23 @@
       <option name="project" value="LOCAL" />
       <updated>1758347588422</updated>
     </task>
-    <option name="localTasksCounter" value="160" />
+    <task id="LOCAL-00160" summary="[WIP] full tests">
+      <option name="closed" value="true" />
+      <created>1758347875646</created>
+      <option name="number" value="00160" />
+      <option name="presentableId" value="LOCAL-00160" />
+      <option name="project" value="LOCAL" />
+      <updated>1758347875646</updated>
+    </task>
+    <task id="LOCAL-00161" summary="[WIP] full tests">
+      <option name="closed" value="true" />
+      <created>1758348909641</created>
+      <option name="number" value="00161" />
+      <option name="presentableId" value="LOCAL-00161" />
+      <option name="project" value="LOCAL" />
+      <updated>1758348909641</updated>
+    </task>
+    <option name="localTasksCounter" value="162" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
