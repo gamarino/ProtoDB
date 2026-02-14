@@ -25,7 +25,8 @@ classifiers = [
 ]
 dependencies = [
   "six",
-  "wrapt"
+  "wrapt",
+  "msgpack",
 ]
 
 [project.optional-dependencies]

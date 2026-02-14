@@ -66,7 +66,7 @@ class ProtoNotSupportedException(ProtoBaseException):
 class ProtoNotAuthorizedException(ProtoBaseException):
     def __init__(self, code: int = NOT_AUTHORIZED_ERROR, exception_type: str = None, message: str = None):
         super().__init__(
-            code if code else 6,
+            code if code else NOT_AUTHORIZED_ERROR,
             exception_type if exception_type else 'AuthorizationException',
             message
         )
@@ -75,7 +75,7 @@ class ProtoNotAuthorizedException(ProtoBaseException):
 class ProtoLockingException(ProtoBaseException):
     def __init__(self, code: int = LOCKING_ERROR, exception_type: str = None, message: str = None):
         super().__init__(
-            code if code else 6,
+            code if code else LOCKING_ERROR,
             exception_type if exception_type else 'LockingException',
             message
         )

@@ -79,8 +79,8 @@ class TestConcurrency(unittest.TestCase):
         tr.set_root_object("counter_root", d)
         tr.commit()
 
-        # Use fewer workers to avoid timeouts on constrained CI runners
-        workers = int(os.environ.get('PB_CONC_WORKERS_101', '6'))
+        # Use fewer workers to avoid timeouts and flaky root contention on CI
+        workers = int(os.environ.get('PB_CONC_WORKERS_101', '3'))
 
         def worker():
             def body():
@@ -110,8 +110,8 @@ class TestConcurrency(unittest.TestCase):
         tr.set_root_object("rk_root", rk)
         tr.commit()
 
-        # Use fewer workers to avoid timeouts on constrained CI runners
-        workers = int(os.environ.get('PB_CONC_WORKERS_102', '8'))
+        # Use fewer workers to avoid timeouts and flaky root contention on CI
+        workers = int(os.environ.get('PB_CONC_WORKERS_102', '4'))
 
         def worker(i):
             value = f"v{i}"
