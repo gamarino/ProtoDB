@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-ProtoBase Update Benchmark
+ProtoDB Update Benchmark
 
 This example demonstrates how to measure the performance of updating items
-in a ProtoBase database. It follows a simple pattern that ensures compatibility
-with the ProtoBase API.
+in a ProtoDB database. It follows a simple pattern that ensures compatibility
+with the ProtoDB API.
 """
 
 import os
@@ -30,7 +30,7 @@ def main():
     """Run the update benchmark."""
     # Parse command line arguments
     import argparse
-    parser = argparse.ArgumentParser(description='ProtoBase Update Benchmark')
+    parser = argparse.ArgumentParser(description='ProtoDB Update Benchmark')
     parser.add_argument('--count', type=int, default=10,
                         help='Number of items for benchmark')
     args = parser.parse_args()

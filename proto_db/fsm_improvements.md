@@ -1,6 +1,6 @@
 # FSM Implementation Improvements
 
-This document summarizes the improvements made to the Finite State Machine (FSM) implementation in the ProtoBase
+This document summarizes the improvements made to the Finite State Machine (FSM) implementation in the ProtoDB
 project.
 
 ## Overview of Changes

@@ -2,8 +2,8 @@
 """
 Task Manager Example Application
 
-This example demonstrates a simple task management application built with ProtoBase.
-It showcases key features of ProtoBase including:
+This example demonstrates a simple task management application built with ProtoDB.
+It showcases key features of ProtoDB including:
 - Transactions for data consistency
 - Object-oriented data modeling with DBObject
 - Query capabilities for filtering and sorting tasks
@@ -34,9 +34,9 @@ class Task(DBObject):
 
 class TaskManager:
     """
-    A task management application built with ProtoBase.
+    A task management application built with ProtoDB.
 
-    This class demonstrates how to use ProtoBase to build a simple but powerful
+    This class demonstrates how to use ProtoDB to build a simple but powerful
     application with persistent storage, transactions, and query capabilities.
     """
 

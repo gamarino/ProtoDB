@@ -7,7 +7,7 @@ from typing import Any, Callable, Iterable, Iterator, Generic, TypeVar, Optional
 import inspect
 import ast
 
-# ProtoBase query infrastructure
+# ProtoDB query infrastructure
 from .common import QueryPlan, DBCollections, Literal
 from .queries import ListPlan, WherePlan, SelectPlan, Expression as PBExpression, FromPlan as PBFromPlan, RecursivePlan
 
@@ -105,7 +105,7 @@ class _Field:
                 cur = cur.get(p)
             else:
                 cur = getattr(cur, p, None)
-        # Unwrap ProtoBase Literal to raw Python value for user-friendly predicates
+        # Unwrap ProtoDB Literal to raw Python value for user-friendly predicates
         try:
             if isinstance(cur, Literal):
                 return cur.string
@@ -212,7 +212,7 @@ class _Field:
         def _fn(x):
             v = self._resolve(x)
             try:
-                # Unwrap ProtoBase Literal or similar objects exposing a 'string' field
+                # Unwrap ProtoDB Literal or similar objects exposing a 'string' field
                 if hasattr(v, 'string'):
                     v = getattr(v, 'string')
             except Exception:
@@ -460,7 +460,7 @@ class FunctionExpression(PBExpression):
 
 class Queryable(Generic[T]):
     def __init__(self, source: Iterable[T] | QueryPlan | DBCollections, plan: Optional[list] = None, policy: Optional[Policy] = None):
-        # If source is a ProtoBase plan/collection, keep a base QueryPlan
+        # If source is a ProtoDB plan/collection, keep a base QueryPlan
         self._base_plan: Optional[QueryPlan] = None
         if isinstance(source, QueryPlan):
             self._base_plan = source

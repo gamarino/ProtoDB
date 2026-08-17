@@ -588,7 +588,7 @@ class Term(Expression):
                         return None
             return cur
         source_value = resolve(record, self.target_attribute)
-        # Unwrap ProtoBase Literal or similar to raw Python value for ergonomic comparisons
+        # Unwrap ProtoDB Literal or similar to raw Python value for ergonomic comparisons
         try:
             if hasattr(source_value, 'string'):
                 source_value = getattr(source_value, 'string')

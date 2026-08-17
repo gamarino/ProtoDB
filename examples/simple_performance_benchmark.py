@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-ProtoBase Simple Performance Benchmark
+ProtoDB Simple Performance Benchmark
 
-This example demonstrates how to measure the performance of ProtoBase
+This example demonstrates how to measure the performance of ProtoDB
 using standard benchmarks for object databases. It follows a simple pattern
-that ensures compatibility with the ProtoBase API.
+that ensures compatibility with the ProtoDB API.
 """
 
 import argparse
@@ -449,7 +449,7 @@ def run_all_benchmarks(count=10, query_count=5):
 def main():
     """Run the performance benchmark."""
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='ProtoBase Simple Performance Benchmark')
+    parser = argparse.ArgumentParser(description='ProtoDB Simple Performance Benchmark')
     parser.add_argument('--count', type=int, default=10,
                         help='Number of items for benchmarks')
     parser.add_argument('--queries', type=int, default=5,

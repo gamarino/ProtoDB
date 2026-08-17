@@ -1,6 +1,6 @@
-# ProtoBase Performance Suite (Indexed Queries)
+# ProtoDB Performance Suite (Indexed Queries)
 
-This document describes how to run ProtoBase’s performance suite, with a focus on indexed collections and the index‑aware query engine.
+This document describes how to run ProtoDB’s performance suite, with a focus on indexed collections and the index‑aware query engine.
 
 ## Highlights
 
@@ -343,7 +343,7 @@ Interpretation:
 
 The script examples/linq_performance.py measures representative LINQ-like pipelines over:
 - A plain Python list source (from_collection(list))
-- A ProtoBase QueryPlan via ListPlan (pushdown for where/select; order/distinct/group still local in this phase)
+- A ProtoDB QueryPlan via ListPlan (pushdown for where/select; order/distinct/group still local in this phase)
 
 Run:
 

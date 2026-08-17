@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Vector ANN Benchmark for ProtoBase
+Vector ANN Benchmark for ProtoDB
 
-This script benchmarks similarity search performance for ProtoBase's vector indexes.
+This script benchmarks similarity search performance for ProtoDB's vector indexes.
 It measures build time and query latency for:
 - ExactVectorIndex (baseline, exact brute-force)
 - HNSWVectorIndex (if hnswlib is installed)
@@ -272,7 +272,7 @@ def run_benchmark(n: int, dim: int, n_queries: int, k: int, metric: str,
 
 
 def main():
-    p = argparse.ArgumentParser(description="Vector ANN benchmark for ProtoBase")
+    p = argparse.ArgumentParser(description="Vector ANN benchmark for ProtoDB")
     p.add_argument('--n', type=int, default=20000, help='Number of vectors')
     p.add_argument('--dim', type=int, default=128, help='Vector dimension')
     p.add_argument('--queries', type=int, default=100, help='Number of KNN queries to run')

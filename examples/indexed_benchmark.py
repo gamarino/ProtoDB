@@ -103,7 +103,7 @@ def run_benchmark(n_items=1000, n_queries=50, out_path="examples/benchmark_resul
     py_stats = time_queries(lambda: py_query_once(), n=n_queries, warmup=warmup)
     py_pk_stats = time_queries(lambda: py_query_single_item(), n=n_queries, warmup=warmup)
 
-    # ProtoBase setup: use ListPlan over dict rows
+    # ProtoDB setup: use ListPlan over dict rows
     space = ObjectSpace(storage=MemoryStorage())
     db = space.new_database('PerfDB')
     tr = db.new_transaction()
@@ -212,7 +212,7 @@ def run_benchmark(n_items=1000, n_queries=50, out_path="examples/benchmark_resul
 
 if __name__ == '__main__':
     import argparse
-    p = argparse.ArgumentParser(description='Indexed performance benchmark for ProtoBase')
+    p = argparse.ArgumentParser(description='Indexed performance benchmark for ProtoDB')
     p.add_argument('--items', type=int, default=1000)
     p.add_argument('--queries', type=int, default=50)
     p.add_argument('--window', type=int, default=100, help='numeric range window size for value field (smaller → higher selectivity)')

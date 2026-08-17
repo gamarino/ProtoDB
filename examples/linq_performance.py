@@ -13,7 +13,7 @@ This script benchmarks a few representative LINQ-like queries:
 
 It compares execution over:
 - Plain Python list source (from_collection(list))
-- ProtoBase QueryPlan using ListPlan (pushdown for where/select; still local for order/distinct/etc.)
+- ProtoDB QueryPlan using ListPlan (pushdown for where/select; still local for order/distinct/etc.)
 
 If your environment provides actual indexed collections/plans, the pushdown may leverage indexes further.
 """
@@ -93,7 +93,7 @@ def build_pipelines(users_list: List[Dict[str, Any]]):
         .take(10)
     )
 
-    # ProtoBase QueryPlan via ListPlan base
+    # ProtoDB QueryPlan via ListPlan base
     q_plan = (
         from_collection(ListPlan(base_list=users_list))
         .where((F.age >= 18) & F.country.in_(["ES", "AR"]))

@@ -4,7 +4,7 @@ from proto_db.common import Atom, Literal
 
 
 class TestExample(unittest.TestCase):
-    """Example test to demonstrate testing in ProtoBase."""
+    """Example test to demonstrate testing in ProtoDB."""
 
     def test_literal_creation(self):
         """Test creating and using a Literal."""

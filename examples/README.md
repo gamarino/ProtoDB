@@ -1,22 +1,22 @@
-# ProtoBase Examples
+# ProtoDB Examples
 
-This directory contains example applications that demonstrate the capabilities of ProtoBase, a transactional,
+This directory contains example applications that demonstrate the capabilities of ProtoDB, a transactional,
 object-oriented database system implemented in Python.
 
-> **Note**: These examples are provided for illustrative purposes to demonstrate the intended usage of ProtoBase.
-> Depending on your specific version of ProtoBase, you may need to make adjustments to the code to run the examples
+> **Note**: These examples are provided for illustrative purposes to demonstrate the intended usage of ProtoDB.
+> Depending on your specific version of ProtoDB, you may need to make adjustments to the code to run the examples
 > successfully.
 
 ## Task Manager Example
 
-The Task Manager example demonstrates a simple but powerful task management application built with ProtoBase. It
+The Task Manager example demonstrates a simple but powerful task management application built with ProtoDB. It
 showcases key features including:
 
 - **Transactional Operations**: All database operations are performed within transactions that ensure data consistency.
 - **Object-Oriented Data Modeling**: Using `DBObject` to represent data as Python objects, making the code more
   intuitive and readable.
-- **Rich Data Structures**: Employing ProtoBase's `Dictionary` to organize and store `Task` objects.
-- **Powerful Query Capabilities**: Filtering and sorting tasks by their object attributes using ProtoBase's query
+- **Rich Data Structures**: Employing ProtoDB's `Dictionary` to organize and store `Task` objects.
+- **Powerful Query Capabilities**: Filtering and sorting tasks by their object attributes using ProtoDB's query
   system.
 - **Persistence**: Storing tasks in a file-based database that persists between application runs.
 
@@ -52,7 +52,7 @@ The Task Manager example is organized around the `TaskManager` class, which prov
 - **get_all_tasks()**: Get all tasks in the database
 - **query_tasks()**: Filter and sort tasks based on criteria
 
-Each method demonstrates ProtoBase's transaction model:
+Each method demonstrates ProtoDB's transaction model:
 
 1. Create a new transaction
 2. Perform operations within the transaction
@@ -62,7 +62,7 @@ Each method demonstrates ProtoBase's transaction model:
 
 #### Object-Oriented Modeling with `DBObject`
 
-ProtoBase allows you to model your data using Python classes that inherit from `DBObject`. This makes data manipulation
+ProtoDB allows you to model your data using Python classes that inherit from `DBObject`. This makes data manipulation
 more intuitive and your code easier to read and maintain.
 
 ```python
@@ -143,7 +143,7 @@ The following examples demonstrate the LINQ-like (Phase 1) query API over Python
 - linq_between.py: Range filtering with F.between()/range() and lambda chained comparisons; includes datetime example.
 - linq_groupby.py: Grouping with aggregates (count, sum, average) and ordering.
 - linq_policies.py: Policy usage for unsupported expressions (error vs warn/fallback) and DSL alternative.
-- linq_performance.py: Performance measurements for typical LINQ pipelines (filter+order+take, distinct, count, between, group_by) comparing Python list vs ProtoBase ListPlan source; optional JSON output.
+- linq_performance.py: Performance measurements for typical LINQ pipelines (filter+order+take, distinct, count, between, group_by) comparing Python list vs ProtoDB ListPlan source; optional JSON output.
 
 Run examples:
 
@@ -158,9 +158,9 @@ python linq_performance.py --size 50000 --runs 5 --out examples/benchmark_result
 
 ## Simple Example
 
-The Simple Example (`simple_example.py`) provides a minimal demonstration of ProtoBase's core functionality, showing how
+The Simple Example (`simple_example.py`) provides a minimal demonstration of ProtoDB's core functionality, showing how
 to store and retrieve different data structures within transactions. This example is ideal for getting started with
-ProtoBase and understanding its basic concepts.
+ProtoDB and understanding its basic concepts.
 
 ### Running the Example
 
@@ -176,7 +176,7 @@ python simple_example.py
 
 ## Performance Benchmarks
 
-The performance benchmark scripts demonstrate how to measure the performance of ProtoBase using standard benchmarks for
+The performance benchmark scripts demonstrate how to measure the performance of ProtoDB using standard benchmarks for
 object databases. They measure:
 
 1. **Insert performance**: Adding objects to the database
@@ -299,7 +299,7 @@ You can extend these benchmarks in several ways:
 
 ## Performance Characteristics
 
-Comprehensive performance testing with significant data volumes reveals the following characteristics of ProtoBase:
+Comprehensive performance testing with significant data volumes reveals the following characteristics of ProtoDB:
 
 ### Performance Metrics
 
@@ -322,7 +322,7 @@ The following metrics were observed in tests with varying dataset sizes:
 
 ### Scaling Characteristics
 
-1. **Read Operations**: ProtoBase excels at read operations, which scale well with increasing dataset size. The binary
+1. **Read Operations**: ProtoDB excels at read operations, which scale well with increasing dataset size. The binary
    search algorithm used in dictionary lookups provides efficient O(log n) performance.
 
 2. **Insert Operations**: Insert performance improves with larger batches, showing good scaling characteristics. This is
@@ -351,28 +351,28 @@ The following metrics were observed in tests with varying dataset sizes:
 When compared to other object storage systems:
 
 1. **Relational Databases (e.g., SQLite, PostgreSQL)**:
-    - ProtoBase offers superior read performance for direct key lookups
-    - SQL databases excel at complex queries and joins, which ProtoBase struggles with
+    - ProtoDB offers superior read performance for direct key lookups
+    - SQL databases excel at complex queries and joins, which ProtoDB struggles with
     - SQL databases provide better indexing options for query optimization
 
 2. **Document Stores (e.g., MongoDB)**:
     - Similar performance characteristics for basic CRUD operations
     - Document stores typically offer better query performance on large datasets
-    - ProtoBase provides stronger transactional guarantees
+    - ProtoDB provides stronger transactional guarantees
 
 3. **Key-Value Stores (e.g., Redis)**:
     - Redis offers faster raw performance for simple operations
-    - ProtoBase provides richer object modeling capabilities
-    - ProtoBase's transaction model offers stronger consistency guarantees
+    - ProtoDB provides richer object modeling capabilities
+    - ProtoDB's transaction model offers stronger consistency guarantees
 
 4. **Object-Relational Mappers (e.g., SQLAlchemy)**:
-    - ProtoBase eliminates the object-relational impedance mismatch
+    - ProtoDB eliminates the object-relational impedance mismatch
     - ORMs typically offer more mature query optimization
-    - ProtoBase provides a more natural Python object model
+    - ProtoDB provides a more natural Python object model
 
 ### Recommended Usage Scenarios
 
-Based on performance characteristics, ProtoBase is well-suited for:
+Based on performance characteristics, ProtoDB is well-suited for:
 
 1. **Read-Heavy Applications**: Applications that perform frequent reads but infrequent writes
 2. **Small to Medium Datasets**: Applications with data volumes in the thousands to tens of thousands of objects
@@ -382,7 +382,7 @@ Based on performance characteristics, ProtoBase is well-suited for:
 
 For applications with very large datasets or complex query requirements, consider:
 
-1. Using ProtoBase with a more optimized query strategy
+1. Using ProtoDB with a more optimized query strategy
 2. Implementing custom indexes for frequently queried attributes
 3. Partitioning data to reduce the size of individual collections
-4. Using a hybrid approach with ProtoBase for object storage and a specialized database for complex queries
+4. Using a hybrid approach with ProtoDB for object storage and a specialized database for complex queries

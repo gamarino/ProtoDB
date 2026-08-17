@@ -1,6 +1,6 @@
 # Test Coverage Improvements
 
-This document outlines the improvements made to the test coverage of the ProtoBase project.
+This document outlines the improvements made to the test coverage of the ProtoDB project.
 
 ## Overview
 
@@ -41,6 +41,6 @@ These additions improve coverage of the HashDictionary class's functionality for
 
 ## Conclusion
 
-The test improvements cover a significant portion of previously untested functionality in the ProtoBase project. The new test cases are designed to test both normal operation and edge cases, providing more robust verification of the code's behavior.
+The test improvements cover a significant portion of previously untested functionality in the ProtoDB project. The new test cases are designed to test both normal operation and edge cases, providing more robust verification of the code's behavior.
 
 Note: Due to circular import issues in the project, we were unable to run the tests directly to verify their execution. However, the test code has been carefully written to match the expected behavior of the components based on their implementation.

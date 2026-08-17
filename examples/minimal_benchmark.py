@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Minimal ProtoBase Performance Benchmark
+Minimal ProtoDB Performance Benchmark
 
 This is a simplified version of the performance benchmark that just tests
 basic database operations to ensure they work correctly.
@@ -25,7 +25,7 @@ class TestItem(DBObject):
 
 def main():
     """Run a minimal benchmark."""
-    print("ProtoBase Minimal Benchmark")
+    print("ProtoDB Minimal Benchmark")
     print("==========================")
 
     # Create an in-memory storage

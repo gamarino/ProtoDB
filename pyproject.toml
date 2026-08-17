@@ -5,16 +5,16 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "proto_db"
 version = "0.1.0"
-description = "ProtoBase is an embedded, transactional, object-oriented database for Python."
+description = "ProtoDB is an embedded, transactional, object-oriented database for Python."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
 authors = [
-    { name = "ProtoBase Team", email = "contact@example.com" }
+    { name = "ProtoDB Team", email = "gamarino@numaes.com" }
 ]
 keywords = ["database", "embedded", "transactional", "object-oriented", "ACID", "ORM-free", "NoSQL"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
@@ -27,6 +27,7 @@ dependencies = [
   "six",
   "wrapt",
   "msgpack",
+  "psutil",
 ]
 
 [project.optional-dependencies]
@@ -41,8 +42,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/gamarino/ProtoBase"
-"Bug Tracker" = "https://github.com/gamarino/ProtoBase/issues"
+Homepage = "https://github.com/gamarino/ProtoDB"
+"Bug Tracker" = "https://github.com/gamarino/ProtoDB/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

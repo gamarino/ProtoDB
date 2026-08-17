@@ -1,6 +1,6 @@
 # Collection Implementations Improvements
 
-This document summarizes the improvements made to the collection implementations in the ProtoBase project.
+This document summarizes the improvements made to the collection implementations in the ProtoDB project.
 
 ## Overview of Changes
 

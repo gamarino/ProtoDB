@@ -1,14 +1,14 @@
-# Technical Audit: ProtoBase (proto_db)
+# Technical Audit: ProtoDB (proto_db)
 
 **Date:** 2025-02-01  
-**Scope:** ProtoBase project and `proto_db` package (embedded transactional object-oriented database for Python).  
-**Sources:** Repository at `ProtoBase/`, including `proto_db/`, `docs/`, and project documentation.
+**Scope:** ProtoDB project and `proto_db` package (embedded transactional object-oriented database for Python).  
+**Sources:** Repository at `ProtoDB/`, including `proto_db/`, `docs/`, and project documentation.
 
 ---
 
 ## 1. Executive Summary
 
-ProtoBase is an **embedded, transactional, object-oriented database** for Python 3.11+, distributed as the **proto_db** package. It provides in-process storage with copy-on-write semantics, multiple backends (memory, file WAL, optional cluster/cloud), immutable collections (Dictionary, List, Set, CountedSet), secondary indexes, and an index-aware query planner plus a LINQ-like API and optional vector search.
+ProtoDB is an **embedded, transactional, object-oriented database** for Python 3.11+, distributed as the **proto_db** package. It provides in-process storage with copy-on-write semantics, multiple backends (memory, file WAL, optional cluster/cloud), immutable collections (Dictionary, List, Set, CountedSet), secondary indexes, and an index-aware query planner plus a LINQ-like API and optional vector search.
 
 **Strengths:** Clear layered architecture, rich documentation (Sphinx, concepts, cookbook), extensible storage and query layers, and a broad test suite including concurrency and property-based tests. The design is well thought out for near in-memory performance with background persistence and write-through caching.
 
@@ -22,7 +22,7 @@ ProtoBase is an **embedded, transactional, object-oriented database** for Python
 
 | Item | Detail |
 |------|--------|
-| **Name** | ProtoBase (package: `proto_db`) |
+| **Name** | ProtoDB (package: `proto_db`) |
 | **Version** | 0.1.0 (pyproject.toml); README states 0.1 alpha (2025-09-16) |
 | **License** | MIT |
 | **Python** | ≥ 3.11 |
@@ -144,4 +144,4 @@ Overall, documentation is a **strong point** and sufficient for onboarding and e
 
 ## 9. Conclusion
 
-ProtoBase (proto_db) is a **well-architected** embedded transactional database with strong documentation and a rich feature set (multiple backends, indexes, LINQ, optional vectors/cloud). The main **blockers** for a smooth out-of-the-box experience are the undeclared mandatory use of `msgpack` and the test failures that result, plus the small exception-code bug. Addressing the dependency and exception issues, and clarifying test prerequisites, would bring the project in line with its documented goals and improve contributor and user experience. After these fixes, the codebase is in good shape for continued development toward a stable release.
+ProtoDB (proto_db) is a **well-architected** embedded transactional database with strong documentation and a rich feature set (multiple backends, indexes, LINQ, optional vectors/cloud). The main **blockers** for a smooth out-of-the-box experience are the undeclared mandatory use of `msgpack` and the test failures that result, plus the small exception-code bug. Addressing the dependency and exception issues, and clarifying test prerequisites, would bring the project in line with its documented goals and improve contributor and user experience. After these fixes, the codebase is in good shape for continued development toward a stable release.

@@ -1,8 +1,8 @@
-# ProtoBase: Commercial Enhancement Proposal (2025 Refresh)
+# ProtoDB: Commercial Enhancement Proposal (2025 Refresh)
 
 ## Executive Summary
 
-ProtoBase has made meaningful progress toward commercial readiness:
+ProtoDB has made meaningful progress toward commercial readiness:
 - LINQ-like query interface (linq.py) with lazy execution, explicit materializers, `explain()`, and fallback policies. This reduces onboarding friction and clarifies the execution model.
 - Query engine with range operators (Between) and index-aware planning, enabling predicate pushdown and early limits.
 - Immutable secondary indexes across core collections (List/Set/Dictionary) via `IndexRegistry`, supporting progressive intersection by selectivity.
@@ -132,17 +132,17 @@ Phase D (20–36 weeks): Commercial deliverables
 
 ## Conclusion
 
-ProtoBase is positioned to consolidate its promise: a familiar declarative API, an embedded optimizable engine, and integrated indexes and vector/ANN search. With a LINQ-first public interface, transparent explain, and focus on indexes/ranges/basic joins, the project can accelerate adoption and unlock hybrid (structured + semantic) use cases without operational complexity. The roadmap prioritizes immediate impact (DX, performance, explain) while preparing for advanced capabilities and sustainable commercial opportunities.
+ProtoDB is positioned to consolidate its promise: a familiar declarative API, an embedded optimizable engine, and integrated indexes and vector/ANN search. With a LINQ-first public interface, transparent explain, and focus on indexes/ranges/basic joins, the project can accelerate adoption and unlock hybrid (structured + semantic) use cases without operational complexity. The roadmap prioritizes immediate impact (DX, performance, explain) while preparing for advanced capabilities and sustainable commercial opportunities.
 
 ## Introduction
 
-This document outlines a strategic plan to enhance the commercial profile of ProtoBase, a transactional, object-oriented database system implemented in Python. Based on a comprehensive analysis of the project's current capabilities and market positioning, the following activities are proposed to increase adoption, improve market visibility, and create commercial opportunities.
+This document outlines a strategic plan to enhance the commercial profile of ProtoDB, a transactional, object-oriented database system implemented in Python. Based on a comprehensive analysis of the project's current capabilities and market positioning, the following activities are proposed to increase adoption, improve market visibility, and create commercial opportunities.
 
 ## Proposed Activities
 
 ### 1. Documentation and Learning Resources Enhancement
 
-**Objective:** Make ProtoBase more accessible to new users and developers.
+**Objective:** Make ProtoDB more accessible to new users and developers.
 
 **Actions:**
 - Create comprehensive API documentation with examples for all major features
@@ -161,14 +161,14 @@ This document outlines a strategic plan to enhance the commercial profile of Pro
 - Conduct comprehensive performance profiling to identify bottlenecks
 - Optimize critical paths in core operations (read/write/query)
 - Implement advanced caching strategies for frequently accessed data
-- Create and publish standardized benchmarks comparing ProtoBase to similar solutions
+- Create and publish standardized benchmarks comparing ProtoDB to similar solutions
 - Develop performance tuning guidelines for different use cases
 
 **Expected Outcome:** Improved performance metrics, competitive positioning, and increased confidence from technical evaluators.
 
 ### 3. Cloud Integration and Deployment Enhancement
 
-**Objective:** Strengthen ProtoBase's position in cloud-native environments.
+**Objective:** Strengthen ProtoDB's position in cloud-native environments.
 
 **Actions:**
 - Enhance existing cloud storage capabilities with additional providers
@@ -194,14 +194,14 @@ This document outlines a strategic plan to enhance the commercial profile of Pro
 
 ### 5. Community and Ecosystem Building
 
-**Objective:** Create a vibrant ecosystem around ProtoBase.
+**Objective:** Create a vibrant ecosystem around ProtoDB.
 
 **Actions:**
 - Establish a formal contribution process with guidelines
 - Create a plugin/extension architecture for third-party contributions
 - Develop integration libraries for popular frameworks (Django, Flask, FastAPI)
 - Organize community events, webinars, and hackathons
-- Implement a showcase for projects and companies using ProtoBase
+- Implement a showcase for projects and companies using ProtoDB
 
 **Expected Outcome:** Expanded ecosystem, increased community contributions, and organic growth through word-of-mouth.
 
@@ -243,4 +243,4 @@ The success of these initiatives will be measured by:
 
 ## Conclusion
 
-By implementing these five key activities, ProtoBase can significantly enhance its commercial profile while maintaining its technical integrity and open-source nature. The proposed roadmap balances immediate improvements with long-term strategic positioning to create sustainable commercial opportunities.
+By implementing these five key activities, ProtoDB can significantly enhance its commercial profile while maintaining its technical integrity and open-source nature. The proposed roadmap balances immediate improvements with long-term strategic positioning to create sustainable commercial opportunities.

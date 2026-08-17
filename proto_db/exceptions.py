@@ -9,7 +9,7 @@ LOCKING_ERROR = 70_000
 
 class ProtoBaseException(Exception):
     """
-    Base exception for ProtoBase exceptions
+    Base exception for ProtoDB exceptions
     """
 
     def __init__(self, code: int = 1, exception_type: str = None, message: str = None):

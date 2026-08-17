@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-ProtoBase Performance Benchmark
+ProtoDB Performance Benchmark
 
-This example demonstrates how to measure the performance of ProtoBase
+This example demonstrates how to measure the performance of ProtoDB
 using standard benchmarks for object databases. It measures:
 
 1. Insert performance (adding objects to the database)
@@ -381,7 +381,7 @@ def run_all_benchmarks(database, item_count=10, query_count=5):
 def main():
     """Run the performance benchmark."""
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='ProtoBase Performance Benchmark')
+    parser = argparse.ArgumentParser(description='ProtoDB Performance Benchmark')
     parser.add_argument('--storage', choices=['memory', 'file'], default='memory',
                         help='Storage type (memory or file)')
     parser.add_argument('--count', type=int, default=10,

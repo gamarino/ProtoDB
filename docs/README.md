@@ -1,6 +1,6 @@
-# ProtoBase Documentation
+# ProtoDB Documentation
 
-This directory contains the documentation for the ProtoBase project.
+This directory contains the documentation for the ProtoDB project.
 
 ## Building the Documentation
 
@@ -64,7 +64,7 @@ make.bat epub     # Build EPUB documentation
 The documentation is organized as follows:
 
 - `source/index.rst`: The main index file
-- `source/introduction.rst`: Introduction to ProtoBase
+- `source/introduction.rst`: Introduction to ProtoDB
 - `source/installation.rst`: Installation instructions
 - `source/quickstart.rst`: Quickstart guide
 - `source/architecture.rst`: Architecture overview
@@ -82,4 +82,4 @@ If you want to contribute to the documentation:
 
 ## License
 
-The documentation is licensed under the same license as the ProtoBase project.
+The documentation is licensed under the same license as the ProtoDB project.

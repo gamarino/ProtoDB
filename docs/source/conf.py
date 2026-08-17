@@ -11,9 +11,9 @@ sys.path.insert(0, os.path.abspath('../..'))
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'ProtoBase'
-copyright = '2025, ProtoBase Team'
-author = 'ProtoBase Team'
+project = 'ProtoDB'
+copyright = '2025, ProtoDB Team'
+author = 'ProtoDB Team'
 # Try to read version from pyproject.toml; fallback to semantic string
 try:
     import tomllib  # Python 3.11+

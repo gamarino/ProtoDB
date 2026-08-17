@@ -9,7 +9,7 @@
 - Documentation: user guide (Parallel Scans), API reference, and ADR.
 - Unit tests for adaptive chunking, work-stealing behavior, cancellation, and fallback correctness.
 
-All notable changes to ProtoBase will be documented in this file.
+All notable changes to ProtoDB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).

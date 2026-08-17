@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-ProtoBase Comprehensive Performance Benchmark
+ProtoDB Comprehensive Performance Benchmark
 
-This script runs comprehensive performance benchmarks on ProtoBase with a significant
+This script runs comprehensive performance benchmarks on ProtoDB with a significant
 number of elements to establish its expected characteristics. It tests:
 
 1. Insert performance (adding objects to the database)
@@ -441,7 +441,7 @@ def run_all_benchmarks(database, item_count=1000, query_count=50):
 def main():
     """Run the comprehensive performance benchmark."""
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='ProtoBase Comprehensive Performance Benchmark')
+    parser = argparse.ArgumentParser(description='ProtoDB Comprehensive Performance Benchmark')
     parser.add_argument('--storage', choices=['memory', 'file'], default='memory',
                         help='Storage type (memory or file)')
     parser.add_argument('--size', choices=['small', 'medium', 'large'], default='small',

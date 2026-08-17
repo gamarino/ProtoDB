@@ -1,5 +1,5 @@
 """
-Ejemplo de Indexación de Colecciones en ProtoBase
+Ejemplo de Indexación de Colecciones en ProtoDB
 
 Este script demuestra cómo las colecciones principales (List, Set, Dictionary)
 pueden mantener sus propios índices para acelerar drásticamente las consultas.

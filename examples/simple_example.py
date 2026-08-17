@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Simple ProtoBase Example
+Simple ProtoDB Example
 
-This example demonstrates the basic functionality of ProtoBase, a transactional,
+This example demonstrates the basic functionality of ProtoDB, a transactional,
 object-oriented database system implemented in Python.
 
 It shows how to:
 1. Create an in-memory database
 2. Perform basic operations within transactions
 3. Store and retrieve data
-4. Use ProtoBase's data structures
+4. Use ProtoDB's data structures
 """
 
 import os
@@ -29,8 +29,8 @@ class User(DBObject):
 
 
 def main():
-    """Run a simple demonstration of ProtoBase."""
-    print("ProtoBase Simple Example")
+    """Run a simple demonstration of ProtoDB."""
+    print("ProtoDB Simple Example")
     print("=======================")
 
     # Create an in-memory storage

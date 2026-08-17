@@ -795,7 +795,7 @@ class DBObject(Atom):
             object.__setattr__(self, key, value)
         else:
             raise ProtoValidationException(
-                message=f'ProtoBase DBObjects are immutable! You are trying to set attribute {key}'
+                message=f'ProtoDB DBObjects are immutable! You are trying to set attribute {key}'
             )
 
     def set_at(self, name: str, value: object) -> DBObject:
@@ -1342,7 +1342,7 @@ class SharedStorage(AbstractSharedStorage):
 
 def canonical_hash(obj) -> int:
     """
-    Return a canonical hash for objects used in ProtoBase collections.
+    Return a canonical hash for objects used in ProtoDB collections.
 
     - If ``obj`` is an ``Atom`` with an ``AtomPointer``, return ``obj.atom_pointer.hash()``.
     - Else, if ``obj`` is an ``Atom`` that exposes ``hash()``, use it.
