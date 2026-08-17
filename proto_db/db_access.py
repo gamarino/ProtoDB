@@ -12,7 +12,7 @@ from .common import Atom, \
     AbstractObjectSpace, AbstractDatabase, AbstractTransaction, \
     SharedStorage, RootObject, Literal, atom_class_registry, AtomPointer, ConcurrentOptimized
 from .dictionaries import Dictionary
-from .exceptions import ProtoValidationException, ProtoLockingException
+from .exceptions import ProtoValidationException, ProtoLockingException, ProtoUnexpectedException
 from .hash_dictionaries import HashDictionary
 from .lists import List
 from .sets import Set
@@ -808,7 +808,27 @@ class Database(AbstractDatabase):
         except Exception:
             # Fallback to non-locked variant if locked API is unavailable
             self.object_space.set_space_root(new_space_root)
-        # CAS verification: ensure the latest catalog maps this database to the just-saved root; on mismatch, retry once under the same lock
+        # Post-write reconciliation. This is deliberately NOT a compare-and-swap: the new
+        # root has already been persisted by the call above. Here we re-read the catalog and,
+        # if it does not map this database to the root we intended, we rebase onto the
+        # freshest value and persist a second time.
+        #
+        # The consequence is worth stating, because a CAS would not have it: between the two
+        # writes there is a window in which another reader can observe the first, superseded
+        # root. A compare-and-swap either publishes the right value or publishes nothing.
+        #
+        # Traced 2026-08-16: no concurrent writer can reach that window. commit() holds the
+        # provider root lock across this whole call, and every other publisher of the space
+        # root — new_database, rename_database, remove_database — takes the same lock through
+        # ObjectSpace._space_context. The re-read below goes to storage, not to a cache. So
+        # the mismatch this block tests for is unreachable by concurrency: if it ever fires,
+        # it is reporting some other defect (a pointer not yet assigned, an identity that
+        # differs from its content) and the repair writes the root a second time on top of it.
+        # That makes this block a candidate for deletion rather than for documentation, which
+        # would remove the window above entirely. Left in place pending that decision.
+        #
+        # Failures here are logged, never raised: the commit already succeeded, so reporting
+        # an exception to the caller would misrepresent a durable write as a failed one.
         try:
             latest_sr = self.object_space.get_space_root()
             latest_catalog = getattr(latest_sr, 'object_root', None)
@@ -816,16 +836,27 @@ class Database(AbstractDatabase):
             intended_ptr = getattr(new_db_root, 'atom_pointer', None)
             latest_ptr = getattr(latest_db_root, 'atom_pointer', None)
             if intended_ptr != latest_ptr:
-                # Re-merge staged_root (new_db_root) against freshest and retry once
+                # Another writer published between our write and this read. Rebase onto the
+                # freshest value and publish again.
                 try:
                     fresh_current = latest_catalog.get_at(self.database_name) if latest_catalog else None
                 except Exception:
+                    logger.warning(
+                        "Reconciliation for '%s': could not read the freshest root from the catalog; "
+                        "rebasing is skipped and the staged root is republished as-is.",
+                        self.database_name, exc_info=True,
+                    )
                     fresh_current = None
                 merged_root = new_db_root
                 try:
                     if isinstance(new_db_root, ConcurrentOptimized) and fresh_current is not None:
                         merged_root = new_db_root._rebase_on_concurrent_update(fresh_current)
                 except Exception:
+                    logger.warning(
+                        "Reconciliation for '%s': rebase onto the concurrent update failed; "
+                        "republishing the staged root unmerged, which may drop the other writer's change.",
+                        self.database_name, exc_info=True,
+                    )
                     merged_root = new_db_root
                 # Build a new space_root with the merged mapping and persist again
                 retry_sr = RootObject(
@@ -839,7 +870,11 @@ class Database(AbstractDatabase):
                 except Exception:
                     self.object_space.set_space_root(retry_sr)
         except Exception:
-            pass
+            logger.error(
+                "Reconciliation for '%s' failed after the root was persisted. The commit stands, "
+                "but the published root may not be the one this transaction intended.",
+                self.database_name, exc_info=True,
+            )
         # Debug: immediately read under lock to log current mapping after verification
         try:
             import os as _os
@@ -1053,7 +1088,10 @@ class ObjectTransaction(AbstractTransaction):
         """
         with self.lock:
             if self.transaction_root:
-                # Capture original pointer for CAS-on-object at commit
+                # Record this root in the transaction's read set: the pointer seen now is what
+                # _check_read_locked_objects compares against at commit time to detect a
+                # concurrent modification. This is the validate half of optimistic concurrency
+                # control, not a compare-and-swap.
                 try:
                     if self.transaction_root.has(name):
                         obj = self.transaction_root.get_at(name)
@@ -1061,8 +1099,17 @@ class ObjectTransaction(AbstractTransaction):
                         # Store snapshot if not already present (track roots by name)
                         if not self.read_lock_roots.has(name):
                             self.read_lock_roots = self.read_lock_roots.set_at(name, original_ptr)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # Without the snapshot there is nothing to compare at commit, so a
+                    # concurrent modification of this root would go undetected. Continuing
+                    # here would silently downgrade the transaction's isolation, which is
+                    # worse than failing it: the caller can retry a failed read, but cannot
+                    # recover a conflict that was never reported.
+                    raise ProtoUnexpectedException(
+                        message=f"Could not record '{name}' in the read set of this transaction. "
+                                f"Continuing would leave a concurrent modification of it undetected "
+                                f"at commit, so the read is refused instead."
+                    ) from exc
                 # Record original counter value for this root (if available) for post-commit verification
                 try:
                     from .dictionaries import Dictionary as _Dict
