@@ -6,7 +6,7 @@ on:
 
 jobs:
   pypi-publish:
-    name: Build and publish to PyPI
+    name: Build and publish
     runs-on: ubuntu-latest
     permissions:
       id-token: write  # Required for OIDC-based trusted publishing
@@ -29,7 +29,19 @@ jobs:
         run: |
           python -m build
 
-      - name: Publish to PyPI
+      # Where a release goes is decided by the release's own pre-release flag,
+      # the one set when publishing it on GitHub. Deliberately not inferred from
+      # the tag name: the workflow this replaced looked for the letter "a"
+      # anywhere in the tag, so any tag containing one went to TestPyPI.
+      - name: Publish to TestPyPI (pre-releases)
+        if: github.event.release.prerelease
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+
+      - name: Publish to PyPI (stable releases)
+        if: ${{ ! github.event.release.prerelease }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
