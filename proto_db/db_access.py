@@ -808,74 +808,22 @@ class Database(AbstractDatabase):
         except Exception:
             # Fallback to non-locked variant if locked API is unavailable
             self.object_space.set_space_root(new_space_root)
-        # Post-write reconciliation. This is deliberately NOT a compare-and-swap: the new
-        # root has already been persisted by the call above. Here we re-read the catalog and,
-        # if it does not map this database to the root we intended, we rebase onto the
-        # freshest value and persist a second time.
+        # The write above is the publication. There is deliberately nothing after it.
         #
-        # The consequence is worth stating, because a CAS would not have it: between the two
-        # writes there is a window in which another reader can observe the first, superseded
-        # root. A compare-and-swap either publishes the right value or publishes nothing.
+        # A post-write reconciliation used to live here — labelled "CAS verification", though
+        # it was not one: it re-read the catalog and, on a mismatch, rebased and persisted the
+        # root a second time. Tracing it on 2026-08-16 showed the mismatch is unreachable by
+        # concurrency. commit() holds the provider root lock across this whole call, and every
+        # other publisher of the space root — new_database, rename_database, remove_database —
+        # takes the same lock through ObjectSpace._space_context, so no one else can publish
+        # between the write and the re-read.
         #
-        # Traced 2026-08-16: no concurrent writer can reach that window. commit() holds the
-        # provider root lock across this whole call, and every other publisher of the space
-        # root — new_database, rename_database, remove_database — takes the same lock through
-        # ObjectSpace._space_context. The re-read below goes to storage, not to a cache. So
-        # the mismatch this block tests for is unreachable by concurrency: if it ever fires,
-        # it is reporting some other defect (a pointer not yet assigned, an identity that
-        # differs from its content) and the repair writes the root a second time on top of it.
-        # That makes this block a candidate for deletion rather than for documentation, which
-        # would remove the window above entirely. Left in place pending that decision.
-        #
-        # Failures here are logged, never raised: the commit already succeeded, so reporting
-        # an exception to the caller would misrepresent a durable write as a failed one.
-        try:
-            latest_sr = self.object_space.get_space_root()
-            latest_catalog = getattr(latest_sr, 'object_root', None)
-            latest_db_root = latest_catalog.get_at(self.database_name) if latest_catalog else None
-            intended_ptr = getattr(new_db_root, 'atom_pointer', None)
-            latest_ptr = getattr(latest_db_root, 'atom_pointer', None)
-            if intended_ptr != latest_ptr:
-                # Another writer published between our write and this read. Rebase onto the
-                # freshest value and publish again.
-                try:
-                    fresh_current = latest_catalog.get_at(self.database_name) if latest_catalog else None
-                except Exception:
-                    logger.warning(
-                        "Reconciliation for '%s': could not read the freshest root from the catalog; "
-                        "rebasing is skipped and the staged root is republished as-is.",
-                        self.database_name, exc_info=True,
-                    )
-                    fresh_current = None
-                merged_root = new_db_root
-                try:
-                    if isinstance(new_db_root, ConcurrentOptimized) and fresh_current is not None:
-                        merged_root = new_db_root._rebase_on_concurrent_update(fresh_current)
-                except Exception:
-                    logger.warning(
-                        "Reconciliation for '%s': rebase onto the concurrent update failed; "
-                        "republishing the staged root unmerged, which may drop the other writer's change.",
-                        self.database_name, exc_info=True,
-                    )
-                    merged_root = new_db_root
-                # Build a new space_root with the merged mapping and persist again
-                retry_sr = RootObject(
-                    object_root=latest_catalog.set_at(self.database_name, merged_root) if latest_catalog else new_db_root,
-                    literal_root=getattr(latest_sr, 'literal_root', None),
-                    transaction=update_tr,
-                )
-                try:
-                    # Best effort: persist via locked history again
-                    self.object_space.set_space_root_locked(retry_sr, locked_space_history)
-                except Exception:
-                    self.object_space.set_space_root(retry_sr)
-        except Exception:
-            logger.error(
-                "Reconciliation for '%s' failed after the root was persisted. The commit stands, "
-                "but the published root may not be the one this transaction intended.",
-                self.database_name, exc_info=True,
-            )
-        # Debug: immediately read under lock to log current mapping after verification
+        # Removing it removes a real hazard rather than dead weight: the two writes left a
+        # window in which a reader could observe the first, superseded root. One write has no
+        # such window. If a mismatch were ever possible here it would signal some other defect
+        # — a pointer not yet assigned, an identity differing from its content — and repairing
+        # it by writing again would paper over that defect instead of surfacing it.
+        # Debug: immediately read under lock to log current mapping after publication
         try:
             import os as _os
             if _os.environ.get('PB_DEBUG_CONC'):
