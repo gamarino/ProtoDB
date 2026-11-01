@@ -4,15 +4,25 @@ import struct
 from datetime import date, datetime, time
 from decimal import Decimal
 
+from proto_db.values import FrozenDict, FrozenList
+
+_PLAIN = {FrozenList: list, FrozenDict: dict}
+
+
+def _kind(x):
+    """Type of ``x`` with frozen containers identified with their plain counterparts (D25)."""
+    return _PLAIN.get(type(x), type(x))
+
 
 def assert_exact(a, b, path="value"):
     """Raise AssertionError unless ``a`` and ``b`` are exactly the same value.
 
-    Stricter than ``==``: types must match exactly, floats compare bit-for-bit
+    Stricter than ``==``: types must match exactly (a frozen container matches its plain
+    counterpart), floats compare bit-for-bit
     (NaN, -0.0), Decimals keep their exponent, datetimes keep fold and tzinfo,
     dict item order is preserved, and atoms must be the same object.
     """
-    assert type(a) is type(b), f"{path}: {type(a).__name__} != {type(b).__name__}"
+    assert _kind(a) is _kind(b), f"{path}: {type(a).__name__} != {type(b).__name__}"
     if isinstance(a, float):
         assert struct.pack("<d", a) == struct.pack("<d", b) or (math.isnan(a) and math.isnan(b)), \
             f"{path}: {a!r} != {b!r}"

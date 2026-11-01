@@ -27,6 +27,9 @@ Wire form of a value:
   ``["fixed", offset_microseconds, name]`` for a ``datetime.timezone``.  Other
   ``tzinfo`` implementations are rejected with ``ProtoValidationError``.
 
+Decoding returns ``FrozenList``/``FrozenDict`` for arrays and ``@map`` (D25); encoding accepts
+both frozen and plain containers.
+
 Decoding validates the structure: an unknown tag or a malformed value raises
 ``ProtoCorruptionError``.
 """
@@ -39,7 +42,7 @@ from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..errors import ProtoCorruptionError, ProtoValidationError
-from ..values import MISSING
+from ..values import MISSING, FrozenDict, FrozenList
 from .atom import Atom, AtomPointer
 
 __all__ = ["encode_state", "decode_state", "encode_value", "decode_value"]
@@ -145,7 +148,7 @@ def decode_value(data, load_ref: Callable[[AtomPointer, str], Atom]):
     if data is None or type(data) in (bool, int, float, str, bytes):
         return data
     if type(data) is list:
-        return [decode_value(v, load_ref) for v in data]
+        return FrozenList(decode_value(v, load_ref) for v in data)
     if type(data) is not dict or len(data) != 1:
         raise ProtoCorruptionError(f"Malformed encoded value: {_preview(data)}")
     (tag, body), = data.items()
@@ -234,7 +237,7 @@ def _dec_map(body, load_ref):
     for pair in body:
         k, v = _fields(pair, 2, (None, None))
         out[decode_value(k, load_ref)] = decode_value(v, load_ref)
-    return out
+    return FrozenDict(out)
 
 
 def _dec_missing(body, _):

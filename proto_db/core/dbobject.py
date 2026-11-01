@@ -6,9 +6,9 @@ absent attribute.  A DBObject cannot be modified: :meth:`DBObject.with_`
 returns a new version, which is a distinct atom with a new ``oid``
 (assigned lazily, D21).
 
-Immutability is shallow: ``list`` and ``dict`` values are copied on
-construction (by :func:`proto_db.values.canonical`) but are returned as is and
-must not be mutated by callers.
+``list`` and ``dict`` values are stored as ``FrozenList`` and ``FrozenDict``
+(by :func:`proto_db.values.canonical`, D25): attempts to mutate them raise
+``ProtoValidationError``; use ``.copy()`` to get a mutable copy.
 """
 from __future__ import annotations
 

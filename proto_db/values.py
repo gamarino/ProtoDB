@@ -17,6 +17,7 @@ not orderable keys.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import uuid
 from datetime import date, datetime, time, timedelta
@@ -24,7 +25,7 @@ from decimal import Decimal
 
 from .errors import ProtoValidationError
 
-__all__ = ["MISSING", "canonical", "order_key", "values_equal", "hash_key", "is_atom"]
+__all__ = ["MISSING", "FrozenList", "FrozenDict", "canonical", "order_key", "values_equal", "hash_key", "is_atom"]
 
 
 class _Missing:
@@ -73,13 +74,93 @@ def _is_aware(value) -> bool:
     return value.tzinfo is not None and value.utcoffset() is not None
 
 
+def _frozen(kind: str):
+    """Build a mutator that always refuses, pointing the user at ``.copy()``."""
+    def refuse(self, *args, **kwargs):
+        raise ProtoValidationError(
+            f"Stored {kind} values are immutable; call .copy() to get a mutable copy")
+    return refuse
+
+
+class FrozenList(list):
+    """Immutable ``list`` used for every list value stored in the database (D25).
+
+    Reads behave like ``list`` and ``FrozenList([1]) == [1]``.  Every mutator
+    raises ``ProtoValidationError``.  Like ``list`` it is unhashable.
+    :meth:`copy` returns a plain mutable ``list`` (shallow: nested values stay
+    frozen).  ``copy.copy``/``copy.deepcopy`` and pickling give an equal
+    ``FrozenList``.
+    """
+
+    __slots__ = ()
+
+    def __new__(cls, iterable=()):
+        self = list.__new__(cls)
+        list.extend(self, iterable)
+        return self
+
+    def __init__(self, iterable=()):
+        """No-op: elements are set in ``__new__``, so ``__init__`` can never mutate."""
+
+    def copy(self) -> list:
+        """Return a plain, mutable, shallow copy."""
+        return list(self)
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self, memo):
+        return FrozenList(copy.deepcopy(v, memo) for v in self)
+
+    def __reduce__(self):
+        return (FrozenList, (list(self),))
+
+    append = extend = insert = pop = remove = clear = sort = reverse = _frozen("list")
+    __setitem__ = __delitem__ = __iadd__ = __imul__ = _frozen("list")
+
+
+class FrozenDict(dict):
+    """Immutable ``dict`` used for every dict value stored in the database (D25).
+
+    Same contract as :class:`FrozenList`: equal to the plain ``dict``, every
+    mutator raises ``ProtoValidationError``, unhashable, :meth:`copy` returns
+    a plain shallow ``dict``, deepcopy and pickle give an equal ``FrozenDict``.
+    """
+
+    __slots__ = ()
+
+    def __new__(cls, *args, **kwargs):
+        self = dict.__new__(cls)
+        dict.update(self, *args, **kwargs)
+        return self
+
+    def __init__(self, *args, **kwargs):
+        """No-op: items are set in ``__new__``, so ``__init__`` can never mutate."""
+
+    def copy(self) -> dict:
+        """Return a plain, mutable, shallow copy."""
+        return dict(self)
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self, memo):
+        return FrozenDict((copy.deepcopy(k, memo), copy.deepcopy(v, memo)) for k, v in self.items())
+
+    def __reduce__(self):
+        return (FrozenDict, (dict(self),))
+
+    update = setdefault = popitem = pop = clear = __setitem__ = __delitem__ = __ior__ = _frozen("dict")
+
+
 def canonical(value):
     """Validate ``value`` and return its canonical form.
 
     Supported: MISSING, None, bool, int, float (NaN allowed as a stored value),
     Decimal, str, bytes (``bytearray`` is converted), date, time, datetime,
     timedelta, UUID, atoms, tuples, and lists/dicts of supported values
-    (processed recursively).  Raises ``ProtoValidationError`` otherwise.
+    (processed recursively).  Lists and dicts become :class:`FrozenList` and
+    :class:`FrozenDict`; already-canonical input is returned as the same object.  Raises ``ProtoValidationError`` otherwise.
     """
     if value is None or value is MISSING or isinstance(
             value, (bool, int, float, Decimal, str, bytes, date, time, timedelta, uuid.UUID)):
@@ -87,11 +168,19 @@ def canonical(value):
     if isinstance(value, bytearray):
         return bytes(value)
     if isinstance(value, tuple):
-        return tuple(canonical(v) for v in value)
+        items = tuple(canonical(v) for v in value)
+        return value if type(value) is tuple and all(a is b for a, b in zip(items, value)) else items
     if isinstance(value, list):
-        return [canonical(v) for v in value]
+        items = [canonical(v) for v in value]
+        if type(value) is FrozenList and all(a is b for a, b in zip(items, value)):
+            return value
+        return FrozenList(items)
     if isinstance(value, dict):
-        return {canonical(k): canonical(v) for k, v in value.items()}
+        pairs = [(canonical(k), canonical(v)) for k, v in value.items()]
+        if type(value) is FrozenDict and all(
+                ka is kb and va is vb for (ka, va), (kb, vb) in zip(pairs, value.items())):
+            return value
+        return FrozenDict(pairs)
     if is_atom(value):
         return value
     raise ProtoValidationError(f"Unsupported value type: {type(value).__name__}")
