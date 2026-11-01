@@ -25,7 +25,13 @@ Semantics (D28):
 * ``contains`` (0.1 vocabulary, D36) takes one orderable operand: a str key
   matches a str operand it contains as a substring, a bytes key a bytes
   operand; a list or tuple key matches when one of its orderable items equals
-  the operand (``values_equal``); every other key (and MISSING) matches nothing.
+  the operand (``values_equal``); a dict key matches when one of its orderable
+  keys equals the operand (key membership, like Python's ``in``); a collection
+  atom uses its own membership: List (and any collection with the default
+  membership) by element equality (unorderable elements never match),
+  Set/CountedSet by member, Dictionary/HashDictionary/RepeatedKeysDictionary
+  by key; every other key (MISSING, None, scalars, other atoms) matches
+  nothing.
 * ``?T`` / ``?!T`` (0.1 vocabulary, D36) test the Python truthiness of a
   present key; MISSING matches neither (absence is not a value, like ``!=``).
 * ``near[]`` takes a :class:`NearQuery` (or a mapping of its fields) and is
@@ -44,7 +50,7 @@ from typing import Any
 
 from ..errors import ProtoNotSupportedError, ProtoValidationError
 from ..indexing.keyspec import KeySpec
-from ..values import MISSING, canonical, is_orderable, order_key
+from ..values import MISSING, canonical, is_atom, is_orderable, order_key
 
 __all__ = ["Term", "NearQuery", "is_orderable", "OPERATORS", "NEAR_METRICS", "EQ", "NE", "LT", "LE", "GT", "GE", "IN", "BETWEEN",
            "BETWEEN_EXCL_BOTH", "BETWEEN_EXCL_LOW", "BETWEEN_EXCL_HIGH", "IS_NONE", "NOT_NONE", "NEAR", "CONTAINS",
@@ -152,8 +158,13 @@ class Term:
     the ``between`` variants a pair ``(low, high)`` of one type rank (stored as
     a tuple), ``?N``/``?!N`` no value, the scalar comparisons one orderable
     operand, ``near[]`` a :class:`NearQuery` (a mapping of its fields is
-    converted).  Terms are hashable.  ``key_spec`` is the :class:`KeySpec` the
-    path names.
+    converted).  ``key_spec`` is the :class:`KeySpec` the path names.
+
+    Equality and hashing are structural and follow :func:`values_equal` for the
+    value (D36 fix round 1): ``Term("x", "==", 1) == Term("x", "==", 1.0)`` but
+    ``Term("x", "==", True) != Term("x", "==", 1)``, recursively for ``in`` and
+    ``between`` operand tuples; two terms are equal only if they match the same
+    elements.
     """
 
     path: str | None
@@ -188,6 +199,18 @@ class Term:
         elif op in UNARY_OPERATORS:
             if value is not None:
                 raise ProtoValidationError(f"Operator {op!r} takes no value, got {value!r}")
+
+    def _value_key(self):
+        value = self.value
+        return value if isinstance(value, NearQuery) else order_key(value)
+
+    def __eq__(self, other):
+        if type(other) is not type(self):
+            return NotImplemented
+        return self.path == other.path and self.op == other.op and self._value_key() == other._value_key()
+
+    def __hash__(self):
+        return hash((self.path, self.op, self._value_key()))
 
     def matches(self, element) -> bool:
         """Evaluate this term on ``element`` (the scan oracle; see the module docstring)."""
@@ -265,6 +288,16 @@ def _contains(key, operand) -> bool:
     if isinstance(key, (list, tuple)):
         target = order_key(operand)
         return any(is_orderable(item) and order_key(item) == target for item in key)
+    if isinstance(key, dict):
+        target = order_key(operand)
+        return any(is_orderable(k) and order_key(k) == target for k in key)
+    if is_atom(key):
+        from ..collections.base import IndexedCollection  # deferred: collections import the query layer
+        if isinstance(key, IndexedCollection):
+            if type(key).__contains__ is IndexedCollection.__contains__:
+                target = order_key(operand)
+                return any(is_orderable(e) and order_key(e) == target for e in key.elements())
+            return operand in key
     return False
 
 
@@ -272,7 +305,8 @@ def display_value(value):
     """A JSON-serialisable rendering of a term operand or key for ``explain()``.
 
     None, bool, int, str and finite floats are kept; tuples and lists become
-    lists; a :class:`NearQuery` becomes a mapping of its fields; every other
+    lists; a :class:`NearQuery` becomes a mapping of its fields; a dict becomes
+    ``{"@dict": [[key, value], ...]}`` (keys stay distinct: ``1`` vs ``"1"``); every other
     value (Decimal, datetime, bytes, UUID, NaN, atoms, handles, ...) becomes its
     ``repr``, so distinct types stay distinguishable.
     """
@@ -285,5 +319,6 @@ def display_value(value):
     if isinstance(value, NearQuery):
         return {"vector": list(value.vector), "k": value.k, "threshold": value.threshold, "metric": value.metric}
     if isinstance(value, dict):
-        return {str(display_value(k)): display_value(v) for k, v in value.items()}
+        # A JSON object would need str keys, and 1 and "1" would collide: keep pairs.
+        return {"@dict": [[display_value(k), display_value(v)] for k, v in value.items()]}
     return repr(value)

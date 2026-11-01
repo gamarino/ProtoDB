@@ -415,3 +415,65 @@ def test_concurrent_execution_gives_identical_results():
     for t in threads:
         t.join()
     assert all(res == expected for res in results) and len(expected) == 250
+
+
+# -- fix round 1 -------------------------------------------------------------------------------------
+
+class CountingPlan(QueryPlan):
+    """A leaf counting how often its estimate is computed."""
+
+    def __init__(self, items):
+        self.items = list(items)
+        self.calls = 0
+
+    def execute(self):
+        return iter(self.items)
+
+    def explain(self):
+        return self._explain("Counting")
+
+    def estimate(self):
+        self.calls += 1
+        return Estimate(len(self.items), len(self.items))
+
+
+def test_explain_computes_each_estimate_once():
+    leaf = CountingPlan([1, 2, 3])
+    plan = Count(Limit(Sort(Filter(Project(leaf, lambda x: x), Term(None, GT, 0)), [None]), 2))
+    check_shape(plan.explain())
+    assert leaf.calls == 1
+    plan.explain()
+    assert leaf.calls == 2  # the memo lives for one explain() call only
+    plan.estimate()
+    assert leaf.calls == 3
+
+
+def test_sort_and_group_by_label_each_callable():
+    def by_name(p):
+        return p.name
+
+    plan = Sort(people(), [(by_name, False), (lambda p: p.city or "", True, "city or empty"), ("age", True)])
+    assert [k["key"] for k in plan.explain()["keys"]] == [by_name.__qualname__, "city or empty", "age"]
+    one = Sort(people(), [(by_name, False), "age"], description="the name")
+    assert one.explain()["keys"][0]["key"] == "the name"
+    with pytest.raises(ProtoValidationError, match="exactly one callable"):
+        Sort(people(), [by_name, lambda p: p.age], description="ambiguous")
+    g = GroupBy(people(), by_name, {"n": ("count", None), "f": (len, "tags", "tag count list"),
+                                    "q": (len, "tags")}, description="name key")
+    info = g.explain()
+    assert info["key"] == "name key" and info["aggregations"]["f"]["op"] == "tag count list"
+    assert info["aggregations"]["q"]["op"] == "len"
+    with pytest.raises(ProtoValidationError):
+        GroupBy(people(), "city", {"x": ("sum", "age", "label for a built-in")})
+
+
+def test_display_value_keeps_dict_keys_distinct():
+    from proto_db.query.terms import display_value
+    out = display_value({1: "a", "1": "b"})
+    assert out == {"@dict": [[1, "a"], ["1", "b"]]}
+    json.dumps(out)
+
+
+def test_join_kinds_exported():
+    from proto_db.query import plans
+    assert "JOIN_KINDS" in plans.__all__ and plans.JOIN_KINDS == ("inner", "left")

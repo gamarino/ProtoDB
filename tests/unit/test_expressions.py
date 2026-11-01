@@ -280,3 +280,42 @@ def test_truthiness_operators():
 
 def test_module_reexports_term():
     assert ex.Term is Term
+
+
+# -- fix round 1: equality follows values_equal; contains on collections --------------------------
+
+def test_term_equality_and_hash_follow_values_equal():
+    assert Term("x", EQ, True) != Term("x", EQ, 1)
+    assert Term("x", IN, (True,)) != Term("x", IN, (1,))
+    assert Term("x", BETWEEN, (True, True)) != Term("x", BETWEEN, (1, 1))
+    assert len({Term("x", EQ, True), Term("x", EQ, 1)}) == 2
+    assert Term("x", EQ, 1) == Term("x", EQ, 1.0) == Term("x", EQ, Decimal("1.00"))
+    assert hash(Term("x", EQ, 1)) == hash(Term("x", EQ, 1.0)) == hash(Term("x", EQ, Decimal("1.00")))
+    assert Term("x", IN, (1, 2)) == Term("x", IN, (1.0, Decimal(2)))
+    assert Term("x", EQ, (True, 1)) != Term("x", EQ, (1, 1))
+    assert Term("v", NEAR, NearQuery((1, 0), k=2)) == Term("v", NEAR, {"vector": (1.0, 0.0), "k": 2})
+    assert And(Term("x", EQ, True), B2) != And(Term("x", EQ, 1), B2)
+    assert Not(Term("x", EQ, True)) != Not(Term("x", EQ, 1))
+    # equal terms match the same elements
+    assert Term("x", EQ, True).matches({"x": 1}) is False and Term("x", EQ, 1).matches({"x": 1}) is True
+
+
+def test_contains_on_dicts_and_collection_atoms():
+    from proto_db.collections.dictionaries import Dictionary
+    from proto_db.collections.lists import List
+    from proto_db.collections.sets import CountedSet, Set
+    t = Term("c", CONTAINS, 2)
+    assert t.matches({"c": {2: "a"}}) and t.matches({"c": {2.0: "a"}}) and not t.matches({"c": {"x": 2}})
+    assert not Term("c", CONTAINS, "2").matches({"c": {2: 1}})
+    assert t.matches(rec(c=List.from_iterable([1, 2.0, [3]])))
+    assert not t.matches(rec(c=List.from_iterable([1, [2], True])))
+    assert not Term("c", CONTAINS, True).matches(rec(c=List.from_iterable([1])))
+    assert t.matches(rec(c=Set.from_iterable([2, 3]))) and not t.matches(rec(c=Set.from_iterable([3])))
+    assert t.matches(rec(c=CountedSet.from_iterable([2, 2]))) and not t.matches(rec(c=CountedSet()))
+    d = Dictionary().set_at("k", 2)
+    assert Term("c", CONTAINS, "k").matches(rec(c=d)) and not t.matches(rec(c=d))  # keys, not values
+    nested = rec(inner=rec(c=List.from_iterable(["a", 2])))
+    assert Term("inner.c", CONTAINS, 2).matches(nested)
+    for other in (None, 2, 2.5, rec(c=1)):
+        assert not t.matches({"c": other})
+    assert evaluate(t, rec()) is False

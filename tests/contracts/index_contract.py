@@ -76,7 +76,8 @@ from proto_db.errors import ProtoNotSupportedError
 from proto_db.indexing import Index, KeySpec, element_identity, register_extractor
 from proto_db.query.plans import Estimate, QueryPlan
 from proto_db.query.terms import (BETWEEN, BETWEEN_EXCL_BOTH, BETWEEN_EXCL_HIGH, BETWEEN_EXCL_LOW, EQ, GE,
-                                  GT, IN, IS_NONE, LE, LT, NE, NOT_NONE, Term, is_orderable)
+                                  GT, IN, IS_NONE, IS_TRUE, LE, LT, NE, NOT_NONE, NOT_TRUE, CONTAINS, Term,
+                                  is_orderable)
 from proto_db.storage.memory import MemoryStorage
 from proto_db.values import MISSING, order_key
 from tests.contracts.collection_contract import COLLECTION_FACTORIES
@@ -173,7 +174,9 @@ class IndexContract:
         terms = [Term(path, IS_NONE), Term(path, NOT_NONE), Term(path, EQ, None),
                  Term(path, EQ, ("contract-absent-key", 0)), Term(FOREIGN_PATH, EQ, 1),
                  Term(FOREIGN_PATH, IS_NONE)]
+        terms += [Term(path, IS_TRUE), Term(path, NOT_TRUE)]
         for k in pivots:
+            terms.append(Term(path, CONTAINS, k))
             terms.append(Term(path, EQ, k))
             terms.append(Term(path, NE, k))
             terms.append(Term(path, rng.choice(_RANGE_OPS), k))

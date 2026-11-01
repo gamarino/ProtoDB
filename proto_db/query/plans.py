@@ -43,6 +43,7 @@ over the sources, Intersect with its minimum.
 from __future__ import annotations
 
 import math
+import threading
 from abc import ABC, abstractmethod
 from collections import Counter
 from collections.abc import Callable, Iterator, Mapping
@@ -57,7 +58,7 @@ from .terms import NEAR, Term
 
 __all__ = ["Estimate", "QueryPlan", "CollectionScanPlan", "IndexPlan", "ordered_index_scan", "VectorSearch",
            "Filter", "PythonFilter", "Intersect", "Union", "Project", "Sort", "Limit", "GroupBy", "Join",
-           "Unnest", "Count", "FILTER_SELECTIVITY", "UNNEST_FANOUT", "AGGREGATES", "element_key"]
+           "Unnest", "Count", "JOIN_KINDS", "FILTER_SELECTIVITY", "UNNEST_FANOUT", "AGGREGATES", "element_key"]
 
 #: Estimated fraction of rows one term (or one PythonFilter) keeps (D36).
 FILTER_SELECTIVITY = 0.5
@@ -130,8 +131,31 @@ class QueryPlan(ABC):
 
     def _explain(self, name: str, params: dict | None = None, children: tuple = ()) -> dict:
         """The common explain shape: ``{"plan", **params, "estimate", "children"}``."""
-        return {"plan": name, **(params or {}), "estimate": self.estimate().describe(),
-                "children": [child.explain() for child in children]}
+        top = getattr(_explain_memo, "cache", None) is None
+        if top:
+            _explain_memo.cache = {}
+        try:
+            return {"plan": name, **(params or {}), "estimate": _est(self).describe(),
+                    "children": [child.explain() for child in children]}
+        finally:
+            if top:
+                _explain_memo.cache = None
+
+
+#: Per-thread estimate memo, active during one top-level ``explain()`` call, so every node's
+#: estimate is computed once per explain instead of once per ancestor.
+_explain_memo = threading.local()
+
+
+def _est(plan: QueryPlan) -> Estimate:
+    """``plan.estimate()``, memoised for the duration of the current top-level ``explain()``."""
+    cache = getattr(_explain_memo, "cache", None)
+    if cache is None:
+        return plan.estimate()
+    hit = cache.get(id(plan))
+    if hit is None:
+        hit = cache[id(plan)] = (plan, plan.estimate())  # the plan is kept so its id stays unique
+    return hit[1]
 
 
 def _check_plan(plan, owner: str) -> QueryPlan:
@@ -280,7 +304,7 @@ class VectorSearch(QueryPlan):
 
     def estimate(self) -> Estimate:
         """The inner plan's estimate."""
-        return self.inner.estimate()
+        return _est(self.inner)
 
 
 def _selectivity(expr: Expression) -> float:
@@ -322,7 +346,7 @@ class Filter(QueryPlan):
 
     def estimate(self) -> Estimate:
         """rows = source rows * selectivity(expr); cost = source cost + source rows."""
-        src = self.source.estimate()
+        src = _est(self.source)
         return Estimate(rows=src.rows * _selectivity(self.expr), cost=src.cost + src.rows)
 
 
@@ -354,7 +378,7 @@ class PythonFilter(QueryPlan):
 
     def estimate(self) -> Estimate:
         """Like a one-term Filter."""
-        src = self.source.estimate()
+        src = _est(self.source)
         return Estimate(rows=src.rows * FILTER_SELECTIVITY, cost=src.cost + src.rows)
 
 
@@ -399,7 +423,7 @@ class Union(_SetPlan):
 
     def estimate(self) -> Estimate:
         """rows = sum of source rows (upper bound); cost = sum of costs + sum of rows."""
-        ests = [s.estimate() for s in self.sources]
+        ests = [_est(s) for s in self.sources]
         rows = sum(e.rows for e in ests)
         return Estimate(rows=rows, cost=sum(e.cost for e in ests) + rows)
 
@@ -428,7 +452,7 @@ class Intersect(_SetPlan):
 
     def estimate(self) -> Estimate:
         """rows = min of source rows; cost = sum of costs + sum of rows."""
-        ests = [s.estimate() for s in self.sources]
+        ests = [_est(s) for s in self.sources]
         return Estimate(rows=min(e.rows for e in ests), cost=sum(e.cost + e.rows for e in ests))
 
 
@@ -489,7 +513,7 @@ class Project(QueryPlan):
 
     def estimate(self) -> Estimate:
         """rows = source rows; cost = source cost + rows."""
-        src = self.source.estimate()
+        src = _est(self.source)
         return Estimate(rows=src.rows, cost=src.cost + src.rows)
 
 
@@ -499,10 +523,14 @@ def _sort_slot(value) -> tuple:
 
 
 class Sort(QueryPlan):
-    """The source elements sorted by ``keys``: a list of ``key`` or ``(key, descending)``.
+    """The source elements sorted by ``keys``: a list of ``key``, ``(key, descending)`` or
+    ``(key, descending, description)``.
 
-    A key is a path (str or None), a KeySpec or a callable (named in
-    ``explain()`` by ``description`` or its qualified name).  The order is
+    A key is a path (str or None), a KeySpec or a callable.  Each callable is
+    named in ``explain()`` by its own ``description`` (third tuple item), else
+    by the ``description`` keyword when it is the only callable key (several
+    callables cannot share one label: ``ProtoValidationError``), else by its
+    qualified name.  The order is
     total: :func:`order_key` across type ranks (MISSING, then None, bool,
     numbers, ...), unorderable keys (lists, dicts, NaN) last and equal to one
     another (R18).  The sort is stable; a descending key reverses the order of
@@ -513,14 +541,23 @@ class Sort(QueryPlan):
         self.source = _check_plan(source, "Sort")
         if not isinstance(keys, (list, tuple)) or not keys:
             raise ProtoValidationError(f"Sort needs a non-empty list of keys, not {keys!r}")
-        parsed = []
+        items = []
         for item in keys:
-            if isinstance(item, tuple) and len(item) != 2:
-                raise ProtoValidationError(f"Sort keys are key or (key, descending), not {item!r}")
-            key, descending = item if isinstance(item, tuple) else (item, False)
+            if isinstance(item, tuple) and len(item) not in (2, 3):
+                raise ProtoValidationError(f"Sort keys are key, (key, descending) or (key, descending, "
+                                           f"description), not {item!r}")
+            items.append(tuple(item) + (None,) * (3 - len(item)) if isinstance(item, tuple) else (item, False, None))
+        callables = [key for key, _, own in items if callable(key) and own is None]
+        if description is not None and len(callables) != 1:
+            raise ProtoValidationError(f"Sort description labels exactly one callable key without its own "
+                                       f"description; found {len(callables)}")
+        if any(own is not None and not callable(key) for key, _, own in items):
+            raise ProtoValidationError("Sort key descriptions label callable keys only")
+        parsed = []
+        for key, descending, own in items:
             if not isinstance(descending, bool):
                 raise ProtoValidationError(f"Sort descending flag must be a bool, not {descending!r}")
-            extract, described = _key_function(key, description, "Sort")
+            extract, described = _key_function(key, own if own is not None else description, "Sort")
             parsed.append((extract, described, descending))
         self._keys = tuple(parsed)
         self.keys = tuple((described, descending) for _, described, descending in parsed)
@@ -546,7 +583,7 @@ class Sort(QueryPlan):
 
     def estimate(self) -> Estimate:
         """rows = n; cost = source cost + n log2 n."""
-        src = self.source.estimate()
+        src = _est(self.source)
         n = src.rows
         return Estimate(rows=n, cost=src.cost + (n * math.log2(n) if n > 1 else 0))
 
@@ -576,7 +613,7 @@ class Limit(QueryPlan):
 
     def estimate(self) -> Estimate:
         """rows = min(n, max(source rows - offset, 0)); cost = source cost (an upper bound)."""
-        src = self.source.estimate()
+        src = _est(self.source)
         return Estimate(rows=min(self.n, max(src.rows - self.offset, 0)), cost=src.cost)
 
 
@@ -602,7 +639,7 @@ class Count(QueryPlan):
 
     def estimate(self) -> Estimate:
         """rows = 1; cost = source cost."""
-        return Estimate(rows=1, cost=self.source.estimate().cost)
+        return Estimate(rows=1, cost=_est(self.source).cost)
 
 
 def _present(values) -> list:
@@ -646,7 +683,10 @@ class GroupBy(QueryPlan):
     form their own group (key ``MISSING``), apart from None.
     ``aggregations``: mapping name -> ``(op, path)`` where ``op`` is one of
     :data:`AGGREGATES` or a callable receiving the group's list of values
-    (MISSING removed) and ``path`` is a path or None (the element).
+    (MISSING removed) and ``path`` is a path or None (the element); a callable
+    may be labelled for ``explain()`` as ``(callable, path, description)``
+    (default: its qualified name).  A callable ``key`` is labelled by
+    ``description`` (default: its qualified name).
     ``count`` with path None counts elements; the built-ins skip MISSING and
     None values; ``min``/``max`` use :func:`order_key` (an unorderable value
     raises), ``sum``/``avg`` need numbers (bool rejected, float and Decimal
@@ -663,11 +703,13 @@ class GroupBy(QueryPlan):
             if not isinstance(name, str) or not name or name == "key":
                 raise ProtoValidationError(f"GroupBy aggregation names must be non-empty str other than "
                                            f"'key', not {name!r}")
-            if not isinstance(spec, tuple) or len(spec) != 2:
-                raise ProtoValidationError(f"GroupBy aggregation {name!r} must be (op, path), not {spec!r}")
-            op, path = spec
+            valid = isinstance(spec, tuple) and (len(spec) == 2 or (len(spec) == 3 and callable(spec[0])))
+            if not valid:
+                raise ProtoValidationError(f"GroupBy aggregation {name!r} must be (op, path) or "
+                                           f"(callable, path, description), not {spec!r}")
+            op, path = spec[0], spec[1]
             if callable(op):
-                op_name = _describe_function(op, None, "GroupBy")
+                op_name = _describe_function(op, spec[2] if len(spec) == 3 else None, "GroupBy")
             elif op in AGGREGATES:
                 op_name = op
             else:
@@ -710,7 +752,7 @@ class GroupBy(QueryPlan):
 
     def estimate(self) -> Estimate:
         """rows = source rows (upper bound: the number of distinct keys is unknown); cost = source cost + rows."""
-        src = self.source.estimate()
+        src = _est(self.source)
         return Estimate(rows=src.rows, cost=src.cost + src.rows)
 
 
@@ -768,7 +810,7 @@ class Join(QueryPlan):
 
     def estimate(self) -> Estimate:
         """rows = left rows (one match per left element assumed); cost = both costs + both row counts."""
-        left, right = self.left.estimate(), self.right.estimate()
+        left, right = _est(self.left), _est(self.right)
         return Estimate(rows=left.rows, cost=left.cost + right.cost + left.rows + right.rows)
 
 
@@ -814,6 +856,6 @@ class Unnest(QueryPlan):
 
     def estimate(self) -> Estimate:
         """rows = source rows * UNNEST_FANOUT; cost = source cost + rows."""
-        src = self.source.estimate()
+        src = _est(self.source)
         rows = src.rows * UNNEST_FANOUT
         return Estimate(rows=rows, cost=src.cost + rows)
