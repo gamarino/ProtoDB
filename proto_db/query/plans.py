@@ -595,26 +595,31 @@ def _check_count(value, what: str) -> int:
 
 
 class Limit(QueryPlan):
-    """At most ``n`` source elements after skipping ``offset`` (``itertools.islice``)."""
+    """At most ``n`` source elements after skipping ``offset`` (``itertools.islice``).
 
-    def __init__(self, source: QueryPlan, n: int, offset: int = 0):
+    ``n=None`` means no upper bound (an offset-only window, D37).
+    """
+
+    def __init__(self, source: QueryPlan, n: int | None, offset: int = 0):
         self.source = _check_plan(source, "Limit")
-        self.n = _check_count(n, "n")
+        self.n = None if n is None else _check_count(n, "n")
         self.offset = _check_count(offset, "offset")
         self._freeze()
 
     def execute(self) -> Iterator:
         """Stream the window."""
-        return islice(self.source.execute(), self.offset, self.offset + self.n)
+        stop = None if self.n is None else self.offset + self.n
+        return islice(self.source.execute(), self.offset, stop)
 
     def explain(self) -> dict:
-        """``{"plan": "Limit", "limit", "offset"}``."""
+        """``{"plan": "Limit", "limit" (None when unbounded), "offset"}``."""
         return self._explain("Limit", {"limit": self.n, "offset": self.offset}, (self.source,))
 
     def estimate(self) -> Estimate:
         """rows = min(n, max(source rows - offset, 0)); cost = source cost (an upper bound)."""
         src = _est(self.source)
-        return Estimate(rows=min(self.n, max(src.rows - self.offset, 0)), cost=src.cost)
+        rows = max(src.rows - self.offset, 0)
+        return Estimate(rows=rows if self.n is None else min(self.n, rows), cost=src.cost)
 
 
 class Count(QueryPlan):

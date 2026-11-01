@@ -305,6 +305,8 @@ def test_limit_offset_and_estimate():
     assert Limit(people(), 10, offset=5).estimate().rows == 1
     assert Limit(people(), 10, offset=50).estimate().rows == 0
     assert list(Limit(people(), 0).execute()) == []
+    info = check_plan(Limit(people(), None, offset=4), PEOPLE[4:])  # offset-only window (D37)
+    assert info["limit"] is None and Limit(people(), None, offset=4).estimate().rows == 2
     for bad in ((-1, 0), (1, -1), (True, 0), (1.5, 0)):
         with pytest.raises(ProtoValidationError):
             Limit(people(), bad[0], offset=bad[1])
