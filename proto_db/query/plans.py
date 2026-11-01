@@ -1,9 +1,10 @@
 """Physical query plans (spec section 10, ruling R5).
 
 This module starts minimal: the :class:`QueryPlan` base, the planner's cost
-record :class:`Estimate` and :class:`CollectionScanPlan`, the access path every
-collection exposes through ``IndexedCollection.as_query_plan()``.  Later tasks add
-the index, filter and composition plans.
+record :class:`Estimate`, :class:`CollectionScanPlan` (the access path every
+collection exposes through ``IndexedCollection.as_query_plan()``) and
+:class:`IndexPlan` (what ``Index.plan(term)`` returns, Task 4.1).  Later tasks add
+the filter and composition plans.
 
 Plans are runtime objects, never persisted (they are not atoms).  A plan holds
 only immutable inputs, so it may be executed several times and from several
@@ -13,12 +14,12 @@ from __future__ import annotations
 
 import math
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
 from ..errors import ProtoValidationError
 
-__all__ = ["Estimate", "QueryPlan", "CollectionScanPlan"]
+__all__ = ["Estimate", "QueryPlan", "CollectionScanPlan", "IndexPlan"]
 
 
 @dataclass(frozen=True)
@@ -77,3 +78,35 @@ class CollectionScanPlan(QueryPlan):
         """A scan produces and touches every element: rows = cost = count."""
         n = self.collection.count
         return Estimate(rows=n, cost=n)
+
+
+class IndexPlan(QueryPlan):
+    """Elements matching ``term``, produced by ``index`` (returned by ``Index.plan``).
+
+    ``producer()`` must return a fresh iterator over the matching elements on
+    every call (each occurrence once) and capture only immutable state, so the
+    plan can be executed several times and from several threads.  ``kind`` names
+    the access path in ``explain()`` (e.g. ``"IndexLookup"``, ``"IndexRange"``).
+    """
+
+    def __init__(self, index, term, producer: Callable[[], Iterator], *, kind: str = "IndexLookup"):
+        if not callable(producer):
+            raise ProtoValidationError(f"IndexPlan needs a callable producer, not {type(producer).__name__}")
+        if not isinstance(kind, str) or not kind:
+            raise ProtoValidationError(f"IndexPlan kind must be a non-empty str, not {kind!r}")
+        self.index = index
+        self.term = term
+        self.kind = kind
+        self._producer = producer
+
+    def execute(self) -> Iterator:
+        """Return a new iterator over the matching elements."""
+        return iter(self._producer())
+
+    def explain(self) -> dict:
+        """``{"plan": kind, "index": index.explain(), "term": term.describe()}``."""
+        return {"plan": self.kind, "index": self.index.explain(), "term": self.term.describe()}
+
+    def estimate(self) -> Estimate:
+        """The index's estimate for the term."""
+        return self.index.estimate(self.term)
