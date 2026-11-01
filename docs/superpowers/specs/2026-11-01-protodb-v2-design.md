@@ -276,8 +276,9 @@ kind that passes it implements every hook correctly (requirement 3).
   resolved among the processes. Peers negotiate a write lock over the network (the 0.1 voting
   idea, made fail-safe: majority grant, lease term, monotonically increasing fencing token);
   segments are uploaded before the lock is requested; the holder validates against the latest root
-  (propagated peer to peer), publishes, broadcasts the new root and releases. The conditional root
-  write stays only as fencing: it stops a stale holder (expired lease, partition) from overwriting a
+  (propagated peer to peer), replicates the new root to a majority (the commit point) and releases;
+  the storage root is updated afterwards, asynchronously and coalesced, never in series with the
+  transaction. The conditional root write stays only as fencing: it stops a stale holder (expired lease, partition) from overwriting a
   newer root, and is never the arbitration mechanism under normal contention.
 - Mock clients live in `tests/`, never in the package; a missing SDK raises a clear error instead of
   falling back to a mock.
