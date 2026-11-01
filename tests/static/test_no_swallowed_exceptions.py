@@ -19,6 +19,10 @@ CHECKED_ROOTS = [
     "proto_db/core/atom.py",
     "proto_db/core/codec.py",
     "proto_db/core/dbobject.py",
+    "proto_db/storage/__init__.py",
+    "proto_db/storage/format.py",
+    "proto_db/storage/base.py",
+    "proto_db/storage/memory.py",
 ]
 
 

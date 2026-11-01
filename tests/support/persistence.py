@@ -3,7 +3,7 @@ from proto_db.core.atom import Atom, AtomPointer
 
 
 class DirectContext:
-    """PersistenceContext over any object offering ``push_atom`` and ``get_atom``.
+    """PersistenceContext over any ``SharedStorage`` (or duck-typed double with ``push_atom``/``get_atom``).
 
     ``save`` adopts atoms that have no context yet; ``load`` returns a lazy stub.
     """
