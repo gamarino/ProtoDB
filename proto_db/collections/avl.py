@@ -27,6 +27,7 @@ Complexity (n elements, k elements produced)::
     key_iter_reversed                               O(n), explicit stack
     key_count_below                                 O(log n)
     pos_from_iterable, key_from_sorted              O(n)
+    key_from_sorted_okeys                           O(n)
     check_invariants                                O(n), explicit stack
 
 Recursive helpers recurse only along one root-to-leaf path, so their depth is
@@ -52,7 +53,7 @@ __all__ = [
     "pos_get", "pos_insert", "pos_set", "pos_remove", "pos_slice", "pos_concat",
     "pos_iter", "pos_count", "pos_from_iterable",
     "key_get", "key_put", "key_remove", "key_iter", "key_iter_range", "key_iter_okey_range",
-    "key_iter_reversed", "key_count_below", "key_from_sorted",
+    "key_iter_reversed", "key_count_below", "key_from_sorted", "key_from_sorted_okeys",
     "check_invariants", "UNBOUNDED",
 ]
 
@@ -568,6 +569,22 @@ def key_from_sorted(pairs: Iterable[tuple]) -> KeyNode | None:
         if prev is not None and not prev < k:
             raise ProtoValidationError(f"key_from_sorted needs strictly increasing keys; {key!r} is out of order")
         items.append((k, key, value))
+        prev = k
+    return _build_balanced(items, lambda t, l, r: KeyNode(t[1], t[2], l, r, _okey=t[0]))
+
+
+def key_from_sorted_okeys(triples: Iterable[tuple]) -> KeyNode | None:
+    """Like :func:`key_from_sorted` for ``(order_key(key), key, value)`` triples whose order keys the
+    caller already computed (bulk builders sort by them); the order is still checked, the order keys
+    are trusted to be ``order_key(key)``.  O(n)."""
+    items = []
+    prev = None
+    for item in triples:
+        k = item[0]
+        if prev is not None and not prev < k:
+            raise ProtoValidationError(f"key_from_sorted_okeys needs strictly increasing keys; {item[1]!r} "
+                                       f"is out of order")
+        items.append(item)
         prev = k
     return _build_balanced(items, lambda t, l, r: KeyNode(t[1], t[2], l, r, _okey=t[0]))
 

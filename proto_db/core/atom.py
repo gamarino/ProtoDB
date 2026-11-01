@@ -52,6 +52,7 @@ Saving
 """
 from __future__ import annotations
 
+import importlib
 import threading
 import uuid
 from dataclasses import dataclass
@@ -117,6 +118,29 @@ def _lock_for(atom) -> "threading.RLock":
 _registry: dict[str, type] = {}
 _registry_lock = threading.Lock()
 
+#: Module defining each built-in 2.0 atom type, imported on a registry miss so that
+#: stored atoms load in a process that never imported their module.  Kept complete
+#: by tests/unit/test_atom_type_modules.py (every built-in Atom subclass must appear).
+BUILTIN_ATOM_MODULES: dict[str, str] = {
+    "proto_db.core.dbobject.DBObject": "proto_db.core.dbobject",
+    "proto_db.avl._Node": "proto_db.collections.avl",
+    "proto_db.avl.PosNode": "proto_db.collections.avl",
+    "proto_db.avl.KeyNode": "proto_db.collections.avl",
+    "proto_db.collections.IndexSet": "proto_db.collections.base",
+    "proto_db.collections.IndexedCollection": "proto_db.collections.base",
+    "proto_db.collections.List": "proto_db.collections.lists",
+    "proto_db.collections.Dictionary": "proto_db.collections.dictionaries",
+    "proto_db.collections.RepeatedKeysDictionary": "proto_db.collections.dictionaries",
+    "proto_db.collections.HashDictionary": "proto_db.collections.hash_dictionaries",
+    "proto_db.collections.sets._HashBuckets": "proto_db.collections.sets",
+    "proto_db.collections.Set": "proto_db.collections.sets",
+    "proto_db.collections.CountedSet": "proto_db.collections.sets",
+    "proto_db.indexing.Index": "proto_db.indexing.base",
+    "proto_db.indexing.keyed.KeyGroupIndex": "proto_db.indexing.keyed",
+    "proto_db.indexing.EqualityIndex": "proto_db.indexing.equality",
+    "proto_db.indexing.RangeIndex": "proto_db.indexing.range",
+}
+
 
 def register_atom_class(cls: type) -> type:
     """Register ``cls`` under ``cls.__type_name__``; return ``cls``.
@@ -169,9 +193,19 @@ class Atom:
 
     @staticmethod
     def _class_for(type_name: str) -> type:
-        """Return the registered class for ``type_name``; ``ProtoCorruptionError`` if unknown."""
+        """Return the registered class for ``type_name``; ``ProtoCorruptionError`` if unknown.
+
+        On a registry miss for a built-in type (:data:`BUILTIN_ATOM_MODULES`) its
+        module is imported (registering the class) and the lookup retried.
+        """
         with _registry_lock:
             cls = _registry.get(type_name)
+        if cls is None:
+            module = BUILTIN_ATOM_MODULES.get(type_name)
+            if module is not None:
+                importlib.import_module(module)  # outside the lock: registration takes it
+                with _registry_lock:
+                    cls = _registry.get(type_name)
         if cls is None:
             raise ProtoCorruptionError(f"Unknown atom type {type_name!r}")
         return cls

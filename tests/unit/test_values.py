@@ -213,6 +213,7 @@ def test_rank_bounds_bracket_exactly_one_rank():
                (), (1, "a"), ((),), FakeAtom(uuid.UUID(int=7))]
     for v in samples:
         low, high = rank_bounds(v)
+        assert len(order_key(v)) == 2 and type(order_key(v)[0]) is int  # the invariant rank_bounds relies on
         for w in samples:
             k = order_key(w)
             same = k[0] == order_key(v)[0]

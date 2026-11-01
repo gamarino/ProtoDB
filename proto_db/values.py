@@ -190,6 +190,10 @@ def canonical(value):
 def order_key(value) -> tuple:
     """Return ``(rank, payload)``, a key that totally orders orderable values.
 
+    Invariant (relied upon by :func:`rank_bounds` and by index range scans):
+    every order key is a 2-element tuple ``(rank, payload)`` whose ``rank`` is
+    an int in ``range(15)``; payloads are compared only between keys of one rank.
+
     Raises ``ProtoValidationError`` for NaN, lists, dicts and unsupported types.
     """
     if value is MISSING:
@@ -240,7 +244,10 @@ def rank_bounds(value) -> tuple:
     For every orderable ``x``, ``low < order_key(x) < high`` holds exactly when
     ``x`` has the same rank as ``value`` (``low`` and ``high`` are never the
     order key of any value).  Range scans use them to stay within the operand's
-    rank, since ordering comparisons match same-rank keys only (D28).  Raises
+    rank, since ordering comparisons match same-rank keys only (D28).  Relies on
+    the :func:`order_key` invariant that every order key is a 2-tuple
+    ``(rank, payload)``: the 1-tuple ``(rank,)`` sorts before every
+    ``(rank, payload)`` and ``(rank + 1,)`` after it.  Raises
     ``ProtoValidationError`` for unorderable values, like :func:`order_key`.
     """
     rank = order_key(value)[0]

@@ -200,3 +200,35 @@ def test_readers_unaffected_by_concurrent_writers():
     assert not errors, repr(errors[0])
     for version, model in derived:
         version.validate(model)
+
+
+def exact(elements):
+    return Counter((type(e).__qualname__, repr(e)) for e in elements)
+
+
+def test_plans_return_the_stored_values_not_an_equal_representative():
+    """Catches equal-but-distinct values (1, 1.0, Decimal("1.00"); one instant in two time zones)
+    collapsing into one representative yielded count times (review fix round 1)."""
+    from datetime import datetime, timedelta, timezone
+    noon = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+    elements = [1, 1.0, Decimal("1.00"), 2.5, 0.0, -0.0, noon, noon.astimezone(timezone(timedelta(hours=3)))]
+    for order in (elements, elements[::-1]):
+        for index in (RangeIndex("v", KeySpec.element()).build(order),
+                      _fold(RangeIndex("v", KeySpec.element()), order)):
+            for term in (Term(None, EQ, 1), Term(None, EQ, 0), Term(None, EQ, noon), Term(None, LE, 2.5),
+                         Term(None, NE, 2.5)):
+                assert exact(index.plan(term).execute()) == exact(e for e in order if term.matches(e)), term
+            assert exact(index.ordered_plan().execute()) == exact(order)
+            index.validate(order)
+    index = RangeIndex("v", KeySpec.element()).build(elements)
+    after = index.with_removed(1.0)
+    assert exact(after.plan(Term(None, EQ, 1)).execute()) == exact([1, Decimal("1.00")])
+    # Removing a value equal to a stored one but not stored itself removes an equal occurrence.
+    fallback = index.with_removed(Decimal("1.0"))
+    assert sum(1 for _ in fallback.plan(Term(None, EQ, 1)).execute()) == 2
+
+
+def _fold(index, elements):
+    for e in elements:
+        index = index.with_added(e)
+    return index

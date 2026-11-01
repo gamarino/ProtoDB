@@ -447,3 +447,15 @@ def test_key_iter_reversed_is_the_exact_reverse():
     for n in (0, 1, 5, 300):
         root = key_from_sorted((i, -i) for i in range(n))
         assert list(key_iter_reversed(root)) == list(key_iter(root))[::-1]
+
+
+def test_key_from_sorted_okeys_matches_key_from_sorted_and_checks_order():
+    """Catches the bulk builder with precomputed order keys building a different or unordered tree."""
+    from proto_db.collections.avl import key_from_sorted_okeys
+    pairs = [(MISSING, 0), (None, 1), (1, 2), (2.5, 3), ("a", 4), ((1, "b"), 5)]
+    tree = key_from_sorted_okeys((order_key(k), k, v) for k, v in pairs)
+    check_invariants(tree)
+    assert list(key_iter(tree)) == list(key_iter(key_from_sorted(pairs)))
+    assert key_from_sorted_okeys([]) is None
+    with pytest.raises(ProtoValidationError):
+        key_from_sorted_okeys([(order_key(2), 2, "x"), (order_key(1), 1, "y")])

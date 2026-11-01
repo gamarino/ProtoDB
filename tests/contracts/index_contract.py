@@ -22,7 +22,13 @@ An :class:`IndexContract` describes one index kind under test:
   default the scan oracle ``[e for e in elements if term.matches(e)]``; kinds
   answering terms the scan oracle refuses (``near[]``) supply their own;
 * ``element_key``: identity used to compare result multisets (default
-  :func:`proto_db.indexing.element_identity`).
+  :func:`proto_db.indexing.element_identity`);
+* ``exact_key`` (optional): a second key added to ``element_key`` when
+  comparing results, so that equal-but-distinct values must come back exactly
+  as a scan returns them (``1``, ``1.0`` and ``Decimal("1.00")`` are one key
+  but three values).  Plain-value registrations use :func:`exact_value_key`
+  (type and ``repr``); a plan must return the stored elements themselves, not
+  an equal representative.
 
 Checks (each a method taking a seed; :meth:`IndexContract.checks` lists them):
 
@@ -84,6 +90,12 @@ _RANGE_OPS = (LT, LE, GT, GE)
 _BETWEEN_OPS = (BETWEEN, BETWEEN_EXCL_BOTH, BETWEEN_EXCL_LOW, BETWEEN_EXCL_HIGH)
 
 
+def exact_value_key(value) -> tuple:
+    """``(type name, repr)`` of a plain value: distinguishes ``1``, ``1.0``, ``Decimal("1.00")``,
+    ``-0.0`` and aware datetimes of one instant in different time zones."""
+    return (type(value).__qualname__, repr(value))
+
+
 def scan_oracle(term: Term, elements: list) -> list:
     """Default oracle: the elements a full scan returns for ``term``."""
     return [e for e in elements if term.matches(e)]
@@ -101,6 +113,7 @@ class IndexContract:
     collection_key_spec: KeySpec | None = KeySpec.element()
     oracle: Callable[[Term, list], list] = scan_oracle
     element_key: Callable = element_identity
+    exact_key: Callable | None = None
 
     # -- helpers ------------------------------------------------------------------------
 
@@ -134,8 +147,13 @@ class IndexContract:
                 out.append(self.element_strategy(rng))
         return out
 
+    def _key(self, element):
+        if self.exact_key is None:
+            return self.element_key(element)
+        return (self.element_key(element), self.exact_key(element))
+
     def _multiset(self, elements) -> Counter:
-        return Counter(self.element_key(e) for e in elements)
+        return Counter(self._key(e) for e in elements)
 
     def terms_for(self, key_spec: KeySpec, elements: list, rng: random.Random, focus=()) -> list[Term]:
         """Generic terms derived from the elements' keys, plus the kind's own (``term_strategy``).
@@ -276,9 +294,9 @@ class IndexContract:
             self.assert_consistent(grown, elements + [extra], self.terms_for(key_spec, elements + [extra], rng),
                                    " (loaded, then added)")
             if elements:
-                victim = rng.choice(elements)
-                rest = list(elements)
-                rest.remove(victim)
+                i = rng.randrange(len(elements))
+                victim = elements[i]
+                rest = elements[:i] + elements[i + 1:]  # by position: list.remove would take False for 0
                 self.assert_consistent(loaded.with_removed(victim), rest, terms, " (loaded, then removed)")
 
     # -- (d) ----------------------------------------------------------------------------
@@ -455,9 +473,9 @@ class IndexContract:
         for e in elements:
             group = self.order_group(key_spec.extract(e))
             if runs and runs[-1][0] == group:
-                runs[-1][1][self.element_key(e)] += 1
+                runs[-1][1][self._key(e)] += 1
             else:
-                runs.append((group, Counter([self.element_key(e)])))
+                runs.append((group, Counter([self._key(e)])))
         return runs
 
     def check_ordered_iteration(self, seed: int) -> None:
@@ -608,7 +626,13 @@ def mixed_value(rng: random.Random):
     from datetime import date
     from decimal import Decimal
     from proto_db.values import FrozenDict, FrozenList
-    pick = rng.randrange(14)
+    pick = rng.randrange(16)
+    if pick == 14:
+        return rng.choice([1, 1.0, Decimal("1"), Decimal("1.00"), 0.0, -0.0, Decimal("0E-3"), True])
+    if pick == 15:
+        from datetime import datetime, timedelta, timezone
+        instant = datetime(2026, 1, 1, 12, tzinfo=timezone.utc) + timedelta(hours=rng.randrange(0, 2))
+        return instant.astimezone(timezone(timedelta(hours=rng.choice([-3, 0, 1, 5]))))
     if pick == 0:
         return rng.randrange(-3, 6)
     if pick == 1:
@@ -630,7 +654,9 @@ def mixed_value(rng: random.Random):
     if pick == 9:
         return FrozenList([rng.randrange(0, 3)])
     if pick == 10:
-        return FrozenDict({"k": rng.randrange(0, 2)})
+        if rng.random() < 0.5:
+            return FrozenDict({"k": rng.randrange(0, 2)})
+        return rng.choice([FrozenDict({"a": 1, "b": 2}), FrozenDict({"b": 2, "a": 1}), FrozenDict({"a": 1.0, "b": 2})])
     if pick == 11:
         return float("nan")
     if pick == 12:
@@ -662,8 +688,10 @@ def _register_equality_and_range() -> None:
                                key_specs=RECORD_KEY_SPECS))
         register(IndexContract(name=f"{kind}-mixed-records", index_factory=cls,
                                element_strategy=mixed_record_strategy, key_specs=RECORD_KEY_SPECS))
-        register(IndexContract(name=f"{kind}-values", index_factory=cls, element_strategy=value_strategy))
-        register(IndexContract(name=f"{kind}-mixed-values", index_factory=cls, element_strategy=mixed_value))
+        register(IndexContract(name=f"{kind}-values", index_factory=cls, element_strategy=value_strategy,
+                               exact_key=exact_value_key))
+        register(IndexContract(name=f"{kind}-mixed-values", index_factory=cls, element_strategy=mixed_value,
+                               exact_key=exact_value_key))
 
 
 _register_equality_and_range()

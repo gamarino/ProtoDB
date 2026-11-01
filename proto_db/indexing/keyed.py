@@ -10,13 +10,18 @@ Structure (persisted public fields of the index):
   key (D28), only ``!=`` and ``?!N``.
 * ``total_count`` -- the number of stored occurrences.
 
-A group is the tuple ``(members, odd, total)``: ``members`` a keyed tree
-mapping each orderable element (atoms by oid, values by ``order_key``) to its
-occurrence count, ``odd`` a keyed tree mapping the *surrogate* of each
-unorderable element (an orderable, injective, equality-preserving encoding,
-see :func:`surrogate`) to ``(element, count)``, and ``total`` the occurrences in
-the group.  Elements are counted, so a List holding an element twice stores it
-with count 2.
+A group is the tuple ``(members, total)``: ``members`` a keyed tree mapping a
+*member key* to ``(element, count)``, and ``total`` the occurrences in the
+group.  A member key is ``(equality part, exact token)``: the equality part is
+``(0, element)`` for an orderable element (atoms by oid, values by
+``order_key``) and ``(1, surrogate(element))`` for an unorderable one (see
+:func:`surrogate`); the exact token (:func:`exact_token`) tells apart values
+that are equal but not identical (``1``, ``1.0``, ``Decimal("1.00")``; aware
+datetimes of one instant in different zones).  Plans therefore return exactly
+the stored elements a scan returns, never an equal representative.  Equal
+members are adjacent, so a removal whose exact value is absent falls back to an
+equal member.  Elements are counted, so a List holding an element twice stores
+it with count 2.
 
 Every operation is a pure function over immutable trees (path copying), so an
 index version may be shared between threads, and plans capture only immutable
@@ -25,8 +30,10 @@ state.
 from __future__ import annotations
 
 import math
+import uuid
 from collections import Counter
 from collections.abc import Iterable, Iterator
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from ..collections import avl
@@ -35,14 +42,14 @@ from ..errors import ProtoCorruptionError, ProtoValidationError
 from ..query.plans import Estimate, IndexPlan
 from ..query.terms import (BETWEEN, BETWEEN_EXCL_BOTH, BETWEEN_EXCL_HIGH, BETWEEN_EXCL_LOW, EQ, GE, GT, IN,
                            IS_NONE, LE, LT, NE, NOT_NONE, Term, is_orderable)
-from ..values import MISSING, order_key, rank_bounds
+from ..values import MISSING, FrozenDict, FrozenList, is_atom, order_key, rank_bounds
 from .base import Index, element_identity
 from .keyspec import KeySpec
 
-__all__ = ["KeyGroupIndex", "surrogate", "EMPTY_GROUP"]
+__all__ = ["KeyGroupIndex", "surrogate", "exact_token", "EMPTY_GROUP"]
 
-#: The group of no element: ``(members, odd, total)``.
-EMPTY_GROUP = (None, None, 0)
+#: The group of no element: ``(members, total)``.
+EMPTY_GROUP = (None, 0)
 
 _NONE_OKEY = order_key(None)
 _MISSING_OKEY = order_key(MISSING)
@@ -59,9 +66,9 @@ def surrogate(value):
     orderable value ``("v", value)``; items are encoded recursively.  The tags
     make the encoding injective up to value equality (``values_equal`` for
     orderable parts, every NaN equal to every NaN, as
-    :func:`proto_db.indexing.element_identity`).  Only used inside the ``odd``
-    trees, which never hold orderable elements, so a surrogate cannot collide
-    with a real element.
+    :func:`proto_db.indexing.element_identity`).  Used as the equality part
+    ``(1, surrogate)`` of member keys, tagged apart from orderable elements
+    ``(0, element)``, so a surrogate cannot collide with a real element.
     """
     if isinstance(value, list):
         return ("l", tuple(surrogate(v) for v in value))
@@ -76,45 +83,122 @@ def surrogate(value):
     return ("v", value)
 
 
+# -- exact member keys ------------------------------------------------------------------------
+
+_EXACT_TAGS = {type(None): "N", bool: "b", int: "i", float: "f", Decimal: "D", str: "s", bytes: "y",
+               date: "d", time: "t", datetime: "dt", timedelta: "td", uuid.UUID: "u", tuple: "T", list: "L",
+               FrozenList: "FL", dict: "M", FrozenDict: "FM"}
+
+
+def _tz_token(value):
+    tz = value.tzinfo
+    if tz is None:
+        return None
+    offset = value.utcoffset()
+    return (None if offset is None else offset // timedelta(microseconds=1), repr(tz))
+
+
+def exact_token(value) -> tuple:
+    """An orderable token that tells apart values a scan would return as different objects (D30).
+
+    ``1``, ``1.0``, ``Decimal("1")`` and ``Decimal("1.00")`` are equal keys but
+    four tokens; so are ``0.0``/``-0.0`` and aware datetimes of one instant in
+    different time zones (offset and ``repr`` of the tzinfo are kept).  Tuples,
+    lists and dicts are encoded item by item, dicts in their own order.  Atoms
+    are identified by oid elsewhere, so their token is ``("a",)``.  The token
+    starts with a type tag (the qualified class name for subclasses), so values
+    of different classes never share a token.  Best effort for exotic tzinfo
+    classes whose ``repr`` is not stable: two tokens for one value only make
+    the index store two entries, never a wrong answer (removal falls back to an
+    equal entry).
+    """
+    if is_atom(value):
+        return ("a",)
+    cls = type(value)
+    tag = _EXACT_TAGS.get(cls) or f"{cls.__module__}.{cls.__qualname__}"
+    if value is None:
+        return (tag,)
+    if isinstance(value, bool):
+        return (tag, int(value))
+    if isinstance(value, int):
+        return (tag, int(value))
+    if isinstance(value, float):
+        return (tag, float.hex(value))
+    if isinstance(value, Decimal):
+        return (tag, str(value))
+    if isinstance(value, (str, bytes)):
+        return (tag, value)
+    if isinstance(value, datetime):
+        return (tag, value.replace(tzinfo=None).isoformat(), value.fold, _tz_token(value))
+    if isinstance(value, date):
+        return (tag, value.toordinal())
+    if isinstance(value, time):
+        return (tag, value.replace(tzinfo=None).isoformat(), value.fold, _tz_token(value))
+    if isinstance(value, timedelta):
+        return (tag, value.days, value.seconds, value.microseconds)
+    if isinstance(value, uuid.UUID):
+        return (tag, value.int)
+    if isinstance(value, (tuple, list)):
+        return (tag, tuple(exact_token(v) for v in value))
+    if isinstance(value, dict):
+        return (tag, tuple((exact_token(k), exact_token(v)) for k, v in value.items()))
+    return (tag, repr(value))
+
+
+def _equality_part(element) -> tuple:
+    """The part of a member key shared by every element equal to ``element`` (``element_identity`` classes)."""
+    return (0, element) if is_orderable(element) else (1, surrogate(element))
+
+
+def _member_key(element) -> tuple:
+    """``(equality part, exact token)``: members equal to one another are adjacent in the members tree."""
+    return (_equality_part(element), exact_token(element))
+
+
+def _equal_members_bounds(element) -> tuple:
+    """Order-key bounds enclosing every member key whose equality part equals ``element``'s."""
+    eq = order_key(_equality_part(element))
+    return (_R_TUPLE, (eq,)), (_R_TUPLE, (eq, (_ABOVE_EVERY_RANK,)))
+
+
+_R_TUPLE = order_key(())[0]
+#: A rank above every order-key rank: ``(_ABOVE_EVERY_RANK,)`` exceeds every order key (2-tuples, D17).
+_ABOVE_EVERY_RANK = order_key(MISSING)[0] + 1000
+
+
 # -- groups ---------------------------------------------------------------------------------
 
 def _group_add(group: tuple, element) -> tuple:
-    members, odd, total = group
-    if is_orderable(element):
-        n = avl.key_get(members, element, 0)
-        members = avl.key_put(members, element, n + 1)[0]
-    else:
-        s = surrogate(element)
-        entry = avl.key_get(odd, s)
-        odd = avl.key_put(odd, s, (element, 1) if entry is None else (entry[0], entry[1] + 1))[0]
-    return members, odd, total + 1
+    members, total = group
+    key = _member_key(element)
+    entry = avl.key_get(members, key)
+    members = avl.key_put(members, key, (element, 1) if entry is None else (entry[0], entry[1] + 1))[0]
+    return members, total + 1
 
 
 def _group_remove(group: tuple, element) -> tuple | None:
-    """The group with one occurrence of ``element`` fewer, or None when it holds none."""
-    members, odd, total = group
-    if is_orderable(element):
-        n = avl.key_get(members, element, 0)
-        if n == 0:
+    """The group with one occurrence of ``element`` fewer, or None when it holds none.
+
+    An exact match (same member key) is removed first; otherwise one occurrence
+    of an equal element (same ``element_identity`` class), if any.
+    """
+    members, total = group
+    key = _member_key(element)
+    entry = avl.key_get(members, key)
+    if entry is None:
+        low, high = _equal_members_bounds(element)
+        found = next(avl.key_iter_okey_range(members, low, high), None)
+        if found is None:
             return None
-        members = (avl.key_remove(members, element)[0] if n == 1
-                   else avl.key_put(members, element, n - 1)[0])
-    else:
-        s = surrogate(element)
-        entry = avl.key_get(odd, s)
-        if entry is None:
-            return None
-        odd = avl.key_remove(odd, s)[0] if entry[1] == 1 else avl.key_put(odd, s, (entry[0], entry[1] - 1))[0]
-    return members, odd, total - 1
+        key, entry = found
+    members = avl.key_remove(members, key)[0] if entry[1] == 1 else avl.key_put(members, key,
+                                                                                   (entry[0], entry[1] - 1))[0]
+    return members, total - 1
 
 
 def _group_iter(group: tuple) -> Iterator:
-    """Every occurrence stored in ``group`` (members first, then unorderable elements)."""
-    members, odd, _ = group
-    for element, n in avl.key_iter(members):
-        for _ in range(n):
-            yield element
-    for _, (element, n) in avl.key_iter(odd):
+    """Every occurrence stored in ``group``, each the stored element itself."""
+    for _, (element, n) in avl.key_iter(group[0]):
         for _ in range(n):
             yield element
 
@@ -125,36 +209,28 @@ def _groups_iter(groups: Iterable[tuple]) -> Iterator:
 
 
 class _GroupBuilder:
-    """Accumulates one group during a bulk build: elements by order key, unorderable ones by surrogate."""
+    """Accumulates one group during a bulk build, by exact member key."""
 
-    __slots__ = ("key", "members", "odd", "total")
+    __slots__ = ("key", "members", "total")
 
     def __init__(self, key):
         self.key = key
         self.members: dict = {}
-        self.odd: dict = {}
         self.total = 0
 
     def add(self, element) -> None:
         self.total += 1
-        if is_orderable(element):
-            slot = self.members.get(ok := order_key(element))
-            if slot is None:
-                self.members[ok] = [element, 1]
-            else:
-                slot[1] += 1
+        key = _member_key(element)
+        slot = self.members.get(ok := order_key(key))
+        if slot is None:
+            self.members[ok] = [key, element, 1]
         else:
-            s = surrogate(element)
-            slot = self.odd.get(ok := order_key(s))
-            if slot is None:
-                self.odd[ok] = [s, element, 1]
-            else:
-                slot[2] += 1
+            slot[2] += 1
 
     def group(self) -> tuple:
-        members = avl.key_from_sorted((e, n) for _, (e, n) in sorted(self.members.items(), key=_first))
-        odd = avl.key_from_sorted((s, (e, n)) for _, (s, e, n) in sorted(self.odd.items(), key=_first))
-        return members, odd, self.total
+        members = avl.key_from_sorted_okeys((ok, k, (e, n)) for ok, (k, e, n)
+                                            in sorted(self.members.items(), key=_first))
+        return members, self.total
 
 
 def _first(item):
@@ -206,7 +282,7 @@ class KeyGroupIndex(Index):
         group = None if group is None else _group_remove(group, element)
         if group is None:
             self._not_held(element, key)
-        groups = (avl.key_remove(self.groups, key)[0] if group[2] == 0
+        groups = (avl.key_remove(self.groups, key)[0] if group[1] == 0
                   else avl.key_put(self.groups, key, group)[0])
         return self._with(groups=groups, total_count=self.total_count - 1)
 
@@ -234,7 +310,7 @@ class KeyGroupIndex(Index):
             else:
                 builder = side
             builder.add(element)
-        groups = avl.key_from_sorted((b.key, b.group()) for _, b in sorted(builders.items(), key=_first))
+        groups = avl.key_from_sorted_okeys((ok, b.key, b.group()) for ok, b in sorted(builders.items(), key=_first))
         return self.empty()._with(groups=groups, side=side.group(), total_count=total)
 
     # -- plans ------------------------------------------------------------------------------
@@ -318,16 +394,16 @@ class KeyGroupIndex(Index):
         descent = math.log2(groups_n + 2)
         if op in (EQ, IN, IS_NONE):
             values = ([term.value] if op == EQ else self._distinct(term.value) if op == IN else [MISSING, None])
-            rows = sum(self._lookup(v)[2] for v in values)
+            rows = sum(self._lookup(v)[1] for v in values)
             return Estimate(rows=rows, cost=rows + len(values) * descent)
-        side_total = self.side[2]
+        side_total = self.side[1]
         if op == NOT_NONE:
-            absent = [self._lookup(MISSING)[2], self._lookup(None)[2]]
+            absent = [self._lookup(MISSING)[1], self._lookup(None)[1]]
             rows = self.total_count - sum(absent)
             visited = groups_n - sum(1 for n in absent if n) + (1 if side_total else 0)
             return Estimate(rows=rows, cost=rows + descent + visited)
         if op == NE:
-            rows = self.total_count - self._lookup(MISSING)[2] - self._lookup(term.value)[2]
+            rows = self.total_count - self._lookup(MISSING)[1] - self._lookup(term.value)[1]
             return Estimate(rows=rows, cost=self.total_count + groups_n + 1)
         lok, hik, lo_inc, hi_inc = self._range(term)
         keys = (avl.key_count_below(self.groups, hik, inclusive=hi_inc)
@@ -363,7 +439,7 @@ class KeyGroupIndex(Index):
         """The base entries plus ``entries`` (occurrences), ``keys`` (distinct orderable keys) and
         ``unorderable`` (occurrences whose key is unorderable)."""
         info = super().explain()
-        info.update(entries=self.total_count, keys=_count(self.groups), unorderable=self.side[2])
+        info.update(entries=self.total_count, keys=_count(self.groups), unorderable=self.side[1])
         return info
 
     @staticmethod
@@ -375,26 +451,25 @@ class KeyGroupIndex(Index):
                                    f"{self.key_spec.describe()}) is corrupt: {detail}")
 
     def _check_group(self, group, slot: tuple, stored: Counter) -> int:
-        if not isinstance(group, tuple) or len(group) != 3:
+        if not isinstance(group, tuple) or len(group) != 2:
             self._corrupt(f"malformed group {group!r}")
-        members, odd, total = group
+        members, total = group
         avl.check_invariants(members)
-        avl.check_invariants(odd)
         seen = 0
-        entries = [(e, n) for e, n in avl.key_iter(members)]
-        for s, entry in avl.key_iter(odd):
+        entries = []
+        for key, entry in avl.key_iter(members):
             if not isinstance(entry, tuple) or len(entry) != 2:
                 self._corrupt(f"malformed entry {entry!r}")
-            e = entry[0]
-            if is_orderable(e) or order_key(surrogate(e)) != order_key(s):
-                self._corrupt(f"element {e!r} is stored under the wrong surrogate {s!r}")
+            if (not isinstance(key, tuple) or len(key) != 2
+                    or order_key(key[0]) != order_key(_equality_part(entry[0]))):
+                self._corrupt(f"element {entry[0]!r} is stored under the wrong member key {key!r}")
             entries.append(entry)
         for element, n in entries:
             if type(n) is not int or n < 1:
                 self._corrupt(f"element {element!r} has the count {n!r}")
             if self._slot(self.key_spec.extract(element)) != slot:
                 self._corrupt(f"element {element!r} is filed under {slot!r}, not under its own key")
-            stored[(slot, element_identity(element))] += n
+            stored[(slot, element_identity(element), exact_token(element))] += n
             seen += n
         if total != seen:
             self._corrupt(f"a group records {total!r} occurrences but holds {seen}")
@@ -405,8 +480,9 @@ class KeyGroupIndex(Index):
 
         Checks the AVL invariants of every tree, that each stored element is
         filed under its own key with a positive count, that group and index
-        totals add up, and that the stored multiset of ``(key, element)`` equals
-        that of ``elements`` (no leftovers, no missing or miscounted entries).
+        totals add up, and that the stored multiset of ``(key, element, exact
+        token)`` equals that of ``elements`` (no leftovers, no missing or
+        miscounted entries, no equal-but-different value in place of the real one).
         That determines every answer, so the default plan-vs-scan comparison
         (O(keys x n)) is not repeated.
         """
@@ -423,7 +499,8 @@ class KeyGroupIndex(Index):
         total += self._check_group(self.side, ("unorderable",), stored)
         if total != self.total_count:
             self._corrupt(f"total_count is {self.total_count!r} but {total} occurrences are stored")
-        expected = Counter((self._slot(self.key_spec.extract(e)), element_identity(e)) for e in elements)
+        expected = Counter((self._slot(self.key_spec.extract(e)), element_identity(e), exact_token(e))
+                           for e in elements)
         if stored != expected:
             extra, missing = stored - expected, expected - stored
             self._corrupt(f"{sum(extra.values())} stored occurrences no element accounts for, "
