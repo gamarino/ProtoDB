@@ -114,6 +114,7 @@ from .core.dbobject import DBObject, MutableObject
 from .errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoOutcomeUnknownError,
                      ProtoUnexpectedError, ProtoUserError,
                      ProtoValidationError)
+from .storage.format import FORMAT_VERSION, RootRecord
 from .values import canonical, exact_token
 
 __all__ = ["ObjectSpace", "Database", "Transaction", "HistoryEntry", "SpaceRoot", "DatabaseRoot"]
@@ -340,12 +341,16 @@ def _publish(storage, ptr: AtomPointer, expected_epoch: int) -> None:
     raise ProtoUnexpectedError(f"Publishing the root failed: {error}") from error
 
 
-def _commit_root(storage, lock_timeout, build: Callable) -> bool:
+def _commit_root(storage, lock_timeout, build: Callable, coordinator=None) -> bool:
     """Run steps 3-7 of the commit protocol (D34); return True if a root was published.
 
     ``build(current_record)`` runs under the root lock; it checks conflicts and returns
     the pointer of the saved new :class:`SpaceRoot`, or ``None`` to publish nothing.
+    With a cluster ``coordinator`` the cluster write lease replaces the root lock
+    (:func:`_commit_under_lease`).
     """
+    if coordinator is not None:
+        return _commit_under_lease(storage, coordinator, lock_timeout, build)
     lock = storage.root_lock(lock_timeout)
     lock.__enter__()
     try:
@@ -369,6 +374,51 @@ def _commit_root(storage, lock_timeout, build: Callable) -> bool:
     return ptr is not None
 
 
+def _commit_under_lease(storage, coordinator, lock_timeout, build: Callable) -> bool:
+    """Steps 3-7 of the commit protocol under the cluster write lease (D44, D45).
+
+    The caller has already saved and flushed (uploaded) its records.  Under the lease the
+    latest root is the one propagated by the granting majority, or the storage's when the
+    propagation is not certain; ``build`` validates and merges against it; the root is
+    published with ``expected_epoch`` = that root's epoch, the epoch half of the lease's
+    fencing token.  A lease that expired before publishing raises ``ProtoConflictError``
+    without touching the storage; a failed conditional write under the lease is a fencing
+    event (counted and logged by the coordinator) and raises ``ProtoConflictError``, which
+    ``Database.run`` retries.  The release, which broadcasts the new root, is best effort.
+    """
+    lease = coordinator.acquire(lock_timeout)
+    try:
+        if lease.root_certain:
+            current = lease.root
+        else:
+            current = storage.read_root()
+            coordinator.observe_root(current, from_storage=True)
+        lease.bind_root(current)
+        ptr = build(current)
+        if ptr is None:
+            return False
+        storage.flush()
+        if not lease.is_valid():
+            raise ProtoConflictError("The cluster write lease expired before the root was published; "
+                                     "nothing was published")
+        try:
+            _publish(storage, ptr, lease.expected_epoch)
+        except ProtoConflictError as e:
+            coordinator.record_fencing_event(lease, e)
+            raise
+        except BaseException:
+            coordinator.mark_root_suspect()   # the outcome may be unknown: the next holder reads the storage
+            raise
+        coordinator.published(lease, RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset,
+                                                lease.expected_epoch + 1))
+        return True
+    finally:
+        try:
+            coordinator.release(lease)
+        except (ProtoDBError, OSError) as e:
+            logger.error("Releasing the cluster write lease failed: %s", e)
+
+
 # -- ObjectSpace ------------------------------------------------------------------------------
 
 class ObjectSpace:
@@ -379,15 +429,26 @@ class ObjectSpace:
     Args:
         storage: the shared storage.
         lock_timeout: seconds commits wait for the root lock (``None``: the storage's
-            default); expiry raises ``ProtoTimeoutError``.
+            default), or for the cluster write lease (``None``: the coordinator's
+            ``acquire_timeout``); expiry raises ``ProtoTimeoutError``.
+        coordinator: a started :class:`~proto_db.cluster.coordinator.ClusterCoordinator`
+            (D44, D45) when several processes write the space.  Commits then flush their
+            records, acquire the cluster write lease (instead of the root lock), validate
+            and merge against the latest root propagated by the peers, publish with the
+            lease's fencing epoch and broadcast the new root; transactions take their
+            snapshot from the root the coordinator knows.  Every writer of the space must
+            use a coordinator of the same cluster.  The caller owns the coordinator
+            (:meth:`close` does not stop it).  ``None`` (default): no cluster, unchanged
+            behaviour.
     """
 
-    def __init__(self, storage, *, lock_timeout: Optional[float] = None):
+    def __init__(self, storage, *, lock_timeout: Optional[float] = None, coordinator=None):
         if lock_timeout is not None and (isinstance(lock_timeout, bool)
                                          or not isinstance(lock_timeout, (int, float)) or lock_timeout < 0):
             raise ProtoValidationError("lock_timeout must be None or a non-negative number of seconds")
         self._storage = storage
         self._lock_timeout = lock_timeout
+        self._coordinator = coordinator
         self._closed = False
         self._state_lock = threading.Lock()
 
@@ -400,6 +461,24 @@ class ObjectSpace:
     def lock_timeout(self) -> Optional[float]:
         """Seconds a commit waits for the root lock (``None``: the storage default)."""
         return self._lock_timeout
+
+    @property
+    def coordinator(self):
+        """The cluster coordinator commits go through, or ``None``."""
+        return self._coordinator
+
+    def _snapshot_record(self):
+        """The root a new transaction starts from: the coordinator's known root when there is
+        one (epochs never go backwards), else the storage's."""
+        coordinator = self._coordinator
+        if coordinator is None:
+            return self._storage.read_root()
+        known, record = coordinator.known_root()
+        if known:
+            return record
+        record = self._storage.read_root()
+        coordinator.observe_root(record, from_storage=True)
+        return record
 
     def _check_open(self) -> None:
         if self._closed:
@@ -424,7 +503,7 @@ class ObjectSpace:
                                 previous=None, version=0, committed_at=_utc_now(), context=context)
             return context.save(SpaceRoot(databases=databases.set_at(name, root), context=context))
 
-        _commit_root(self._storage, self._lock_timeout, build)
+        _commit_root(self._storage, self._lock_timeout, build, self._coordinator)
         return Database(self, name)
 
     def open_database(self, name: str) -> "Database":
@@ -561,7 +640,7 @@ class Transaction:
         self._mreads: dict = {}         # mutable name -> token (or ABSENT) seen in the snapshot
         self._mwrites: dict = {}        # mutable name -> value or REMOVED
         self._mexpected: set = set()    # mutables set blindly: must still exist at commit
-        record = self.storage.read_root()
+        record = database.space._snapshot_record()
         self._epoch = record.epoch if record is not None else 0
         self._snapshot_space = _load_space(self, record)
         self._db_root = database._root_in(self, record)
@@ -812,7 +891,9 @@ class Transaction:
             if isinstance(value, Atom):
                 self.save(value)
         space = self._database.space
-        if _commit_root(self.storage, space.lock_timeout, self._build_root):
+        if space.coordinator is not None:
+            self.storage.flush()   # upload the records before asking for the cluster lease (D44)
+        if _commit_root(self.storage, space.lock_timeout, self._build_root, space.coordinator):
             # Post-publish, cannot fail: a committed value's log was consumed by this
             # commit, so a later transaction reusing it must not replay it again (D33).
             for value in written:

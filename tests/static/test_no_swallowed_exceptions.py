@@ -53,6 +53,11 @@ CHECKED_ROOTS = [
     "proto_db/runtime/fsm.py",
     "proto_db/interop/__init__.py",
     "proto_db/interop/arrow.py",
+    "proto_db/cluster/__init__.py",
+    "proto_db/cluster/protocol.py",
+    "proto_db/cluster/lease.py",
+    "proto_db/cluster/transport.py",
+    "proto_db/cluster/coordinator.py",
 ]
 
 

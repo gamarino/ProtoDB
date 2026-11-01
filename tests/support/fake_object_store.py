@@ -16,7 +16,10 @@ Faults are armed per operation with :meth:`FakeObjectStore.inject`:
 ``random_faults`` arms the same faults at random (``transient``, ``unknown_before`` and
 ``unknown_after`` on writes; ``transient`` on reads) with a seeded generator.  ``log``
 records every applied write as ``(operation, key)`` in application order, so tests can
-check that a root write came after the segment writes it depends on.  ``before_write``
+check that a root write came after the segment writes it depends on.  ``failed_preconditions``
+counts, per key, the conditional writes refused because their precondition did not hold
+(injected ``precondition`` faults excluded): the storage-level measure of root write
+contention (D44).  ``before_write``
 is an optional hook ``(operation, key) -> None`` called before each write is applied,
 used to interleave a competing writer at an exact point.
 """
@@ -46,6 +49,7 @@ class FakeObjectStore:
         self.before_write = before_write
         self.log = []
         self.calls = {op: 0 for op in OPERATIONS}
+        self.failed_preconditions = {}     # key -> conditional writes refused by a real precondition
 
     # --- fault control ------------------------------------------------------------
 
@@ -110,10 +114,10 @@ class FakeObjectStore:
             fault = self._take_fault(operation, key)
             self._raise_before(fault, operation, key)
             current = self._objects.get(key)
-            if operation == "put_if_absent" and current is not None:
-                raise PreconditionFailedError(f"{key} already exists")
-            if operation == "put_if_match" and (current is None or current[1] != etag):
-                raise PreconditionFailedError(f"{key} does not have etag {etag}")
+            if (operation == "put_if_absent" and current is not None) or \
+                    (operation == "put_if_match" and (current is None or current[1] != etag)):
+                self.failed_preconditions[key] = self.failed_preconditions.get(key, 0) + 1
+                raise PreconditionFailedError(f"{key}: precondition of {operation} failed")
             new_etag = self._next_etag()
             self._objects[key] = (data, new_etag)
             self.log.append((operation, key))

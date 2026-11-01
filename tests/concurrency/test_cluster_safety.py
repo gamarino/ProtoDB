@@ -1,0 +1,234 @@
+"""Fault-injection safety of the cluster lease (Task 8.3c, D44, D45).
+
+Hypothesis draws a schedule for an in-process cluster of 3 or 5 peers committing to one
+shared storage: message drop, duplicate and delay (reorder) rates, per-node clock drift
+within the bound the drift margin covers, and timed events -- partitions, heals, crashes
+(a node's transport stops while its threads keep running: a frozen or partitioned
+process), restarts (a fresh coordinator with the default startup grace) and freezes (a
+node's next root publish stalls for longer than a lease: a stale holder).
+
+Invariants checked on every schedule, in global real time (``time.monotonic``, with each
+node's drifting clock mapped back by ``DriftClock.to_real``):
+
+1. at most one peer believes it holds a valid lease at any instant (lease intervals
+   ``[acquired, min(valid_until, released)]`` of distinct leases never overlap);
+2. no committed update is lost or duplicated: every ``Database.run`` that returned added
+   its unique id to a blind-written ``CountedSet`` exactly once, and no other id appears;
+3. a stale holder's publish is rejected by the storage: every root publish passes an
+   expected epoch, and a publish whose expected epoch was no longer current never
+   succeeds; when a frozen holder resumed after another commit, it was fenced.
+"""
+import itertools
+import threading
+import time
+
+import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
+
+from proto_db.errors import ProtoConflictError, ProtoTimeoutError, ProtoValidationError
+from proto_db.storage.memory import MemoryStorage
+from proto_db.transactions import ObjectSpace
+from tests.support.cluster import Cluster, DriftClock
+
+pytestmark = [pytest.mark.freethreaded, pytest.mark.timeout(240)]
+
+LEASE = 0.3
+MARGIN = 0.03
+RHO = 0.04                  # 2 * RHO * LEASE / (1 + RHO) = 0.023 <= MARGIN
+RUN_SECONDS = 1.2
+THREADS_PER_NODE = 2
+COORD_KW = dict(lease_duration=LEASE, drift_margin=MARGIN, request_timeout=0.08, startup_grace=0.0,
+                backoff=(0.001, 0.02), acquire_timeout=0.6)
+
+
+class FencingProbe:
+    """Shared storage proxy: checks invariant 3 and implements freezes."""
+
+    def __init__(self, inner):
+        self._inner = inner
+        self._lock = threading.Lock()
+        self.violations = []
+        self.failed_cas = 0
+        self.freezes = {}             # node -> seconds to stall its next publish
+        self.frozen_results = []      # (epoch moved during the stall, publish raised a conflict)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def for_node(self, node_id):
+        probe = self
+
+        class NodeView:
+            def __getattr__(self, name):
+                return getattr(probe._inner, name)
+
+            def publish_root(self, ptr, expected_epoch):
+                return probe.publish_as(node_id, ptr, expected_epoch)
+
+        return NodeView()
+
+    def _epoch(self):
+        root = self._inner.read_root()
+        return root.epoch if root is not None else 0
+
+    def publish_root(self, ptr, expected_epoch):
+        return self.publish_as("setup", ptr, expected_epoch)
+
+    def publish_as(self, node_id, ptr, expected_epoch):
+        if expected_epoch is None:
+            with self._lock:
+                self.violations.append(f"{node_id} published without an expected epoch")
+        with self._lock:
+            stall = self.freezes.pop(node_id, None)
+        moved = None
+        if stall is not None:
+            before = self._epoch()
+            time.sleep(stall)
+            moved = self._epoch() != before
+        current = self._epoch()
+        try:
+            record = self._inner.publish_root(ptr, expected_epoch)
+        except ProtoConflictError:
+            with self._lock:
+                self.failed_cas += 1
+                if moved is not None:
+                    self.frozen_results.append((moved, True))
+            raise
+        with self._lock:
+            if expected_epoch != current:
+                self.violations.append(f"{node_id} published on stale epoch {expected_epoch} (current {current})")
+            if moved is not None:
+                self.frozen_results.append((moved, False))
+        return record
+
+
+class Recorder:
+    """Records every lease a node held, in real time."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.leases = []
+
+    def wrap(self, node, clock):
+        acquire, release = node.acquire, node.release
+
+        def recorded_release(lease):
+            release(lease)
+            end = min(lease.valid_until, lease.released_at if lease.released_at is not None else lease.valid_until)
+            with self._lock:
+                self.leases.append((clock.to_real(lease.acquired_at), clock.to_real(end), node.node_id,
+                                    lease.term))
+
+        node.acquire = acquire
+        node.release = recorded_release
+
+
+events_strategy = st.lists(
+    st.tuples(st.floats(0.05, RUN_SECONDS - 0.2),
+              st.sampled_from(["partition", "heal", "crash", "restart", "freeze"]),
+              st.integers(0, 4), st.integers(0, 2 ** 16)),
+    max_size=5)
+
+schedule_strategy = st.fixed_dictionaries({
+    "size": st.sampled_from([3, 5]),
+    "drop": st.sampled_from([0.0, 0.05, 0.2]),
+    "duplicate": st.sampled_from([0.0, 0.1, 0.3]),
+    "delay": st.sampled_from([0.0, 0.003, 0.01]),
+    "rates": st.lists(st.floats(1 - RHO, 1 + RHO), min_size=5, max_size=5),
+    "events": events_strategy,
+    "seed": st.integers(0, 2 ** 16),
+})
+
+
+def _run_schedule(schedule):
+    size = schedule["size"]
+    clocks = {f"n{i}": DriftClock(rate=schedule["rates"][i], offset=1000.0 * i) for i in range(size)}
+    storage = FencingProbe(MemoryStorage())
+    recorder = Recorder()
+    ObjectSpace(storage).new_database("db")
+    uids = itertools.count()
+    committed = set()
+    committed_lock = threading.Lock()
+    unexpected = []
+    with Cluster(size, seed=schedule["seed"], clocks=clocks, **COORD_KW) as cl:
+        cl.net.set_faults(drop=schedule["drop"], duplicate=schedule["duplicate"], delay=(0.0, schedule["delay"]))
+        for node_id in cl.ids:
+            recorder.wrap(cl[node_id], clocks[node_id])
+        stop_at = time.monotonic() + RUN_SECONDS
+
+        def worker(node_id):
+            while time.monotonic() < stop_at:
+                node = cl.nodes[node_id]
+                db = ObjectSpace(storage.for_node(node_id), coordinator=node, lock_timeout=0.6).open_database("db")
+                uid = next(uids)
+                try:
+                    db.run(lambda tr: tr.set_root_object("ids", tr.new_counted_set().add(uid)),
+                           retries=3, backoff=(0.001, 0.01))
+                except (ProtoTimeoutError, ProtoConflictError, ProtoValidationError):
+                    continue      # not committed: no quorum, retries exhausted, or the node stopped
+                except BaseException as e:   # surfaced by the assertion below
+                    unexpected.append(e)
+                    raise
+                with committed_lock:
+                    committed.add(uid)
+
+        threads = [threading.Thread(target=worker, args=(n,), daemon=True)
+                   for n in cl.ids for _ in range(THREADS_PER_NODE)]
+        for t in threads:
+            t.start()
+        start = time.monotonic()
+        for at, kind, who, salt in sorted(schedule["events"]):
+            time.sleep(max(0.0, start + at - time.monotonic()))
+            node_id = cl.ids[who % size]
+            if kind == "partition":
+                members = list(cl.ids)
+                cut = 1 + salt % (size - 1)
+                rotated = members[salt % size:] + members[:salt % size]
+                cl.net.partition(set(rotated[:cut]), set(rotated[cut:]))
+            elif kind == "heal":
+                cl.net.heal()
+            elif kind == "crash":
+                cl.crash(node_id)
+            elif kind == "restart":
+                cl.restart(node_id, startup_grace=LEASE)
+                recorder.wrap(cl[node_id], clocks[node_id])
+            else:
+                storage.freezes[node_id] = LEASE * 1.5
+        for t in threads:
+            t.join(30)
+        assert not any(t.is_alive() for t in threads), "a worker hung"
+    assert not unexpected, unexpected
+
+    # 1. lease beliefs never overlap in real time
+    leases = sorted(recorder.leases)
+    for (s1, e1, n1, t1), (s2, e2, n2, t2) in zip(leases, leases[1:]):
+        assert e1 <= s2 + 1e-6, f"overlapping leases: {n1}/term {t1} [{s1:.4f}, {e1:.4f}] and " \
+                                f"{n2}/term {t2} [{s2:.4f}, {e2:.4f}]"
+    # 2. no lost or duplicated update
+    tr = ObjectSpace(storage).open_database("db").new_transaction()
+    counted = tr.get_root_object("ids")
+    found = {} if counted is None else dict(counted.items())
+    tr.abort()
+    assert set(found) == committed, (sorted(set(found) - committed)[:5], sorted(committed - set(found))[:5])
+    assert all(c == 1 for c in found.values())
+    # 3. stale publishes never succeed; a frozen holder overtaken by another commit was fenced
+    assert not storage.violations, storage.violations
+    for moved, fenced in storage.frozen_results:
+        assert fenced or not moved
+    return len(committed), len(leases), storage.failed_cas
+
+
+@settings(max_examples=14, deadline=None, derandomize=True,
+          suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large])
+@given(schedule=schedule_strategy)
+def test_random_fault_schedules_keep_the_lease_and_the_data_safe(schedule):
+    _run_schedule(schedule)
+
+
+def test_a_frozen_holder_overtaken_by_another_commit_is_fenced():
+    commits, leases, failed = _run_schedule({
+        "size": 3, "drop": 0.0, "duplicate": 0.0, "delay": 0.0, "rates": [1.0] * 5, "seed": 7,
+        "events": [(0.2, "freeze", 0, 0)],
+    })
+    assert commits > 0 and failed >= 1
