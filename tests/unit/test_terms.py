@@ -15,7 +15,7 @@ from proto_db.core.dbobject import DBObject
 from proto_db.errors import ProtoNotSupportedError, ProtoValidationError
 from proto_db.indexing import KeySpec, register_extractor
 from proto_db.query.terms import (BETWEEN, BETWEEN_EXCL_BOTH, BETWEEN_EXCL_HIGH, BETWEEN_EXCL_LOW, EQ, GE,
-                                  GT, IN, IS_NONE, LE, LT, NE, NEAR, NOT_NONE, OPERATORS, Term)
+                                  GT, IN, IS_NONE, LE, LT, NE, NEAR, NOT_NONE, OPERATORS, NearQuery, Term)
 from proto_db.values import MISSING
 
 
@@ -131,9 +131,45 @@ def test_dotted_and_extractor_paths():
 
 
 def test_near_is_not_answered_by_the_scan_oracle():
-    t = Term("v", NEAR, ([1.0, 0.0], 3))
+    t = Term("v", NEAR, NearQuery(vector=[1.0, 0.0], k=3))
     with pytest.raises(ProtoNotSupportedError):
         t.matches(rec(v=[1.0, 0.0]))
+
+
+def test_near_values_are_canonical_and_hashable():
+    q = NearQuery(vector=[1, 0.5], k=2, metric="cosine")
+    assert q.vector == (1.0, 0.5) and all(type(x) is float for x in q.vector)
+    t = Term("v", NEAR, q)
+    assert hash(t) == hash(Term("v", NEAR, NearQuery(vector=(1.0, 0.5), k=2, metric="cosine")))
+    assert {t: 1}[Term("v", NEAR, {"vector": [1.0, 0.5], "k": 2, "metric": "cosine"})] == 1
+    assert Term("v", NEAR, {"vector": [1.0], "threshold": 0.3}).value == NearQuery((1.0,), threshold=0.3)
+    assert NearQuery((1.0,), k=1).metric is None  # None = the index's default metric
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"vector": [], "k": 1}, {"vector": [1.0]}, {"vector": [1.0], "k": 0}, {"vector": [1.0], "k": True},
+    {"vector": [1.0], "k": 1.5}, {"vector": [float("nan")], "k": 1}, {"vector": [float("inf")], "k": 1},
+    {"vector": [True], "k": 1}, {"vector": ["1"], "k": 1}, {"vector": 1.0, "k": 1},
+    {"vector": [1.0], "threshold": float("nan")}, {"vector": [1.0], "threshold": "0.1"},
+    {"vector": [1.0], "k": 1, "metric": "manhattan"},
+])
+def test_near_query_validation(kwargs):
+    with pytest.raises(ProtoValidationError):
+        NearQuery(**kwargs)
+
+
+@pytest.mark.parametrize("value", [([1.0, 0.0], 3), [1.0], 5, {"vector": [1.0]}, {"vector": [1.0], "k": 1, "x": 2}])
+def test_near_terms_need_a_near_query(value):
+    with pytest.raises(ProtoValidationError):
+        Term("v", NEAR, value)
+
+
+def test_in_over_a_set_is_stored_in_a_canonical_order():
+    a = Term("x", IN, {3, "b", 1, 2.5, "a"})
+    b = Term("x", IN, frozenset(["a", 2.5, 1, "b", 3]))
+    assert a == b and hash(a) == hash(b)
+    assert a.value == (1, 2.5, 3, "a", "b")
+    assert Term("x", IN, [3, 1]).value == (3, 1)  # sequences keep the caller's order
 
 
 @pytest.mark.parametrize("path, op, value", [

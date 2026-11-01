@@ -1,4 +1,4 @@
-"""Unit tests for proto_db.indexes.keyspec (spec section 8.3, Task 4.1).
+"""Unit tests for proto_db.indexing.keyspec (spec section 8.3, Task 4.1).
 
 Catches: wrong key extraction (absent attributes or mapping keys not mapped to
 MISSING, explicit None confused with absence, dotted paths not descending through

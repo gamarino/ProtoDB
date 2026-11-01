@@ -81,32 +81,47 @@ class CollectionScanPlan(QueryPlan):
 
 
 class IndexPlan(QueryPlan):
-    """Elements matching ``term``, produced by ``index`` (returned by ``Index.plan``).
+    """Elements produced by ``index``: those matching ``term`` (``Index.plan``) or, with ``term=None``,
+    every element in key order (``Index.ordered_plan``).
 
-    ``producer()`` must return a fresh iterator over the matching elements on
-    every call (each occurrence once) and capture only immutable state, so the
-    plan can be executed several times and from several threads.  ``kind`` names
-    the access path in ``explain()`` (e.g. ``"IndexLookup"``, ``"IndexRange"``).
+    ``producer()`` must return a fresh iterator over the elements on every call
+    (each occurrence once) and capture only immutable state, so the plan can be
+    executed several times and from several threads.  ``kind`` names the access
+    path in ``explain()`` (e.g. ``"IndexLookup"``, ``"IndexRange"``).
+    ``estimate`` overrides ``index.estimate(term)`` and is required when
+    ``term`` is None; ``details`` adds entries to ``explain()``.
     """
 
-    def __init__(self, index, term, producer: Callable[[], Iterator], *, kind: str = "IndexLookup"):
+    def __init__(self, index, term, producer: Callable[[], Iterator], *, kind: str = "IndexLookup",
+                 estimate: Estimate | None = None, details: dict | None = None):
         if not callable(producer):
             raise ProtoValidationError(f"IndexPlan needs a callable producer, not {type(producer).__name__}")
         if not isinstance(kind, str) or not kind:
             raise ProtoValidationError(f"IndexPlan kind must be a non-empty str, not {kind!r}")
+        if estimate is not None and not isinstance(estimate, Estimate):
+            raise ProtoValidationError(f"IndexPlan estimate must be an Estimate, not {type(estimate).__name__}")
+        if term is None and estimate is None:
+            raise ProtoValidationError("An IndexPlan without a term needs an explicit estimate")
+        details = dict(details or {})
+        clash = sorted({"plan", "index", "term"} & set(details))
+        if clash:
+            raise ProtoValidationError(f"IndexPlan details may not redefine {clash}")
         self.index = index
         self.term = term
         self.kind = kind
         self._producer = producer
+        self._estimate = estimate
+        self._details = details
 
     def execute(self) -> Iterator:
-        """Return a new iterator over the matching elements."""
+        """Return a new iterator over the plan's elements."""
         return iter(self._producer())
 
     def explain(self) -> dict:
-        """``{"plan": kind, "index": index.explain(), "term": term.describe()}``."""
-        return {"plan": self.kind, "index": self.index.explain(), "term": self.term.describe()}
+        """``{"plan": kind, "index": index.explain(), "term": term.describe() or None, **details}``."""
+        term = None if self.term is None else self.term.describe()
+        return {"plan": self.kind, "index": self.index.explain(), "term": term, **self._details}
 
     def estimate(self) -> Estimate:
-        """The index's estimate for the term."""
-        return self.index.estimate(self.term)
+        """The explicit estimate, else the index's estimate for the term."""
+        return self._estimate if self._estimate is not None else self.index.estimate(self.term)

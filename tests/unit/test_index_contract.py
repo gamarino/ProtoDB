@@ -8,10 +8,10 @@ check aimed at its defect, while the correct ScanIndex passes everything.
 import pytest
 
 from proto_db.errors import ProtoCorruptionError
-from proto_db.query.plans import IndexPlan
+from proto_db.query.plans import Estimate, IndexPlan
 from tests.contracts.index_contract import (INDEX_CONTRACTS, RECORD_KEY_SPECS, SEEDS, IndexContract,
                                             check_cases, record_strategy, value_strategy)
-from tests.support.scan_index import ScanIndex
+from tests.support.scan_index import OrderedScanIndex, ScanIndex
 
 
 @pytest.mark.parametrize("contract, check, seed", check_cases())
@@ -20,7 +20,8 @@ def test_index_contract(contract, check, seed):
 
 
 def test_scan_index_is_registered():
-    assert {c.name for c in INDEX_CONTRACTS} >= {"ScanIndex-records", "ScanIndex-values"}
+    assert {c.name for c in INDEX_CONTRACTS} >= {"ScanIndex-records", "ScanIndex-values",
+                                                 "OrderedScanIndex-records", "OrderedScanIndex-values"}
 
 
 # -- broken variants -------------------------------------------------------------------------
@@ -28,12 +29,16 @@ def test_scan_index_is_registered():
 class NoopRemoveIndex(ScanIndex):
     """Defect: with_removed returns a new index with unchanged content."""
 
+    __type_name__ = "tests.unit.test_index_contract.NoopRemoveIndex"
+
     def with_removed(self, element):
         return self._with()
 
 
 class DroppingPlanIndex(ScanIndex):
     """Defect: plan silently drops the first match."""
+
+    __type_name__ = "tests.unit.test_index_contract.DroppingPlanIndex"
 
     def plan(self, term):
         inner = super().plan(term)
@@ -48,6 +53,8 @@ class DroppingPlanIndex(ScanIndex):
 
 class PathBlindIndex(ScanIndex):
     """Defect: supports() ignores the term path (answers terms on other attributes with its own key)."""
+
+    __type_name__ = "tests.unit.test_index_contract.PathBlindIndex"
 
     def supports(self, term):
         return term.op in self.SUPPORTED_OPS
@@ -70,6 +77,8 @@ class PathBlindIndex(ScanIndex):
 class LenientPlanIndex(ScanIndex):
     """Defect: plan on an unsupported term returns an empty plan instead of raising."""
 
+    __type_name__ = "tests.unit.test_index_contract.LenientPlanIndex"
+
     def plan(self, term):
         if not self.supports(term):
             return IndexPlan(self, term, lambda: iter(()))
@@ -79,6 +88,8 @@ class LenientPlanIndex(ScanIndex):
 class MutatingIndex(ScanIndex):
     """Defect: with_added updates the receiver in place and returns it."""
 
+    __type_name__ = "tests.unit.test_index_contract.MutatingIndex"
+
     def with_added(self, element):
         object.__setattr__(self, "content", self.content.add(element))
         return self
@@ -86,6 +97,8 @@ class MutatingIndex(ScanIndex):
 
 class ContentKeepingBuildIndex(ScanIndex):
     """Defect: build folds onto the receiver instead of an empty index."""
+
+    __type_name__ = "tests.unit.test_index_contract.ContentKeepingBuildIndex"
 
     def build(self, elements):
         index = self
@@ -97,8 +110,45 @@ class ContentKeepingBuildIndex(ScanIndex):
 class ForgetfulEmptyIndex(ScanIndex):
     """Defect: empty() returns the receiver itself (content kept)."""
 
+    __type_name__ = "tests.unit.test_index_contract.ForgetfulEmptyIndex"
+
     def empty(self):
         return self._with()
+
+
+class WrongOrderIndex(OrderedScanIndex):
+    """Defect: descending ordered iteration returns the ascending order."""
+
+    __type_name__ = "tests.unit.test_index_contract.WrongOrderIndex"
+
+    def ordered_plan(self, descending=False):
+        return super().ordered_plan(descending=False)
+
+
+class UnstableOrderIndex(OrderedScanIndex):
+    """Defect: orders by the key's hash instead of its order key."""
+
+    __type_name__ = "tests.unit.test_index_contract.UnstableOrderIndex"
+
+    def ordered_plan(self, descending=False):
+        content = self.content
+        key_spec = self.key_spec
+
+        def produce():
+            items = sorted(content.items(), key=lambda item: hash(repr(key_spec.extract(item[0]))))
+            for element, n in items:
+                yield from [element] * n
+
+        return IndexPlan(self, None, produce, estimate=Estimate(rows=0, cost=0))
+
+
+class OrderClaimingIndex(ScanIndex):
+    """Defect: claims ordered iteration on every key but cannot provide it."""
+
+    __type_name__ = "tests.unit.test_index_contract.OrderClaimingIndex"
+
+    def supports_order(self, key_spec):
+        return True
 
 
 def contracts_for(cls):
@@ -131,6 +181,9 @@ def failing_seeds(cls, check):
     (MutatingIndex, "check_hooks_do_not_mutate"),
     (ContentKeepingBuildIndex, "check_hook_equivalences"),
     (ForgetfulEmptyIndex, "check_empty"),
+    (WrongOrderIndex, "check_ordered_iteration"),
+    (UnstableOrderIndex, "check_ordered_iteration"),
+    (OrderClaimingIndex, "check_ordered_iteration"),
 ])
 def test_contract_rejects_broken_index(cls, check):
     assert failing_seeds(cls, check), f"{check} did not catch {cls.__name__}"

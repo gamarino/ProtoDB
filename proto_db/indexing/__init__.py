@@ -1,9 +1,9 @@
 """ProtoDB 2.0 index framework (spec section 8.3).
 
-This package is ``proto_db.indexing`` rather than the spec's ``proto_db.indexes``
-because the 0.1 module ``proto_db/indexes.py`` must stay until Task 8.5 (ruling
-R4) and a package of the same name would shadow it (D29).  Persisted type names
-already use the ``proto_db.indexes.`` prefix, so a later rename changes no data.
+``proto_db.indexing`` is the permanent name of this package (ruling R16): the
+spec's ``proto_db.indexes`` collides with the 0.1 module ``proto_db/indexes.py``.
+Index classes persist under their own stable ``__type_name__``
+(``proto_db.indexing.Index`` for the abstract base, D29).
 
 ``KeySpec`` and ``register_extractor`` live in :mod:`.keyspec`; ``Index`` and
 ``element_identity`` in :mod:`.base`.  The latter are resolved lazily (PEP 562)

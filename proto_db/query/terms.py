@@ -21,10 +21,16 @@ Semantics (D28):
   ``between()`` excludes both, ``between(]`` excludes the lower, ``between[)``
   the upper; both bounds must share a type rank.
 * Keys that cannot be ordered (lists, dicts, NaN) match only ``?!N`` and ``!=``.
-* ``near[]`` is answered by vector plans, never by the scan oracle.
+* ``near[]`` takes a :class:`NearQuery` (or a mapping of its fields) and is
+  answered by vector plans, never by the scan oracle: the result depends on the
+  index's metric and on the whole collection (k nearest), so ``matches`` raises
+  ``ProtoNotSupportedError``; the vector contract supplies an exact oracle.
+* ``in`` over a set or frozenset stores its operands sorted by ``order_key``,
+  so equal sets give equal terms; a list or tuple keeps the caller's order.
 """
 from __future__ import annotations
 
+import math
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, time, timedelta
@@ -35,7 +41,7 @@ from ..errors import ProtoNotSupportedError, ProtoValidationError
 from ..indexing.keyspec import KeySpec
 from ..values import MISSING, canonical, is_atom, order_key
 
-__all__ = ["Term", "is_orderable", "OPERATORS", "EQ", "NE", "LT", "LE", "GT", "GE", "IN", "BETWEEN",
+__all__ = ["Term", "NearQuery", "is_orderable", "OPERATORS", "NEAR_METRICS", "EQ", "NE", "LT", "LE", "GT", "GE", "IN", "BETWEEN",
            "BETWEEN_EXCL_BOTH", "BETWEEN_EXCL_LOW", "BETWEEN_EXCL_HIGH", "IS_NONE", "NOT_NONE", "NEAR"]
 
 EQ = "=="
@@ -79,6 +85,58 @@ def is_orderable(value) -> bool:
     return is_atom(value)
 
 
+#: Metrics a ``near[]`` query may name (``None`` = the index's default metric).
+NEAR_METRICS = frozenset({"cosine", "l2", "ip"})
+
+
+def _finite_number(value, what: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)) or not math.isfinite(value):
+        raise ProtoValidationError(f"{what} must be a finite number, not {value!r}")
+    return float(value)
+
+
+@dataclass(frozen=True)
+class NearQuery:
+    """Value of a ``near[]`` term: a query ``vector`` and ``k`` (nearest count) and/or a ``threshold``.
+
+    ``vector`` is stored as a non-empty tuple of finite floats; ``k`` is an int
+    >= 1 or None; ``threshold`` a finite float or None; at least one of ``k`` and
+    ``threshold`` is given.  ``metric`` is ``"cosine"``, ``"l2"``, ``"ip"`` or
+    None (the index's default).  Hashable, so terms holding it are hashable.
+    """
+
+    vector: tuple
+    k: int | None = None
+    threshold: float | None = None
+    metric: str | None = None
+
+    def __post_init__(self):
+        if not isinstance(self.vector, (list, tuple)) or not self.vector:
+            raise ProtoValidationError(f"near[] needs a non-empty vector, not {self.vector!r}")
+        object.__setattr__(self, "vector", tuple(_finite_number(x, "A vector component") for x in self.vector))
+        if self.k is None and self.threshold is None:
+            raise ProtoValidationError("near[] needs k, threshold or both")
+        if self.k is not None and (isinstance(self.k, bool) or not isinstance(self.k, int) or self.k < 1):
+            raise ProtoValidationError(f"near[] k must be an int >= 1, not {self.k!r}")
+        if self.threshold is not None:
+            object.__setattr__(self, "threshold", _finite_number(self.threshold, "near[] threshold"))
+        if self.metric is not None and self.metric not in NEAR_METRICS:
+            raise ProtoValidationError(f"near[] metric must be one of {sorted(NEAR_METRICS)} or None, "
+                                       f"not {self.metric!r}")
+
+
+def _near_query(value) -> NearQuery:
+    if isinstance(value, NearQuery):
+        return value
+    if isinstance(value, dict):
+        unknown = set(value) - {"vector", "k", "threshold", "metric"}
+        if unknown or "vector" not in value:
+            raise ProtoValidationError(f"A near[] mapping needs 'vector' and only vector/k/threshold/metric, "
+                                       f"got {sorted(map(str, value))}")
+        return NearQuery(**value)
+    raise ProtoValidationError(f"near[] needs a NearQuery (or a mapping of its fields), not {value!r}")
+
+
 def _operand(value, op: str):
     """Validate one comparison operand: canonical, orderable, not MISSING."""
     value = canonical(value)
@@ -96,10 +154,11 @@ class Term:
     """A predicate on one key: ``path`` (str or None), ``op`` (an operator constant) and ``value``.
 
     Validated on construction (``ProtoValidationError``): ``in`` takes a
-    collection of operands (stored as a tuple), the ``between`` variants a pair
-    ``(low, high)`` of one type rank (stored as a tuple), ``?N``/``?!N`` no
-    value, the scalar comparisons one orderable operand; ``near[]`` values are
-    validated by the vector layer.  ``key_spec`` is the :class:`KeySpec` the
+    collection of operands (stored as a tuple; a set sorted by ``order_key``),
+    the ``between`` variants a pair ``(low, high)`` of one type rank (stored as
+    a tuple), ``?N``/``?!N`` no value, the scalar comparisons one orderable
+    operand, ``near[]`` a :class:`NearQuery` (a mapping of its fields is
+    converted).  Terms are hashable.  ``key_spec`` is the :class:`KeySpec` the
     path names.
     """
 
@@ -119,7 +178,10 @@ class Term:
         elif op == IN:
             if not isinstance(value, (list, tuple, set, frozenset)):
                 raise ProtoValidationError(f"Operator 'in' needs a list, tuple or set of values, not {value!r}")
-            osa(self, "value", tuple(_operand(v, op) for v in value))
+            operands = tuple(_operand(v, op) for v in value)
+            if isinstance(value, (set, frozenset)):
+                operands = tuple(sorted(operands, key=order_key))
+            osa(self, "value", operands)
         elif op in _BETWEEN_OPS:
             if not isinstance(value, (list, tuple)) or len(value) != 2:
                 raise ProtoValidationError(f"Operator {op!r} needs a (low, high) pair, not {value!r}")
@@ -127,6 +189,8 @@ class Term:
             if _rank(low) != _rank(high):
                 raise ProtoValidationError(f"Operator {op!r} needs bounds of one type rank, not {low!r}, {high!r}")
             osa(self, "value", (low, high))
+        elif op == NEAR:
+            osa(self, "value", _near_query(value))
         elif op in _PRESENCE_OPS:
             if value is not None:
                 raise ProtoValidationError(f"Operator {op!r} takes no value, got {value!r}")

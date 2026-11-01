@@ -1,4 +1,4 @@
-"""Unit tests for proto_db.indexes.base (Index hooks and defaults) and IndexPlan (Task 4.1, D29).
+"""Unit tests for proto_db.indexing.base (Index hooks and defaults) and IndexPlan (Task 4.1, D29).
 
 Catches: an Index base that can be instantiated without its abstract hooks,
 mutable or unvalidated index definitions, defaults that diverge from the spec
@@ -49,7 +49,7 @@ def test_index_requires_every_abstract_hook():
         partial = type(f"Without_{missing}", (Index,), {k: v for k, v in hooks.items() if k != missing})
         with pytest.raises(TypeError):
             partial("i", KeySpec.element())
-    complete = type("Complete", (Index,), dict(hooks))
+    complete = type("Complete", (Index,), dict(hooks, __type_name__="tests.unit.test_index_base.Complete"))
     assert complete("i", KeySpec.element()).name == "i"
     with pytest.raises(TypeError):
         Index("i", KeySpec.element())
@@ -73,7 +73,24 @@ def test_index_is_immutable():
 
 def test_definition_must_name_name_and_key_spec():
     with pytest.raises(ProtoUserError):
-        type("BadDefinition", (ScanIndex,), {"_definition": ("name",)})
+        type("BadDefinition", (ScanIndex,), {"_definition": ("name",),
+                                             "__type_name__": "tests.unit.test_index_base.BadDefinition"})
+
+
+def test_abstract_base_type_name():
+    assert Index.__type_name__ == "proto_db.indexing.Index"
+
+
+def test_concrete_index_classes_must_name_their_type():
+    with pytest.raises(ProtoUserError, match="__type_name__"):
+        type("Unnamed", (ScanIndex,), {})
+    # An abstract intermediate class may rely on the default name.
+    abstract = type("AbstractMiddle", (Index,), {"extra": lambda self: None})
+    named = type("NamedLeaf", (abstract,), {
+        "__type_name__": "tests.unit.test_index_base.NamedLeaf",
+        "with_added": lambda self, e: self, "with_removed": lambda self, e: self,
+        "supports": lambda self, t: False, "estimate": lambda self, t: None, "plan": lambda self, t: None})
+    assert named("n", KeySpec.element()).name == "n"
 
 
 def test_with_rejects_unknown_fields():
@@ -88,6 +105,8 @@ CALLS = []
 
 class SpyIndex(ScanIndex):
     """Records the order of add/remove calls in the module list CALLS."""
+
+    __type_name__ = "tests.unit.test_index_base.SpyIndex"
 
     def with_added(self, element):
         CALLS.append(("add", element))
@@ -126,6 +145,8 @@ def test_build_accepts_any_iterable():
 class Flavoured(ScanIndex):
     """An index with an extra definition field."""
 
+    __type_name__ = "tests.unit.test_index_base.Flavoured"
+
     _definition = ScanIndex._definition + ("flavour",)
 
     def __init__(self, name, key_spec, flavour="plain", *, context=None):
@@ -162,8 +183,37 @@ def test_plan_on_unsupported_term_raises_not_supported():
             idx.plan(term)
 
 
+def test_estimate_on_unsupported_term_raises_not_supported():
+    with pytest.raises(ProtoNotSupportedError):
+        city_index().estimate(Term("zip", EQ, 1))
+
+
+def test_ordered_iteration_is_unsupported_by_default():
+    idx = city_index()
+    assert idx.supports_order(KeySpec.path("city")) is False
+    with pytest.raises(ProtoNotSupportedError):
+        idx.ordered_plan()
+    with pytest.raises(ProtoNotSupportedError):
+        idx.ordered_plan(descending=True)
+
+
+def test_ordered_scan_index():
+    from tests.support.scan_index import OrderedScanIndex
+    a, b, c, d, e = (DBObject(city="b"), DBObject(city=None), DBObject(), DBObject(city=2), DBObject(city="a"))
+    idx = OrderedScanIndex("o", KeySpec.path("city")).build([a, b, c, d, e])
+    assert idx.supports_order(KeySpec.path("city")) and not idx.supports_order(KeySpec.path("zip"))
+    assert list(idx.ordered_plan().execute()) == [c, b, d, e, a]  # MISSING < None < number < str
+    assert list(idx.ordered_plan(descending=True).execute()) == [a, e, d, b, c]
+    plan = idx.ordered_plan(descending=True)
+    assert plan.explain() == {"plan": "IndexOrderedScan", "index": idx.explain(), "term": None,
+                              "descending": True}
+    assert plan.estimate() == Estimate(rows=5, cost=5)
+
+
 class StaleIndex(ScanIndex):
     """Forgets removals: its content is stale after a remove."""
+
+    __type_name__ = "tests.unit.test_index_base.StaleIndex"
 
     def with_removed(self, element):
         return self._with()
@@ -181,6 +231,7 @@ def test_validate_detects_an_inconsistent_index():
 
 
 class StaleWithNotNone(StaleIndex):
+    __type_name__ = "tests.unit.test_index_base.StaleWithNotNone"
     SUPPORTED_OPS = frozenset({EQ, IS_NONE, NOT_NONE})
 
 
@@ -195,6 +246,7 @@ def test_validate_covers_missing_keys_and_stale_keys():
 
 
 class NotNoneOnly(ScanIndex):
+    __type_name__ = "tests.unit.test_index_base.NotNoneOnly"
     SUPPORTED_OPS = frozenset({NOT_NONE})
 
 
@@ -243,6 +295,19 @@ def test_index_plan():
     assert plan.explain() == {"plan": "IndexScan", "index": idx.explain(), "term": term.describe()}
     assert plan.estimate() == idx.estimate(term) == Estimate(rows=2, cost=2)
     assert plan.index is idx and plan.term is term
+
+
+def test_index_plan_without_term_needs_an_estimate():
+    idx = city_index()
+    with pytest.raises(ProtoValidationError):
+        IndexPlan(idx, None, lambda: iter(()))
+    plan = IndexPlan(idx, None, lambda: iter(()), estimate=Estimate(rows=0, cost=1), details={"x": 1})
+    assert plan.estimate() == Estimate(rows=0, cost=1)
+    assert plan.explain()["term"] is None and plan.explain()["x"] == 1
+    with pytest.raises(ProtoValidationError):
+        IndexPlan(idx, None, lambda: iter(()), estimate=(0, 1))
+    with pytest.raises(ProtoValidationError):
+        IndexPlan(idx, None, lambda: iter(()), estimate=Estimate(rows=0, cost=1), details={"plan": "x"})
 
 
 def test_index_plan_default_kind_and_validation():

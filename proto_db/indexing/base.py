@@ -51,7 +51,9 @@ class Index(Atom, metaclass=ABCMeta):
 
     Writing a new index kind
     ------------------------
-    1. Subclass :class:`Index` and give it a stable ``__type_name__``.
+    1. Subclass :class:`Index` and give it a stable ``__type_name__`` in the
+       class body (required for every concrete class, ``ProtoUserError``
+       otherwise; abstract intermediate classes may omit it).
     2. ``__init__(self, name, key_spec, <extra definition fields>, *, context=None)``
        must create an EMPTY index: call ``super().__init__(name, key_spec,
        context=context)`` and set every other public field with
@@ -71,7 +73,9 @@ class Index(Atom, metaclass=ABCMeta):
        * ``supports(term)`` -- start with ``self._on_key(term)`` (an index on
          ``city`` never answers a term on ``zip``) and accept only operators
          whose answer equals :meth:`Term.matches` exactly.
-       * ``estimate(term) -> Estimate(rows, cost)`` for the planner.
+       * ``estimate(term) -> Estimate(rows, cost)`` for the planner; an
+         unsupported term raises ``ProtoNotSupportedError`` (use
+         ``self._check_supported(term)``).
        * ``plan(term) -> IndexPlan`` -- call ``self._check_supported(term)``
          first (an unsupported term raises ``ProtoNotSupportedError``) and
          return ``IndexPlan(self, term, producer, kind=...)`` where
@@ -79,23 +83,32 @@ class Index(Atom, metaclass=ABCMeta):
          each occurrence once.  Capture immutable state only, so the plan can
          run several times and from several threads.
 
-    4. Override defaults when the structure allows better:
+    4. Ordered iteration (used by ``order_by``): an index that can yield its
+       elements in key order overrides ``supports_order(key_spec)`` (True only
+       for keys it can order, normally ``key_spec == self.key_spec``) and
+       ``ordered_plan(descending=False)``: every stored occurrence, ascending by
+       ``order_key`` of the extracted key (MISSING < None < bool < number < ...,
+       unorderable keys after every orderable one); descending is the exact
+       reverse of that key-group order; the order inside one key group is
+       unspecified.  Return ``IndexPlan(self, None, producer, kind=...,
+       estimate=Estimate(...))``.  The defaults declare no ordering.
+    5. Override defaults when the structure allows better:
        ``with_replaced`` (default: remove then add), ``build`` (default: fold
        of ``with_added`` starting from :meth:`empty`; bulk-load for speed),
        ``validate`` (default: plan == scan for every supported ``==`` on the
        elements' keys, ``?N`` and ``?!N``; add structural checks), ``explain``
        (add details, keep the ``index``/``kind``/``key`` entries) and
        ``empty`` (only if ``__init__`` cannot be called with the definition).
-    5. Prove it: register an ``IndexContract`` for the new kind in
+    6. Prove it: register an ``IndexContract`` for the new kind in
        ``tests/contracts/index_contract.py`` (index factory, element strategy,
        optional term strategy and oracle).  The contract checks plan == scan,
        mutation sequences, persistence, concurrent readers, unsupported terms,
        attachment to every registered collection, immutability of the
-       receiver, ``empty`` and the default equivalences.  A kind that passes
+       receiver, ``empty``, ordered iteration and the default equivalences.  A kind that passes
        it implements every hook correctly.
     """
 
-    __type_name__ = "proto_db.indexes.Index"
+    __type_name__ = "proto_db.indexing.Index"
     #: Public fields that define the index (kept by :meth:`empty`).
     _definition: tuple = ("name", "key_spec")
     #: Public fields holding a :class:`KeySpec`, persisted as plain data.
@@ -105,6 +118,11 @@ class Index(Atom, metaclass=ABCMeta):
         missing = {"name", "key_spec"} - set(cls._definition)
         if missing:
             raise ProtoUserError(f"{cls.__name__}._definition must include {sorted(missing)}")
+        # ABCMeta computes __abstractmethods__ only after this hook, so look for abstract members directly.
+        abstract = any(getattr(getattr(cls, n, None), "__isabstractmethod__", False) for n in dir(cls))
+        if not abstract and "__type_name__" not in cls.__dict__:
+            raise ProtoUserError(f"Concrete index class {cls.__qualname__} must set __type_name__ in its own "
+                                 f"body: persisted indexes are found by that stable name")
         super().__init_subclass__(**kwargs)
 
     def __init__(self, name: str, key_spec: KeySpec, *, context: PersistenceContext | None = None):
@@ -196,7 +214,7 @@ class Index(Atom, metaclass=ABCMeta):
 
     @abstractmethod
     def estimate(self, term: Term) -> Estimate:
-        """Planner estimate for answering a supported ``term`` with this index."""
+        """Planner estimate for answering a supported ``term``; ``ProtoNotSupportedError`` otherwise."""
 
     @abstractmethod
     def plan(self, term: Term) -> QueryPlan:
@@ -206,6 +224,15 @@ class Index(Atom, metaclass=ABCMeta):
         """
 
     # -- defaults --------------------------------------------------------------------------
+
+    def supports_order(self, key_spec: KeySpec) -> bool:
+        """True iff :meth:`ordered_plan` yields the elements ordered by ``key_spec`` (default False)."""
+        return False
+
+    def ordered_plan(self, descending: bool = False) -> QueryPlan:
+        """Every element in key order (see the class docstring); default ``ProtoNotSupportedError``."""
+        raise ProtoNotSupportedError(
+            f"Index {self.name!r} ({type(self).__name__}) does not provide ordered iteration")
 
     def with_replaced(self, old, new) -> "Index":
         """Return the index after replacing one occurrence of ``old`` by ``new`` (default: remove + add)."""

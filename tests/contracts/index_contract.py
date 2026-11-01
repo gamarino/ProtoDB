@@ -22,7 +22,7 @@ An :class:`IndexContract` describes one index kind under test:
   default the scan oracle ``[e for e in elements if term.matches(e)]``; kinds
   answering terms the scan oracle refuses (``near[]``) supply their own;
 * ``element_key``: identity used to compare result multisets (default
-  :func:`proto_db.indexes.element_identity`).
+  :func:`proto_db.indexing.element_identity`).
 
 Checks (each a method taking a seed; :meth:`IndexContract.checks` lists them):
 
@@ -34,8 +34,9 @@ Checks (each a method taking a seed; :meth:`IndexContract.checks` lists them):
     and every result; the loaded index keeps working.
 (d) ``check_concurrent_readers`` -- 8 threads reading one index version (in
     memory and as a freshly loaded stub) get identical, correct results.
-(e) ``check_unsupported_raises`` -- ``supports`` False => ``plan`` raises
-    ``ProtoNotSupportedError``; terms on another path are never supported.
+(e) ``check_unsupported_raises`` -- ``supports`` False => ``plan`` and
+    ``estimate`` raise ``ProtoNotSupportedError``; terms on another path are
+    never supported.
 (f) ``check_collections`` -- attached through ``add_index`` to EVERY collection of
     ``COLLECTION_FACTORIES`` and driven by the collection mutators, the index
     stays consistent (validate passes, plan == oracle), also after a round trip.
@@ -43,7 +44,13 @@ Checks (each a method taking a seed; :meth:`IndexContract.checks` lists them):
     an index of the same type and name.
 (h) ``check_empty`` -- ``empty()`` of a populated index is empty and keeps the
     whole definition (``_definition``).
-plus ``check_hook_equivalences`` -- ``with_replaced`` == remove + add, ``build``
+plus ``check_ordered_iteration`` -- when ``supports_order(key_spec)``, the
+``ordered_plan`` output is the elements sorted by the ``order_key`` of their key
+(MISSING < None < bool < number < ..., unorderable keys after every orderable
+one; descending is the exact reverse of the key-group order; the order inside
+one key group is unspecified, so key groups are compared as a sequence and each
+group as a multiset); otherwise ``ordered_plan`` raises
+``ProtoNotSupportedError``; ``check_hook_equivalences`` -- ``with_replaced`` == remove + add, ``build``
 == fold of ``with_added`` from empty, whatever the receiver holds; and
 ``check_explain`` -- ``explain()`` names the index, its kind and its key.
 
@@ -102,7 +109,8 @@ class IndexContract:
         """Names of every check method, in a stable order."""
         return ["check_plan_matches_scan", "check_mutation_sequence", "check_persistence",
                 "check_concurrent_readers", "check_unsupported_raises", "check_collections",
-                "check_hooks_do_not_mutate", "check_empty", "check_hook_equivalences", "check_explain"]
+                "check_hooks_do_not_mutate", "check_empty", "check_ordered_iteration",
+                "check_hook_equivalences", "check_explain"]
 
     def run_all(self, seeds=SEEDS) -> None:
         """Run every check for every seed (raises on the first failure)."""
@@ -129,8 +137,12 @@ class IndexContract:
     def _multiset(self, elements) -> Counter:
         return Counter(self.element_key(e) for e in elements)
 
-    def terms_for(self, key_spec: KeySpec, elements: list, rng: random.Random) -> list[Term]:
-        """Generic terms derived from the elements' keys, plus the kind's own (``term_strategy``)."""
+    def terms_for(self, key_spec: KeySpec, elements: list, rng: random.Random, focus=()) -> list[Term]:
+        """Generic terms derived from the elements' keys, plus the kind's own (``term_strategy``).
+
+        ``focus`` elements always contribute ``==`` and ``!=`` terms on their keys
+        (independently of the random pivot sample).
+        """
         path = key_spec.term_path
         keys: dict = {}
         for e in elements:
@@ -155,6 +167,11 @@ class IndexContract:
         for group in by_rank.values():
             lo, hi = sorted((rng.choice(group), rng.choice(group)), key=order_key)
             terms.append(Term(path, rng.choice(_BETWEEN_OPS), (lo, hi)))
+        for e in focus:
+            k = key_spec.extract(e)
+            if k is not MISSING and is_orderable(k):
+                terms.append(Term(path, EQ, k))
+                terms.append(Term(path, NE, k))
         if self.term_strategy is not None:
             terms.extend(self.term_strategy(rng, elements, key_spec))
         return terms
@@ -216,21 +233,25 @@ class IndexContract:
                 index = index.build(model)
             for step in range(steps):
                 r = rng.random()
+                touched: list = []
                 if not model or r < 0.45:
                     e = rng.choice(model) if model and rng.random() < 0.25 else self.element_strategy(rng)
                     index = index.with_added(e)
                     model.append(e)
                     seen.append(e)
+                    touched.append(e)
                 elif r < 0.75:
                     e = model.pop(rng.randrange(len(model)))
                     index = index.with_removed(e)
+                    touched.append(e)
                 else:
                     i = rng.randrange(len(model))
                     new = self.element_strategy(rng)
                     index = index.with_replaced(model[i], new)
+                    touched.extend((model[i], new))
                     model[i] = new
                     seen.append(new)
-                self.assert_consistent(index, model, self.terms_for(key_spec, seen, rng),
+                self.assert_consistent(index, model, self.terms_for(key_spec, seen, rng, focus=touched),
                                        f" step {step} on {key_spec}")
 
     # -- (c) ----------------------------------------------------------------------------
@@ -311,11 +332,12 @@ class IndexContract:
                 if term.path != key_spec.term_path:
                     assert not index.supports(term), f"{self.name} on {key_spec} supports {term}"
                 if not index.supports(term):
-                    try:
-                        index.plan(term)
-                    except ProtoNotSupportedError:
-                        continue
-                    raise AssertionError(f"{self.name}: plan({term}) did not raise ProtoNotSupportedError")
+                    for hook in ("plan", "estimate"):
+                        try:
+                            getattr(index, hook)(term)
+                        except ProtoNotSupportedError:
+                            continue
+                        raise AssertionError(f"{self.name}: {hook}({term}) did not raise ProtoNotSupportedError")
 
     # -- (f) ----------------------------------------------------------------------------
 
@@ -420,6 +442,51 @@ class IndexContract:
             self.assert_consistent(index, elements, terms, " (receiver of empty)")
             self.assert_consistent(empty.build(elements), elements, terms, " (empty, rebuilt)")
 
+    # -- ordered iteration ---------------------------------------------------------------
+
+    @staticmethod
+    def order_group(key) -> tuple:
+        """Sort position of a key in ascending ordered iteration (unorderable keys last)."""
+        return (0, order_key(key)) if is_orderable(key) else (1,)
+
+    def _runs(self, key_spec: KeySpec, elements) -> list:
+        """``[(key group, multiset)]`` for consecutive elements sharing a key group."""
+        runs: list = []
+        for e in elements:
+            group = self.order_group(key_spec.extract(e))
+            if runs and runs[-1][0] == group:
+                runs[-1][1][self.element_key(e)] += 1
+            else:
+                runs.append((group, Counter([self.element_key(e)])))
+        return runs
+
+    def check_ordered_iteration(self, seed: int) -> None:
+        """ordered_plan == elements sorted by key (key groups in order), or ProtoNotSupportedError."""
+        rng = random.Random(seed)
+        foreign = KeySpec.path(FOREIGN_PATH)
+        for key_spec in self.key_specs:
+            elements = self._elements(rng)
+            index = self._new(key_spec).build(elements)
+            assert not index.supports_order(foreign), f"{self.name} claims to order by {foreign}"
+            if not index.supports_order(key_spec):
+                for descending in (False, True):
+                    try:
+                        index.ordered_plan(descending=descending)
+                    except ProtoNotSupportedError:
+                        continue
+                    raise AssertionError(f"{self.name}: ordered_plan() without supports_order did not raise")
+                continue
+            ascending = sorted(elements, key=lambda e: self.order_group(key_spec.extract(e)))
+            expected_up = self._runs(key_spec, ascending)
+            for descending, expected in ((False, expected_up), (True, expected_up[::-1])):
+                plan = index.ordered_plan(descending=descending)
+                assert isinstance(plan, QueryPlan), f"ordered_plan returned {plan!r}"
+                got = self._runs(key_spec, plan.execute())
+                assert got == expected, (f"{self.name}: ordered_plan(descending={descending}) on {key_spec} "
+                                         f"is out of key order")
+                assert self._runs(key_spec, plan.execute()) == got, "an ordered plan must be re-executable"
+                assert isinstance(plan.explain(), dict) and isinstance(plan.estimate(), Estimate)
+
     # -- equivalences and explain --------------------------------------------------------
 
     def check_hook_equivalences(self, seed: int) -> None:
@@ -523,6 +590,11 @@ def _register_scan_index() -> None:
     register(IndexContract(name="ScanIndex-records", index_factory=ScanIndex,
                            element_strategy=record_strategy, key_specs=RECORD_KEY_SPECS))
     register(IndexContract(name="ScanIndex-values", index_factory=ScanIndex,
+                           element_strategy=value_strategy, key_specs=(KeySpec.element(),)))
+    from tests.support.scan_index import OrderedScanIndex
+    register(IndexContract(name="OrderedScanIndex-records", index_factory=OrderedScanIndex,
+                           element_strategy=record_strategy, key_specs=RECORD_KEY_SPECS))
+    register(IndexContract(name="OrderedScanIndex-values", index_factory=OrderedScanIndex,
                            element_strategy=value_strategy, key_specs=(KeySpec.element(),)))
 
 
