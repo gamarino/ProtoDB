@@ -38,7 +38,7 @@ def test_operator_vocabulary_uses_the_0_1_spellings():
         "between[]", "between()", "between(]", "between[)")
     assert (IS_NONE, NOT_NONE, NEAR) == ("?N", "?!N", "near[]")
     assert set(OPERATORS) == {EQ, NE, LT, LE, GT, GE, IN, BETWEEN, BETWEEN_EXCL_BOTH, BETWEEN_EXCL_LOW,
-                              BETWEEN_EXCL_HIGH, IS_NONE, NOT_NONE, NEAR}
+                              BETWEEN_EXCL_HIGH, IS_NONE, NOT_NONE, NEAR, "contains", "?T", "?!T"}
 
 
 def test_term_is_frozen_and_compares_by_value():

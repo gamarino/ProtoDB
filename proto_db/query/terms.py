@@ -20,7 +20,14 @@ Semantics (D28):
   is false), ordered by :func:`order_key`.  ``between[]`` includes both bounds,
   ``between()`` excludes both, ``between(]`` excludes the lower, ``between[)``
   the upper; both bounds must share a type rank.
-* Keys that cannot be ordered (lists, dicts, NaN) match only ``?!N`` and ``!=``.
+* Keys that cannot be ordered (lists, dicts, NaN) match only ``?!N``, ``!=``,
+  ``contains``, ``?T`` and ``?!T``.
+* ``contains`` (0.1 vocabulary, D36) takes one orderable operand: a str key
+  matches a str operand it contains as a substring, a bytes key a bytes
+  operand; a list or tuple key matches when one of its orderable items equals
+  the operand (``values_equal``); every other key (and MISSING) matches nothing.
+* ``?T`` / ``?!T`` (0.1 vocabulary, D36) test the Python truthiness of a
+  present key; MISSING matches neither (absence is not a value, like ``!=``).
 * ``near[]`` takes a :class:`NearQuery` (or a mapping of its fields) and is
   answered by vector plans, never by the scan oracle: the result depends on the
   index's metric and on the whole collection (k nearest), so ``matches`` raises
@@ -40,7 +47,8 @@ from ..indexing.keyspec import KeySpec
 from ..values import MISSING, canonical, is_orderable, order_key
 
 __all__ = ["Term", "NearQuery", "is_orderable", "OPERATORS", "NEAR_METRICS", "EQ", "NE", "LT", "LE", "GT", "GE", "IN", "BETWEEN",
-           "BETWEEN_EXCL_BOTH", "BETWEEN_EXCL_LOW", "BETWEEN_EXCL_HIGH", "IS_NONE", "NOT_NONE", "NEAR"]
+           "BETWEEN_EXCL_BOTH", "BETWEEN_EXCL_LOW", "BETWEEN_EXCL_HIGH", "IS_NONE", "NOT_NONE", "NEAR", "CONTAINS",
+           "IS_TRUE", "NOT_TRUE", "display_value"]
 
 EQ = "=="
 NE = "!="
@@ -56,14 +64,20 @@ BETWEEN_EXCL_HIGH = "between[)"
 IS_NONE = "?N"
 NOT_NONE = "?!N"
 NEAR = "near[]"
+CONTAINS = "contains"
+IS_TRUE = "?T"
+NOT_TRUE = "?!T"
 
 _SCALAR_OPS = (EQ, NE, LT, LE, GT, GE)
 #: ``op -> (include lower bound, include upper bound)``.
 _BETWEEN_OPS = {BETWEEN: (True, True), BETWEEN_EXCL_BOTH: (False, False),
                 BETWEEN_EXCL_LOW: (False, True), BETWEEN_EXCL_HIGH: (True, False)}
 _PRESENCE_OPS = (IS_NONE, NOT_NONE)
+_TRUTH_OPS = (IS_TRUE, NOT_TRUE)
+#: Operators that take no value.
+UNARY_OPERATORS = frozenset(_PRESENCE_OPS + _TRUTH_OPS)
 #: Every operator of the term vocabulary.
-OPERATORS = frozenset(_SCALAR_OPS + (IN, NEAR) + tuple(_BETWEEN_OPS) + _PRESENCE_OPS)
+OPERATORS = frozenset(_SCALAR_OPS + (IN, NEAR, CONTAINS) + tuple(_BETWEEN_OPS) + _PRESENCE_OPS + _TRUTH_OPS)
 
 #: Metrics a ``near[]`` query may name (``None`` = the index's default metric).
 NEAR_METRICS = frozenset({"cosine", "l2", "ip"})
@@ -153,7 +167,7 @@ class Term:
         op, value = self.op, self.value
         if op not in OPERATORS:
             raise ProtoValidationError(f"Unknown operator {op!r}; expected one of {sorted(OPERATORS)}")
-        if op in _SCALAR_OPS:
+        if op in _SCALAR_OPS or op == CONTAINS:
             osa(self, "value", _operand(value, op))
         elif op == IN:
             if not isinstance(value, (list, tuple, set, frozenset)):
@@ -171,7 +185,7 @@ class Term:
             osa(self, "value", (low, high))
         elif op == NEAR:
             osa(self, "value", _near_query(value))
-        elif op in _PRESENCE_OPS:
+        elif op in UNARY_OPERATORS:
             if value is not None:
                 raise ProtoValidationError(f"Operator {op!r} takes no value, got {value!r}")
 
@@ -185,6 +199,10 @@ class Term:
             return (key is MISSING or key is None) == (op == IS_NONE)
         if key is MISSING:
             return False
+        if op in _TRUTH_OPS:
+            return bool(key) == (op == IS_TRUE)
+        if op == CONTAINS:
+            return _contains(key, self.value)
         if op == NE:
             return not (is_orderable(key) and order_key(key) == order_key(self.value))
         if not is_orderable(key):
@@ -212,5 +230,60 @@ class Term:
         return k >= v  # GE
 
     def describe(self) -> dict:
-        """``{"path", "op", "value"}`` for ``explain()``."""
-        return {"path": self.path, "op": self.op, "value": self.value}
+        """``{"path", "op", "value"}`` for ``explain()``; the value is JSON-safe (:func:`display_value`)."""
+        return {"path": self.path, "op": self.op, "value": display_value(self.value)}
+
+    def to_list(self) -> list:
+        """This term in the 0.1 prefix syntax accepted by ``Expression.compile``.
+
+        ``[path, op]`` for unary operators, ``[path, op, low, high]`` for the
+        between variants, ``[path, "near[]", vector, threshold]`` for a cosine
+        threshold query (the 0.1 form) and ``[path, "near[]", NearQuery]``
+        otherwise, ``[path, op, value]`` for the rest (an ``in`` operand list as
+        a list).
+        """
+        op, value = self.op, self.value
+        if op in UNARY_OPERATORS:
+            return [self.path, op]
+        if op in _BETWEEN_OPS:
+            return [self.path, op, value[0], value[1]]
+        if op == NEAR:
+            if value.k is None and value.metric == "cosine":
+                return [self.path, op, list(value.vector), value.threshold]
+            return [self.path, op, value]
+        if op == IN:
+            return [self.path, op, list(value)]
+        return [self.path, op, value]
+
+
+def _contains(key, operand) -> bool:
+    """``contains`` semantics (module docstring): substring for str/bytes, item equality for sequences."""
+    if isinstance(key, str):
+        return isinstance(operand, str) and operand in key
+    if isinstance(key, bytes):
+        return isinstance(operand, bytes) and operand in key
+    if isinstance(key, (list, tuple)):
+        target = order_key(operand)
+        return any(is_orderable(item) and order_key(item) == target for item in key)
+    return False
+
+
+def display_value(value):
+    """A JSON-serialisable rendering of a term operand or key for ``explain()``.
+
+    None, bool, int, str and finite floats are kept; tuples and lists become
+    lists; a :class:`NearQuery` becomes a mapping of its fields; every other
+    value (Decimal, datetime, bytes, UUID, NaN, atoms, handles, ...) becomes its
+    ``repr``, so distinct types stay distinguishable.
+    """
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float) and math.isfinite(value):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [display_value(v) for v in value]
+    if isinstance(value, NearQuery):
+        return {"vector": list(value.vector), "k": value.k, "threshold": value.threshold, "metric": value.metric}
+    if isinstance(value, dict):
+        return {str(display_value(k)): display_value(v) for k, v in value.items()}
+    return repr(value)

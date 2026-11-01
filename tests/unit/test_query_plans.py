@@ -31,7 +31,8 @@ def test_collection_scan_plan():
     assert isinstance(plan, CollectionScanPlan) and isinstance(plan, QueryPlan)
     assert plan.collection is s
     assert list(plan.execute()) == [1, 2]
-    assert plan.explain() == {"plan": "CollectionScan", "collection": "ToySet", "rows": 2, "indexes": ["i"]}
+    assert plan.explain() == {"plan": "CollectionScan", "collection": "ToySet", "rows": 2, "indexes": ["i"],
+                              "estimate": {"rows": 2.0, "cost": 2.0}, "children": []}
     assert plan.estimate() == Estimate(rows=2, cost=2)
 
 

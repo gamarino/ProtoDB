@@ -206,7 +206,7 @@ def test_ordered_scan_index():
     assert list(idx.ordered_plan(descending=True).execute()) == [a, e, d, b, c]
     plan = idx.ordered_plan(descending=True)
     assert plan.explain() == {"plan": "IndexOrderedScan", "index": idx.explain(), "term": None,
-                              "descending": True}
+                              "descending": True, "estimate": {"rows": 5.0, "cost": 5.0}, "children": []}
     assert plan.estimate() == Estimate(rows=5, cost=5)
 
 
@@ -292,7 +292,8 @@ def test_index_plan():
     plan = idx.plan(term)
     assert isinstance(plan, IndexPlan) and isinstance(plan, QueryPlan)
     assert list(plan.execute()) == [a] and list(plan.execute()) == [a]  # re-executable
-    assert plan.explain() == {"plan": "IndexScan", "index": idx.explain(), "term": term.describe()}
+    assert plan.explain() == {"plan": "IndexScan", "index": idx.explain(), "term": term.describe(),
+                              "estimate": {"rows": 2.0, "cost": 2.0}, "children": []}
     assert plan.estimate() == idx.estimate(term) == Estimate(rows=2, cost=2)
     assert plan.index is idx and plan.term is term
 
