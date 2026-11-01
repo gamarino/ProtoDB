@@ -27,19 +27,27 @@ Granting
     A node grants, and acknowledges replications, only while a cluster tier (the storage
     of a space) is attached and while it is not fenced: a node without a durable place for
     its promises and roots never counts toward a majority.
-Rejoining
-    A node whose acceptor log is empty (a new node, or a disk lost or wiped) cannot tell
-    which terms it promised or proposed in a previous life.  Until it has learnt the
-    highest term promised or seen by ``N - majority + 1`` other members (``query``/
-    ``answer``; for three nodes, both others), it neither grants, nor accepts replicated
-    roots, nor proposes; it then records that term in its log, which also marks the rejoin
-    as done.  Its own knowledge counts for nothing, so the answering members intersect,
-    outside this node, every majority that granted a term: it never proposes a ballot of
-    its own again, and never accepts a root below a ballot it granted.  With
-    proposer-qualified ballots, two different roots therefore never share a label while at
-    most one acceptor log is lost at a time (D46, ruling R47).  The price is availability:
-    a node with an empty log -- every node on a cluster's first start -- needs those
-    answers before it votes.
+Rejoining and witnesses
+    A node is a *witness* -- its grants, acknowledgements and ``answer``s count -- only
+    while its acceptor log is loaded (a space is open on it) and rejoined.  A node whose
+    log has no rejoined marker (a new node, a disk lost or wiped, or an interrupted rejoin)
+    cannot tell what it promised, proposed or accepted in a previous life.  Until it has
+    learnt, from ``N - majority + 1`` other witnesses (``query``/``answer``; for three
+    nodes, both others), the highest term they promised or saw AND the highest root they
+    accepted, it neither grants, nor acknowledges, nor proposes, and its answers are marked
+    ``empty``; it then logs that term and that root, then the rejoined marker.  Its own
+    knowledge counts for nothing, so the answering witnesses intersect, outside this node,
+    every majority that granted a term or acknowledged a root: it never proposes one of
+    its own ballots again, never accepts a root below a ballot it granted, and reports a
+    root at or above every committed root, as it did before it lost its log.  A node without
+    a loaded log answers ``unknown`` and is never counted.  ``empty`` answers count only
+    for a cluster's first start: every other member answered and none has accepted any
+    root.  Any other loss of a majority of logs needs the operator's
+    :meth:`ClusterCoordinator.force_rejoin`.  With proposer-qualified ballots, two
+    different roots never share a label, and no acknowledged root is lost, while at most
+    one acceptor log is lost at a time (D46, rulings R47 and R49).  The price is
+    availability: a node with an empty log -- every node on a cluster's first start --
+    needs those answers before it votes.
 Roots and their labels (D46)
     Every root the cluster knows carries the term of the lease that replicated it, its
     *label*; roots are ordered by :func:`~proto_db.cluster.rootlog.root_key` everywhere, and
@@ -99,7 +107,7 @@ import uuid
 from typing import Callable, NamedTuple, Optional
 
 from ..core.atom import AtomPointer
-from ..errors import (ProtoConflictError, ProtoDBError, ProtoOutcomeUnknownError, ProtoTimeoutError,
+from ..errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoOutcomeUnknownError, ProtoTimeoutError,
                       ProtoUnexpectedError, ProtoUserError, ProtoValidationError)
 from ..storage.format import RootRecord
 from . import protocol
@@ -176,7 +184,7 @@ def _split_records(records: list, budget: int) -> list:
 class _Waiter:
     """Replies gathered for one replicate, query or fetch (guarded by the coordinator lock)."""
 
-    __slots__ = ("kind", "term", "acks", "nacks", "answers", "promised", "data", "missing")
+    __slots__ = ("kind", "term", "acks", "nacks", "answers", "promised", "states", "data", "missing")
 
     def __init__(self, kind: str, term: int = 0):
         self.kind = kind
@@ -185,6 +193,7 @@ class _Waiter:
         self.nacks = set()
         self.answers = {}
         self.promised = {}
+        self.states = {}
         self.data = None
         self.missing = 0
 
@@ -309,7 +318,8 @@ class ClusterCoordinator:
         self._persist_failure = None        # the exception that stopped the persister, if any
         self._rejoining = False             # the acceptor log was empty: learning the promised terms
         self._rejoin_forced = False         # the operator accepted a rejoin from a bare majority
-        self._rejoiner = None               # the thread running a rejoin, if any
+        self._rejoiners = []                # every rejoin thread started (joined by stop)
+        self._loaded = False                # the attached tier's acceptor log is loaded
         self._tier = None
         self._confirmed = True
         self._persister = None
@@ -463,9 +473,11 @@ class ClusterCoordinator:
             self._cond.notify_all()
         if persister is not None:
             persister.stop()
-        rejoiner = self._rejoiner
-        if rejoiner is not None and rejoiner is not threading.current_thread() and rejoiner.ident is not None:
-            rejoiner.join()             # woken by the notify above; it checks the state first
+        with self._lock:
+            rejoiners = list(self._rejoiners)
+        for rejoiner in rejoiners:      # woken by the notify above; each checks the state first
+            if rejoiner is not threading.current_thread() and rejoiner.ident is not None:
+                rejoiner.join()
         if started:
             self._transport.stop()
         worker = self._worker
@@ -516,6 +528,8 @@ class ClusterCoordinator:
             raise
         accepted, committed, top, promised, empty = logged
         rejoin = empty and bool(self._others)
+        if empty and not self._others:
+            tier.log_rejoined()         # a one-member cluster has nobody to learn from
         with self._cond:
             if accepted is not None:
                 self._observe_accepted(True, accepted[1], accepted[0])
@@ -526,29 +540,48 @@ class ClusterCoordinator:
             tier.set_fetcher(self.fetch_record)
             self._confirmed = False
             self._rejoining = rejoin
+            self._loaded = True
             persister = Persister(self, tier, interval=self._persist_interval, lag=self._persist_lag)
             self._persister = persister
+            if rejoin:
+                rejoiner = threading.Thread(target=self._rejoin, args=(tier,),
+                                            name=f"proto-cluster-rejoin-{self._node}", daemon=True)
+                self._rejoiners = [t for t in self._rejoiners if t.is_alive()] + [rejoiner]
         persister.start()
         if rejoin:
-            rejoiner = threading.Thread(target=self._rejoin, args=(tier,), name=f"proto-cluster-rejoin-{self._node}",
-                                        daemon=True)
-            with self._lock:
-                self._rejoiner = rejoiner
             rejoiner.start()
 
     def _rejoin_answers(self) -> int:
-        """Answers from other members a rejoin needs: ``N - majority + 1`` (every member when
-        fewer).  Any majority that granted a term holds at least ``majority - 1`` members other
-        than this node, and that many answers from the ``N - 1`` others always include one of
-        them; this node's own (empty) knowledge counts for nothing."""
+        """Witness answers from other members a rejoin needs: ``N - majority + 1`` (every member
+        when fewer).  Any majority that granted a term, or acknowledged a root, holds at least
+        ``majority - 1`` members other than this node, and that many answers from the ``N - 1``
+        others always include one of them; this node's own (empty) knowledge counts for
+        nothing.  Forced (:meth:`force_rejoin`): ``majority - 1`` answers of any member that
+        has its log loaded, witnesses or not."""
         if self._rejoin_forced:
             return self._majority - 1
         return min(len(self._others), self.cluster_size - self._majority + 1)
 
+    def _witness_state(self) -> str:
+        """What this node's answers are worth (lock held): ``"unknown"`` without a loaded
+        acceptor log (no space opened, or stopping), ``"empty"`` while it rejoins, ``"ok"``
+        for a witness (its log holds what it promised and accepted)."""
+        if self._state != "running" or self._tier is None or not self._loaded:
+            return "unknown"
+        return "empty" if self._rejoining else "ok"
+
+    @staticmethod
+    def _rootless(answer) -> bool:
+        """True for an answer that has accepted no root (a committed root it read from the
+        persisted root of the store is not acceptance)."""
+        (ak, _, _), _, _ = answer
+        return not ak
+
     def force_rejoin(self) -> None:
         """Disaster recovery: let this node's rejoin (now or at the next :meth:`attach`)
         complete with the answers of a bare majority counting itself, ``majority - 1`` other
-        members, instead of ``N - majority + 1``.
+        members whose log is loaded (witnesses or rejoining), instead of ``N - majority + 1``
+        witnesses.
 
         Only for an operator who knows that the members that cannot answer lost their acceptor
         logs too (a majority of disks lost: the cluster then refounds from the persisted root)
@@ -560,12 +593,29 @@ class ClusterCoordinator:
             self._cond.notify_all()
         logger.warning("Node %s: rejoin forced by the operator (bare majority)", self._node)
 
+    def _rejoin_decision(self, answers: dict, states: dict) -> Optional[list]:
+        """The answers a rejoin learns from, or ``None`` when they are not enough (lock held).
+
+        Witness answers (``"ok"``) count; ``N - majority + 1`` of them are needed.  Answers of
+        empty members (rejoining) are counted only for a cluster's first start: when every
+        other member answered and none of them has accepted any root (each is empty, or a
+        witness that completed its own first start and has accepted nothing since).  Forced, any
+        ``majority - 1`` answers of loaded members do.  ``"unknown"`` answers never count."""
+        loaded = {p: a for p, a in answers.items() if states.get(p) in ("ok", "empty")}
+        witnesses = {p: a for p, a in loaded.items() if states[p] == "ok"}
+        if self._rejoin_forced:
+            return list(loaded) if len(loaded) >= self._majority - 1 else None
+        if len(witnesses) >= self._rejoin_answers():
+            return list(witnesses)
+        if len(loaded) == len(self._others) and all(self._rootless(a) for a in loaded.values()):
+            return list(loaded)     # a new cluster: nothing was ever accepted or committed
+        return None
+
     def _rejoin(self, tier) -> None:
         """Learn the highest term promised or seen by a majority, record it, and start voting
         (see "Rejoining" in the module docstring).  Retries until it succeeds, the tier is
         detached or the coordinator stops."""
         while True:
-            needed = self._rejoin_answers()
             with self._cond:
                 if self._state != "running" or self._tier is not tier or not self._rejoining:
                     return
@@ -574,23 +624,9 @@ class ClusterCoordinator:
                                    self._request_timeout)
                 with self._lock:
                     answers, promised = dict(waiter.answers), dict(waiter.promised)
-                if len(answers) >= needed:
-                    learnt = max([promised[p] for p in answers]
-                                 + [max(a[2], c[2]) for a, c, _ in answers.values()])
-                    tier.log_promise(learnt, force=True)        # also marks the rejoin as done
-                    with self._cond:
-                        if self._tier is not tier:
-                            return
-                        self._grants.restore(learnt)
-                        self._hint = max(self._hint, learnt)
-                        for _, (ck, croot, clabel), _ in answers.values():
-                            self._observe_committed(ck, croot, clabel, None, accept=False)
-                        self._rejoining = False
-                        self._rejoin_forced = False
-                        self._stats["rejoins"] += 1
-                        self._cond.notify_all()
-                    logger.info("Node %s rejoined with an empty acceptor log; highest term learnt %d",
-                                self._node, learnt)
+                    counted = self._rejoin_decision(answers, dict(waiter.states))
+                if counted is not None:
+                    self._complete_rejoin(tier, [answers[p] for p in counted], [promised[p] for p in counted])
                     return
             except (ProtoDBError, OSError) as e:
                 with self._lock:
@@ -602,6 +638,44 @@ class ClusterCoordinator:
                 raise
             with self._cond:
                 self._cond.wait_for(lambda: self._state != "running", timeout=self._request_timeout)
+
+    def _complete_rejoin(self, tier, answers: list, promised: list) -> None:
+        """Adopt what the counted ``answers`` teach -- the highest promise and label, and the
+        highest accepted root, which orders at or above every committed root (each was
+        accepted by a majority, which the counted answers intersect) -- log both durably, then
+        the rejoined marker, and only then act as an acceptor and a witness.  Committed roots
+        the answers report are adopted as committed knowledge only (they may have been read
+        from the persisted root of the store, which is never acceptance) and are not logged.
+
+        The node adopts the accepted root without its records: they are read from the peers
+        that hold them (page requests) until the object store has them."""
+        learnt = max(promised + [max(a[2], c[2]) for a, c, _ in answers] + [0])
+        best = committed = None
+        for (ak, aroot, alabel), (ck, croot, clabel), _ in answers:
+            if ak and (best is None or compare_roots(alabel, aroot, best[0], best[1]) > 0):
+                best = (alabel, aroot)
+            if ck and (committed is None or compare_roots(clabel, croot, committed[0], committed[1]) > 0):
+                committed = (clabel, croot)
+        if learnt:
+            tier.log_promise(learnt)
+        if best is not None:
+            tier.log_root("accepted", best[0], best[1], sync=True)
+        tier.log_rejoined()                 # last: the log now holds what the node must know
+        with self._cond:
+            if self._tier is not tier:
+                return
+            self._grants.restore(learnt)
+            self._hint = max(self._hint, learnt)
+            if best is not None:
+                self._observe_accepted(True, best[1], best[0])
+            if committed is not None:
+                self._observe_committed(True, committed[1], committed[0], None, accept=False)
+            self._rejoining = False
+            self._rejoin_forced = False
+            self._stats["rejoins"] += 1
+            self._cond.notify_all()
+        logger.info("Node %s rejoined with an empty acceptor log: highest term %d, accepted root %s",
+                    self._node, learnt, None if best is None else root_key(*best)[:2])
 
     def wait_idle(self, timeout: Optional[float] = None) -> bool:
         """Wait until every queued peer message (replications, releases, fetches) has been
@@ -671,6 +745,7 @@ class ClusterCoordinator:
                 return
             persister, self._persister = self._persister, None
             self._tier = None
+            self._loaded = False
             self._rejoining = False
             self._cond.notify_all()
         if persister is not None:
@@ -794,10 +869,17 @@ class ClusterCoordinator:
             elif kind in ("grant", "reject"):
                 self._on_reply(sender, msg)
             elif kind == "query":
-                reply = make_message("answer", self._node, rid=msg["rid"], root=self._wire(self._accepted),
-                                     committed=self._wire(self._committed), certain=not self._suspect_term,
-                                     promised=max(self._grants.highest_term, self._accepted[2],
-                                                  self._committed[2]))
+                state = self._witness_state()
+                if state == "unknown":
+                    # No acceptor log loaded: whatever is in memory is not what this node
+                    # promised or accepted.  Never counted by the asker.
+                    reply = make_message("answer", self._node, rid=msg["rid"], root=None, committed=None,
+                                         certain=False, promised=0, state=state)
+                else:
+                    reply = make_message("answer", self._node, rid=msg["rid"], root=self._wire(self._accepted),
+                                         committed=self._wire(self._committed), certain=not self._suspect_term,
+                                         promised=max(self._grants.highest_term, self._accepted[2],
+                                                      self._committed[2]), state=state)
             else:
                 self._on_answer(sender, kind, msg)
         if promise is not None and not self._promise(promise, msg["term"]):
@@ -820,7 +902,7 @@ class ClusterCoordinator:
         """Why this node may not vote or accept right now (lock held), or ``None``."""
         if self._failure is not None:
             return "fenced"
-        if self._tier is None:
+        if self._tier is None or not self._loaded:
             return "no_storage"
         if self._rejoining:
             return "rejoining"
@@ -915,6 +997,7 @@ class ClusterCoordinator:
             waiter.answers[sender] = (decode_labeled_root(msg["root"]), decode_labeled_root(msg["committed"]),
                                       msg["certain"])
             waiter.promised[sender] = msg["promised"]
+            waiter.states[sender] = msg["state"]
         elif kind == "fetched":
             if waiter.kind != "fetch":
                 return
@@ -1301,6 +1384,13 @@ class ClusterCoordinator:
                     self._stats["replication_failures"] += 1
                     self._suspect_term = max(self._suspect_term, label)
                 acks = len(waiter.acks)
+        except ProtoCorruptionError:
+            # A protocol violation (two roots sharing a key) is an invariant breach, never an
+            # unknown outcome: report it as it is.
+            with self._lock:
+                self._stats["replication_failures"] += 1
+                self._suspect_term = max(self._suspect_term, label)
+            raise
         except (ProtoDBError, OSError) as e:
             # The root left this node: peers may acknowledge it whatever happens here, so a
             # failure now (the space closing under the commit, a log write) leaves the outcome
@@ -1353,18 +1443,21 @@ class ClusterCoordinator:
         this node's.  Every committed root was acknowledged by a majority, which intersects
         the answering majority, so the result is the newest committed root or a root built on
         it.  Committed roots learnt are adopted and the suspicion is cleared; the accepted
-        roots of others are not (a root is accepted here only with its records).
+        roots of others are not (a root is accepted here only with its records).  Only
+        witnesses count: members whose acceptor log is loaded and not rejoining (this node
+        too: when it is not one, a majority of other witnesses is needed).
         Raises ``ProtoConflictError`` when no majority answers within ``request_timeout``.
         """
-        needed = self._majority - 1
         waiter = self._ask("query", {}, lambda w: len(w.answers) >= len(self._others), self._request_timeout)
         with self._lock:
-            answers = dict(waiter.answers)
+            answers = {p: a for p, a in waiter.answers.items() if waiter.states.get(p) == "ok"}
+            own = self._witness_state() == "ok"
+            needed = self._majority - 1 if own else self._majority
             self._stats["recoveries"] += 1
             if len(answers) < needed:
-                raise ProtoConflictError(f"Node {self._node}: only {len(answers) + 1} of the {self._majority} "
-                                         f"members needed answered the recovery query")
-            best = self._accepted
+                raise ProtoConflictError(f"Node {self._node}: only {len(answers) + int(own)} of the "
+                                         f"{self._majority} witnesses needed answered the recovery query")
+            best = self._accepted if own else (False, None, 0)
             for (ak, aroot, alabel), (ck, croot, clabel), _ in answers.values():
                 # A peer's committed root may be the persisted one only: never accepted knowledge.
                 self._observe_committed(ck, croot, clabel, None, accept=False)

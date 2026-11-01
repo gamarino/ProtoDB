@@ -189,7 +189,7 @@ def _in_process_tcp_rate(black_holed: bool, seconds: float = 1.5) -> float:
     for i in range(live):
         # A cluster that ran before n2 became unreachable: non-empty acceptor logs.  A fresh
         # log would rejoin first, which needs both other members of three (D46, R47).
-        memory_log_for(storage, f"n{i}").promise(0, force=True)
+        memory_log_for(storage, f"n{i}").mark_rejoined()
     try:
         ObjectSpace(storage).new_database("db")
         uids = itertools.count()

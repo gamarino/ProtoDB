@@ -9,9 +9,10 @@ Root order
     ballot (its low bits are the proposer's rank, :mod:`proto_db.cluster.coordinator`), so
     two proposers never share one; a proposer uses a ballot only once a majority granted
     it, and every member persists its promise before granting, and a member whose log was
-    lost grants nothing until it has learned the highest promise from the cluster, so the
-    same proposer never wins the same ballot twice (even after losing its own disk); one
-    holder replicates at most one root per epoch.
+    lost grants, acknowledges and answers as a witness nothing until it has learned the
+    highest promise and the highest accepted root from the cluster (the coordinator's
+    rejoin), so the same proposer never wins the same ballot twice (even after losing its
+    own disk); one holder replicates at most one root per epoch.
     :func:`compare_roots` asserts it and raises ``ProtoCorruptionError`` on a violation
     instead of breaking the tie silently.
 
@@ -21,7 +22,10 @@ The acceptor log
     and the newest root it knows committed.  :class:`RootsLog` keeps them in a file of
     fixed-size, checksummed entries, appended and ``fsync``-ed per the durability mode; a
     promise is always made durable before the grant is sent, an accepted root before the
-    acknowledgement.  :class:`MemoryRootsLog` keeps them in memory, for storages that have
+    acknowledgement.  A *rejoined* marker (written last by the coordinator's rejoin, or at
+    a cluster's first start) tells a log that holds what the node knows from a log that is
+    new, wiped, or whose rejoin was interrupted: only a marked log makes the node an
+    acceptor and a witness (:attr:`LoggedRoots.empty` is True without it).  :class:`MemoryRootsLog` keeps them in memory, for storages that have
     no directory (``MemoryStorage``): such a cluster is not durable; the log survives a
     coordinator restart in the same process only.
 
@@ -43,7 +47,7 @@ __all__ = ["root_key", "compare_roots", "LoggedRoots", "RootsLog", "MemoryRootsL
 _ENTRY = struct.Struct("<BQQ16sQ")          # kind, label (or term), epoch, segment, offset
 _CRC = struct.Struct("<I")
 ENTRY_SIZE = _ENTRY.size + _CRC.size
-KINDS = {"accepted": 1, "committed": 2, "promise": 3}
+KINDS = {"accepted": 1, "committed": 2, "promise": 3, "rejoined": 4}
 _COMPACT_BYTES = 1024 * 1024
 _O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
 _O_BINARY = getattr(os, "O_BINARY", 0)
@@ -76,7 +80,8 @@ def compare_roots(label_a: int, record_a: Optional[RootRecord], label_b: int,
 class LoggedRoots(NamedTuple):
     """What a node logged: ``accepted`` and ``committed`` as ``(label, RootRecord or None)`` or
     ``None``, ``top`` the highest label or term logged, ``promised`` the highest term granted,
-    ``empty`` True when the log holds no entry at all (a new or wiped disk)."""
+    ``empty`` True when the log has no rejoined marker (a new or wiped disk, or a rejoin
+    that did not complete): the node must rejoin before it acts as an acceptor."""
 
     accepted: Optional[tuple]
     committed: Optional[tuple]
@@ -93,10 +98,12 @@ class _Best:
         self.committed = None
         self.promised = 0
         self.top = 0
-        self.entries = 0
+        self.rejoined = False
 
     def add(self, kind: int, label: int, record: Optional[RootRecord]) -> None:
-        self.entries += 1
+        if kind == 4:
+            self.rejoined = True
+            return
         self.top = max(self.top, label)
         if kind == 3:
             self.promised = max(self.promised, label)
@@ -109,7 +116,7 @@ class _Best:
                 self.committed = (label, record)
 
     def result(self) -> LoggedRoots:
-        return LoggedRoots(self.accepted, self.committed, self.top, self.promised, self.entries == 0)
+        return LoggedRoots(self.accepted, self.committed, self.top, self.promised, not self.rejoined)
 
 
 def _check_kind(kind: str) -> int:
@@ -193,10 +200,8 @@ class RootsLog:
                 raise ProtoValidationError(f"The root log {self._path} is closed")
             self._write(entry, sync)
 
-    def promise(self, term: int, *, force: bool = False) -> None:
+    def promise(self, term: int) -> None:
         """Make the promise of ``term`` durable (per the durability mode) before it is sent.
-        ``force`` writes the entry even when a higher promise is durable (the marker of a
-        completed recovery, which makes the log non-empty).
 
         Raises ``ProtoValidationError`` when the log is closed: a promise that cannot be
         recorded must not be made.
@@ -204,10 +209,18 @@ class RootsLog:
         with self._lock:
             if self._closed:
                 raise ProtoValidationError(f"The root log {self._path} is closed")
-            if term <= self._promised and not force:
+            if term <= self._promised:
                 return              # a higher or equal promise is already durable
             self._write(_encode(3, term, None), True)
-            self._promised = max(self._promised, term)
+            self._promised = term
+
+    def mark_rejoined(self) -> None:
+        """Append the rejoined marker, durable per the durability mode (written last, after
+        the promise and the roots the rejoin learnt)."""
+        with self._lock:
+            if self._closed:
+                raise ProtoValidationError(f"The root log {self._path} is closed")
+            self._write(_encode(4, 0, None), True)
 
     def _write(self, entry: bytes, sync: bool) -> None:
         """Append ``entry`` (lock held)."""
@@ -232,8 +245,10 @@ class RootsLog:
             data += _encode(1, *roots.accepted)
         if roots.committed is not None:
             data += _encode(2, *roots.committed)
-        if roots.promised or not roots.empty:
-            data += _encode(3, roots.promised, None)     # keeps the recovery marker
+        if roots.promised:
+            data += _encode(3, roots.promised, None)
+        if not roots.empty:
+            data += _encode(4, 0, None)                  # the rejoined marker, last
         tmp = self._path + ".tmp"
         with open(tmp, "wb") as f:
             f.write(data)
@@ -277,10 +292,15 @@ class MemoryRootsLog:
         with self._lock:
             self._best.add(code, label, record)
 
-    def promise(self, term: int, *, force: bool = False) -> None:
+    def promise(self, term: int) -> None:
         """Record the promise of ``term``."""
         with self._lock:
             self._best.add(3, term, None)
+
+    def mark_rejoined(self) -> None:
+        """Record the rejoined marker."""
+        with self._lock:
+            self._best.add(4, 0, None)
 
     def load(self) -> LoggedRoots:
         """The roots and the promise recorded (see :class:`LoggedRoots`)."""

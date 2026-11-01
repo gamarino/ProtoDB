@@ -171,10 +171,11 @@ def test_losing_a_majority_before_persistence_loses_only_unpersisted_commits(tmp
         # The persisted state is intact and readable without the cluster.
         assert _remote_value(tc.store) == persisted
         tc.revive("n1")
-        tc.revive("n0")
-        # n1 survived with every commit it accepted and is in the first quorum: nothing is lost.
+        # A majority of disks is lost: the operator forces the rejoins (R49).  n1 survived with
+        # every commit it accepted and answers both: nothing is lost.
+        tc.revive("n0", force_rejoin=True)
         assert tc.eventually("n1", 9)
-        tc.revive("n2")
+        tc.revive("n2", force_rejoin=True)
         assert tc.eventually("n2", 9) and tc.eventually("n0", 9)
         tc.db("n2").run(incr, **RUN_KW)
         assert tc.eventually("n1", 10)

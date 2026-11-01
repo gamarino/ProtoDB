@@ -197,7 +197,7 @@ def _run_schedule(schedule):
         for node_id in cl.ids:
             recorder.wrap(cl[node_id], clocks[node_id])
             freezer.wrap(cl[node_id])
-        stop_at = time.monotonic() + RUN_SECONDS
+        stop_at = None            # set once the first rejoins are done
         spaces = {}               # node -> (coordinator, its space): one space per incarnation
         spaces_lock = threading.Lock()
 
@@ -229,6 +229,12 @@ def _run_schedule(schedule):
                 with committed_lock:
                     committed.add(uid)
 
+        # A new cluster rejoins once every member answered (D46, R47/R49): open every space
+        # and let the first rejoins finish before the faults start.
+        for node_id in cl.ids:
+            space_of(node_id)
+        cl.wait_rejoined()
+        stop_at = time.monotonic() + RUN_SECONDS
         threads = [threading.Thread(target=worker, args=(n,), daemon=True)
                    for n in cl.ids for _ in range(THREADS_PER_NODE)]
         for t in threads:

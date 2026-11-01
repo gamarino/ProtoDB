@@ -694,11 +694,15 @@ class TieredStorage(SharedStorage):
         ``sync``; see :class:`~proto_db.cluster.rootlog.RootsLog`)."""
         self._roots.append(kind, label, record, sync=sync)
 
-    def log_promise(self, term: int, *, force: bool = False) -> None:
-        """Make this node's promise of lease ``term`` durable in ``roots.log`` before it is sent
-        (``force``: even when a higher promise is logged, as the marker of a completed rejoin)."""
+    def log_promise(self, term: int) -> None:
+        """Make this node's promise of lease ``term`` durable in ``roots.log`` before it is sent."""
         self._check_open()
-        self._roots.promise(term, force=force)
+        self._roots.promise(term)
+
+    def log_rejoined(self) -> None:
+        """Append the rejoined marker to ``roots.log`` (the node's rejoin completed)."""
+        self._check_open()
+        self._roots.mark_rejoined()
 
     def load_roots(self) -> LoggedRoots:
         """The roots and the promise logged in ``roots.log`` (a

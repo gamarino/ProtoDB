@@ -191,6 +191,7 @@ def test_a_holder_paused_past_its_lease_never_replicates():
         shared = MemoryStorage()
         s0 = ObjectSpace(shared, coordinator=cl["n0"])
         s1 = ObjectSpace(shared, coordinator=cl["n1"])
+        ObjectSpace(shared, coordinator=cl["n2"])        # a new cluster rejoins once every member answers
         s0.new_database("db")
         entered, resume = threading.Event(), threading.Event()
         original = cl["n0"].tier.outgoing
@@ -230,6 +231,7 @@ def test_a_late_replication_is_refused_by_peers_that_granted_a_newer_term():
         shared = MemoryStorage()
         s0 = ObjectSpace(shared, coordinator=cl["n0"])
         s1 = ObjectSpace(shared, coordinator=cl["n1"])
+        ObjectSpace(shared, coordinator=cl["n2"])        # a new cluster rejoins once every member answers
         s0.new_database("db")
         _value(s1)
         late = FAST["lease_duration"] * 1.5

@@ -117,6 +117,7 @@ from .errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, Pro
                      ProtoValidationError)
 from .storage.format import FORMAT_VERSION, RootRecord
 from .cluster.coordinator import REFOUND_TERM_STEP
+from .cluster.rootlog import compare_roots
 from .values import canonical, exact_token
 
 __all__ = ["ObjectSpace", "Database", "Transaction", "HistoryEntry", "SpaceRoot", "DatabaseRoot"]
@@ -483,6 +484,15 @@ def _lease_base(coordinator, tier, lease) -> Optional[tuple]:
     When no node of the answering majority knows any root (a cluster started on empty local
     tiers, or one that lost a majority of its disks), the cluster refounds from the
     persisted root with a term above any root a lost node accepted (D46).
+
+    Hard guard: the base never orders below the committed root this node knows.  Every
+    committed root was accepted by a majority, which every recovery and every granting
+    majority of witnesses intersects, so an older base means a lost acceptor log answered as a
+    witness; committing over it would silently drop an acknowledged commit, so it raises
+    ``ProtoCorruptionError`` instead.  The guard concerns roots committed before this lease
+    was granted (labelled below its term); a committed root labelled with this term or a
+    later one means another holder committed after this lease was granted -- the holder was
+    paused past its lease -- so the lease is superseded and the caller acquires again.
     """
     replicated = True
     if lease.root_certain:
@@ -497,6 +507,14 @@ def _lease_base(coordinator, tier, lease) -> Optional[tuple]:
             if lease.term < label + REFOUND_TERM_STEP:
                 coordinator.refound(label)
                 return None
+    known, committed, committed_label = coordinator.committed_root()[:3]
+    if known and committed_label >= lease.term:
+        return None                 # superseded by a later holder's commit: acquire again
+    if known and compare_roots(label, current, committed_label, committed) < 0:
+        raise ProtoCorruptionError(
+            f"Protocol violation: the base root (label {label}, epoch {current.epoch if current else 0}) "
+            f"orders below the committed root this node knows (label {committed_label}, epoch "
+            f"{committed.epoch if committed else 0}); refusing to commit over it")
     if label >= lease.term:
         return None                 # acquire learnt the label: the next term is above it
     return current, label, replicated

@@ -99,8 +99,7 @@ def test_a_wiped_granter_never_lets_two_roots_share_a_label():
         lease_c = h.attempt("c", {"b"})
         assert lease_c.term != lease_a.term
         root, _ = h.base("c", lease_c, responders={"b"})      # a's answer is lost
-        r_prime = rec(root.epoch + 1)
-        assert root.epoch + 1 == r.epoch                      # the same epoch as a's minority root
+        r_prime = rec(root.epoch + 1)                         # b rejoined knowing a's R: c builds on it
         assert not isinstance(h.replicate("c", lease_c, r_prime, to={"b"}), Exception)
         h.release("c", lease_c, to={"a", "b"})
         h.clock.t += D

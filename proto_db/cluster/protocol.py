@@ -28,8 +28,11 @@ fields of its type:
 ``ack``        ``term``, ``rid``, ``ok``, ``root``: the receiver durably accepted (``ok``) or
                refused the replicated root; ``root`` is its accepted root.
 ``query``      ``rid``: ask a peer for the roots it knows (recovery, rejoin).
-``answer``     ``rid``, ``root``, ``committed``, ``certain``, ``promised``: the peer's accepted and
-               committed roots and the highest term it has seen or promised.
+``answer``     ``rid``, ``root``, ``committed``, ``certain``, ``promised``, ``state``: the peer's
+               accepted and committed roots and the highest term it has seen or promised;
+               ``state`` is ``"ok"`` (a witness), ``"empty"`` (it is rejoining) or
+               ``"unknown"`` (no acceptor log loaded: the roots are ``None`` and the answer
+               never counts).
 ``fetch``      ``rid``, ``segment``, ``offset``: a peer page request for one record.
 ``fetched``    ``rid``, ``data``: the framed record bytes, or ``None`` when the peer lacks it.
 
@@ -62,7 +65,7 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
            "encode_frame", "FrameDecoder", "encode_root", "decode_root", "decode_labeled_root"]
 
 #: Version carried by every message; a receiver drops messages of any other version.
-PROTOCOL_VERSION = 3
+PROTOCOL_VERSION = 4
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
 #: Record bytes a replication puts in one frame at most (a single record may fill one alone).
@@ -93,7 +96,8 @@ MESSAGE_TYPES = {
                   "chunks": _INT},
     "ack": {"term": _INT, "rid": _INT, "ok": _BOOL, "root": _ROOT},
     "query": {"rid": _INT},
-    "answer": {"rid": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL, "promised": _INT},
+    "answer": {"rid": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL, "promised": _INT,
+               "state": _STR},
     "fetch": {"rid": _INT, "segment": _UUID, "offset": _INT},
     "fetched": {"rid": _INT, "data": _OPT_BYTES},
 }

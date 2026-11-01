@@ -43,7 +43,7 @@ The cluster tier
     where records need no shipping and the persisted root is the storage's own root.
     Methods: ``storage``, ``outgoing()``, ``flush_local()``, ``shipped(records, root, label)``,
     ``apply(records, root, label)``, ``prefetch(records)``, ``log_root(kind, label, record, sync=)``,
-    ``log_promise(term, force=)``, ``load_roots()`` (a :class:`~proto_db.cluster.rootlog.LoggedRoots`),
+    ``log_promise(term)``, ``log_rejoined()``, ``load_roots()`` (a :class:`~proto_db.cluster.rootlog.LoggedRoots`),
     ``local_record(ptr)``, ``set_fetcher(fn)``, ``read_persisted()``,
     ``persist(label, record)``, ``ship(force)``, ``refresh_remote()``, ``commit_ranges(root)``,
     ``ensure_remote(needs, upload_copies=)``,
@@ -165,10 +165,13 @@ class PlainTier:
         """Log a root this node accepted or learnt committed (``fsync`` with ``sync``)."""
         self._log.append(kind, label, record, sync=sync)
 
-    def log_promise(self, term: int, *, force: bool = False) -> None:
-        """Make this node's promise of lease ``term`` durable before it is sent (``force``:
-        even when a higher promise is logged, as the marker of a completed rejoin)."""
-        self._log.promise(term, force=force)
+    def log_promise(self, term: int) -> None:
+        """Make this node's promise of lease ``term`` durable before it is sent."""
+        self._log.promise(term)
+
+    def log_rejoined(self) -> None:
+        """Append the rejoined marker (the node's rejoin completed)."""
+        self._log.mark_rejoined()
 
     def load_roots(self) -> LoggedRoots:
         """The roots and the promise this node logged."""
