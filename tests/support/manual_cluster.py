@@ -97,6 +97,8 @@ class Harness:
         self.disks = {n: MemoryStorage() for n in self.names}
         self.nodes = {n: self._node(n, 0.0) for n in self.names}
         self.retired = []
+        for n in self.names:                # empty acceptor logs: every node rejoins first
+            self.rejoin(n)
 
     def _node(self, name, grace):
         node = ClusterCoordinator(name, self.peers, transport=self.net.transport(), lease_duration=D,
@@ -106,15 +108,34 @@ class Harness:
         node.attach(MemoryTier(self.disks[name], name))
         return node
 
-    def restart(self, name, *, wipe=False):
-        """Restart ``name`` with a startup grace of one lease; ``wipe`` loses its disk."""
+    def restart(self, name, *, wipe=False, responders=None):
+        """Restart ``name`` with a startup grace of one lease; ``wipe`` loses its disk, and the
+        node then rejoins with the answers of ``responders`` (default: every other node; an
+        empty set leaves it rejoining)."""
         old = self.nodes[name]
         old.stop()
         self.retired.append(old)
         if wipe:
             self.disks[name] = MemoryStorage()
         self.nodes[name] = self._node(name, D)
+        if wipe and (responders is None or responders):
+            self.rejoin(name, responders)
         return self.nodes[name]
+
+    def rejoin(self, name, responders=None, timeout=5.0):
+        """Deliver ``name``'s rejoin queries to ``responders`` (default: every other node) and
+        their answers until it has rejoined; return True, or False after ``timeout``."""
+        responders = set(self.names) - {name} if responders is None else set(responders)
+        node = self.nodes[name]
+        deadline = time.monotonic() + timeout
+        while node.stats()["rejoining"]:
+            if time.monotonic() > deadline:
+                return False
+            self.net.deliver(src=name, dst=responders, kinds=("query",))
+            self.net.drop(src=name, kinds=("query",))
+            self.net.deliver(src=None, dst={name}, kinds=("answer",))
+            time.sleep(0.001)
+        return True
 
     def close(self):
         for node in list(self.nodes.values()) + self.retired:

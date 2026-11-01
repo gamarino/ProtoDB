@@ -11,7 +11,9 @@ node and the network, joining all their threads.
 A node grants and acknowledges only with a cluster tier attached (D46: its promises must
 be recorded somewhere).  Tests that open spaces attach their storage's tier; lease-only
 tests pass ``tiers=True``: every node then gets a :class:`MemoryTier` (an in-memory
-acceptor log that survives ``restart``, like a disk, and a persister that never writes).
+acceptor log that survives ``restart``, like a disk, and a persister that never writes),
+and the cluster waits until every node has rejoined (an empty acceptor log learns the
+promised terms from its peers before it votes, D46); ``wipe(node)`` waits for that node.
 
 ``CasCountingStorage(storage)`` delegates to a storage and counts failed conditional root
 writes (``ProtoConflictError`` from ``publish_root``), publishes, and publishes sent
@@ -75,6 +77,8 @@ class Cluster:
         try:
             for node_id in self.ids:
                 self.start(node_id)
+            if tiers:
+                self.wait_rejoined()
         except BaseException:
             self.close()
             raise
@@ -92,10 +96,23 @@ class Cluster:
             node.attach(MemoryTier(self.disks.setdefault(node_id, MemoryStorage()), node_id))
         return node
 
-    def wipe(self, node_id: str, **overrides) -> ClusterCoordinator:
-        """Restart ``node_id`` with an empty acceptor log (its disk is lost)."""
+    def wipe(self, node_id: str, *, wait: bool = True, **overrides) -> ClusterCoordinator:
+        """Restart ``node_id`` with an empty acceptor log (its disk is lost); with ``wait``,
+        return once it has rejoined."""
         self.disks.pop(node_id, None)
-        return self.restart(node_id, **overrides)
+        node = self.restart(node_id, **overrides)
+        if wait and self.tiers:
+            self.wait_rejoined([node_id])
+        return node
+
+    def wait_rejoined(self, nodes=None, timeout: float = 10.0) -> None:
+        """Wait until ``nodes`` (default all) have rejoined (no empty acceptor log learning)."""
+        deadline = time.monotonic() + timeout
+        for node_id in nodes or self.ids:
+            while self.nodes[node_id].stats()["rejoining"]:
+                if time.monotonic() > deadline:
+                    raise AssertionError(f"{node_id} did not rejoin within {timeout} s")
+                time.sleep(0.002)
 
     def __getitem__(self, node_id: str) -> ClusterCoordinator:
         return self.nodes[node_id]

@@ -185,6 +185,11 @@ def _in_process_tcp_rate(black_holed: bool, seconds: float = 1.5) -> float:
     nodes = [ClusterCoordinator(f"n{i}", peers, transport=transports[i], startup_grace=0.0).start()
              for i in range(live)]
     storage = MemoryStorage()
+    from proto_db.cluster.rootlog import memory_log_for
+    for i in range(live):
+        # A cluster that ran before n2 became unreachable: non-empty acceptor logs.  A fresh
+        # log would rejoin first, which needs both other members of three (D46, R47).
+        memory_log_for(storage, f"n{i}").promise(0, force=True)
     try:
         ObjectSpace(storage).new_database("db")
         uids = itertools.count()

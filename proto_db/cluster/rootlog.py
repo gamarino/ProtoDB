@@ -5,9 +5,13 @@ Root order
     *label*.  :func:`root_key` is the one ordering key of roots, used by every comparison
     in the coordinator, the persister, the root logs and the persisted-root writes:
     ``(label, epoch, segment, offset)``, a deterministic total order.  Two *different*
-    roots never share ``(label, epoch)`` by construction: a term is granted by a majority
-    whose members each persist the promise before granting (so at most one holder per
-    term, even across restarts), and one holder replicates at most one root per epoch.
+    roots never share ``(label, epoch)`` by construction: a label is a proposer-qualified
+    ballot (its low bits are the proposer's rank, :mod:`proto_db.cluster.coordinator`), so
+    two proposers never share one; a proposer uses a ballot only once a majority granted
+    it, and every member persists its promise before granting, and a member whose log was
+    lost grants nothing until it has learned the highest promise from the cluster, so the
+    same proposer never wins the same ballot twice (even after losing its own disk); one
+    holder replicates at most one root per epoch.
     :func:`compare_roots` asserts it and raises ``ProtoCorruptionError`` on a violation
     instead of breaking the tie silently.
 
@@ -71,12 +75,14 @@ def compare_roots(label_a: int, record_a: Optional[RootRecord], label_b: int,
 
 class LoggedRoots(NamedTuple):
     """What a node logged: ``accepted`` and ``committed`` as ``(label, RootRecord or None)`` or
-    ``None``, ``top`` the highest label or term logged, ``promised`` the highest term granted."""
+    ``None``, ``top`` the highest label or term logged, ``promised`` the highest term granted,
+    ``empty`` True when the log holds no entry at all (a new or wiped disk)."""
 
     accepted: Optional[tuple]
     committed: Optional[tuple]
     top: int
     promised: int
+    empty: bool = True
 
 
 class _Best:
@@ -87,8 +93,10 @@ class _Best:
         self.committed = None
         self.promised = 0
         self.top = 0
+        self.entries = 0
 
     def add(self, kind: int, label: int, record: Optional[RootRecord]) -> None:
+        self.entries += 1
         self.top = max(self.top, label)
         if kind == 3:
             self.promised = max(self.promised, label)
@@ -101,7 +109,7 @@ class _Best:
                 self.committed = (label, record)
 
     def result(self) -> LoggedRoots:
-        return LoggedRoots(self.accepted, self.committed, self.top, self.promised)
+        return LoggedRoots(self.accepted, self.committed, self.top, self.promised, self.entries == 0)
 
 
 def _check_kind(kind: str) -> int:
@@ -185,8 +193,10 @@ class RootsLog:
                 raise ProtoValidationError(f"The root log {self._path} is closed")
             self._write(entry, sync)
 
-    def promise(self, term: int) -> None:
+    def promise(self, term: int, *, force: bool = False) -> None:
         """Make the promise of ``term`` durable (per the durability mode) before it is sent.
+        ``force`` writes the entry even when a higher promise is durable (the marker of a
+        completed recovery, which makes the log non-empty).
 
         Raises ``ProtoValidationError`` when the log is closed: a promise that cannot be
         recorded must not be made.
@@ -194,10 +204,10 @@ class RootsLog:
         with self._lock:
             if self._closed:
                 raise ProtoValidationError(f"The root log {self._path} is closed")
-            if term <= self._promised:
+            if term <= self._promised and not force:
                 return              # a higher or equal promise is already durable
             self._write(_encode(3, term, None), True)
-            self._promised = term
+            self._promised = max(self._promised, term)
 
     def _write(self, entry: bytes, sync: bool) -> None:
         """Append ``entry`` (lock held)."""
@@ -222,8 +232,8 @@ class RootsLog:
             data += _encode(1, *roots.accepted)
         if roots.committed is not None:
             data += _encode(2, *roots.committed)
-        if roots.promised:
-            data += _encode(3, roots.promised, None)
+        if roots.promised or not roots.empty:
+            data += _encode(3, roots.promised, None)     # keeps the recovery marker
         tmp = self._path + ".tmp"
         with open(tmp, "wb") as f:
             f.write(data)
@@ -267,7 +277,7 @@ class MemoryRootsLog:
         with self._lock:
             self._best.add(code, label, record)
 
-    def promise(self, term: int) -> None:
+    def promise(self, term: int, *, force: bool = False) -> None:
         """Record the promise of ``term``."""
         with self._lock:
             self._best.add(3, term, None)

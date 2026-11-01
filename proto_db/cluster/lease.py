@@ -30,9 +30,11 @@ never overlap in real time.
 Since D46 the data does not depend on that timing argument: a peer refuses to accept a
 replicated root of a term lower than one it has granted (:attr:`PeerGrants.granted_top`),
 so a holder whose lease ended without its knowing cannot reach a majority once a newer
-lease exists (the ballot rule of Paxos).  Because the promises are durable, each term has
-at most one holder, so two different roots never share a label and an epoch
-(:mod:`proto_db.cluster.rootlog`).  The lease timing only keeps holders from wasting each
+lease exists (the ballot rule of Paxos).  Terms are proposer-qualified ballots (their low
+bits are the proposer's rank, :func:`~proto_db.cluster.coordinator.ballot_after`), the
+promises are durable, and a node that lost its promises learns them back from its peers
+before voting (the coordinator's rejoin), so each term has at most one holder and two
+different roots never share a label and an epoch (:mod:`proto_db.cluster.rootlog`).  The lease timing only keeps holders from wasting each
 other's work.
 """
 from typing import Callable, NamedTuple, Optional

@@ -8,6 +8,7 @@ from proto_db.errors import (ProtoBacklogFullError, ProtoCorruptionError, ProtoN
                              ProtoUnexpectedError, ProtoValidationError)
 from proto_db.storage.cloud import CloudStorage
 from proto_db.storage.format import FORMAT_VERSION, RootRecord, encode_segment_header
+from proto_db.cluster.rootlog import root_key
 from proto_db.storage.tiered import TieredStorage
 from tests.support.fake_object_store import FakeObjectStore
 
@@ -95,11 +96,11 @@ def test_released_segments_are_read_from_the_object_store(tmp_path):
     store = FakeObjectStore()
     st = _tiered(tmp_path, store)
     ptr = st.push_atom({"n": 1})
-    st.shipped(st.outgoing(), _root(ptr, 4))
+    st.shipped(st.outgoing(), _root(ptr, 4), 1)
     st.ship(force=True)
     st.push_atom({"n": 2})                             # the open segment is never released
-    assert st.release_local(3) == 0                    # the persisted root does not cover it yet
-    assert st.release_local(4) == 1
+    assert st.release_local(root_key(1, _root(ptr, 3))) == 0     # the persisted root does not cover it yet
+    assert st.release_local(root_key(1, _root(ptr, 4))) == 1
     assert not os.path.exists(os.path.join(st.path, ptr.segment.hex + ".seg"))
     st.close()
     st = _tiered(tmp_path, store)
@@ -132,7 +133,7 @@ def test_the_roots_log_survives_a_restart_and_a_torn_tail(tmp_path):
     with open(tmp_path / "n0" / "roots.log", "ab") as f:
         f.write(b"\x01torn")
     st = _tiered(tmp_path, store)
-    accepted, committed, top, promised = st.load_roots()
+    accepted, committed, top, promised, empty = st.load_roots()
     assert accepted == (3, _root(ptr, 4)) and committed == (2, _root(ptr, 5)) and top == 3 and promised == 0
     st.close()
 
@@ -227,14 +228,32 @@ def test_invalid_arguments_are_refused(tmp_path):
         _tiered(tmp_path, FakeObjectStore(), ship_interval=-1)
 
 
+def test_local_release_follows_the_order_of_roots_not_the_epoch(tmp_path):
+    """8.3d re-review N3: a dead-branch root persisted late (old label, higher epoch) does not
+    release data shipped with a new-lineage root (higher label, lower epoch)."""
+    from proto_db.cluster.coordinator import REFOUND_TERM_STEP
+    store = FakeObjectStore()
+    st = _tiered(tmp_path, store)
+    ptr = st.push_atom({"n": 1})
+    new_lineage = 5 + REFOUND_TERM_STEP
+    st.shipped(st.outgoing(), _root(ptr, 2), new_lineage)
+    st.ship(force=True)
+    st.push_atom({"n": 2})                             # the open segment is never released
+    dead_branch = root_key(5, RootRecord(FORMAT_VERSION, uuid.uuid4(), 64, 10))
+    assert st.release_local(dead_branch) == 0          # an epoch-keyed release dropped it here
+    assert st.commit_ranges(_root(ptr, 2)) is not None
+    assert st.release_local(root_key(new_lineage, _root(ptr, 2))) == 1
+    st.close()
+
+
 def test_a_foreign_segment_object_is_detected(tmp_path):
     store = FakeObjectStore()
     st = _tiered(tmp_path, store)
     ptr = st.push_atom({"n": 1})
-    st.shipped(st.outgoing(), _root(ptr, 1))
+    st.shipped(st.outgoing(), _root(ptr, 1), 1)
     st.ship(force=True)
     st.push_atom({})
-    st.release_local(1)
+    st.release_local(root_key(1, _root(ptr, 1)))
     st.close()
     other = uuid.uuid4()
     store.overwrite(st.segment_key(ptr.segment), encode_segment_header(other) + b"\0" * 64)

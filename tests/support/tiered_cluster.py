@@ -8,8 +8,11 @@ of ``n`` coordinators and, per node, a :class:`~proto_db.storage.tiered.TieredSt
 * ``kill(node)``: the process dies: its transport and persister stop, its space and
   storage are closed (the local directory survives, as a disk does);
 * ``wipe(node)``: also deletes the local directory (the disk is lost);
-* ``revive(node)``: a fresh coordinator with the same id, a storage reopened on the local
-  directory (empty after a wipe) and a new space;
+* ``revive(node, force_rejoin=False)``: a fresh coordinator with the same id, a storage
+  reopened on the local directory (empty after a wipe) and a new space; after a wipe the
+  node rejoins before voting, and ``force_rejoin`` is the operator's disaster-recovery
+  decision when a majority of disks is lost
+  (:meth:`~proto_db.cluster.coordinator.ClusterCoordinator.force_rejoin`);
 * ``value(node)``: the counter ``n`` of database ``db`` read by a new transaction;
 * ``eventually(node, expected)``: True once ``value(node) == expected`` (within 5 s): a
   node learns another node's commit when its release arrives.
@@ -99,9 +102,11 @@ class TieredCluster:
         self.kill(node)
         shutil.rmtree(os.path.join(self.path, node), ignore_errors=True)
 
-    def revive(self, node: str, **overrides) -> None:
+    def revive(self, node: str, *, force_rejoin: bool = False, **overrides) -> None:
         """Start the node again (a fresh coordinator and a reopened storage)."""
-        self.cluster.restart(node, **overrides)
+        coordinator = self.cluster.restart(node, **overrides)
+        if force_rejoin:
+            coordinator.force_rejoin()
         self._open(node)
 
     def close(self) -> None:

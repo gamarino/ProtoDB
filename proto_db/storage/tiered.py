@@ -58,7 +58,8 @@ copy must serve).  The bytes of a prefix are identical at every node (records ar
 at their original offsets), so concurrent part uploads agree.
 
 Local release: an own segment or a copy is deleted locally once the object store holds
-it and the persisted root covers every commit that referenced it (``release_local``).
+it and every commit that referenced it orders at or below the persisted root in the full
+order of roots (:func:`~proto_db.cluster.rootlog.root_key`; ``release_local``).
 
 Backlog: bytes and age of own data not yet in the object store, exposed by
 :meth:`TieredStorage.backlog`.  ``on_backlog_alert(backlog)`` is called when the backlog
@@ -88,13 +89,13 @@ from ..errors import (ProtoBacklogFullError, ProtoCorruptionError, ProtoDBError,
                       ProtoNotSupportedError, ProtoTimeoutError, ProtoUnexpectedError,
                       ProtoValidationError)
 from ..cluster import protocol as _protocol
-from ..cluster.rootlog import LoggedRoots, RootsLog, compare_roots
+from ..cluster.rootlog import LoggedRoots, RootsLog, compare_roots, root_key
 from .base import SharedStorage
 from .cache import BoundedCache
 from .cloud import (ObjectNotFoundError, OutcomeUnknownError, PreconditionFailedError,
                     TransientObjectStoreError)
 from .file import DURABILITY_MODES, FileStorage
-from .format import (SEGMENT_HEADER_SIZE, RecordKind, RootRecord, decode_root,
+from .format import (FORMAT_VERSION, SEGMENT_HEADER_SIZE, RecordKind, RootRecord, decode_root,
                      decode_segment_header, encode_record, encode_segment_header, read_record)
 
 __all__ = ["TieredStorage"]
@@ -111,7 +112,7 @@ ROOTS_LOG = "roots.log"
 _ROOT_CRC = struct.Struct("<I")
 _ROOTS_LOG_COMPACT = 1 * MIB
 RANGES_LOG = "ranges.log"
-_RANGES_HEAD = struct.Struct("<16sQQI")          # root segment, root offset, epoch, count
+_RANGES_HEAD = struct.Struct("<16sQQQI")         # root segment, root offset, label, epoch, count
 _RANGE = struct.Struct("<16sQQ")                 # segment, start, end
 _O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
 _O_BINARY = getattr(os, "O_BINARY", 0)
@@ -120,14 +121,14 @@ _O_BINARY = getattr(os, "O_BINARY", 0)
 class _Own:
     """Bookkeeping of one own segment."""
 
-    __slots__ = ("uuid", "end", "first", "uploaded", "max_epoch", "released")
+    __slots__ = ("uuid", "end", "first", "uploaded", "max_key", "released")
 
     def __init__(self, segment: uuid.UUID):
         self.uuid = segment
         self.end = SEGMENT_HEADER_SIZE
         self.first = None          # time.monotonic() of the first write not yet uploaded
         self.uploaded = False
-        self.max_epoch = 0         # newest commit epoch that shipped records of this segment
+        self.max_key = None        # root_key of the newest commit that shipped records of this segment
         self.released = False
 
 
@@ -234,10 +235,10 @@ class TieredStorage(SharedStorage):
         self._tls = threading.local()
         self._fetcher = None
         self._own = {}                 # UUID -> _Own, in creation order (dicts keep it)
-        self._copies = {}              # UUID -> newest commit epoch that wrote into the copy
+        self._copies = {}              # UUID -> root_key of the newest commit that wrote into the copy
         self._remote = set()           # segments whose sealed object is in the store
         self._parts = {}               # UUID -> largest end of a part object in the store
-        self._ranges = {}              # (root segment, offset) -> (epoch, [(UUID, start, end)])
+        self._ranges = {}              # (root segment, offset) -> (root_key, [(UUID, start, end)])
         self._unshipped = []           # [segment bytes, offset, framed record], push order
         self._manifest_dirty = False
         self._last_alert = 0.0
@@ -318,7 +319,7 @@ class TieredStorage(SharedStorage):
                 except ValueError:
                     continue
                 if seg not in self._own:
-                    self._copies[seg] = 0
+                    self._copies[seg] = None        # released by key only once written again
 
     def _open_ranges(self) -> int:
         return os.open(os.path.join(self._path, RANGES_LOG),
@@ -334,7 +335,7 @@ class TieredStorage(SharedStorage):
             raise ProtoUnexpectedError(f"Cannot read {RANGES_LOG}: {e}") from e
         pos = 0
         while pos + _RANGES_HEAD.size <= len(data):
-            root_seg, root_off, epoch, count = _RANGES_HEAD.unpack_from(data, pos)
+            root_seg, root_off, label, epoch, count = _RANGES_HEAD.unpack_from(data, pos)
             end = pos + _RANGES_HEAD.size + count * _RANGE.size
             if end + _ROOT_CRC.size > len(data):
                 break               # a torn tail
@@ -343,12 +344,13 @@ class TieredStorage(SharedStorage):
                 break
             ranges = [(uuid.UUID(bytes=seg), start, stop) for seg, start, stop in
                       _RANGE.iter_unpack(data[pos + _RANGES_HEAD.size:end])]
-            self._ranges[(uuid.UUID(bytes=root_seg), root_off)] = (epoch, ranges)
+            root = RootRecord(FORMAT_VERSION, uuid.UUID(bytes=root_seg), root_off, epoch)
+            self._ranges[(root.segment, root_off)] = (root_key(label, root), ranges)
             pos = end + _ROOT_CRC.size
 
     @staticmethod
-    def _encode_ranges(key: tuple, epoch: int, ranges: list) -> bytes:
-        body = _RANGES_HEAD.pack(key[0].bytes, key[1], epoch, len(ranges)) + b"".join(
+    def _encode_ranges(key: tuple, order: tuple, ranges: list) -> bytes:
+        body = _RANGES_HEAD.pack(key[0].bytes, key[1], order[0], order[1], len(ranges)) + b"".join(
             _RANGE.pack(seg.bytes, start, end) for seg, start, end in ranges)
         return body + _ROOT_CRC.pack(zlib.crc32(body))
 
@@ -597,14 +599,14 @@ class TieredStorage(SharedStorage):
             spans[segment] = (min(start, offset), max(end, offset + len(data)))
         return [(segment, start, end) for segment, (start, end) in spans.items()]
 
-    def _remember(self, records: list, root: Optional[RootRecord]) -> Optional[bytes]:
-        """Remember the ranges of the records shipped with the commit of ``root`` (lock held);
-        return the ``ranges.log`` entry to write."""
+    def _remember(self, records: list, root: Optional[RootRecord], label: int) -> Optional[bytes]:
+        """Remember the ranges of the records shipped with the commit of ``root`` labelled
+        ``label`` (lock held); return the ``ranges.log`` entry to write."""
         if root is None:
             return None
-        key, ranges = (root.segment, root.offset), self._ranges_of(records)
-        self._ranges[key] = (root.epoch, ranges)
-        return self._encode_ranges(key, root.epoch, ranges)
+        key, order, ranges = (root.segment, root.offset), root_key(label, root), self._ranges_of(records)
+        self._ranges[key] = (order, ranges)
+        return self._encode_ranges(key, order, ranges)
 
     def commit_ranges(self, root: RootRecord) -> Optional[list]:
         """``[(segment, start, end)]`` of the records shipped with the commit of ``root``, if this
@@ -613,27 +615,29 @@ class TieredStorage(SharedStorage):
             entry = self._ranges.get((root.segment, root.offset))
         return None if entry is None else list(entry[1])
 
-    def shipped(self, records: list, root: Optional[RootRecord] = None) -> None:
-        """``records`` (a prefix returned by :meth:`outgoing`) reached a majority with the commit of ``root``."""
-        epoch = root.epoch if root is not None else 0
+    def shipped(self, records: list, root: Optional[RootRecord] = None, label: int = 0) -> None:
+        """``records`` (a prefix returned by :meth:`outgoing`) reached a majority with the commit
+        of ``root`` labelled ``label``."""
+        order = root_key(label, root) if root is not None else None
         with self._lock:
             n = len(records)
             if n and self._unshipped[:1] and self._unshipped[0] is records[0]:
                 del self._unshipped[:n]
             for raw, _, _ in records:
                 own = self._own.get(uuid.UUID(bytes=raw))
-                if own is not None:
-                    own.max_epoch = max(own.max_epoch, epoch)
-            entry = self._remember(records, root)
+                if own is not None and order is not None and (own.max_key is None or order > own.max_key):
+                    own.max_key = order
+            entry = self._remember(records, root, label)
         self._log_ranges(entry, sync=False)     # own records reach the store in order anyway
 
-    def apply(self, records: list, root: Optional[RootRecord] = None) -> None:
-        """Store records received with the replicated root ``root`` at their original offsets
-        (durable per the durability mode) and cache them.  Own records are skipped."""
+    def apply(self, records: list, root: Optional[RootRecord] = None, label: int = 0) -> None:
+        """Store records received with the replicated root ``root`` labelled ``label`` at their
+        original offsets (durable per the durability mode) and cache them.  Own records are
+        skipped."""
         self._check_open()
-        epoch = root.epoch if root is not None else 0
+        order = root_key(label, root) if root is not None else None
         with self._lock:
-            entry = self._remember(records, root)
+            entry = self._remember(records, root, label)
         self._log_ranges(entry, sync=True)
         groups = {}
         for raw, offset, data in records:
@@ -645,7 +649,10 @@ class TieredStorage(SharedStorage):
                 if segment in self._own:
                     continue
                 known = segment in self._copies
-                self._copies[segment] = max(self._copies.get(segment, 0), epoch)
+                newest = self._copies.get(segment)
+                if order is not None and (newest is None or order > newest):
+                    newest = order
+                self._copies[segment] = newest
             path = os.path.join(self._path, segment.hex + SEGMENT_SUFFIX)
             try:
                 fd = os.open(path, os.O_RDWR | os.O_CREAT | _O_BINARY | _O_CLOEXEC, 0o644)
@@ -687,10 +694,11 @@ class TieredStorage(SharedStorage):
         ``sync``; see :class:`~proto_db.cluster.rootlog.RootsLog`)."""
         self._roots.append(kind, label, record, sync=sync)
 
-    def log_promise(self, term: int) -> None:
-        """Make this node's promise of lease ``term`` durable in ``roots.log`` before it is sent."""
+    def log_promise(self, term: int, *, force: bool = False) -> None:
+        """Make this node's promise of lease ``term`` durable in ``roots.log`` before it is sent
+        (``force``: even when a higher promise is logged, as the marker of a completed rejoin)."""
         self._check_open()
-        self._roots.promise(term)
+        self._roots.promise(term, force=force)
 
     def load_roots(self) -> LoggedRoots:
         """The roots and the promise logged in ``roots.log`` (a
@@ -931,23 +939,26 @@ class TieredStorage(SharedStorage):
             self._put_part(segment, data)
         return True
 
-    def release_local(self, persisted_epoch: int) -> int:
-        """Delete local segments (own and copies) the store holds and the persisted root of
-        ``persisted_epoch`` covers; return how many were deleted."""
+    def release_local(self, persisted_key: tuple) -> int:
+        """Delete local segments (own and copies) the store holds and whose commits all order
+        at or below the persisted root whose :func:`~proto_db.cluster.rootlog.root_key` is
+        ``persisted_key``; return how many were deleted.  A segment written by a commit that
+        orders above it (a new lineage after a refound, say) is kept."""
         if self._closed:
             return 0
         if not self._release:
             with self._lock:
-                for key in [k for k, (epoch, _) in self._ranges.items() if epoch <= persisted_epoch]:
+                for key in [k for k, (order, _) in self._ranges.items() if order <= persisted_key]:
                     del self._ranges[key]
             return 0
         current = self._local.current_segment
         with self._lock:
-            for key in [k for k, (epoch, _) in self._ranges.items() if epoch <= persisted_epoch]:
+            for key in [k for k, (order, _) in self._ranges.items() if order <= persisted_key]:
                 del self._ranges[key]
             own = [o for o in self._own.values() if o.uploaded and not o.released and o.uuid != current
-                   and o.max_epoch <= persisted_epoch and o.max_epoch > 0]
-            copies = [s for s, e in self._copies.items() if s in self._remote and 0 < e <= persisted_epoch]
+                   and o.max_key is not None and o.max_key <= persisted_key]
+            copies = [s for s, k in self._copies.items() if s in self._remote and k is not None
+                      and k <= persisted_key]
             for o in own:
                 o.released = True
             for s in copies:

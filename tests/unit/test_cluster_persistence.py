@@ -195,8 +195,8 @@ def test_losing_a_majority_with_the_survivor_outside_the_quorum_rolls_back_to_th
         tc.wipe("n2")
         tc.kill("n1")
         tc.store.set_outage(False)
-        tc.revive("n0")
-        tc.revive("n2")                                  # a quorum of empty disks
+        tc.revive("n0", force_rejoin=True)               # the operator's disaster recovery
+        tc.revive("n2", force_rejoin=True)               # a quorum of empty disks
         assert tc.eventually("n0", 4)                       # the persisted state: unpersisted commits lost
         tc.db("n2").run(incr, **RUN_KW)
         tc.revive("n1")                                  # the survivor's newer roots are superseded

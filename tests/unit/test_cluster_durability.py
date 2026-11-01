@@ -6,8 +6,11 @@
   branch whose epochs are higher (review I2).
 * A commit whose records exceed one frame is split into chunks; a record that could never
   be replicated is refused when it is saved, so the node keeps committing (review I3).
-* An unexpected exception in the worker or the persister fences the node: logged, reported
-  by the health metric, no more grants or acknowledgements (review M3).
+* An unexpected exception in the worker fences the node: logged, reported by the health
+  metric, no more grants or acknowledgements, and the messages still queued or arriving
+  are refused, so the node reports idle (review M3, re-review N5).
+* An unexpected exception in the persister stops persisting only: the node reports itself
+  unhealthy but keeps granting and acknowledging (re-review N2, ruling R47c).
 """
 import time
 
@@ -82,9 +85,12 @@ def test_a_node_restarted_after_a_refound_never_reloads_the_dead_branch(tmp_path
         tc.wipe("n0")
         tc.wipe("n2")                                       # a majority of the disks is lost
         tc.cluster.net.partition({"n0", "n2"}, {"n1"})      # the survivor misses the refound
+        # ... and cannot reach the store either (else it persists its newest root, the
+        # committed state, and there is no dead branch: a race this test used to win by timing).
+        tc["n1"].persister.stop()
         tc.store.set_outage(False)
-        tc.revive("n0")
-        tc.revive("n2")
+        tc.revive("n0", force_rejoin=True)                  # the operator's disaster recovery
+        tc.revive("n2", force_rejoin=True)
         assert tc.eventually("n0", 4)                       # refounded from the persisted state
         tc.db("n2").run(incr, **RUN_KW)
         tc.cluster.net.heal()
@@ -132,7 +138,7 @@ def test_an_unexpected_worker_failure_fences_the_node(tmp_path):
         tc.db("n0").run(incr, **RUN_KW)
         assert tc["n1"].healthy and tc["n1"].stats()["healthy"]
 
-        def broken(records, root=None):
+        def broken(records, root=None, label=0):
             raise RuntimeError("disk controller on fire")
 
         tc.storages["n1"].apply = broken
@@ -149,10 +155,14 @@ def test_an_unexpected_worker_failure_fences_the_node(tmp_path):
         assert tc["n1"].stats()["accepted"] == stats["accepted"]   # ... nor acknowledges
         with pytest.raises(ProtoUnexpectedError, match="fenced"):
             tc["n1"].acquire(timeout=1)
+        # N5: the replications and releases sent to it since are refused or dropped, never
+        # queued for a worker that is gone: the node reports idle.
+        assert tc["n1"].wait_idle(timeout=2.0)
+        assert tc["n1"]._queued == 0 and tc["n1"]._jobs.empty()
 
 
 @_THREAD_DIES
-def test_an_unexpected_persister_failure_fences_the_node(tmp_path):
+def test_an_unexpected_persister_failure_stops_persisting_but_not_voting(tmp_path):
     with TieredCluster(tmp_path) as tc:
         tc.spaces["n0"].new_database("db")
 
@@ -162,10 +172,20 @@ def test_an_unexpected_persister_failure_fences_the_node(tmp_path):
         tc.storages["n2"].ship = broken
         tc.db("n0").run(incr, **RUN_KW)
         assert _wait_for(lambda: not tc["n2"].healthy)
-        assert "upload queue corrupted" in tc["n2"].stats()["failure"]
+        stats = tc["n2"].stats()
+        assert "upload queue corrupted" in stats["failure"]
+        assert not stats["healthy"] and not stats["persisting"] and not stats["fenced"]
         assert _wait_for(lambda: not tc["n2"].persister._thread.is_alive())
-        tc.db("n1").run(incr, **RUN_KW)                     # the others go on
-        assert tc.eventually("n0", 2)
+        # Persisting is off the commit path: with n1 cut off, every lease and every commit
+        # needs n2's grant and acknowledgement, and gets them.
+        tc.cluster.net.partition({"n0", "n2"}, {"n1"})
+        accepted = tc["n2"].stats()["accepted"]
+        tc.db("n0").run(incr, **RUN_KW)
+        assert tc["n2"].stats()["accepted"] > accepted
+        tc.db("n2").run(incr, **RUN_KW)                     # and it still acquires
+        assert tc.eventually("n0", 3)
+        with pytest.raises(ProtoUnexpectedError, match="persister failed"):
+            tc.spaces["n2"].sync(timeout=5)                 # fails at once, never a 5 s wait
 
 
 def _wait_for(predicate, timeout=5.0):
@@ -222,3 +242,38 @@ def test_a_verified_dead_branch_root_never_shortens_the_persisters_walk(tmp_path
         storage.ensure_remote = lambda needs, upload_copies=False: False
         assert not persister._persistable(label, record, upload_copies=False)
         assert len(walked) == 3                             # every unpersisted commit is checked
+
+
+def test_a_commit_racing_the_close_of_the_space_has_an_unknown_outcome(tmp_path):
+    """Re-review N4: once the root is sent, the peers may acknowledge it, so a failure of the
+    committer's own log (the space closing under the commit) is ``ProtoOutcomeUnknownError``,
+    never a validation error that claims nothing took effect."""
+    import uuid
+    from proto_db.cluster.persister import PlainTier
+    from proto_db.errors import ProtoOutcomeUnknownError
+    from proto_db.storage.format import FORMAT_VERSION, RootRecord
+    with Cluster(3, **FAST) as cl:
+        tiers = {n: PlainTier(FileStorage(str(tmp_path / "space"), durability="none"), n) for n in cl.ids}
+        for n in cl.ids:
+            cl[n].attach(tiers[n])
+        cl.wait_rejoined()
+        lease = cl["n0"].acquire(timeout=5)
+        transport = cl["n0"].transport
+        send = transport.send
+
+        def send_then_close(node_id, message):
+            send(node_id, message)
+            if message["type"] == "replicate":
+                tiers["n0"].close()                       # ObjectSpace.close closes the log
+
+        transport.send = send_then_close
+        root = RootRecord(FORMAT_VERSION, uuid.uuid4(), 64, 1)
+        with pytest.raises(ProtoOutcomeUnknownError) as info:
+            cl["n0"].replicate(lease, root)
+        assert isinstance(info.value.__cause__, ProtoValidationError)
+        assert _wait_for(lambda: cl["n1"].accepted_root()[1] == root)    # it did reach the peers
+        assert cl["n0"].stats()["replication_failures"] == 1
+        transport.send = send
+        cl["n0"].release(lease)
+        for n in ("n1", "n2"):
+            tiers[n].close()

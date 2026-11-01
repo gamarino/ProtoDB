@@ -34,7 +34,7 @@ def test_every_message_carries_the_protocol_version_and_sender():
     ("records", dict(term=3, rid=4, index=0, records=[[uuid.UUID(int=2).bytes, 40, b"framed"]])),
     ("ack", dict(term=3, rid=4, ok=True, root=None)),
     ("query", dict(rid=1)),
-    ("answer", dict(rid=1, root=None, committed=[0, None, None, 0], certain=True)),
+    ("answer", dict(rid=1, root=None, committed=[0, None, None, 0], certain=True, promised=4)),
     ("fetch", dict(rid=2, segment=uuid.UUID(int=9).bytes, offset=26)),
     ("fetched", dict(rid=2, data=None)),
 ])

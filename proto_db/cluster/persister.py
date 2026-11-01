@@ -28,9 +28,12 @@ Each pass of a node's persister:
 4. releases local segments the persisted root covers and checks the backlog (alert hook).
 
 Errors (the object store unreachable, for instance) are logged and retried with a
-growing back-off; commits are never affected.  An unexpected exception fences the node
-(:meth:`~proto_db.cluster.coordinator.ClusterCoordinator.fence`) and is re-raised: the
-thread never dies silently.
+growing back-off; commits are never affected.  An unexpected exception stops persisting on
+this node only: it is reported
+(:meth:`~proto_db.cluster.coordinator.ClusterCoordinator.persistence_failed`, which marks
+the node unhealthy without fencing its votes and acknowledgements, persistence being off
+the commit path), waiters of :meth:`Persister.wait_persisted` fail at once, and the
+exception is re-raised: the thread never dies silently.
 
 The cluster tier
     What the coordinator and the persister need from the storage of a space: a duck-typed
@@ -38,13 +41,13 @@ The cluster tier
     (local WAL tier plus object store); :class:`PlainTier` adapts a storage shared by
     every node (``MemoryStorage`` in one process, ``FileStorage`` on a shared filesystem),
     where records need no shipping and the persisted root is the storage's own root.
-    Methods: ``storage``, ``outgoing()``, ``flush_local()``, ``shipped(records, root)``,
-    ``apply(records, root)``, ``prefetch(records)``, ``log_root(kind, label, record, sync=)``,
-    ``log_promise(term)``, ``load_roots()`` (a :class:`~proto_db.cluster.rootlog.LoggedRoots`),
+    Methods: ``storage``, ``outgoing()``, ``flush_local()``, ``shipped(records, root, label)``,
+    ``apply(records, root, label)``, ``prefetch(records)``, ``log_root(kind, label, record, sync=)``,
+    ``log_promise(term, force=)``, ``load_roots()`` (a :class:`~proto_db.cluster.rootlog.LoggedRoots`),
     ``local_record(ptr)``, ``set_fetcher(fn)``, ``read_persisted()``,
     ``persist(label, record)``, ``ship(force)``, ``refresh_remote()``, ``commit_ranges(root)``,
     ``ensure_remote(needs, upload_copies=)``,
-    ``release_local(epoch)``, ``check_backlog()``, ``check_commit_allowed()``,
+    ``release_local(persisted_key)``, ``check_backlog()``, ``check_commit_allowed()``,
     ``critical_section()``.
 """
 import collections
@@ -149,10 +152,10 @@ class PlainTier:
         """Make this node's records durable in the shared storage."""
         self.storage.flush()
 
-    def shipped(self, records: list, root=None) -> None:
+    def shipped(self, records: list, root=None, label: int = 0) -> None:
         """Nothing to track."""
 
-    def apply(self, records: list, root=None) -> None:
+    def apply(self, records: list, root=None, label: int = 0) -> None:
         """Nothing to store."""
 
     def prefetch(self, records: list) -> None:
@@ -162,9 +165,10 @@ class PlainTier:
         """Log a root this node accepted or learnt committed (``fsync`` with ``sync``)."""
         self._log.append(kind, label, record, sync=sync)
 
-    def log_promise(self, term: int) -> None:
-        """Make this node's promise of lease ``term`` durable before it is sent."""
-        self._log.promise(term)
+    def log_promise(self, term: int, *, force: bool = False) -> None:
+        """Make this node's promise of lease ``term`` durable before it is sent (``force``:
+        even when a higher promise is logged, as the marker of a completed rejoin)."""
+        self._log.promise(term, force=force)
 
     def load_roots(self) -> LoggedRoots:
         """The roots and the promise this node logged."""
@@ -220,7 +224,7 @@ class PlainTier:
         """Every record is in the shared storage."""
         return True
 
-    def release_local(self, persisted_epoch: int) -> int:
+    def release_local(self, persisted_key: Optional[tuple]) -> int:
         """Nothing local to release."""
         return 0
 
@@ -247,6 +251,7 @@ class Persister:
         self._lock = threading.Lock()
         self._cond = threading.Condition(self._lock)
         self._stopped = False
+        self._failed = None            # the unexpected exception that ended the thread
         self._urgent = False
         self._waiters = 0
         self._persisted = (0, None)    # (label, RootRecord): the newest persisted root known
@@ -300,6 +305,8 @@ class Persister:
             self._cond.notify_all()
             try:
                 while self._behind(label, record):
+                    if self._failed is not None:
+                        raise ProtoUnexpectedError(f"The persister failed: {self._failed!r}") from self._failed
                     if self._stopped:
                         raise ProtoTimeoutError("The persister stopped before the root was persisted")
                     remaining = None if deadline is None else deadline - time.monotonic()
@@ -350,11 +357,14 @@ class Persister:
                 delay = min(_MAX_BACKOFF, max(self._interval, delay * 2))
                 logger.info("Persister of node %s: %s (retrying in %.2f s)", self._coordinator.node_id, e, delay)
             except Exception as e:
-                # A bug or an unforeseen failure: fence the node and fail loudly.
-                with self._lock:
+                # A bug or an unforeseen failure: stop persisting, report it, fail loudly.  The
+                # node keeps voting and acknowledging: the commit path never depends on this.
+                with self._cond:
                     self._stats["errors"] += 1
                     self._last_error = e
-                self._coordinator.fence(e)
+                    self._failed = e
+                    self._cond.notify_all()
+                self._coordinator.persistence_failed(e)
                 raise
 
     def _refresh(self, force: bool = False) -> None:
@@ -449,6 +459,14 @@ class Persister:
                         self._refresh(force=True)
             else:
                 self._refresh(force=waiting)
-        # Local release stays keyed by epoch: after a refound the new lineage's epochs exceed
-        # the persisted one, so a release is at worst delayed, never premature.
-        self._tier.release_local(self.persisted_epoch)
+        # Local release is keyed by the full order of roots, like the walk: only data shipped
+        # with roots ordering at or below the persisted one is released, and such a root is
+        # either on the persisted root's chain or can no longer commit (a committed root of a
+        # higher key exists).  A new lineage after a refound orders above every root of the
+        # lost one (its labels are higher), so a dead-branch root persisted late (a survivor
+        # partitioned from the refounded majority) never releases the new lineage's
+        # unpersisted data; a root that orders above the persisted one is never released.
+        with self._lock:
+            persisted = self._persisted
+        if persisted[1] is not None:
+            self._tier.release_local(root_key(*persisted))

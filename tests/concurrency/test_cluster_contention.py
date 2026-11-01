@@ -12,6 +12,11 @@ unique id to a ``CountedSet`` root written blind (intent merge).  Checks:
   write was unconditional, no replication failed (no commit with an unknown outcome) and
   every node stayed healthy: contention never reached the storage.
 
+A node learns that another node's commit is committed from that commit's release, handled
+by its worker; a read on a node is therefore stale until then (never lost).  The checks
+read only once every node knows the same committed root (``_settle``), and a
+deterministic test (a delayed release) shows both the stale read and its end.
+
 A second test measures commits per second with 1, 2 and 4 peers (blind adds only, so the
 figure is the lease round trip plus majority replication, not conflict retries).  A third
 compares, with 30 ms injected object-store latency, the tiered cluster against the
@@ -19,6 +24,7 @@ single-writer CAS-only path (every commit writes the root object).  The numbers 
 printed for the Phase 9 record.
 """
 import itertools
+import threading
 import time
 
 import pytest
@@ -66,6 +72,19 @@ def _storage_untouched_by_commits(storages, spaces):
             assert stats()["root_writes_in_critical"] == 0
 
 
+def _settle(cl, timeout=15.0):
+    """Wait until every node has handled its queued messages and knows the same committed
+    root: the last commit's release reached everyone."""
+    deadline = time.monotonic() + timeout
+    while True:
+        idle = all(cl[n].wait_idle(timeout=0.0) for n in cl.ids)
+        roots = {cl[n].committed_root()[:3] for n in cl.ids}
+        if idle and len(roots) == 1:
+            return
+        assert time.monotonic() < deadline, f"the cluster did not settle: {roots}"
+        time.sleep(0.005)
+
+
 def _read(space):
     tr = space.open_database("db").new_transaction()
     try:
@@ -96,6 +115,7 @@ def test_contending_peers_never_reach_the_storage(tmp_path, backend):
 
         elapsed = run_threads([worker_for(dbs[i % PEERS]) for i in range(PEERS * THREADS)])
         stats = [cl[n].stats() for n in cl.ids]
+        _settle(cl)
         n, counted = _read(spaces[1])
         total = PEERS * THREADS * PER_THREAD
         assert n == total
@@ -138,8 +158,10 @@ def _throughput(storages_factory, tmp_path, peers, threads=4, seconds=1.5, break
         elapsed = run_threads([worker_for(dbs[i % peers]) for i in range(peers * threads)])
         failures = sum(cl[n].stats()["replication_failures"] for n in cl.ids)
         critical = [cl[n].stats() for n in cl.ids]
+        _settle(cl)                    # the last commits' releases reached node 0
         _, counted = _read(spaces[0])
         commits = sum(done)
+        # No lost update: the final state holds exactly the acknowledged commits.
         assert sorted(counted.elements()) == list(range(commits))     # every committed id, no other
         assert all(c == 1 for _, c in counted.items())                 # none applied twice
         _storage_untouched_by_commits(storages, spaces)
@@ -151,6 +173,49 @@ def _throughput(storages_factory, tmp_path, peers, threads=4, seconds=1.5, break
         for key in ("validation", "replay", "path_copy", "replication"):
             breakdown[key] = sum(st["critical"][key] for st in critical) / n
     return commits / elapsed
+
+
+def _delay_releases(node, gate):
+    """Make ``node``'s worker handle winners' releases only once ``gate`` is set (the wait
+    releases the coordinator lock, as a slow worker would not hold it)."""
+    original = node._on_release
+
+    def delayed(sender, msg):
+        if msg["held"]:
+            node._cond.wait_for(gate.is_set, timeout=10.0)
+        return original(sender, msg)
+
+    node._on_release = delayed
+
+
+def test_a_read_before_the_release_is_handled_is_stale_never_lost(tmp_path):
+    """Root cause of the one-off ``test_throughput_with_1_2_4_peers[tiered]`` failure (8.3d
+    re-review): the check read node 0 right after the threads joined, while node 0's worker
+    had not yet handled the release of the last commit made on another node.  Delaying that
+    release deterministically reproduces the missing id; once it is handled the id is there."""
+    store, storages = _tiered_storages(tmp_path, 2)
+    with Cluster(2, **CLUSTER_KW) as cl:
+        spaces = [ObjectSpace(s, coordinator=cl[n]) for s, n in zip(storages, cl.ids)]
+        spaces[0].new_database("db")
+        dbs = [s.open_database("db") for s in spaces]
+        dbs[1].run(lambda tr: tr.set_root_object("ids", tr.new_counted_set().add(0)), **RUN_KW)
+        _settle(cl)
+        gate = threading.Event()
+        _delay_releases(cl["n0"], gate)
+        try:
+            dbs[1].run(lambda tr: tr.set_root_object("ids", tr.new_counted_set().add(1)), **RUN_KW)
+            assert cl["n0"].accepted_root()[1] == cl["n1"].committed_root()[1]   # n0 acknowledged it
+            _, counted = _read(spaces[0])
+            assert sorted(counted.elements()) == [0]     # acknowledged, not yet known committed at n0
+        finally:
+            gate.set()
+            with cl["n0"]._cond:
+                cl["n0"]._cond.notify_all()
+        _settle(cl)
+        _, counted = _read(spaces[0])
+        assert sorted(counted.elements()) == [0, 1]      # stale, never lost
+        for space in spaces:
+            space.close()
 
 
 @pytest.mark.parametrize("backend", sorted(BACKENDS))
