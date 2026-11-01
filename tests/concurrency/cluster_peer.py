@@ -17,8 +17,9 @@ line each way:
 3. the peer starts its coordinator, prints ``{"ready": true}``;
 4. the parent writes ``{"go": true}`` once every peer is ready;
 5. the peer commits, waits until its commits are persisted (``ObjectSpace.sync``) and prints
-   ``{"commits": .., "seconds": .., "fencing": .., "commit_publishes": .., "critical": ..}``
-   (``commit_publishes``: root writes made by other threads than the persister, D46;
+   ``{"commits": .., "seconds": .., "failures": .., "commit_publishes": .., "critical": ..}``
+   (``failures``: replications without a majority; ``commit_publishes``: root writes made
+   by other threads than the persister, D46;
    ``critical``: the tiered storage's critical-section counters, or ``None``);
 6. the parent writes ``{"stop": true}`` once every peer has finished (a peer keeps
    granting until then), and the peer stops and exits.
@@ -119,7 +120,7 @@ def main():
         if callable(stats):
             st = stats()
             critical = {k: st[k] for k in ("critical_misses", "root_writes_in_critical")}
-        _say({"commits": sum(counts), "seconds": seconds, "fencing": coordinator.stats()["fencing_events"],
+        _say({"commits": sum(counts), "seconds": seconds, "failures": coordinator.stats()["replication_failures"],
               "commit_publishes": sum(1 for name in storage.publishers if not name.startswith("proto-persister-")),
               "critical": critical, "breakdown": coordinator.stats()["critical"],
               "critical_commits": coordinator.stats()["critical_commits"]})

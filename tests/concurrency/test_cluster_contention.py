@@ -9,8 +9,8 @@ unique id to a ``CountedSet`` root written blind (intent merge).  Checks:
 * the final count is exact and every committed id is present exactly once (no lost and
   no duplicated update);
 * no committing thread wrote a storage root (only persister threads did, D46), no root
-  write was unconditional and the coordinators saw zero fencing events: contention never
-  reached the storage.
+  write was unconditional, no replication failed (no commit with an unknown outcome) and
+  every node stayed healthy: contention never reached the storage.
 
 A second test measures commits per second with 1, 2 and 4 peers (blind adds only, so the
 figure is the lease round trip plus majority replication, not conflict retries).  A third
@@ -105,7 +105,8 @@ def test_contending_peers_never_reach_the_storage(tmp_path, backend):
         _storage_untouched_by_commits(storages, spaces)
         for space in spaces:
             space.close()
-    assert sum(st["fencing_events"] for st in stats) == 0
+    assert sum(st["replication_failures"] for st in stats) == 0
+    assert all(st["healthy"] for st in stats)
     print(f"\n[{backend}] {total} increments by {PEERS}x{THREADS} threads in {elapsed:.2f}s; "
           f"lease attempts {sum(st['attempts'] for st in stats)}, "
           f"acquired {sum(st['acquired'] for st in stats)}, "
@@ -135,7 +136,7 @@ def _throughput(storages_factory, tmp_path, peers, threads=4, seconds=1.5, break
             return worker
 
         elapsed = run_threads([worker_for(dbs[i % peers]) for i in range(peers * threads)])
-        fencing = sum(cl[n].stats()["fencing_events"] for n in cl.ids)
+        failures = sum(cl[n].stats()["replication_failures"] for n in cl.ids)
         critical = [cl[n].stats() for n in cl.ids]
         _, counted = _read(spaces[0])
         commits = sum(done)
@@ -144,7 +145,7 @@ def _throughput(storages_factory, tmp_path, peers, threads=4, seconds=1.5, break
         _storage_untouched_by_commits(storages, spaces)
         for space in spaces:
             space.close()
-    assert fencing == 0
+    assert failures == 0
     if breakdown is not None:
         n = sum(st["critical_commits"] for st in critical) or 1
         for key in ("validation", "replay", "path_copy", "replication"):

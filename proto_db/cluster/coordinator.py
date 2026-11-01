@@ -17,19 +17,29 @@ Acquiring
 Granting
     See :class:`~proto_db.cluster.lease.PeerGrants`.  Requests and releases carry the
     sender's incarnation (a random number drawn at each start), so a restarted node is
-    never confused with its previous life.
+    never confused with its previous life.  A grant's term is made durable in the node's
+    acceptor log (:mod:`proto_db.cluster.rootlog`) before the grant is sent, and restored
+    when the node restarts, so no term is ever granted twice (the acceptor rule of Paxos).
+    A node grants, and acknowledges replications, only while a cluster tier (the storage
+    of a space) is attached and while it is healthy: a node without a durable place for its
+    promises and roots never counts toward a majority.
 Roots and their labels (D46)
     Every root the cluster knows carries the term of the lease that replicated it, its
-    *label*; roots are ordered by ``(label, epoch)``.  Each node keeps its *accepted* root
+    *label*; roots are ordered by :func:`~proto_db.cluster.rootlog.root_key` everywhere, and
+    two different roots with the same label and epoch are reported as a protocol violation
+    (:func:`~proto_db.cluster.rootlog.compare_roots`).  Each node keeps its *accepted* root
     (the highest root it has durably accepted from a replication) and its *committed* root
     (the newest root it knows a majority acknowledged).  Transactions read committed roots
     only; the holder builds on the highest accepted root of its granting majority.
 The commit point (D46)
     Under the lease the holder validates and merges against that root, then
     :meth:`ClusterCoordinator.replicate` sends ``(epoch, root pointer)`` with the records
-    the commit added to every peer.  A peer accepts it -- stores the records and the root
-    durably, then acknowledges -- unless it is starting or has granted a higher term (the
-    ballot rule).  The commit is acknowledged once a majority (the holder included) has
+    the commit added to every peer (split into several frames when they do not fit in
+    one).  A peer accepts it -- stores the records and logs the root on its own durable
+    tier (``fsync``), then acknowledges -- unless it is starting, has no tier, is fenced or
+    has granted a higher term (the ballot rule).  The commit point is therefore the local
+    WAL ``fsync`` of a majority.  A cluster over ``MemoryStorage`` keeps its acceptor logs
+    in memory and is not durable.  The commit is acknowledged once a majority (the holder included) has
     acknowledged before the lease ends; the release then tells the peers it is committed.
     Every later lease's granting majority intersects that acknowledging majority, and a
     peer that acknowledged before granting reports the root (or a newer one) with its
@@ -46,11 +56,18 @@ Peer services
     ``query``/``answer`` (recovery, joining peers) and ``fetch``/``fetched`` (peer page
     requests for records not yet in the object store).
 
+Health
+    An unexpected exception in the worker or the persister thread fences the node
+    (:meth:`ClusterCoordinator.fence`): it is logged, the node stops granting, accepting
+    and acquiring, :attr:`ClusterCoordinator.healthy` and ``stats()["healthy"]`` turn
+    False, and the exception is re-raised in its thread.
+
 Threads: the transport's own threads, plus one worker started by :meth:`start` that
 applies replicated records, serves page requests and prefetches, and the persister
 started by :meth:`attach`.  One lock guards the coordinator's state; it is never held
 while sending, while doing I/O, or while calling user code.
 """
+import collections
 import itertools
 import logging
 import queue
@@ -62,10 +79,12 @@ from typing import Callable, NamedTuple, Optional
 
 from ..core.atom import AtomPointer
 from ..errors import (ProtoConflictError, ProtoDBError, ProtoOutcomeUnknownError, ProtoTimeoutError,
-                      ProtoUserError, ProtoValidationError)
+                      ProtoUnexpectedError, ProtoUserError, ProtoValidationError)
 from ..storage.format import RootRecord
+from . import protocol
 from .lease import Lease, LeaseAttempt, PeerGrants, majority
 from .protocol import decode_labeled_root, encode_root, make_message
+from .rootlog import compare_roots, root_key
 
 __all__ = ["Peer", "ClusterCoordinator"]
 
@@ -78,6 +97,8 @@ _STRAGGLE_FACTOR = 4.0
 #: Upper bound, in seconds, of the random spread a requester adds after being woken by a release.
 _WAKE_SPREAD = 0.003
 _STOP = object()
+#: Roots whose records this node stored, remembered for :meth:`ClusterCoordinator.await_records`.
+_STORED_MEMORY = 256
 _CRITICAL_KEYS = ("validation", "replay", "path_copy", "replication")
 
 
@@ -99,8 +120,19 @@ def _number(name: str, value, *, positive: bool = True) -> float:
     return float(value)
 
 
-def _key(label: int, record: Optional[RootRecord]) -> tuple:
-    return label, (record.epoch if record is not None else 0)
+def _split_records(records: list, budget: int) -> list:
+    """Split ``records`` into consecutive chunks of at most ``budget`` record bytes (a larger
+    record forms a chunk alone); the last chunk rides in the ``replicate`` message."""
+    chunks, current, size = [], [], 0
+    for record in records:
+        n = 32 + (len(record[2]) if record[2] is not None else 0)
+        if current and size + n > budget:
+            chunks.append(current)
+            current, size = [], 0
+        current.append(record)
+        size += n
+    chunks.append(current)
+    return chunks
 
 
 class _Waiter:
@@ -137,7 +169,9 @@ class ClusterCoordinator:
         startup_grace: seconds after :meth:`start` during which this node grants nothing and
             accepts no replicated root (default ``lease_duration``).  ``0`` is safe only on a
             cluster's first start.
-        fetch_timeout: seconds a peer page request waits for an answer.
+        fetch_timeout: seconds a peer page request waits for an answer; must be shorter than
+            ``lease_duration - drift_margin`` (default a quarter of it), and a request made
+            under the lease never waits beyond what remains of the lease.
         persist_interval: seconds between two passes of the persister (D46).
         persist_lag: seconds the persisted epoch may lag the committed one before this node
             persists a root committed by another node (covers a crashed committer).
@@ -148,7 +182,7 @@ class ClusterCoordinator:
     def __init__(self, node_id: str, peers, *, transport=None, lease_duration: float = 2.0,
                  drift_margin: Optional[float] = None, request_timeout: float = 0.25,
                  acquire_timeout: float = 30.0, backoff: tuple = (0.001, 0.05),
-                 startup_grace: Optional[float] = None, fetch_timeout: float = 2.0,
+                 startup_grace: Optional[float] = None, fetch_timeout: Optional[float] = None,
                  persist_interval: float = 0.05, persist_lag: float = 1.0,
                  clock: Optional[Callable[[], float]] = None, seed: Optional[int] = None):
         members = []
@@ -187,7 +221,11 @@ class ClusterCoordinator:
         self._backoff = (low, high)
         self._grace = self._duration if startup_grace is None else _number("startup_grace", startup_grace,
                                                                               positive=False)
-        self._fetch_timeout = _number("fetch_timeout", fetch_timeout)
+        window = self._duration - self._margin
+        self._fetch_timeout = window / 4 if fetch_timeout is None else _number("fetch_timeout", fetch_timeout)
+        if self._fetch_timeout >= window:
+            raise ProtoValidationError("fetch_timeout must be shorter than lease_duration - drift_margin, "
+                                       "or a page request could consume the whole lease")
         self._persist_interval = _number("persist_interval", persist_interval)
         self._persist_lag = _number("persist_lag", persist_lag, positive=False)
         self._clock = clock if clock is not None else time.monotonic
@@ -222,14 +260,16 @@ class ClusterCoordinator:
         self._suspect_term = 0              # a grant whose outcome this node could not know
         self._waiters = {}                  # rid -> _Waiter
         self._queued = 0                    # peer messages queued for the worker, not yet handled
-        self._stored = (-1, -1)             # (label, epoch) of the newest root whose records are here
+        self._stored = collections.OrderedDict()   # root_key -> None: roots whose records are here
+        self._chunks = {}                   # sender -> (rid, {index: records}) awaiting a replicate
+        self._failure = None                # the exception that fenced this node, if any
         self._tier = None
         self._confirmed = True
         self._persister = None
         self._worker = None
         self._jobs = queue.Queue()
-        self._stats = {"acquired": 0, "attempts": 0, "lost_attempts": 0, "fencing_events": 0,
-                       "grants_given": 0, "releases_received": 0, "storage_root_reads": 0,
+        self._stats = {"acquired": 0, "attempts": 0, "lost_attempts": 0, "grants_given": 0,
+                       "grants_refused_no_storage": 0, "releases_received": 0, "storage_root_reads": 0,
                        "replications": 0, "replication_failures": 0, "accepted": 0, "refused": 0,
                        "recoveries": 0, "fetches_requested": 0, "fetches_served": 0,
                        "critical_commits": 0}
@@ -273,16 +313,40 @@ class ClusterCoordinator:
         return self._tier
 
     def stats(self) -> dict:
-        """Counters: leases acquired, attempts, lost attempts, fencing events, grants given,
-        winners' releases received, storage root reads reported by the caller, replications
-        and their failures, replicated roots accepted and refused, recovery rounds, page
-        requests sent and served, and ``critical``: the summed seconds spent inside the
-        critical section by stage (validation, intent replay, path copy, replication) over
-        ``critical_commits`` commits."""
+        """Counters: leases acquired, attempts, lost attempts, grants given (and requests
+        refused for want of an attached tier), winners' releases received, storage root reads
+        reported by the caller, replications and their failures, replicated roots accepted
+        and refused, recovery rounds, page requests sent and served, ``critical``: the
+        summed seconds spent inside the critical section by stage (validation, intent
+        replay, path copy, replication) over ``critical_commits`` commits, and the health
+        metric: ``healthy`` and ``failure`` (the message of the exception that fenced the
+        node, or ``None``)."""
         with self._lock:
             out = dict(self._stats)
             out["critical"] = dict(self._critical)
+            out["healthy"] = self._failure is None
+            out["failure"] = None if self._failure is None else repr(self._failure)
             return out
+
+    @property
+    def healthy(self) -> bool:
+        """False once an internal failure fenced this node (see :meth:`fence`)."""
+        with self._lock:
+            return self._failure is None
+
+    def fence(self, error: BaseException) -> None:
+        """Fence this node after an unexpected internal failure ``error`` (a worker or
+        persister thread crashed): log it, and stop granting, acknowledging and acquiring
+        for good.  The rest of the cluster continues without this node; restart its process
+        to bring it back.  Idempotent (the first failure is kept)."""
+        with self._cond:
+            first = self._failure is None
+            if first:
+                self._failure = error
+            self._cond.notify_all()
+        if first:
+            logger.error("Node %s is fenced after an internal failure: %r", self._node, error,
+                         exc_info=(type(error), error, error.__traceback__))
 
     def record_critical(self, timings: dict) -> None:
         """Add one commit's critical-section stage timings (seconds) to :meth:`stats`."""
@@ -350,13 +414,19 @@ class ClusterCoordinator:
         if self._state != "running":
             raise ProtoValidationError(f"The coordinator is {self._state}")
 
+    def _check_healthy(self) -> None:
+        if self._failure is not None:
+            raise ProtoUnexpectedError(f"Node {self._node} is fenced after an internal failure: "
+                                       f"{self._failure!r}") from self._failure
+
     def attach(self, tier) -> None:
         """Attach the cluster tier of the space this node commits to and start its persister.
 
         ``tier`` provides the storage and the tier operations described in
-        :mod:`proto_db.cluster.persister`.  The roots the tier logged (its local WAL) and
-        its term floor are loaded, so a restarted node knows what it accepted.  Attaching
-        the same tier again is a no-op; another one raises ``ProtoValidationError``.
+        :mod:`proto_db.cluster.persister`.  The roots and the promise the tier logged (its
+        acceptor log) are loaded, so a restarted node knows what it accepted and never
+        grants a term it granted before.  Attaching the same tier again is a no-op; another
+        one raises ``ProtoValidationError``.
         """
         from .persister import Persister
         with self._lock:
@@ -366,13 +436,20 @@ class ClusterCoordinator:
                     return
                 raise ProtoValidationError("This coordinator already serves another storage")
             self._tier = tier
-        accepted, committed, top = tier.load_roots()
+        try:
+            logged = tier.load_roots()
+        except BaseException:
+            with self._lock:
+                self._tier = None
+            raise
+        accepted, committed, top, promised = logged
         with self._cond:
             if accepted is not None:
                 self._observe_accepted(True, accepted[1], accepted[0])
             if committed is not None:
                 self._observe_committed(True, committed[1], committed[0], None)
             self._hint = max(self._hint, top)
+            self._grants.restore(max(promised, accepted[0] if accepted is not None else 0))
             tier.set_fetcher(self.fetch_record)
             self._confirmed = False
             persister = Persister(self, tier, interval=self._persist_interval, lag=self._persist_lag)
@@ -393,11 +470,20 @@ class ClusterCoordinator:
         the remaining lease)``; reads then fall back to peer page requests."""
         if root is None or label == 0:
             return True             # the empty space, or a root written outside the cluster
-        wanted = _key(label, root)
+        wanted = root_key(label, root)
         timeout = min(self._fetch_timeout, max(0.0, lease.remaining()) / 4)
         with self._cond:
-            return self._cond.wait_for(lambda: self._stored >= wanted or self._state != "running",
-                                       timeout=timeout) and self._stored >= wanted
+            return self._cond.wait_for(lambda: wanted in self._stored or self._state != "running",
+                                       timeout=timeout) and wanted in self._stored
+
+    def _note_stored(self, label: int, root: Optional[RootRecord]) -> None:
+        """The records of the root ``root`` labelled ``label`` are stored here (lock held)."""
+        key = root_key(label, root)
+        self._stored[key] = None
+        self._stored.move_to_end(key)
+        while len(self._stored) > _STORED_MEMORY:
+            self._stored.popitem(last=False)
+        self._cond.notify_all()
 
     def refound(self, persisted_label: int) -> int:
         """A granting majority knows no root: the cluster restarts from the persisted root
@@ -482,18 +568,18 @@ class ClusterCoordinator:
             self._suspect_term = 0
 
     def _observe_accepted(self, known: bool, root: Optional[RootRecord], label: int) -> bool:
-        """Adopt ``root`` as accepted if its ``(label, epoch)`` is higher (lock held)."""
+        """Adopt ``root`` as accepted if it orders after the accepted root (lock held)."""
         if not known:
             return False
         self._learn_label(label)
-        if self._accepted[0] and _key(label, root) <= _key(self._accepted[2], self._accepted[1]):
+        if self._accepted[0] and compare_roots(label, root, self._accepted[2], self._accepted[1]) <= 0:
             return False
         self._accepted = (True, root, label)
         return True
 
     def _observe_committed(self, known: bool, root: Optional[RootRecord], label: int, by, *,
                            accept: bool = True) -> bool:
-        """Adopt ``root`` as committed if its ``(label, epoch)`` is higher (lock held).  A root
+        """Adopt ``root`` as committed if it orders after the committed root (lock held).  A root
         known committed through the cluster is also accepted knowledge (``accept``); one read
         from the persisted root is not (with ``accept=False``): a granting majority that knows
         nothing newer must refound (:meth:`refound`)."""
@@ -503,7 +589,7 @@ class ClusterCoordinator:
             self._observe_accepted(True, root, label)
         else:
             self._learn_label(label)
-        if self._committed[0] and _key(label, root) <= _key(self._committed[2], self._committed[1]):
+        if self._committed[0] and compare_roots(label, root, self._committed[2], self._committed[1]) <= 0:
             return False
         self._committed = (True, root, label)
         self._committed_by = by
@@ -524,30 +610,6 @@ class ClusterCoordinator:
             if from_storage:
                 self._stats["storage_root_reads"] += 1
 
-    def mark_root_suspect(self) -> None:
-        """Note that a newer root than the known one may exist (e.g. a replication failed)."""
-        with self._lock:
-            self._suspect_term = max(self._suspect_term, self._grants.highest_term if self._grants else 1, 1)
-
-    def published(self, lease: Lease, root: RootRecord) -> None:
-        """Record that ``lease``'s holder committed ``root`` (labelled with the lease term);
-        the release tells the peers."""
-        with self._lock:
-            lease.published = root
-            self._observe_committed(True, root, lease.term, self._node)
-            if self._suspect_term and self._suspect_term <= lease.term:
-                self._suspect_term = 0
-
-    def record_fencing_event(self, lease: Lease, error: BaseException) -> None:
-        """A write under ``lease`` was rejected (fencing): count it, log it, mark the root suspect."""
-        with self._lock:
-            self._stats["fencing_events"] += 1
-            self._suspect_term = max(self._suspect_term, lease.term)
-            valid = lease.is_valid()
-        logger.warning("Fencing event on node %s: a write of lease term %d (token %s, lease %s) "
-                       "was rejected: %s", self._node, lease.term, tuple(lease.fencing_token),
-                       "still valid" if valid else "expired", error)
-
     def _wire(self, triple) -> object:
         known, root, label = triple
         return encode_root(root, known=known, term=label)
@@ -560,19 +622,22 @@ class ClusterCoordinator:
             logger.warning("Node %s ignored a %r message from unknown sender %r", self._node, msg["type"], sender)
             return
         kind = msg["type"]
-        if kind in ("replicate", "release", "fetch"):
-            # A release follows its replicate through the same queue, so a root is never known
-            # committed here before its records are stored here.
+        if kind in ("records", "replicate", "release", "fetch"):
+            # A release follows its replicate (and a replicate its record chunks) through the
+            # same queue, so a root is never known committed here before its records are stored.
             with self._lock:
                 self._queued += 1
             self._jobs.put(msg)
             return
         reply = None
+        promise = None
         with self._cond:
             if self._state != "running":
                 return
             if kind == "request":
                 reply = self._decide(sender, msg["term"], msg["rid"], msg["inc"])
+                if reply["type"] == "grant":
+                    promise = self._tier
             elif kind in ("grant", "reject"):
                 self._on_reply(sender, msg)
             elif kind == "query":
@@ -580,11 +645,40 @@ class ClusterCoordinator:
                                      committed=self._wire(self._committed), certain=not self._suspect_term)
             else:
                 self._on_answer(sender, kind, msg)
+        if promise is not None and not self._promise(promise, msg["term"]):
+            return                  # a promise that could not be made durable is not sent
         if reply is not None:
             self._transport.send(sender, reply)
 
+    def _promise(self, tier, term: int) -> bool:
+        """Make the promise of ``term`` durable in ``tier``'s acceptor log; False (logged) if it
+        failed, in which case the grant must not be sent or counted."""
+        try:
+            tier.log_promise(term)
+            return True
+        except (ProtoDBError, OSError) as e:
+            logger.error("Node %s could not record its promise of term %d; the grant is withheld: %s",
+                         self._node, term, e)
+            return False
+
+    def _refusal(self) -> Optional[str]:
+        """Why this node may not vote or accept right now (lock held), or ``None``."""
+        if self._failure is not None:
+            return "fenced"
+        if self._tier is None:
+            return "no_storage"
+        return None
+
     def _decide(self, requester: str, term: int, rid: int, inc: int) -> dict:
-        """Apply the grant rules to a request (lock held); return the reply."""
+        """Apply the grant rules to a request (lock held); return the reply.  A node without
+        an attached tier (nowhere durable to record the promise) or fenced refuses."""
+        refusal = self._refusal()
+        if refusal is not None:
+            if refusal == "no_storage":
+                self._stats["grants_refused_no_storage"] += 1
+            return make_message("reject", self._node, term=term, rid=rid, root=self._wire(self._accepted),
+                                certain=not self._suspect_term, reason=refusal,
+                                highest=self._grants.highest_term, remaining=0.0)
         decision = self._grants.on_request(requester, term, inc)
         if decision.previous_expired:
             self._suspect_term = max(self._suspect_term, decision.ended_term)
@@ -677,9 +771,12 @@ class ClusterCoordinator:
             if msg is _STOP:
                 return
             try:
-                if msg["type"] == "replicate":
+                kind = msg["type"]
+                if kind == "replicate":
                     self._apply_replicate(msg)
-                elif msg["type"] == "release":
+                elif kind == "records":
+                    self._buffer_records(msg)
+                elif kind == "release":
                     with self._cond:
                         learnt = self._on_release(msg["from"], msg) if self._state == "running" else None
                         tier = self._tier
@@ -690,36 +787,62 @@ class ClusterCoordinator:
                     self._serve_fetch(msg)
             except (ProtoDBError, OSError) as e:
                 logger.error("Node %s: handling a %r message failed: %s", self._node, msg["type"], e)
+            except Exception as e:
+                # A bug or an unforeseen failure: never die silently, never keep acknowledging
+                # with a broken worker.  Fence the node, then let the thread fail loudly.
+                self.fence(e)
+                raise
             finally:
                 with self._cond:
                     self._queued -= 1
                     self._cond.notify_all()
 
+    def _buffer_records(self, msg: dict) -> None:
+        """Keep a chunk of records until its replicate arrives (worker thread)."""
+        with self._lock:
+            if self._state != "running" or self._tier is None:
+                return
+            sender = msg["from"]
+            pending = self._chunks.get(sender)
+            if pending is None or pending[0] != msg["rid"]:
+                pending = self._chunks[sender] = (msg["rid"], {})   # an older replication is void
+            pending[1][msg["index"]] = msg["records"]
+
     def _may_accept(self, term: int, root: Optional[RootRecord], label: int) -> bool:
-        """The acceptance rules of a replicated root (lock held): running, not starting, no
-        higher term granted here (ballot rule), and not older than the accepted root."""
-        if self._state != "running" or self._grants.starting or self._grants.granted_top > term:
+        """The acceptance rules of a replicated root (lock held): running, healthy, a tier
+        attached, not starting, no higher term granted here (ballot rule), and not older
+        than the accepted root."""
+        if self._state != "running" or self._refusal() is not None or self._grants.starting \
+                or self._grants.granted_top > term:
             return False
-        return not self._accepted[0] or _key(label, root) >= _key(self._accepted[2], self._accepted[1])
+        return not self._accepted[0] or compare_roots(label, root, self._accepted[2], self._accepted[1]) >= 0
 
     def _apply_replicate(self, msg: dict) -> None:
         sender, term, rid = msg["from"], msg["term"], msg["rid"]
         known, root, label = decode_labeled_root(msg["root"])
-        tier = self._tier
-        valid = known and label == term and root is not None
+        records = msg["records"]
         with self._lock:
-            # A node with no tier attached (no space open) can only witness roots whose records
-            # live in a shared storage; records to store need a tier.
-            ok = valid and (tier is not None or not msg["records"]) and self._may_accept(term, root, label)
+            tier = self._tier
+            pending = self._chunks.pop(sender, None)
+        complete = True
+        if msg["chunks"]:
+            parts = pending[1] if pending is not None and pending[0] == rid else {}
+            complete = all(i in parts for i in range(msg["chunks"]))
+            if complete:
+                records = [r for i in range(msg["chunks"]) for r in parts[i]] + records
+        valid = known and label == term and root is not None and complete
+        with self._lock:
+            # Acknowledging needs a durable place for the records and the root: a node without
+            # a tier never counts toward the majority.
+            ok = valid and tier is not None and self._may_accept(term, root, label)
         if valid and tier is not None:
             # Records are stored even when the root is refused (a newer term was granted here
             # meanwhile): immutable data, and this node may be the next holder, whose base can
             # be this root (adopted from its granters); it then reads nothing under its lease.
-            if msg["records"]:
-                tier.apply(msg["records"], root)      # durable before the ack
+            if records:
+                tier.apply(records, root)             # durable before the ack
             with self._cond:
-                self._stored = max(self._stored, _key(label, root))
-                self._cond.notify_all()
+                self._note_stored(label, root)
         with self._lock:
             ok = ok and self._may_accept(term, root, label)
             if ok:
@@ -730,11 +853,11 @@ class ClusterCoordinator:
             else:
                 self._stats["refused"] += 1
             reply_root = self._wire(self._accepted)
-        if ok and tier is not None:
-            tier.log_root("accepted", label, root, sync=True)
+        if ok:
+            tier.log_root("accepted", label, root, sync=True)     # durable before the ack
         self._transport.send(sender, make_message("ack", self._node, term=term, rid=rid, ok=ok, root=reply_root))
-        if ok and msg["records"] and tier is not None:
-            tier.prefetch(msg["records"])
+        if ok and records:
+            tier.prefetch(records)
 
     def _serve_fetch(self, msg: dict) -> None:
         tier = self._tier
@@ -750,7 +873,8 @@ class ClusterCoordinator:
 
     def acquire(self, timeout: Optional[float] = None) -> Lease:
         """Acquire the write lease; raise ``ProtoTimeoutError`` after ``timeout`` seconds
-        (default ``acquire_timeout``) and ``ProtoValidationError`` if the coordinator stops.
+        (default ``acquire_timeout``), ``ProtoValidationError`` if the coordinator stops and
+        ``ProtoUnexpectedError`` if the node is fenced (:meth:`fence`).
 
         One thread of this process at a time holds or requests the lease; others wait here.
         Release with :meth:`release` (or use :meth:`lease`).
@@ -759,6 +883,7 @@ class ClusterCoordinator:
         deadline = time.monotonic() + timeout
         with self._lock:
             self._check_running()
+            self._check_healthy()
         if not self._local.acquire(timeout=timeout):
             raise ProtoTimeoutError(f"Node {self._node}: another thread held the cluster lease for {timeout} s")
         try:
@@ -771,8 +896,13 @@ class ClusterCoordinator:
     def _acquire(self, deadline: float, timeout: float) -> Lease:
         failures = 0
         while True:
-            attempt, request, seen = self._open_attempt()
+            attempt, request, seen, promise = self._open_attempt()
             self._broadcast(request)
+            if promise is not None and not self._promise(promise, attempt.term):
+                with self._lock:
+                    # Our own vote cannot be made durable: it does not count.
+                    attempt.granted_by.pop(self._node, None)
+                    attempt.on_reject(self._node, "promise_failed", attempt.term, 0.0)
             lease, cancel, wait = self._close_attempt(attempt)
             if lease is not None:
                 return lease
@@ -797,25 +927,34 @@ class ClusterCoordinator:
                 time.sleep(self._rng.random() * _WAKE_SPREAD)
 
     def _open_attempt(self) -> tuple:
+        """Open an attempt with this node's own vote decided; return ``(attempt, request,
+        wakeups seen, tier whose log must record our own promise or None)``."""
+        promise = None
         with self._lock:
             self._check_running()
+            self._check_healthy()
             term = max(self._grants.highest_term, self._hint, self._accepted[2], self._committed[2]) + 1
             attempt = LeaseAttempt(term=term, rid=next(self._rids), sent_at=self._clock(),
                                    cluster_size=self.cluster_size, lease_duration=self._duration,
                                    drift_margin=self._margin)
             self._attempt = attempt
             self._stats["attempts"] += 1
-            decision = self._grants.on_request(self._node, term, self._inc)
-            if decision.previous_expired:
-                self._suspect_term = max(self._suspect_term, decision.ended_term)
-            if decision.granted:
-                known, root, label = self._accepted
-                attempt.on_grant(self._node, known, root, not self._suspect_term, label)
+            refusal = self._refusal()
+            if refusal is not None:
+                attempt.on_reject(self._node, refusal, self._grants.highest_term, 0.0)
             else:
-                attempt.on_reject(self._node, decision.reason, decision.highest, decision.remaining)
+                decision = self._grants.on_request(self._node, term, self._inc)
+                if decision.previous_expired:
+                    self._suspect_term = max(self._suspect_term, decision.ended_term)
+                if decision.granted:
+                    known, root, label = self._accepted
+                    attempt.on_grant(self._node, known, root, not self._suspect_term, label)
+                    promise = self._tier
+                else:
+                    attempt.on_reject(self._node, decision.reason, decision.highest, decision.remaining)
             request = make_message("request", self._node, term=term, rid=attempt.rid, inc=self._inc)
             seen = self._wakeups
-        return attempt, request, seen
+        return attempt, request, seen, promise
 
     def _close_attempt(self, attempt: LeaseAttempt) -> tuple:
         """Wait for the attempt's outcome; return ``(lease, None, 0)`` or ``(None, cancel, wait)``."""
@@ -906,20 +1045,31 @@ class ClusterCoordinator:
             raise ProtoUserError("This lease is not held by this coordinator")
         records = tier.outgoing()
         label = lease.term
+        # Records that ride with the replication are made durable by every receiver; records in
+        # a shared storage must be durable there before any peer can acknowledge their root.
+        riding = bool(getattr(tier, "cluster_tier", False))
+        if not riding:
+            tier.flush_local()
+        chunks = _split_records(records, protocol.CHUNK_BYTES)
         with self._lock:
-            self._stored = max(self._stored, _key(label, root))      # our own records
+            self._note_stored(label, root)            # our own records
             self._check_running()
             if not lease.is_valid():
                 raise ProtoConflictError("The cluster write lease expired before the root was replicated; "
                                          "nothing was replicated")
             rid, waiter = self._new_waiter("replicate", label)
+            parts = [make_message("records", self._node, term=label, rid=rid, index=i, records=chunk)
+                     for i, chunk in enumerate(chunks[:-1])]
             msg = make_message("replicate", self._node, term=label, rid=rid,
                                root=encode_root(root, known=True, term=label),
-                               committed=self._wire(self._committed), records=records)
+                               committed=self._wire(self._committed), records=chunks[-1], chunks=len(parts))
             self._stats["replications"] += 1
         try:
+            for part in parts:                         # same ordered link, before the replicate
+                self._broadcast(part)
             self._broadcast(msg)
-            tier.flush_local()                         # our own records, durable before our own ack
+            if riding:
+                tier.flush_local()                     # our own records, durable before our own ack
             with self._lock:
                 self_ok = self._may_accept(label, root, label)
                 if self_ok:
@@ -954,7 +1104,11 @@ class ClusterCoordinator:
                 f"Node {self._node}: only {acks} of the {self._majority} acknowledgements needed arrived "
                 f"before the lease ended; the root (epoch {root.epoch}) may or may not take effect")
         tier.shipped(records, root)
-        tier.log_root("committed", label, root, sync=False)
+        try:
+            tier.log_root("committed", label, root, sync=False)
+        except (ProtoDBError, OSError) as e:
+            # Committed already: the log only speeds up a restart, never fail the commit for it.
+            logger.warning("Node %s could not log committed root epoch %d: %s", self._node, root.epoch, e)
         return time.perf_counter() - started
 
     # -- recovery and peer services ----------------------------------------------------------
@@ -997,10 +1151,8 @@ class ClusterCoordinator:
                 # A peer's committed root may be the persisted one only: never accepted knowledge.
                 self._observe_committed(ck, croot, clabel, None, accept=False)
                 self._hint = max(self._hint, alabel)
-                if ak and (not best[0] or _key(alabel, aroot) > _key(best[2], best[1])):
+                if ak and (not best[0] or compare_roots(alabel, aroot, best[2], best[1]) > 0):
                     best = (True, aroot, alabel)
-            if self._accepted[0] and _key(self._accepted[2], self._accepted[1]) > _key(best[2], best[1]):
-                best = self._accepted
             self._suspect_term = 0
             return best
 
@@ -1031,7 +1183,8 @@ class ClusterCoordinator:
 
     def fetch_record(self, ptr) -> Optional[bytes]:
         """Peer page request: the framed record at ``ptr`` from the first peer that has it, or
-        ``None`` (no peer answered with it within ``fetch_timeout``)."""
+        ``None`` (no peer answered with it within ``fetch_timeout``, nor within what remains
+        of a lease this node holds)."""
         others = len(self._others)
         if not others:
             return None
@@ -1039,8 +1192,11 @@ class ClusterCoordinator:
             if self._state != "running":
                 return None
             self._stats["fetches_requested"] += 1
+            timeout = self._fetch_timeout
+            if self._held is not None:
+                timeout = min(timeout, self._held.remaining())
         waiter = self._ask("fetch", {"segment": ptr.segment.bytes, "offset": ptr.offset},
-                           lambda w: w.data is not None or w.missing >= others, self._fetch_timeout)
+                           lambda w: w.data is not None or w.missing >= others, timeout)
         return waiter.data
 
 

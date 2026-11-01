@@ -519,10 +519,10 @@ def _new_space_root(databases: Dictionary, context, stamp: Optional[_ClusterStam
     return SpaceRoot(databases=databases, context=context, cluster=stamp, previous=previous)
 
 
-def _cluster_tier(storage):
-    """The cluster tier serving ``storage`` (D46): the storage itself when it is a tiered
-    storage, a :class:`~proto_db.cluster.persister.PlainTier` for a storage shared by every
-    node; an object store must go through a tiered storage."""
+def _cluster_tier(storage, node_id: str):
+    """The cluster tier serving ``storage`` for node ``node_id`` (D46): the storage itself when
+    it is a tiered storage, a :class:`~proto_db.cluster.persister.PlainTier` for a storage
+    shared by every node; an object store must go through a tiered storage."""
     if getattr(storage, "cluster_tier", False):
         return storage
     if not getattr(storage, "root_lock_is_global", True):
@@ -530,7 +530,7 @@ def _cluster_tier(storage):
             "In cluster mode an object store is used through TieredStorage (local WAL tier plus "
             "asynchronous replication), so that it stays off the commit path (D46)")
     from .cluster.persister import PlainTier
-    return PlainTier(storage)
+    return PlainTier(storage, node_id)
 
 
 # -- ObjectSpace ------------------------------------------------------------------------------
@@ -554,7 +554,10 @@ class ObjectSpace:
             Transactions take their snapshot from the newest committed root the coordinator
             knows.  The storage must be a :class:`~proto_db.storage.tiered.TieredStorage`
             or a storage shared by every node (``MemoryStorage``, ``FileStorage`` on a
-            shared filesystem).  Every writer of the space must use a coordinator of the
+            shared filesystem).  A commit is durable when it returns -- in the local WAL or
+            acceptor log of a majority, ``fsync``-ed per the durability mode -- except over
+            ``MemoryStorage``, whose cluster keeps its acceptor logs in memory and is not
+            durable.  A node grants and acknowledges only while a space is open on it.  Every writer of the space must use a coordinator of the
             same cluster.  The caller owns the coordinator (:meth:`close` detaches it but
             does not stop it).  ``None`` (default): no cluster, unchanged behaviour.
     """
@@ -570,8 +573,13 @@ class ObjectSpace:
         self._closed = False
         self._state_lock = threading.Lock()
         if coordinator is not None:
-            self._tier = _cluster_tier(storage)
-            coordinator.attach(self._tier)
+            self._tier = _cluster_tier(storage, coordinator.node_id)
+            try:
+                coordinator.attach(self._tier)
+            except BaseException:
+                if self._tier is not storage:
+                    self._tier.close()
+                raise
 
     @property
     def storage(self):
@@ -637,7 +645,9 @@ class ObjectSpace:
         persister = self._coordinator.persister
         if persister is None:
             raise ProtoValidationError("The coordinator has no persister for this space")
-        persister.wait_persisted(self._coordinator.committed_epoch, timeout)
+        known, record, label = self._coordinator.committed_root()[:3]
+        if known:
+            persister.wait_persisted(label, record, timeout)
 
     def _check_open(self) -> None:
         if self._closed:
@@ -694,6 +704,8 @@ class ObjectSpace:
             self._closed = True
         if self._coordinator is not None:
             self._coordinator.detach(self._tier)
+            if self._tier is not self._storage:
+                self._tier.close()          # the node's acceptor log of a shared storage
         self._storage.close()
 
     def __enter__(self):
@@ -815,6 +827,7 @@ class Transaction:
         self._mexpected: set = set()    # mutables set blindly: must still exist at commit
         record = database.space._snapshot_record()
         self._epoch = record.epoch if record is not None else 0
+        self._snapshot_pointer = record.pointer if record is not None else None
         self._snapshot_space = _load_space(self, record)
         self._db_root = database._root_in(self, record)
         self._objects = self._db_root.objects
@@ -1079,8 +1092,9 @@ class Transaction:
         clock = time.perf_counter
         started = clock()
         replay = 0.0
-        epoch = current.epoch if current is not None else 0
-        if epoch == self._epoch:
+        # The snapshot is current only if it is the very same root: in cluster mode, after a
+        # refound, an epoch no longer identifies a root (D46).
+        if (current.pointer if current is not None else None) == self._snapshot_pointer:
             space = self._snapshot_space
             db_root = self._db_root
         else:

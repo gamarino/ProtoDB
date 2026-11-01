@@ -6,8 +6,11 @@ access under its own lock):
 :class:`PeerGrants`
     What one peer has promised.  It grants the lease to at most one holder per term and,
     once it has granted, to no other holder until the lease expires on its own clock or
-    the holder releases it.  It persists nothing: after a (re)start it refuses every grant
-    for ``startup_grace`` seconds, so a promise made before a crash is honoured.
+    the holder releases it.  It does no I/O itself: the coordinator makes every grant's
+    term durable in the node's acceptor log before sending the grant, and restores the
+    logged promise after a restart (:meth:`PeerGrants.restore`), so a term is never granted
+    twice, even across a crash.  After a (re)start it also refuses every grant for
+    ``startup_grace`` seconds, so a lease *timing* promise made before a crash is honoured.
 :class:`LeaseAttempt`
     One request of a requester: grants and rejections gathered from the peers.  It is won
     when a majority (``floor(N/2) + 1``, the requester's own vote included) has granted,
@@ -27,12 +30,15 @@ never overlap in real time.
 Since D46 the data does not depend on that timing argument: a peer refuses to accept a
 replicated root of a term lower than one it has granted (:attr:`PeerGrants.granted_top`),
 so a holder whose lease ended without its knowing cannot reach a majority once a newer
-lease exists (the ballot rule of Paxos).  The lease timing only keeps holders from
-wasting each other's work.
+lease exists (the ballot rule of Paxos).  Because the promises are durable, each term has
+at most one holder, so two different roots never share a label and an epoch
+(:mod:`proto_db.cluster.rootlog`).  The lease timing only keeps holders from wasting each
+other's work.
 """
 from typing import Callable, NamedTuple, Optional
 
 from ..storage.format import RootRecord
+from .rootlog import compare_roots
 
 __all__ = ["majority", "FencingToken", "GrantDecision", "PeerGrants", "LeaseAttempt", "Lease"]
 
@@ -105,6 +111,13 @@ class PeerGrants:
     def granted_top(self) -> int:
         """Highest term this peer has granted (the ballot a replicated root must not be below)."""
         return self._granted_top
+
+    def restore(self, term: int) -> None:
+        """Honour a promise logged before a restart: ``term`` (and every lower term) counts as
+        granted here, so it is never granted again."""
+        self._granted_max = max(self._granted_max, term)
+        self._granted_top = max(self._granted_top, term)
+        self._highest = max(self._highest, term)
 
     @property
     def starting(self) -> bool:
@@ -232,25 +245,26 @@ class LeaseAttempt:
         """``(known, root, certain, label)`` over the granters (and ``own``, the requester's
         ``(known, root, label)``, counted even when its own vote was refused).
 
-        ``root`` is the root of highest ``(label, epoch)``: by the intersection of the
-        acknowledging majority of every committed root with this granting majority, it is
-        the newest committed root or a root built on it (D46).  ``certain`` holds when
-        every granter knows a root and none reported a grant whose outcome it could not
-        know; otherwise the holder runs a recovery round.
+        ``root`` is the highest root in the order of
+        :func:`~proto_db.cluster.rootlog.root_key`: by the intersection of the acknowledging
+        majority of every committed root with this granting majority, it is the newest
+        committed root or a root built on it (D46).  ``certain`` holds when every granter
+        knows a root and none reported a grant whose outcome it could not know; otherwise
+        the holder runs a recovery round.  Two different roots with the same label and
+        epoch raise ``ProtoCorruptionError`` (:func:`~proto_db.cluster.rootlog.compare_roots`).
         """
         candidates = [(k, r, lab) for k, r, _, lab in self.granted_by.values()]
         if own is not None:
             candidates.append(own)
-        best, best_key, any_known = None, (-1, -1), False
+        best, best_label, any_known = None, 0, False
         for known, root, label in candidates:
             if not known:
                 continue
+            if not any_known or compare_roots(label, root, best_label, best) > 0:
+                best, best_label = root, label
             any_known = True
-            key = (label, root.epoch if root is not None else 0)
-            if key > best_key:
-                best, best_key = root, key
         certain = any_known and all(k and c for k, _, c, _ in self.granted_by.values())
-        return any_known, best, certain, max(best_key[0], 0)
+        return any_known, best, certain, best_label
 
 
 class Lease:
@@ -273,7 +287,6 @@ class Lease:
         self.released_at = None
         self._clock = clock
         self._released = False
-        self.published = None
 
     def is_valid(self) -> bool:
         """True while unreleased and before ``valid_until`` on the holder's clock."""

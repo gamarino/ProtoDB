@@ -11,7 +11,8 @@ Layout of the local directory::
                         commits are written at their original offsets, so every
                         AtomPointer is valid cluster-wide; a copy may have holes
     segments.log        the node's own segments in creation order (16-byte UUIDs)
-    roots.log           roots accepted and committed by this node (fixed-size entries)
+    roots.log           the node's acceptor log: lease promises, roots accepted and committed
+                        (:class:`~proto_db.cluster.rootlog.RootsLog`; fixed-size entries)
     ranges.log          per accepted commit root, the byte ranges of the records shipped
                         with it (so a restarted node can still upload a lost writer's data)
 
@@ -27,7 +28,9 @@ Layout in the object store under ``prefix``::
 While no part object exists the layout is the :class:`~proto_db.storage.cloud.CloudStorage`
 one, which can then read the persisted space; a TieredStorage reads both.
 
-Write path: ``push_atom``/``push_blob`` append to the local WAL and keep the framed
+Write path: a record larger than :data:`~proto_db.cluster.protocol.MAX_RECORD_BYTES` is
+refused (``ProtoValidationError``): it could never be replicated in one frame.
+``push_atom``/``push_blob`` append to the local WAL and keep the framed
 record in a bounded in-memory record cache and in the list of records not yet shipped to
 the peers (:meth:`TieredStorage.outgoing`); the cluster commit sends them with the root.
 
@@ -64,7 +67,7 @@ reaches ``backlog_alert_bytes`` (default 80 % of the limit).  At ``backlog_limit
 :class:`~proto_db.errors.ProtoBacklogFullError`; nothing stops committing below it.
 
 Thread-safety: every public method may be called from any thread.  One lock guards the
-bookkeeping, one serializes shipping, one the roots log; the caches have their own
+bookkeeping, one serializes shipping, one the ranges log (the roots log has its own); the caches have their own
 locks.  No lock is held across object-store or peer requests.
 """
 import contextlib
@@ -84,12 +87,14 @@ from ..core.atom import AtomPointer
 from ..errors import (ProtoBacklogFullError, ProtoCorruptionError, ProtoDBError, ProtoLockingError,
                       ProtoNotSupportedError, ProtoTimeoutError, ProtoUnexpectedError,
                       ProtoValidationError)
+from ..cluster import protocol as _protocol
+from ..cluster.rootlog import LoggedRoots, RootsLog, compare_roots
 from .base import SharedStorage
 from .cache import BoundedCache
 from .cloud import (ObjectNotFoundError, OutcomeUnknownError, PreconditionFailedError,
                     TransientObjectStoreError)
 from .file import DURABILITY_MODES, FileStorage
-from .format import (FORMAT_VERSION, SEGMENT_HEADER_SIZE, RecordKind, RootRecord, decode_root,
+from .format import (SEGMENT_HEADER_SIZE, RecordKind, RootRecord, decode_root,
                      decode_segment_header, encode_record, encode_segment_header, read_record)
 
 __all__ = ["TieredStorage"]
@@ -103,10 +108,7 @@ SEGMENT_SUFFIX = ".seg"
 PART_SUFFIX = ".part"
 MANIFEST = "segments.log"
 ROOTS_LOG = "roots.log"
-_ROOT_ENTRY = struct.Struct("<BQQ16sQ")          # kind, label, epoch, segment, offset
 _ROOT_CRC = struct.Struct("<I")
-_ENTRY_SIZE = _ROOT_ENTRY.size + _ROOT_CRC.size
-_KINDS = {"accepted": 1, "committed": 2}
 _ROOTS_LOG_COMPACT = 1 * MIB
 RANGES_LOG = "ranges.log"
 _RANGES_HEAD = struct.Struct("<16sQQI")          # root segment, root offset, epoch, count
@@ -224,7 +226,7 @@ class TieredStorage(SharedStorage):
 
         self._lock = threading.Lock()
         self._ship_lock = threading.Lock()
-        self._log_lock = threading.Lock()
+        self._manifest_lock = threading.Lock()
         self._root_lock = threading.Lock()
         self._holder = None
         self._cache = BoundedCache(cache_bytes)
@@ -247,8 +249,7 @@ class TieredStorage(SharedStorage):
         self._load_manifest()
         self._manifest_fd = os.open(os.path.join(self._path, MANIFEST),
                                     os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_BINARY | _O_CLOEXEC, 0o644)
-        self._roots_fd = os.open(os.path.join(self._path, ROOTS_LOG),
-                                 os.O_RDWR | os.O_CREAT | os.O_APPEND | _O_BINARY | _O_CLOEXEC, 0o644)
+        self._roots = RootsLog(os.path.join(self._path, ROOTS_LOG), durability=durability)
         self._ranges_lock = threading.Lock()
         self._load_ranges()
         self._ranges_fd = self._open_ranges()
@@ -386,15 +387,32 @@ class TieredStorage(SharedStorage):
 
     def _push(self, kind: RecordKind, payload: bytes) -> AtomPointer:
         self._check_open()
+        limit = _protocol.MAX_RECORD_BYTES
+        if len(payload) > limit:
+            raise ProtoValidationError(
+                f"A record of {len(payload)} bytes exceeds the {limit} bytes a cluster node can replicate")
         ptr = self._local.append_record(kind, payload)
         framed = encode_record(kind, payload)
         self._cache.put((ptr.segment, ptr.offset), framed)
         with self._lock:
-            own = self._own.get(ptr.segment)
-            if own is None:
-                own = self._own[ptr.segment] = _Own(ptr.segment)
-                os.write(self._manifest_fd, ptr.segment.bytes)
-                self._manifest_dirty = True
+            known = ptr.segment in self._own
+        if not known:
+            # A new own segment: registered and appended to the manifest in creation order under
+            # the manifest lock, never under the bookkeeping lock that every read takes.
+            with self._manifest_lock:
+                with self._lock:
+                    write = ptr.segment not in self._own
+                    if write:
+                        self._own[ptr.segment] = _Own(ptr.segment)
+                if write:
+                    try:
+                        os.write(self._manifest_fd, ptr.segment.bytes)
+                    except OSError as e:
+                        raise ProtoUnexpectedError(f"Writing {MANIFEST} failed: {e}") from e
+                    with self._lock:
+                        self._manifest_dirty = True
+        with self._lock:
+            own = self._own[ptr.segment]
             own.end = max(own.end, ptr.offset + len(framed))
             if own.first is None:
                 own.first = time.monotonic()
@@ -665,73 +683,19 @@ class TieredStorage(SharedStorage):
             os.close(fd)
 
     def log_root(self, kind: str, label: int, record: Optional[RootRecord], *, sync: bool) -> None:
-        """Append a root this node accepted or learnt committed to ``roots.log`` (``fsync`` with ``sync``)."""
-        if self._closed:
-            return
-        segment = record.segment.bytes if record is not None else bytes(16)
-        body = _ROOT_ENTRY.pack(_KINDS[kind], label, record.epoch if record is not None else 0, segment,
-                                record.offset if record is not None else 0)
-        entry = body + _ROOT_CRC.pack(zlib.crc32(body))
-        with self._log_lock:
-            try:
-                os.write(self._roots_fd, entry)
-                if sync and self._durability == "fsync":
-                    os.fsync(self._roots_fd)
-                if os.fstat(self._roots_fd).st_size > _ROOTS_LOG_COMPACT:
-                    self._compact_roots_log()
-            except OSError as e:
-                raise ProtoUnexpectedError(f"Writing {ROOTS_LOG} failed: {e}") from e
+        """Append a root this node accepted or learnt committed to ``roots.log`` (``fsync`` with
+        ``sync``; see :class:`~proto_db.cluster.rootlog.RootsLog`)."""
+        self._roots.append(kind, label, record, sync=sync)
 
-    def _read_roots_log(self) -> tuple:
-        with open(os.path.join(self._path, ROOTS_LOG), "rb") as f:
-            data = f.read()
-        best = {1: None, 2: None}
-        top = 0
-        for i in range(0, len(data) - _ENTRY_SIZE + 1, _ENTRY_SIZE):
-            body = data[i:i + _ROOT_ENTRY.size]
-            (crc,) = _ROOT_CRC.unpack_from(data, i + _ROOT_ENTRY.size)
-            if zlib.crc32(body) != crc:
-                break                   # a torn tail: everything before it is valid
-            kind, label, epoch, segment, offset = _ROOT_ENTRY.unpack(body)
-            record = None if epoch == 0 else RootRecord(FORMAT_VERSION, uuid.UUID(bytes=segment), offset, epoch)
-            top = max(top, label)
-            current = best.get(kind)
-            key = (label, epoch) if kind == 1 else (epoch, label)
-            if current is None or key > current[0]:
-                best[kind] = (key, (label, record))
-        accepted = best[1][1] if best[1] else None
-        committed = best[2][1] if best[2] else None
-        return accepted, committed, top
+    def log_promise(self, term: int) -> None:
+        """Make this node's promise of lease ``term`` durable in ``roots.log`` before it is sent."""
+        self._check_open()
+        self._roots.promise(term)
 
-    def _compact_roots_log(self) -> None:
-        """Rewrite ``roots.log`` with its newest accepted and committed entries (log lock held)."""
-        accepted, committed, _ = self._read_roots_log()
-        tmp = os.path.join(self._path, ROOTS_LOG + ".tmp")
-        entries = b""
-        for kind, entry in ((1, accepted), (2, committed)):
-            if entry is not None:
-                label, record = entry
-                body = _ROOT_ENTRY.pack(kind, label, record.epoch if record else 0,
-                                        record.segment.bytes if record else bytes(16), record.offset if record else 0)
-                entries += body + _ROOT_CRC.pack(zlib.crc32(body))
-        with open(tmp, "wb") as f:
-            f.write(entries)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, os.path.join(self._path, ROOTS_LOG))
-        os.close(self._roots_fd)
-        self._roots_fd = os.open(os.path.join(self._path, ROOTS_LOG),
-                                 os.O_RDWR | os.O_CREAT | os.O_APPEND | _O_BINARY | _O_CLOEXEC, 0o644)
-        self._fsync_dir()
-
-    def load_roots(self) -> tuple:
-        """``(accepted, committed, top_term)`` from ``roots.log``: each ``(label, RootRecord or
-        None)`` or ``None``; ``top_term`` is the highest label logged."""
-        with self._log_lock:
-            try:
-                return self._read_roots_log()
-            except OSError as e:
-                raise ProtoUnexpectedError(f"Reading {ROOTS_LOG} failed: {e}") from e
+    def load_roots(self) -> LoggedRoots:
+        """The roots and the promise logged in ``roots.log`` (a
+        :class:`~proto_db.cluster.rootlog.LoggedRoots`)."""
+        return self._roots.load()
 
     # -- cluster tier: object store ----------------------------------------------------------
 
@@ -762,8 +726,8 @@ class TieredStorage(SharedStorage):
 
     def persist(self, label: int, record: RootRecord) -> bool:
         """Write ``record`` (cluster epoch, label ``label``) as the persisted root by
-        compare-and-swap, never moving the persisted root backwards in the ``(label, epoch)``
-        order of roots (D46).
+        compare-and-swap, never moving the persisted root backwards in the order of roots
+        (:func:`~proto_db.cluster.rootlog.root_key`, D46).
 
         Returns True when written, False when the store already holds that root or a newer
         one.  Raises ``ProtoUnexpectedError`` when the store stays unreachable.
@@ -775,10 +739,9 @@ class TieredStorage(SharedStorage):
                 try:
                     current, etag = self._store.get(self._root_key)
                     current_label, current_root = _decode_root_object(current)
-                    current_key = (current_label, current_root.epoch)
                 except ObjectNotFoundError:
-                    etag, current_key = None, (0, 0)
-                if current_key >= (label, record.epoch):
+                    etag, current_label, current_root = None, 0, None
+                if etag is not None and compare_roots(current_label, current_root, label, record) >= 0:
                     return False
                 if etag is None:
                     self._store.put_if_absent(self._root_key, data)
@@ -825,19 +788,20 @@ class TieredStorage(SharedStorage):
                 try:
                     with open(path, "rb") as f:
                         data = f.read()
-                except FileNotFoundError:
-                    data = None
+                except FileNotFoundError as e:
+                    # Released only once uploaded, so a missing segment not uploaded is lost data:
+                    # never report it as being in the store.
+                    raise ProtoCorruptionError(
+                        f"Own segment {own.uuid.hex} is missing from {self._path} before its upload") from e
                 except OSError as e:
                     raise ProtoUnexpectedError(f"Reading segment {own.uuid.hex} for upload failed: {e}") from e
-                if data is not None:
-                    self._put_segment(own.uuid, data)
+                self._put_segment(own.uuid, data)
                 with self._lock:
                     own.uploaded = True
                     own.first = None
                     self._remote.add(own.uuid)
                     self._stats["segments_uploaded"] += 1
-                if data is not None:
-                    self._segments.put(own.uuid, data)
+                self._segments.put(own.uuid, data)
                 uploaded = True
             return uploaded
 
@@ -1094,12 +1058,16 @@ class TieredStorage(SharedStorage):
             except ProtoDBError as e:
                 error = e
             self._local.close()
-            with self._log_lock, self._ranges_lock:
-                for fd in (self._manifest_fd, self._roots_fd, self._ranges_fd):
+            with self._ranges_lock:
+                for fd in (self._manifest_fd, self._ranges_fd):
                     try:
                         os.close(fd)
                     except OSError as e:
                         error = error or e
+            try:
+                self._roots.close()
+            except ProtoDBError as e:
+                error = error or e
             self._cache.clear()
             self._segments.clear()
             if error is not None:

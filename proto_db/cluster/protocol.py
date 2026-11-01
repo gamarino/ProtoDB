@@ -16,10 +16,14 @@ fields of its type:
                up ``term``; ``held`` is True when it actually held the lease (a winner's
                release, which wakes waiting requesters) and False for the cancel of a lost
                attempt.
-``replicate``  ``term``, ``rid``, ``root``, ``committed``, ``records``: the lease holder of
-               ``term`` replicates its new root (the commit point, D46) together with the
-               records the receiver needs: ``[segment UUID bytes, offset, framed record bytes
-               or None]`` (``None``: the records live in a shared storage; only prefetch).
+``records``    ``term``, ``rid``, ``index``, ``records``: one chunk of the records of the
+               replication ``rid`` that do not fit in its ``replicate`` frame (sent before it,
+               on the same ordered link; ``index`` counts from 0).
+``replicate``  ``term``, ``rid``, ``root``, ``committed``, ``records``, ``chunks``: the lease
+               holder of ``term`` replicates its new root (the commit point, D46) together
+               with the records the receiver needs: ``[segment UUID bytes, offset, framed
+               record bytes or None]`` (``None``: the records live in a shared storage; only
+               prefetch), after ``chunks`` ``records`` messages carrying the rest.
 ``ack``        ``term``, ``rid``, ``ok``, ``root``: the receiver durably accepted (``ok``) or
                refused the replicated root; ``root`` is its accepted root.
 ``query``      ``rid``: ask a peer for the roots it knows (recovery).
@@ -28,12 +32,16 @@ fields of its type:
 ``fetched``    ``rid``, ``data``: the framed record bytes, or ``None`` when the peer lacks it.
 
 ``root`` and ``committed`` use :func:`encode_root`: a root with the term of the lease that
-replicated it (its *label*); roots are ordered by ``(term, epoch)`` (D46).  ``certain``
+replicated it (its *label*); roots are ordered by
+:func:`~proto_db.cluster.rootlog.root_key` (D46).  ``certain``
 tells whether the sender knows of no grant whose outcome it could have missed.
 
 On a stream, each message travels as one frame: a 4-byte big-endian length followed by
 that many bytes of msgpack.  A frame longer than :data:`MAX_FRAME_BYTES` is a protocol
-error (the connection is dropped before the frame is buffered).  A message of another
+error (the connection is dropped before the frame is buffered); every transport refuses
+to send one.  A replication splits its records into frames of at most
+:data:`CHUNK_BYTES` of record data, and a cluster node refuses to store a record larger
+than :data:`MAX_RECORD_BYTES`, so any commit fits.  A message of another
 protocol version, an unknown type or a missing or ill-typed field is a
 :class:`ClusterProtocolError`; receivers drop such messages.
 """
@@ -46,14 +54,19 @@ import msgpack
 from ..errors import ProtoCorruptionError
 from ..storage.format import FORMAT_VERSION, RootRecord
 
-__all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "MESSAGE_TYPES", "ClusterProtocolError",
-           "make_message", "validate_message", "encode_message", "decode_message",
+__all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYTES", "MESSAGE_TYPES",
+           "ClusterProtocolError",
+           "make_message", "validate_message", "encode_message", "decode_message", "check_frame_size",
            "encode_frame", "FrameDecoder", "encode_root", "decode_root", "decode_labeled_root"]
 
 #: Version carried by every message; a receiver drops messages of any other version.
 PROTOCOL_VERSION = 2
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
+#: Record bytes a replication puts in one frame at most (a single record may fill one alone).
+CHUNK_BYTES = 16 * 1024 * 1024
+#: Largest record payload a cluster node stores: a record always fits in one frame.
+MAX_RECORD_BYTES = 16 * 1024 * 1024
 
 _LENGTH = struct.Struct(">I")
 _INT = "int"
@@ -73,7 +86,9 @@ MESSAGE_TYPES = {
                "highest": _INT, "remaining": _NUM},
     "release": {"term": _INT, "inc": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL,
                 "held": _BOOL},
-    "replicate": {"term": _INT, "rid": _INT, "root": _ROOT, "committed": _ROOT, "records": _RECORDS},
+    "records": {"term": _INT, "rid": _INT, "index": _INT, "records": _RECORDS},
+    "replicate": {"term": _INT, "rid": _INT, "root": _ROOT, "committed": _ROOT, "records": _RECORDS,
+                  "chunks": _INT},
     "ack": {"term": _INT, "rid": _INT, "ok": _BOOL, "root": _ROOT},
     "query": {"rid": _INT},
     "answer": {"rid": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL},
@@ -151,11 +166,16 @@ def decode_message(data: bytes) -> dict:
     return validate_message(msg)
 
 
+def check_frame_size(size: int) -> None:
+    """Raise ``ClusterProtocolError`` when a message of ``size`` bytes exceeds :data:`MAX_FRAME_BYTES`."""
+    if size > MAX_FRAME_BYTES:
+        raise ClusterProtocolError(f"A message of {size} bytes exceeds the frame limit of {MAX_FRAME_BYTES}")
+
+
 def encode_frame(msg: dict) -> bytes:
     """One frame: the 4-byte big-endian length, then the msgpack bytes of ``msg``."""
     payload = encode_message(msg)
-    if len(payload) > MAX_FRAME_BYTES:
-        raise ClusterProtocolError(f"A message of {len(payload)} bytes exceeds the frame limit")
+    check_frame_size(len(payload))
     return _LENGTH.pack(len(payload)) + payload
 
 

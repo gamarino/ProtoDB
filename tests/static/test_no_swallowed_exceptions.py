@@ -60,6 +60,7 @@ CHECKED_ROOTS = [
     "proto_db/cluster/transport.py",
     "proto_db/cluster/coordinator.py",
     "proto_db/cluster/persister.py",
+    "proto_db/cluster/rootlog.py",
 ]
 
 

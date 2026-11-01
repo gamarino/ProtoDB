@@ -121,7 +121,7 @@ def test_three_tcp_peers_commit_concurrently(tmp_path, backend):
     assert n == total
     assert len(ids) == total and all(c == 1 for c in ids.values())
     assert sum(r["commit_publishes"] for r in results) == 0
-    assert sum(r["fencing"] for r in results) == 0
+    assert sum(r["failures"] for r in results) == 0
     if backend == "tiered":
         assert all(r["critical"]["root_writes_in_critical"] == 0 for r in results)
 

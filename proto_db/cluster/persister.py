@@ -17,15 +17,20 @@ Each pass of a node's persister:
    accepted it) or else the sealed object of the segment holding its root (by the strict
    per-node upload order, that covers every record of the commit).  When persistence has
    lagged beyond ``persist_lag``, missing ranges of other nodes' segments are uploaded
-   from this node's copies (part objects; a writer lost before shipping).  The write is a
-   compare-and-swap that never moves the persisted epoch backwards (a lost race re-reads
-   and gives up if behind);
+   from this node's copies (part objects; a writer lost before shipping).  The walk stops
+   at the persisted root (or at a root already verified), compared by the full order of
+   roots (:func:`~proto_db.cluster.rootlog.root_key`), never by epoch alone: after a
+   refound, epochs of the new lineage repeat those of the lost one.  The write is a
+   compare-and-swap that never moves the persisted root backwards in that order (a lost
+   race re-reads and gives up if behind);
 3. refreshes its view of the persisted epoch from the store while it is behind and not
    the one expected to write (so :meth:`Persister.wait_persisted` returns);
 4. releases local segments the persisted root covers and checks the backlog (alert hook).
 
 Errors (the object store unreachable, for instance) are logged and retried with a
-growing back-off; commits are never affected.
+growing back-off; commits are never affected.  An unexpected exception fences the node
+(:meth:`~proto_db.cluster.coordinator.ClusterCoordinator.fence`) and is re-raised: the
+thread never dies silently.
 
 The cluster tier
     What the coordinator and the persister need from the storage of a space: a duck-typed
@@ -35,7 +40,8 @@ The cluster tier
     where records need no shipping and the persisted root is the storage's own root.
     Methods: ``storage``, ``outgoing()``, ``flush_local()``, ``shipped(records, root)``,
     ``apply(records, root)``, ``prefetch(records)``, ``log_root(kind, label, record, sync=)``,
-    ``load_roots()``, ``local_record(ptr)``, ``set_fetcher(fn)``, ``read_persisted()``,
+    ``log_promise(term)``, ``load_roots()`` (a :class:`~proto_db.cluster.rootlog.LoggedRoots`),
+    ``local_record(ptr)``, ``set_fetcher(fn)``, ``read_persisted()``,
     ``persist(label, record)``, ``ship(force)``, ``refresh_remote()``, ``commit_ranges(root)``,
     ``ensure_remote(needs, upload_copies=)``,
     ``release_local(epoch)``, ``check_backlog()``, ``check_commit_allowed()``,
@@ -44,6 +50,8 @@ The cluster tier
 import collections
 import contextlib
 import logging
+import os
+import re
 import threading
 import time
 from typing import Optional
@@ -52,6 +60,7 @@ from ..core.atom import Atom
 from ..errors import ProtoConflictError, ProtoDBError, ProtoOutcomeUnknownError, ProtoTimeoutError, \
     ProtoUnexpectedError
 from ..storage.format import FORMAT_VERSION, RootRecord
+from .rootlog import LoggedRoots, RootsLog, compare_roots, memory_log_for, root_key
 
 __all__ = ["Persister", "PlainTier"]
 
@@ -91,16 +100,46 @@ def cluster_fields(storage, record: RootRecord) -> tuple:
     return space.cluster_term or 0, epoch, space.cluster_previous
 
 
+#: Directory, inside a shared FileStorage, of the per-node acceptor logs.
+NODE_LOG_DIR = "cluster"
+
+
+def _node_log(storage, node_id: str):
+    """The acceptor log of ``node_id`` for a shared ``storage``: a file in the storage's
+    directory when it has one, else kept in memory (not durable)."""
+    path = getattr(storage, "path", None)
+    if isinstance(path, str) and os.path.isdir(path):
+        name = node_id if re.fullmatch(r"[A-Za-z0-9._-]{1,64}", node_id) else node_id.encode("utf-8").hex()
+        durability = getattr(storage, "durability", "fsync")
+        return RootsLog(os.path.join(path, NODE_LOG_DIR, name + ".roots"),
+                        durability=durability if isinstance(durability, str) else "fsync")
+    return memory_log_for(storage, node_id)
+
+
 class PlainTier:
     """The cluster tier over a storage shared by every node (see the module docstring).
 
     The persisted root is the storage's root; its cluster epoch and label come from the
     space root's cluster fields.  Records live in the shared storage, so nothing is shipped
-    or applied, and no root log is kept (a node that restarts recovers from its peers).
+    or applied.  Each node keeps its acceptor log (promises, accepted and committed roots;
+    :mod:`proto_db.cluster.rootlog`): for a ``FileStorage``, in the file
+    ``<directory>/cluster/<node_id>.roots``, written with the storage's durability mode, so
+    an acknowledged commit survives a crash of the whole cluster before the persister
+    writes the storage root; for a storage without a directory (``MemoryStorage``), in
+    memory: such a cluster is not durable.
+
+    Args:
+        storage: the shared storage.
+        node_id: the id of the node this tier serves.
     """
 
-    def __init__(self, storage):
+    def __init__(self, storage, node_id: str):
         self.storage = storage
+        self._log = _node_log(storage, node_id)
+
+    def close(self) -> None:
+        """Close the node's acceptor log (the space is closing)."""
+        self._log.close()
 
     def outgoing(self) -> list:
         """Nothing to ship: the peers read the shared storage."""
@@ -120,11 +159,16 @@ class PlainTier:
         """Nothing to prefetch."""
 
     def log_root(self, kind: str, label: int, record, *, sync: bool) -> None:
-        """No root log for a shared storage."""
+        """Log a root this node accepted or learnt committed (``fsync`` with ``sync``)."""
+        self._log.append(kind, label, record, sync=sync)
 
-    def load_roots(self) -> tuple:
-        """No root log: ``(None, None, 0)``."""
-        return None, None, 0
+    def log_promise(self, term: int) -> None:
+        """Make this node's promise of lease ``term`` durable before it is sent."""
+        self._log.promise(term)
+
+    def load_roots(self) -> LoggedRoots:
+        """The roots and the promise this node logged."""
+        return self._log.load()
 
     def local_record(self, ptr) -> Optional[bytes]:
         """Peers read the shared storage themselves."""
@@ -143,12 +187,15 @@ class PlainTier:
 
     def persist(self, label: int, record: RootRecord) -> bool:
         """Publish ``record`` as the storage root by compare-and-swap on the storage epoch,
-        unless the storage already holds that root or a newer one in the ``(label, epoch)``
-        order (returns False)."""
+        unless the storage already holds that root or a newer one in the order of roots
+        (returns False)."""
         for _ in range(100):
             current = self.storage.read_root()
-            if current is not None and cluster_fields(self.storage, current)[:2] >= (label, record.epoch):
-                return False
+            if current is not None:
+                current_label, current_epoch, _ = cluster_fields(self.storage, current)
+                persisted = RootRecord(FORMAT_VERSION, current.segment, current.offset, current_epoch)
+                if compare_roots(current_label, persisted, label, record) >= 0:
+                    return False
             try:
                 self.storage.publish_root(record.pointer, current.epoch if current is not None else 0)
                 return True
@@ -202,9 +249,9 @@ class Persister:
         self._stopped = False
         self._urgent = False
         self._waiters = 0
-        self._persisted = 0            # highest persisted epoch known
-        self._verified = 0             # highest epoch whose chain is known to be remote
-        self._pending = collections.deque()   # (committed epoch, monotonic time first seen), unpersisted
+        self._persisted = (0, None)    # (label, RootRecord): the newest persisted root known
+        self._verified = set()         # root_key of roots newer than it whose chain is remote
+        self._pending = collections.deque()   # (root_key, monotonic time first seen), unpersisted
         self._last_refresh = 0.0
         self._last_error = None
         self._stats = {"cycles": 0, "roots_written": 0, "roots_behind": 0, "errors": 0, "refreshes": 0}
@@ -225,43 +272,55 @@ class Persister:
 
     @property
     def persisted_epoch(self) -> int:
-        """The highest epoch this node knows to be persisted."""
+        """The epoch of the newest root this node knows to be persisted (``0`` when none)."""
         with self._lock:
-            return self._persisted
+            record = self._persisted[1]
+            return record.epoch if record is not None else 0
+
+    def _behind(self, label: int, record: Optional[RootRecord]) -> bool:
+        """True when the root ``record`` labelled ``label`` orders after the persisted one (lock held)."""
+        return record is not None and compare_roots(label, record, *self._persisted) > 0
 
     def stats(self) -> dict:
         """Counters (passes, roots written, roots found already persisted, errors, refreshes)
         and the last error message, if any."""
         with self._lock:
             out = dict(self._stats)
-            out["persisted_epoch"] = self._persisted
+            out["persisted_epoch"] = self._persisted[1].epoch if self._persisted[1] is not None else 0
             out["last_error"] = None if self._last_error is None else str(self._last_error)
             return out
 
-    def wait_persisted(self, epoch: int, timeout: Optional[float]) -> None:
-        """Wait until the persisted epoch reaches ``epoch``; ``ProtoTimeoutError`` after ``timeout``."""
+    def wait_persisted(self, label: int, record: Optional[RootRecord], timeout: Optional[float]) -> None:
+        """Wait until the persisted root is the root ``record`` labelled ``label`` or a newer
+        one (in the order of roots); ``ProtoTimeoutError`` after ``timeout``."""
         deadline = None if timeout is None else time.monotonic() + timeout
         with self._cond:
             self._waiters += 1
             self._urgent = True
             self._cond.notify_all()
             try:
-                while self._persisted < epoch:
+                while self._behind(label, record):
                     if self._stopped:
                         raise ProtoTimeoutError("The persister stopped before the root was persisted")
                     remaining = None if deadline is None else deadline - time.monotonic()
                     if remaining is not None and remaining <= 0:
                         raise ProtoTimeoutError(
-                            f"The persisted epoch is {self._persisted}, waiting for {epoch}"
+                            f"The persisted epoch is {self._persisted_epoch()}, waiting for {record.epoch}"
                             + (f" (last error: {self._last_error})" if self._last_error else ""))
                     self._cond.wait(timeout=remaining if remaining is None else min(remaining, 0.05))
             finally:
                 self._waiters -= 1
 
-    def _set_persisted(self, epoch: int) -> None:
+    def _persisted_epoch(self) -> int:
+        """:attr:`persisted_epoch` (lock held)."""
+        return self._persisted[1].epoch if self._persisted[1] is not None else 0
+
+    def _set_persisted(self, label: int, record: Optional[RootRecord]) -> None:
         with self._cond:
-            if epoch > self._persisted:
-                self._persisted = epoch
+            if self._behind(label, record):
+                self._persisted = (label, record)
+                key = root_key(label, record)
+                self._verified = {k for k in self._verified if k > key}
                 self._cond.notify_all()
 
     def _run(self) -> None:
@@ -290,6 +349,13 @@ class Persister:
                     self._last_error = e
                 delay = min(_MAX_BACKOFF, max(self._interval, delay * 2))
                 logger.info("Persister of node %s: %s (retrying in %.2f s)", self._coordinator.node_id, e, delay)
+            except Exception as e:
+                # A bug or an unforeseen failure: fence the node and fail loudly.
+                with self._lock:
+                    self._stats["errors"] += 1
+                    self._last_error = e
+                self._coordinator.fence(e)
+                raise
 
     def _refresh(self, force: bool = False) -> None:
         """Read the persisted root from the store (at most once per interval unless forced)."""
@@ -303,14 +369,17 @@ class Persister:
         if persisted is not None:
             label, record = persisted
             self._coordinator.observe_root(record, term=label, accept=False)
-            self._set_persisted(record.epoch)
+            self._set_persisted(label, record)
 
-    def _persistable(self, record: RootRecord, upload_copies: bool) -> bool:
-        """True when every record the root at ``record`` can reach is in the object store
-        (uploading parts from local copies with ``upload_copies``); see the module docstring."""
+    def _persistable(self, record_label: int, record: RootRecord, upload_copies: bool) -> bool:
+        """True when every record the root ``record`` labelled ``record_label`` can reach is in
+        the object store (uploading parts from local copies with ``upload_copies``); see the
+        module docstring."""
         if not getattr(self._tier, "cluster_tier", False):
             return True
-        floor = max(self._persisted, self._verified)
+        with self._lock:
+            persisted = self._persisted
+            verified = set(self._verified)
         storage = self._tier.storage
         needs = []
         current = record
@@ -324,13 +393,20 @@ class Persister:
             if previous is None:
                 break
             epoch = previous.cluster_epoch
-            if epoch is None or epoch <= floor:
-                break
+            if epoch is None:
+                break               # written outside cluster mode: persisted before the cluster
             ptr = previous.atom_pointer
+            label = previous.cluster_term or 0
             current = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, epoch)
+            # The persisted root is on this root's chain (every committed root builds on the
+            # newest committed one, and a refound starts from the persisted root), so any
+            # ancestor ordering at or below it is persisted with its records.
+            if compare_roots(label, current, *persisted) <= 0 or root_key(label, current) in verified:
+                break
         if not self._tier.ensure_remote(needs, upload_copies=upload_copies):
             return False
-        self._verified = max(self._verified, record.epoch)
+        with self._lock:
+            self._verified.add(root_key(record_label, record))
         return True
 
     def _cycle(self) -> None:
@@ -345,28 +421,34 @@ class Persister:
     def _advance(self, waiting: bool) -> None:
         coordinator = self._coordinator
         known, record, label, by, _, _ = coordinator.committed_root()
-        behind = known and record is not None and record.epoch > self._persisted
+        with self._lock:
+            behind = known and self._behind(label, record)
+            persisted_key = root_key(*self._persisted)
         self._tier.ship(force=waiting and behind)
         now = time.monotonic()
         pending = self._pending
-        if behind and (not pending or record.epoch > pending[-1][0]):
-            pending.append((record.epoch, now))
-        while pending and pending[0][0] <= self._persisted:
+        if behind:
+            key = root_key(label, record)
+            if not pending or key > pending[-1][0]:
+                pending.append((key, now))
+        while pending and pending[0][0] <= persisted_key:
             pending.popleft()
         if behind:
             # Lag: how long the oldest commit known and not yet persisted has waited.
             mine = by == coordinator.node_id
             lagging = bool(pending) and now - pending[0][1] >= self._lag
             if mine or lagging:
-                if self._persistable(record, upload_copies=lagging):
+                if self._persistable(label, record, upload_copies=lagging):
                     if self._tier.persist(label, record):
                         with self._lock:
                             self._stats["roots_written"] += 1
-                        self._set_persisted(record.epoch)
+                        self._set_persisted(label, record)
                     else:
                         with self._lock:
                             self._stats["roots_behind"] += 1
                         self._refresh(force=True)
             else:
                 self._refresh(force=waiting)
-        self._tier.release_local(self._persisted)
+        # Local release stays keyed by epoch: after a refound the new lineage's epochs exceed
+        # the persisted one, so a release is at worst delayed, never premature.
+        self._tier.release_local(self.persisted_epoch)

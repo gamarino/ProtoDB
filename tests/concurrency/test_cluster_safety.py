@@ -55,11 +55,21 @@ class FencingProbe:
         self._lock = threading.Lock()
         self.violations = []
         self.failed_cas = 0
+        self._views = {}
 
     def __getattr__(self, name):
         return getattr(self._inner, name)
 
     def for_node(self, node_id):
+        """The node's view of the storage; one per node, so that its in-memory acceptor log
+        (keyed by the storage object, D46) survives the node's restarts like a disk."""
+        with self._lock:
+            view = self._views.get(node_id)
+            if view is None:
+                view = self._views[node_id] = self._new_view(node_id)
+            return view
+
+    def _new_view(self, node_id):
         probe = self
 
         class NodeView:
@@ -313,7 +323,7 @@ def test_the_drift_margin_covers_the_worst_clock_rates():
     rho, lease = 0.1, 0.4
     margin = 0.08                        # >= 2 * rho * D / (1 + rho) = 0.0727
     clocks = {"n0": DriftClock(1 - rho), "n1": DriftClock(1 + rho, 50.0), "n2": DriftClock(1 + rho, 90.0)}
-    with Cluster(3, clocks=clocks, lease_duration=lease, drift_margin=margin, request_timeout=0.05,
+    with Cluster(3, tiers=True, clocks=clocks, lease_duration=lease, drift_margin=margin, request_timeout=0.05,
                  startup_grace=0.0, backoff=(0.001, 0.005)) as cl:
         held = cl["n0"].acquire(timeout=5)          # kept to expiry, never released
         nxt = cl["n1"].acquire(timeout=5)
@@ -327,7 +337,7 @@ def test_the_drift_margin_covers_the_worst_clock_rates():
 def test_the_lease_window_is_measured_from_the_send_not_the_win():
     """Grants to n0 are delayed 0.3 s: counted from its win, n0's window would outlast the
     promises its granters made when they received the request."""
-    with Cluster(3, lease_duration=1.0, drift_margin=0.1, request_timeout=0.45, startup_grace=0.0,
+    with Cluster(3, tiers=True, lease_duration=1.0, drift_margin=0.1, request_timeout=0.45, startup_grace=0.0,
                  backoff=(0.001, 0.005)) as cl:
         cl.net.set_link_delay("n1", "n0", 0.3)
         cl.net.set_link_delay("n2", "n0", 0.3)

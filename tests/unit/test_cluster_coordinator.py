@@ -1,4 +1,6 @@
-"""ClusterCoordinator over the in-process transport: lease, contention, faults, root propagation (Task 8.3c)."""
+"""ClusterCoordinator over the in-process transport: lease, contention, faults, root propagation
+(Tasks 8.3c and 8.3d).  Every node has an in-memory cluster tier (``Cluster(tiers=True)``): a
+node without one neither grants nor acknowledges (D46)."""
 import threading
 import time
 import uuid
@@ -7,7 +9,7 @@ import pytest
 
 from proto_db.cluster.coordinator import ClusterCoordinator
 from proto_db.cluster.transport import InProcessNetwork
-from proto_db.errors import ProtoTimeoutError, ProtoValidationError
+from proto_db.errors import ProtoOutcomeUnknownError, ProtoTimeoutError, ProtoValidationError
 from proto_db.storage.format import FORMAT_VERSION, RootRecord
 from tests.support.cluster import Cluster
 
@@ -60,7 +62,7 @@ def test_constructor_validates_membership_and_timing():
 
 
 def test_acquire_before_start_or_after_stop_raises(baseline_threads):
-    with Cluster(1, **FAST) as cl:
+    with Cluster(1, tiers=True, **FAST) as cl:
         node = cl["n0"]
         node.stop()
         with pytest.raises(ProtoValidationError):
@@ -70,7 +72,7 @@ def test_acquire_before_start_or_after_stop_raises(baseline_threads):
 # -- lease basics ------------------------------------------------------------------------------
 
 def test_single_node_cluster_acquires_and_releases(baseline_threads):
-    with Cluster(1, **FAST) as cl:
+    with Cluster(1, tiers=True, **FAST) as cl:
         with cl["n0"].lease() as lease:
             assert lease.is_valid() and lease.term >= 1
         assert not lease.is_valid()
@@ -79,7 +81,7 @@ def test_single_node_cluster_acquires_and_releases(baseline_threads):
 def test_three_nodes_never_hold_overlapping_leases_and_terms_increase(baseline_threads):
     intervals = []
     lock = threading.Lock()
-    with Cluster(3, **FAST) as cl:
+    with Cluster(3, tiers=True, **FAST) as cl:
         def worker(node):
             for _ in range(15):
                 with node.lease(timeout=10) as lease:
@@ -100,7 +102,7 @@ def test_three_nodes_never_hold_overlapping_leases_and_terms_increase(baseline_t
 
 
 def test_a_minority_cannot_acquire_while_the_majority_can(baseline_threads):
-    with Cluster(3, **FAST) as cl:
+    with Cluster(3, tiers=True, **FAST) as cl:
         cl.net.partition({"n0"}, {"n1", "n2"})
         with pytest.raises(ProtoTimeoutError):
             cl["n0"].acquire(timeout=0.5)
@@ -109,7 +111,7 @@ def test_a_minority_cannot_acquire_while_the_majority_can(baseline_threads):
 
 
 def test_a_crashed_holder_blocks_others_until_its_lease_expires(baseline_threads):
-    with Cluster(3, **FAST) as cl:
+    with Cluster(3, tiers=True, **FAST) as cl:
         held = cl["n0"].acquire(timeout=5)
         cl.crash("n0")            # never releases
         t0 = time.monotonic()
@@ -121,7 +123,7 @@ def test_a_crashed_holder_blocks_others_until_its_lease_expires(baseline_threads
 
 
 def test_a_restarted_peer_honours_promises_through_its_startup_grace(baseline_threads):
-    with Cluster(3, **FAST) as cl:
+    with Cluster(3, tiers=True, **FAST) as cl:
         cl.net.partition({"n0", "n1"}, {"n2"})     # n0 wins with n0 + n1 only
         held = cl["n0"].acquire(timeout=5)
         cl.net.heal()
@@ -134,7 +136,7 @@ def test_a_restarted_peer_honours_promises_through_its_startup_grace(baseline_th
 
 
 def test_a_waiting_requester_is_woken_by_the_release(baseline_threads):
-    with Cluster(3, lease_duration=2.0, drift_margin=0.2, request_timeout=0.1, startup_grace=0.0,
+    with Cluster(3, tiers=True, lease_duration=2.0, drift_margin=0.2, request_timeout=0.1, startup_grace=0.0,
                  backoff=(0.5, 0.5)) as cl:
         held = cl["n0"].acquire(timeout=5)
         got = {}
@@ -155,7 +157,7 @@ def test_a_waiting_requester_is_woken_by_the_release(baseline_threads):
 
 
 def test_stop_wakes_a_blocked_acquirer(baseline_threads):
-    with Cluster(3, **FAST) as cl:
+    with Cluster(3, tiers=True, **FAST) as cl:
         cl.net.partition({"n0"}, {"n1"}, {"n2"})
         errors = []
 
@@ -185,13 +187,13 @@ def test_known_root_never_goes_backwards():
     net.close()
 
 
-def test_release_propagates_the_published_root_to_every_peer(baseline_threads):
-    with Cluster(3, **FAST) as cl:
+def test_release_propagates_the_replicated_root_to_every_peer(baseline_threads):
+    with Cluster(3, tiers=True, **FAST) as cl:
         for node in cl.nodes.values():
             node.observe_root(None, from_storage=True)     # all know the empty space
         lease = cl["n0"].acquire(timeout=5)
         assert lease.root_certain and lease.root is None
-        cl["n0"].published(lease, _rec(1))
+        cl["n0"].replicate(lease, _rec(1))
         cl["n0"].release(lease)
         assert _wait(lambda: all(cl[n].known_root() == (True, _rec(1)) for n in cl.ids))
         nxt = cl["n2"].acquire(timeout=5)
@@ -199,48 +201,71 @@ def test_release_propagates_the_published_root_to_every_peer(baseline_threads):
         cl["n2"].release(nxt)
 
 
-def test_unknown_roots_make_the_holder_read_the_storage(baseline_threads):
-    with Cluster(3, **FAST) as cl:
+def test_unknown_roots_make_the_holder_recover(baseline_threads):
+    with Cluster(3, tiers=True, **FAST) as cl:
         lease = cl["n0"].acquire(timeout=5)
         assert not lease.root_certain     # nobody knows any root yet
         cl["n0"].release(lease)
 
 
-def test_a_peer_that_missed_a_release_makes_the_next_holder_read_the_storage(baseline_threads):
-    with Cluster(3, **FAST) as cl:
+def test_a_peer_that_missed_a_release_makes_the_next_holder_recover(baseline_threads):
+    with Cluster(3, tiers=True, **FAST) as cl:
         for node in cl.nodes.values():
             node.observe_root(None, from_storage=True)
         lease = cl["n0"].acquire(timeout=5)
         assert _wait(lambda: cl["n2"].stats()["grants_given"] >= 1)
-        cl.net.partition({"n0", "n1"}, {"n2"})      # n2 misses the release
-        cl["n0"].published(lease, _rec(1))
+        cl.net.partition({"n0", "n1"}, {"n2"})      # n2 misses the replication and the release
+        cl["n0"].replicate(lease, _rec(1))
         cl["n0"].release(lease)
         cl.net.heal()
         assert cl["n2"].known_root() == (True, None)
         time.sleep(FAST["lease_duration"])          # n2's grant to n0 expires
         nxt = cl["n2"].acquire(timeout=5)
-        assert not nxt.root_certain                  # n2 may have missed a root: read the storage
+        assert not nxt.root_certain                  # n2 may have missed a root: recover
         cl["n2"].release(nxt)
 
 
-def test_a_fencing_event_marks_the_root_suspect_and_is_counted(baseline_threads):
-    with Cluster(3, **FAST) as cl:
+def test_a_failed_replication_makes_the_holders_next_lease_uncertain(baseline_threads):
+    with Cluster(3, tiers=True, **FAST) as cl:
         for node in cl.nodes.values():
             node.observe_root(None, from_storage=True)
         lease = cl["n0"].acquire(timeout=5)
-        cl["n0"].record_fencing_event(lease, RuntimeError("cas failed"))
+        cl.net.partition({"n0"}, {"n1", "n2"})
+        with pytest.raises(ProtoOutcomeUnknownError):
+            cl["n0"].replicate(lease, _rec(1))      # only n0 accepts: no majority
         cl["n0"].release(lease)
-        assert cl["n0"].stats()["fencing_events"] == 1
+        assert cl["n0"].stats()["replication_failures"] == 1
+        cl.net.heal()
+        time.sleep(FAST["lease_duration"])
         nxt = cl["n0"].acquire(timeout=5)
         assert not nxt.root_certain
         cl["n0"].release(nxt)
+
+
+def test_a_node_without_a_tier_neither_grants_nor_counts(baseline_threads):
+    with Cluster(3, **FAST) as cl:                   # no tiers attached
+        with pytest.raises(ProtoTimeoutError):
+            cl["n0"].acquire(timeout=0.3)
+        assert all(cl[n].stats()["grants_given"] == 0 for n in cl.ids)
+        assert cl["n1"].stats()["grants_refused_no_storage"] >= 1
+
+
+def test_fetch_timeout_must_leave_part_of_the_lease():
+    net = InProcessNetwork()
+    peers = [("a", "h", 1)]
+    with pytest.raises(ProtoValidationError, match="fetch_timeout"):
+        ClusterCoordinator("a", peers, transport=net.endpoint(), lease_duration=2.0, drift_margin=0.2,
+                           fetch_timeout=1.8)
+    c = ClusterCoordinator("a", peers, transport=net.endpoint(), lease_duration=2.0, drift_margin=0.2)
+    assert c._fetch_timeout == pytest.approx(0.45)
+    net.close()
 
 
 def test_the_default_startup_grace_lasts_one_lease(baseline_threads):
     kw = dict(FAST)
     del kw["startup_grace"]                        # default: one lease_duration
     t0 = time.monotonic()
-    with Cluster(3, **kw) as cl:
+    with Cluster(3, tiers=True, **kw) as cl:
         lease = cl["n0"].acquire(timeout=5)
         waited = time.monotonic() - t0
         cl["n0"].release(lease)

@@ -132,8 +132,48 @@ def test_the_roots_log_survives_a_restart_and_a_torn_tail(tmp_path):
     with open(tmp_path / "n0" / "roots.log", "ab") as f:
         f.write(b"\x01torn")
     st = _tiered(tmp_path, store)
-    accepted, committed, top = st.load_roots()
-    assert accepted == (3, _root(ptr, 4)) and committed == (2, _root(ptr, 5)) and top == 3
+    accepted, committed, top, promised = st.load_roots()
+    assert accepted == (3, _root(ptr, 4)) and committed == (2, _root(ptr, 5)) and top == 3 and promised == 0
+    st.close()
+
+
+def test_the_roots_log_orders_committed_roots_by_label_first_so_a_refound_lineage_wins(tmp_path):
+    """Review I2a: after a refound the new lineage restarts from the persisted epoch, below the
+    epochs of the dead branch a survivor logged.  A restarted survivor must load the new
+    lineage, also after the log is compacted."""
+    from proto_db.cluster.coordinator import REFOUND_TERM_STEP
+    store = FakeObjectStore()
+    st = _tiered(tmp_path, store)
+    dead = _root(st.push_atom({"n": 1}), 10)
+    fresh = _root(st.push_atom({"n": 2}), 7)
+    st.log_root("committed", 5, dead, sync=True)
+    st.log_root("accepted", 5, dead, sync=True)
+    st.log_root("committed", 5 + REFOUND_TERM_STEP, fresh, sync=True)
+    st.log_root("accepted", 5 + REFOUND_TERM_STEP, fresh, sync=True)
+    st.close()
+    st = _tiered(tmp_path, store)
+    logged = st.load_roots()
+    assert logged.committed == (5 + REFOUND_TERM_STEP, fresh)
+    assert logged.accepted == (5 + REFOUND_TERM_STEP, fresh)
+    st._roots._compact()                                # the compacted log keeps the same roots
+    assert st.load_roots()[:2] == logged[:2]
+    st.close()
+
+
+def test_promises_are_logged_and_two_roots_with_one_label_and_epoch_are_refused(tmp_path):
+    store = FakeObjectStore()
+    st = _tiered(tmp_path, store)
+    st.log_promise(7)
+    st.log_promise(3)                                   # lower: already covered
+    a = _root(st.push_atom({"n": 1}), 4)
+    b = _root(st.push_atom({"n": 2}), 4)
+    st.log_root("accepted", 7, a, sync=True)
+    st.close()
+    st = _tiered(tmp_path, store)
+    assert st.load_roots().promised == 7
+    st.log_root("accepted", 7, b, sync=True)            # a protocol violation, reported on load
+    with pytest.raises(ProtoCorruptionError, match="Protocol violation"):
+        st.load_roots()
     st.close()
 
 

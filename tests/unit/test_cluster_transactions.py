@@ -168,8 +168,16 @@ def test_the_commit_point_is_the_majority_acknowledgement():
         spaces = [ObjectSpace(shared, coordinator=cl[n], lock_timeout=1.0) for n in cl.ids]
         db = spaces[0].new_database("db")
         db.run(_incr, **RUN_KW)
-        stats = [cl[n].stats() for n in cl.ids]
-        assert sum(s["accepted"] for s in stats) >= 2 * 2        # both commits reached the two peers
+        commits = cl["n0"].stats()["replications"] - cl["n0"].stats()["replication_failures"]
+        assert commits >= 2
+        # A commit returns once a majority acknowledged: the committer and at least one peer.
+        # The other peer's acknowledgement may still be on its way.
+        peers = ("n1", "n2")
+        assert sum(cl[n].stats()["accepted"] for n in peers) >= commits * (cl["n0"].majority - 1)
+        # Every replication reaches both peers eventually, but a straggler copy may be refused:
+        # the peer may already have granted the committer's next lease (the ballot rule).
+        assert _eventually(lambda: all(cl[n].stats()["accepted"] + cl[n].stats()["refused"] == commits
+                                       for n in peers))
         cl.crash("n2")                                           # a minority down: commits go on
         db.run(_incr, **RUN_KW)
         assert _value(spaces[1]) == 2
@@ -269,6 +277,7 @@ def test_storage_root_reads_never_make_reads_go_backwards():
     with Cluster(3, **FAST) as cl:
         s0 = ObjectSpace(shared, coordinator=cl["n0"])
         s1 = ObjectSpace(shared, coordinator=cl["n1"])
+        ObjectSpace(shared, coordinator=cl["n2"])        # n2 grants and acknowledges with a tier only
         db0 = s0.new_database("db")
         db0.run(_incr, **RUN_KW)
         assert _value(s1) == 1

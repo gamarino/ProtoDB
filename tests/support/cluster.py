@@ -8,6 +8,11 @@ process: it keeps running its code but neither sends nor receives).  ``restart(n
 starts a fresh coordinator with the same id on a new endpoint.  ``close()`` stops every
 node and the network, joining all their threads.
 
+A node grants and acknowledges only with a cluster tier attached (D46: its promises must
+be recorded somewhere).  Tests that open spaces attach their storage's tier; lease-only
+tests pass ``tiers=True``: every node then gets a :class:`MemoryTier` (an in-memory
+acceptor log that survives ``restart``, like a disk, and a persister that never writes).
+
 ``CasCountingStorage(storage)`` delegates to a storage and counts failed conditional root
 writes (``ProtoConflictError`` from ``publish_root``), publishes, and publishes sent
 without an expected epoch; ``publishers`` is the set of thread names that published.
@@ -20,8 +25,21 @@ import threading
 import time
 
 from proto_db.cluster.coordinator import ClusterCoordinator
+from proto_db.cluster.persister import PlainTier
 from proto_db.errors import ProtoConflictError
 from proto_db.cluster.transport import InProcessNetwork
+from proto_db.storage.memory import MemoryStorage
+
+
+class MemoryTier(PlainTier):
+    """A cluster tier for lease-level tests: an in-memory acceptor log per (storage, node), no
+    persisted root, nothing persisted."""
+
+    def read_persisted(self):
+        return None
+
+    def persist(self, label, record):
+        return False
 
 
 class DriftClock:
@@ -43,8 +61,10 @@ class DriftClock:
 class Cluster:
     """``n`` in-process coordinators on one network (see the module docstring)."""
 
-    def __init__(self, n: int, *, seed: int = 0, clocks=None, **coordinator_kwargs):
+    def __init__(self, n: int, *, seed: int = 0, clocks=None, tiers: bool = False, **coordinator_kwargs):
         self.seed = seed
+        self.tiers = tiers
+        self.disks = {}               # node -> MemoryStorage holding its in-memory acceptor log
         self.net = InProcessNetwork(seed=seed)
         self.ids = [f"n{i}" for i in range(n)]
         self.peers = [(node_id, "127.0.0.1", 0) for node_id in self.ids]
@@ -68,7 +88,14 @@ class Cluster:
         node = ClusterCoordinator(node_id, self.peers, transport=self.net.endpoint(), **kwargs)
         node.start()
         self.nodes[node_id] = node
+        if self.tiers:
+            node.attach(MemoryTier(self.disks.setdefault(node_id, MemoryStorage()), node_id))
         return node
+
+    def wipe(self, node_id: str, **overrides) -> ClusterCoordinator:
+        """Restart ``node_id`` with an empty acceptor log (its disk is lost)."""
+        self.disks.pop(node_id, None)
+        return self.restart(node_id, **overrides)
 
     def __getitem__(self, node_id: str) -> ClusterCoordinator:
         return self.nodes[node_id]

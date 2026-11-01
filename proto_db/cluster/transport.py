@@ -35,7 +35,8 @@ import time
 from typing import Callable, Optional, Protocol
 
 from ..errors import ProtoDBError, ProtoValidationError
-from .protocol import ClusterProtocolError, FrameDecoder, decode_message, encode_frame, encode_message
+from .protocol import (ClusterProtocolError, FrameDecoder, check_frame_size, decode_message, encode_frame,
+                       encode_message)
 
 __all__ = ["Transport", "TcpTransport", "InProcessNetwork", "InProcessTransport"]
 
@@ -250,8 +251,10 @@ class InProcessTransport:
             self._thread.start()
 
     def send(self, node_id: str, message: dict) -> None:
-        """See :class:`Transport`.  An invalid message raises ``ClusterProtocolError`` (a bug)."""
+        """See :class:`Transport`.  An invalid message, or one larger than a frame, raises
+        ``ClusterProtocolError`` (as on TCP)."""
         data = encode_message(message)
+        check_frame_size(len(data))
         if not self._running:
             return
         self._network._route(self._node, self, node_id, data)
