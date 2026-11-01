@@ -17,6 +17,7 @@ not orderable keys.
 """
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -148,6 +149,77 @@ def values_equal(a, b) -> bool:
     return order_key(a) == order_key(b)
 
 
+#: Modulus of the exact numeric hash (a Mersenne prime, as in CPython's numeric hash).
+_HASH_MODULUS = (1 << 61) - 1
+_HASH_INV10 = pow(10, _HASH_MODULUS - 2, _HASH_MODULUS)
+
+
+def _number_residue(x) -> bytes:
+    """Encode the exact value of a non-NaN number for hashing: equal numbers give equal bytes.
+
+    Finite numbers map to their rational value modulo the prime ``_HASH_MODULUS``
+    (``m * n**-1 mod P`` for ``m / n``), computed without expanding huge
+    exponents; infinities get their own tags.
+    """
+    p = _HASH_MODULUS
+    if isinstance(x, Decimal):
+        if x.is_infinite():
+            return b"+inf" if x > 0 else b"-inf"
+        sign, digits, exp = x.as_tuple()
+        m = 0
+        for d in digits:
+            m = (m * 10 + d) % p
+        m = m * (pow(10, exp, p) if exp >= 0 else pow(_HASH_INV10, -exp, p)) % p
+        residue = (p - m) % p if sign else m
+    elif isinstance(x, float):
+        if x in (float("inf"), float("-inf")):
+            return b"+inf" if x > 0 else b"-inf"
+        n, d = x.as_integer_ratio()
+        residue = n * pow(d, p - 2, p) % p
+    else:
+        residue = x % p
+    return residue.to_bytes(8, "little")
+
+
+def _feed_hash(h, key: tuple) -> None:
+    """Feed an order key into the hash object ``h`` with an unambiguous, process-independent encoding."""
+    rank, payload = key
+    h.update(rank.to_bytes(1, "little"))
+    if rank == _R_NUMBER:
+        h.update(_number_residue(payload))
+        return
+    if rank == _R_TUPLE:
+        h.update(len(payload).to_bytes(8, "little"))
+        for item in payload:
+            _feed_hash(h, item)
+        return
+    if isinstance(payload, str):
+        data = payload.encode("utf-8", "surrogatepass")
+    elif isinstance(payload, bytes):
+        data = payload
+    else:
+        if isinstance(payload, datetime):  # naive datetime
+            payload = (payload - _NAIVE_ORIGIN) // _MICROSECOND
+        elif isinstance(payload, date):
+            payload = payload.toordinal()
+        elif isinstance(payload, timedelta):
+            payload = payload // _MICROSECOND
+        if type(payload) is not int:
+            raise ProtoValidationError(f"Cannot hash order-key payload of type {type(payload).__name__}")
+        data = payload.to_bytes(payload.bit_length() // 8 + 1, "little", signed=True)
+    h.update(len(data).to_bytes(8, "little"))
+    h.update(data)
+
+
 def hash_key(value) -> int:
-    """Return a hash consistent with :func:`values_equal`."""
-    return hash(order_key(value))
+    """Return a signed 64-bit hash consistent with :func:`values_equal`, identical in every process.
+
+    Python's ``hash`` of ``str``, ``bytes`` and date/time objects is salted per
+    process (``PYTHONHASHSEED``), so it cannot order persisted structures.  This
+    hash is a BLAKE2b digest of an exact encoding of :func:`order_key` (numbers
+    by their exact rational value), stable across processes, platforms and
+    releases (D24).  Raises ``ProtoValidationError`` for unorderable values.
+    """
+    h = hashlib.blake2b(digest_size=8)
+    _feed_hash(h, order_key(value))
+    return int.from_bytes(h.digest(), "little", signed=True)

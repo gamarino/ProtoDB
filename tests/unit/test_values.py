@@ -1,6 +1,7 @@
 """Unit tests for the ProtoDB value model."""
 import pickle
 import uuid
+import sys
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
@@ -146,3 +147,55 @@ def test_fold_and_gap_datetimes_use_resolved_instant():
     g = datetime(2020, 3, 29, 2, 30, tzinfo=m)
     assert values_equal(g, g.astimezone(timezone.utc))
     assert hash_key(g) == hash_key(g.astimezone(timezone.utc))
+
+
+# -- process-stable hash_key (D24) ----------------------------------------------------------
+
+_HASH_PROBE = r"""
+import sys, uuid
+from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal
+sys.path.insert(0, sys.argv[1])
+from proto_db.values import MISSING, hash_key
+values = [MISSING, None, True, False, 0, 1, -7, 2**60 + 3, 10**40, 0.5, -2.25, Decimal("1.10"),
+          float("inf"), Decimal("-Infinity"), "abc", "", "ñand\udc80", b"", b"\x00xyz",
+          date(2024, 2, 29), time(10, 30), time(10, 30, tzinfo=timezone.utc),
+          datetime(2020, 1, 1, 12), datetime(2020, 1, 1, 12, tzinfo=timezone(timedelta(hours=3))),
+          timedelta(days=2, microseconds=5), uuid.UUID(int=12345), (1, "a", (b"x", None)), ()]
+print([hash_key(v) for v in values])
+"""
+
+
+def test_hash_key_is_identical_across_processes_with_different_hash_seeds():
+    """Persisted structures (HashDictionary buckets) need hashes that survive a restart."""
+    import os
+    import subprocess
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    outputs = set()
+    for seed in ("1", "2", "12345"):
+        env = dict(os.environ, PYTHONHASHSEED=seed)
+        out = subprocess.run([sys.executable, "-c", _HASH_PROBE, root], env=env, check=True,
+                             capture_output=True, text=True).stdout
+        outputs.add(out)
+    assert len(outputs) == 1, outputs
+
+
+def test_hash_key_numbers_hash_by_exact_value():
+    assert hash_key(1) == hash_key(1.0) == hash_key(Decimal(1)) == hash_key(Decimal("1.000"))
+    assert hash_key(0.5) == hash_key(Decimal("0.5"))
+    assert hash_key(-0.75) == hash_key(Decimal("-0.75"))
+    assert hash_key(10**1000) == hash_key(Decimal("1E+1000"))
+    assert hash_key(float("inf")) == hash_key(Decimal("Infinity"))
+    assert hash_key(float("-inf")) == hash_key(Decimal("-Infinity"))
+    assert hash_key(float("inf")) != hash_key(float("-inf"))
+    assert hash_key(0.0) == hash_key(-0.0) == hash_key(0) == hash_key(Decimal("-0"))
+    assert hash_key(True) != hash_key(1)
+    # Huge exponents are reduced modularly, never expanded.
+    hash_key(Decimal("1E+999999999"))
+    hash_key(Decimal("1E-999999999"))
+
+
+def test_hash_key_is_a_signed_64_bit_int():
+    for v in ("x", 1, (1, 2), b"q", None):
+        h = hash_key(v)
+        assert type(h) is int and -(2**63) <= h < 2**63
