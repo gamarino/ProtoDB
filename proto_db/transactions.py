@@ -228,6 +228,10 @@ def _token(value):
     """
     if value is _ABSENT:
         return _ABSENT
+    if isinstance(value, Atom):
+        # Directly, not through exact_token: its is_atom() probe reads ``oid``, which
+        # loads a stub (D21) -- under the root lock, for the commit-time check.
+        return _atom_token(value)
     return exact_token(value, _atom_token)
 
 

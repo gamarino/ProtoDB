@@ -316,6 +316,35 @@ def test_values_survive_the_transaction_that_loaded_them(db):
     assert list(copy.get_at("a")) == [1] and copy.get_at("b") == 2
 
 
+def test_reading_a_root_and_checking_it_at_commit_do_not_load_it(tmp_path, monkeypatch):
+    """The read set tokenises atoms by pointer so that stubs stay unloaded (D34), also under the root lock."""
+    path = str(tmp_path / "space")
+    s = ObjectSpace(FileStorage(path))
+    db = s.new_database("db")
+    with db.new_transaction() as tr:
+        tr.set_root_object("l", tr.new_list().append_last(1))
+        tr.set_root_object("x", 0)
+    s.close()
+    s = ObjectSpace(FileStorage(path))
+    try:
+        db = s.open_database("db")
+        fetched = []
+        original = s.storage.get_atom
+        monkeypatch.setattr(s.storage, "get_atom", lambda ptr: (fetched.append(ptr), original(ptr))[1])
+        tr = db.new_transaction()
+        lst = tr.get_root_object("l")
+        ptr = object.__getattribute__(lst, "atom_pointer")
+        assert object.__getattribute__(lst, "_loaded") is False
+        with db.new_transaction() as other:
+            other.set_root_object("x", 1)
+        tr.set_root_object("y", 2)
+        tr.commit()     # the read set is compared with a newer root
+        assert ptr not in fetched
+        assert list(read_root(db, "l")) == [1] and read_root(db, "y") == 2
+    finally:
+        s.close()
+
+
 # -- read set and conflicts ------------------------------------------------------------------
 
 def test_two_creators_of_the_same_absent_root(space, db):
