@@ -50,6 +50,8 @@ CHECKED_ROOTS = [
     "proto_db/runtime/__init__.py",
     "proto_db/runtime/parallel.py",
     "proto_db/runtime/fsm.py",
+    "proto_db/interop/__init__.py",
+    "proto_db/interop/arrow.py",
 ]
 
 
