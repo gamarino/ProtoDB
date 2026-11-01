@@ -339,3 +339,114 @@ def _toy_factory() -> CollectionFactory:
 
 
 register(_toy_factory())
+
+
+# -- Task 3.3a: List, Dictionary, HashDictionary ------------------------------------------
+
+def _list_factory() -> CollectionFactory:
+    from proto_db.collections.lists import List
+
+    def populate(coll, rng):
+        for _ in range(rng.randrange(0, 30)):
+            coll = coll.insert_at(rng.randrange(0, coll.count + 1), rng.randrange(0, 40))
+        return coll
+
+    def position(coll, rng):
+        return None if coll.count == 0 else rng.randrange(-coll.count, coll.count)
+
+    def insert_at(coll, rng):
+        i, v = rng.randrange(-coll.count, coll.count + 1), rng.randrange(0, 40)
+        return coll.insert_at(i, v), [("add", v)]
+
+    def append_first(coll, rng):
+        v = rng.randrange(0, 40)
+        return coll.append_first(v), [("add", v)]
+
+    def append_last(coll, rng):
+        v = rng.randrange(0, 40)
+        return coll.append_last(v), [("add", v)]
+
+    def set_at(coll, rng):
+        i = position(coll, rng)
+        if i is None:
+            return None
+        v = rng.randrange(0, 40)
+        return coll.set_at(i, v), [("replace", coll.get_at(i), v)]
+
+    def remove_at(coll, rng):
+        i = position(coll, rng)
+        return None if i is None else (coll.remove_at(i), [("remove", coll.get_at(i))])
+
+    def extend(coll, rng):
+        items = [rng.randrange(0, 40) for _ in range(rng.randrange(0, 5))]
+        return coll.extend(items), [("add", v) for v in items]
+
+    return CollectionFactory(
+        name="List", empty=List, populate=populate,
+        mutators={"insert_at": insert_at, "append_first": append_first, "append_last": append_last,
+                  "set_at": set_at, "remove_at": remove_at, "extend": extend})
+
+
+def _dictionary_like_factory(name, cls) -> CollectionFactory:
+    """Factory for a key -> value collection with set_at/remove_at/has (Dictionary, HashDictionary)."""
+
+    def populate(coll, rng):
+        for _ in range(rng.randrange(0, 30)):
+            coll = coll.set_at(rng.choice([rng.randrange(0, 50), f"s{rng.randrange(0, 20)}"]),
+                               rng.randrange(0, 15))
+        return coll
+
+    def fresh_key(coll, rng):
+        while True:
+            k = rng.choice([rng.randrange(0, 200), f"s{rng.randrange(0, 200)}", float(rng.randrange(0, 200))])
+            if not coll.has(k):
+                return k
+
+    def existing_key(coll, rng):
+        ks = list(coll.keys())
+        return rng.choice(ks) if ks else None
+
+    def set_new(coll, rng):
+        k, v = fresh_key(coll, rng), rng.randrange(0, 15)
+        return coll.set_at(k, v), [("add", v)]
+
+    def set_existing(coll, rng):
+        k = existing_key(coll, rng)
+        if k is None:
+            return None
+        v = rng.randrange(0, 15)
+        # An equal key of another type (1 vs 1.0) addresses the same entry.
+        probe = float(k) if isinstance(k, int) and rng.random() < 0.5 else k
+        return coll.set_at(probe, v), [("replace", coll.get_at(k), v)]
+
+    def remove_present(coll, rng):
+        k = existing_key(coll, rng)
+        return None if k is None else (coll.remove_at(k), [("remove", coll.get_at(k))])
+
+    def remove_absent(coll, rng):
+        return coll.remove_at(fresh_key(coll, rng)), []
+
+    def rebase_model(theirs, op_log):
+        mapping = {order_key(k): v for k, v in theirs.items()}
+        for op in op_log:
+            if op[0] == "set":
+                mapping[order_key(op[1])] = op[2]
+            elif op[0] == "remove":
+                mapping.pop(order_key(op[1]), None)
+        return Counter(order_key(v) for v in mapping.values())
+
+    return CollectionFactory(
+        name=name, empty=cls, populate=populate, rebase_model=rebase_model,
+        mutators={"set_new": set_new, "set_existing": set_existing, "remove_present": remove_present,
+                  "remove_absent": remove_absent})
+
+
+def _register_3_3a() -> None:
+    from proto_db.collections.dictionaries import Dictionary
+    from proto_db.collections.hash_dictionaries import HashDictionary
+    register(_list_factory())
+    register(_dictionary_like_factory("Dictionary", Dictionary))
+    register(_dictionary_like_factory("HashDictionary", HashDictionary))
+
+
+_register_3_3a()
