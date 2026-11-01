@@ -21,6 +21,7 @@ Wire form of a value:
                canonical value, so a msgpack map is never used for a dict)
   ``@missing`` the ``MISSING`` sentinel (value ``0``)
   ``@ref``     ``[segment_hex, offset, type_name]`` for a nested atom
+  ``@mut``     the cell name of a ``MutableObject`` handle (a non-empty str, D35)
   ===========  ==================================================================
 
   ``tz`` is ``None`` (naive), ``["zone", key]`` for a ``zoneinfo.ZoneInfo`` or
@@ -44,6 +45,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from ..errors import ProtoCorruptionError, ProtoValidationError
 from ..values import MISSING, FrozenDict, FrozenList
 from .atom import Atom, AtomPointer
+from .dbobject import MutableObject
 
 __all__ = ["encode_state", "decode_state", "encode_value", "decode_value"]
 
@@ -105,6 +107,8 @@ def encode_value(value, save_child: Callable[[Atom], AtomPointer]):
         return {"@uuid": value.bytes}
     if value is MISSING:
         return {"@missing": 0}
+    if isinstance(value, MutableObject):
+        return {"@mut": value.name}
     if isinstance(value, Atom):
         ptr = save_child(value)
         if not isinstance(ptr, AtomPointer):
@@ -255,8 +259,15 @@ def _dec_ref(body, load_ref):
     return load_ref(ptr, type_name)
 
 
+def _dec_mutable(body, _):
+    if type(body) is not str or not body:
+        raise ValueError("expected a non-empty str")
+    return MutableObject(body)
+
+
 _DECODERS = {
     "@int": _dec_int, "@dec": _dec_decimal, "@date": _dec_date, "@time": _dec_time,
     "@dt": _dec_datetime, "@td": _dec_timedelta, "@uuid": _dec_uuid, "@tup": _dec_tuple,
     "@map": _dec_map, "@missing": _dec_missing, "@ref": _dec_ref,
+    "@mut": _dec_mutable,
 }

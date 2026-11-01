@@ -8,7 +8,11 @@ Rank order (see decision D17)::
 
     MISSING < None < bool < number < str < bytes < date < time-naive
     < time-aware < datetime-naive < datetime-aware < timedelta < UUID
-    < tuple < atom
+    < tuple < atom < mutable handle
+
+The last rank holds :class:`proto_db.core.dbobject.MutableObject` handles,
+ordered by name (D35); it was appended after ``atom`` so that the order keys
+and hash keys of every other value are unchanged.
 
 Numbers (``int``, ``float``, ``Decimal``) share one rank and are compared
 exactly by Python's native mixed comparison; they are never converted to
@@ -53,7 +57,7 @@ MISSING = _Missing()
 
 (_R_MISSING, _R_NONE, _R_BOOL, _R_NUMBER, _R_STR, _R_BYTES, _R_DATE,
  _R_TIME_NAIVE, _R_TIME_AWARE, _R_DT_NAIVE, _R_DT_AWARE, _R_TIMEDELTA,
- _R_UUID, _R_TUPLE, _R_ATOM) = range(15)
+ _R_UUID, _R_TUPLE, _R_ATOM, _R_MUTABLE) = range(16)
 
 
 _MICROSECOND = timedelta(microseconds=1)
@@ -63,6 +67,12 @@ _NAIVE_ORIGIN = datetime(1, 1, 1)
 def is_atom(value) -> bool:
     """Return True if ``value`` looks like an atom: it has a ``uuid.UUID`` ``oid``."""
     return isinstance(getattr(value, "oid", None), uuid.UUID)
+
+
+def _mutable_type() -> type:
+    """The MutableObject handle class (imported lazily: ``core.dbobject`` imports this module)."""
+    from .core.dbobject import MutableObject
+    return MutableObject
 
 
 def _is_nan(value) -> bool:
@@ -159,7 +169,7 @@ def canonical(value):
 
     Supported: MISSING, None, bool, int, float (NaN allowed as a stored value),
     Decimal, str, bytes (``bytearray`` is converted), date, time, datetime,
-    timedelta, UUID, atoms, tuples, and lists/dicts of supported values
+    timedelta, UUID, atoms, ``MutableObject`` handles, tuples, and lists/dicts of supported values
     (processed recursively).  Lists and dicts become :class:`FrozenList` and
     :class:`FrozenDict`; already-canonical input is returned as the same object.  Raises ``ProtoValidationError`` otherwise.
     """
@@ -182,7 +192,7 @@ def canonical(value):
                 ka is kb and va is vb for (ka, va), (kb, vb) in zip(pairs, value.items())):
             return value
         return FrozenDict(pairs)
-    if is_atom(value):
+    if is_atom(value) or isinstance(value, _mutable_type()):
         return value
     raise ProtoValidationError(f"Unsupported value type: {type(value).__name__}")
 
@@ -192,7 +202,7 @@ def order_key(value) -> tuple:
 
     Invariant (relied upon by :func:`rank_bounds` and by index range scans):
     every order key is a 2-element tuple ``(rank, payload)`` whose ``rank`` is
-    an int in ``range(15)``; payloads are compared only between keys of one rank.
+    an int in ``range(16)``; payloads are compared only between keys of one rank.
 
     Raises ``ProtoValidationError`` for NaN, lists, dicts and unsupported types.
     """
@@ -233,6 +243,8 @@ def order_key(value) -> tuple:
         return (_R_TUPLE, tuple(order_key(v) for v in value))
     if is_atom(value):
         return (_R_ATOM, value.oid.int)
+    if isinstance(value, _mutable_type()):
+        return (_R_MUTABLE, value.name)
     if isinstance(value, (list, dict)):
         raise ProtoValidationError(f"{type(value).__name__} is not an orderable key")
     raise ProtoValidationError(f"Unsupported value type: {type(value).__name__}")
@@ -368,6 +380,8 @@ def exact_token(value, atom_token=None) -> tuple:
     """
     if is_atom(value):
         return ("a",) if atom_token is None else atom_token(value)
+    if isinstance(value, _mutable_type()):
+        return ("@mut", value.name)
     cls = type(value)
     tag = _EXACT_TAGS.get(cls) or f"{cls.__module__}.{cls.__qualname__}"
     if value is None:

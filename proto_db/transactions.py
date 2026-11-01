@@ -1,10 +1,11 @@
 """ObjectSpace, Database and Transaction: the transactional layer of ProtoDB 2.0
-(spec section 7, decisions D9, D32, D33, D34).
+(spec section 7, decisions D9, D11, D32, D33, D34, D35).
 
 Layout of a space (D32)
     The storage root points to a :class:`SpaceRoot` atom whose ``databases`` field is a
     :class:`~proto_db.collections.dictionaries.Dictionary` ``name -> DatabaseRoot``.  A
-    :class:`DatabaseRoot` holds ``objects`` (a Dictionary ``root name -> value``), its
+    :class:`DatabaseRoot` holds ``objects`` (a Dictionary ``root name -> value``),
+    ``mutables`` (a Dictionary ``mutable name -> value``, the mutable table, D35), its
     ``version`` (0 when the database is created, +1 per commit), ``committed_at`` (an
     aware UTC datetime, never decreasing along the chain) and ``previous``, the
     DatabaseRoot it replaced, which :meth:`Database.history` walks.  Every atom is
@@ -36,6 +37,19 @@ Merge of roots written but not read (D9, D33)
     logs are marked incomplete, so reusing such a value in a later transaction
     replaces instead of replaying this transaction's operations again.  Reading back a root written before it
     was read returns the value as written, not the merged one.
+
+Mutable cells (D11, D35)
+    The mutable table is a second namespace beside the roots: ``new_mutable``,
+    ``get_mutable``, ``set_mutable``, ``remove_mutable`` and ``mutable_names`` mirror
+    the root API and share its read set rule (exact tokens, ABSENT included) and its
+    conflict check, but per namespace: a root and a mutable of the same name are
+    unrelated.  Mutables are never merged: a written value is stored as written
+    (blind writes: last writer wins).  ``new_mutable`` requires the name to be absent
+    and records that in the read set, so two concurrent creators conflict;
+    ``set_mutable`` requires the cell to exist, and a blind set of a cell removed by a
+    concurrent commit is a conflict (it never resurrects the cell).  A
+    :class:`~proto_db.core.dbobject.MutableObject` handle names a cell and resolves it
+    through a transaction.
 
 Commit protocol (D34)
     1. No writes: nothing is saved nor published.
@@ -89,7 +103,7 @@ from .collections.hash_dictionaries import HashDictionary
 from .collections.lists import List
 from .collections.sets import CountedSet, Set
 from .core.atom import Atom, AtomPointer, PersistenceContext
-from .core.dbobject import DBObject
+from .core.dbobject import DBObject, MutableObject
 from .errors import (ProtoConflictError, ProtoDBError, ProtoUnexpectedError, ProtoUserError,
                      ProtoValidationError)
 from .values import canonical, exact_token
@@ -139,17 +153,19 @@ class SpaceRoot(_Immutable, Atom):
 
 
 class DatabaseRoot(_Immutable, Atom):
-    """One version of a database: ``objects`` (root name -> value), ``version``,
-    ``committed_at`` and the ``previous`` version (``None`` for version 0)."""
+    """One version of a database: ``objects`` (root name -> value), ``mutables`` (mutable
+    name -> value, D35), ``version``, ``committed_at`` and the ``previous`` version
+    (``None`` for version 0)."""
 
     __type_name__ = "proto_db.transactions.DatabaseRoot"
 
-    def __init__(self, *, objects: Dictionary, previous: Optional["DatabaseRoot"], version: int,
-                 committed_at: datetime.datetime, context: PersistenceContext | None = None):
+    def __init__(self, *, objects: Dictionary, mutables: Dictionary, previous: Optional["DatabaseRoot"],
+                 version: int, committed_at: datetime.datetime, context: PersistenceContext | None = None):
         """Create a database version."""
         super().__init__(context=context)
         osa = object.__setattr__
         osa(self, "objects", objects)
+        osa(self, "mutables", mutables)
         osa(self, "previous", previous)
         osa(self, "version", version)
         osa(self, "committed_at", committed_at)
@@ -158,8 +174,8 @@ class DatabaseRoot(_Immutable, Atom):
 class HistoryEntry:
     """One committed version of a database, as listed by :meth:`Database.history`.
 
-    ``version`` and ``committed_at`` are plain attributes; :attr:`root_names` loads
-    that version's root table on first access.
+    ``version`` and ``committed_at`` are plain attributes; :attr:`root_names`,
+    :attr:`mutable_names` and :meth:`get_mutable` load that version's tables on access.
     """
 
     __slots__ = ("version", "committed_at", "_root")
@@ -174,6 +190,15 @@ class HistoryEntry:
     def root_names(self) -> tuple:
         """Sorted names of the roots present in this version."""
         return tuple(sorted(self._root.objects.keys()))
+
+    @property
+    def mutable_names(self) -> tuple:
+        """Sorted names of the mutable cells present in this version."""
+        return tuple(sorted(self._root.mutables.keys()))
+
+    def get_mutable(self, name: str):
+        """Value of the mutable cell ``name`` in this version (``None`` if absent)."""
+        return self._root.mutables.get_at(_check_name(name, "mutable"))
 
     def __repr__(self):
         return f"HistoryEntry(version={self.version}, committed_at={self.committed_at.isoformat()})"
@@ -346,8 +371,8 @@ class ObjectSpace:
             databases = space.databases if space is not None else Dictionary(context=context)
             if databases.has(name):
                 raise ProtoValidationError(f"Database {name!r} already exists")
-            root = DatabaseRoot(objects=Dictionary(context=context), previous=None, version=0,
-                                committed_at=_utc_now(), context=context)
+            root = DatabaseRoot(objects=Dictionary(context=context), mutables=Dictionary(context=context),
+                                previous=None, version=0, committed_at=_utc_now(), context=context)
             return context.save(SpaceRoot(databases=databases.set_at(name, root), context=context))
 
         _commit_root(self._storage, self._lock_timeout, build)
@@ -483,11 +508,15 @@ class Transaction:
         self._reads: dict = {}
         self._writes: dict = {}
         self._replaced: set = set()
+        self._mreads: dict = {}         # mutable name -> token (or ABSENT) seen in the snapshot
+        self._mwrites: dict = {}        # mutable name -> value or REMOVED
+        self._mexpected: set = set()    # mutables set blindly: must still exist at commit
         record = self.storage.read_root()
         self._epoch = record.epoch if record is not None else 0
         self._snapshot_space = _load_space(self, record)
         self._db_root = database._root_in(self, record)
         self._objects = self._db_root.objects
+        self._mutables = self._db_root.mutables
 
     # -- PersistenceContext -----------------------------------------------------------------
 
@@ -578,6 +607,93 @@ class Transaction:
                     names.add(name)
             return sorted(names)
 
+    # -- mutable cells (D11, D35) ------------------------------------------------------------
+
+    def _mutable_view(self, name: str, record: bool):
+        """The cell ``name`` as this transaction sees it (value or ABSENT); the caller holds the lock.
+
+        With ``record``, a snapshot read enters the read set (first read only).
+        """
+        if name in self._mwrites:
+            value = self._mwrites[name]
+            return _ABSENT if value is _REMOVED else value
+        value = self._mutables.get_at(name, _ABSENT)
+        if record and name not in self._mreads:
+            self._mreads[name] = _token(value)
+        return value
+
+    def new_mutable(self, name: str, value) -> MutableObject:
+        """Create the mutable cell ``name`` holding ``value`` at commit; return its handle.
+
+        Raises ``ProtoValidationError`` if the cell exists in this transaction's view.
+        The absence is recorded in the read set, so a concurrent creator of the same
+        name makes one of the two commits raise ``ProtoConflictError``.
+        """
+        _check_name(name, "mutable")
+        value = canonical(value)
+        with self._lock:
+            self._check_active()
+            if self._mutable_view(name, record=True) is not _ABSENT:
+                raise ProtoValidationError(f"Mutable {name!r} already exists")
+            self._mwrites[name] = value
+        return MutableObject(name)
+
+    def get_mutable(self, name: str):
+        """Return the value of the mutable cell ``name`` (``None`` if absent); records the read.
+
+        Like :meth:`get_root_object`: the snapshot value (an exact token, or ABSENT)
+        enters the read set, so a concurrent change, creation or removal of the cell
+        makes the commit raise ``ProtoConflictError``.
+        """
+        _check_name(name, "mutable")
+        with self._lock:
+            self._check_active()
+            value = self._mutable_view(name, record=True)
+            return None if value is _ABSENT else value
+
+    def set_mutable(self, name: str, value) -> None:
+        """Set the mutable cell ``name`` to ``value`` at commit; the cell must exist.
+
+        Raises ``ProtoValidationError`` if the cell is absent in this transaction's view
+        (use :meth:`new_mutable`).  The value is stored as written, never merged.  A set
+        without a prior read is blind: a concurrent set is not a conflict (last writer
+        wins), but a concurrent removal of the cell is.
+        """
+        _check_name(name, "mutable")
+        value = canonical(value)
+        with self._lock:
+            self._check_active()
+            if self._mutable_view(name, record=False) is _ABSENT:
+                raise ProtoValidationError(f"Mutable {name!r} does not exist; create it with new_mutable")
+            if name not in self._mwrites:
+                self._mexpected.add(name)
+            self._mwrites[name] = value
+
+    def remove_mutable(self, name: str) -> None:
+        """Remove the mutable cell ``name`` at commit; the cell must exist in this transaction's view.
+
+        Raises ``ProtoValidationError`` if it is absent.  A cell removed meanwhile by a
+        concurrent commit makes a blind removal a no-op, not a conflict.
+        """
+        _check_name(name, "mutable")
+        with self._lock:
+            self._check_active()
+            if self._mutable_view(name, record=False) is _ABSENT:
+                raise ProtoValidationError(f"Mutable {name!r} does not exist")
+            self._mwrites[name] = _REMOVED
+
+    def mutable_names(self) -> list:
+        """Sorted names of the mutable cells as this transaction sees them (not recorded in the read set)."""
+        with self._lock:
+            self._check_active()
+            names = set(self._mutables.keys())
+            for name, value in self._mwrites.items():
+                if value is _REMOVED:
+                    names.discard(name)
+                else:
+                    names.add(name)
+            return sorted(names)
+
     # -- factories --------------------------------------------------------------------------
 
     def _new(self, cls):
@@ -639,16 +755,17 @@ class Transaction:
                 self._state = _COMMITTED if committed else _ABORTED
 
     def _commit(self) -> None:
-        if not self._writes:
+        if not self._writes and not self._mwrites:
             return
-        for value in self._writes.values():
+        written = list(self._writes.values()) + list(self._mwrites.values())
+        for value in written:
             if isinstance(value, Atom):
                 self.save(value)
         space = self._database.space
         if _commit_root(self.storage, space.lock_timeout, self._build_root):
             # Post-publish, cannot fail: a committed value's log was consumed by this
             # commit, so a later transaction reusing it must not replay it again (D33).
-            for value in self._writes.values():
+            for value in written:
                 if isinstance(value, ConcurrentOptimized):
                     object.__setattr__(value, "_log_complete", False)
 
@@ -667,6 +784,8 @@ class Transaction:
                 if not _same_token(token, _token(db_root.objects.get_at(name, _ABSENT))):
                     raise ProtoConflictError(
                         f"Root {name!r} of database {self._database.name!r} was changed by a concurrent commit")
+            if self._mreads or self._mexpected:
+                self._check_mutables(db_root.mutables)
         current_objects = db_root.objects
         objects = current_objects
         for name, value in self._writes.items():
@@ -677,10 +796,28 @@ class Transaction:
             if name not in self._reads and name not in self._replaced:
                 value = self._merged(value, current_objects.get_at(name, _ABSENT))
             objects = objects.set_at(name, value)
-        new_root = DatabaseRoot(objects=objects, previous=db_root, version=db_root.version + 1,
+        mutables = db_root.mutables
+        for name, value in self._mwrites.items():
+            if value is not _REMOVED:
+                mutables = mutables.set_at(name, value)
+            elif mutables.has(name):
+                mutables = mutables.remove_at(name)
+        new_root = DatabaseRoot(objects=objects, mutables=mutables, previous=db_root,
+                                version=db_root.version + 1,
                                 committed_at=max(_utc_now(), db_root.committed_at), context=self)
         new_space = SpaceRoot(databases=space.databases.set_at(self._database.name, new_root), context=self)
         return self.save(new_space)
+
+    def _check_mutables(self, current: Dictionary) -> None:
+        """Under the root lock: raise ``ProtoConflictError`` if a read cell changed or a blindly set one vanished."""
+        for name, token in self._mreads.items():
+            if not _same_token(token, _token(current.get_at(name, _ABSENT))):
+                raise ProtoConflictError(
+                    f"Mutable {name!r} of database {self._database.name!r} was changed by a concurrent commit")
+        for name in self._mexpected:
+            if not current.has(name):
+                raise ProtoConflictError(
+                    f"Mutable {name!r} of database {self._database.name!r} was removed by a concurrent commit")
 
     @staticmethod
     def _merged(mine, current):
