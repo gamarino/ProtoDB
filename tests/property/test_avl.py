@@ -14,13 +14,13 @@ from hypothesis.stateful import RuleBasedStateMachine, invariant, precondition, 
 
 from proto_db.collections import avl
 from proto_db.collections.avl import (
-    KeyNode, PosNode, check_invariants, key_from_sorted, key_get, key_iter, key_iter_range,
+    UNBOUNDED, KeyNode, PosNode, check_invariants, key_from_sorted, key_get, key_iter, key_iter_range,
     key_put, key_remove, pos_concat, pos_count, pos_from_iterable, pos_get, pos_insert,
     pos_iter, pos_remove, pos_set, pos_slice,
 )
 from proto_db.errors import ProtoCorruptionError, ProtoUserError, ProtoValidationError
 from proto_db.storage.memory import MemoryStorage
-from proto_db.values import order_key
+from proto_db.values import MISSING, order_key
 from tests.support.persistence import DirectContext
 
 SM_SETTINGS = settings(max_examples=60, stateful_step_count=40, deadline=None)
@@ -106,8 +106,10 @@ TestPositional.settings = SM_SETTINGS
 # -- keyed state machine ------------------------------------------------------------------
 
 # 1.0 and 2.0 collide with 1 and 2 under order_key, exactly as they do as dict keys.
-keys = st.one_of(st.integers(-20, 20), st.sampled_from(["a", "b", "c", "x", 1.0, 2.0, 2.5]), st.none())
-bounds = st.one_of(st.none(), st.integers(-25, 25), st.sampled_from(["a", "b", "z"]))
+keys = st.one_of(st.integers(-20, 20), st.sampled_from(["a", "b", "c", "x", 1.0, 2.0, 2.5, MISSING]), st.none())
+# None and MISSING are ordinary bounds; only UNBOUNDED leaves a side open.
+bounds = st.one_of(st.just(UNBOUNDED), st.none(), st.just(MISSING), st.integers(-25, 25),
+                   st.sampled_from(["a", "b", "z"]))
 
 
 def _sorted_items(model):
@@ -158,10 +160,10 @@ class KeyedMachine(RuleBasedStateMachine):
     def iter_range(self, lo, hi, lo_inc, hi_inc):
         def inside(k):
             ok = order_key(k)
-            if lo is not None:
+            if lo is not UNBOUNDED:
                 if ok < order_key(lo) or (ok == order_key(lo) and not lo_inc):
                     return False
-            if hi is not None:
+            if hi is not UNBOUNDED:
                 if ok > order_key(hi) or (ok == order_key(hi) and not hi_inc):
                     return False
             return True
@@ -386,3 +388,26 @@ def test_keyed_persistence_roundtrip():
     again = DirectContext(storage).load(ptr2, KeyNode.__type_name__)
     assert list(key_iter(again)) == [(-1, "neg")] + [(i, str(i)) for i in range(n)]
     check_invariants(again)
+
+
+def test_none_and_missing_are_real_range_bounds():
+    root = key_from_sorted([(MISSING, "m"), (None, "n"), (1, "one")])
+    assert [v for _, v in key_iter_range(root, UNBOUNDED, None, True, True)] == ["m", "n"]
+    assert [v for _, v in key_iter_range(root, None, UNBOUNDED, False, True)] == ["one"]
+    assert [v for _, v in key_iter_range(root, None, 5, False, False)] == ["one"]
+    assert [v for _, v in key_iter_range(root, MISSING, None, True, False)] == ["m"]
+    assert [v for _, v in key_iter_range(root)] == ["m", "n", "one"]
+
+
+def test_check_invariants_shared_child_and_cycle_raise_corruption():
+    leaf = pos_from_iterable([1])
+    # A shared child is a DAG, not a tree; it must not crash with KeyError.
+    shared = _forge(PosNode, value=0, left=leaf, right=leaf, height=2, count=3)
+    check_invariants(shared)  # structurally consistent; traversed per path
+    a = _forge(PosNode, value=0, left=None, right=None, height=2, count=2)
+    object.__setattr__(a, "left", a)  # cycle
+    with pytest.raises(ProtoCorruptionError):
+        check_invariants(a)
+    huge = _forge(PosNode, value=0, left=None, right=None, height=10**9, count=1)
+    with pytest.raises(ProtoCorruptionError, match="height"):
+        check_invariants(huge)

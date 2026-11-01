@@ -50,8 +50,33 @@ __all__ = [
     "pos_get", "pos_insert", "pos_set", "pos_remove", "pos_slice", "pos_concat",
     "pos_iter", "pos_count", "pos_from_iterable",
     "key_get", "key_put", "key_remove", "key_iter", "key_iter_range", "key_from_sorted",
-    "check_invariants",
+    "check_invariants", "UNBOUNDED",
 ]
+
+#: Tree height above which ``check_invariants`` reports corruption without walking:
+#: an AVL tree of height 128 would need more than 10**26 nodes.
+_MAX_HEIGHT = 128
+
+
+class _Unbounded:
+    """Type of :data:`UNBOUNDED`: an open side of a key range."""
+
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self):
+        return "UNBOUNDED"
+
+    def __reduce__(self):
+        return "UNBOUNDED"
+
+
+#: Range bound meaning "no limit on this side"; ``None`` and ``MISSING`` are ordinary bounds.
+UNBOUNDED = _Unbounded()
 
 
 # -- nodes --------------------------------------------------------------------------------
@@ -439,16 +464,19 @@ def key_iter(root: KeyNode | None) -> Iterator[tuple]:
         yield node.key, node.value
 
 
-def key_iter_range(root: KeyNode | None, lo, hi, lo_inc: bool = True, hi_inc: bool = True) -> Iterator[tuple]:
+def key_iter_range(root: KeyNode | None, lo=UNBOUNDED, hi=UNBOUNDED,
+                   lo_inc: bool = True, hi_inc: bool = True) -> Iterator[tuple]:
     """Yield ``(key, value)`` pairs with ``lo <(=) key <(=) hi`` in key order, in O(log n + k).
 
-    ``lo`` or ``hi`` set to ``None`` means unbounded on that side (so ``None``
-    itself cannot serve as a bound, D20).  ``lo_inc``/``hi_inc`` select
-    inclusive bounds.
+    A side left at :data:`UNBOUNDED` (the default) is open.  Every other bound,
+    ``None`` and ``MISSING`` included, is compared by ``order_key`` (D20), so
+    ``lo=None, lo_inc=False`` excludes ``MISSING`` and ``None`` keys.
+    ``lo_inc``/``hi_inc`` select inclusive bounds.
     """
     _check_kind(root, KeyNode)
-    lok = None if lo is None else order_key(lo)
-    hik = None if hi is None else order_key(hi)
+    # Order keys are never None, so None marks an open side internally.
+    lok = None if lo is UNBOUNDED else order_key(lo)
+    hik = None if hi is UNBOUNDED else order_key(hi)
     stack = []
     node = root
     while stack or node is not None:
@@ -496,31 +524,43 @@ def check_invariants(root: _Node | None) -> None:
     Checks, for every node: one node kind throughout, ``height`` and ``count``
     consistent with the children, AVL balance (child heights differ by at most
     one) and, for keyed trees, strictly increasing ``order_key`` in order.
-    Post-order traversal with an explicit stack: loads every node of a stored tree.
+    Post-order traversal with an explicit stack and a stack of child results:
+    loads every node of a stored tree.  A path longer than the root's stored
+    height (a cycle, or a height lie) is reported as corruption, so the walk
+    always terminates; a subtree shared by two parents is checked once per path.
     """
     if root is None:
         return
     kind = type(root)
     if kind not in (PosNode, KeyNode):
         raise ProtoCorruptionError(f"Not an AVL node: {kind.__name__}")
+    max_depth = root.height
+    if type(max_depth) is not int or not 1 <= max_depth <= _MAX_HEIGHT:
+        raise ProtoCorruptionError(f"Implausible root height {max_depth!r} at {root!r}")
     keyed = kind is KeyNode
+    empty = (0, 0, None, None)
     # Each result: (height, count, min order key, max order key); keys are None for PosNode.
-    results: dict[int, tuple] = {}
-    stack = [(root, False)]
+    results: list[tuple] = []
+    stack = [(root, False, 1)]
     while stack:
-        node, expanded = stack.pop()
+        node, expanded, depth = stack.pop()
         if not expanded:
-            stack.append((node, True))
+            if depth > max_depth:
+                raise ProtoCorruptionError(
+                    f"Path deeper than the root height {max_depth} at {node!r} (cycle or wrong height)")
+            stack.append((node, True, depth))
             for child in (node.right, node.left):
                 if child is not None:
                     if type(child) is not kind:
                         raise ProtoCorruptionError(
                             f"Mixed node kind: {type(child).__name__} under a {kind.__name__} tree")
-                    stack.append((child, False))
+                    stack.append((child, False, depth + 1))
             continue
-        left, right = node.left, node.right
-        lh, lc, lmin, lmax = results.pop(id(left)) if left is not None else (0, 0, None, None)
-        rh, rc, rmin, rmax = results.pop(id(right)) if right is not None else (0, 0, None, None)
+        # Children were pushed right then left, so their results arrive left then right.
+        right_res = results.pop() if node.right is not None else empty
+        left_res = results.pop() if node.left is not None else empty
+        lh, lc, lmin, lmax = left_res
+        rh, rc, rmin, rmax = right_res
         height, count = node.height, node.count
         if height != 1 + max(lh, rh):
             raise ProtoCorruptionError(
@@ -536,4 +576,4 @@ def check_invariants(root: _Node | None) -> None:
                 raise ProtoCorruptionError(f"Key order violated at {node!r} (key {node.key!r})")
             nmin = k if lmin is None else lmin
             nmax = k if rmax is None else rmax
-        results[id(node)] = (height, count, nmin, nmax)
+        results.append((height, count, nmin, nmax))
