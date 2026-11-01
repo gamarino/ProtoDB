@@ -31,7 +31,7 @@ from proto_db.errors import ProtoNotSupportedError, ProtoUserError, ProtoValidat
 from proto_db.indexing.equality import EqualityIndex
 from proto_db.indexing.range import RangeIndex
 from proto_db.query.expressions import And, Not, Or, Term, evaluate
-from proto_db.query.linq import Agg, F, Predicate, Queryable, from_collection
+from proto_db.query.linq import Agg, F, Field, Predicate, Queryable, from_collection, path_of
 from proto_db.query.plans import Distinct, Limit, QueryPlan, ValuesScan, element_key
 from proto_db.query.terms import NearQuery
 from proto_db.values import MISSING
@@ -168,7 +168,7 @@ def test_field_paths():
     assert (F["a"]["b"] == 1).expression == Term("a.b", "==", 1)
     assert (F["between"] > 1).expression == Term("between", ">", 1)
     assert (F() > 1).expression == Term(None, ">", 1)
-    assert F.a.b.path == "a.b" and F().path is None
+    assert path_of(F.a.b) == "a.b" and path_of(F()) is None
     with pytest.raises(AttributeError):
         F.a._private
     with pytest.raises(ProtoValidationError):
@@ -493,7 +493,7 @@ def test_where_after_take_is_applied_on_top():
     assert node_names(info) == ["Filter", "Limit", "ValuesScan"]
     assert q.to_list() == [3, 4]
     q = from_collection(list(range(10))).where(lambda x: x % 2 == 0).order_by(F(), descending=True).skip(1).take(2)
-    assert node_names(explained(q)) == ["Limit", "Sort", "PythonFilter", "ValuesScan"]
+    assert node_names(explained(q)) == ["Limit", "PythonFilter", "Sort", "ValuesScan"]  # path key: planner sorts
     assert q.to_list() == [6, 4]
 
 
@@ -671,3 +671,76 @@ def test_values_scan_and_distinct_nodes():
         d.source = scan
     with pytest.raises(ProtoValidationError):
         Distinct([1, 2])
+
+
+# -- review fix round 1 ----------------------------------------------------------------------------
+
+def test_missing_is_public_api():
+    from proto_db import query
+    from proto_db.query import linq
+    assert linq.MISSING is MISSING and query.MISSING is MISSING
+    assert repr(MISSING) == "MISSING" and not MISSING
+
+
+def test_builder_names_are_child_fields_not_internals():
+    assert isinstance(F.file.path, Field) and path_of(F.file.path) == "file.path"
+    assert path_of(F()) is None and path_of(F.a.b) == "a.b"
+    data = [{"id": 1, "file": {"path": "/b", "size": 2}}, {"id": 2, "file": {"path": "/a", "size": 1}}]
+    q = from_collection(data)
+    assert q.select(F.file.path).to_list() == ["/b", "/a"]
+    assert ids(q.order_by(F.file.path)) == [2, 1]
+    assert [g["key"] for g in q.group_by(F.file.path, {"n": Agg.count()})] == ["/b", "/a"]
+    assert ids(q.where(F.file.path == "/a")) == [2]
+    assert [(l["id"], r["id"]) for l, r in q.join(data, F.file.path, F.file.path)] == [(1, 1), (2, 2)]
+
+
+def test_bound_builder_methods_are_rejected_as_keys_and_predicates():
+    q = from_collection([{"name": "x", "v": [1.0]}])
+    calls = [lambda: q.select(F.name.startswith), lambda: q.select({"s": F.name.lower}),
+             lambda: q.order_by(F.v.near), lambda: q.order_by(F.name).then_by(F.name.upper),
+             lambda: q.group_by(F.name.length), lambda: q.join(q, F.name.abs, F.name),
+             lambda: q.select_many(F.v.contains), lambda: q.where(F.name.is_none),
+             lambda: q.group_by(F.name, {"n": Agg.count(F.name.lower)}), lambda: (F.a == 1) & F.b.is_true]
+    for call in calls:
+        with pytest.raises(ProtoValidationError, match=r'F\["'):
+            call()
+
+
+def test_group_by_key_rename_keeps_any_aggregation_name():
+    q = from_collection(ORDERS).group_by(F.cid, {"customer": Agg.key(), "n.c": Agg.count(), "@x": Agg.sum(F.total)})
+    assert q.to_list()[0] == {"customer": 1, "n.c": 2, "@x": 25.0}
+    assert node_names(explained(q)) == ["Project", "GroupBy", "ValuesScan"]
+
+
+def test_impure_leading_predicate_still_lets_the_planner_order():
+    lam = lambda r: r.value % 3 == 0  # noqa: E731
+    q = from_collection(indexed()).where((F.id > 0) & lam).order_by(F.value).take(7)
+    info = explained(q)
+    assert info["plan"] == "Limit" and info["children"][0]["plan"] == "PythonFilter"
+    assert find(info, "IndexOrderedScan") is not None and find(info, "Sort") is None
+    expected = sorted((r for r in ROWS if r.id > 0 and r.value % 3 == 0), key=lambda r: r.value)[:7]
+    assert [r.value for r in q] == [r.value for r in expected]
+    # a callable order key still needs a Sort above the PythonFilter
+    q = from_collection(indexed()).where((F.id > 0) & lam).order_by(lambda r: -r.value).take(3)
+    assert node_names(explained(q))[:3] == ["Limit", "Sort", "PythonFilter"]
+
+
+def test_near_and_lambda_split_like_two_wheres():
+    coll = indexed()
+    q = from_collection(coll).where(F.v.near([1.0, 0.0], k=2) & (lambda r: True))  # no error at where()
+    with pytest.raises(ProtoNotSupportedError, match="index"):  # the planner: no vector index
+        q.to_list()
+    with pytest.raises(ProtoNotSupportedError, match="OR/NOT"):
+        from_collection(coll).where(F.v.near([1.0], k=1) | (lambda r: True))
+
+
+def test_in_rejects_a_mapping():
+    with pytest.raises(ProtoValidationError):
+        F.a.in_({"x": 1})
+
+
+def test_queryable_of_a_queryable_keeps_its_operators():
+    gen_rows = iter(list(USERS))
+    base = from_collection(gen_rows).where(F.age > 18)
+    again = Queryable(base)
+    assert again.explain() == base.explain() and ids(again) == ids(base) == [1, 3, 4]

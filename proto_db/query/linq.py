@@ -55,7 +55,13 @@ one PythonFilter for the whole predicate: never partially indexed, never
 dropped.  A ``near[]`` term inside such a predicate raises
 ``ProtoNotSupportedError`` (it has no per-element semantics).  Using a
 predicate as a bool (``F.a == 1 and F.b == 2``) raises ``ProtoUserError``,
-because Python would silently keep only one side.
+because Python would silently keep only one side.  Note that ``F.a in values`` is not a
+predicate either: Python compares each item with ``==`` and asks for its truth
+value (``ProtoUserError``), except for an empty container, which answers False
+without any comparison; write ``F.a.in_(values)``.  Builder methods passed
+uncalled where a key or predicate belongs (``select(F.name.startswith)``) raise
+``ProtoValidationError`` pointing to ``F["name"]``; :func:`path_of` reads a
+field's path, so every other public name is a child field (``F.file.path``).
 
 Placement
 ---------
@@ -77,7 +83,9 @@ then the D28 type ranks; unorderable values last); a later ``order_by``
 re-sorts the whole sequence, so earlier keys break its ties; ``then_by`` adds a
 tie-breaker and must directly follow ``order_by``/``then_by``.  ``skip`` and
 ``take`` compose like slicing into one window.  ``select`` of one path yields
-that value (MISSING when absent), of several paths or a mapping a dict
+that value (:data:`MISSING` when absent -- ``MISSING`` is public API, exported
+here and by :mod:`proto_db.query`; its repr is ``MISSING`` and it is falsy; None
+would conflate an absent key with an explicit null), of several paths or a mapping a dict
 (absent values are left out), of a function its result.  ``distinct`` keeps
 the first occurrence by exact identity (R19).  ``group_by`` yields one dict
 per group (:class:`Agg` aggregations; default ``{"key", "items"}``).
@@ -102,7 +110,8 @@ from .plans import (AGGREGATES, JOIN_KINDS, Count, Distinct, GroupBy, Join, Limi
 from .terms import (BETWEEN, BETWEEN_EXCL_BOTH, BETWEEN_EXCL_HIGH, BETWEEN_EXCL_LOW, CONTAINS, EQ, GE, GT, IN,
                     IS_NONE, IS_TRUE, LE, LT, NE, NEAR, NOT_NONE, NOT_TRUE, UNARY_OPERATORS, NearQuery, Term)
 
-__all__ = ["from_collection", "Queryable", "F", "Field", "Computed", "Predicate", "Agg", "Aggregation"]
+__all__ = ["from_collection", "Queryable", "F", "Field", "Computed", "Predicate", "Agg", "Aggregation", "path_of",
+           "MISSING"]
 
 _BOUNDS = {"[]": BETWEEN, "()": BETWEEN_EXCL_BOTH, "(]": BETWEEN_EXCL_LOW, "[)": BETWEEN_EXCL_HIGH}
 _INCLUSIVE = {(True, True): BETWEEN, (False, False): BETWEEN_EXCL_BOTH, (False, True): BETWEEN_EXCL_LOW,
@@ -308,6 +317,7 @@ def _as_predicate(value) -> Predicate:
         return _Pure(Expression.compile(value))
     if isinstance(value, _Operand):
         raise ProtoValidationError(f"{value!r} is a value, not a predicate; compare it (e.g. == or is_true())")
+    _reject_builder_method(value, "A predicate")
     if callable(value):
         return _Opaque(value, _describe_callable(value))
     raise ProtoValidationError(f"A predicate must be built with F, be an Expression, the 0.1 list syntax or a "
@@ -333,8 +343,9 @@ def _check_no_near(predicate: Predicate) -> None:
         p = stack.pop()
         if isinstance(p, _Pure):
             if any(t.op == NEAR for t in iter_terms(p.expression)):
-                raise ProtoNotSupportedError(f"A 'near[]' term cannot be combined with a Python predicate by "
-                                             f"OR/NOT ({predicate.describe()}): it has no per-element semantics")
+                raise ProtoNotSupportedError(f"A 'near[]' term cannot run inside a Python predicate (it is combined "
+                                             f"with one by OR/NOT in {predicate.describe()}): it has no "
+                                             f"per-element semantics; AND it at the top level instead")
         elif isinstance(p, _Junction):
             stack.extend(p.parts)
         elif isinstance(p, _Negation):
@@ -379,9 +390,13 @@ class _Operand:
         return self._predicate(op, other)
 
     def __eq__(self, other):
+        """``key == other`` (D28): ``values_equal``; ``F.a == None`` matches only an explicit None, never a
+        MISSING ``a`` (use ``is_none()`` for "MISSING or None")."""
         return self._compare(EQ, other)
 
     def __ne__(self, other):
+        """``key != other`` (D28): a PRESENT key not equal to ``other``; ``F.a != 1`` does not match an
+        element without ``a`` (absence is not a value)."""
         return self._compare(NE, other)
 
     def __lt__(self, other):
@@ -397,7 +412,13 @@ class _Operand:
         return self._compare(GE, other)
 
     def in_(self, values) -> Predicate:
-        """Membership in ``values`` (a list, tuple, set or any iterable; ``values_equal`` semantics)."""
+        """Membership in ``values`` (a list, tuple, set or any iterable; ``values_equal`` semantics).
+
+        A mapping is rejected (iterate its keys or values explicitly).
+        """
+        if isinstance(values, Mapping):
+            raise ProtoValidationError(f"in_ needs a collection of values, not a mapping {values!r}; pass "
+                                       f"list(m) or list(m.values())")
         if not isinstance(values, (list, tuple, set, frozenset)):
             if isinstance(values, (str, bytes)) or not isinstance(values, Iterable):
                 raise ProtoValidationError(f"in_ needs a collection of values, not {values!r}")
@@ -574,29 +595,28 @@ def _compare_operands(left: _Operand, op: str, right: _Operand) -> Predicate:
 class Field(_Operand):
     """The key at a path of the element (built with ``F``): comparisons build pure terms.
 
-    ``path`` is the dotted path, None for the element itself, or ``"@name"``
-    for a registered extractor.
+    Its term path (dotted path, None for the element itself, or ``"@name"``
+    for a registered extractor) is read with :func:`path_of`; every public
+    attribute name that is not a builder method is a child field, so
+    ``F.file.path`` is the key ``file.path``.
     """
 
-    __slots__ = ("_segments", "_spec")
+    __slots__ = ("_segments", "_spec", "_path")
 
     def __init__(self, segments: tuple):
+        path = ".".join(segments) if segments else None
         object.__setattr__(self, "_segments", segments)
-        object.__setattr__(self, "_spec", KeySpec.for_term_path(self.path))
-
-    @property
-    def path(self) -> str | None:
-        """The term path: dotted path, None (element) or ``"@name"``."""
-        return ".".join(self._segments) if self._segments else None
+        object.__setattr__(self, "_path", path)
+        object.__setattr__(self, "_spec", KeySpec.for_term_path(path))
 
     def _child(self, name) -> "Field":
         if not isinstance(name, str) or not name or "." in name:
             raise ProtoValidationError(f"A field name must be a non-empty str without '.', not {name!r}")
         if name.startswith("@") and self._segments:
             raise ProtoValidationError(f"An extractor ('@name') must be the whole path, not a step of "
-                                       f"{self.path!r}")
+                                       f"{self._path!r}")
         if self._segments and self._segments[0].startswith("@"):
-            raise ProtoValidationError(f"An extractor key {self.path!r} has no sub-fields")
+            raise ProtoValidationError(f"An extractor key {self._path!r} has no sub-fields")
         return Field(self._segments + (name,))
 
     def __getattr__(self, name: str) -> "Field":
@@ -611,15 +631,33 @@ class Field(_Operand):
         return self._spec.extract(element)
 
     def _label(self) -> str:
-        return _render_path(self.path)
+        return _render_path(self._path)
 
     def _predicate(self, op: str, value=None) -> Predicate:
-        return _Pure(Term(self.path, op) if op in UNARY_OPERATORS else Term(self.path, op, value))
+        return _Pure(Term(self._path, op) if op in UNARY_OPERATORS else Term(self._path, op, value))
 
     def near(self, vector, k: int | None = None, threshold: float | None = None,
              metric: str | None = None) -> Predicate:
         """The ``near[]`` term: the ``k`` nearest and/or those within ``threshold`` (needs a vector index)."""
-        return _Pure(Term(self.path, NEAR, NearQuery(vector, k=k, threshold=threshold, metric=metric)))
+        return _Pure(Term(self._path, NEAR, NearQuery(vector, k=k, threshold=threshold, metric=metric)))
+
+
+def path_of(field: Field) -> str | None:
+    """The term path of a :class:`Field`: the dotted path, None (the element) or ``"@name"``."""
+    if not isinstance(field, Field):
+        raise ProtoValidationError(f"path_of needs a Field (built with F), not {field!r}")
+    return field._path
+
+
+def _reject_builder_method(value, what: str) -> None:
+    """A bound builder method (``F.name.startswith``) passed where a key or predicate belongs is a mistake."""
+    owner = getattr(value, "__self__", None)
+    if isinstance(owner, _Operand) and callable(value):
+        name = getattr(value, "__name__", "?")
+        base = path_of(owner) if isinstance(owner, Field) else owner._label()
+        raise ProtoValidationError(
+            f"{what} got the builder method {base}.{name} (not a field and not a predicate); for a field named "
+            f"{name!r} write F[\"{name}\"] (e.g. F[\"{base}\"][\"{name}\"]), or call the method")
 
 
 class Computed(_Operand):
@@ -689,7 +727,8 @@ def _key(value, what: str):
         KeySpec.for_term_path(value)
         return value
     if isinstance(value, Field):
-        return value.path
+        return value._path
+    _reject_builder_method(value, what)
     if isinstance(value, Computed):
         return _Described(value._compute, value._label())
     if isinstance(value, Predicate):
@@ -787,7 +826,7 @@ def _aggregations(aggregations) -> tuple:
 def _projection(spec):
     """``(fields or function, description or None)`` for a Project node, validated eagerly."""
     if isinstance(spec, (str, Field)):
-        path = spec if isinstance(spec, str) else spec.path
+        path = spec if isinstance(spec, str) else spec._path
         extract = KeySpec.for_term_path(path).extract
         return extract, _render_path(path)
     if isinstance(spec, Computed):
@@ -797,8 +836,8 @@ def _projection(spec):
     if isinstance(spec, Mapping):
         if not spec or not all(isinstance(k, str) for k in spec):
             raise ProtoValidationError(f"select needs a non-empty mapping with str names, not {spec!r}")
-        if all(isinstance(v, (str, Field)) and (isinstance(v, str) or v.path is not None) for v in spec.values()):
-            return {k: (v if isinstance(v, str) else v.path) for k, v in spec.items()}, None
+        if all(isinstance(v, (str, Field)) and (isinstance(v, str) or v._path is not None) for v in spec.values()):
+            return {k: (v if isinstance(v, str) else v._path) for k, v in spec.items()}, None
         parts = []
         for name, value in spec.items():
             fn, label = _projection(value)
@@ -820,14 +859,15 @@ def _projection(spec):
         for item in spec:
             if isinstance(item, str):
                 paths.append(item)
-            elif isinstance(item, Field) and item.path is not None:
-                paths.append(item.path)
+            elif isinstance(item, Field) and item._path is not None:
+                paths.append(item._path)
             else:
                 raise ProtoValidationError(f"select lists hold paths or fields only (use a mapping for computed "
                                            f"values), not {item!r}")
         if not paths:
             raise ProtoValidationError("select needs at least one field")
         return paths, None
+    _reject_builder_method(spec, "select")
     if callable(spec):
         return spec, _describe_callable(spec)
     raise ProtoValidationError(f"select needs a field, a path, a list or mapping of them, a computed value or a "
@@ -858,6 +898,9 @@ class Queryable:
     __slots__ = ("_source", "_ops")
 
     def __init__(self, source, ops: tuple = ()):
+        """Prefer :func:`from_collection`; a Queryable source keeps its source and operators (no copy)."""
+        if isinstance(source, Queryable):
+            source, ops = source._source, source._ops + tuple(ops)
         object.__setattr__(self, "_source", _source(source))
         object.__setattr__(self, "_ops", ops)
 
@@ -881,8 +924,8 @@ class Queryable:
     def where(self, predicate) -> "Queryable":
         """Keep the elements satisfying ``predicate`` (an F predicate, an Expression, list syntax or callable)."""
         predicate = _as_predicate(predicate)
-        if predicate.expression is None:
-            _check_no_near(predicate)
+        for part in _split(predicate)[1]:  # pure conjuncts of a top-level AND go to the planner
+            _check_no_near(part)
         return self._with("where", predicate)
 
     def select(self, selector) -> "Queryable":
@@ -943,13 +986,16 @@ class Queryable:
             i += 1
         offset, limit, i = _window(ops, i)
         expr, impure = (None, []) if not predicates else _split(_conjunction(predicates))
-        if not impure and all(not callable(k) for k, _ in keys):
+        path_keys = all(not callable(k) for k, _ in keys)
+        if not impure and path_keys:
             plan = plan_query(self._source, expr, keys or None, limit, offset)
         else:
-            plan = plan_query(self._source, expr)
+            # Filtering commutes with a stable sort, so the planner may still order by path keys (an ordered
+            # index scan) below the PythonFilters; the window must stay above them.
+            plan = plan_query(self._source, expr, (keys or None) if path_keys else None)
             for part in impure:
                 plan = PythonFilter(plan, part, part.describe())
-            if keys:
+            if keys and not path_keys:
                 plan = Sort(plan, keys)
             if limit is not None or offset:
                 plan = Limit(plan, limit, offset)
@@ -1062,7 +1108,7 @@ def _apply(plan: QueryPlan, op: tuple) -> QueryPlan:
         _, key, mapping, key_names, order = op
         plan = GroupBy(plan, key, mapping)
         if key_names:
-            plan = Project(plan, {name: "key" if name in key_names else name for name in order})
+            plan = _rename_project(plan, key_names, order)
         return plan
     if kind == "join":
         _, other, left_key, right_key, join_kind = op
@@ -1071,6 +1117,18 @@ def _apply(plan: QueryPlan, op: tuple) -> QueryPlan:
         _, path, with_parent = op
         return Unnest(plan, path, with_parent=with_parent)
     raise ProtoValidationError(f"Unknown query operator {kind!r}")
+
+
+def _rename_project(plan: QueryPlan, key_names: tuple, order: tuple) -> QueryPlan:
+    """A function Project copying each GroupBy output by name (no path parsing), the key under ``key_names``."""
+    sources = tuple((name, "key" if name in key_names else name) for name in order)
+
+    def rename(group: dict) -> dict:
+        return {name: group[source] for name, source in sources if source in group}
+
+    description = "{" + ", ".join(f"{name!r}: {'key' if source == 'key' else repr(source)}"
+                                  for name, source in sources) + "}"
+    return Project(plan, rename, description=f"rename {description}")
 
 
 def from_collection(source) -> Queryable:

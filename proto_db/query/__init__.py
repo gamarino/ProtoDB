@@ -6,8 +6,10 @@ the boolean expression layer and the 0.1 prefix syntax compiler,
 and :mod:`.linq` the LINQ front end (D38).  This package imports only
 :mod:`.terms` and :mod:`.expressions` eagerly (so ``Term`` is registered as an
 ``Expression`` whenever terms are used); :mod:`.plans` is imported by the
-index framework, which it must not import back at module level.
+index framework, which it must not import back at module level.  ``MISSING``
+(an absent key, distinct from None) is re-exported: LINQ results can hold it.
 """
+from ..values import MISSING
 from .expressions import And, Expression, Not, Or, Term, evaluate
 
-__all__ = ["Term", "Expression", "And", "Or", "Not", "evaluate"]
+__all__ = ["Term", "Expression", "And", "Or", "Not", "evaluate", "MISSING"]

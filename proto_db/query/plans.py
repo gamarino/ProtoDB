@@ -59,9 +59,10 @@ from ..values import MISSING, exact_token, is_atom, is_orderable, order_key
 from .expressions import And, Expression, Not, Or, evaluate, iter_terms
 from .terms import NEAR, Term
 
-__all__ = ["Estimate", "QueryPlan", "CollectionScanPlan", "ValuesScan", "Distinct", "IndexPlan", "ordered_index_scan", "VectorSearch",
-           "Filter", "PythonFilter", "Intersect", "Union", "Project", "Sort", "Limit", "GroupBy", "Join",
-           "Unnest", "Count", "JOIN_KINDS", "FILTER_SELECTIVITY", "UNNEST_FANOUT", "AGGREGATES", "element_key"]
+__all__ = ["Estimate", "QueryPlan", "CollectionScanPlan", "ValuesScan", "Distinct", "IndexPlan",
+           "ordered_index_scan", "VectorSearch", "Filter", "PythonFilter", "Intersect", "Union", "Project",
+           "Sort", "Limit", "GroupBy", "Join", "Unnest", "Count", "JOIN_KINDS", "FILTER_SELECTIVITY",
+           "UNNEST_FANOUT", "AGGREGATES", "element_key"]
 
 #: Estimated fraction of rows one term (or one PythonFilter) keeps (D36).
 FILTER_SELECTIVITY = 0.5
