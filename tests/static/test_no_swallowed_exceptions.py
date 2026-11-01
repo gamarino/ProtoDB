@@ -47,6 +47,8 @@ CHECKED_ROOTS = [
     "proto_db/indexing/range.py",
     "proto_db/indexing/vector.py",
     "proto_db/indexing/vector_backends.py",
+    "proto_db/runtime/__init__.py",
+    "proto_db/runtime/parallel.py",
 ]
 
 
