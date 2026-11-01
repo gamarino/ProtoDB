@@ -40,6 +40,7 @@ CHECKED_ROOTS = [
     "proto_db/indexing/base.py",
     "proto_db/indexing/keyed.py",
     "proto_db/indexing/equality.py",
+    "proto_db/indexing/range.py",
 ]
 
 

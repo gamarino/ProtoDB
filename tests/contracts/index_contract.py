@@ -655,7 +655,8 @@ def mixed_record_strategy(rng: random.Random) -> DBObject:
 
 def _register_equality_and_range() -> None:
     from proto_db.indexing.equality import EqualityIndex
-    for cls in (EqualityIndex,):
+    from proto_db.indexing.range import RangeIndex
+    for cls in (EqualityIndex, RangeIndex):
         kind = cls.__name__
         register(IndexContract(name=f"{kind}-records", index_factory=cls, element_strategy=record_strategy,
                                key_specs=RECORD_KEY_SPECS))
