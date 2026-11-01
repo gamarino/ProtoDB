@@ -27,8 +27,10 @@ Semantics (D41):
   state, and it is set on the event's future.  It is then delivered to
   ``on_error(fsm, event, exc)`` when given; otherwise it is kept and re-raised
   by the next :meth:`FSM.join` or :meth:`FSM.stop` (the first one, with the
-  others listed in a note).  An exception raised by ``on_error`` itself is kept
-  and re-raised the same way.  The worker keeps processing later events.
+  others listed in a note and kept as objects, see
+  :func:`proto_db.errors.secondary_errors`), unless a caller retrieved it
+  through the event's future first (it is then consumed, reported once).
+  An exception raised by ``on_error`` itself is kept and re-raised the same way.  The worker keeps processing later events.
 - **Timers** are kept in a heap served by the worker: a due timer queues its
   event.  :meth:`Timer.stop` cancels a timer that has not fired (returns True);
   :meth:`FSM.stop` cancels them all.
@@ -50,7 +52,7 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from concurrent.futures import CancelledError, Future
 
-from ..errors import ProtoTimeoutError, ProtoUserError, ProtoValidationError
+from ..errors import ProtoTimeoutError, ProtoUserError, ProtoValidationError, attach_secondary_errors
 
 __all__ = ["FSM", "Timer", "EventFuture", "ALL_STATES", "INITIAL_STATE"]
 
@@ -105,14 +107,24 @@ class EventFuture(Future):
             raise ProtoUserError("Waiting from a handler for an unprocessed event of the same FSM would deadlock")
 
     def result(self, timeout=None):
-        """As ``Future.result``; raises ``ProtoUserError`` instead of deadlocking (class docstring)."""
-        self._check_wait()
-        return super().result(timeout)
+        """As ``Future.result``; raises ``ProtoUserError`` instead of deadlocking (class docstring).
+
+        Retrieving a handler error here consumes it: :meth:`FSM.join` / :meth:`FSM.stop`
+        do not re-raise it.
+        """
+        self.exception(timeout)
+        return super().result(0)
 
     def exception(self, timeout=None):
-        """As ``Future.exception``; raises ``ProtoUserError`` instead of deadlocking (class docstring)."""
+        """As ``Future.exception``; raises ``ProtoUserError`` instead of deadlocking (class docstring).
+
+        A returned handler error is consumed (see :meth:`result`).
+        """
         self._check_wait()
-        return super().exception(timeout)
+        exc = super().exception(timeout)
+        if exc is not None:
+            self._fsm._consume(exc)
+        return exc
 
 
 class Timer:
@@ -179,7 +191,8 @@ class FSM:
         self._queue: deque = deque()
         self._timers: list = []  # heap of (deadline, seq, Timer)
         self._timer_seq = itertools.count()
-        self._busy = False
+        self._enqueued = 0  # items appended to the queue (events and fired timers)
+        self._processed = 0  # items taken from the queue and finished
         self._stopping = False
         self._pending_errors: list[BaseException] = []
         self._post: list | None = None  # post-processing tasks of the event being handled (worker only)
@@ -225,6 +238,7 @@ class FSM:
             if self._stopping:
                 raise ProtoUserError(f"FSM {self.name!r} is stopped; it accepts no new events")
             self._queue.append((event, future))
+            self._enqueued += 1
             self._cond.notify_all()
         return future
 
@@ -260,21 +274,22 @@ class FSM:
     def stop_all_timers(self) -> None:
         """Cancel every timer that has not fired."""
         with self._cond:
-            for _, _, timer in self._timers:
-                self._cancel_locked(timer)
-            self._timers.clear()
+            cancelled = self._cancel_all_locked()
+        self._cancel_futures(cancelled)
 
     def join(self, timeout: float | None = None) -> None:
-        """Wait until every event queued so far is processed, then re-raise pending errors.
+        """Wait until every event queued before this call is processed, then re-raise pending errors.
 
-        Pending timers are not waited for.  Expiry of ``timeout`` raises
+        Events queued after the call (e.g. by a handler that resends itself) and
+        pending timers are not waited for.  Expiry of ``timeout`` raises
         ``ProtoTimeoutError``; calling it from a handler raises ``ProtoUserError``.
         """
         if self._on_worker():
             raise ProtoUserError("join() called from a handler of the same FSM would deadlock")
         deadline = None if timeout is None else time.monotonic() + timeout
         with self._cond:
-            while (self._queue or self._busy) and self._thread.is_alive():
+            target = self._enqueued
+            while self._processed < target and self._thread.is_alive():
                 remaining = None if deadline is None else deadline - time.monotonic()
                 if remaining is not None and remaining <= 0:
                     raise ProtoTimeoutError(f"FSM {self.name!r} did not become idle within {timeout} s")
@@ -291,10 +306,9 @@ class FSM:
         """
         with self._cond:
             self._stopping = True
-            for _, _, timer in self._timers:
-                self._cancel_locked(timer)
-            self._timers.clear()
+            cancelled = self._cancel_all_locked()
             self._cond.notify_all()
+        self._cancel_futures(cancelled)
         if self._on_worker():
             return
         self._thread.join()
@@ -308,17 +322,30 @@ class FSM:
 
     def _cancel_timer(self, timer: Timer) -> bool:
         with self._cond:
-            cancelled = self._cancel_locked(timer)
+            cancelled = self._mark_cancelled(timer)
             self._cond.notify_all()
-            return cancelled
+        if cancelled:
+            self._cancel_futures([timer])
+        return cancelled
 
     @staticmethod
-    def _cancel_locked(timer: Timer) -> bool:
+    def _mark_cancelled(timer: Timer) -> bool:
+        """Under the lock: mark a pending timer cancelled (its future is cancelled after the lock is released)."""
         if timer._status != "pending":
             return False
         timer._status = "canceled"
-        timer.future.cancel()
         return True
+
+    def _cancel_all_locked(self) -> list:
+        cancelled = [timer for _, _, timer in self._timers if self._mark_cancelled(timer)]
+        self._timers.clear()
+        return cancelled
+
+    @staticmethod
+    def _cancel_futures(timers: list) -> None:
+        """Cancel the futures of cancelled timers; never called with the lock held (done-callbacks run here)."""
+        for timer in timers:
+            timer.future.cancel()
 
     def _next_item(self):
         """Block until an event is available (timers included); None when stopping with an empty queue."""
@@ -330,8 +357,8 @@ class FSM:
                     if timer._status == "pending":
                         timer._status = "fired"
                         self._queue.append((timer.event, timer.future))
+                        self._enqueued += 1
                 if self._queue:
-                    self._busy = True
                     return self._queue.popleft()
                 if self._stopping:
                     self._cond.notify_all()
@@ -348,7 +375,7 @@ class FSM:
                 self._process(*item)
             finally:
                 with self._cond:
-                    self._busy = False
+                    self._processed += 1
                     self._cond.notify_all()
 
     def _process(self, event: Mapping, future: EventFuture) -> None:
@@ -382,13 +409,14 @@ class FSM:
             future.set_result(None)
             return
         error.add_note(f"FSM {self.name!r}: raised while processing event {name!r} in state {saved!r}")
+        if self._on_error is None:
+            self._keep(error)  # before set_exception, so that retrieval through the future can consume it
+            future.set_exception(error)
+            return
         future.set_exception(error)
         self._report(event, error)
 
     def _report(self, event: Mapping, error: BaseException) -> None:
-        if self._on_error is None:
-            self._keep(error)
-            return
         try:
             self._on_error(self, event, error)
         except BaseException as hook_error:  # kept and re-raised by join()/stop()
@@ -398,6 +426,11 @@ class FSM:
     def _keep(self, error: BaseException) -> None:
         with self._cond:
             self._pending_errors.append(error)
+
+    def _consume(self, error: BaseException) -> None:
+        """Forget a pending error that a caller retrieved through its event future."""
+        with self._cond:
+            self._pending_errors = [e for e in self._pending_errors if e is not error]
 
     def _raise_pending(self) -> None:
         with self._cond:
@@ -409,4 +442,5 @@ class FSM:
             listed = "; ".join(repr(e) for e in others[:_MAX_LISTED_ERRORS])
             more = "; ..." if len(others) > _MAX_LISTED_ERRORS else ""
             first.add_note(f"FSM {self.name!r}: {len(others)} other handler error(s): {listed}{more}")
+        attach_secondary_errors(first, others)
         raise first

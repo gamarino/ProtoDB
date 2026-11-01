@@ -189,6 +189,8 @@ def test_handler_exception_goes_to_the_future_rolls_back_and_is_raised_by_join(f
     assert fsm.state == "Initializing"  # rolled back
     fsm.send_event({"name": "ok"}).result(timeout=WAIT)  # the worker survived
     assert rec.log == ["ok"]
+    fsm.join(timeout=WAIT)  # retrieved through the future: consumed, not reported again
+    fsm.send_event({"name": "boom"})  # not observed through its future
     with pytest.raises(ValueError, match="handler failed"):
         fsm.join(timeout=WAIT)
     fsm.join(timeout=WAIT)  # reported once
@@ -257,6 +259,7 @@ def test_post_task_error_is_reported(fsms):
     holder["fsm"] = fsm = make(fsms, {"all": {"start": start}})
     with pytest.raises(ZeroDivisionError):
         fsm.send_event({"name": "start"}).result(timeout=WAIT)
+    fsm.send_event({"name": "start"})
     with pytest.raises(ZeroDivisionError):
         fsm.join(timeout=WAIT)
 
@@ -396,3 +399,79 @@ def test_change_state_from_many_threads(fsms):
         t.join()
     fsm.join(timeout=WAIT)
     assert fsm.state in states
+
+
+# -- review fix round 1 -----------------------------------------------------------------------
+
+def _run_bounded(fn, timeout=WAIT):
+    """Run ``fn`` in a thread; fail (instead of hanging) if it does not finish in ``timeout``."""
+    outcome = {}
+
+    def target():
+        outcome["value"] = fn()
+    t = threading.Thread(target=target, daemon=True)
+    t.start()
+    t.join(timeout)
+    assert not t.is_alive(), "deadlock"
+    return outcome.get("value")
+
+
+@pytest.mark.parametrize("entry", ["timer.stop", "stop_all_timers", "fsm.stop"])
+def test_cancelled_timer_callbacks_run_without_the_machine_lock(fsms, entry):
+    """A done-callback of a cancelled timer's future that touches the machine must not deadlock."""
+    fsm = make(fsms, {"all": {"y": lambda e: None}})
+    timer = fsm.start_timer(10_000, {"name": "t"})
+    touched = []
+    timer.future.add_done_callback(lambda f: touched.append(fsm.state))
+    if entry == "timer.stop":
+        timer.future.add_done_callback(lambda f: fsm.send_event({"name": "y"}))
+        assert _run_bounded(timer.stop) is True
+    elif entry == "stop_all_timers":
+        timer.future.add_done_callback(lambda f: fsm.send_event({"name": "y"}))
+        _run_bounded(fsm.stop_all_timers)
+    else:
+        _run_bounded(fsm.stop)
+    assert touched == [fsm.state] and timer.canceled and timer.future.cancelled()
+
+
+def test_error_retrieved_through_the_future_is_not_reported_again(fsms):
+    fsm = make(fsms, {"all": {"e": lambda e: 1 / 0}})
+    with pytest.raises(ZeroDivisionError):
+        fsm.send_event({"name": "e"}).result(timeout=WAIT)
+    future = fsm.send_event({"name": "e"})
+    assert isinstance(future.exception(timeout=WAIT), ZeroDivisionError)
+    fsm.join(timeout=WAIT)  # both errors were consumed by their futures
+    fsm.send_event({"name": "e"})  # this one is not observed: join reports it
+    with pytest.raises(ZeroDivisionError):
+        fsm.join(timeout=WAIT)
+
+
+def test_secondary_errors_are_kept_as_objects(fsms):
+    from proto_db.errors import secondary_errors
+
+    def fail(event):
+        raise KeyError(event["n"])
+    fsm = make(fsms, {"all": {"e": fail}})
+    for i in range(3):
+        fsm.send_event({"name": "e", "n": i})
+    with pytest.raises(KeyError) as info:
+        fsm.join(timeout=WAIT)
+    others = secondary_errors(info.value)
+    assert [type(e) for e in others] == [KeyError, KeyError] and [e.args for e in others] == [(1,), (2,)]
+
+
+def test_join_does_not_wait_for_events_queued_after_the_call(fsms):
+    """A handler that resends itself forever must not make join() hang."""
+    holder = {"go": True, "count": 0}
+
+    def again(event):
+        holder["count"] += 1
+        time.sleep(0.001)
+        if holder["go"]:
+            holder["fsm"].send_event({"name": "again"})
+    fsm = holder["fsm"] = make(fsms, {"all": {"again": again}})
+    fsm.send_event({"name": "again"})
+    _run_bounded(lambda: fsm.join(timeout=WAIT))
+    assert holder["count"] >= 1
+    holder["go"] = False  # end the self-resending loop
+    fsm.join(timeout=WAIT)

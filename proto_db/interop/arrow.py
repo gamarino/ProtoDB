@@ -31,10 +31,14 @@ ProtoDB value                          Arrow
 ``bool`` / ``int`` / ``float``         bool / int64 / double (int beyond int64
                                        is an error: pass a decimal schema)
 ``str`` / ``bytes``                    string / binary
-``Decimal``                            decimal128(p, s) (decimal256 when wider)
-``date`` / ``time``                    date32 / time64[us]
+``Decimal``                            decimal128(p, s) (decimal256 when wider);
+                                       NaN/Infinity rejected
+``date`` / naive ``time``              date32 / time64[us] (aware times are
+                                       rejected: time64 has no time zone)
 naive / aware ``datetime``             timestamp[us] / timestamp[us, tz] (tz of
-                                       the column's first value; instants kept)
+                                       the column's first value; instants kept);
+                                       naive and aware mixed at one position of
+                                       a column are rejected
 ``timedelta``                          duration[us]
 ``UUID``                               uuid (extension type)
 ``FrozenList``, ``list``, ``tuple``    list<...>
@@ -43,7 +47,9 @@ naive / aware ``datetime``             timestamp[us] / timestamp[us, tz] (tz of
 =====================================  ======================================
 
 A column whose values pyarrow cannot convert to one type (e.g. ``int`` and
-``str`` mixed) raises ``ProtoValidationError`` naming the column.  Vectors
+``str`` mixed), or holding values pyarrow would silently rewrite (naive and
+aware datetimes mixed, aware times, non-finite Decimals), raises
+``ProtoValidationError`` naming the column.  Vectors
 stored as tuples become ``list<double>``; pass a schema with
 ``pyarrow.list_(pyarrow.float32(), dim)`` for a fixed-size list column.
 """
@@ -53,6 +59,8 @@ import numbers
 import os
 import sys
 from collections.abc import Iterable, Iterator, Mapping, Sequence
+from datetime import datetime, time
+from decimal import Decimal
 
 from ..core.dbobject import DBObject
 from ..errors import ProtoNotSupportedError, ProtoValidationError
@@ -94,12 +102,44 @@ def _dataset():
 
 # -- conversion of ProtoDB values -------------------------------------------------------------
 
-def _plain(value, column: str):
-    """``value`` as plain Python for pyarrow (module docstring, "Value mapping")."""
+def _describe_path(column: str, path: tuple) -> str:
+    return repr(column) + "".join(p if p == "[]" else f".{p}" for p in path)
+
+
+def _check_temporal(value, column: str, path: tuple, zones: dict) -> None:
+    """Reject values pyarrow would silently rewrite: aware times, naive/aware datetimes mixed at one position."""
+    if isinstance(value, time):
+        if value.tzinfo is not None:
+            raise ProtoValidationError(f"to_arrow: column {_describe_path(column, path)} holds an aware time "
+                                       f"{value!r}; Arrow time64 has no time zone")
+        return
+    aware = value.tzinfo is not None and value.tzinfo.utcoffset(value) is not None
+    seen = zones.setdefault(path, aware)
+    if seen != aware:
+        raise ProtoValidationError(f"to_arrow: column {_describe_path(column, path)} mixes naive and aware "
+                                   f"datetimes; pyarrow would silently rewrite one kind into the other")
+
+
+def _plain(value, column: str, path: tuple = (), zones: dict | None = None):
+    """``value`` as plain Python for pyarrow (module docstring, "Value mapping").
+
+    ``zones`` maps a position (``path`` inside the column) to whether its
+    datetimes are aware, to reject mixtures (D42 fix round 1).
+    """
+    if zones is None:
+        zones = {}
     if value is MISSING:
         return None
+    if isinstance(value, (datetime, time)):
+        _check_temporal(value, column, path, zones)
+        return value
+    if isinstance(value, Decimal):
+        if not value.is_finite():
+            raise ProtoValidationError(f"to_arrow: column {_describe_path(column, path)} holds the non-finite "
+                                       f"Decimal {value}; Arrow decimals have no NaN or Infinity")
+        return value
     if isinstance(value, DBObject):
-        return {k: _plain(v, column) for k, v in value._state().items()}
+        return {k: _plain(v, column, path + (k,), zones) for k, v in value._state().items()}
     if isinstance(value, MutableObject):
         raise ProtoNotSupportedError(f"to_arrow: column {column!r} holds a MutableObject handle "
                                      f"({value.name!r}); resolve it with a transaction first")
@@ -112,10 +152,10 @@ def _plain(value, column: str):
             if not isinstance(k, str):
                 raise ProtoValidationError(f"to_arrow: column {column!r} holds a mapping with a non-string key "
                                            f"{k!r}; Arrow structs need string keys")
-            out[k] = _plain(v, column)
+            out[k] = _plain(v, column, path + (k,), zones)
         return out
     if isinstance(value, (list, tuple)):
-        return [_plain(v, column) for v in value]
+        return [_plain(v, column, path + ("[]",), zones) for v in value]
     return value
 
 
@@ -177,7 +217,8 @@ def to_arrow(source, columns: Sequence[str] | None = None, *, schema=None):
         columns = list(seen)
     arrays = []
     for name in columns:
-        values = [_plain(record.get(name, None), name) for record in records]
+        zones = {}
+        values = [_plain(record.get(name, None), name, (), zones) for record in records]
         field_type = schema.field(name).type if schema is not None else None
         try:
             arrays.append(pa.array(values, type=field_type))

@@ -2,6 +2,9 @@
 
 All ProtoDB errors derive from :class:`ProtoDBError`. Every class carries a numeric
 ``code``; an explicitly given code always wins, including ``0``.
+
+:func:`secondary_errors` returns the exceptions that were raised concurrently with
+an exception re-raised by the parallel scan or the FSM (decisions D40, D41).
 """
 
 VALIDATION_ERROR = 10_000
@@ -70,6 +73,24 @@ class ProtoConflictError(ProtoLockingError):
 class ProtoTimeoutError(ProtoLockingError):
     """A lock or wait timed out."""
     default_code = TIMEOUT_ERROR
+
+
+SECONDARY_ERRORS_ATTRIBUTE = "proto_secondary_errors"
+
+
+def attach_secondary_errors(primary: BaseException, others) -> None:
+    """Record ``others`` (exceptions raised alongside ``primary``) on ``primary`` (decisions D40, D41).
+
+    Used when several concurrent failures are reported by re-raising the first one:
+    the others stay available as objects through :func:`secondary_errors`.
+    """
+    previous = tuple(getattr(primary, SECONDARY_ERRORS_ATTRIBUTE, ()))
+    setattr(primary, SECONDARY_ERRORS_ATTRIBUTE, previous + tuple(others))
+
+
+def secondary_errors(exc: BaseException) -> tuple:
+    """The exceptions raised concurrently with ``exc`` and reported through it (empty tuple if none)."""
+    return tuple(getattr(exc, SECONDARY_ERRORS_ATTRIBUTE, ()))
 
 
 # Backward-compatible names (kept for one release, D12).

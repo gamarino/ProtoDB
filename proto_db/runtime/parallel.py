@@ -31,7 +31,8 @@ Semantics (D40):
 - **Exceptions.** The first exception raised by ``fn`` (in time) is re-raised in
   the caller with its own type and traceback, with a note naming the item
   index; exceptions raised concurrently by other workers are listed in a
-  second note.  After the first exception, workers stop claiming chunks and
+  second note and kept as objects (:func:`proto_db.errors.secondary_errors`).
+  After the first exception, workers stop claiming chunks and
   stop between items, so the remaining work is cancelled.  ``BaseException``
   subclasses propagate the same way.
 - **Shutdown.** A temporary pool is shut down (threads joined) before
@@ -53,7 +54,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 
-from ..errors import ProtoUnexpectedError, ProtoUserError, ProtoValidationError
+from ..errors import ProtoUnexpectedError, ProtoUserError, ProtoValidationError, attach_secondary_errors
 from ..query.expressions import evaluate
 from ..query.plans import Filter, PythonFilter, QueryPlan
 
@@ -405,6 +406,7 @@ def _first_error(errors: list) -> BaseException:
         listed = "; ".join(f"item {i}: {e!r}" if i is not None else repr(e) for i, e in others[:_MAX_LISTED_ERRORS])
         more = "; ..." if len(others) > _MAX_LISTED_ERRORS else ""
         first.add_note(f"parallel_scan: {len(others)} other exception(s) raised concurrently: {listed}{more}")
+        attach_secondary_errors(first, [e for _, e in others])
     return first
 
 

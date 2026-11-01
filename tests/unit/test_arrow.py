@@ -203,3 +203,47 @@ def test_parquet_row_group_size_is_rows(tmp_path):
 def test_parquet_missing_file_propagates(tmp_path):
     with pytest.raises(FileNotFoundError):
         bridge.from_parquet_to_rows(tmp_path / "absent.parquet")
+
+
+# -- review fix round 1 -----------------------------------------------------------------------
+
+@pytest.mark.parametrize("values", [
+    [datetime(2026, 1, 1), datetime(2026, 1, 1, tzinfo=TZ)],
+    [datetime(2026, 1, 1, tzinfo=timezone(timedelta(hours=3))), datetime(2026, 1, 1)],
+])
+def test_mixed_naive_and_aware_datetimes_are_rejected(values):
+    with pytest.raises(ProtoValidationError, match="'when'.*naive and aware"):
+        bridge.to_arrow([{"when": v} for v in values])
+    with pytest.raises(ProtoValidationError, match="naive and aware"):
+        bridge.to_arrow([{"rec": {"when": v}} for v in values])
+    with pytest.raises(ProtoValidationError, match="naive and aware"):
+        bridge.to_arrow([{"seq": [v]} for v in values])
+
+
+def test_naive_and_aware_in_different_fields_are_fine():
+    table = bridge.to_arrow([{"rec": {"a": datetime(2026, 1, 1), "b": datetime(2026, 1, 1, tzinfo=TZ)}}])
+    assert table.to_pylist()[0]["rec"]["b"] == datetime(2026, 1, 1, tzinfo=TZ)
+
+
+def test_aware_times_are_rejected():
+    """Arrow time64 has no time zone: pyarrow drops tzinfo silently."""
+    with pytest.raises(ProtoValidationError, match="'t'.*time zone"):
+        bridge.to_arrow([{"t": time(1, tzinfo=TZ)}])
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity", "sNaN"])
+def test_non_finite_decimals_are_rejected(value):
+    with pytest.raises(ProtoValidationError, match=f"'price'.*{value}"):
+        bridge.to_arrow([{"price": Decimal(value)}])
+
+
+def test_importing_pyarrow_keeps_the_gil_disabled():
+    import subprocess
+    import sys
+    import sysconfig
+    if not sysconfig.get_config_var("Py_GIL_DISABLED"):
+        pytest.skip("not a free-threaded build")
+    code = ("import sys; before = sys._is_gil_enabled(); import proto_db.interop.arrow as b; "
+            "b.to_arrow([{'a': 1}]); import pyarrow.parquet, pyarrow.dataset; print(before, sys._is_gil_enabled())")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert out.stdout.split() == ["False", "False"]

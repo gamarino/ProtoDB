@@ -307,3 +307,18 @@ def test_parallel_filter_propagates_predicate_errors():
 def test_parallel_filter_rejects_other_plans():
     with pytest.raises(ProtoValidationError):
         parallel_filter(Limit(ValuesScan([1, 2]), 1))
+
+
+def test_secondary_exceptions_are_kept_as_objects():
+    from proto_db.errors import secondary_errors
+    barrier = threading.Barrier(3, timeout=10)
+
+    def fn(x):
+        barrier.wait()
+        raise KeyError(x)
+    with pytest.raises(KeyError) as info:
+        parallel_scan(range(3), fn, workers=3, chunk=1)
+    others = secondary_errors(info.value)
+    assert len(others) == 2 and all(isinstance(e, KeyError) for e in others)
+    assert {info.value.args[0], *(e.args[0] for e in others)} == {0, 1, 2}
+    assert secondary_errors(ValueError()) == ()
