@@ -35,6 +35,8 @@ dependencies = [
 parquet = ["pyarrow"]
 vectors = ["numpy"]
 hnsw = ["numpy", "hnswlib"]
+s3 = ["boto3"]
+gcs = ["google-cloud-storage"]
 dev = [
   "pytest",
   "pytest-timeout",
