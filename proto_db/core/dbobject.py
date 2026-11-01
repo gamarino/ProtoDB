@@ -21,16 +21,19 @@ from .atom import RESERVED_NAMES, Atom, PersistenceContext, _check_context
 __all__ = ["DBObject"]
 
 
-def _check_name(name) -> None:
-    if not isinstance(name, str) or not name or name.startswith("_") or name in RESERVED_NAMES:
-        raise ProtoValidationError(f"Invalid DBObject attribute name {name!r}")
+def _check_name(cls, name) -> None:
+    if (not isinstance(name, str) or not name or name.startswith("_") or name in RESERVED_NAMES
+            or hasattr(cls, name)):
+        raise ProtoValidationError(f"Invalid attribute name {name!r} for {cls.__name__}")
 
 
 class DBObject(Atom):
     """Immutable record of named canonical values.
 
     ``DBObject(context=None, **attributes)``.  Attribute names must not start
-    with an underscore nor be one of ``oid``, ``atom_pointer``, ``context``.
+    with an underscore, be one of ``oid``, ``atom_pointer``, ``context``, nor
+    name an attribute of the class (``with_``, ``has_defined_attr``, or a
+    subclass method or property).
     Values are validated and normalised with :func:`proto_db.values.canonical`.
     Equality and hashing follow the ``oid`` (D10): two versions with the same
     content are different atoms.
@@ -59,7 +62,7 @@ class DBObject(Atom):
     def _install(self, attributes: dict) -> None:
         values = {}
         for name, value in attributes.items():
-            _check_name(name)
+            _check_name(type(self), name)
             values[name] = canonical(value)
         osa = object.__setattr__
         for name, value in values.items():

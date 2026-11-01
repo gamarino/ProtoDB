@@ -16,8 +16,10 @@ Lazy loading
     Equality and hashing use ``oid`` (D10), therefore comparing or hashing a
     stub loads it.
 
-    Persisted attributes must not have class-level defaults: normal attribute
-    lookup would find the class attribute on a stub and skip the load.
+    Persisted attributes must not shadow class attributes (methods, properties,
+    class-level defaults): normal attribute lookup would find the class
+    attribute on a stub and skip the load.  ``_save`` rejects such state with
+    ``ProtoValidationError`` and ``_load`` with ``ProtoCorruptionError``.
 
 Saving
     :meth:`Atom._save` is idempotent and thread-safe: children are saved first
@@ -208,9 +210,10 @@ class Atom:
 
     def _restore(self, state: dict) -> None:
         """Install a decoded state on a stub (protected hook; default sets attributes)."""
+        cls = type(self)
         for name in state:
-            if name.startswith("_") or name in RESERVED_NAMES:
-                raise ProtoCorruptionError(f"Invalid persisted attribute name {name!r}")
+            if name.startswith("_") or name in RESERVED_NAMES or hasattr(cls, name):
+                raise ProtoCorruptionError(f"Invalid persisted attribute name {name!r} for {cls.__type_name__}")
         osa = object.__setattr__
         for name, value in state.items():
             osa(self, name, value)
@@ -235,7 +238,14 @@ class Atom:
             if context is None:
                 raise ProtoUserError(f"Cannot save {self!r}: it has no persistence context")
             from . import codec
-            encoded = codec.encode_state(self._state(), context.save)
+            state = self._state()
+            cls = type(self)
+            for name in state:
+                if hasattr(cls, name):
+                    raise ProtoValidationError(
+                        f"Attribute {name!r} of {cls.__type_name__} shadows a class attribute and "
+                        f"could not be loaded back lazily")
+            encoded = codec.encode_state(state, context.save)
             payload = {"t": type(self).__type_name__, "oid": self.oid.bytes, "s": encoded}
             ptr = context.storage.push_atom(payload)
             object.__setattr__(self, "atom_pointer", ptr)

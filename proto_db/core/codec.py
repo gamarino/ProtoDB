@@ -8,7 +8,8 @@ Wire form of a value:
 * Every other value is a single-key map whose key is a tag:
 
   ===========  ==================================================================
-  ``@int``     ``str(n)`` for integers outside the msgpack range
+  ``@int``     ``format(n, "x")`` (signed hexadecimal) for integers outside the
+               msgpack range; base 16 is not subject to the int/str digit limit
   ``@dec``     ``str(d)`` (keeps sign, exponent, NaN and infinities exactly)
   ``@date``    ``[year, month, day]``
   ``@time``    ``[hour, minute, second, microsecond, fold, tz]``
@@ -73,7 +74,7 @@ def encode_value(value, save_child: Callable[[Atom], AtomPointer]):
         return str(value)
     if isinstance(value, int):
         value = int(value)
-        return value if _INT_MIN <= value <= _INT_MAX else {"@int": str(value)}
+        return value if _INT_MIN <= value <= _INT_MAX else {"@int": format(value, "x")}
     if isinstance(value, float):
         return float(value)
     if isinstance(value, (bytes, bytearray)):
@@ -187,7 +188,7 @@ def _decode_tz(tz):
 def _dec_int(body, _):
     if type(body) is not str:
         raise TypeError("expected str")
-    return int(body)
+    return int(body, 16)
 
 
 def _dec_decimal(body, _):

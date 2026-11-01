@@ -94,6 +94,17 @@ def test_bytes_up_to_one_mib():
     assert_exact(roundtrip(blob), blob)
 
 
+@pytest.mark.parametrize("value", [10**5000, -10**5000, 2**70000 + 1, -(2**70000) - 1],
+                         ids=["1e5000", "-1e5000", "2^70000+1", "-2^70000-1"])
+def test_huge_int_roundtrip_beyond_str_digit_limit(value):
+    assert_exact(roundtrip(value), value)
+
+
+def test_huge_int_wire_form_is_hex():
+    encoded = codec.encode_state({"v": -2**64 - 1}, _Refs().save_child)
+    assert encoded["v"] == {"@int": "-10000000000000001"}
+
+
 def test_bytearray_comes_back_as_bytes():
     assert_exact(roundtrip(bytearray(b"ab")), b"ab")
 
@@ -161,7 +172,8 @@ def test_unknown_tag_raises_corruption():
     {"v": {"@ref": ["zz", 0, "T"]}},
     {"v": {"@dt": [2026, 1, 1, 0, 0, 0, 0, 0, ["bogus"]]}},
     {"v": {"@map": [[1]]}},
-    {"v": {"@int": "abc"}},
+    {"v": {"@int": "xyz"}},
+    {"v": {"@int": 12}},
     {"v": {"@dec": "not a number"}},
     {"v": object()},
     {1: 1},

@@ -357,3 +357,55 @@ def test_dbobject_persist_and_lazy_reload():
     assert stub == o and hash(stub) == hash(o)
     with pytest.raises(ProtoUserError):
         stub.child = None
+
+
+class Account(DBObject):
+    """DBObject subclass with a read-only property and a method."""
+
+    @property
+    def label(self):
+        return f"#{self.number}"
+
+    def close(self):
+        return self.with_(closed=True)
+
+
+@pytest.mark.parametrize("name", ["with_", "has_defined_attr"])
+def test_dbobject_rejects_names_shadowing_class_attributes(name):
+    with pytest.raises(ProtoValidationError):
+        DBObject(**{name: 1})
+    with pytest.raises(ProtoValidationError):
+        DBObject(a=1).with_(**{name: 1})
+
+
+@pytest.mark.parametrize("name", ["label", "close"])
+def test_subclass_rejects_names_shadowing_its_properties_and_methods(name):
+    with pytest.raises(ProtoValidationError):
+        Account(**{name: 1})
+    assert DBObject(**{name: 1}).has_defined_attr(name)  # fine on the base class
+    assert Account(number=7).label == "#7"
+
+
+@pytest.mark.parametrize("name", ["label", "with_"])
+def test_load_of_shadowing_name_raises_corruption(name):
+    c = ctx()
+    state = {"number": 1, name: 2}
+    ptr = c.storage.push_atom({"t": Account.__type_name__, "oid": uuid.uuid4().bytes, "s": state})
+    stub = c.load(ptr, Account.__type_name__)
+    with pytest.raises(ProtoCorruptionError):
+        _ = stub.number
+
+
+class Shadowed(Atom):
+    """Plain atom whose persisted attribute shadows a class-level default."""
+
+    height = 0
+
+    def __init__(self, height, *, context=None):
+        super().__init__(context=context)
+        self.height = height
+
+
+def test_save_rejects_instance_attribute_shadowing_class_attribute():
+    with pytest.raises(ProtoValidationError):
+        Shadowed(3, context=ctx())._save()
