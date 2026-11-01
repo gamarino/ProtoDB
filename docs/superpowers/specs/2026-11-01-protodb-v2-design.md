@@ -62,7 +62,7 @@ alternatives considered). The decisions taken in this document are D1–D16 belo
 | D2 | One value model with a total order across types (§4). Index results and scan results use the same comparator. |
 | D3 | Canonical types: `None, bool, int, float, Decimal, str, bytes, date, time, datetime (naive or aware), timedelta, UUID, tuple, list, dict`, plus atoms. |
 | D4 | On-disk format v2: framed binary records, msgpack payloads, CRC32, per-segment header (§6). A `protodb inspect` CLI replaces "readable files". Parquet is an export format, not the store. |
-| D5 | Cloud/cluster: CAS on the root via conditional writes; data strictly before root; UDP voting removed. |
+| D5 | Cloud/cluster: data strictly before root; in a cluster, root write contention is resolved among the processes (peer write lock with fencing), never by the storage; conditional writes on the root are only a fencing safety net (amended 2026-11-01 by the maintainer, see D44). |
 | D6 | Durability: fsync per commit by default; `durability="flush"` and `"none"` are explicit opt-outs for tests/benchmarks. Group commit is a later optimisation. |
 | D7 | Strings are stored inline. The global `Literal` catalog is removed; reading a string returns `str`. |
 | D8 | `Dictionary` becomes a key-ordered persistent AVL tree (O(log n)), not a binary search over a positional list (O(log² n)). |
@@ -272,8 +272,15 @@ kind that passes it implements every hook correctly (requirement 3).
   (S3 `If-Match`/`If-None-Match`, GCS `ifGenerationMatch`). A failed precondition raises
   `ProtoConflictError` and the transaction retries.
 - Shared filesystem (several processes/nodes): OS lock + epoch CAS on `space.root`.
-- `ClusterFileStorage`'s UDP voting is removed. Mock clients live in `tests/`, never in the package;
-  a missing SDK raises a clear error instead of falling back to a mock.
+- Cluster (amended by the maintainer, D44): root write contention must not reach the storage; it is
+  resolved among the processes. Peers negotiate a write lock over the network (the 0.1 voting
+  idea, made fail-safe: majority grant, lease term, monotonically increasing fencing token);
+  segments are uploaded before the lock is requested; the holder validates against the latest root
+  (propagated peer to peer), publishes, broadcasts the new root and releases. The conditional root
+  write stays only as fencing: it stops a stale holder (expired lease, partition) from overwriting a
+  newer root, and is never the arbitration mechanism under normal contention.
+- Mock clients live in `tests/`, never in the package; a missing SDK raises a clear error instead of
+  falling back to a mock.
 
 ## 10. Query layer
 
