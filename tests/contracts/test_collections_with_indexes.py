@@ -49,7 +49,7 @@ from tests.support.persistence import DirectContext
 INDEX_NAME = "idx"
 #: Cap on remembered elements used to draw terms: bounds the cost of a step.
 SEEN_LIMIT = 40
-PROFILE = settings(max_examples=40, stateful_step_count=40, deadline=None, database=None,
+PROFILE = settings(max_examples=40, stateful_step_count=40, deadline=None, database=None, derandomize=True,
                    suppress_health_check=list(HealthCheck))
 
 
@@ -230,7 +230,8 @@ class CollectionIndexMachine(RuleBasedStateMachine):
         self.backend = self.backend_cls()
         self.context = DirectContext(self.backend.storage)
         self.coll = self.factory.empty()
-        self.seen: list = []
+        self.seen: dict = {}        # exact key -> detached stand-in element (deduplicated, oldest evicted)
+        self.removed: list = []     # stand-ins of keys that the last mutation removed
         self.indexed = False        # model: should the collection carry the index?
         self.history: list = []     # (version, element keys, term answers) kept for later re-checks
         self.rng = random.Random(0)
@@ -241,8 +242,10 @@ class CollectionIndexMachine(RuleBasedStateMachine):
                          else RECORD_MUTATORS[self.factory.name])
 
     def teardown(self):
-        self.recheck_history()
-        self.backend.close()
+        try:
+            self.recheck_history()
+        finally:
+            self.backend.close()
 
     # -- helpers --
 
@@ -263,8 +266,15 @@ class CollectionIndexMachine(RuleBasedStateMachine):
         for e in coll.elements():
             key = self.key_spec.extract(e)
             if key is not MISSING:
-                self.seen.append(self.standin(key))
-        del self.seen[:-SEEN_LIMIT]
+                token = exact_value_key(key)
+                self.seen.pop(token, None)          # re-insert: most recently seen last
+                self.seen[token] = self.standin(key)
+        while len(self.seen) > SEEN_LIMIT:
+            del self.seen[next(iter(self.seen))]
+
+    def seen_elements(self) -> list:
+        """The remembered stand-in elements."""
+        return list(self.seen.values())
 
     def check(self, coll, where: str) -> None:
         """Count agrees with the elements; the index (if any) validates and answers like a scan."""
@@ -276,7 +286,8 @@ class CollectionIndexMachine(RuleBasedStateMachine):
         if index is None:
             return
         assert type(index) is self.index_cls and index.key_spec == self.key_spec, where
-        terms = self.contract.terms_for(self.key_spec, self.seen + elements, self.rng, focus=elements[:4])
+        terms = self.contract.terms_for(self.key_spec, self.seen_elements() + elements, self.rng,
+                                         focus=elements[:4] + self.removed)
         checked = self.contract.assert_consistent(index, elements, terms, f" {where}")
         assert checked > 0, f"{where}: no term was supported"
         self.check_order(index, elements, where)
@@ -297,25 +308,32 @@ class CollectionIndexMachine(RuleBasedStateMachine):
             assert c._runs(self.key_spec, plan.execute()) == want, f"{where}: ordered_plan({descending})"
 
     def recheck_history(self) -> None:
-        """Old versions are exactly what they were: elements, index set, and index answers."""
-        for version, keys, answers in self.history:
+        """Every kept version, reloaded from the CURRENT storage, is exactly what it was.
+
+        Elements, index set and recorded index answers are compared on a fresh lazy load of the
+        saved pointer, so after a FileStorage reopen this proves old versions survive on disk.
+        """
+        for ptr, type_name, keys, indexed, answers in self.history:
+            version = self.context.load(ptr, type_name)
             assert self.element_keys(version) == keys, "an old version's elements changed"
             index = version.get_index(INDEX_NAME)
+            assert (index is not None) == indexed, "an old version's index set changed"
             if index is not None:
-                elements = list(version.elements())
-                index.validate(elements)
+                index.validate(list(version.elements()))
                 for term, expected in answers:
                     assert self.contract._results(index, term) == expected, \
                         f"an old index answers {term} differently"
 
     def keep(self) -> None:
+        """Save the current version and remember its pointer, content and index answers."""
         index = self.coll.get_index(INDEX_NAME)
-        terms = []
+        answers = []
         if index is not None:
-            terms = self.contract.terms_for(self.key_spec, self.seen, self.rng)
-        answers = [(t, self.contract._results(index, t)) for t in terms if index.supports(t)] \
-            if index is not None else []
-        self.history.append((self.coll, self.element_keys(self.coll), answers))
+            terms = self.contract.terms_for(self.key_spec, self.seen_elements(), self.rng)
+            answers = [(t, self.contract._results(index, t)) for t in terms if index.supports(t)]
+        ptr = self.context.save(self.coll)
+        self.history.append((ptr, type(self.coll).__type_name__, self.element_keys(self.coll),
+                             index is not None, answers))
         del self.history[:-3]
 
     # -- rules --
@@ -330,9 +348,15 @@ class CollectionIndexMachine(RuleBasedStateMachine):
             new = mutator(self.coll, rng, make_record(rng, self.key_kind == "dotted"))
         if new is None:
             return
+        kept = {self.contract._key(e) for e in new.elements()}
+        gone = [e for e in self.coll.elements() if self.contract._key(e) not in kept]
+        self.removed = [self.standin(k) for k in (self.key_spec.extract(e) for e in gone[:3])
+                        if k is not MISSING]
         self.coll = new
         self.remember(new)
 
+    # Three identical rules weight mutation 3:1 against each structural rule (Hypothesis picks
+    # rules uniformly), so most steps change content.
     @rule(seed=st.integers(0, 2**31))
     def mutate_a(self, seed):
         self.mutate_once(seed)
@@ -362,6 +386,12 @@ class CollectionIndexMachine(RuleBasedStateMachine):
     def keep_version(self):
         self.keep()
 
+    @precondition(lambda self: self.history)
+    @rule()
+    def recheck_old(self):
+        """Reload every kept version from storage and compare it with what was recorded."""
+        self.recheck_history()
+
     @rule()
     def save_keep(self):
         """Save, and keep working on the in-memory (now saved) version."""
@@ -385,7 +415,6 @@ class CollectionIndexMachine(RuleBasedStateMachine):
         storage.publish_root(ptr, None if root is None else root.epoch)
         before = self.element_keys(self.coll)
         self.recheck_history()
-        self.history.clear()        # versions of the closed storage cannot be read any more
         self.remember(self.coll)
         type_name = type(self.coll).__type_name__
         self.backend.reopen()
@@ -393,11 +422,17 @@ class CollectionIndexMachine(RuleBasedStateMachine):
         root = self.backend.storage.read_root()
         self.coll = self.context.load(root.pointer, type_name)
         assert self.element_keys(self.coll) == before
+        self.recheck_history()      # kept versions are read back from the reopened storage
 
     @invariant()
     def consistent(self):
         self.check(self.coll, "invariant")
 
+
+
+_missing = [f.name for f in COLLECTION_FACTORIES if f.name != "ToySet" and f.name not in RECORD_MUTATORS]
+assert not _missing, (f"collections {_missing} are registered but have no entry in RECORD_MUTATORS "
+                      f"(tests/contracts/test_collections_with_indexes.py); add record-aware mutators")
 
 
 def _machine(factory, index_name, key_name, backend_name) -> type:
