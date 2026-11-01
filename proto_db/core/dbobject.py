@@ -13,12 +13,13 @@ returns a new version, which is a distinct atom with a new ``oid``
 
 A :class:`MutableObject` is not an atom: it is a plain value naming a cell of the
 database's mutable table, resolved through a transaction.  Stored inside an atom it
-gives versions of a record a shared entity identity (D18).
+gives versions of a record a shared entity identity (D18).  The class is defined in
+:mod:`proto_db.values` (it is part of the value model) and re-exported here.
 """
 from __future__ import annotations
 
 from ..errors import ProtoUserError, ProtoValidationError
-from ..values import canonical
+from ..values import MutableObject, canonical
 from .atom import RESERVED_NAMES, Atom, PersistenceContext, _check_context
 
 __all__ = ["DBObject", "MutableObject"]
@@ -107,59 +108,3 @@ class DBObject(Atom):
         fields = ", ".join(f"{k}={v!r}" for k, v in self._state().items())
         return f"{type(self).__name__}({fields})"
 
-
-class MutableObject:
-    """Handle on the named mutable cell ``name`` of a database (D11, D35).
-
-    The handle holds only the name; the cell's value lives in the database's mutable
-    table and is read and written through a transaction (:meth:`get`, :meth:`set`,
-    or ``Transaction.get_mutable``/``set_mutable``/``new_mutable``/``remove_mutable``),
-    so reads enter the transaction's read set and writes are applied at commit.
-
-    A handle is an immutable canonical value: it can be stored in atoms, collections
-    and other mutables (persisted as ``{"@mut": name}``), compares and hashes by
-    name, and orders after every atom (D35).  It is never persisted as an atom and
-    carries no reference to a transaction or storage, so one handle is valid in any
-    transaction of any database that has a cell of that name.  Thread-safe (immutable).
-    """
-
-    __slots__ = ("_name",)
-
-    def __init__(self, name: str):
-        """Create a handle on the cell ``name`` (a non-empty ``str``); does not create the cell."""
-        if not isinstance(name, str) or not name:
-            raise ProtoValidationError(f"A mutable name must be a non-empty str, not {name!r}")
-        object.__setattr__(self, "_name", str(name))
-
-    @property
-    def name(self) -> str:
-        """The cell name."""
-        return self._name
-
-    def get(self, transaction):
-        """Return the cell's value as seen by ``transaction`` (``None`` if the cell is absent)."""
-        return transaction.get_mutable(self._name)
-
-    def set(self, transaction, value) -> None:
-        """Set the cell's value in ``transaction`` (applied at commit); the cell must exist."""
-        transaction.set_mutable(self._name, value)
-
-    def __setattr__(self, name, value):
-        raise ProtoUserError("MutableObject is immutable")
-
-    def __delattr__(self, name):
-        raise ProtoUserError("MutableObject is immutable")
-
-    def __eq__(self, other):
-        if not isinstance(other, MutableObject):
-            return NotImplemented
-        return self._name == other._name
-
-    def __hash__(self):
-        return hash(("MutableObject", self._name))
-
-    def __reduce__(self):
-        return (MutableObject, (self._name,))
-
-    def __repr__(self):
-        return f"MutableObject({self._name!r})"

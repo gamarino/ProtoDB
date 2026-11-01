@@ -104,7 +104,7 @@ from .collections.lists import List
 from .collections.sets import CountedSet, Set
 from .core.atom import Atom, AtomPointer, PersistenceContext
 from .core.dbobject import DBObject, MutableObject
-from .errors import (ProtoConflictError, ProtoDBError, ProtoUnexpectedError, ProtoUserError,
+from .errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoUnexpectedError, ProtoUserError,
                      ProtoValidationError)
 from .values import canonical, exact_token
 
@@ -169,6 +169,14 @@ class DatabaseRoot(_Immutable, Atom):
         osa(self, "previous", previous)
         osa(self, "version", version)
         osa(self, "committed_at", committed_at)
+
+    def _absent_attribute(self, name: str):
+        if name == "mutables":
+            # Written before the mutable table existed (D35); no migration is provided.
+            raise ProtoCorruptionError(
+                f"DatabaseRoot at {self.atom_pointer} has no mutable table: the database was written "
+                f"by a ProtoDB build older than decision D35 and cannot be opened")
+        return super()._absent_attribute(name)
 
 
 class HistoryEntry:

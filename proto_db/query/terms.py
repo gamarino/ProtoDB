@@ -31,15 +31,13 @@ Semantics (D28):
 from __future__ import annotations
 
 import math
-import uuid
 from dataclasses import dataclass, field
-from datetime import date, time, timedelta
 from decimal import Decimal
 from typing import Any
 
 from ..errors import ProtoNotSupportedError, ProtoValidationError
 from ..indexing.keyspec import KeySpec
-from ..values import MISSING, canonical, is_atom, order_key
+from ..values import MISSING, canonical, is_orderable, order_key
 
 __all__ = ["Term", "NearQuery", "is_orderable", "OPERATORS", "NEAR_METRICS", "EQ", "NE", "LT", "LE", "GT", "GE", "IN", "BETWEEN",
            "BETWEEN_EXCL_BOTH", "BETWEEN_EXCL_LOW", "BETWEEN_EXCL_HIGH", "IS_NONE", "NOT_NONE", "NEAR"]
@@ -66,24 +64,6 @@ _BETWEEN_OPS = {BETWEEN: (True, True), BETWEEN_EXCL_BOTH: (False, False),
 _PRESENCE_OPS = (IS_NONE, NOT_NONE)
 #: Every operator of the term vocabulary.
 OPERATORS = frozenset(_SCALAR_OPS + (IN, NEAR) + tuple(_BETWEEN_OPS) + _PRESENCE_OPS)
-
-_ORDERABLE_TYPES = (bool, int, str, bytes, bytearray, date, time, timedelta, uuid.UUID)
-
-
-def is_orderable(value) -> bool:
-    """True iff :func:`order_key` accepts ``value`` (no NaN, list or dict anywhere; a supported type)."""
-    if value is None or value is MISSING or isinstance(value, _ORDERABLE_TYPES):
-        return True
-    if isinstance(value, float):
-        return value == value
-    if isinstance(value, Decimal):
-        return not value.is_nan()
-    if isinstance(value, tuple):
-        return all(is_orderable(v) for v in value)
-    if isinstance(value, (list, dict)):
-        return False
-    return is_atom(value)
-
 
 #: Metrics a ``near[]`` query may name (``None`` = the index's default metric).
 NEAR_METRICS = frozenset({"cosine", "l2", "ip"})

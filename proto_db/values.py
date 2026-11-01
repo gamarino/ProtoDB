@@ -10,7 +10,8 @@ Rank order (see decision D17)::
     < time-aware < datetime-naive < datetime-aware < timedelta < UUID
     < tuple < atom < mutable handle
 
-The last rank holds :class:`proto_db.core.dbobject.MutableObject` handles,
+The last rank holds :class:`MutableObject` handles (re-exported by
+:mod:`proto_db.core.dbobject`),
 ordered by name (D35); it was appended after ``atom`` so that the order keys
 and hash keys of every other value are unchanged.
 
@@ -27,10 +28,10 @@ import uuid
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
-from .errors import ProtoValidationError
+from .errors import ProtoUserError, ProtoValidationError
 
 __all__ = ["MISSING", "FrozenList", "FrozenDict", "canonical", "order_key", "rank_bounds", "values_equal", "hash_key",
-           "is_atom", "exact_token"]
+           "is_atom", "is_orderable", "exact_token", "MutableObject"]
 
 
 class _Missing:
@@ -67,12 +68,6 @@ _NAIVE_ORIGIN = datetime(1, 1, 1)
 def is_atom(value) -> bool:
     """Return True if ``value`` looks like an atom: it has a ``uuid.UUID`` ``oid``."""
     return isinstance(getattr(value, "oid", None), uuid.UUID)
-
-
-def _mutable_type() -> type:
-    """The MutableObject handle class (imported lazily: ``core.dbobject`` imports this module)."""
-    from .core.dbobject import MutableObject
-    return MutableObject
 
 
 def _is_nan(value) -> bool:
@@ -164,6 +159,63 @@ class FrozenDict(dict):
     update = setdefault = popitem = pop = clear = __setitem__ = __delitem__ = __ior__ = _frozen("dict")
 
 
+class MutableObject:
+    """Handle on the named mutable cell ``name`` of a database (D11, D35).
+
+    The handle holds only the name; the cell's value lives in the database's mutable
+    table and is read and written through a transaction (:meth:`get`, :meth:`set`,
+    or ``Transaction.get_mutable``/``set_mutable``/``new_mutable``/``remove_mutable``),
+    so reads enter the transaction's read set and writes are applied at commit.
+
+    A handle is an immutable canonical value: it can be stored in atoms, collections
+    and other mutables (persisted as ``{"@mut": name}``), compares and hashes by
+    name, and orders after every atom (D35).  It is never persisted as an atom and
+    carries no reference to a transaction or storage, so one handle is valid in any
+    transaction of any database that has a cell of that name.  Thread-safe (immutable).
+    """
+
+    __slots__ = ("_name",)
+
+    def __init__(self, name: str):
+        """Create a handle on the cell ``name`` (a non-empty ``str``); does not create the cell."""
+        if not isinstance(name, str) or not name:
+            raise ProtoValidationError(f"A mutable name must be a non-empty str, not {name!r}")
+        object.__setattr__(self, "_name", str(name))
+
+    @property
+    def name(self) -> str:
+        """The cell name."""
+        return self._name
+
+    def get(self, transaction):
+        """Return the cell's value as seen by ``transaction`` (``None`` if the cell is absent)."""
+        return transaction.get_mutable(self._name)
+
+    def set(self, transaction, value) -> None:
+        """Set the cell's value in ``transaction`` (applied at commit); the cell must exist."""
+        transaction.set_mutable(self._name, value)
+
+    def __setattr__(self, name, value):
+        raise ProtoUserError("MutableObject is immutable")
+
+    def __delattr__(self, name):
+        raise ProtoUserError("MutableObject is immutable")
+
+    def __eq__(self, other):
+        if not isinstance(other, MutableObject):
+            return NotImplemented
+        return self._name == other._name
+
+    def __hash__(self):
+        return hash(("MutableObject", self._name))
+
+    def __reduce__(self):
+        return (MutableObject, (self._name,))
+
+    def __repr__(self):
+        return f"MutableObject({self._name!r})"
+
+
 def canonical(value):
     """Validate ``value`` and return its canonical form.
 
@@ -192,7 +244,7 @@ def canonical(value):
                 ka is kb and va is vb for (ka, va), (kb, vb) in zip(pairs, value.items())):
             return value
         return FrozenDict(pairs)
-    if is_atom(value) or isinstance(value, _mutable_type()):
+    if is_atom(value) or isinstance(value, MutableObject):
         return value
     raise ProtoValidationError(f"Unsupported value type: {type(value).__name__}")
 
@@ -243,11 +295,32 @@ def order_key(value) -> tuple:
         return (_R_TUPLE, tuple(order_key(v) for v in value))
     if is_atom(value):
         return (_R_ATOM, value.oid.int)
-    if isinstance(value, _mutable_type()):
+    if isinstance(value, MutableObject):
         return (_R_MUTABLE, value.name)
     if isinstance(value, (list, dict)):
         raise ProtoValidationError(f"{type(value).__name__} is not an orderable key")
     raise ProtoValidationError(f"Unsupported value type: {type(value).__name__}")
+
+
+_ORDERABLE_TYPES = (bool, int, str, bytes, bytearray, date, time, timedelta, uuid.UUID, MutableObject)
+
+
+def is_orderable(value) -> bool:
+    """True iff :func:`order_key` accepts ``value`` (no NaN, list or dict anywhere; a supported type).
+
+    The single definition of orderability: the term model and the indexes use it.
+    """
+    if value is None or value is MISSING or isinstance(value, _ORDERABLE_TYPES):
+        return True
+    if isinstance(value, float):
+        return value == value
+    if isinstance(value, Decimal):
+        return not value.is_nan()
+    if isinstance(value, tuple):
+        return all(is_orderable(v) for v in value)
+    if isinstance(value, (list, dict)):
+        return False
+    return is_atom(value)
 
 
 def rank_bounds(value) -> tuple:
@@ -380,8 +453,10 @@ def exact_token(value, atom_token=None) -> tuple:
     """
     if is_atom(value):
         return ("a",) if atom_token is None else atom_token(value)
-    if isinstance(value, _mutable_type()):
-        return ("@mut", value.name)
+    if isinstance(value, MutableObject):
+        # Class-qualified like every other value: a subclass gets its own tag.
+        return ("@mut" if type(value) is MutableObject else f"{type(value).__module__}.{type(value).__qualname__}",
+                value.name)
     cls = type(value)
     tag = _EXACT_TAGS.get(cls) or f"{cls.__module__}.{cls.__qualname__}"
     if value is None:

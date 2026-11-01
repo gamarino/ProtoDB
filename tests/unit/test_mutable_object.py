@@ -18,7 +18,7 @@ from proto_db.errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBEr
 from proto_db.storage.file import FileStorage
 from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
-from proto_db.values import canonical, exact_token, hash_key, order_key, values_equal
+from proto_db.values import canonical, exact_token, hash_key, is_orderable, order_key, values_equal
 
 
 @pytest.fixture(params=["memory", "file"])
@@ -48,8 +48,12 @@ def test_handle_equality_hash_and_immutability():
     a, b, c = MutableObject("acct"), MutableObject("acct"), MutableObject("other")
     assert a == b and hash(a) == hash(b) and a != c and a.name == "acct"
     assert a != "acct" and len({a, b, c}) == 2
-    with pytest.raises((AttributeError, ProtoUserError)):
+    with pytest.raises(ProtoUserError):
         a.name = "x"
+    with pytest.raises(ProtoUserError):
+        a.other = 1
+    with pytest.raises(ProtoUserError):
+        del a.name
     for bad in ("", None, 3, b"x"):
         with pytest.raises(ProtoValidationError):
             MutableObject(bad)
@@ -66,6 +70,71 @@ def test_handle_is_a_canonical_orderable_value():
     assert values_equal(h, MutableObject("n")) and not values_equal(h, "n")
     assert hash_key(h) == hash_key(MutableObject("n")) != hash_key("n")
     assert exact_token(h) == exact_token(MutableObject("n")) != exact_token("n")
+
+
+def test_handle_class_lives_in_the_value_model():
+    """One class, defined by ``values`` and re-exported by ``core.dbobject`` (no lazy import, D35)."""
+    import proto_db.core as core
+    import proto_db.values as values
+    assert MutableObject is values.MutableObject is core.MutableObject
+
+
+def test_handle_is_orderable_for_the_term_model():
+    from proto_db.query import terms
+    h = MutableObject("x")
+    assert is_orderable(h) and terms.is_orderable is is_orderable
+    assert is_orderable((1, h)) and not is_orderable((h, [1]))
+    owner = DBObject(owner=h)
+    assert terms.Term("owner", terms.EQ, h).matches(owner)
+    assert terms.Term("owner", terms.IN, (MutableObject("y"), h)).matches(owner)
+    assert terms.Term("owner", terms.LT, MutableObject("z")).matches(owner)
+    assert not terms.Term("owner", terms.GT, MutableObject("z")).matches(owner)
+    assert not terms.Term("owner", terms.EQ, "x").matches(owner)
+
+
+def test_exact_token_of_a_handle_subclass_is_class_qualified():
+    class Special(MutableObject):
+        __slots__ = ()
+
+    assert exact_token(Special("n")) != exact_token(MutableObject("n"))
+    assert exact_token(Special("n"))[0].endswith("Special")
+    assert Special("n") == MutableObject("n") and values_equal(Special("n"), MutableObject("n"))
+
+
+@pytest.mark.parametrize("kind", ["equality", "range"])
+def test_indexes_file_handles_in_the_ordered_tree(kind):
+    """Handle keys go to the ordered groups (rank 15), not the unorderable side bucket; plan == scan."""
+    from collections import Counter
+
+    from proto_db.indexing import element_identity
+    from proto_db.indexing.equality import EqualityIndex
+    from proto_db.indexing.range import RangeIndex
+    from proto_db.query import terms
+
+    cls = EqualityIndex if kind == "equality" else RangeIndex
+    names = ["a", "b", "b", "c", "d"]
+    elements = [DBObject(owner=MutableObject(n)) for n in names] + [DBObject(owner="b"), DBObject(owner=1),
+                                                                    DBObject()]
+    built = cls("by_owner", "owner").build(elements)
+    folded = cls("by_owner", "owner")
+    for e in elements:
+        folded = folded.with_added(e)
+    queries = [terms.Term("owner", terms.EQ, MutableObject("b")),
+               terms.Term("owner", terms.IN, (MutableObject("a"), MutableObject("d"), "b")),
+               terms.Term("owner", terms.NE, MutableObject("b"))]
+    if kind == "range":
+        queries += [terms.Term("owner", terms.LT, MutableObject("c")),
+                    terms.Term("owner", terms.GE, MutableObject("b")),
+                    terms.Term("owner", terms.BETWEEN, (MutableObject("b"), MutableObject("d")))]
+    for index in (built, folded):
+        info = index.explain()
+        assert info["unorderable"] == 0 and info["keys"] == 7, info  # a b c d, "b", 1, MISSING
+        for term in queries:
+            planned = Counter(element_identity(e) for e in index.plan(term).execute())
+            scanned = Counter(element_identity(e) for e in elements if term.matches(e))
+            assert planned == scanned, term
+        index.validate(elements)
+    assert sum(Counter(element_identity(e) for e in built.plan(queries[0]).execute()).values()) == 2
 
 
 def test_handle_codec_round_trip():
@@ -244,6 +313,28 @@ def test_handle_inside_a_dbobject_resolves_after_reload(tmp_path):
         tr.abort()
 
 
+def test_database_written_before_the_mutable_table_is_reported_as_corrupt():
+    """A DatabaseRoot without ``mutables`` (pre-D35) raises ProtoCorruptionError, not AttributeError."""
+    from proto_db.transactions import DatabaseRoot, SpaceRoot, _SpaceContext
+    storage = MemoryStorage()
+    with ObjectSpace(storage) as s:
+        s.new_database("db")
+        context = _SpaceContext(storage)
+        old = storage.read_root()
+        space_root = context.load(old.pointer, SpaceRoot.__type_name__)
+        root = space_root.databases.get_at("db")
+        legacy = DatabaseRoot(objects=root.objects, mutables=root.mutables, previous=None, version=0,
+                              committed_at=root.committed_at, context=context)
+        object.__delattr__(legacy, "mutables")
+        ptr = context.save(SpaceRoot(databases=space_root.databases.set_at("db", legacy), context=context))
+        storage.publish_root(ptr, old.epoch)
+        db = s.open_database("db")
+        with pytest.raises(ProtoCorruptionError, match="mutable"):
+            db.new_transaction()
+        with pytest.raises(ProtoCorruptionError, match="mutable"):
+            db.history()[0].mutable_names
+
+
 def test_history_shows_mutable_changes(db):
     with db.new_transaction() as tr:
         tr.new_mutable("m", "v1")
@@ -318,6 +409,24 @@ def test_blind_set_of_a_concurrently_removed_mutable_conflicts(db):
     with pytest.raises(ProtoConflictError):
         t1.commit()
     assert read_mutable(db, "x") is None
+
+
+def test_blind_set_over_a_concurrently_recreated_mutable_wins(db):
+    """ABA: a cell removed and created again meanwhile exists at commit, so a blind set overwrites
+    the new cell (last writer wins, D35); a reader of the cell would conflict instead."""
+    with db.new_transaction() as tr:
+        tr.new_mutable("x", 1)
+    blind, reader = db.new_transaction(), db.new_transaction()
+    blind.set_mutable("x", "blind")
+    reader.set_mutable("x", reader.get_mutable("x") + 1)
+    with db.new_transaction() as tr:
+        tr.remove_mutable("x")
+    with db.new_transaction() as tr:
+        tr.new_mutable("x", "recreated")
+    blind.commit()
+    assert read_mutable(db, "x") == "blind"
+    with pytest.raises(ProtoConflictError):
+        reader.commit()
 
 
 def test_blind_remove_of_a_concurrently_removed_mutable_is_a_no_op(db):
