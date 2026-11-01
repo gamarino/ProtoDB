@@ -67,7 +67,7 @@ alternatives considered). The decisions taken in this document are D1–D16 belo
 | D7 | Strings are stored inline. The global `Literal` catalog is removed; reading a string returns `str`. |
 | D8 | `Dictionary` becomes a key-ordered persistent AVL tree (O(log n)), not a binary search over a positional list (O(log² n)). |
 | D9 | Conflict ⇒ retry. Read sets include absent roots. `ConcurrentOptimized` merge (per-key/per-element op-log replay) applies only to roots this transaction did not read. |
-| D10 | Atom identity: every atom gets a stable `oid` (UUID4) at creation, persisted. Equality and hashing of atoms use `oid`, never `id()` or the storage pointer. |
+| D10 | Atom identity: every atom gets a stable `oid` (UUID4), persisted (assigned lazily on first use — amended by D21). Equality and hashing of atoms use `oid`, never `id()` or the storage pointer. |
 | D11 | `MutableObject` is kept with fixed semantics: a named mutable cell with read-set conflict detection. |
 | D12 | Single exception hierarchy rooted at `ProtoDBError`; `ProtoBaseException` remains as an alias for one release. |
 | D13 | `hnswlib` is optional and imported lazily (it re-enables the GIL on 3.14t). The default vector backend is exact search with numpy; IVF-Flat is persistent and built in. |
@@ -143,7 +143,7 @@ truth for the collections (key order), the indexes and the query evaluator.
 
 ## 5. Atoms and serialization
 
-- `Atom` has `oid: UUID` (created at construction, persisted), `atom_pointer` (set when saved),
+- `Atom` has `oid: UUID` (assigned lazily on first observation or save, persisted; D21), `atom_pointer` (set when saved),
   `transaction`. Persisted state = public instance attributes; underscore attributes are runtime
   only. Classes register by a stable type name (`__type_name__`, default `module.ClassName`), so
   third-party subclasses (custom indexes) cannot collide.
@@ -151,7 +151,7 @@ truth for the collections (key order), the indexes and the query evaluator.
   canonical type (D3) and `{"@ref": [segment_hex, offset, type_name]}` for nested atoms (D18). Round-trip is exact for
   every canonical type (property-tested).
 - Lazy loading: an atom loaded by pointer is a stub until first attribute access; loading is
-  thread-safe (per-atom lock or idempotent publish — never a torn half-loaded object visible to
+  thread-safe (striped lock pool, D21, or idempotent publish — never a torn half-loaded object visible to
   another thread).
 - Saving is explicit and happens inside commit, children first, exactly once per atom.
 
