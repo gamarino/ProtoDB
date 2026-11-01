@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "proto_db"
-version = "0.1.0"
+version = "2.0.0.dev0"
 description = "ProtoDB is an embedded, transactional, object-oriented database for Python."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -20,25 +20,27 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Free Threading",
     "Topic :: Database",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-  "six",
-  "wrapt",
   "msgpack",
   "psutil",
 ]
 
 [project.optional-dependencies]
 parquet = ["pyarrow"]
-vectors = ["numpy", "hnswlib"]
+vectors = ["numpy"]
+hnsw = ["numpy", "hnswlib"]
 dev = [
   "pytest",
+  "pytest-timeout",
+  "pytest-cov",
   "hypothesis",
   "sphinx",
-  "build",
-  "twine"
 ]
 
 [project.urls]
@@ -49,3 +51,8 @@ Homepage = "https://github.com/gamarino/ProtoDB"
 where = ["."]
 include = ["proto_db*"]
 exclude = ["proto_db.tests*"]
+
+[tool.pytest.ini_options]
+# "proto_db/tests" is the 0.1 suite; it is removed in Task 8.5.
+testpaths = ["tests", "proto_db/tests"]
+timeout = 300
