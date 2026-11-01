@@ -14,6 +14,7 @@ from tests.static import _scan
 # New modules are appended as they are written; Phase 11 replaces this with the whole package.
 CHECKED_ROOTS = [
     "proto_db/errors.py",
+    "proto_db/values.py",
 ]
 
 
