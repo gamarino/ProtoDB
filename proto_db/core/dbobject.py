@@ -3,16 +3,14 @@
 Reading an attribute that was never defined returns ``None``;
 :meth:`DBObject.has_defined_attr` tells an explicit ``None`` apart from an
 absent attribute.  A DBObject cannot be modified: :meth:`DBObject.with_`
-returns a new version, which is a distinct atom with a new ``oid``.
+returns a new version, which is a distinct atom with a new ``oid``
+(assigned lazily, D21).
 
 Immutability is shallow: ``list`` and ``dict`` values are copied on
 construction (by :func:`proto_db.values.canonical`) but are returned as is and
 must not be mutated by callers.
 """
 from __future__ import annotations
-
-import threading
-import uuid
 
 from ..errors import ProtoUserError, ProtoValidationError
 from ..values import canonical
@@ -51,9 +49,7 @@ class DBObject(Atom):
         _check_context(context)
         obj = object.__new__(cls)
         osa = object.__setattr__
-        osa(obj, "_lock", threading.RLock())
         osa(obj, "_loaded", True)
-        osa(obj, "oid", uuid.uuid4())
         osa(obj, "atom_pointer", None)
         osa(obj, "context", context)
         obj._install(state)

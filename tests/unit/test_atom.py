@@ -409,3 +409,74 @@ class Shadowed(Atom):
 def test_save_rejects_instance_attribute_shadowing_class_attribute():
     with pytest.raises(ProtoValidationError):
         Shadowed(3, context=ctx())._save()
+
+
+# --- lazy identity (D21) -------------------------------------------------------------
+
+def test_oid_is_stable_once_observed():
+    a = Leaf(1)
+    first = a.oid
+    assert a.oid is first and a.oid == first
+    assert hash(a) == hash(first)
+
+
+def test_hash_and_eq_assign_a_stable_oid():
+    a, b = Leaf(1), Leaf(1)
+    h = hash(a)
+    assert "oid" in a.__dict__ and hash(a) == h == hash(a.oid)
+    assert a != b
+    assert "oid" in b.__dict__
+    assert a == a
+
+
+def test_concurrent_first_oid_access_yields_one_oid():
+    for _ in range(50):
+        atom = Leaf(1)
+        barrier = threading.Barrier(16)
+        seen = []
+
+        def worker():
+            barrier.wait()
+            seen.append(atom.oid)
+
+        threads = [threading.Thread(target=worker) for _ in range(16)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert len(seen) == 16 and len(set(seen)) == 1 and atom.oid == seen[0]
+
+
+def test_saved_payload_carries_observed_oid():
+    c = ctx()
+    a = Leaf(1, context=c)
+    observed = a.oid
+    a._save()
+    assert c.storage.payloads_in_order()[-1]["oid"] == observed.bytes
+    assert a.oid == observed
+
+
+def test_save_assigns_oid_of_unobserved_atom():
+    c = ctx()
+    child = Leaf("c")
+    root = Node(child, None, context=c)
+    assert "oid" not in root.__dict__ and "oid" not in child.__dict__
+    ptr = root._save()
+    payloads = c.storage.payloads_in_order()
+    assert payloads[0]["oid"] == child.oid.bytes
+    assert payloads[-1]["oid"] == root.oid.bytes
+    stub = c.load(ptr, Node.__type_name__)
+    assert stub == root and hash(stub) == hash(root) and stub.left == child
+
+
+def test_fresh_atoms_never_equal():
+    atoms = [Leaf(1) for _ in range(1000)]
+    assert len(set(atoms)) == 1000
+    assert len({a.oid for a in atoms}) == 1000
+
+
+def test_dbobject_versions_get_lazy_distinct_oids():
+    o = DBObject(a=1)
+    o2 = o.with_(a=2)
+    assert "oid" not in o2.__dict__
+    assert o2 != o and o2.oid != o.oid

@@ -1,18 +1,38 @@
 """Atoms: the unit of persistence (spec section 5, decisions D10 and R3).
 
-An atom has a stable identity (``oid``, a UUID4 created at construction and
-persisted), an ``atom_pointer`` once saved, and a ``context`` (a
-:class:`PersistenceContext`) through which it is saved and its references are
-loaded.  Its persisted state is its public instance attributes; attributes whose
-name starts with an underscore are runtime only.
+An atom has a stable identity (``oid``, a UUID4, persisted), an
+``atom_pointer`` once saved, and a ``context`` (a :class:`PersistenceContext`)
+through which it is saved and its references are loaded.  Its persisted state is
+its public instance attributes; attributes whose name starts with an underscore
+are runtime only.
+
+Identity (D10, D21)
+    The ``oid`` of a new atom is assigned lazily: constructing an atom creates
+    neither a UUID nor a lock.  The UUID4 is generated on first need -- the
+    first ``oid`` read, ``==``/``hash``, or ``_save`` -- under the atom's striped
+    lock, so racing threads all observe the same value; once observed it never
+    changes.  A stub takes its ``oid`` from the payload when it is loaded.
+
+Locking (D21)
+    Atoms share a module-level pool of ``_STRIPES`` re-entrant locks;
+    :func:`_lock_for` maps an atom to its stripe.  Lock order rule: *a thread
+    holding an atom stripe never acquires another atom stripe* (re-acquiring the
+    same stripe is allowed: the locks are re-entrant).  Every critical section
+    below touches only its own atom and storage, whose locks are leaves that
+    never call back into atoms; work that reaches other atoms (encoding children,
+    which saves them, and decoding a payload, which may hash child stubs) runs
+    with no stripe held.  With no nested acquisition there is no lock-order cycle,
+    so stripes shared by unrelated atoms cannot deadlock.
 
 Lazy loading
     An atom obtained from a pointer is a *stub*: only ``context`` and
     ``atom_pointer`` are set.  The first access to any other public attribute,
-    ``oid`` included, loads the state.  Loading runs under a per-atom lock; the
-    state is fully decoded before it is published and the loaded flag is set
-    last, so a thread either finds an attribute with its final value or waits
-    for the load to finish.  No thread ever observes a half-loaded atom.
+    ``oid`` included, loads the state.  The payload is fetched once, under the
+    stub's stripe, and kept on the stub; it is decoded with no stripe held (two
+    racing threads may both decode it; that work is pure) and the first decoded
+    state is published under the stripe with the loaded flag set last, so a
+    thread either finds an attribute with its final value or waits for the load
+    to finish.  No thread ever observes a half-loaded atom.
     Equality and hashing use ``oid`` (D10), therefore comparing or hashing a
     stub loads it.
 
@@ -23,9 +43,12 @@ Lazy loading
 
 Saving
     :meth:`Atom._save` is idempotent and thread-safe: children are saved first
-    (through ``context.save``), then the atom's own payload
+    (through ``context.save``, with no stripe held), then, under the atom's
+    stripe, the atom's own payload
     ``{"t": type_name, "oid": oid_bytes, "s": encoded_state}`` is pushed to
-    ``context.storage``.  Concurrent calls produce exactly one pointer.
+    ``context.storage`` unless another thread published a pointer first.
+    Concurrent calls push exactly one payload and return one pointer (racing
+    callers may encode the state more than once; only one result is pushed).
 """
 from __future__ import annotations
 
@@ -76,6 +99,21 @@ class PersistenceContext(Protocol):
         ...
 
 
+#: Number of locks in the striped pool shared by all atoms (D21).
+_STRIPES = 64
+_LOCKS = tuple(threading.RLock() for _ in range(_STRIPES))
+
+
+def _lock_for(atom) -> "threading.RLock":
+    """Return the striped lock that guards ``atom`` (load, oid assignment, save publication).
+
+    Object addresses are aligned, so the low bits of ``id`` carry no information;
+    they are discarded and two higher bit ranges are folded together.
+    """
+    i = id(atom) >> 4
+    return _LOCKS[(i ^ (i >> 6)) & (_STRIPES - 1)]
+
+
 _registry: dict[str, type] = {}
 _registry_lock = threading.Lock()
 
@@ -123,9 +161,7 @@ class Atom:
     def __init__(self, *, context: PersistenceContext | None = None):
         _check_context(context)
         osa = object.__setattr__
-        osa(self, "_lock", threading.RLock())
         osa(self, "_loaded", True)
-        osa(self, "oid", uuid.uuid4())
         osa(self, "atom_pointer", None)
         osa(self, "context", context)
 
@@ -151,7 +187,6 @@ class Atom:
             raise ProtoCorruptionError(f"Atom type {type_name!r} is not a {cls.__type_name__}")
         stub = object.__new__(target)
         osa = object.__setattr__
-        osa(stub, "_lock", threading.RLock())
         osa(stub, "_loaded", False)
         osa(stub, "atom_pointer", ptr)
         osa(stub, "context", context)
@@ -159,7 +194,7 @@ class Atom:
 
     def _bind(self, context: PersistenceContext) -> None:
         """Attach ``context`` to an atom that has none (protected; used by contexts)."""
-        with self._lock:
+        with _lock_for(self):
             if self.context is None:
                 object.__setattr__(self, "context", context)
 
@@ -180,33 +215,63 @@ class Atom:
         try:
             return object.__getattribute__(self, name)
         except AttributeError:
+            if name == "oid":
+                return self._assign_oid()
             return self._absent_attribute(name)
+
+    def _assign_oid(self) -> uuid.UUID:
+        """Return the oid of a loaded atom, generating it on first need (D21)."""
+        with _lock_for(self):
+            return self._oid_locked()
+
+    def _oid_locked(self) -> uuid.UUID:
+        """Body of :meth:`_assign_oid`; the caller holds ``_lock_for(self)``."""
+        oid = self.__dict__.get("oid")
+        if oid is None:
+            oid = uuid.uuid4()
+            object.__setattr__(self, "oid", oid)
+        return oid
 
     def _absent_attribute(self, name: str):
         """Value of a public attribute that is not set on a loaded atom (default: raise)."""
         raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
 
     def _load(self) -> None:
-        """Load the state of a stub, once; a no-op for loaded atoms."""
+        """Load the state of a stub, once; a no-op for loaded atoms.
+
+        Three steps, so that no stripe is held while other atoms are touched:
+        fetch the payload once under the stripe, decode it unlocked (decoding
+        creates child stubs and may hash them, which loads them), publish under
+        the stripe unless another thread published first.
+        """
         if self._loaded:
             return
-        with self._lock:
+        lock = _lock_for(self)
+        with lock:
             if self._loaded:
                 return
-            payload = self.context.storage.get_atom(self.atom_pointer)
-            if not isinstance(payload, dict) or set(payload) != {"t", "oid", "s"}:
-                raise ProtoCorruptionError(f"Malformed atom payload at {self.atom_pointer}")
-            if payload["t"] != type(self).__type_name__:
-                raise ProtoCorruptionError(
-                    f"Atom at {self.atom_pointer} is a {payload['t']!r}, expected {type(self).__type_name__!r}")
-            raw_oid = payload["oid"]
-            if not isinstance(raw_oid, bytes) or len(raw_oid) != 16:
-                raise ProtoCorruptionError(f"Malformed oid in atom at {self.atom_pointer}")
-            from . import codec
-            state = codec.decode_state(payload["s"], self.context.load)
+            payload = self.__dict__.get("_payload")
+            if payload is None:
+                payload = self.context.storage.get_atom(self.atom_pointer)
+                if not isinstance(payload, dict) or set(payload) != {"t", "oid", "s"}:
+                    raise ProtoCorruptionError(f"Malformed atom payload at {self.atom_pointer}")
+                if payload["t"] != type(self).__type_name__:
+                    raise ProtoCorruptionError(
+                        f"Atom at {self.atom_pointer} is a {payload['t']!r}, expected {type(self).__type_name__!r}")
+                raw_oid = payload["oid"]
+                if not isinstance(raw_oid, bytes) or len(raw_oid) != 16:
+                    raise ProtoCorruptionError(f"Malformed oid in atom at {self.atom_pointer}")
+                object.__setattr__(self, "_payload", payload)
+        from . import codec
+        state = codec.decode_state(payload["s"], self.context.load)
+        oid = uuid.UUID(bytes=payload["oid"])
+        with lock:
+            if self._loaded:
+                return
             self._restore(state)
-            object.__setattr__(self, "oid", uuid.UUID(bytes=raw_oid))
+            object.__setattr__(self, "oid", oid)
             object.__setattr__(self, "_loaded", True)
+            object.__delattr__(self, "_payload")
 
     def _restore(self, state: dict) -> None:
         """Install a decoded state on a stub (protected hook; default sets attributes)."""
@@ -221,32 +286,41 @@ class Atom:
     # -- save -----------------------------------------------------------------------
 
     def _state(self) -> dict:
-        """Return the persisted state: public instance attributes except the reserved ones."""
+        """Return the persisted state: public instance attributes except the reserved ones.
+
+        Iterates over a copy of the instance dictionary (copied atomically): other
+        threads may add runtime keys concurrently, such as a lazily assigned ``oid``.
+        """
         self._load()
-        return {k: v for k, v in vars(self).items()
+        return {k: v for k, v in vars(self).copy().items()
                 if not k.startswith("_") and k not in RESERVED_NAMES}
 
     def _save(self) -> AtomPointer:
-        """Save this atom (children first) unless already saved; return its pointer."""
+        """Save this atom (children first) unless already saved; return its pointer.
+
+        Children are saved while no stripe is held; only the publication of this
+        atom's payload runs under its stripe (see the module lock order rule).
+        """
         ptr = self.atom_pointer
         if ptr is not None:
             return ptr
-        with self._lock:
-            if self.atom_pointer is not None:
-                return self.atom_pointer
-            context = self.context
-            if context is None:
-                raise ProtoUserError(f"Cannot save {self!r}: it has no persistence context")
-            from . import codec
-            state = self._state()
-            cls = type(self)
-            for name in state:
-                if hasattr(cls, name):
-                    raise ProtoValidationError(
-                        f"Attribute {name!r} of {cls.__type_name__} shadows a class attribute and "
-                        f"could not be loaded back lazily")
-            encoded = codec.encode_state(state, context.save)
-            payload = {"t": type(self).__type_name__, "oid": self.oid.bytes, "s": encoded}
+        context = self.context
+        if context is None:
+            raise ProtoUserError(f"Cannot save {self!r}: it has no persistence context")
+        from . import codec
+        state = self._state()
+        cls = type(self)
+        for name in state:
+            if hasattr(cls, name):
+                raise ProtoValidationError(
+                    f"Attribute {name!r} of {cls.__type_name__} shadows a class attribute and "
+                    f"could not be loaded back lazily")
+        encoded = codec.encode_state(state, context.save)
+        with _lock_for(self):
+            ptr = self.atom_pointer
+            if ptr is not None:
+                return ptr
+            payload = {"t": cls.__type_name__, "oid": self._oid_locked().bytes, "s": encoded}
             ptr = context.storage.push_atom(payload)
             object.__setattr__(self, "atom_pointer", ptr)
             return ptr
