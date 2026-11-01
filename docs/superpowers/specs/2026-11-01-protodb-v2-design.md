@@ -126,7 +126,7 @@ Module size rule: no module above ~800 lines; split by responsibility.
 `values.py` defines what a storable value is and how values compare. It is the single source of
 truth for the collections (key order), the indexes and the query evaluator.
 
-- `canonical(value)` validates and normalises a value (raises `ProtoValidationError` for an
+- `canonical(value)` validates and normalises a value; `list`/`dict` values become frozen containers (`FrozenList`/`FrozenDict`, subclasses whose mutators raise) so stored values can never be mutated through reads (ruling R13) (raises `ProtoValidationError` for an
   unsupported type). `float('nan')` is rejected as a key (it breaks total order) but allowed as a
   stored value.
 - `order_key(value) -> tuple` returns a key that totally orders all canonical values:
@@ -229,7 +229,7 @@ Every collection derives from `IndexedCollection(Atom)`:
   Never mutates the receiver.
 - `CountedSet` — multiset; `add`, `remove` (decrements), `count(e)`, `total`.
 
-All collections: `count`, iteration, equality by content, `__repr__`, and a factory on the
+All collections: `count`, iteration, `content_equals(other)` (content comparison; `==` stays oid identity per D10, ruling R12), `__repr__`, and a factory on the
 transaction (`tr.new_list()`, … including `new_set`, `new_counted_set`, `new_repeated_keys_dictionary`).
 
 ### 8.3 Index framework
