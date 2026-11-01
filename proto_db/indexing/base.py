@@ -92,14 +92,22 @@ class Index(Atom, metaclass=ABCMeta):
        reverse of that key-group order; the order inside one key group is
        unspecified.  Return ``IndexPlan(self, None, producer, kind=...,
        estimate=Estimate(...))``.  The defaults declare no ordering.
-    5. Override defaults when the structure allows better:
+    5. Residual predicates (``near[]`` with ``k``, ruling R27): an index whose
+       answer to a term depends on the whole collection (k nearest) cannot be
+       post-filtered without changing the meaning of ``term AND P``.  Such an
+       index overrides ``supports_filtered(term)`` (True for the terms it can
+       restrict) and ``filtered_plan(term, where)``: the answer to ``term``
+       computed over only the elements satisfying the Expression ``where``.
+       The planner hands every other conjunct of a ``near[]`` conjunction with
+       ``k`` to it (D37 amendment).  The defaults declare no such support.
+    6. Override defaults when the structure allows better:
        ``with_replaced`` (default: remove then add), ``build`` (default: fold
        of ``with_added`` starting from :meth:`empty`; bulk-load for speed),
        ``validate`` (default: plan == scan for every supported ``==`` on the
        elements' keys, ``?N`` and ``?!N``; add structural checks), ``explain``
        (add details, keep the ``index``/``kind``/``key`` entries) and
        ``empty`` (only if ``__init__`` cannot be called with the definition).
-    6. Prove it: register an ``IndexContract`` for the new kind in
+    7. Prove it: register an ``IndexContract`` for the new kind in
        ``tests/contracts/index_contract.py`` (index factory, element strategy,
        optional term strategy and oracle).  The contract checks plan == scan,
        mutation sequences, persistence, concurrent readers, unsupported terms,
@@ -233,6 +241,15 @@ class Index(Atom, metaclass=ABCMeta):
         """Every element in key order (see the class docstring); default ``ProtoNotSupportedError``."""
         raise ProtoNotSupportedError(
             f"Index {self.name!r} ({type(self).__name__}) does not provide ordered iteration")
+
+    def supports_filtered(self, term: Term) -> bool:
+        """True iff :meth:`filtered_plan` answers ``term`` restricted to a predicate (default False)."""
+        return False
+
+    def filtered_plan(self, term: Term, where) -> QueryPlan:
+        """``term`` answered over only the elements satisfying ``where``; default ``ProtoNotSupportedError``."""
+        raise ProtoNotSupportedError(
+            f"Index {self.name!r} ({type(self).__name__}) cannot answer {term.op!r} restricted to a predicate")
 
     def with_replaced(self, old, new) -> "Index":
         """Return the index after replacing one occurrence of ``old`` by ``new`` (default: remove + add)."""

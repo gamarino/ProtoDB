@@ -311,20 +311,37 @@ def ordered_index_scan(index, key, descending: bool = False) -> QueryPlan:
 
 
 class VectorSearch(QueryPlan):
-    """The elements a vector-capable index returns for a ``near[]`` term (stub node; Task 7.1 completes it).
+    """The elements a vector-capable index returns for a ``near[]`` term, optionally among those
+    satisfying a residual predicate ``where`` (ruling R27).
 
     Works with any index whose ``supports(term)`` accepts the term: the node
-    runs ``index.plan(term)``, which is its only child in ``explain()``.
+    runs ``index.plan(term)``, or ``index.filtered_plan(term, where)`` when
+    ``where`` (an Expression or the 0.1 list syntax, without ``near[]``) is
+    given, which then requires ``index.supports_filtered(term)``
+    (``ProtoNotSupportedError`` otherwise).  ``near(k) AND where`` is the k
+    nearest among the elements satisfying ``where``, not a post-filtered kNN.
+    The index plan is its only child in ``explain()``; ``where`` is shown.
     """
 
-    def __init__(self, index, term: Term):
+    def __init__(self, index, term: Term, where=None):
         if not isinstance(term, Term) or term.op != NEAR:
             raise ProtoValidationError(f"VectorSearch needs a 'near[]' term, not {term!r}")
         if not index.supports(term):
             raise ProtoNotSupportedError(f"Index {index.explain().get('index')!r} does not support {term!r}")
+        if where is not None:
+            where = Expression.compile(where)
+            near = [t for t in iter_terms(where) if t.op == NEAR]
+            if near:
+                raise ProtoValidationError(f"A VectorSearch residual predicate cannot hold 'near[]' terms "
+                                           f"({near[0]!r})")
+            if not index.supports_filtered(term):
+                raise ProtoNotSupportedError(f"Index {index.explain().get('index')!r} cannot answer {term!r} "
+                                             f"restricted to a predicate")
         self.index = index
         self.term = term
-        self.inner = _check_plan(index.plan(term), "VectorSearch")
+        self.where = where
+        inner = index.plan(term) if where is None else index.filtered_plan(term, where)
+        self.inner = _check_plan(inner, "VectorSearch")
         self._freeze()
 
     def execute(self) -> Iterator:
@@ -332,9 +349,11 @@ class VectorSearch(QueryPlan):
         return self.inner.execute()
 
     def explain(self) -> dict:
-        """``{"plan": "VectorSearch", "index", "term", "estimate", "children": [index plan]}``."""
-        return self._explain("VectorSearch", {"index": self.index.explain(), "term": self.term.describe()},
-                             (self.inner,))
+        """``{"plan": "VectorSearch", "index", "term", ["where",] "estimate", "children": [index plan]}``."""
+        params = {"index": self.index.explain(), "term": self.term.describe()}
+        if self.where is not None:
+            params["where"] = self.where.describe()
+        return self._explain("VectorSearch", params, (self.inner,))
 
     def estimate(self) -> Estimate:
         """The inner plan's estimate."""

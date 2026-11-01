@@ -44,7 +44,8 @@ from ..values import MISSING, exact_token, is_atom, order_key, rank_bounds
 from .base import Index, element_identity
 from .keyspec import KeySpec
 
-__all__ = ["KeyGroupIndex", "surrogate", "exact_token", "EMPTY_GROUP"]
+__all__ = ["KeyGroupIndex", "surrogate", "exact_token", "EMPTY_GROUP", "member_key", "equal_members_bounds",
+           "group_add", "group_remove", "group_iter"]
 
 #: The group of no element: ``(members, total)``.
 EMPTY_GROUP = (None, 0)
@@ -103,6 +104,10 @@ _R_TUPLE = order_key(())[0]
 #: A rank above every order-key rank: ``(_ABOVE_EVERY_RANK,)`` exceeds every order key (2-tuples, D17).
 _ABOVE_EVERY_RANK = order_key(MISSING)[0] + 1000
 
+#: Public names of the member-key scheme, shared with other index kinds (the vector index, D39).
+member_key = _member_key
+equal_members_bounds = _equal_members_bounds
+
 
 # -- groups ---------------------------------------------------------------------------------
 
@@ -139,6 +144,12 @@ def _group_iter(group: tuple) -> Iterator:
     for _, (element, n) in avl.key_iter(group[0]):
         for _ in range(n):
             yield element
+
+
+#: Public names of the group operations, shared with other index kinds (the vector index, D39).
+group_add = _group_add
+group_remove = _group_remove
+group_iter = _group_iter
 
 
 def _groups_iter(groups: Iterable[tuple]) -> Iterator:

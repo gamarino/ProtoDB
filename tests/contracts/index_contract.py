@@ -698,3 +698,145 @@ def _register_equality_and_range() -> None:
 
 
 _register_equality_and_range()
+
+
+# -- Task 7.1: VectorIndex ---------------------------------------------------------------------
+# ``near[]`` has no per-element semantics (Term.matches raises), so the vector registrations supply
+# the brute-force oracle ``near_oracle`` through the generic ``oracle`` hook, and a term strategy that
+# draws k / threshold / k+threshold queries (often a stored vector, so exact ties are exercised).
+
+VECTOR_DIM = 4
+#: Thresholds per metric: similarity for cosine, distance for l2, score for ip (D39).
+VECTOR_THRESHOLDS = {"cosine": (-1.0, 0.0, 0.5, 0.9, 1.0), "l2": (0.0, 1.0, 2.0, 3.5),
+                     "ip": (-2.0, 0.0, 1.0, 4.0)}
+
+
+def vector_value(rng: random.Random):
+    """A vector key of :data:`VECTOR_DIM` components (small ints for ties, floats, a FrozenList,
+    zero, Decimals) or, sometimes, a key that is not a valid vector."""
+    from decimal import Decimal
+    pick = rng.random()
+    if pick < 0.45:
+        return tuple(rng.randrange(-2, 3) for _ in range(VECTOR_DIM))
+    if pick < 0.72:
+        return tuple(rng.uniform(-2.0, 2.0) for _ in range(VECTOR_DIM))
+    if pick < 0.77:
+        return [float(rng.randrange(-1, 2)) for _ in range(VECTOR_DIM)]
+    if pick < 0.80:
+        return (0.0,) * VECTOR_DIM
+    if pick < 0.83:
+        return tuple(Decimal(rng.randrange(-4, 5)) / 2 for _ in range(VECTOR_DIM))
+    return rng.choice([None, (1.0, 2.0), (1.0, float("nan"), 0.0, 0.0), "abcd", (True, 0, 0, 0),
+                       (1e200,) * VECTOR_DIM, ("a", 1, 2, 3), 7])
+
+
+def vector_record_strategy(rng: random.Random) -> DBObject:
+    """A DBObject with a ``vec`` key (sometimes absent) and an ``emb.v`` key (mapping or nested record)."""
+    attrs: dict = {"n": rng.randrange(0, 5)}
+    if rng.random() < 0.85:
+        attrs["vec"] = vector_value(rng)
+    r = rng.random()
+    if r < 0.4:
+        attrs["emb"] = {"v": vector_value(rng)}
+    elif r < 0.7:
+        attrs["emb"] = DBObject(v=vector_value(rng))
+    return DBObject(**attrs)
+
+
+def _reversed_vec(element):
+    vec = KeySpec.path("vec").extract(element)
+    return tuple(reversed(vec)) if isinstance(vec, (tuple, list)) else vec
+
+
+def _value_vector(value):
+    """A deterministic vector "field" of a plain collection value (for check (f)); equal values agree."""
+    if isinstance(value, bool):
+        return (1.0, -1.0, 0.0, 1.0)
+    if isinstance(value, (int, float)):
+        n = float(value)
+        return (n % 5, (n // 5) % 3, 1.0, 0.0)
+    if isinstance(value, str):
+        return (float(len(value)), float(sum(map(ord, value)) % 7), 0.0, 1.0)
+    if isinstance(value, tuple) and value and type(value[0]) is int:
+        return (float(value[0]), 0.0, 0.0, 0.0)
+    if value is None:
+        return None
+    return MISSING
+
+
+register_extractor("tests.contracts.reversed_vec", _reversed_vec)
+register_extractor("tests.contracts.value_vector", _value_vector)
+
+VECTOR_KEY_SPECS = (KeySpec.path("vec"), KeySpec.path("emb.v"), KeySpec.extractor("tests.contracts.reversed_vec"))
+#: Collections hold plain values: their vector "field" is derived by an extractor.
+VALUE_VECTOR_SPEC = KeySpec.extractor("tests.contracts.value_vector")
+
+
+def vector_term_strategy(metric: str) -> Callable:
+    """``near[]`` terms with k, threshold and both; plus unsupported metric and dimension variants."""
+    from proto_db.indexing.vector_backends import canonical_vector
+    from proto_db.query.terms import NEAR, NearQuery
+
+    def terms(rng: random.Random, elements: list, key_spec: KeySpec) -> list:
+        path = key_spec.term_path
+        stored = [v for v in (canonical_vector(key_spec.extract(e), VECTOR_DIM) for e in elements) if v]
+        out = []
+        for _ in range(4):
+            r = rng.random()
+            if stored and r < 0.5:
+                q = rng.choice(stored)
+            elif r < 0.75:
+                q = tuple(float(rng.randrange(-2, 3)) for _ in range(VECTOR_DIM))
+            else:
+                q = tuple(rng.uniform(-2.0, 2.0) for _ in range(VECTOR_DIM))
+            k = rng.choice([1, 2, 3, 5, 8, 50])
+            thr = rng.choice(VECTOR_THRESHOLDS[metric])
+            out += [Term(path, NEAR, NearQuery(q, k=k)), Term(path, NEAR, NearQuery(q, threshold=thr)),
+                    Term(path, NEAR, NearQuery(q, k=k, threshold=thr))]
+        q = tuple(float(rng.randrange(-2, 3)) for _ in range(VECTOR_DIM))
+        other = next(m for m in ("cosine", "l2", "ip") if m != metric)
+        out += [Term(path, NEAR, NearQuery(q, k=3, metric=metric)), Term(path, NEAR, NearQuery(q, k=3, metric=other)),
+                Term(path, NEAR, NearQuery(q + (1.0,), k=3)), Term(FOREIGN_PATH, NEAR, NearQuery(q, k=3))]
+        return out
+
+    return terms
+
+
+def vector_oracle(metric: str) -> Callable:
+    """The oracle of a vector index: ``near_oracle`` for ``near[]``, the scan oracle for every other term."""
+    from proto_db.indexing.vector import near_oracle
+    from proto_db.query.terms import NEAR
+
+    def oracle(term: Term, elements: list) -> list:
+        if term.op == NEAR:
+            return near_oracle(elements, term.key_spec, term.value, metric)
+        return scan_oracle(term, elements)
+
+    return oracle
+
+
+def vector_contract(name: str, metric: str, backend: str, params: dict, element_strategy=vector_record_strategy,
+                    key_specs=VECTOR_KEY_SPECS, exact_key=None) -> IndexContract:
+    """An IndexContract for ``VectorIndex(name, key_spec, VECTOR_DIM, metric, backend, **params)``."""
+    from proto_db.indexing.vector import VectorIndex
+
+    def factory(index_name, key_spec):
+        return VectorIndex(index_name, key_spec, VECTOR_DIM, metric=metric, backend=backend, **params)
+
+    return IndexContract(name=name, index_factory=factory, element_strategy=element_strategy,
+                         term_strategy=vector_term_strategy(metric), key_specs=key_specs,
+                         collection_key_spec=VALUE_VECTOR_SPEC, oracle=vector_oracle(metric), exact_key=exact_key)
+
+
+def _register_vector() -> None:
+    # The hnsw backend is checked in a child process (tests/unit/hnsw_checks.py): importing hnswlib
+    # would re-enable the GIL in this process.
+    for metric in ("cosine", "l2", "ip"):
+        register(vector_contract(f"VectorIndex-exact-{metric}", metric, "exact", {}))
+        register(vector_contract(f"VectorIndex-ivf_flat-{metric}", metric, "ivf_flat", {"nlist": 3, "nprobe": 3}))
+    register(vector_contract("VectorIndex-exact-python-l2", "l2", "exact", {"numpy": False}))
+    register(vector_contract("VectorIndex-exact-values", "cosine", "exact", {}, element_strategy=value_strategy,
+                             key_specs=(VALUE_VECTOR_SPEC,), exact_key=exact_value_key))
+
+
+_register_vector()

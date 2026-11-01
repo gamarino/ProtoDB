@@ -139,6 +139,7 @@ BUILTIN_ATOM_MODULES: dict[str, str] = {
     "proto_db.indexing.keyed.KeyGroupIndex": "proto_db.indexing.keyed",
     "proto_db.indexing.EqualityIndex": "proto_db.indexing.equality",
     "proto_db.indexing.RangeIndex": "proto_db.indexing.range",
+    "proto_db.indexing.VectorIndex": "proto_db.indexing.vector",
     "proto_db.transactions.SpaceRoot": "proto_db.transactions",
     "proto_db.transactions.DatabaseRoot": "proto_db.transactions",
 }

@@ -16,6 +16,14 @@ Invariants
   ``VectorSearch`` over an index that supports them, never by a filter.  A
   ``near[]`` term no index supports, or one under a negation, raises
   ``ProtoNotSupportedError`` (no silent fallback).
+* ``near(k) AND P`` (one bare ``near[]`` term with ``k`` and other conjuncts)
+  means the k nearest among the elements satisfying P (ruling R27): P is the
+  residual predicate of the ``VectorSearch`` (``where`` in ``explain()``),
+  never a post-filter, and an index that cannot restrict its search
+  (``supports_filtered``) raises ``ProtoNotSupportedError``.  A threshold-only
+  ``near[]`` term keeps the post-filter (both readings are equal), and several
+  ``near[]`` conjuncts or a ``near[]`` term inside a disjunction keep the set
+  semantics below (Intersect/Union of the searches over the whole collection).
 * Planning is a pure function of its arguments: collections are immutable
   versions and nothing is cached between calls.
 
@@ -40,9 +48,11 @@ whose ``supports(term)`` accepts it (a ``VectorSearch`` for ``near[]``), or,
 for a disjunction, the ``Union`` of index-only plans of every branch.
 Conjuncts that cannot be residual (they hold a ``near[]`` term) are always
 answered by their access paths, combined by ``Intersect`` when there are
-several.  An ``Intersect`` of an extra index plan is never a candidate:
-under the D36 model ``Intersect(a, b)`` costs ``cost(a) + rows(a) + cost(b) +
-rows(b)``, never less than ``Filter(a, b)`` at ``cost(a) + rows(a)``.
+several (a single ``near[]`` term with ``k`` takes the other conjuncts as its
+residual predicate instead, see the invariants).  An ``Intersect`` of an extra
+index plan is never a candidate: under the D36 model ``Intersect(a, b)`` costs
+``cost(a) + rows(a) + cost(b) + rows(b)``, never less than ``Filter(a, b)`` at
+``cost(a) + rows(a)``.
 
 A disjunction is planned as a ``Union`` only if every branch has an index-only
 plan (each branch is a conjunction planned recursively on the base
@@ -118,6 +128,11 @@ def _has_near(expr: Expression) -> bool:
     return any(t.op == NEAR for t in iter_terms(expr))
 
 
+def _is_knn(conjunct: Expression) -> bool:
+    """True for a bare ``near[]`` term with ``k`` (its answer depends on which elements compete)."""
+    return isinstance(conjunct, Term) and conjunct.op == NEAR and conjunct.value.k is not None
+
+
 def _conjuncts(expr: Expression) -> list:
     """The conjuncts of ``expr`` without duplicates (And is idempotent), in order."""
     operands = expr.operands if isinstance(expr, And) else (expr,)
@@ -185,10 +200,12 @@ class _Planner:
                     f"No index supports the 'near[]' term in {conjuncts[i]!r}, and a 'near[]' term cannot be "
                     f"evaluated by a filter; add a vector index on its path")
         if forced:
+            rest = [c for i, c in enumerate(conjuncts) if i not in forced]
+            if len(forced) == 1 and rest and _is_knn(conjuncts[forced[0]]):
+                return self.filtered_knn(conjuncts[forced[0]], rest)
             parts = [access[i] for i in forced]
             base = parts[0] if len(parts) == 1 else _Candidate(
                 Intersect(*(p.plan for p in parts)), _merge_names(parts), any(p.scans for p in parts))
-            rest = [c for i, c in enumerate(conjuncts) if i not in forced]
             return self.with_residual(base, rest)
         candidates = []
         if not require_index:
@@ -197,6 +214,22 @@ class _Planner:
             if option is not None:
                 candidates.append(self.with_residual(option, conjuncts[:i] + conjuncts[i + 1:]))
         return _best(candidates)
+
+    def filtered_knn(self, term: Term, rest: list) -> _Candidate:
+        """``near(k) AND rest``: the k nearest among the elements satisfying ``rest`` (ruling R27).
+
+        The other conjuncts go into the vector plan as its residual predicate,
+        never into a post-filter (which would return fewer than k elements).
+        ``ProtoNotSupportedError`` when no index supporting the term can restrict it.
+        """
+        where = _conjunction(rest)
+        options = [_Candidate(VectorSearch(index, term, where=where), (name,))
+                   for name, index in self.indexes if index.supports(term) and index.supports_filtered(term)]
+        if not options:
+            raise ProtoNotSupportedError(
+                f"'near[]' with k combined with other conjuncts means the k nearest among the elements "
+                f"satisfying them, but no index supporting {term!r} can restrict its search to a predicate")
+        return _best(options)
 
     def access(self, conjunct: Expression):
         """The cheapest access path answering ``conjunct`` exactly without a full scan, else None."""

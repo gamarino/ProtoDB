@@ -430,7 +430,7 @@ class NearScanIndex(ScanIndex):
 
     def estimate(self, term):
         self._check_supported(term)
-        return Estimate(rows=term.value.k, cost=self.content.total_count)
+        return Estimate(rows=term.value.k or 0, cost=self.content.total_count)
 
     def plan(self, term):
         self._check_supported(term)
@@ -438,6 +438,28 @@ class NearScanIndex(ScanIndex):
 
         def produce():
             ranked = sorted(content.items(), key=lambda item: math.dist(spec.extract(item[0]), q))
+            for element, n in ranked[:k]:
+                for _ in range(n):
+                    yield element
+
+        return IndexPlan(self, term, produce, kind="VectorKnn")
+
+
+class FilteredNearScanIndex(NearScanIndex):
+    """NearScanIndex that can restrict its kNN to a residual predicate (ruling R27)."""
+
+    __type_name__ = "tests.unit.test_planner.FilteredNearScanIndex"
+
+    def supports_filtered(self, term):
+        return self.supports(term)
+
+    def filtered_plan(self, term, where):
+        self._check_supported(term)
+        content, spec, q, k = self.content, self.key_spec, term.value.vector, term.value.k
+
+        def produce():
+            eligible = [item for item in content.items() if evaluate(where, item[0])]
+            ranked = sorted(eligible, key=lambda item: math.dist(spec.extract(item[0]), q))
             for element, n in ranked[:k]:
                 for _ in range(n):
                     yield element
@@ -468,10 +490,18 @@ def test_near_with_index_uses_vector_search_never_a_filter():
     plan = plan_query(coll, near())
     assert isinstance(plan, VectorSearch)
     assert sorted(e.id for e in plan.execute()) == [3, 4, 5]
-    plan = plan_query(coll, And(Term("z", EQ, 1), near()))
+    # near(k) AND P is the k nearest among the elements satisfying P (R27): an index that cannot restrict its
+    # search refuses, rather than post-filtering to fewer than k elements.
+    with pytest.raises(ProtoNotSupportedError, match="restrict"):
+        plan_query(coll, And(Term("z", EQ, 1), near()))
+    filtered = List.from_iterable(VECTORS).add_index(FilteredNearScanIndex("vec", KeySpec.path("v")))
+    plan = plan_query(filtered, And(Term("z", EQ, 1), near()))
     info = plan.explain()
-    assert node_names(info)[:2] == ["Filter", "VectorSearch"] and info["predicate"] == Term("z", EQ, 1).describe()
-    assert sorted(e.id for e in plan.execute()) == [4]
+    assert node_names(info) == ["VectorSearch", "VectorKnn"] and info["where"] == Term("z", EQ, 1).describe()
+    assert sorted(e.id for e in plan.execute()) == [1, 4, 7]
+    # threshold-only near[] keeps the exact post-filter
+    plan = plan_query(coll, And(Term("z", EQ, 1), Term("v", NEAR, NearQuery((4.1, 0.0), threshold=1.0))))
+    assert node_names(plan.explain())[:2] == ["Filter", "VectorSearch"]
     plan = plan_query(coll, And(near(k=5), near(k=3, at=6.0)))  # both forced: Intersect of the two searches
     assert plan.explain()["plan"] == "Intersect" and sorted(e.id for e in plan.execute()) == [5, 6]
 
