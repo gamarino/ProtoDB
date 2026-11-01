@@ -37,8 +37,8 @@ from ..core.atom import PersistenceContext
 from ..errors import ProtoValidationError
 from ..values import canonical, order_key
 from . import avl
-from .base import ConcurrentOptimized, IndexedCollection
-from .sets import CountedSet, counter_net_effect
+from .base import ConcurrentOptimized, IndexedCollection, same_value
+from .sets import CountedSet, counter_net_effect, counter_transform
 
 __all__ = ["Dictionary", "RepeatedKeysDictionary"]
 
@@ -141,6 +141,11 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
             return self._with(_op_log=log)
         return self._with(root=root, count=self.count - 1, indexes=self._after_remove(old), _op_log=log)
 
+    def _same_content(self, other) -> bool:
+        """Equal ``(key, value)`` pairs in key order (keys by ``order_key``, values by ``same_value``)."""
+        return all(order_key(k1) == order_key(k2) and same_value(v1, v2)
+                   for (k1, v1), (k2, v2) in zip(self.items(), other.items()))
+
     def _replay_op(self, target: "Dictionary", op: tuple) -> "Dictionary":
         if op[0] == _SET:
             return target.set_at(op[1], op[2])
@@ -157,6 +162,7 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
 _ADD = "add"
 _REMOVE_RECORD = "remove_record"
 _REMOVE_KEY = "remove_key"
+_TRANSFORM_RECORD = "transform_record"
 _NET = "net"
 
 
@@ -231,22 +237,48 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
 
     # -- mutators -----------------------------------------------------------------------
 
+    def _record_step(self, key, record, removes: int, adds: int, op: tuple) -> "RepeatedKeysDictionary":
+        """Apply the counter transform ``(removes, adds)`` to ``record`` under ``key`` and log ``op``.
+
+        ``key`` and ``record`` are canonical; both are validated (orderable)
+        before anything is logged.  Fires ``on_add(record)`` when the record
+        appears under the key and ``on_remove(stored record)`` when it
+        disappears; the key goes with its last record.
+        """
+        order_key(record)
+        log = self._logged(op)
+        records = avl.key_get(self.root, key)
+        if records is None:
+            if not adds:
+                return self._with(_op_log=log)
+            records = CountedSet(context=self.context)
+        found = records._find(record)
+        n = found[1][found[2]][1] if found[2] >= 0 else 0
+        final = counter_transform(n, removes, adds)
+        if final == n:
+            return self._with(_op_log=log)
+        updated = records._retarget_at(found, record, final, ())
+        if updated.count:
+            root = avl.key_put(self.root, key, updated)[0]
+        else:
+            root = avl.key_remove(self.root, key)[0]
+        total = self.total_count + final - n
+        if n and final:
+            return self._with(root=root, total_count=total, _op_log=log)
+        if final:
+            return self._with(root=root, count=self.count + 1, total_count=total,
+                              indexes=self._after_add(record), _op_log=log)
+        stored = found[1][found[2]][0]
+        return self._with(root=root, count=self.count - 1, total_count=total,
+                          indexes=self._after_remove(stored), _op_log=log)
+
     def set_at(self, key, record) -> "RepeatedKeysDictionary":
         """Return a multimap with one more occurrence of ``record`` under ``key``.
 
         Fires ``on_add(record)`` when the record is new under that key.
         """
         key, record = _canonical_key(key), canonical(record)
-        records = avl.key_get(self.root, key)
-        if records is None:
-            records = CountedSet(context=self.context)
-        known = records.has(record)
-        root = avl.key_put(self.root, key, records._adjusted(record, True, ()))[0]
-        log = self._logged((_ADD, key, record))
-        if known:
-            return self._with(root=root, total_count=self.total_count + 1, _op_log=log)
-        return self._with(root=root, count=self.count + 1, total_count=self.total_count + 1,
-                          indexes=self._after_add(record), _op_log=log)
+        return self._record_step(key, record, 0, 1, (_ADD, key, record))
 
     def remove_record(self, key, record) -> "RepeatedKeysDictionary":
         """Return a multimap with one occurrence of ``record`` fewer under ``key``.
@@ -254,26 +286,15 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
         The key's other records are kept; the key goes when its last record
         goes.  Fires ``on_remove`` when the last occurrence of the record under
         that key goes.  An absent key or record yields a new version with the
-        same content.
+        same content; the record must be orderable even then.
         """
         key, record = _canonical_key(key), canonical(record)
-        log = self._logged((_REMOVE_RECORD, key, record))
-        records = avl.key_get(self.root, key)
-        if records is None:
-            return self._with(_op_log=log)
-        _, bucket, position = records._find(record)
-        if position < 0:
-            return self._with(_op_log=log)
-        stored, n = bucket[position]
-        remaining = records._adjusted(record, False, ())
-        if remaining.count:
-            root = avl.key_put(self.root, key, remaining)[0]
-        else:
-            root = avl.key_remove(self.root, key)[0]
-        if n > 1:
-            return self._with(root=root, total_count=self.total_count - 1, _op_log=log)
-        return self._with(root=root, count=self.count - 1, total_count=self.total_count - 1,
-                          indexes=self._after_remove(stored), _op_log=log)
+        return self._record_step(key, record, 1, 0, (_REMOVE_RECORD, key, record))
+
+    def _transform_record(self, key, record, removes: int, adds: int) -> "RepeatedKeysDictionary":
+        """Apply a composed counter transform to one record as one adjustment (concurrent merge, D26)."""
+        key, record = _canonical_key(key), canonical(record)
+        return self._record_step(key, record, removes, adds, (_TRANSFORM_RECORD, key, record, removes, adds))
 
     def remove_at(self, key) -> "RepeatedKeysDictionary":
         """Return a multimap without ``key`` and all its records (one remove event per distinct record).
@@ -285,11 +306,15 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
         root, removed, records = avl.key_remove(self.root, key)
         if not removed:
             return self._with(_op_log=log)
-        indexes = self.indexes
-        for record in records.elements():
-            indexes = indexes.on_remove(record)
         return self._with(root=root, count=self.count - records.count,
-                          total_count=self.total_count - records.total_count, indexes=indexes, _op_log=log)
+                          total_count=self.total_count - records.total_count,
+                          indexes=self._after_removes(records.elements()), _op_log=log)
+
+    def _same_content(self, other) -> bool:
+        """Equal keys in key order, each with an equal CountedSet of records."""
+        return self.total_count == other.total_count and all(
+            order_key(k1) == order_key(k2) and r1.content_equals(r2)
+            for (k1, r1), (k2, r2) in zip(self.items(), other.items()))
 
     # Names used by spec section 8.2.
     add = set_at
@@ -302,7 +327,7 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
         """Per key, in order of last occurrence: ``("net", key, cleared, transforms)`` (D26).
 
         ``cleared`` is True when the log removed the key; ``transforms`` are the
-        counter transforms (:func:`~proto_db.collections.sets.counter_net_effect`)
+        composed counter transforms (:func:`~proto_db.collections.sets.counter_net_effect`)
         of the record ops after the last ``remove_key``.
         """
         per_key: dict = {}
@@ -315,6 +340,8 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
                 entry[2].append(("add", op[2]))
             elif op[0] == _REMOVE_RECORD:
                 entry[2].append(("remove", op[2]))
+            elif op[0] == _TRANSFORM_RECORD:
+                entry[2].append(("transform", op[2], op[3], op[4]))
             else:
                 raise ProtoValidationError(f"Unknown RepeatedKeysDictionary op {op!r}")
             per_key[okey] = entry
@@ -332,10 +359,7 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
         if cleared:
             target = target.remove_at(key)
         for record, removes, adds in transforms:
-            for _ in range(removes):
-                target = target.remove_record(key, record)
-            for _ in range(adds):
-                target = target.set_at(key, record)
+            target = target._transform_record(key, record, removes, adds)
         return target
 
     def __repr__(self):

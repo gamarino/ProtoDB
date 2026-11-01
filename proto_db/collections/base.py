@@ -34,10 +34,10 @@ from collections.abc import Callable, Iterable, Iterator
 from ..core.atom import Atom, PersistenceContext
 from ..errors import ProtoConflictError, ProtoUserError, ProtoValidationError
 from ..query.plans import CollectionScanPlan
-from ..values import order_key, values_equal
+from ..values import is_atom, order_key, values_equal
 from . import avl
 
-__all__ = ["IndexSet", "IndexedCollection", "ConcurrentOptimized", "net_effect"]
+__all__ = ["IndexSet", "IndexedCollection", "ConcurrentOptimized", "net_effect", "same_value"]
 
 #: Op-log kinds reserved for index-definition changes; collection ops must not start with "@".
 _INDEX_ADD = "@index_add"
@@ -66,6 +66,26 @@ class _Immutable:
             object.__delattr__(self, name)
             return
         raise ProtoUserError(f"{type(self).__name__} is immutable; cannot delete {name!r}")
+
+
+def same_value(a, b) -> bool:
+    """Content equality of two stored values (D27).
+
+    :func:`values_equal` for orderable values; lists, dicts and tuples compare
+    recursively (a list never equals a tuple); NaN equals NaN, since a stored
+    NaN is the same content.  Atoms compare by identity (oid).
+    """
+    if isinstance(a, (list, dict, tuple)) or isinstance(b, (list, dict, tuple)):
+        if isinstance(a, list) and isinstance(b, list) or isinstance(a, tuple) and isinstance(b, tuple):
+            return len(a) == len(b) and all(same_value(x, y) for x, y in zip(a, b))
+        if isinstance(a, dict) and isinstance(b, dict):
+            return len(a) == len(b) and all(k in b and same_value(v, b[k]) for k, v in a.items())
+        return False
+    a_nan = not is_atom(a) and a != a
+    b_nan = not is_atom(b) and b != b
+    if a_nan or b_nan:
+        return a_nan and b_nan
+    return values_equal(a, b)
 
 
 # -- IndexSet ------------------------------------------------------------------------------
@@ -207,6 +227,35 @@ class IndexedCollection(_Immutable, Atom):
         """
         return any(e is element or values_equal(e, element) for e in self.elements())
 
+    def content_equals(self, other) -> bool:
+        """True iff ``other`` is a collection of the same type holding the same content (ruling R12).
+
+        ``==`` stays identity by oid (D10); this compares content.  Indexes and
+        op logs are not content.  Values are compared with :func:`same_value`.
+        """
+        if type(other) is not type(self):
+            return False
+        if other is self:
+            return True
+        if self.count != other.count:
+            return False
+        return self._same_content(other)
+
+    def _same_content(self, other) -> bool:
+        """Content comparison with a collection of the same type and count (hook).
+
+        The default compares :meth:`elements` pairwise, in order; collections
+        whose iteration order is not determined by content override it.
+        """
+        sentinel = object()
+        mine, theirs = self.elements(), other.elements()
+        while True:
+            a, b = next(mine, sentinel), next(theirs, sentinel)
+            if a is sentinel or b is sentinel:
+                return a is b
+            if not same_value(a, b):
+                return False
+
     # -- indexes ------------------------------------------------------------------------
 
     def add_index(self, index) -> "IndexedCollection":
@@ -275,6 +324,13 @@ class IndexedCollection(_Immutable, Atom):
     def _after_remove(self, element) -> IndexSet:
         """The IndexSet after removing ``element`` from the content."""
         return self.indexes.on_remove(element)
+
+    def _after_removes(self, elements: Iterable) -> IndexSet:
+        """The IndexSet after removing each of ``elements`` from the content, in order."""
+        indexes = self.indexes
+        for element in elements:
+            indexes = indexes.on_remove(element)
+        return indexes
 
     def _after_replace(self, old, new) -> IndexSet:
         """The IndexSet after replacing element ``old`` by ``new``."""
@@ -364,7 +420,7 @@ class ConcurrentOptimized:
         return net_effect(element_ops, self._op_key)
 
     def _replay_op(self, target, op: tuple):
-        """Apply one net element op to ``target`` through its public mutators; return the new version."""
+        """Apply one net element op to ``target`` through mutators that maintain its indexes and log; return it."""
         raise NotImplementedError(f"{type(self).__name__} must implement _replay_op()")
 
     def rebase_onto(self, current):

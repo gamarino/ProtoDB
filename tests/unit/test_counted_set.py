@@ -49,12 +49,15 @@ def counts(coll):
 def literal(start: dict, ops) -> dict:
     """Independent model: apply counter ops one at a time, clamping at zero."""
     model = Counter(start)
-    for kind, e in ops:
-        k = order_key(e)
-        if kind == "add":
+    for op in ops:
+        k = order_key(op[1])
+        if op[0] == "add":
             model[k] += 1
-        elif model[k] > 0:
-            model[k] -= 1
+        elif op[0] == "remove":
+            if model[k] > 0:
+                model[k] -= 1
+        else:  # ("transform", e, removes, adds): logged by a replayed merge
+            model[k] = max(model[k] - op[2], 0) + op[3]
     return dict(+model)
 
 
@@ -229,3 +232,36 @@ class TestFreeThreading:
         for t in threads:
             t.join()
         assert errors == []
+
+
+class TestReviewFixes:
+    def test_replay_is_one_step_per_element(self):
+        """The composed transform is applied as one adjustment: no remove/add pair when the element survives."""
+        snapshot = reload(make(["a", "b", "b"], indexes=("i",)))
+        theirs = snapshot.add("c")
+        mine = snapshot.remove("a").add("a").remove("b").add("b").add("b")
+        merged = mine.rebase_onto(theirs)
+        assert merged.get_index("i").events_since(theirs.get_index("i")) == ()
+        assert merged.count_of("b") == 3 and merged.count_of("a") == 1
+        assert len(merged._op_log) == len(theirs._op_log) + 2  # one logged step per element
+
+    def test_random_replay_emits_no_events_for_survivors(self):
+        rng = random.Random(3)
+        for _ in range(150):
+            snapshot = make([rng.randrange(4) for _ in range(rng.randrange(6))], indexes=("i",))
+            snapshot = snapshot._with(_op_log=())
+            theirs, mine = snapshot, snapshot
+            for _ in range(rng.randrange(6)):
+                e = rng.randrange(4)
+                theirs = theirs.add(e) if rng.random() < 0.5 else theirs.remove(e)
+            for _ in range(rng.randrange(10)):
+                e = rng.randrange(4)
+                mine = mine.add(e) if rng.random() < 0.5 else mine.remove(e)
+            merged = mine.rebase_onto(theirs)
+            assert counts(merged) == literal(counts(theirs), mine._op_log)
+            events = merged.get_index("i").events_since(theirs.get_index("i"))
+            assert len(events) == len({order_key(ev[1]) for ev in events})  # at most one event per element
+            for kind, e in events:
+                assert (kind == "add") == (not theirs.has(e) and merged.has(e))
+            # A merged version can itself be rebased (its log holds transform ops).
+            assert counts(merged.rebase_onto(theirs)) == literal(counts(theirs), merged._op_log)

@@ -28,7 +28,7 @@ from ..core.atom import PersistenceContext
 from ..errors import ProtoValidationError
 from ..values import canonical, hash_key, order_key
 from . import avl
-from .base import ConcurrentOptimized, IndexedCollection
+from .base import ConcurrentOptimized, IndexedCollection, same_value
 from .dictionaries import sorted_unique_pairs
 
 __all__ = ["HashDictionary"]
@@ -146,6 +146,14 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
         else:
             root, _, _ = avl.key_remove(self.root, h)
         return self._with(root=root, count=self.count - 1, indexes=self._after_remove(old), _op_log=log)
+
+    def _same_content(self, other) -> bool:
+        """Order-independent: every key maps to an equal value (``same_value``) in ``other``."""
+        for key, value in self.items():
+            _, bucket, position = other._find(key)
+            if position < 0 or not same_value(value, bucket[position][1]):
+                return False
+        return True
 
     def _replay_op(self, target: "HashDictionary", op: tuple) -> "HashDictionary":
         if op[0] == _SET:

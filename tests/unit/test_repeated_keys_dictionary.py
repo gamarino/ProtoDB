@@ -232,3 +232,23 @@ class TestFreeThreading:
         for t in threads:
             t.join()
         assert errors == []
+
+
+class TestReviewFixes:
+    def test_remove_record_validates_record_on_absent_key(self):
+        d = RepeatedKeysDictionary().set_at("k", 1)
+        for bad in ([1], {"a": 1}, float("nan")):
+            with pytest.raises(ProtoValidationError):
+                d.remove_record("zz", bad)
+            with pytest.raises(ProtoValidationError):
+                d.remove_record("k", bad)
+        assert d._op_log == (("add", "k", 1),)
+
+    def test_replay_does_not_churn_surviving_records(self):
+        """A record that survives the merge sees no remove/add pair (one step per record)."""
+        snapshot = reload(make([("k", "a"), ("k", "b")], indexes=("i",)))
+        theirs = snapshot.set_at("j", 1)
+        mine = snapshot.remove_record("k", "a").set_at("k", "a").remove_record("k", "b").remove_record("k", "b")
+        merged = mine.rebase_onto(theirs)
+        assert merged.get_index("i").events_since(theirs.get_index("i")) == (("remove", "b"),)
+        assert merged.get_at("k").count_of("a") == 1

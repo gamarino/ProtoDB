@@ -250,3 +250,10 @@ class TestFreeThreading:
         for t in threads:
             t.join()
         assert errors == []
+
+
+class TestReviewFixes:
+    def test_algebra_returns_new_version_when_content_unchanged(self):
+        a = make([1, 2])
+        for result in (a.union([]), a.union([1]), a.intersection([1, 2]), a.difference([]), a.difference([9])):
+            assert result is not a and result.root is a.root and result.indexes is a.indexes
