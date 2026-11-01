@@ -17,7 +17,7 @@ import pytest
 
 from proto_db.core.atom import AtomPointer
 from proto_db.errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError,
-                             ProtoNotAuthorizedError, ProtoNotSupportedError,
+                             ProtoNotAuthorizedError, ProtoNotSupportedError, ProtoOutcomeUnknownError,
                              ProtoUnexpectedError, ProtoValidationError)
 from proto_db.storage import cloud as cloud_mod
 from proto_db.storage.base import SharedStorage
@@ -232,8 +232,9 @@ def test_superseded_beyond_history_is_reported_unknown():
     other.flush()
     store.inject("put_if_match", "unknown_after")
     _supersede_on_read_back(store, mine, other, others)
-    with pytest.raises(ProtoUnexpectedError, match="unknown"):
+    with pytest.raises(ProtoOutcomeUnknownError, match="unknown"):
         mine.publish_root(p2, r1.epoch)
+    assert mine.publish_outcome(p2, 2) is None  # the history no longer reaches epoch 2
 
 
 def test_not_applied_and_superseded_is_a_conflict():
@@ -262,11 +263,129 @@ def test_unknown_outcome_is_resolvable_by_read_root():
             store.inject("get", "transient", match=lambda k: k == s.root_key)
 
     store.before_write = fail_read_back
-    with pytest.raises(ProtoUnexpectedError, match="unknown"):
+    with pytest.raises(ProtoOutcomeUnknownError, match="unknown"):
         s.publish_root(p2, r1.epoch)
     store.before_write = None
     root = s.read_root()
     assert (root.pointer, root.epoch) == (p2, 2)
+    assert s.publish_outcome(p2, 2) is True
+
+
+def test_publish_outcome_verdicts():
+    store = FakeObjectStore()
+    a, b = make(store, root_history=2), make(store, root_history=2)
+    p1 = a.push_atom(atom_payload(1))
+    assert a.publish_outcome(p1, 1) is None  # nothing published yet: an in-flight write could land
+    a.publish_root(p1, 0)
+    assert a.publish_outcome(p1, 1) is True
+    p2 = b.push_atom(atom_payload(2))
+    assert b.publish_outcome(p2, 1) is False  # epoch 1 belongs to another root
+    assert b.publish_outcome(p2, 2) is None   # epoch 2 not reached yet
+    b.publish_root(p2, 1)
+    later = [b.push_atom(atom_payload(10 + i)) for i in range(2)]
+    for epoch, p in enumerate(later, start=2):
+        b.publish_root(p, epoch)
+    assert a.publish_outcome(p2, 2) is True    # superseded, still in the history
+    assert a.publish_outcome(p1, 1) is None    # beyond root_history=2
+    with pytest.raises(ProtoValidationError):
+        a.publish_outcome("ptr", 1)
+
+
+def test_cloud_storage_declares_an_in_process_root_lock():
+    assert CloudStorage.root_lock_is_global is False
+
+
+@pytest.mark.parametrize("history", [2, 64], ids=["beyond-history", "within-history"])
+def test_database_run_never_double_applies_after_unknown_outcome(history):
+    """Regression (review round 1): unknown outcome + 3 commits from another instance before read-back.
+
+    The commit is applied exactly once: either run returns (resolved from the history) or
+    the caller gets ProtoOutcomeUnknownError; Database.run never retries it.
+    """
+    store = FakeObjectStore()
+    a = ObjectSpace(make(store, root_history=history))
+    b = ObjectSpace(make(store, root_history=history))
+    dba = a.new_database("db")
+    dba.run(lambda tr: tr.set_root_object("n", 0))
+    dbb = b.open_database("db")
+
+    def inc(tr):
+        tr.set_root_object("n", tr.get_root_object("n") + 1)
+
+    original_get = store.get
+    state = {"pm": store.calls["put_if_match"]}
+
+    def get(key):
+        if key == a.storage.root_key and "done" not in state and store.calls["put_if_match"] > state["pm"]:
+            state["done"] = True
+            for _ in range(3):
+                dbb.run(inc)
+        return original_get(key)
+
+    store.get = get
+    store.inject("put_if_match", "unknown_after", match=lambda k: k == a.storage.root_key)
+    calls = []
+
+    def inc_a(tr):
+        calls.append(1)
+        inc(tr)
+
+    if history == 2:
+        with pytest.raises(ProtoOutcomeUnknownError):
+            dba.run(inc_a)
+    else:
+        dba.run(inc_a)
+    assert len(calls) == 1
+    store.get = original_get
+    reader = ObjectSpace(make(store)).open_database("db")
+    with reader.new_transaction() as tr:
+        assert tr.get_root_object("n") == 4  # 0 + ours (once) + 3 from the other instance
+
+
+def test_exhausted_retries_after_a_possible_landing_are_outcome_unknown():
+    store = FakeObjectStore()
+    s = make(store, retries=1)
+    r1 = s.publish_root(s.push_atom(atom_payload(1)), 0)
+    store.inject("put_if_match", "unknown_before", times=2)
+    with pytest.raises(ProtoOutcomeUnknownError):
+        s.publish_root(s.push_atom(atom_payload(2)), r1.epoch)
+    store.inject("put_if_match", "transient", times=2)
+    with pytest.raises(ProtoUnexpectedError) as info:
+        s.publish_root(s.push_atom(atom_payload(3)), r1.epoch)
+    assert not isinstance(info.value, ProtoOutcomeUnknownError)  # certainly not applied
+
+
+def test_lost_races_back_off(monkeypatch):
+    store = FakeObjectStore()
+    s = make(store)
+    s.publish_root(s.push_atom(atom_payload(1)), 0)
+    sleeps = []
+    monkeypatch.setattr(s, "_sleep", lambda attempt: sleeps.append(attempt))
+    store.inject("put_if_match", "precondition", times=3)
+    s.publish_root(s.push_atom(atom_payload(2)), None)
+    assert len(sleeps) == 3
+
+
+def test_publish_does_not_download_the_segment_it_just_uploaded():
+    store = FakeObjectStore()
+    s = make(store, cache_bytes=0)
+    p = s.push_atom(atom_payload(1))
+    original_get = store.get
+    fetched = []
+
+    def get(key):
+        fetched.append(key)
+        return original_get(key)
+
+    store.get = get
+    s.publish_root(p, 0)
+    s.flush()
+    p2 = s.push_atom(atom_payload(2))
+    s.flush()  # p2's segment uploaded before the publish
+    s.publish_root(p2, 1)
+    assert all(key == s.root_key for key in fetched), fetched
+    with pytest.raises(ProtoCorruptionError):
+        s.publish_root(AtomPointer(p2.segment, 10 ** 6), 2)  # offset beyond the uploaded segment
 
 
 def test_transaction_commit_survives_applied_then_timed_out_publish():
@@ -506,6 +625,18 @@ def fake_botocore(monkeypatch):
     class NoCredentialsError(BotoCoreError):
         pass
 
+    class PartialCredentialsError(BotoCoreError):
+        pass
+
+    class CredentialRetrievalError(BotoCoreError):
+        pass
+
+    class IncompleteReadError(BotoCoreError):
+        pass
+
+    class ResponseStreamingError(HTTPClientError):
+        pass
+
     class ClientError(Exception):
         def __init__(self, response, operation):
             super().__init__(f"{operation}: {response}")
@@ -525,7 +656,10 @@ def fake_botocore(monkeypatch):
     exc = _install(monkeypatch, "botocore.exceptions", BotoCoreError=BotoCoreError,
                    ConnectionError=ConnectionError, EndpointConnectionError=EndpointConnectionError,
                    HTTPClientError=HTTPClientError, ReadTimeoutError=ReadTimeoutError,
-                   NoCredentialsError=NoCredentialsError, ClientError=ClientError)
+                   NoCredentialsError=NoCredentialsError, ClientError=ClientError,
+                   PartialCredentialsError=PartialCredentialsError,
+                   CredentialRetrievalError=CredentialRetrievalError,
+                   IncompleteReadError=IncompleteReadError, ResponseStreamingError=ResponseStreamingError)
     _install(monkeypatch, "botocore.config", Config=Config)
     _install(monkeypatch, "boto3", client=client)
     return exc, created
@@ -543,6 +677,7 @@ class FakeS3Client:
         self.objects = {}
         self.calls = []
         self.fail = None
+        self.body_error = None
         self._n = 0
         self._ClientError = client_error_cls
 
@@ -578,7 +713,13 @@ class FakeS3Client:
         current = self.objects.get(kw["Key"])
         if current is None:
             raise self._error("NoSuchKey", 404)
-        body = types.SimpleNamespace(read=lambda: current[0])
+        def read():
+            if self.body_error is not None:
+                error, self.body_error = self.body_error, None
+                raise error
+            return current[0]
+
+        body = types.SimpleNamespace(read=read)
         return {"Body": body, "ETag": current[1]}
 
     def delete_object(self, **kw):
@@ -638,6 +779,8 @@ def test_s3_adapter_round_trip_and_conditions(monkeypatch):
     (lambda exc: exc.EndpointConnectionError("no route"), TransientObjectStoreError),
     (lambda exc: exc.ReadTimeoutError("read timeout"), OutcomeUnknownError),
     (lambda exc: exc.NoCredentialsError("no credentials"), ProtoNotAuthorizedError),
+    (lambda exc: exc.PartialCredentialsError("partial"), ProtoNotAuthorizedError),
+    (lambda exc: exc.CredentialRetrievalError("retrieval"), ProtoNotAuthorizedError),
 ])
 def test_s3_adapter_error_mapping(monkeypatch, make_error, expected):
     exc, _ = fake_botocore(monkeypatch)
@@ -648,6 +791,27 @@ def test_s3_adapter_error_mapping(monkeypatch, make_error, expected):
         s3.put_if_absent("k", b"x")
     assert info.value.__cause__ is error
     assert isinstance(info.value, ProtoDBError)
+
+
+@pytest.mark.parametrize("name", ["IncompleteReadError", "ResponseStreamingError"])
+def test_s3_get_body_read_failure_is_transient(monkeypatch, name):
+    exc, _ = fake_botocore(monkeypatch)
+    s3 = S3ObjectStore("bkt")
+    s3.put_if_absent("k", b"x")
+    error = getattr(exc, name)("body cut")
+    s3.client.body_error = error
+    with pytest.raises(TransientObjectStoreError) as info:
+        s3.get("k")
+    assert info.value.__cause__ is error
+    assert s3.get("k")[0] == b"x"
+
+
+def test_s3_streaming_error_on_a_write_stays_unknown(monkeypatch):
+    exc, _ = fake_botocore(monkeypatch)
+    s3 = S3ObjectStore("bkt")
+    s3.client.fail = exc.ResponseStreamingError("cut")
+    with pytest.raises(OutcomeUnknownError):
+        s3.put_if_absent("k", b"x")
 
 
 def test_s3_adapter_accepts_a_client(monkeypatch):

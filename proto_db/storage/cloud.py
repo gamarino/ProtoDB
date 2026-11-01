@@ -30,14 +30,17 @@ timeout or a failed precondition on the root, ``publish_root`` reads the root ba
 our root is the current one or in ``recent`` -> success (the write landed; it may even
 have been superseded already); the etag is unchanged -> not applied, retried; the
 epoch we tried to take belongs to another root -> ``ProtoConflictError``; the history no
-longer reaches that epoch, or the read-back fails -> ``ProtoUnexpectedError`` reporting
-an unknown outcome, which a later ``read_root`` resolves (transactions.py does exactly
-that, step 6 of D34).  A request still in flight can only land while the etag it was
+longer reaches that epoch, or the read-back fails -> ``ProtoOutcomeUnknownError`` (never
+a conflict, so ``Database.run`` does not retry it).  ``publish_outcome(ptr, epoch)``
+gives the same verdict later from the root and its history; transactions.py consults it
+(step 6 of D34).  ``root_lock_is_global`` is False: an epoch mismatch alone proves
+nothing, because other processes publish without taking this instance's lock.  A request still in flight can only land while the etag it was
 conditioned on is current, so a conclusion drawn from a changed etag is final.
 
 Locking: an object store has no cross-process lock.  ``root_lock`` is an in-process
-lock (exclusion among the threads of this instance only); correctness across instances
-and processes rests solely on the compare-and-swap of ``publish_root``.
+lock (exclusion among the threads of this instance only).  Without a cluster
+coordinator the compare-and-swap of ``publish_root`` is the arbiter across instances and
+processes; with a coordinator (D44) it is the fencing safety net.
 
 Retries: ``TransientObjectStoreError`` (not applied) and ``OutcomeUnknownError`` are
 retried up to ``retries`` times with exponential backoff and jitter; reads and segment
@@ -65,7 +68,8 @@ import msgpack
 
 from ..core.atom import AtomPointer
 from ..errors import (ProtoConflictError, ProtoCorruptionError, ProtoLockingError,
-                      ProtoNotAuthorizedError, ProtoNotSupportedError, ProtoTimeoutError,
+                      ProtoNotAuthorizedError, ProtoNotSupportedError, ProtoOutcomeUnknownError,
+                      ProtoTimeoutError,
                       ProtoUnexpectedError, ProtoValidationError)
 from .base import SharedStorage
 from .cache import BoundedCache
@@ -199,6 +203,9 @@ class CloudStorage(SharedStorage):
             (``ProtoCorruptionError`` otherwise).
     """
 
+    #: The root lock is in-process only: other instances and processes are arbitrated by CAS.
+    root_lock_is_global = False
+
     def __init__(self, store: ObjectStore, prefix: str = "", *, segment_max_bytes: int = 8 * MIB,
                  write_buffer_bytes: int = 32 * MIB, cache_bytes: int = 64 * MIB,
                  lock_timeout: float = 30.0, retries: int = 5, backoff: tuple = (0.05, 2.0),
@@ -246,6 +253,7 @@ class CloudStorage(SharedStorage):
         self._local = {}          # UUID -> _LocalSegment not yet uploaded (open or sealed)
         self._sealed = []         # sealed segments in upload order
         self._sealed_bytes = 0
+        self._uploaded = {}       # UUID -> size of segments this instance uploaded
         self._closed = False
 
         if verify_root:
@@ -324,14 +332,20 @@ class CloudStorage(SharedStorage):
         return AtomPointer(seg.uuid, offset)
 
     def push_atom(self, payload: dict) -> AtomPointer:
-        """See :meth:`SharedStorage.push_atom`."""
+        """See :meth:`SharedStorage.push_atom`.
+
+        When sealed segments exceed ``write_buffer_bytes`` this push uploads them and may
+        raise ``ProtoUnexpectedError`` for that upload; the record was buffered but its
+        pointer is lost to the caller, so its bytes are unreferenced garbage.  The pending
+        segments stay buffered and the next flush retries them.
+        """
         if not isinstance(payload, dict):
             raise ProtoValidationError("Atom payload must be a dict")
         self._check_open()
         return self._append(RecordKind.ATOM, msgpack.packb(payload, use_bin_type=True))
 
     def push_blob(self, data: bytes) -> AtomPointer:
-        """See :meth:`SharedStorage.push_blob`."""
+        """See :meth:`SharedStorage.push_blob`; may raise for a spill upload as :meth:`push_atom`."""
         if not isinstance(data, (bytes, bytearray, memoryview)):
             raise ProtoValidationError("Blob data must be bytes")
         self._check_open()
@@ -375,6 +389,7 @@ class CloudStorage(SharedStorage):
                     self._sealed.remove(seg)
                     self._sealed_bytes -= len(seg.data)
                     self._local.pop(seg.uuid, None)
+                    self._uploaded[seg.uuid] = len(seg.data)
 
     def flush(self) -> None:
         """Seal the open segment and upload every pending segment.
@@ -457,51 +472,105 @@ class CloudStorage(SharedStorage):
         self._check_open()
         return self._read_root_object()[0]
 
+    @staticmethod
+    def _verdict(current: Optional[RootRecord], recent: list, segment: uuid.UUID, offset: int,
+                 epoch: int) -> Optional[bool]:
+        """True: ``(segment, offset)`` holds ``epoch`` in the root or its history; False: another
+        root holds it; None: the history does not reach ``epoch`` (or it is not taken yet)."""
+        entries = recent + ([(current.segment, current.offset, current.epoch)] if current else [])
+        if (segment, offset, epoch) in entries:
+            return True
+        if any(e == epoch for _, _, e in entries):
+            return False
+        return None
+
+    def publish_outcome(self, ptr: AtomPointer, epoch: int) -> Optional[bool]:
+        """See :meth:`SharedStorage.publish_outcome`; decided from the root and its ``recent`` history.
+
+        ``None`` when the history no longer reaches ``epoch``, or when the root has not
+        reached ``epoch`` yet (a write still in flight could land).
+        """
+        if not isinstance(ptr, AtomPointer) or type(epoch) is not int:
+            raise ProtoValidationError("publish_outcome expects an AtomPointer and an int epoch")
+        self._check_open()
+        current, _, recent = self._read_root_object()
+        return self._verdict(current, recent, ptr.segment, ptr.offset, epoch)
+
     def _resolve(self, mine: RootRecord, etag_before: Optional[str], error) -> str:
         """After an uncertain root write: ``"applied"``, ``"unchanged"`` or ``"taken"``.
 
-        Raises ``ProtoUnexpectedError`` (outcome unknown) if the root cannot be read or its
-        history no longer reaches the epoch we tried to take.
+        Raises ``ProtoOutcomeUnknownError`` if the root cannot be read or its history no
+        longer reaches the epoch we tried to take.
         """
         try:
             current, etag, recent = self._read_root_object()
         except ProtoUnexpectedError as e:
-            raise ProtoUnexpectedError(
+            raise ProtoOutcomeUnknownError(
                 f"The outcome of publishing the root is unknown ({error}) and reading it back "
-                f"failed ({e}); read_root resolves it") from error
+                f"failed ({e}); read the root to resolve it") from error
         if etag == etag_before:
             return "unchanged"
-        entries = recent + ([(current.segment, current.offset, current.epoch)] if current else [])
-        if (mine.segment, mine.offset, mine.epoch) in entries:
+        verdict = self._verdict(current, recent, mine.segment, mine.offset, mine.epoch)
+        if verdict is True:
             return "applied"
-        if any(epoch == mine.epoch for _, _, epoch in entries):
+        if verdict is False:
             return "taken"
-        raise ProtoUnexpectedError(
+        raise ProtoOutcomeUnknownError(
             f"The outcome of publishing the root is unknown ({error}): the root changed and its "
             f"history no longer reaches epoch {mine.epoch}") from error
+
+    def _check_publishable(self, ptr: AtomPointer) -> None:
+        """Check that ``ptr`` names a record, without downloading a segment this instance wrote."""
+        with self._state_lock:
+            self._check_open()
+            local = ptr.segment in self._local
+            uploaded_end = self._uploaded.get(ptr.segment)
+        if local:
+            self._fetch_record(ptr)  # served from the local buffer
+            return
+        if uploaded_end is not None:
+            if not SEGMENT_HEADER_SIZE <= ptr.offset < uploaded_end:
+                raise ProtoCorruptionError(f"No record at {ptr}")
+            data = self._cache.get(ptr.segment)
+            if data is not None:
+                read_record(data, ptr.offset)
+            return
+        self._fetch_record(ptr)  # a segment written by another instance
 
     def publish_root(self, ptr: AtomPointer, expected_epoch: Optional[int]) -> RootRecord:
         """See :meth:`SharedStorage.publish_root` and the module docstring.
 
-        Uploads every pending segment first and checks that ``ptr`` names a stored record,
-        then writes the root by compare-and-swap on the root object's etag.
+        Checks that ``ptr`` names a record, uploads every pending segment, then writes the
+        root by compare-and-swap on the root object's etag.  Raises ``ProtoConflictError``
+        when another root won, ``ProtoOutcomeUnknownError`` when the write may have been
+        applied and the read-back could not decide.
         """
         if not isinstance(ptr, AtomPointer):
             raise ProtoValidationError("Expected an AtomPointer")
         if expected_epoch is not None and (type(expected_epoch) is not int or expected_epoch < 0):
             raise ProtoValidationError("expected_epoch must be a non-negative int or None")
+        self._check_publishable(ptr)
         self.flush()
-        self._fetch_record(ptr)
         with self._state_lock:
             self._check_open()
             if ptr.segment in self._local:
                 raise ProtoUnexpectedError(f"Segment {ptr.segment.hex} is not uploaded; refusing to publish")
         failures = 0
         races = 0
+        uncertain = False   # an earlier attempt may still land: exhaustion is then an unknown outcome
         while True:
             current, etag, recent = self._read_root_object()
             epoch = current.epoch if current is not None else 0
             if expected_epoch is not None and expected_epoch != epoch:
+                if uncertain:
+                    # An earlier attempt of ours may be what moved the root.
+                    verdict = self._verdict(current, recent, ptr.segment, ptr.offset, expected_epoch + 1)
+                    if verdict is True:
+                        return RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, expected_epoch + 1)
+                    if verdict is None:
+                        raise ProtoOutcomeUnknownError(
+                            f"The root moved to epoch {epoch} after an attempt with an unknown outcome "
+                            f"and its history no longer reaches epoch {expected_epoch + 1}")
                 raise ProtoConflictError(f"Root epoch is {epoch}, expected {expected_epoch}")
             mine = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, epoch + 1)
             history = ([(current.segment, current.offset, current.epoch)] + recent
@@ -516,6 +585,7 @@ class CloudStorage(SharedStorage):
             except TransientObjectStoreError as e:
                 error, outcome = e, "unchanged"
             except (PreconditionFailedError, OutcomeUnknownError) as e:
+                uncertain = uncertain or isinstance(e, OutcomeUnknownError)
                 error, outcome = e, self._resolve(mine, etag, e)
             if outcome == "applied":
                 return mine
@@ -527,13 +597,16 @@ class CloudStorage(SharedStorage):
                 if races >= _UNCONDITIONAL_ATTEMPTS:
                     raise ProtoConflictError(
                         f"Unconditional publish lost {races} races to other writers") from error
+                self._sleep(min(races, 10))
                 continue
             # Not applied and the root is unchanged: safe to send again (same etag condition).
             if failures == self._retries:
-                kind = "unknown" if isinstance(error, OutcomeUnknownError) else "failed"
+                if uncertain:
+                    raise ProtoOutcomeUnknownError(
+                        f"Publishing the root failed after {failures + 1} attempt(s) and an earlier "
+                        f"attempt may still be applied; read the root to resolve it: {error}") from error
                 raise ProtoUnexpectedError(
-                    f"Publishing the root failed after {failures + 1} attempt(s) (outcome {kind}; "
-                    f"read_root resolves it): {error}") from error
+                    f"Publishing the root failed after {failures + 1} attempt(s) (not applied): {error}") from error
             self._sleep(failures)
             failures += 1
 
@@ -574,6 +647,7 @@ class CloudStorage(SharedStorage):
                 self._local = {}
                 self._sealed = []
                 self._sealed_bytes = 0
+                self._uploaded = {}
             self._cache.clear()
 
 
@@ -606,20 +680,36 @@ class S3ObjectStore:
             raise ProtoNotSupportedError(
                 "S3ObjectStore requires boto3: pip install boto3 (or proto_db[s3])") from e
         self._exc = exceptions
+        # Names present in the installed botocore (older releases lack some of them).
+        self._credential_errors = tuple(
+            getattr(exceptions, name) for name in
+            ("NoCredentialsError", "PartialCredentialsError", "CredentialRetrievalError")
+            if hasattr(exceptions, name))
+        self._streaming_errors = tuple(
+            getattr(exceptions, name) for name in ("IncompleteReadError", "ResponseStreamingError")
+            if hasattr(exceptions, name))
         self._bucket = bucket
         self.client = client
 
-    def _call(self, what: str, operation):
+    def _call(self, what: str, operation, *, read: bool = False):
+        """Run ``operation()`` mapping botocore errors to the protocol.
+
+        ``read``: the operation only reads, so a failure while streaming the response
+        body (``IncompleteReadError``, ``ResponseStreamingError``) is transient.
+        """
         exc = self._exc
+        streaming = self._streaming_errors if read else ()
         try:
             return operation()
         except exc.ClientError as e:
             raise self._client_error(what, e) from e
+        except streaming as e:
+            raise TransientObjectStoreError(f"S3 {what}: the response body could not be read: {e}") from e
         except exc.ConnectionError as e:   # botocore's: the connection was never established
             raise TransientObjectStoreError(f"S3 {what}: {e}") from e
         except exc.HTTPClientError as e:   # read timeouts, connection closed mid-request
             raise OutcomeUnknownError(f"S3 {what}: {e}") from e
-        except exc.NoCredentialsError as e:
+        except self._credential_errors as e:
             raise ProtoNotAuthorizedError(f"S3 {what}: {e}") from e
         except exc.BotoCoreError as e:
             raise ObjectStoreError(f"S3 {what}: {e}") from e
@@ -665,7 +755,7 @@ class S3ObjectStore:
         def read():
             response = self.client.get_object(Bucket=self._bucket, Key=key)
             return response["Body"].read(), response["ETag"]
-        return self._call(f"get {key}", read)
+        return self._call(f"get {key}", read, read=True)
 
     def list(self, prefix: str) -> list:
         """See :meth:`ObjectStore.list`."""
@@ -675,7 +765,7 @@ class S3ObjectStore:
                     Bucket=self._bucket, Prefix=prefix):
                 keys.extend(item["Key"] for item in page.get("Contents", []))
             return keys
-        return self._call(f"list {prefix}", collect)
+        return self._call(f"list {prefix}", collect, read=True)
 
     def delete(self, key: str) -> None:
         """See :meth:`ObjectStore.delete`."""

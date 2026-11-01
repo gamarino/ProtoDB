@@ -13,6 +13,7 @@ CORRUPTION_ERROR = 30_000
 NOT_SUPPORTED_ERROR = 40_000
 NOT_AUTHORIZED_ERROR = 50_000
 UNEXPECTED_ERROR = 60_000
+OUTCOME_UNKNOWN_ERROR = 60_100
 LOCKING_ERROR = 70_000
 CONFLICT_ERROR = 70_100
 TIMEOUT_ERROR = 70_200
@@ -58,6 +59,15 @@ class ProtoNotAuthorizedError(ProtoDBError):
 class ProtoUnexpectedError(ProtoDBError):
     """Internal error that should not happen."""
     default_code = UNEXPECTED_ERROR
+
+
+class ProtoOutcomeUnknownError(ProtoUnexpectedError):
+    """The outcome of a write (typically a root publish) is unknown: it may or may not have been applied.
+
+    Never a :class:`ProtoConflictError`: retrying the operation could apply it twice, so
+    ``Database.run`` does not retry it.  Reading the current state tells what happened.
+    """
+    default_code = OUTCOME_UNKNOWN_ERROR
 
 
 class ProtoLockingError(ProtoDBError):

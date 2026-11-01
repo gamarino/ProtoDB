@@ -62,12 +62,19 @@ Commit protocol (D34)
        DatabaseRoot and SpaceRoot atoms are built and saved.
     6. ``storage.flush()`` makes the data durable according to the storage's
        durability mode, then ``publish_root(ptr, expected_epoch)`` publishes the root
-       by compare-and-swap.  If publishing fails, the outcome may be unknown (e.g. a
-       file storage failing after the rename): the root is read again; if it is ours
-       the commit succeeded, if another epoch is visible the commit raises
+       by compare-and-swap.  If publishing fails, the outcome may be unknown.  A
+       ``ProtoOutcomeUnknownError`` is first resolved by the storage's optional
+       ``publish_outcome(ptr, epoch)`` hook (True: committed; False: conflict).  For a
+       storage whose root lock excludes every writer (``root_lock_is_global``, e.g. a
+       file storage failing after the rename) the root is then read again: if it is
+       ours the commit succeeded, if another epoch is visible the commit raises
        ``ProtoConflictError``, otherwise the original error is raised (wrapped in
-       ``ProtoUnexpectedError`` if it was not a ProtoDB error).  If the root cannot
-       even be read back, ``ProtoUnexpectedError`` reports an unknown outcome.
+       ``ProtoUnexpectedError`` if it was not a ProtoDB error); if the root cannot even
+       be read back, ``ProtoOutcomeUnknownError`` reports an unknown outcome.  For a
+       storage with an in-process root lock (``CloudStorage``) an epoch mismatch proves
+       nothing, so an unresolved outcome raises ``ProtoOutcomeUnknownError``.
+       ``Database.run`` never retries ``ProtoOutcomeUnknownError``: the commit may have
+       been applied.
     7. Nothing after a successful publish can fail the commit: releasing the root
        lock is best-effort and a failure there is logged, and the written values'
        logs are marked consumed.  On the failure path a lock-release error is
@@ -104,7 +111,8 @@ from .collections.lists import List
 from .collections.sets import CountedSet, Set
 from .core.atom import Atom, AtomPointer, PersistenceContext
 from .core.dbobject import DBObject, MutableObject
-from .errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoUnexpectedError, ProtoUserError,
+from .errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoOutcomeUnknownError,
+                     ProtoUnexpectedError, ProtoUserError,
                      ProtoValidationError)
 from .values import canonical, exact_token
 
@@ -276,17 +284,50 @@ def _same_token(a, b) -> bool:
 
 # -- the publish protocol ---------------------------------------------------------------------
 
+def _ask_outcome(storage, ptr: AtomPointer, epoch: int) -> Optional[bool]:
+    """The storage's ``publish_outcome`` verdict on ``ptr`` at ``epoch`` (``None``: unknown or no hook)."""
+    hook = getattr(storage, "publish_outcome", None)
+    if hook is None:
+        return None
+    try:
+        verdict = hook(ptr, epoch)
+    except (ProtoDBError, OSError) as e:
+        logger.warning("publish_outcome failed (%s); the outcome of the commit stays unknown", e)
+        return None
+    return verdict if verdict is True or verdict is False else None
+
+
 def _publish(storage, ptr: AtomPointer, expected_epoch: int) -> None:
-    """Publish ``ptr`` by CAS; resolve an unknown outcome by reading the root back (step 6 of D34)."""
+    """Publish ``ptr`` by CAS; resolve an unknown outcome (step 6 of D34).
+
+    The verdict comes from the storage's ``publish_outcome`` hook when it has one.
+    Inferring a conflict from an epoch mismatch is valid only when the root lock excludes
+    every other writer (``root_lock_is_global``): with an in-process root lock another
+    process may have published on top of our root, so an unresolved outcome is reported
+    as ``ProtoOutcomeUnknownError`` (which ``Database.run`` never retries).
+    """
     try:
         storage.publish_root(ptr, expected_epoch)
         return
     except (ProtoDBError, OSError) as e:
         error = e
+    unknown = isinstance(error, ProtoOutcomeUnknownError)
+    if unknown:
+        verdict = _ask_outcome(storage, ptr, expected_epoch + 1)
+        if verdict is True:
+            logger.warning("publish_root reported %r but the root was applied; the commit succeeded", error)
+            return
+        if verdict is False:
+            raise ProtoConflictError("Another root was published concurrently; nothing was committed") from error
+    if not getattr(storage, "root_lock_is_global", True):
+        # Only an outcome-unknown error leaves doubt; any other error means nothing was applied.
+        if isinstance(error, ProtoDBError):
+            raise error
+        raise ProtoUnexpectedError(f"Publishing the root failed: {error}") from error
     try:
         root = storage.read_root()
     except (ProtoDBError, OSError) as e:
-        raise ProtoUnexpectedError(
+        raise ProtoOutcomeUnknownError(
             f"Publishing the root failed ({error}) and reading it back failed ({e}); "
             f"the outcome of the commit is unknown") from error
     if root is not None and root.pointer == ptr:
@@ -467,7 +508,8 @@ class Database:
         times, sleeping a bounded exponential backoff with jitter between attempts:
         ``uniform(d/2, d)`` with ``d = min(backoff[1], backoff[0] * 2**attempt)``.  After
         the last retry the conflict is re-raised.  Any other exception aborts the
-        transaction and propagates unchanged.  If ``fn`` ends the transaction itself
+        transaction and propagates unchanged; notably ``ProtoOutcomeUnknownError`` is never
+        retried, because the commit may have been applied.  If ``fn`` ends the transaction itself
         (commit or abort), ``run`` returns its result without committing.
         """
         if isinstance(retries, bool) or not isinstance(retries, int) or retries < 0:

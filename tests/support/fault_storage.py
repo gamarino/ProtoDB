@@ -13,6 +13,11 @@
 * ``"oserror"``: like ``"lost"`` but a raw ``OSError`` escapes, as from a storage that
   does not wrap its I/O errors.
 
+``fault_error`` (default ``ProtoUnexpectedError``) is the class raised by the
+non-OSError faults; tests set it to ``ProtoOutcomeUnknownError`` and may set the
+instance attributes ``root_lock_is_global`` and ``publish_outcome`` to model a storage
+with an in-process root lock and an outcome hook.
+
 ``fail_read_root_after_fault`` makes the next ``read_root`` after the fault raise as
 well, so the outcome stays unknown.  ``publish_calls`` counts publishes.
 """
@@ -29,6 +34,7 @@ class PublishFaultStorage:
         self.fail_read_root_after_fault = False
         self._read_root_fails = False
         self.publish_calls = 0
+        self.fault_error = ProtoUnexpectedError
 
     def fail_next_publish(self, mode: str) -> None:
         """Arm the fault for the next ``publish_root``."""
@@ -75,4 +81,4 @@ class PublishFaultStorage:
             self.inner.publish_root(other, expected_epoch)
         elif mode == "oserror":
             raise OSError(5, "injected raw publish failure")
-        raise ProtoUnexpectedError(f"injected publish failure ({mode})")
+        raise self.fault_error(f"injected publish failure ({mode})")

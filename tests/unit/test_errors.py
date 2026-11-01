@@ -11,6 +11,7 @@ DEFAULTS = [
     (e.ProtoNotSupportedError, 40_000),
     (e.ProtoNotAuthorizedError, 50_000),
     (e.ProtoUnexpectedError, 60_000),
+    (e.ProtoOutcomeUnknownError, 60_100),
     (e.ProtoLockingError, 70_000),
     (e.ProtoConflictError, 70_100),
     (e.ProtoTimeoutError, 70_200),
@@ -29,6 +30,11 @@ def test_default_codes(cls, code):
 def test_explicit_code_wins_including_zero(cls, _):
     assert cls("x", code=0).code == 0
     assert cls("x", code=7).code == 7
+
+
+def test_outcome_unknown_is_unexpected_and_never_a_conflict():
+    assert issubclass(e.ProtoOutcomeUnknownError, e.ProtoUnexpectedError)
+    assert not issubclass(e.ProtoOutcomeUnknownError, e.ProtoLockingError)
 
 
 def test_locking_hierarchy():

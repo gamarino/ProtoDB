@@ -22,7 +22,17 @@ class SharedStorage(ABC):
 
     After :meth:`close`, every method raises ``ProtoValidationError``; ``close`` itself
     is idempotent.
+
+    Publish failures: a ``publish_root`` that may or may not have been applied raises
+    ``ProtoOutcomeUnknownError``; any other error means nothing was published.
+    ``root_lock_is_global`` tells whether :meth:`root_lock` excludes every writer of the
+    space (all processes): when it does, a reader of the root after an uncertain publish
+    may infer a conflict from an epoch mismatch; when it does not, only
+    :meth:`publish_outcome` (and the compare-and-swap itself) can decide.
     """
+
+    #: True when :meth:`root_lock` excludes every writer of the space, in every process.
+    root_lock_is_global = True
 
     @abstractmethod
     def push_atom(self, payload: dict) -> AtomPointer:
@@ -64,9 +74,22 @@ class SharedStorage(ABC):
         Returns the new :class:`RootRecord`.
         """
 
+    def publish_outcome(self, ptr: AtomPointer, epoch: int) -> Optional[bool]:
+        """Tell whether ``ptr`` was published as the root of ``epoch``.
+
+        ``True``: it was (possibly superseded since); ``False``: another root holds that
+        epoch, so it was not; ``None``: cannot tell.  Used to resolve a
+        ``ProtoOutcomeUnknownError`` from :meth:`publish_root`.  The default cannot tell.
+        """
+        return None
+
     @abstractmethod
     def root_lock(self, timeout: Optional[float] = None) -> ContextManager:
         """Return a context manager giving exclusive access to the root.
+
+        The lock may be in-process only (``root_lock_is_global = False``, e.g. an object
+        store, which has no cross-process lock); the correctness of publishing then rests
+        on the compare-and-swap of :meth:`publish_root` and on :meth:`publish_outcome`.
 
         ``timeout`` (seconds) defaults to the storage's configured lock timeout; expiry
         raises ``ProtoTimeoutError`` and never proceeds unlocked.  The lock is not

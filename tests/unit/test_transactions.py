@@ -17,7 +17,7 @@ from proto_db.collections.dictionaries import Dictionary
 from proto_db.collections.lists import List
 from proto_db.collections.sets import CountedSet, Set
 from proto_db.core.dbobject import DBObject
-from proto_db.errors import (ProtoConflictError, ProtoDBError, ProtoLockingError, ProtoTimeoutError,
+from proto_db.errors import (ProtoOutcomeUnknownError, ProtoConflictError, ProtoDBError, ProtoLockingError, ProtoTimeoutError,
                              ProtoUnexpectedError, ProtoUserError, ProtoValidationError)
 from proto_db.storage.file import FileStorage
 from proto_db.storage.memory import MemoryStorage
@@ -759,6 +759,93 @@ def test_publish_failure_with_unreadable_root_reports_an_unknown_outcome(faulty)
     with pytest.raises(ProtoUnexpectedError, match="outcome"):
         tr.commit()
     assert not tr.is_active
+
+
+@pytest.mark.parametrize("verdict, expected", [(True, None), (False, ProtoConflictError),
+                                                (None, ProtoOutcomeUnknownError)])
+def test_outcome_unknown_is_decided_by_the_storage_hook(faulty, verdict, expected):
+    """In-process root lock: only the hook decides; an epoch mismatch never implies a conflict."""
+    storage, db = faulty
+    storage.root_lock_is_global = False
+    storage.fault_error = ProtoOutcomeUnknownError
+    asked = []
+
+    def outcome(ptr, epoch):
+        asked.append(epoch)
+        return verdict
+
+    storage.publish_outcome = outcome
+    # "foreign" moves the root to another epoch: the old inference would call it a conflict.
+    storage.fail_next_publish("visible" if verdict else "foreign")
+    calls = []
+
+    def write(tr):
+        calls.append(1)
+        tr.set_root_object("x", 1)
+
+    if expected is None:
+        db.run(write)
+        assert read_root(db, "x") == 1
+    else:
+        with pytest.raises(expected):
+            db.run(write, retries=0)
+    assert len(asked) == 1
+    assert len(calls) == 1  # never retried by Database.run
+
+
+def test_database_run_does_not_retry_outcome_unknown(faulty):
+    storage, db = faulty
+    storage.root_lock_is_global = False
+    storage.fault_error = ProtoOutcomeUnknownError
+    storage.fail_next_publish("foreign")
+    calls = []
+    before = storage.publish_calls
+
+    def write(tr):
+        calls.append(1)
+        tr.set_root_object("x", 1)
+
+    with pytest.raises(ProtoOutcomeUnknownError):
+        db.run(write, retries=5)
+    assert len(calls) == 1 and storage.publish_calls == before + 1
+
+
+def test_in_process_lock_storage_other_errors_mean_not_applied(faulty):
+    storage, db = faulty
+    storage.root_lock_is_global = False
+    storage.fail_next_publish("lost")
+    tr = db.new_transaction()
+    tr.set_root_object("x", 1)
+    with pytest.raises(ProtoUnexpectedError) as info:
+        tr.commit()
+    assert not isinstance(info.value, (ProtoOutcomeUnknownError, ProtoConflictError))
+
+
+def test_global_lock_storage_consults_the_hook_first(faulty):
+    storage, db = faulty
+    storage.fault_error = ProtoOutcomeUnknownError
+    storage.publish_outcome = lambda ptr, epoch: True
+    storage.fail_next_publish("visible")
+    tr = db.new_transaction()
+    tr.set_root_object("x", 1)
+    tr.commit()
+    assert read_root(db, "x") == 1
+
+
+def test_unreadable_root_reports_outcome_unknown_type(faulty):
+    storage, db = faulty
+    storage.fail_next_publish("visible")
+    storage.fail_read_root_after_fault = True
+    tr = db.new_transaction()
+    tr.set_root_object("x", 1)
+    with pytest.raises(ProtoOutcomeUnknownError):
+        tr.commit()
+
+
+def test_builtin_storages_declare_a_global_root_lock(tmp_path):
+    assert MemoryStorage.root_lock_is_global is True
+    assert FileStorage.root_lock_is_global is True
+    assert MemoryStorage().publish_outcome(None, 1) is None
 
 
 # -- FileStorage write failures (real fault injection) ---------------------------------------
