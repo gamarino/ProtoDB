@@ -389,10 +389,42 @@ class ConcurrentOptimized:
 
     The log grows with every mutation of a version chain; it lives as long as the
     versions holding it (typically one transaction).
+
+    :attr:`log_is_complete` tells whether the log describes the whole content of
+    the version (D33): true for a collection constructed empty in this process and
+    for versions derived from it only through logged mutators; false for loaded
+    versions, bulk-built ones (``from_items``/``from_iterable``) and rebased ones,
+    and for every version derived from those.  A transaction merges a written root
+    by replaying its log only when the log is complete; otherwise replaying would
+    drop content the log does not describe.
     """
 
     _op_log: tuple = ()
-    _runtime_fields: tuple = ("_op_log",)
+    _log_complete: bool = False
+    _runtime_fields: tuple = ("_op_log", "_log_complete")
+
+    def __init__(self, *args, **kwargs):
+        """Initialise the collection (cooperatively) and mark its empty log as complete."""
+        super().__init__(*args, **kwargs)
+        object.__setattr__(self, "_log_complete", True)
+
+    @property
+    def log_is_complete(self) -> bool:
+        """True iff replaying this version's op log onto an empty collection rebuilds its content (D33)."""
+        return self._log_complete
+
+    def _with(self, **changes):
+        """See :meth:`IndexedCollection._with`; also maintains :attr:`log_is_complete`.
+
+        A change of persisted content keeps the log complete only when it also
+        extends the log; a version built from an incomplete one stays incomplete.
+        """
+        if "_log_complete" not in changes:
+            complete = self._log_complete
+            if complete and any(name in type(self)._fields for name in changes):
+                complete = len(changes.get("_op_log", ())) > len(self._op_log)
+            changes["_log_complete"] = complete
+        return super()._with(**changes)
 
     def _logged(self, *ops: tuple) -> tuple:
         """Return this version's op log extended with ``ops`` (the receiver's log is unchanged)."""

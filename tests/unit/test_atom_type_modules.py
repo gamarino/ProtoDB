@@ -22,6 +22,7 @@ from proto_db.errors import ProtoCorruptionError
 ROOT = Path(__file__).resolve().parents[2]
 BUILTIN_PACKAGES = ("proto_db.core", "proto_db.collections", "proto_db.indexing", "proto_db.storage",
                     "proto_db.query")
+BUILTIN_MODULES = ("proto_db.transactions",)
 
 
 def _all_subclasses(cls):
@@ -38,7 +39,10 @@ def test_every_builtin_atom_type_is_in_the_table():
         package = importlib.import_module(name)
         for info in pkgutil.iter_modules(package.__path__):
             importlib.import_module(f"{name}.{info.name}")
-    builtin = [c for c in _all_subclasses(Atom) if c.__module__.startswith(BUILTIN_PACKAGES)]
+    for name in BUILTIN_MODULES:
+        importlib.import_module(name)
+    builtin = [c for c in _all_subclasses(Atom)
+               if c.__module__.startswith(BUILTIN_PACKAGES) or c.__module__ in BUILTIN_MODULES]
     assert builtin, "no built-in atom class found"
     for cls in builtin:
         assert BUILTIN_ATOM_MODULES.get(cls.__type_name__) == cls.__module__, \

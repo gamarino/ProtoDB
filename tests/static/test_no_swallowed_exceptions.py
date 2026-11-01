@@ -15,6 +15,7 @@ from tests.static import _scan
 CHECKED_ROOTS = [
     "proto_db/errors.py",
     "proto_db/values.py",
+    "proto_db/transactions.py",
     "proto_db/core/__init__.py",
     "proto_db/core/atom.py",
     "proto_db/core/codec.py",
