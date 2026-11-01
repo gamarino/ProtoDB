@@ -181,27 +181,55 @@ def test_valid_until_is_measured_from_the_send_time():
     assert a.valid_until == pytest.approx(10.9)
 
 
-def test_best_root_is_the_highest_epoch_and_certain_only_when_all_agree():
+def test_best_root_is_the_highest_label_then_epoch_and_certain_unless_a_granter_is_unsure():
     a = _attempt(n=3)
-    a.on_grant("x", True, _rec(4), True)
-    a.on_grant("y", True, _rec(4), True)
-    assert a.best_root() == (True, _rec(4), True)
+    a.on_grant("x", True, _rec(4), True, 2)
+    a.on_grant("y", True, _rec(4), True, 2)
+    assert a.best_root() == (True, _rec(4), True, 2)
     b = _attempt(n=3)
-    b.on_grant("x", True, _rec(4), True)
-    b.on_grant("y", True, _rec(5), True)            # epoch disagreement
-    assert b.best_root() == (True, _rec(5), False)
+    b.on_grant("x", True, _rec(4), True, 2)
+    b.on_grant("y", True, _rec(5), True, 2)            # y missed nothing: x lags behind, still certain
+    assert b.best_root() == (True, _rec(5), True, 2)
+    f = _attempt(n=3)
+    f.on_grant("x", True, _rec(6), True, 1)            # epoch 6 from an older term ...
+    f.on_grant("y", True, _rec(5), True, 3)            # ... loses to epoch 5 of a newer term (D46)
+    assert f.best_root() == (True, _rec(5), True, 3)
     c = _attempt(n=3)
     c.on_grant("x", True, _rec(4), True)
     c.on_grant("y", True, _rec(4), False)           # one granter may have missed a root
-    assert c.best_root() == (True, _rec(4), False)
+    assert c.best_root() == (True, _rec(4), False, 0)
     d = _attempt(n=3)
     d.on_grant("x", False, None, True)              # root unknown at x
     d.on_grant("y", True, _rec(4), True)
-    assert d.best_root() == (True, _rec(4), False)
+    assert d.best_root() == (True, _rec(4), False, 0)
     e = _attempt(n=3)
     e.on_grant("x", True, None, True)               # known empty space (epoch 0)
     e.on_grant("y", True, None, True)
-    assert e.best_root() == (True, None, True)
+    assert e.best_root() == (True, None, True, 0)
+    g = _attempt(n=3)
+    g.on_grant("x", True, _rec(4), True)
+    g.on_grant("y", True, _rec(4), True)
+    assert g.best_root(own=(True, _rec(7), 0)) == (True, _rec(7), True, 0)   # the requester's own root counts
+
+
+def test_a_request_from_a_new_incarnation_ends_the_old_grant():
+    clock = FakeClock(0.0)
+    g = PeerGrants(1.0, clock, startup_grace=0.0)
+    assert g.on_request("a", 1, 100).granted
+    d = g.on_request("a", 1, 200)                    # "a" restarted and reuses term 1
+    assert not d.granted and d.reason == "term_taken"
+    assert d.previous_expired and d.ended_term == 1
+    assert g.holder is None
+    g.on_release("a", 1, 200)                        # the new life's cancel
+    assert g.on_request("b", 2).granted
+    assert g.granted_top == 2
+
+
+def test_granted_top_ignores_terms_closed_by_releases():
+    g = PeerGrants(1.0, FakeClock(0.0), startup_grace=0.0)
+    g.on_request("a", 1)
+    g.on_release("b", 9)                             # a cancel of term 9 closes it here
+    assert g.granted_top == 1 and g.highest_term == 9
 
 
 # -- Lease and fencing tokens -----------------------------------------------------------------

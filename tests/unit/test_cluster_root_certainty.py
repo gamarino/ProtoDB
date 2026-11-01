@@ -5,9 +5,11 @@ every message is held until the test delivers or drops it, and all nodes share o
 clock advanced by hand.  The invariant checked is the one Task 8.3d must establish with
 majority-acknowledged root replication: a lease whose root is reported certain carries the
 latest published root (``truth``).  With the 8.3c release-carried propagation each schedule
-violates it, so they are strict xfails: Task 8.3d must make them pass (and drop the marker).
-Safety of the data does not depend on this flag: a stale certain root only costs a fencing
-event (a failed conditional root write), never a lost update.
+violated it (they were strict xfails); Task 8.3d (D46) makes them pass: roots carry the term
+that replicated them, a suspicion is keyed by the term whose outcome a node could not know
+and cleared only by a root of that term or later, an uncertain release taints its receiver,
+requests carry the requester's incarnation, and the requester counts its own accepted root
+even when its own vote is refused.
 """
 import threading
 import time
@@ -19,8 +21,7 @@ from proto_db.cluster.coordinator import ClusterCoordinator
 from proto_db.errors import ProtoTimeoutError
 from proto_db.storage.format import FORMAT_VERSION, RootRecord
 
-pytestmark = [pytest.mark.timeout(30),
-              pytest.mark.xfail(strict=True, reason="Task 8.3d: majority-acknowledged root replication")]
+pytestmark = [pytest.mark.timeout(30)]
 
 D = 10.0
 
@@ -72,6 +73,7 @@ class ManualNet:
     def deliver(self, src=None, dst=None, kinds=("request", "grant", "reject", "release")):
         for _, to, msg in self._take(src, dst, kinds):
             self.handlers[to](msg)
+            self.handlers[to].__self__.wait_idle(5.0)    # releases are handled by a worker thread
 
     def drop(self, src=None, dst=None, kinds=("request", "grant", "reject", "release")):
         self._take(src, dst, kinds)
@@ -129,6 +131,8 @@ class Harness:
                 self.net.drop(dst={name}, kinds=("grant", "reject"))
             time.sleep(0.001)
         t.join()
+        if deliver_cancels:                 # a lost attempt's cancel may be sent as it returns
+            self.net.deliver(src=name, dst=set(granters), kinds=("release",))
         return out.get("lease")
 
     def release(self, name, lease, to=(), root=None):

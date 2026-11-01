@@ -1,4 +1,4 @@
-"""The majority-granted write lease of the cluster (Task 8.3c, decisions D44 and D45).
+"""The majority-granted write lease of the cluster (Tasks 8.3c and 8.3d, decisions D44, D45, D46).
 
 Three pieces of pure state, with no I/O and no locking (the coordinator serializes
 access under its own lock):
@@ -22,9 +22,13 @@ A peer that grants at real time ``g`` (after the request was sent at real time `
 refuses other holders until at least ``g + D / (1 + rho)``; the holder believes it holds
 the lease until at most ``s + (D - m) / (1 - rho)``.  With ``m >= 2 * rho * D / (1 + rho)``
 the belief ends before the promise.  Two majorities share a peer, so two holders' beliefs
-never overlap in real time.  The storage's conditional root write remains the fencing net
-for whatever this argument does not cover (a holder paused between its validity check and
-its write).
+never overlap in real time.
+
+Since D46 the data does not depend on that timing argument: a peer refuses to accept a
+replicated root of a term lower than one it has granted (:attr:`PeerGrants.granted_top`),
+so a holder whose lease ended without its knowing cannot reach a majority once a newer
+lease exists (the ballot rule of Paxos).  The lease timing only keeps holders from
+wasting each other's work.
 """
 from typing import Callable, NamedTuple, Optional
 
@@ -56,9 +60,10 @@ class GrantDecision(NamedTuple):
     ``reason`` is ``"granted"``, ``"busy"`` (another holder's lease runs), ``"stale_term"``
     (lower than the highest term seen), ``"term_taken"`` (this term was already granted or
     closed here) or ``"starting"`` (startup grace).  ``remaining`` is the seconds left of the
-    promise or grace that blocks a grant.  ``previous_expired`` is True when the grant ended
-    the previous holder's lease by expiry rather than by release, i.e. this peer may have
-    missed the root that holder published.
+    promise or grace that blocks a grant.  ``previous_expired`` is True when deciding ended
+    a previous grant without a release from its holder -- by expiry, or because the request
+    comes from a new incarnation of that holder -- i.e. this peer cannot know what that
+    holder did with its lease; ``ended_term`` is that grant's term (``0`` when none).
     """
 
     granted: bool
@@ -66,6 +71,7 @@ class GrantDecision(NamedTuple):
     highest: int
     remaining: float
     previous_expired: bool
+    ended_term: int = 0
 
 
 class PeerGrants:
@@ -83,7 +89,9 @@ class PeerGrants:
         self._quiet_until = clock() + startup_grace
         self._highest = 0          # highest term seen in any request or release
         self._granted_max = 0      # highest term granted or closed here
+        self._granted_top = 0      # highest term actually granted here
         self._holder = None
+        self._inc = 0
         self._term = 0
         self._expiry = 0.0
         self._active = False
@@ -94,53 +102,74 @@ class PeerGrants:
         return self._highest
 
     @property
+    def granted_top(self) -> int:
+        """Highest term this peer has granted (the ballot a replicated root must not be below)."""
+        return self._granted_top
+
+    @property
+    def starting(self) -> bool:
+        """True during the startup grace."""
+        return self._clock() < self._quiet_until
+
+    @property
     def holder(self) -> Optional[str]:
         """The node holding an unexpired, unreleased grant from this peer, or ``None``."""
         self._settle(self._clock())
         return self._holder if self._active else None
 
-    def _settle(self, now: float) -> bool:
-        """End an expired grant; True if it ended now (by expiry)."""
+    def _settle(self, now: float) -> int:
+        """End an expired grant; return its term if it ended now (by expiry), else ``0``."""
         if self._active and now >= self._expiry:
             self._active = False
-            return True
-        return False
+            return self._term
+        return 0
 
-    def on_request(self, holder: str, term: int) -> GrantDecision:
-        """Decide a request of ``holder`` for ``term`` (see :class:`GrantDecision`)."""
+    def on_request(self, holder: str, term: int, inc: int = 0) -> GrantDecision:
+        """Decide a request of ``holder`` (incarnation ``inc``) for ``term`` (see :class:`GrantDecision`).
+
+        A request from another incarnation of the node holding an active grant proves that
+        node restarted: the old grant is void (its process is gone) and ends here, reported
+        as ``previous_expired`` because its holder may have used it before restarting.
+        """
         now = self._clock()
-        expired = self._settle(now)
+        ended = self._settle(now)
+        if self._active and self._holder == holder and self._inc != inc:
+            self._active = False
+            ended = self._term
         try:
             if now < self._quiet_until:
-                return GrantDecision(False, "starting", self._highest, self._quiet_until - now, expired)
+                return GrantDecision(False, "starting", self._highest, self._quiet_until - now, bool(ended), ended)
             if term < self._highest:
-                return GrantDecision(False, "stale_term", self._highest, 0.0, expired)
+                return GrantDecision(False, "stale_term", self._highest, 0.0, bool(ended), ended)
             if self._active:
                 if self._holder == holder and self._term == term:
                     # A duplicate: grant again, but never extend the promise.
-                    return GrantDecision(True, "granted", self._highest, self._expiry - now, False)
+                    return GrantDecision(True, "granted", self._highest, self._expiry - now, False, 0)
                 if self._holder != holder:
-                    return GrantDecision(False, "busy", self._highest, self._expiry - now, expired)
+                    return GrantDecision(False, "busy", self._highest, self._expiry - now, bool(ended), ended)
             if term <= self._granted_max:
-                return GrantDecision(False, "term_taken", self._highest, 0.0, expired)
+                return GrantDecision(False, "term_taken", self._highest, 0.0, bool(ended), ended)
             self._granted_max = term
+            self._granted_top = max(self._granted_top, term)
             self._holder = holder
+            self._inc = inc
             self._term = term
             self._expiry = now + self._duration
             self._active = True
-            return GrantDecision(True, "granted", term, self._duration, expired)
+            return GrantDecision(True, "granted", term, self._duration, bool(ended), ended)
         finally:
             self._highest = max(self._highest, term)
 
-    def on_release(self, holder: str, term: int) -> bool:
-        """Apply ``holder``'s release (or cancel) of ``term``.
+    def on_release(self, holder: str, term: int, inc: int = 0) -> int:
+        """Apply ``holder``'s release (or cancel) of ``term`` from incarnation ``inc``.
 
-        Frees the grant if it is ``holder``'s for ``term``, and closes ``term`` here so a
-        delayed duplicate of the request is refused.  Returns True if an active grant
-        ended by expiry while settling (the caller may have missed a root).
+        Frees the grant if it is that incarnation's grant for ``term``, and closes ``term``
+        here so a delayed duplicate of the request is refused.  Returns the term of an
+        active grant that ended by expiry while settling (the caller may have missed what
+        its holder did), else ``0``.
         """
         expired = self._settle(self._clock())
-        if self._active and self._holder == holder and self._term == term:
+        if self._active and self._holder == holder and self._term == term and self._inc == inc:
             self._active = False
         self._granted_max = max(self._granted_max, term)
         self._highest = max(self._highest, term)
@@ -158,14 +187,16 @@ class LeaseAttempt:
         self._size = cluster_size
         self._needed = majority(cluster_size)
         self.valid_until = sent_at + lease_duration - drift_margin
-        self.granted_by = {}        # peer -> (known, root, certain)
+        self.granted_by = {}        # peer -> (known, root, certain, label term)
         self.rejected_by = {}       # peer -> (reason, highest, remaining)
         self.highest_seen = term
 
-    def on_grant(self, peer: str, known: bool, root: Optional[RootRecord], certain: bool) -> None:
-        """Record ``peer``'s grant with the root it knows (counted once per peer)."""
+    def on_grant(self, peer: str, known: bool, root: Optional[RootRecord], certain: bool,
+                 label: int = 0) -> None:
+        """Record ``peer``'s grant with the root it has accepted and that root's label term
+        (counted once per peer)."""
         if peer not in self.rejected_by:
-            self.granted_by.setdefault(peer, (known, root, certain))
+            self.granted_by.setdefault(peer, (known, root, certain, label))
 
     def on_reject(self, peer: str, reason: str, highest: int, remaining: float) -> None:
         """Record ``peer``'s refusal."""
@@ -197,30 +228,29 @@ class LeaseAttempt:
         """Longest remaining promise among the refusals (``0.0`` if none)."""
         return max((r[2] for r in self.rejected_by.values() if r[0] in ("busy", "starting")), default=0.0)
 
-    def best_root(self) -> tuple:
-        """``(known, root, certain)`` over the granters.
+    def best_root(self, own: Optional[tuple] = None) -> tuple:
+        """``(known, root, certain, label)`` over the granters (and ``own``, the requester's
+        ``(known, root, label)``, counted even when its own vote was refused).
 
-        ``root`` is the granted root of highest epoch.  ``certain`` holds only when every
-        granter knows a root, none of them may have missed one, and they all agree on the
-        epoch; otherwise the holder reads the storage (D45).
+        ``root`` is the root of highest ``(label, epoch)``: by the intersection of the
+        acknowledging majority of every committed root with this granting majority, it is
+        the newest committed root or a root built on it (D46).  ``certain`` holds when
+        every granter knows a root and none reported a grant whose outcome it could not
+        know; otherwise the holder runs a recovery round.
         """
-        best = None
-        best_epoch = -1
-        epochs = set()
-        certain = True
-        any_known = False
-        for known, root, peer_certain in self.granted_by.values():
+        candidates = [(k, r, lab) for k, r, _, lab in self.granted_by.values()]
+        if own is not None:
+            candidates.append(own)
+        best, best_key, any_known = None, (-1, -1), False
+        for known, root, label in candidates:
             if not known:
-                certain = False
                 continue
             any_known = True
-            epoch = root.epoch if root is not None else 0
-            epochs.add(epoch)
-            certain = certain and peer_certain
-            if epoch > best_epoch:
-                best, best_epoch = root, epoch
-        certain = certain and any_known and len(epochs) == 1
-        return any_known, best, certain
+            key = (label, root.epoch if root is not None else 0)
+            if key > best_key:
+                best, best_key = root, key
+        certain = any_known and all(k and c for k, _, c, _ in self.granted_by.values())
+        return any_known, best, certain, max(best_key[0], 0)
 
 
 class Lease:
@@ -232,12 +262,14 @@ class Lease:
     """
 
     def __init__(self, *, term: int, acquired_at: float, valid_until: float,
-                 root: Optional[RootRecord], root_certain: bool, clock: Callable[[], float]):
+                 root: Optional[RootRecord], root_certain: bool, clock: Callable[[], float],
+                 root_term: int = 0):
         self.term = term
         self.acquired_at = acquired_at
         self.valid_until = valid_until
         self.root = root
         self.root_certain = root_certain
+        self.root_term = root_term
         self.released_at = None
         self._clock = clock
         self._released = False
@@ -251,10 +283,16 @@ class Lease:
         """Seconds of validity left (``0.0`` once expired or released)."""
         return 0.0 if self._released else max(0.0, self.valid_until - self._clock())
 
-    def bind_root(self, root: Optional[RootRecord]) -> None:
-        """Set the root the holder validates and publishes against."""
+    def bind_root(self, root: Optional[RootRecord], term: Optional[int] = None) -> None:
+        """Set the root the holder validates against (and its label term, if given)."""
         self.root = root
         self.root_certain = True
+        if term is not None:
+            self.root_term = term
+
+    def revoke(self) -> None:
+        """End the holder's belief now (the coordinator stopped): ``is_valid()`` turns False."""
+        self.valid_until = min(self.valid_until, self._clock())
 
     @property
     def expected_epoch(self) -> int:

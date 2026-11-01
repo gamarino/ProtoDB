@@ -1,6 +1,11 @@
-"""One cluster peer process for the TCP smoke and throughput tests (Task 8.3c).
+"""One cluster peer process for the TCP smoke and throughput tests (Tasks 8.3c and 8.3d).
 
-Usage: ``python cluster_peer.py NODE_ID SPACE_DIR MODE THREADS AMOUNT``
+Usage: ``python cluster_peer.py NODE_ID SPACE MODE THREADS AMOUNT``
+
+``SPACE`` is a directory (a FileStorage shared by every peer) or
+``tiered:LOCAL_DIR:STORE_DIR`` (a TieredStorage with this peer's local tier in LOCAL_DIR
+over a :class:`~tests.support.dir_object_store.DirObjectStore` in STORE_DIR shared by
+every peer).
 
 ``MODE`` is ``increment`` (each thread runs AMOUNT ``Database.run`` increments of the
 ``n`` root plus a blind add of a unique id to the ``ids`` CountedSet) or ``throughput``
@@ -11,7 +16,10 @@ line each way:
 2. the parent writes ``{"peers": [[id, host, port], ...]}``;
 3. the peer starts its coordinator, prints ``{"ready": true}``;
 4. the parent writes ``{"go": true}`` once every peer is ready;
-5. the peer commits, prints ``{"commits": .., "seconds": .., "fencing": .., "failed_cas": ..}``;
+5. the peer commits, waits until its commits are persisted (``ObjectSpace.sync``) and prints
+   ``{"commits": .., "seconds": .., "fencing": .., "commit_publishes": .., "critical": ..}``
+   (``commit_publishes``: root writes made by other threads than the persister, D46;
+   ``critical``: the tiered storage's critical-section counters, or ``None``);
 6. the parent writes ``{"stop": true}`` once every peer has finished (a peer keeps
    granting until then), and the peer stops and exits.
 """
@@ -25,9 +33,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from proto_db.cluster.coordinator import ClusterCoordinator  # noqa: E402
 from proto_db.cluster.transport import TcpTransport  # noqa: E402
+from proto_db.errors import ProtoValidationError  # noqa: E402
 from proto_db.storage.file import FileStorage  # noqa: E402
+from proto_db.storage.tiered import TieredStorage  # noqa: E402
 from proto_db.transactions import ObjectSpace  # noqa: E402
 from tests.support.cluster import CasCountingStorage  # noqa: E402
+from tests.support.dir_object_store import DirObjectStore  # noqa: E402
+
+
+def _storage(space: str):
+    if space.startswith("tiered:"):
+        _, local, store = space.split(":", 2)
+        return TieredStorage(local, DirObjectStore(store), durability="flush", ship_interval=0.1)
+    return FileStorage(space, durability="none")
 
 
 def _say(obj):
@@ -54,8 +72,14 @@ def main():
     with coordinator:
         _say({"ready": True})
         _hear()
-        storage = CasCountingStorage(FileStorage(space_dir, durability="none"))
-        db = ObjectSpace(storage, coordinator=coordinator).open_database("db")
+        storage = CasCountingStorage(_storage(space_dir))
+        space = ObjectSpace(storage, coordinator=coordinator)
+        if "db" not in space.list_databases():
+            try:
+                space.new_database("db")          # a tiered space starts empty: one peer creates it
+            except ProtoValidationError:
+                pass                              # another peer created it first
+        db = space.open_database("db")
         counts = []
         lock = threading.Lock()
         prefix = int(node_id[1:]) * 1_000_000
@@ -89,10 +113,18 @@ def main():
         for t in workers:
             t.join()
         seconds = time.monotonic() - start
-        _say({"commits": sum(counts), "seconds": seconds,
-              "fencing": coordinator.stats()["fencing_events"], "failed_cas": storage.failed_cas})
+        space.sync(timeout=60)
+        stats = getattr(storage, "stats", None)
+        critical = None
+        if callable(stats):
+            st = stats()
+            critical = {k: st[k] for k in ("critical_misses", "root_writes_in_critical")}
+        _say({"commits": sum(counts), "seconds": seconds, "fencing": coordinator.stats()["fencing_events"],
+              "commit_publishes": sum(1 for name in storage.publishers if not name.startswith("proto-persister-")),
+              "critical": critical, "breakdown": coordinator.stats()["critical"],
+              "critical_commits": coordinator.stats()["critical_commits"]})
         _hear()
-        storage.close()
+        space.close()
 
 
 if __name__ == "__main__":

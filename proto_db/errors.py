@@ -14,6 +14,7 @@ NOT_SUPPORTED_ERROR = 40_000
 NOT_AUTHORIZED_ERROR = 50_000
 UNEXPECTED_ERROR = 60_000
 OUTCOME_UNKNOWN_ERROR = 60_100
+BACKLOG_FULL_ERROR = 60_200
 LOCKING_ERROR = 70_000
 CONFLICT_ERROR = 70_100
 TIMEOUT_ERROR = 70_200
@@ -68,6 +69,15 @@ class ProtoOutcomeUnknownError(ProtoUnexpectedError):
     ``Database.run`` does not retry it.  Reading the current state tells what happened.
     """
     default_code = OUTCOME_UNKNOWN_ERROR
+
+
+class ProtoBacklogFullError(ProtoUnexpectedError):
+    """A cluster node's local backlog of data not yet in the object store reached its limit (D46).
+
+    Raised by a commit before it asks for the cluster lease, so nothing is written; commits
+    succeed again once the object store is reachable and the replicator has caught up.
+    """
+    default_code = BACKLOG_FULL_ERROR
 
 
 class ProtoLockingError(ProtoDBError):

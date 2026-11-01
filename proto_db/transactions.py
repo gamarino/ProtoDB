@@ -113,9 +113,10 @@ from .collections.sets import CountedSet, Set
 from .core.atom import Atom, AtomPointer, PersistenceContext
 from .core.dbobject import DBObject, MutableObject
 from .errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoOutcomeUnknownError,
-                     ProtoUnexpectedError, ProtoUserError,
+                     ProtoTimeoutError, ProtoUnexpectedError, ProtoUserError,
                      ProtoValidationError)
 from .storage.format import FORMAT_VERSION, RootRecord
+from .cluster.coordinator import REFOUND_TERM_STEP
 from .values import canonical, exact_token
 
 __all__ = ["ObjectSpace", "Database", "Transaction", "HistoryEntry", "SpaceRoot", "DatabaseRoot"]
@@ -152,14 +153,42 @@ def _check_name(name, what: str = "root") -> str:
 # -- root atoms -------------------------------------------------------------------------------
 
 class SpaceRoot(_Immutable, Atom):
-    """The atom the storage root points to: ``databases`` maps database names to :class:`DatabaseRoot`."""
+    """The atom the storage root points to: ``databases`` maps database names to :class:`DatabaseRoot`.
+
+    A root committed in cluster mode (D46) also carries ``cluster_term`` (the term of the
+    lease that committed it), ``cluster_epoch`` (its cluster epoch) and ``cluster_previous``
+    (the space root it was built on), so every root is self-describing and the persister can
+    walk the chain of commits; these read as ``None`` on other roots.
+    """
 
     __type_name__ = "proto_db.transactions.SpaceRoot"
+    _CLUSTER_FIELDS = ("cluster_term", "cluster_epoch", "cluster_previous")
 
-    def __init__(self, *, databases: Dictionary, context: PersistenceContext | None = None):
-        """Create a space root over the ``databases`` dictionary."""
+    def __init__(self, *, databases: Dictionary, context: PersistenceContext | None = None,
+                 cluster: Optional["_ClusterStamp"] = None, previous: Optional["SpaceRoot"] = None):
+        """Create a space root over the ``databases`` dictionary (with the cluster fields of ``cluster``)."""
         super().__init__(context=context)
         object.__setattr__(self, "databases", databases)
+        if cluster is not None:
+            object.__setattr__(self, "cluster_term", cluster.term)
+            object.__setattr__(self, "cluster_epoch", cluster.epoch)
+            object.__setattr__(self, "cluster_previous", previous)
+
+    def _absent_attribute(self, name: str):
+        if name in self._CLUSTER_FIELDS:
+            return None
+        return super()._absent_attribute(name)
+
+
+class _ClusterStamp:
+    """What a commit under the cluster lease adds to the new space root, and its stage timings."""
+
+    __slots__ = ("term", "epoch", "timings")
+
+    def __init__(self, term: int, epoch: int):
+        self.term = term
+        self.epoch = epoch
+        self.timings = {"validation": 0.0, "replay": 0.0, "path_copy": 0.0, "replication": 0.0}
 
 
 class DatabaseRoot(_Immutable, Atom):
@@ -351,18 +380,18 @@ def _publish(storage, ptr: AtomPointer, expected_epoch: int, *, writers_excluded
 def _commit_root(storage, lock_timeout, build: Callable, coordinator=None) -> bool:
     """Run steps 3-7 of the commit protocol (D34); return True if a root was published.
 
-    ``build(current_record)`` runs under the root lock; it checks conflicts and returns
+    ``build(current_record, stamp)`` runs under the root lock; it checks conflicts and returns
     the pointer of the saved new :class:`SpaceRoot`, or ``None`` to publish nothing.
-    With a cluster ``coordinator`` the cluster write lease replaces the root lock
-    (:func:`_commit_under_lease`).
+    With a cluster ``coordinator`` the cluster lease replaces the root lock and majority
+    replication replaces the publish (:func:`_commit_under_lease`).
     """
     if coordinator is not None:
-        return _commit_under_lease(storage, coordinator, lock_timeout, build)
+        return _commit_under_lease(coordinator, lock_timeout, build)
     lock = storage.root_lock(lock_timeout)
     lock.__enter__()
     try:
         current = storage.read_root()
-        ptr = build(current)
+        ptr = build(current, None)
         if ptr is not None:
             storage.flush()
             _publish(storage, ptr, current.epoch if current is not None else 0)
@@ -381,49 +410,127 @@ def _commit_root(storage, lock_timeout, build: Callable, coordinator=None) -> bo
     return ptr is not None
 
 
-def _commit_under_lease(storage, coordinator, lock_timeout, build: Callable) -> bool:
-    """Steps 3-7 of the commit protocol under the cluster write lease (D44, D45).
+def _confirm_build(current, stamp):
+    """The build step of a confirmation: nothing to publish (see :func:`_commit_under_lease`)."""
+    return None
 
-    The caller has already saved and flushed (uploaded) its records.  Under the lease the
-    latest root is the one propagated by the granting majority, or the storage's when the
-    propagation is not certain; ``build`` validates and merges against it; the root is
-    published with ``expected_epoch`` = that root's epoch, the epoch half of the lease's
-    fencing token.  A lease that expired before publishing raises ``ProtoConflictError``
-    without touching the storage; a failed conditional write under the lease is a fencing
-    event (counted and logged by the coordinator) and raises ``ProtoConflictError``, which
-    ``Database.run`` retries.  The release, which broadcasts the new root, is best effort.
+
+def _commit_under_lease(coordinator, lock_timeout, build: Callable) -> bool:
+    """Steps 3-7 of the commit protocol in cluster mode (D44, D45, D46).
+
+    The caller has saved its records and flushed them to the local tier.  A node whose
+    backlog reached its limit refuses the commit first (``ProtoBacklogFullError``).  Under
+    the lease: the base root is the highest accepted root of the granting majority (a
+    recovery round when the lease is not certain); ``build`` validates and merges against
+    it and builds the new root, labelled with the lease term; then
+    :meth:`~proto_db.cluster.coordinator.ClusterCoordinator.replicate` sends it with its
+    records and returns once a majority acknowledged it -- the commit point.  No storage
+    root is written here: the persister writes it later.  ``replicate`` raises
+    ``ProtoConflictError`` when the lease ended before anything was sent (retryable) and
+    ``ProtoOutcomeUnknownError`` when no majority acknowledged in time (never retried).
+    The release, which tells the peers the root is committed, is best effort.
     """
-    lease = coordinator.acquire(lock_timeout)
-    try:
-        if lease.root_certain:
-            current = lease.root
-        else:
-            current = storage.read_root()
-            coordinator.observe_root(current, from_storage=True)
-        lease.bind_root(current)
-        ptr = build(current)
-        if ptr is None:
-            return False
-        storage.flush()
-        if not lease.is_valid():
-            raise ProtoConflictError("The cluster write lease expired before the root was published; "
-                                     "nothing was published")
+    tier = coordinator.tier
+    if build is not _confirm_build:
+        tier.check_commit_allowed()
+    for _ in range(_TERM_RETRIES):
+        lease = coordinator.acquire(lock_timeout)
         try:
-            _publish(storage, ptr, lease.expected_epoch, writers_excluded=False)
-        except ProtoConflictError as e:
-            coordinator.record_fencing_event(lease, e)
-            raise
-        except BaseException:
-            coordinator.mark_root_suspect()   # the outcome may be unknown: the next holder reads the storage
-            raise
-        coordinator.published(lease, RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset,
-                                                lease.expected_epoch + 1))
-        return True
-    finally:
-        try:
-            coordinator.release(lease)
-        except (ProtoDBError, OSError) as e:
-            logger.error("Releasing the cluster write lease failed: %s", e)
+            with tier.critical_section():
+                base = _lease_base(coordinator, tier, lease)
+                if base is None:
+                    continue        # the lease's term is too low: acquire again (finally releases)
+                current, label, replicated = base
+                if replicated:
+                    coordinator.await_records(current, label, lease)    # its records: never read under the lease
+                lease.bind_root(current, label)
+                committed = coordinator.known_root()
+                if current is not None and committed != (True, current):
+                    # The base was accepted by some peer but is not known committed (its
+                    # holder's replication failed or its release was lost).  Commit it first
+                    # with an unchanged root on top, so that transactions starting from the
+                    # committed root see it (otherwise a transaction that read what it
+                    # changed would conflict against it forever).  One holder may commit
+                    # several roots in one term.
+                    current = _commit_base(coordinator, lease, current)
+                    lease.bind_root(current, lease.term)
+                stamp = _ClusterStamp(lease.term, lease.expected_epoch + 1)
+                ptr = build(current, stamp)
+                if ptr is None:
+                    return False
+                record = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, stamp.epoch)
+                stamp.timings["replication"] = coordinator.replicate(lease, record)
+            coordinator.record_critical(stamp.timings)
+            return True
+        finally:
+            try:
+                coordinator.release(lease)
+            except (ProtoDBError, OSError) as e:
+                logger.error("Releasing the cluster write lease failed: %s", e)
+    raise ProtoConflictError(f"No lease with a term above the base root's after {_TERM_RETRIES} attempts")
+
+
+#: Leases :func:`_commit_under_lease` acquires before giving up on finding a high enough term.
+_TERM_RETRIES = 5
+
+
+def _lease_base(coordinator, tier, lease) -> Optional[tuple]:
+    """``(base record, its label, replicated)`` for a commit under ``lease``, or ``None`` when
+    the lease's term is not above the base's label (the term floor has been raised: acquire
+    again).  ``replicated`` is False for the persisted root (no replication carries it).
+
+    The base is the lease's root when it is certain, else the result of a recovery round.
+    When no node of the answering majority knows any root (a cluster started on empty local
+    tiers, or one that lost a majority of its disks), the cluster refounds from the
+    persisted root with a term above any root a lost node accepted (D46).
+    """
+    replicated = True
+    if lease.root_certain:
+        current, label = lease.root, lease.root_term
+    else:
+        known, current, label = coordinator.recover_root()
+        if not known:
+            persisted = tier.read_persisted()
+            label, current = persisted if persisted is not None else (0, None)
+            replicated = False
+            coordinator.observe_root(current, from_storage=True, term=label, accept=False)
+            if lease.term < label + REFOUND_TERM_STEP:
+                coordinator.refound(label)
+                return None
+    if label >= lease.term:
+        return None                 # acquire learnt the label: the next term is above it
+    return current, label, replicated
+
+
+def _commit_base(coordinator, lease, base: RootRecord) -> RootRecord:
+    """Replicate a root equal to ``base`` (same databases), labelled with the lease term, on top of
+    it; return the new root's record (see :func:`_commit_under_lease`)."""
+    context = _SpaceContext(coordinator.tier.storage)
+    space = _load_space(context, base)
+    stamp = _ClusterStamp(lease.term, base.epoch + 1)
+    ptr = context.save(_new_space_root(space.databases, context, stamp, space))
+    record = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, stamp.epoch)
+    coordinator.replicate(lease, record)
+    return record
+
+
+def _new_space_root(databases: Dictionary, context, stamp: Optional[_ClusterStamp],
+                    previous: Optional[SpaceRoot]) -> SpaceRoot:
+    return SpaceRoot(databases=databases, context=context, cluster=stamp, previous=previous)
+
+
+def _cluster_tier(storage):
+    """The cluster tier serving ``storage`` (D46): the storage itself when it is a tiered
+    storage, a :class:`~proto_db.cluster.persister.PlainTier` for a storage shared by every
+    node; an object store must go through a tiered storage."""
+    if getattr(storage, "cluster_tier", False):
+        return storage
+    if not getattr(storage, "root_lock_is_global", True):
+        raise ProtoValidationError(
+            "In cluster mode an object store is used through TieredStorage (local WAL tier plus "
+            "asynchronous replication), so that it stays off the commit path (D46)")
+    from .cluster.persister import PlainTier
+    return PlainTier(storage)
 
 
 # -- ObjectSpace ------------------------------------------------------------------------------
@@ -439,14 +546,17 @@ class ObjectSpace:
             default), or for the cluster write lease (``None``: the coordinator's
             ``acquire_timeout``); expiry raises ``ProtoTimeoutError``.
         coordinator: a started :class:`~proto_db.cluster.coordinator.ClusterCoordinator`
-            (D44, D45) when several processes write the space.  Commits then flush their
-            records, acquire the cluster write lease (instead of the root lock), validate
-            and merge against the latest root propagated by the peers, publish with the
-            lease's fencing epoch and broadcast the new root; transactions take their
-            snapshot from the root the coordinator knows.  Every writer of the space must
-            use a coordinator of the same cluster.  The caller owns the coordinator
-            (:meth:`close` does not stop it).  ``None`` (default): no cluster, unchanged
-            behaviour.
+            (D44, D45, D46) when several processes write the space.  Commits then flush
+            their records to the local tier, acquire the cluster write lease (instead of
+            the root lock), validate and merge against the newest root of the granting
+            majority and commit by majority-acknowledged replication; the storage root is
+            persisted afterwards by the node's persister (:meth:`sync` waits for it).
+            Transactions take their snapshot from the newest committed root the coordinator
+            knows.  The storage must be a :class:`~proto_db.storage.tiered.TieredStorage`
+            or a storage shared by every node (``MemoryStorage``, ``FileStorage`` on a
+            shared filesystem).  Every writer of the space must use a coordinator of the
+            same cluster.  The caller owns the coordinator (:meth:`close` detaches it but
+            does not stop it).  ``None`` (default): no cluster, unchanged behaviour.
     """
 
     def __init__(self, storage, *, lock_timeout: Optional[float] = None, coordinator=None):
@@ -456,8 +566,12 @@ class ObjectSpace:
         self._storage = storage
         self._lock_timeout = lock_timeout
         self._coordinator = coordinator
+        self._tier = None
         self._closed = False
         self._state_lock = threading.Lock()
+        if coordinator is not None:
+            self._tier = _cluster_tier(storage)
+            coordinator.attach(self._tier)
 
     @property
     def storage(self):
@@ -475,22 +589,55 @@ class ObjectSpace:
         return self._coordinator
 
     def _snapshot_record(self):
-        """The root a new transaction starts from: the coordinator's known root when there is
-        one (epochs never go backwards), else the storage's."""
-        coordinator = self._coordinator
-        if coordinator is None:
-            return self._storage.read_root()
-        known, record = coordinator.known_root()
-        if known:
-            return record
+        """The root a new transaction starts from: in cluster mode the newest committed root
+        the coordinator knows (recovered from the peers, else the persisted root, when it
+        knows none; epochs never go backwards), else the storage's."""
         return self._read_storage_root()
 
     def _read_storage_root(self):
-        """Read the storage root; a coordinator learns it, so later snapshots never go backwards."""
-        record = self._storage.read_root()
-        if self._coordinator is not None:
-            self._coordinator.observe_root(record, from_storage=True)
-        return record
+        """The current root: the storage's, or in cluster mode the cluster's committed root
+        (the persisted one may lag)."""
+        coordinator = self._coordinator
+        if coordinator is None:
+            return self._storage.read_root()
+        if coordinator.needs_confirmation:
+            # One attempt per attach: under contention the node learns newer roots anyway, and
+            # its logged committed root already keeps its reads from going backwards.
+            coordinator.confirmed()
+            try:
+                _commit_under_lease(coordinator, self._lock_timeout, _confirm_build)
+            except (ProtoTimeoutError, ProtoConflictError, ProtoOutcomeUnknownError) as e:
+                logger.warning("Confirming the committed root under the cluster lease failed: %s", e)
+        return coordinator.current_root()[1]
+
+    @property
+    def committed_epoch(self) -> int:
+        """Cluster mode: the epoch of the newest committed root this node knows (else the storage epoch)."""
+        if self._coordinator is None:
+            record = self._storage.read_root()
+            return record.epoch if record is not None else 0
+        return self._coordinator.committed_epoch
+
+    @property
+    def persisted_epoch(self) -> int:
+        """Cluster mode: the highest epoch this node knows to be persisted in the storage (else
+        the storage epoch: every commit is persisted when it returns)."""
+        if self._coordinator is None:
+            return self.committed_epoch
+        persister = self._coordinator.persister
+        return persister.persisted_epoch if persister is not None else 0
+
+    def sync(self, timeout: Optional[float] = None) -> None:
+        """Wait until every commit this node knows is persisted in the storage (cluster mode:
+        the persisted epoch reaches the committed epoch); ``ProtoTimeoutError`` after
+        ``timeout`` seconds.  Without a cluster commits are persisted when they return."""
+        self._check_open()
+        if self._coordinator is None:
+            return
+        persister = self._coordinator.persister
+        if persister is None:
+            raise ProtoValidationError("The coordinator has no persister for this space")
+        persister.wait_persisted(self._coordinator.committed_epoch, timeout)
 
     def _check_open(self) -> None:
         if self._closed:
@@ -506,14 +653,14 @@ class ObjectSpace:
         self._check_open()
         context = _SpaceContext(self._storage)
 
-        def build(current):
+        def build(current, stamp):
             space = _load_space(context, current)
             databases = space.databases if space is not None else Dictionary(context=context)
             if databases.has(name):
                 raise ProtoValidationError(f"Database {name!r} already exists")
             root = DatabaseRoot(objects=Dictionary(context=context), mutables=Dictionary(context=context),
                                 previous=None, version=0, committed_at=_utc_now(), context=context)
-            return context.save(SpaceRoot(databases=databases.set_at(name, root), context=context))
+            return context.save(_new_space_root(databases.set_at(name, root), context, stamp, space))
 
         _commit_root(self._storage, self._lock_timeout, build, self._coordinator)
         return Database(self, name)
@@ -522,6 +669,14 @@ class ObjectSpace:
         """Return the existing database ``name`` (``ProtoValidationError`` if absent)."""
         _check_name(name, "database")
         space = self._current_space(_SpaceContext(self._storage))
+        if (space is None or not space.databases.has(name)) and self._coordinator is not None:
+            # This node's committed root may lag a commit another node just made (its release
+            # is on the way): ask a majority before reporting the database missing.
+            try:
+                self._coordinator.recover_root()
+            except ProtoConflictError as e:
+                logger.info("Recovery before reporting database %r missing failed: %s", name, e)
+            space = self._current_space(_SpaceContext(self._storage))
         if space is None or not space.databases.has(name):
             raise ProtoValidationError(f"Database {name!r} does not exist")
         return Database(self, name)
@@ -532,11 +687,13 @@ class ObjectSpace:
         return [] if space is None else sorted(space.databases.keys())
 
     def close(self) -> None:
-        """Close the space and its storage.  Idempotent."""
+        """Close the space and its storage (detaching the coordinator first).  Idempotent."""
         with self._state_lock:
             if self._closed:
                 return
             self._closed = True
+        if self._coordinator is not None:
+            self._coordinator.detach(self._tier)
         self._storage.close()
 
     def __enter__(self):
@@ -589,6 +746,10 @@ class Database:
             entries.append(HistoryEntry(root))
             root = root.previous
         return entries
+
+    def sync(self, timeout: Optional[float] = None) -> None:
+        """Wait until the commits this node knows are persisted (see :meth:`ObjectSpace.sync`)."""
+        self._space.sync(timeout)
 
     def run(self, fn: Callable[["Transaction"], Any], retries: int = 10,
             backoff: tuple = (0.001, 0.2)) -> Any:
@@ -904,7 +1065,7 @@ class Transaction:
                 self.save(value)
         space = self._database.space
         if space.coordinator is not None:
-            self.storage.flush()   # upload the records before asking for the cluster lease (D44)
+            self.storage.flush()   # the records reach the local tier before the cluster lease (D44, D46)
         if _commit_root(self.storage, space.lock_timeout, self._build_root, space.coordinator):
             # Post-publish, cannot fail: a committed value's log was consumed by this
             # commit, so a later transaction reusing it must not replay it again (D33).
@@ -912,8 +1073,12 @@ class Transaction:
                 if isinstance(value, ConcurrentOptimized):
                     object.__setattr__(value, "_log_complete", False)
 
-    def _build_root(self, current) -> AtomPointer:
-        """Under the root lock: check the read set, merge, save and return the new SpaceRoot pointer."""
+    def _build_root(self, current, stamp: Optional[_ClusterStamp] = None) -> AtomPointer:
+        """Under the root lock (or the cluster lease): check the read set, merge, save and return
+        the new SpaceRoot pointer.  With a cluster ``stamp`` the stage timings are recorded in it."""
+        clock = time.perf_counter
+        started = clock()
+        replay = 0.0
         epoch = current.epoch if current is not None else 0
         if epoch == self._epoch:
             space = self._snapshot_space
@@ -929,6 +1094,7 @@ class Transaction:
                         f"Root {name!r} of database {self._database.name!r} was changed by a concurrent commit")
             if self._mreads or self._mexpected:
                 self._check_mutables(db_root.mutables)
+        validated = clock()
         current_objects = db_root.objects
         objects = current_objects
         for name, value in self._writes.items():
@@ -937,7 +1103,9 @@ class Transaction:
                     objects = objects.remove_at(name)
                 continue
             if name not in self._reads and name not in self._replaced:
+                merge_started = clock()
                 value = self._merged(value, current_objects.get_at(name, _ABSENT))
+                replay += clock() - merge_started
             objects = objects.set_at(name, value)
         mutables = db_root.mutables
         for name, value in self._mwrites.items():
@@ -948,8 +1116,13 @@ class Transaction:
         new_root = DatabaseRoot(objects=objects, mutables=mutables, previous=db_root,
                                 version=db_root.version + 1,
                                 committed_at=max(_utc_now(), db_root.committed_at), context=self)
-        new_space = SpaceRoot(databases=space.databases.set_at(self._database.name, new_root), context=self)
-        return self.save(new_space)
+        new_space = _new_space_root(space.databases.set_at(self._database.name, new_root), self, stamp, space)
+        ptr = self.save(new_space)
+        if stamp is not None:
+            stamp.timings["validation"] = validated - started
+            stamp.timings["replay"] = replay
+            stamp.timings["path_copy"] = clock() - validated - replay
+        return ptr
 
     def _check_mutables(self, current: Dictionary) -> None:
         """Under the root lock: raise ``ProtoConflictError`` if a read cell changed or a blindly set one vanished."""

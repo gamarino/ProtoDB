@@ -1,19 +1,22 @@
-"""Contention resolved among the peers, never in the storage (Task 8.3c, D44, D45).
+"""Contention resolved among the peers, never in the storage (Tasks 8.3c and 8.3d, D44-D46).
 
 Four in-process peers, each with its own storage instance over one shared space (as four
-processes would have), run four threads each.  Every ``Database.run`` attempt increments
+processes would have: a tiered storage per node over one object store, or one shared
+directory), run four threads each.  Every ``Database.run`` attempt increments
 a plain ``int`` root (read set: concurrent commits conflict and are retried) and adds a
 unique id to a ``CountedSet`` root written blind (intent merge).  Checks:
 
 * the final count is exact and every committed id is present exactly once (no lost and
   no duplicated update);
-* the storage saw zero failed conditional root writes (``FakeObjectStore``'s precondition
-  counter for the cloud space, a counting proxy for the file space) and the coordinators
-  saw zero fencing events: contention never reached the storage.
+* no committing thread wrote a storage root (only persister threads did, D46), no root
+  write was unconditional and the coordinators saw zero fencing events: contention never
+  reached the storage.
 
 A second test measures commits per second with 1, 2 and 4 peers (blind adds only, so the
-figure is the lease round trip plus the root publish, not conflict retries); the numbers
-are printed for the Phase 9 record.
+figure is the lease round trip plus majority replication, not conflict retries).  A third
+compares, with 30 ms injected object-store latency, the tiered cluster against the
+single-writer CAS-only path (every commit writes the root object).  The numbers are
+printed for the Phase 9 record.
 """
 import itertools
 import time
@@ -22,6 +25,7 @@ import pytest
 
 from proto_db.storage.cloud import CloudStorage
 from proto_db.storage.file import FileStorage
+from proto_db.storage.tiered import TieredStorage
 from proto_db.transactions import ObjectSpace
 from tests.concurrency.harness import run_threads
 from tests.support.cluster import CasCountingStorage, Cluster
@@ -37,16 +41,29 @@ CLUSTER_KW = dict(lease_duration=2.0, drift_margin=0.2, request_timeout=0.2, sta
 pytestmark = [pytest.mark.freethreaded, pytest.mark.timeout(240)]
 
 
-def _cloud_storages(tmp_path, n):
-    store = FakeObjectStore()
-    return store, [CasCountingStorage(CloudStorage(store, backoff=(0.0, 0.001))) for _ in range(n)]
+def _tiered_storages(tmp_path, n, store=None):
+    store = store if store is not None else FakeObjectStore()
+    return store, [CasCountingStorage(TieredStorage(str(tmp_path / f"n{i}"), store, durability="none",
+                                                    ship_interval=0.05, backoff=(0.001, 0.01)))
+                   for i in range(n)]
 
 
 def _file_storages(tmp_path, n):
     return None, [CasCountingStorage(FileStorage(str(tmp_path / "space"), durability="none")) for _ in range(n)]
 
 
-BACKENDS = {"cloud": _cloud_storages, "file": _file_storages}
+BACKENDS = {"tiered": _tiered_storages, "file": _file_storages}
+
+
+def _storage_untouched_by_commits(storages, spaces):
+    """No committing thread published a root; the persisters' writes are all conditional."""
+    for s in storages:
+        assert s.unconditional == 0
+        assert all(name.startswith("proto-persister-") for name in s.publishers), s.publishers
+    for space in spaces:
+        stats = getattr(space.storage, "stats", None)
+        if callable(stats) and "root_writes_in_critical" in stats():
+            assert stats()["root_writes_in_critical"] == 0
 
 
 def _read(space):
@@ -80,22 +97,22 @@ def test_contending_peers_never_reach_the_storage(tmp_path, backend):
         elapsed = run_threads([worker_for(dbs[i % PEERS]) for i in range(PEERS * THREADS)])
         stats = [cl[n].stats() for n in cl.ids]
         n, counted = _read(spaces[1])
-    total = PEERS * THREADS * PER_THREAD
-    assert n == total
-    assert sorted(counted.elements()) == list(range(total))
-    assert all(counted.count_of(i) == 1 for i in range(total))
-    assert sum(s.failed_cas for s in storages) == 0
-    assert sum(s.unconditional for s in storages) == 0
+        total = PEERS * THREADS * PER_THREAD
+        assert n == total
+        assert sorted(counted.elements()) == list(range(total))
+        assert all(counted.count_of(i) == 1 for i in range(total))
+        spaces[1].sync(timeout=30)
+        _storage_untouched_by_commits(storages, spaces)
+        for space in spaces:
+            space.close()
     assert sum(st["fencing_events"] for st in stats) == 0
-    if store is not None:
-        assert store.failed_preconditions.get(storages[0].root_key, 0) == 0
     print(f"\n[{backend}] {total} increments by {PEERS}x{THREADS} threads in {elapsed:.2f}s; "
           f"lease attempts {sum(st['attempts'] for st in stats)}, "
           f"acquired {sum(st['acquired'] for st in stats)}, "
           f"storage root reads {sum(st['storage_root_reads'] for st in stats)}")
 
 
-def _throughput(storages_factory, tmp_path, peers, threads=4, seconds=1.5):
+def _throughput(storages_factory, tmp_path, peers, threads=4, seconds=1.5, breakdown=None):
     store, storages = storages_factory(tmp_path, peers)
     counter = itertools.count()
     with Cluster(peers, **CLUSTER_KW) as cl:
@@ -119,11 +136,19 @@ def _throughput(storages_factory, tmp_path, peers, threads=4, seconds=1.5):
 
         elapsed = run_threads([worker_for(dbs[i % peers]) for i in range(peers * threads)])
         fencing = sum(cl[n].stats()["fencing_events"] for n in cl.ids)
+        critical = [cl[n].stats() for n in cl.ids]
         _, counted = _read(spaces[0])
-    commits = sum(done)
-    assert sorted(counted.elements()) == list(range(commits))     # every committed id, no other
-    assert all(c == 1 for _, c in counted.items())                 # none applied twice
-    assert sum(s.failed_cas for s in storages) == 0 and fencing == 0
+        commits = sum(done)
+        assert sorted(counted.elements()) == list(range(commits))     # every committed id, no other
+        assert all(c == 1 for _, c in counted.items())                 # none applied twice
+        _storage_untouched_by_commits(storages, spaces)
+        for space in spaces:
+            space.close()
+    assert fencing == 0
+    if breakdown is not None:
+        n = sum(st["critical_commits"] for st in critical) or 1
+        for key in ("validation", "replay", "path_copy", "replication"):
+            breakdown[key] = sum(st["critical"][key] for st in critical) / n
     return commits / elapsed
 
 
@@ -136,3 +161,35 @@ def test_throughput_with_1_2_4_peers(tmp_path, backend, capsys):
         print(f"\nTHROUGHPUT in-process [{backend}] commits/s: "
               + ", ".join(f"{p} peer(s)={r:.0f}" for p, r in rates.items()))
     assert all(r > 0 for r in rates.values())
+
+
+def _cas_only_rate(store, seconds=1.5):
+    """Commits per second of one CloudStorage writer without a cluster: each commit uploads its
+    segment and compare-and-swaps the root object on the commit path."""
+    space = ObjectSpace(CloudStorage(store, backoff=(0.0, 0.001)))
+    db = space.new_database("db")
+    commits, stop_at, started = 0, time.monotonic() + seconds, time.perf_counter()
+    while time.monotonic() < stop_at:
+        db.run(lambda tr: tr.set_root_object("n", (tr.get_root_object("n") or 0) + 1), **RUN_KW)
+        commits += 1
+    elapsed = time.perf_counter() - started
+    space.close()
+    return commits / elapsed
+
+
+def test_throughput_with_a_30ms_object_store(tmp_path, capsys):
+    """Informational (Phase 9 record): the store's latency is off the cluster's commit path."""
+    slow = FakeObjectStore()
+    slow.latency = 0.030
+    breakdown = {}
+    tiered = _throughput(lambda p, n: _tiered_storages(p, n, store=slow), tmp_path / "tiered", 3,
+                         breakdown=breakdown)
+    cas_store = FakeObjectStore()
+    cas_store.latency = 0.030
+    cas = _cas_only_rate(cas_store)
+    with capsys.disabled():
+        print(f"\nTHROUGHPUT with 30 ms store latency: tiered cluster (3 peers x 4 threads) {tiered:.0f} "
+              f"commits/s; CAS-only single writer {cas:.1f} commits/s")
+        print("CRITICAL SECTION mean per commit (ms): "
+              + ", ".join(f"{k}={v * 1000:.3f}" for k, v in breakdown.items()))
+    assert tiered > cas

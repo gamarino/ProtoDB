@@ -22,9 +22,14 @@ counts, per key, the conditional writes refused because their precondition did n
 contention (D44).  ``before_write``
 is an optional hook ``(operation, key) -> None`` called before each write is applied,
 used to interleave a competing writer at an exact point.
+
+``set_outage(True)`` makes every operation fail with ``TransientObjectStoreError`` (the
+store is unreachable) until ``set_outage(False)``; ``latency`` seconds are slept before
+every operation (outside the lock, so concurrent requests overlap as in a real service).
 """
 import random
 import threading
+import time
 from typing import Callable, Optional
 
 from proto_db.storage.cloud import (ObjectNotFoundError, OutcomeUnknownError,
@@ -50,6 +55,23 @@ class FakeObjectStore:
         self.log = []
         self.calls = {op: 0 for op in OPERATIONS}
         self.failed_preconditions = {}     # key -> conditional writes refused by a real precondition
+        self.latency = 0.0
+        self._outage = False
+        self.outage_rejections = 0
+
+    def set_outage(self, down: bool) -> None:
+        """Make the store unreachable (every operation fails transiently) or reachable again."""
+        with self._lock:
+            self._outage = bool(down)
+
+    def _enter(self, operation: str, key: str) -> None:
+        """Apply the latency, then refuse the call during an outage."""
+        if self.latency:
+            time.sleep(self.latency)
+        with self._lock:
+            if self._outage:
+                self.outage_rejections += 1
+                raise TransientObjectStoreError(f"store unreachable: {operation} {key}")
 
     # --- fault control ------------------------------------------------------------
 
@@ -106,6 +128,7 @@ class FakeObjectStore:
         return self._write("put_if_match", key, bytes(data), etag)
 
     def _write(self, operation: str, key: str, data: bytes, etag: Optional[str]) -> str:
+        self._enter(operation, key)
         hook = self.before_write
         if hook is not None:
             hook(operation, key)
@@ -127,6 +150,7 @@ class FakeObjectStore:
 
     def get(self, key: str) -> tuple:
         """Return ``(data, etag)``; ``ObjectNotFoundError`` if ``key`` is absent."""
+        self._enter("get", key)
         with self._lock:
             self.calls["get"] += 1
             self._raise_before(self._take_fault("get", key), "get", key)
@@ -137,6 +161,7 @@ class FakeObjectStore:
 
     def list(self, prefix: str) -> list:
         """Return the sorted keys starting with ``prefix``."""
+        self._enter("list", prefix)
         with self._lock:
             self.calls["list"] += 1
             self._raise_before(self._take_fault("list", prefix), "list", prefix)
@@ -144,6 +169,7 @@ class FakeObjectStore:
 
     def delete(self, key: str) -> None:
         """Delete ``key``; deleting an absent key is not an error (as in S3)."""
+        self._enter("delete", key)
         hook = self.before_write
         if hook is not None:
             hook("delete", key)

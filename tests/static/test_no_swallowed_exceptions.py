@@ -27,6 +27,7 @@ CHECKED_ROOTS = [
     "proto_db/storage/cache.py",
     "proto_db/storage/file.py",
     "proto_db/storage/cloud.py",
+    "proto_db/storage/tiered.py",
     "proto_db/collections/__init__.py",
     "proto_db/collections/avl.py",
     "proto_db/collections/base.py",
@@ -58,6 +59,7 @@ CHECKED_ROOTS = [
     "proto_db/cluster/lease.py",
     "proto_db/cluster/transport.py",
     "proto_db/cluster/coordinator.py",
+    "proto_db/cluster/persister.py",
 ]
 
 

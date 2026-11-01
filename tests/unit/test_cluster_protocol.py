@@ -6,7 +6,7 @@ import msgpack
 import pytest
 
 from proto_db.cluster.protocol import (MAX_FRAME_BYTES, PROTOCOL_VERSION, ClusterProtocolError,
-                                       FrameDecoder, decode_message, decode_root, encode_frame,
+                                       FrameDecoder, decode_labeled_root, decode_message, decode_root, encode_frame,
                                        encode_root, make_message)
 from proto_db.storage.format import FORMAT_VERSION, RootRecord
 
@@ -16,17 +16,25 @@ def _record(epoch=3):
 
 
 def test_every_message_carries_the_protocol_version_and_sender():
-    msg = make_message("request", "n1", term=4, rid=7)
+    msg = make_message("request", "n1", term=4, rid=7, inc=3)
     assert msg["v"] == PROTOCOL_VERSION
     assert msg["type"] == "request" and msg["from"] == "n1"
 
 
 @pytest.mark.parametrize("kind,fields", [
-    ("request", dict(term=1, rid=2)),
-    ("grant", dict(term=1, rid=2, root=None, certain=False)),
+    ("request", dict(term=1, rid=2, inc=11)),
+    ("grant", dict(term=1, rid=2, root=None, committed=[0, None, None, 1], certain=False)),
     ("reject", dict(term=1, rid=2, root=[0, None, None], certain=True, reason="busy",
                     highest=5, remaining=0.25)),
-    ("release", dict(term=9, root=None, certain=False, held=True)),
+    ("release", dict(term=9, inc=11, root=None, committed=[4, uuid.UUID(int=1).bytes, 64, 2], certain=False,
+                     held=True)),
+    ("replicate", dict(term=3, rid=4, root=[5, uuid.UUID(int=2).bytes, 80, 3], committed=None,
+                       records=[[uuid.UUID(int=2).bytes, 80, b"framed"], [uuid.UUID(int=3).bytes, 26, None]])),
+    ("ack", dict(term=3, rid=4, ok=True, root=None)),
+    ("query", dict(rid=1)),
+    ("answer", dict(rid=1, root=None, committed=[0, None, None, 0], certain=True)),
+    ("fetch", dict(rid=2, segment=uuid.UUID(int=9).bytes, offset=26)),
+    ("fetched", dict(rid=2, data=None)),
 ])
 def test_message_roundtrip_through_a_frame(kind, fields):
     msg = make_message(kind, "peer-a", **fields)
@@ -45,7 +53,7 @@ def test_make_message_rejects_unknown_types_and_missing_fields():
 
 
 def test_decode_rejects_another_protocol_version():
-    msg = make_message("request", "n1", term=1, rid=1)
+    msg = make_message("request", "n1", term=1, rid=1, inc=0)
     msg["v"] = PROTOCOL_VERSION + 1
     with pytest.raises(ClusterProtocolError, match="version"):
         decode_message(msgpack.packb(msg, use_bin_type=True))
@@ -59,7 +67,7 @@ def test_decode_rejects_garbage_and_non_maps():
 
 
 def test_frames_split_across_chunks_and_coalesced_in_one_chunk():
-    msgs = [make_message("request", "n1", term=t, rid=t) for t in range(1, 6)]
+    msgs = [make_message("request", "n1", term=t, rid=t, inc=0) for t in range(1, 6)]
     data = b"".join(encode_frame(m) for m in msgs)
     decoder = FrameDecoder()
     out = []
@@ -81,6 +89,22 @@ def test_root_encoding_distinguishes_unknown_empty_and_a_record():
     assert decode_root(encode_root(None, known=True)) == (True, None)
     rec = _record()
     assert decode_root(encode_root(rec, known=True)) == (True, rec)
+
+
+def test_roots_carry_their_label_term():
+    rec = _record(7)
+    assert decode_labeled_root(encode_root(rec, known=True, term=5)) == (True, rec, 5)
+    assert decode_labeled_root(encode_root(None, known=True, term=2)) == (True, None, 2)
+    assert decode_labeled_root([7, rec.segment.bytes, 64]) == (True, rec, 0)     # unlabelled: term 0
+    with pytest.raises(ClusterProtocolError):
+        decode_labeled_root([7, rec.segment.bytes, 64, -1])
+
+
+def test_replicate_records_are_validated():
+    with pytest.raises(ClusterProtocolError):
+        make_message("replicate", "n1", term=1, rid=1, root=None, committed=None, records=[[b"short", 1, None]])
+    with pytest.raises(ClusterProtocolError):
+        make_message("fetch", "n1", rid=1, segment=b"x", offset=0)
 
 
 def test_decode_root_rejects_malformed_values():

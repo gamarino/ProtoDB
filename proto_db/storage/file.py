@@ -426,6 +426,39 @@ class FileStorage(SharedStorage):
         self._check_open()
         self._write_out(sync=self._durability == "fsync")
 
+    def append_record(self, kind: RecordKind, payload: bytes) -> AtomPointer:
+        """Append an already encoded record payload of ``kind`` (``push_atom`` without the msgpack step).
+
+        Used by :class:`~proto_db.storage.tiered.TieredStorage`, which keeps the framed bytes.
+        """
+        if not isinstance(payload, (bytes, bytearray, memoryview)):
+            raise ProtoValidationError("Record payload must be bytes")
+        self._check_writable()
+        return self._append(RecordKind(kind), bytes(payload))
+
+    @property
+    def current_segment(self) -> Optional[uuid.UUID]:
+        """UUID of the segment receiving appends, or ``None`` before the first append or after
+        :meth:`roll_segment`."""
+        with self._state_lock:
+            return self._current.uuid if self._current is not None else None
+
+    def roll_segment(self) -> Optional[uuid.UUID]:
+        """Seal the segment receiving appends (the next append starts a new one); return the
+        sealed segment's UUID, or ``None`` when no segment holds records.
+
+        A sealed segment is never written again once the buffer is flushed, so its file
+        can be copied elsewhere whole (the tiered storage ships it to an object store).
+        """
+        with self._state_lock:
+            self._check_writable()
+            seg = self._current
+            if seg is None or seg.end <= SEGMENT_HEADER_SIZE:
+                return None
+            seg.sealed = True
+            self._current = None
+            return seg.uuid
+
     # --- read path -----------------------------------------------------------------
 
     def _buffered(self, ptr: AtomPointer) -> Optional[bytes]:
@@ -532,6 +565,30 @@ class FileStorage(SharedStorage):
             return read_record(self._read_range(ptr.segment, fd, ptr.offset, total, use_cache), 0)
         except OSError as e:
             raise ProtoUnexpectedError(f"Reading {ptr} failed: {e}") from e
+
+    def get_record(self, ptr: AtomPointer) -> tuple:
+        """Return ``(RecordKind, payload)`` of the verified record at ``ptr``, whatever its kind.
+
+        Raises ``ProtoCorruptionError`` for a missing segment or a record that fails its checks.
+        """
+        if not isinstance(ptr, AtomPointer):
+            raise ProtoValidationError("Expected an AtomPointer")
+        return self._fetch_record(ptr)
+
+    def forget_segment(self, segment: uuid.UUID) -> None:
+        """Close the cached read descriptor of ``segment`` (its file was removed or replaced).
+
+        Waits for file reads in progress (a descriptor is never closed under a reader); a
+        later read reopens the file, or fails with ``ProtoCorruptionError`` if it is gone.
+        Cached pages of that segment are left to age out of the bounded cache.
+        """
+        with self._state_lock:
+            while self._readers:
+                self._idle.wait()
+            with self._fd_lock:
+                fd = self._read_fds.pop(segment, None)
+            if fd is not None:
+                os.close(fd)
 
     def get_atom(self, ptr: AtomPointer) -> dict:
         """See :meth:`SharedStorage.get_atom`."""

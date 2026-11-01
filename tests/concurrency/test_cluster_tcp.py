@@ -1,10 +1,12 @@
-"""Real TCP cluster: three subprocess peers on localhost over one FileStorage (Task 8.3c, D44, D45).
+"""Real TCP cluster: three subprocess peers on localhost (Tasks 8.3c and 8.3d, D44-D46).
 
 Each peer (``cluster_peer.py``) binds its transport to port 0 and reports the port; the
-parent sends every peer the full peer list, then starts them together.  The smoke test
-checks the final count of concurrent increments is exact, every committed id appears once
-and no conditional root write failed.  The throughput test prints commits per second
-through the TCP transport (informational, for the Phase 9 record).
+parent sends every peer the full peer list, then starts them together.  The peers share
+one FileStorage, or each has a local tier (TieredStorage) over one shared directory
+object store.  The smoke tests check the final persisted count of concurrent increments
+is exact, every committed id appears once and no committing thread wrote a root (only
+the persisters did, D46).  The throughput tests print commits per second through the TCP
+transport (informational, for the Phase 9 record).
 """
 import json
 import os
@@ -15,7 +17,9 @@ import tempfile
 import pytest
 
 from proto_db.storage.file import FileStorage
+from proto_db.storage.tiered import TieredStorage
 from proto_db.transactions import ObjectSpace
+from tests.support.dir_object_store import DirObjectStore
 
 PEER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cluster_peer.py")
 PEERS = 3
@@ -41,13 +45,23 @@ def _recv(proc, err):
     return json.loads(line)
 
 
+def _space_arg(space_dir, node_id):
+    """The peer's SPACE argument: the shared directory, or its tiered layout."""
+    if isinstance(space_dir, tuple):
+        root, store = space_dir
+        return f"tiered:{os.path.join(root, node_id)}:{store}"
+    return space_dir
+
+
 def _run_cluster(space_dir, mode, threads, amount):
-    space = ObjectSpace(FileStorage(space_dir, durability="none"))
-    space.new_database("db")
-    space.close()
+    if not isinstance(space_dir, tuple):
+        space = ObjectSpace(FileStorage(space_dir, durability="none"))
+        space.new_database("db")            # the tiered peers create it themselves (n0)
+        space.close()
     ids = [f"n{i}" for i in range(PEERS)]
     errs = [tempfile.TemporaryFile("w+") for _ in ids]    # files: a chatty peer never blocks on stderr
-    procs = [subprocess.Popen([sys.executable, PEER_SCRIPT, node_id, space_dir, mode, str(threads), str(amount)],
+    procs = [subprocess.Popen([sys.executable, PEER_SCRIPT, node_id, _space_arg(space_dir, node_id), mode,
+                               str(threads), str(amount)],
                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err, text=True)
              for node_id, err in zip(ids, errs)]
     pairs = list(zip(procs, errs))
@@ -78,7 +92,11 @@ def _run_cluster(space_dir, mode, threads, amount):
 
 
 def _final(space_dir):
-    space = ObjectSpace(FileStorage(space_dir, durability="none"))
+    if isinstance(space_dir, tuple):
+        reader = TieredStorage(os.path.join(space_dir[0], "reader"), DirObjectStore(space_dir[1]))
+    else:
+        reader = FileStorage(space_dir, durability="none")
+    space = ObjectSpace(reader)
     try:
         tr = space.open_database("db").new_transaction()
         n, ids = tr.get_root_object("n"), tr.get_root_object("ids")
@@ -88,8 +106,13 @@ def _final(space_dir):
         space.close()
 
 
-def test_three_tcp_peers_commit_concurrently_to_a_shared_file_storage(tmp_path):
-    space_dir = str(tmp_path / "space")
+def _spaces(tmp_path):
+    return {"file": str(tmp_path / "space"), "tiered": (str(tmp_path / "local"), str(tmp_path / "store"))}
+
+
+@pytest.mark.parametrize("backend", ["file", "tiered"])
+def test_three_tcp_peers_commit_concurrently(tmp_path, backend):
+    space_dir = _spaces(tmp_path)[backend]
     threads, per_thread = 2, 25
     results = _run_cluster(space_dir, "increment", threads, per_thread)
     total = PEERS * threads * per_thread
@@ -97,21 +120,28 @@ def test_three_tcp_peers_commit_concurrently_to_a_shared_file_storage(tmp_path):
     n, ids = _final(space_dir)
     assert n == total
     assert len(ids) == total and all(c == 1 for c in ids.values())
-    assert sum(r["failed_cas"] for r in results) == 0
+    assert sum(r["commit_publishes"] for r in results) == 0
     assert sum(r["fencing"] for r in results) == 0
+    if backend == "tiered":
+        assert all(r["critical"]["root_writes_in_critical"] == 0 for r in results)
 
 
-def test_tcp_throughput_three_peers(tmp_path, capsys):
-    space_dir = str(tmp_path / "space")
+@pytest.mark.parametrize("backend", ["file", "tiered"])
+def test_tcp_throughput_three_peers(tmp_path, capsys, backend):
+    space_dir = _spaces(tmp_path)[backend]
     results = _run_cluster(space_dir, "throughput", 4, 2.0)
     commits = sum(r["commits"] for r in results)
     seconds = max(r["seconds"] for r in results)
     _, ids = _final(space_dir)
     assert len(ids) == commits and all(c == 1 for c in ids.values())
-    assert sum(r["failed_cas"] for r in results) == 0
+    assert sum(r["commit_publishes"] for r in results) == 0
+    n = sum(r["critical_commits"] for r in results) or 1
+    breakdown = {k: sum(r["breakdown"][k] for r in results) / n * 1000
+                 for k in ("validation", "replay", "path_copy", "replication")}
     with capsys.disabled():
-        print(f"\nTHROUGHPUT TCP [file] 3 subprocess peers x 4 threads: {commits / seconds:.0f} commits/s "
-              f"({commits} commits in {seconds:.2f}s)")
+        print(f"\nTHROUGHPUT TCP [{backend}] 3 subprocess peers x 4 threads: {commits / seconds:.0f} commits/s "
+              f"({commits} commits in {seconds:.2f}s); critical section ms/commit: "
+              + ", ".join(f"{k}={v:.3f}" for k, v in breakdown.items()))
 
 
 # -- one unreachable member must not stall the others (fix round 1, R39) ----------------------
@@ -193,4 +223,7 @@ def test_an_unreachable_member_does_not_stall_the_healthy_majority(capsys):
     with capsys.disabled():
         print(f"\nTCP 3 members, 2 committing: all reachable {healthy:.0f} commits/s, "
               f"one black-holed {degraded:.0f} commits/s")
-    assert degraded >= 0.5 * healthy
+    # The stall this guards against was 8 against 460 commits/s.  Since D46 every commit needs
+    # a majority ack: with one member of three down, each needs the other (busy) live member,
+    # while the healthy run has an idle spare acker, so the expected ratio is lower than 0.5.
+    assert degraded >= 0.3 * healthy

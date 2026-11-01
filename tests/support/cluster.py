@@ -10,7 +10,7 @@ node and the network, joining all their threads.
 
 ``CasCountingStorage(storage)`` delegates to a storage and counts failed conditional root
 writes (``ProtoConflictError`` from ``publish_root``), publishes, and publishes sent
-without an expected epoch.
+without an expected epoch; ``publishers`` is the set of thread names that published.
 
 ``DriftClock(rate, offset)`` is a node clock running at ``rate`` times real time;
 ``to_real(t)`` maps one of its readings back to ``time.monotonic()``, so a harness can
@@ -104,6 +104,7 @@ class CasCountingStorage:
         self.publishes = 0
         self.failed_cas = 0
         self.unconditional = 0
+        self.publishers = set()
 
     def __getattr__(self, name):
         return getattr(self._inner, name)
@@ -111,6 +112,7 @@ class CasCountingStorage:
     def publish_root(self, ptr, expected_epoch):
         with self._count_lock:
             self.publishes += 1
+            self.publishers.add(threading.current_thread().name)
             if expected_epoch is None:
                 self.unconditional += 1
         try:

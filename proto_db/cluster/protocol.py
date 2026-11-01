@@ -1,21 +1,35 @@
-"""Wire protocol of the cluster coordinator (Task 8.3c, decisions D44 and D45).
+"""Wire protocol of the cluster coordinator (Tasks 8.3c and 8.3d, decisions D44, D45, D46).
 
 Every message is a msgpack map with three common fields -- ``v`` (the protocol version,
 :data:`PROTOCOL_VERSION`), ``type`` and ``from`` (the sender's node id) -- plus the
 fields of its type:
 
-``request``  ``term``, ``rid``: ask for the write lease for ``term`` (``rid`` matches the replies
-             to one attempt).
-``grant``    ``term``, ``rid``, ``root``, ``certain``: the sender grants the lease for ``term``.
-``reject``   ``term``, ``rid``, ``root``, ``certain``, ``reason``, ``highest``, ``remaining``:
-             the sender refuses; ``highest`` is the highest term it has seen and ``remaining``
-             the seconds left of the promise that blocks the grant (``0.0`` when none).
-``release``  ``term``, ``root``, ``certain``, ``held``: the sender gives up ``term``; ``held``
-             is True when it actually held the lease (a winner's release, which wakes waiting
-             requesters) and False for the cancel of a lost attempt.
+``request``    ``term``, ``rid``, ``inc``: ask for the write lease for ``term`` (``rid`` matches
+               the replies to one attempt; ``inc`` is the requester's incarnation, a random
+               number drawn at each start, so a restarted node is never mistaken for its
+               previous life).
+``grant``      ``term``, ``rid``, ``root``, ``certain``: the sender grants the lease for ``term``.
+``reject``     ``term``, ``rid``, ``root``, ``certain``, ``reason``, ``highest``, ``remaining``:
+               the sender refuses; ``highest`` is the highest term it has seen and
+               ``remaining`` the seconds left of the promise that blocks the grant.
+``release``    ``term``, ``inc``, ``root``, ``committed``, ``certain``, ``held``: the sender gives
+               up ``term``; ``held`` is True when it actually held the lease (a winner's
+               release, which wakes waiting requesters) and False for the cancel of a lost
+               attempt.
+``replicate``  ``term``, ``rid``, ``root``, ``committed``, ``records``: the lease holder of
+               ``term`` replicates its new root (the commit point, D46) together with the
+               records the receiver needs: ``[segment UUID bytes, offset, framed record bytes
+               or None]`` (``None``: the records live in a shared storage; only prefetch).
+``ack``        ``term``, ``rid``, ``ok``, ``root``: the receiver durably accepted (``ok``) or
+               refused the replicated root; ``root`` is its accepted root.
+``query``      ``rid``: ask a peer for the roots it knows (recovery).
+``answer``     ``rid``, ``root``, ``committed``, ``certain``: the peer's accepted and committed roots.
+``fetch``      ``rid``, ``segment``, ``offset``: a peer page request for one record.
+``fetched``    ``rid``, ``data``: the framed record bytes, or ``None`` when the peer lacks it.
 
-``root`` is the sender's latest known storage root (see :func:`encode_root`) and
-``certain`` tells whether the sender is sure no root newer than it was published (D45).
+``root`` and ``committed`` use :func:`encode_root`: a root with the term of the lease that
+replicated it (its *label*); roots are ordered by ``(term, epoch)`` (D46).  ``certain``
+tells whether the sender knows of no grant whose outcome it could have missed.
 
 On a stream, each message travels as one frame: a 4-byte big-endian length followed by
 that many bytes of msgpack.  A frame longer than :data:`MAX_FRAME_BYTES` is a protocol
@@ -34,12 +48,12 @@ from ..storage.format import FORMAT_VERSION, RootRecord
 
 __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "MESSAGE_TYPES", "ClusterProtocolError",
            "make_message", "validate_message", "encode_message", "decode_message",
-           "encode_frame", "FrameDecoder", "encode_root", "decode_root"]
+           "encode_frame", "FrameDecoder", "encode_root", "decode_root", "decode_labeled_root"]
 
 #: Version carried by every message; a receiver drops messages of any other version.
-PROTOCOL_VERSION = 1
-#: Largest accepted frame payload, in bytes.
-MAX_FRAME_BYTES = 1024 * 1024
+PROTOCOL_VERSION = 2
+#: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
+MAX_FRAME_BYTES = 64 * 1024 * 1024
 
 _LENGTH = struct.Struct(">I")
 _INT = "int"
@@ -47,14 +61,24 @@ _NUM = "number"
 _STR = "str"
 _BOOL = "bool"
 _ROOT = "root"
+_RECORDS = "records"
+_UUID = "uuid"
+_OPT_BYTES = "optional bytes"
 
 #: Fields of each message type (besides ``v``, ``type`` and ``from``).
 MESSAGE_TYPES = {
-    "request": {"term": _INT, "rid": _INT},
-    "grant": {"term": _INT, "rid": _INT, "root": _ROOT, "certain": _BOOL},
+    "request": {"term": _INT, "rid": _INT, "inc": _INT},
+    "grant": {"term": _INT, "rid": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL},
     "reject": {"term": _INT, "rid": _INT, "root": _ROOT, "certain": _BOOL, "reason": _STR,
                "highest": _INT, "remaining": _NUM},
-    "release": {"term": _INT, "root": _ROOT, "certain": _BOOL, "held": _BOOL},
+    "release": {"term": _INT, "inc": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL,
+                "held": _BOOL},
+    "replicate": {"term": _INT, "rid": _INT, "root": _ROOT, "committed": _ROOT, "records": _RECORDS},
+    "ack": {"term": _INT, "rid": _INT, "ok": _BOOL, "root": _ROOT},
+    "query": {"rid": _INT},
+    "answer": {"rid": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL},
+    "fetch": {"rid": _INT, "segment": _UUID, "offset": _INT},
+    "fetched": {"rid": _INT, "data": _OPT_BYTES},
 }
 
 
@@ -71,6 +95,14 @@ def _check_field(kind: str, name: str, value, expected: str) -> None:
         ok = isinstance(value, str)
     elif expected == _BOOL:
         ok = isinstance(value, bool)
+    elif expected == _UUID:
+        ok = isinstance(value, bytes) and len(value) == 16
+    elif expected == _OPT_BYTES:
+        ok = value is None or isinstance(value, bytes)
+    elif expected == _RECORDS:
+        ok = isinstance(value, list) and all(
+            isinstance(r, (list, tuple)) and len(r) == 3 and isinstance(r[0], bytes) and len(r[0]) == 16
+            and type(r[1]) is int and r[1] >= 0 and (r[2] is None or isinstance(r[2], bytes)) for r in value)
     else:
         decode_root(value)
         ok = True
@@ -154,29 +186,39 @@ class FrameDecoder:
         return out
 
 
-def encode_root(record: Optional[RootRecord], *, known: bool):
-    """Wire form of a known root: ``None`` (unknown), ``[0, None, None]`` (known empty space)
-    or ``[epoch, segment UUID bytes, offset]``."""
+def encode_root(record: Optional[RootRecord], *, known: bool, term: int = 0):
+    """Wire form of a root: ``None`` (unknown), ``[0, None, None, term]`` (known empty space)
+    or ``[epoch, segment UUID bytes, offset, term]``; ``term`` is the root's label (D46)."""
     if not known:
         return None
     if record is None:
-        return [0, None, None]
-    return [record.epoch, record.segment.bytes, record.offset]
+        return [0, None, None, term]
+    return [record.epoch, record.segment.bytes, record.offset, term]
 
 
-def decode_root(value) -> tuple:
-    """Inverse of :func:`encode_root`: ``(known, RootRecord or None)``."""
+def decode_labeled_root(value) -> tuple:
+    """Inverse of :func:`encode_root`: ``(known, RootRecord or None, term)``.
+
+    A three-element value (no term) is accepted with term ``0``.
+    """
     if value is None:
-        return False, None
-    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        return False, None, 0
+    if not isinstance(value, (list, tuple)) or len(value) not in (3, 4):
         raise ClusterProtocolError(f"Malformed root {value!r}")
-    epoch, segment, offset = value
-    if type(epoch) is not int or epoch < 0:
-        raise ClusterProtocolError(f"Malformed root epoch {epoch!r}")
+    epoch, segment, offset = value[:3]
+    term = value[3] if len(value) == 4 else 0
+    if type(epoch) is not int or epoch < 0 or type(term) is not int or term < 0:
+        raise ClusterProtocolError(f"Malformed root epoch or term {value!r}")
     if epoch == 0:
         if segment is not None or offset is not None:
             raise ClusterProtocolError("The empty root (epoch 0) has no pointer")
-        return True, None
+        return True, None, term
     if not isinstance(segment, bytes) or len(segment) != 16 or type(offset) is not int or offset < 0:
         raise ClusterProtocolError(f"Malformed root pointer {value!r}")
-    return True, RootRecord(FORMAT_VERSION, uuid.UUID(bytes=segment), offset, epoch)
+    return True, RootRecord(FORMAT_VERSION, uuid.UUID(bytes=segment), offset, epoch), term
+
+
+def decode_root(value) -> tuple:
+    """``(known, RootRecord or None)`` of a wire root (its label is dropped)."""
+    known, record, _ = decode_labeled_root(value)
+    return known, record
