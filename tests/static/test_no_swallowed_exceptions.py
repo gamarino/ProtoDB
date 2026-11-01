@@ -25,6 +25,8 @@ CHECKED_ROOTS = [
     "proto_db/storage/memory.py",
     "proto_db/storage/cache.py",
     "proto_db/storage/file.py",
+    "proto_db/collections/__init__.py",
+    "proto_db/collections/avl.py",
 ]
 
 
