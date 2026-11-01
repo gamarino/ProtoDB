@@ -28,19 +28,21 @@ class ToySet(ConcurrentOptimized, IndexedCollection):
         """True iff ``e`` is a member."""
         return avl.key_get(self.root, e, False)
 
+    __contains__ = has
+
     def add(self, e) -> "ToySet":
-        """Return a set with ``e`` added (``self`` when already present)."""
+        """Return a set with ``e`` added; when already present, a new version logging the intent only."""
         root, replaced, _ = avl.key_put(self.root, e, True)
         if replaced:
-            return self
+            return self._with(_op_log=self._logged(("add", e)))
         return self._with(root=root, count=self.count + 1, indexes=self._after_add(e),
                           _op_log=self._logged(("add", e)))
 
     def discard(self, e) -> "ToySet":
-        """Return a set without ``e`` (``self`` when absent)."""
+        """Return a set without ``e``; when absent, a new version logging the intent only."""
         root, removed, _ = avl.key_remove(self.root, e)
         if not removed:
-            return self
+            return self._with(_op_log=self._logged(("remove", e)))
         return self._with(root=root, count=self.count - 1, indexes=self._after_remove(e),
                           _op_log=self._logged(("remove", e)))
 

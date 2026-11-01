@@ -34,8 +34,12 @@ class RecordingIndex(Atom):
         return RecordingIndex(self.name)
 
     def build(self, elements):
-        """Return a fresh index whose only event is the bulk build over ``elements``."""
-        return RecordingIndex(self.name, (("build", tuple(elements)),))
+        """Fold ``elements`` onto this index (as a fold of ``with_added`` would): records a build event.
+
+        Building a non-empty index keeps its previous content, so a collection
+        that forgets to call ``empty()`` first ends up with a stale index.
+        """
+        return self._plus(("build", tuple(elements)))
 
     def with_added(self, element):
         """Record an element addition."""
@@ -65,7 +69,7 @@ class RecordingIndex(Atom):
         for event in self.events:
             kind = event[0]
             if kind == "build":
-                live = Counter(key(e) for e in event[1])
+                live.update(key(e) for e in event[1])
             elif kind == "add":
                 live[key(event[1])] += 1
             elif kind == "remove":

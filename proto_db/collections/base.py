@@ -14,8 +14,10 @@ every mutator of every registered collection.
 
 Index objects are duck-typed here (the ``Index`` base arrives with the index
 framework): an index exposes a non-empty ``str`` ``name`` and the hooks
-``build(elements)``, ``with_added(e)``, ``with_removed(e)`` and
+``empty()``, ``build(elements)``, ``with_added(e)``, ``with_removed(e)`` and
 ``with_replaced(old, new)``, each returning a new index with the same name.
+Collections always build an index as ``index.empty().build(elements)``, so an
+index passed with content of its own never leaks that content into a collection.
 
 :class:`ConcurrentOptimized` adds a runtime-only operation log to a collection so
 that a transaction can replay its net effect onto a concurrently committed
@@ -32,7 +34,7 @@ from collections.abc import Callable, Iterable, Iterator
 from ..core.atom import Atom, PersistenceContext
 from ..errors import ProtoConflictError, ProtoUserError, ProtoValidationError
 from ..query.plans import CollectionScanPlan
-from ..values import order_key
+from ..values import order_key, values_equal
 from . import avl
 
 __all__ = ["IndexSet", "IndexedCollection", "ConcurrentOptimized", "net_effect"]
@@ -196,18 +198,29 @@ class IndexedCollection(_Immutable, Atom):
     def __len__(self) -> int:
         return self.count
 
+    def __contains__(self, element) -> bool:
+        """True iff some element equals ``element`` by ``values_equal``.
+
+        The default is an O(n) scan, which needs orderable elements; subclasses
+        override it with their structure's lookup (or their own notion of
+        membership, e.g. keys for dictionaries).
+        """
+        return any(e is element or values_equal(e, element) for e in self.elements())
+
     # -- indexes ------------------------------------------------------------------------
 
     def add_index(self, index) -> "IndexedCollection":
         """Return a version with ``index`` built over the current elements.
 
+        The index is built as ``index.empty().build(self.elements())``: only its
+        definition is used, never content it may already hold.
         ``ProtoValidationError`` if an index with the same name exists (checked
-        before building) or if ``build`` returns an index with another name.
+        before building) or if the built index has another name.
         """
         name = _index_name(index)
         if name in self.indexes:
             raise ProtoValidationError(f"An index named {name!r} already exists")
-        built = index.build(self.elements())
+        built = index.empty().build(self.elements())
         if built is None or _index_name(built) != name:
             raise ProtoValidationError(f"Index {name!r} build() returned {built!r}; expected the same name")
         return self._with(indexes=self.indexes.with_index(built),
@@ -243,6 +256,9 @@ class IndexedCollection(_Immutable, Atom):
         unknown = [k for k in changes if k not in cls._fields and k not in runtime]
         if unknown:
             raise ProtoValidationError(f"{cls.__name__}._with got unknown fields {unknown}")
+        if "indexes" in changes and not isinstance(changes["indexes"], IndexSet):
+            raise ProtoValidationError(f"{cls.__name__}._with: indexes must be an IndexSet, "
+                                       f"not {type(changes['indexes']).__name__}")
         new = object.__new__(cls)
         Atom.__init__(new, context=self.context)
         osa = object.__setattr__
@@ -300,10 +316,17 @@ class ConcurrentOptimized:
     version starts with an empty log).  Mutators extend it immutably with
     ``_with(..., _op_log=self._logged(op))``; an op is a tuple whose first item
     is a ``str`` kind not starting with ``"@"`` (reserved for index-definition
-    changes, which :class:`IndexedCollection` logs itself).  No-op mutations
-    should not log.
+    changes, which :class:`IndexedCollection` logs itself).
 
-    :meth:`rebase_onto` replays the net effect of the log onto another version.
+    The log records INTENT, not observed change: every mutator call logs its op
+    (add means "present", remove means "absent", set means "mapped to this
+    value"), including calls that change nothing in this version (a blind
+    write).  Such a call returns a NEW version that carries the extended log
+    and reuses the receiver's content and indexes (no index work).  Mutators
+    must therefore be idempotent with respect to their intent, so that
+    replaying an op onto any version forces its key to the intended state.
+
+    :meth:`rebase_onto` replays the net intent of the log onto another version.
     Subclasses implement :meth:`_replay_op` and, when ``op[1]`` is not the key an
     op touches, override :meth:`_op_key`.  It must precede
     :class:`IndexedCollection` in the class bases.
@@ -336,14 +359,16 @@ class ConcurrentOptimized:
     def rebase_onto(self, current):
         """Return ``current`` with the net effect of this version's op log applied.
 
-        Element ops: the last op per key is replayed, in order of last occurrence,
-        through :meth:`_replay_op` (so ``current``'s indexes are maintained).
+        Element ops: the last op per key is replayed unconditionally, in order of
+        last occurrence, through :meth:`_replay_op` (public, idempotent mutators,
+        so ``current``'s indexes are maintained and every touched key ends in
+        its last intended state).
         Index-definition changes are then replayed per index name: an index this
         log created is added (``ProtoConflictError`` if ``current`` already has
         one with that name), an index this log removed is removed if still
         present, a removed-then-added index replaces ``current``'s, and an index
         created and removed within the log leaves ``current`` untouched.  Added
-        indexes are built over the merged elements.
+        indexes are built (from ``empty()``) over the merged elements.
         """
         if type(current) is not type(self):
             raise ProtoValidationError(f"Cannot rebase a {type(self).__name__} onto a {type(current).__name__}")

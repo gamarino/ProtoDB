@@ -13,9 +13,13 @@ A mutator is a callable ``(collection, rng) -> (new_collection, expected_events)
 or ``None`` when it does not apply to that collection (e.g. removing from an
 empty collection).  ``expected_events`` is the exact sequence of element-level
 index events the mutation implies: ``("add", e)``, ``("remove", e)``,
-``("replace", old, new)``.  An empty sequence declares a no-op: the mutator may
-then return the receiver itself or a new collection with the same content;
-otherwise it must return a new object.
+``("replace", old, new)``.  An empty sequence declares a no-op on the content:
+the mutator may then return the receiver itself or a new collection with the
+same content; otherwise it must return a new object.  ConcurrentOptimized
+collections log intent (D22): every mutator call, no-ops included, returns a
+new version with a longer op log, and a no-op reuses the receiver's indexes.
+Their factories also provide ``rebase_model`` so that ``check_rebase`` can
+verify ``rebase_onto`` against an independent model.
 """
 from __future__ import annotations
 
@@ -44,7 +48,11 @@ class CollectionFactory:
     returns a version with some random content, built through public mutators;
     ``mutators`` maps a name to a mutator (see the module docstring);
     ``element_key`` maps an element to a hashable key that is equal for equal
-    elements (default ``order_key``; override for unorderable elements).
+    elements (default ``order_key``; override for unorderable elements);
+    ``rebase_model(theirs, op_log) -> Counter`` (required for ConcurrentOptimized
+    collections) returns the element-key multiset expected from replaying the
+    net intent of ``op_log`` onto collection ``theirs``, computed independently
+    of the collection's own replay code.
     """
 
     name: str
@@ -52,6 +60,7 @@ class CollectionFactory:
     populate: Callable[[IndexedCollection, random.Random], IndexedCollection]
     mutators: dict = field(default_factory=dict)
     element_key: Callable = order_key
+    rebase_model: Callable | None = None
 
 
 COLLECTION_FACTORIES: list[CollectionFactory] = []
@@ -69,6 +78,13 @@ def mutator_cases():
     import pytest
     return [pytest.param(f, m, s, id=f"{f.name}-{m}-{s}")
             for f in COLLECTION_FACTORIES for m in f.mutators for s in SEEDS]
+
+
+def rebase_cases():
+    """``(factory, seed)`` pairs for every ConcurrentOptimized factory."""
+    import pytest
+    return [pytest.param(f, s, id=f"{f.name}-{s}") for f in COLLECTION_FACTORIES
+            if isinstance(f.empty(), ConcurrentOptimized) for s in SEEDS]
 
 
 def factory_cases():
@@ -107,9 +123,13 @@ def assert_indexes_consistent(factory, coll) -> None:
         assert coll.get_index(name).live(factory.element_key) == content, f"stale index {name}"
 
 
-def assert_round_trip(factory, coll) -> None:
-    """Saving and lazily loading ``coll`` preserves elements, count and indexes; op logs are dropped."""
-    context = DirectContext(MemoryStorage())
+def assert_round_trip(factory, coll, context=None) -> None:
+    """Saving and lazily loading ``coll`` preserves elements, count and indexes; op logs are dropped.
+
+    ``context`` defaults to a fresh one; pass the context ``coll`` was loaded from
+    when it shares already-saved nodes with a stored version.
+    """
+    context = context if context is not None else DirectContext(MemoryStorage())
     ptr = context.save(coll)
     loaded = context.load(ptr, type(coll).__type_name__)
     assert type(loaded) is type(coll)
@@ -133,6 +153,7 @@ def check_mutator(factory: CollectionFactory, mutator_name: str, seed: int) -> N
     before_count = coll.count
     before_indexes = coll.indexes
     before_events = {n: coll.get_index(n).events for n in coll.index_names()}
+    before_log = getattr(coll, "_op_log", None)
 
     result = factory.mutators[mutator_name](coll, rng)
     if result is None:
@@ -145,11 +166,19 @@ def check_mutator(factory: CollectionFactory, mutator_name: str, seed: int) -> N
         assert new is not coll, "a mutation must return a new collection"
     elif new is not coll:
         assert _content(factory, new) == _content(factory, coll)
+    if isinstance(coll, ConcurrentOptimized):
+        # Intent logging: every call yields a new version with a longer log; a no-op does no index work.
+        assert new is not coll, "a ConcurrentOptimized mutator must return a new version"
+        assert len(new._op_log) > len(before_log), "the mutator did not log its intent"
+        assert new._op_log[:len(before_log)] == before_log
+        if not expected:
+            assert new.indexes is coll.indexes, "a no-op must reuse the receiver's indexes"
 
     # The receiver is unchanged: elements, count, index set and every index.
     assert _sequence(factory, coll) == before_seq
     assert coll.count == before_count
     assert coll.indexes is before_indexes
+    assert getattr(coll, "_op_log", None) == before_log
     for name, events in before_events.items():
         assert coll.get_index(name).events == events
 
@@ -168,6 +197,12 @@ def check_index_management(factory: CollectionFactory, seed: int) -> None:
     coll = factory.populate(factory.empty(), rng)
     assert coll.index_names() == [] and len(coll.indexes) == 0
     assert coll.get_index("idx_a") is None
+
+    # Content held by the passed index object must never leak into the collection.
+    preloaded = RecordingIndex("idx_x").build(list(coll.elements()))
+    for e in coll.elements():
+        preloaded = preloaded.with_added(e)
+    assert_indexes_consistent(factory, coll.add_index(preloaded))
 
     with_a = coll.add_index(RecordingIndex("idx_a"))
     assert with_a is not coll and coll.index_names() == []
@@ -207,6 +242,45 @@ def check_mutator_sequence(factory: CollectionFactory, seed: int, steps: int = 4
         assert_indexes_consistent(factory, coll)
         assert coll.count == len(list(coll.elements()))
     assert_round_trip(factory, coll)
+
+
+def _snapshot(coll):
+    context = DirectContext(MemoryStorage())
+    return context.load(context.save(coll), type(coll).__type_name__)
+
+
+def _state(factory, coll):
+    return (_sequence(factory, coll), coll.count, coll.indexes, coll._op_log,
+            {n: coll.get_index(n).events for n in coll.index_names()})
+
+
+def check_rebase(factory: CollectionFactory, seed: int, steps: int = 15) -> None:
+    """``mine.rebase_onto(theirs)`` from a common snapshot equals the intent model and keeps indexes."""
+    assert factory.rebase_model is not None, f"{factory.name} is ConcurrentOptimized but has no rebase_model"
+    rng = random.Random(seed)
+    snapshot = _snapshot(indexed_sample(factory, rng))
+    assert snapshot._op_log == ()
+    names = sorted(factory.mutators)
+
+    def mutate(coll):
+        for _ in range(rng.randrange(0, steps)):
+            result = factory.mutators[rng.choice(names)](coll, rng)
+            if result is not None:
+                coll = result[0]
+        return coll
+
+    mine, theirs = mutate(snapshot), mutate(snapshot)
+    mine_before, theirs_before = _state(factory, mine), _state(factory, theirs)
+
+    merged = mine.rebase_onto(theirs)
+
+    assert _state(factory, mine) == mine_before and _state(factory, theirs) == theirs_before
+    assert type(merged) is type(mine)
+    assert _content(factory, merged) == factory.rebase_model(theirs, mine._op_log)
+    assert merged.count == len(list(merged.elements()))
+    assert merged.index_names() == theirs.index_names()
+    assert_indexes_consistent(factory, merged)
+    assert_round_trip(factory, merged, snapshot.context)
 
 
 # == REGISTRATIONS ========================================================================
@@ -252,8 +326,14 @@ def _toy_factory() -> CollectionFactory:
         new = fresh(coll, rng)
         return coll.replace(old, new), [("replace", old, new)]
 
+    def rebase_model(theirs, op_log):
+        members = {order_key(e) for e in theirs.elements()}
+        for kind, e in op_log:
+            (members.add if kind == "add" else members.discard)(order_key(e))
+        return Counter(members)
+
     return CollectionFactory(
-        name="ToySet", empty=ToySet, populate=populate,
+        name="ToySet", empty=ToySet, populate=populate, rebase_model=rebase_model,
         mutators={"add_new": add_new, "add_existing": add_existing, "discard_present": discard_present,
                   "discard_absent": discard_absent, "replace": replace})
 

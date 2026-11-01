@@ -2,7 +2,8 @@
 import pytest
 
 from tests.contracts.collection_contract import (check_index_management, check_mutator,
-                                                 check_mutator_sequence, factory_cases, mutator_cases)
+                                                 check_mutator_sequence, check_rebase, factory_cases,
+                                                 mutator_cases, rebase_cases)
 
 
 @pytest.mark.parametrize("factory, mutator_name, seed", mutator_cases())
@@ -18,3 +19,8 @@ def test_index_management_contract(factory, seed):
 @pytest.mark.parametrize("factory, seed", factory_cases())
 def test_mutator_sequence_contract(factory, seed):
     check_mutator_sequence(factory, seed)
+
+
+@pytest.mark.parametrize("factory, seed", rebase_cases())
+def test_rebase_contract(factory, seed):
+    check_rebase(factory, seed)

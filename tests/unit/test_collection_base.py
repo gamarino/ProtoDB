@@ -101,6 +101,29 @@ class TestIndexedCollection:
     def test_iteration_is_elements(self):
         assert list(toy(3, 1, 2)) == [1, 2, 3]
 
+    def test_add_index_ignores_content_of_the_passed_index(self):
+        preloaded = RecordingIndex("i").build([1, 2]).with_added(7)
+        s2 = toy(1, 2).add_index(preloaded)
+        assert s2.get_index("i").events == (("build", (1, 2)),)
+
+    def test_rebase_rebuilds_added_index_from_empty(self):
+        stored = _snapshot(toy(1))
+        preloaded = RecordingIndex("i").build([1, 99])
+        merged = stored.add_index(preloaded).rebase_onto(stored.add(2))
+        assert merged.get_index("i").events == (("build", (1, 2)),)
+
+    def test_with_rejects_non_indexset_indexes(self):
+        with pytest.raises(ProtoValidationError):
+            ToySet()._with(indexes=RecordingIndex("i"))
+
+    def test_contains(self):
+        s = toy(1, 2)
+        assert 1 in s and 1.0 in s and 3 not in s
+
+    def test_default_contains_scans_elements(self):
+        assert IndexedCollection.__contains__(toy(1, 2), 2.0)
+        assert not IndexedCollection.__contains__(toy(1, 2), 3)
+
     def test_add_index_builds_over_current_elements(self):
         s = toy(1, 2)
         s2 = s.add_index(RecordingIndex("i"))
@@ -124,6 +147,9 @@ class TestIndexedCollection:
     def test_add_index_rejects_renaming_build(self):
         class Bad(RecordingIndex):
             __type_name__ = "tests.unit.BadBuild"
+
+            def empty(self):
+                return Bad(self.name)
 
             def build(self, elements):
                 return RecordingIndex("other")
@@ -233,9 +259,22 @@ class TestRebase:
         s2 = s1.add(2)
         assert s1._op_log == (("add", 1),) and s2._op_log == (("add", 1), ("add", 2))
 
-    def test_no_op_mutations_do_not_log(self):
-        s = toy(1)
-        assert s.add(1)._op_log == s._op_log and s.discard(9)._op_log == s._op_log
+    def test_blind_writes_log_intent_without_index_work(self):
+        s = toy(1, indexes=("i",))
+        for new, op in ((s.add(1), ("add", 1)), (s.discard(9), ("remove", 9))):
+            assert new is not s and new._op_log == s._op_log + (op,)
+            assert new.indexes is s.indexes and new.root is s.root and list(new) == [1]
+        assert s._op_log[-1] == ("add", 1) and len(s._op_log) == 2
+
+    def test_blind_discard_wins_over_concurrent_add(self):
+        stored = _snapshot(toy(1))
+        assert list(stored.discard(5).rebase_onto(stored.add(5))) == [1]
+
+    def test_blind_add_wins_over_concurrent_discard(self):
+        stored = _snapshot(toy(1, indexes=("i",)))
+        merged = stored.add(1).rebase_onto(stored.discard(1))
+        assert list(merged) == [1]
+        assert merged.get_index("i").live() == RecordingIndex("x", (("build", (1,)),)).live()
 
     def test_rebase_replays_net_effect(self):
         base = toy(1, 2, 3)
@@ -303,14 +342,12 @@ class TestRebase:
             model_mine = {}
             for _ in range(30):
                 e = rng.randrange(30)
-                # Net effect relative to the snapshot: no-op mutations are not logged.
+                # Intent semantics: every call forces its key to the intended state.
                 if rng.random() < 0.5:
-                    if not mine.has(e):
-                        model_mine[e] = True
+                    model_mine[e] = True
                     mine = mine.add(e)
                 else:
-                    if mine.has(e):
-                        model_mine[e] = False
+                    model_mine[e] = False
                     mine = mine.discard(e)
                 f = rng.randrange(30)
                 theirs = theirs.add(f) if rng.random() < 0.5 else theirs.discard(f)
