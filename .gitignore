@@ -1,5 +1,6 @@
 # Entornos y configuración del editor
 .venv/
+.venv314t/
 .idea/
 
 # Caches de Python y de las herramientas de test

@@ -203,6 +203,8 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
                     pass
         except Exception:
             pass
+        # The root must never point at data that is not durable yet
+        self.flush_wal()
         self.block_provider.update_root_object(root_pointer)
 
     def _get_new_wal(self):
@@ -293,6 +295,7 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
             if operations:
                 try:
                     # Try to group consecutive writes operations and perform all of them together
+                    written_pointers = []
                     with self.block_provider.write_streamer(operations[0].transaction_id) as stream:
                         current_offset = operations[0].offset
                         stream.seek(current_offset)
@@ -310,10 +313,12 @@ class StandaloneFileStorage(common.SharedStorage, ABC):
                                         message=f"Failed to write complete segment: {bytes_written}/{len(segment)} bytes written"
                                     )
                                 current_offset += len(segment)
-                                with self._lock:
-                                    pointer = (operation.transaction_id, saved_offset)
-                                    if pointer in self.in_memory_segments:
-                                        del self.in_memory_segments[pointer]
+                                written_pointers.append((operation.transaction_id, saved_offset))
+
+                    # Only once the writer has made the data durable can reads be served from the WAL
+                    with self._lock:
+                        for pointer in written_pointers:
+                            self.in_memory_segments.pop(pointer, None)
 
                     operations_processed += len(operations)
                 except Exception as e:

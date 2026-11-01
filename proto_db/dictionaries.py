@@ -339,72 +339,41 @@ class Dictionary(DBCollections, ConcurrentOptimized):
         return False
 
     def _rebase_on_concurrent_update(self, current_db_object: Atom) -> Atom:
+        """
+        Re-applies the changes of this transaction on top of the current database
+        state for this object.
+
+        Only the keys this transaction touched are replayed, each with its net effect
+        (the last set or remove for that key); every other key keeps its committed
+        value. A value that is itself ConcurrentOptimized is merged by its own rebase.
+        """
         if not isinstance(current_db_object, Dictionary):
             raise ProtoNotSupportedException(
                 "Cannot rebase onto a different object type."
             )
 
-        rebased_dict = cast(Dictionary, current_db_object)
-        rebased_dict._op_log = []
+        net_effect = {}
+        for op_type, key, value in self._op_log:
+            if op_type not in ('set', 'remove'):
+                raise ProtoNotSupportedException(
+                    f"Unknown operation '{op_type}' during rebase."
+                )
+            # Re-insert so the replay order follows the last operation on each key
+            net_effect.pop(key, None)
+            net_effect[key] = (op_type, value)
 
-        # Data-driven merge: compare our staged values with the current DB values and reconcile
-        try:
-            # Build a dict of our staged key->value pairs
-            staged_items = []
-            for k, v in self.as_iterable():
-                staged_items.append((k, v))
-            for key, value in staged_items:
-                current_val = rebased_dict.get_at(key)
-                # 1) Integer counters: if both ints and value differs, treat as +1 increment
-                if isinstance(value, int) and isinstance(current_val, int):
-                    # Treat integer updates as idempotent increments: always apply +1 on the current value
-                    rebased_dict = rebased_dict.set_at(key, current_val + 1)
-                    continue
-                # 2) Set/CountedSet buckets: union staged bucket into current bucket
-                from .sets import Set as _Set, CountedSet as _CSet
-                if hasattr(value, 'as_iterable') and isinstance(current_val, (_Set, _CSet)):
-                    bucket = current_val
-                    try:
-                        for e in value.as_iterable():
-                            # Guard against nested Set/CountedSet being added as elements
-                            if isinstance(e, (_Set, _CSet)):
-                                continue
-                            bucket = bucket.add(e)
-                        rebased_dict = rebased_dict.set_at(key, bucket)
-                        continue
-                    except Exception:
-                        pass
-                # 3) Nested concurrent-optimized objects (e.g., RepeatedKeysDictionary): delegate rebase to child
-                try:
-                    from .common import ConcurrentOptimized as _CO
-                except Exception:
-                    _CO = None
-                if _CO is not None and isinstance(value, _CO) and isinstance(current_val, _CO):
-                    try:
-                        merged = value._rebase_on_concurrent_update(current_val)
-                        rebased_dict = rebased_dict.set_at(key, merged)
-                        continue
-                    except Exception:
-                        # If child-level rebase fails, fall through to last-writer-wins
-                        pass
-                # 4) For other types: if value differs or key absent, last-writer-wins
-                try:
-                    equal = (value == current_val)
-                except Exception:
-                    equal = False
-                if not equal:
-                    rebased_dict = rebased_dict.set_at(key, value)
-        except Exception:
-            # On any failure, fallback to replaying op_log if available; otherwise last-writer-wins
-            for op_type, key, value in self._op_log:
-                if op_type == 'set':
-                    rebased_dict = rebased_dict.set_at(key, value)
-                elif op_type == 'remove':
-                    rebased_dict = rebased_dict.remove_at(key)
-                else:
-                    raise ProtoNotSupportedException(
-                        f"Unknown operation '{op_type}' during rebase."
-                    )
+        rebased_dict = cast(Dictionary, current_db_object)
+        for key, (op_type, value) in net_effect.items():
+            if op_type == 'remove':
+                rebased_dict = rebased_dict.remove_at(key)
+                continue
+            current_value = rebased_dict.get_at(key)
+            if isinstance(value, ConcurrentOptimized) and isinstance(current_value, ConcurrentOptimized):
+                value = value._rebase_on_concurrent_update(current_value)
+            rebased_dict = rebased_dict.set_at(key, value)
+
+        if rebased_dict is not current_db_object:
+            rebased_dict._op_log = []
         return rebased_dict
 
 

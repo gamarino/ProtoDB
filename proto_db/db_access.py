@@ -977,8 +977,6 @@ class ObjectTransaction(AbstractTransaction):
         self.modified_mutable_objects = HashDictionary()
         # Track which roots were successfully rebased due to concurrent updates
         self._rebased_root_names = set()
-        # Track original counter values per root name (for post-commit verification)
-        self._root_counters = {}
         # Track staged set-like operations per root name for post-commit verification
         self._staged_set_ops = {}
 
@@ -1058,19 +1056,6 @@ class ObjectTransaction(AbstractTransaction):
                                 f"Continuing would leave a concurrent modification of it undetected "
                                 f"at commit, so the read is refused instead."
                     ) from exc
-                # Record original counter value for this root (if available) for post-commit verification
-                try:
-                    from .dictionaries import Dictionary as _Dict
-                    obj_tmp = self.transaction_root.get_at(name)
-                    if isinstance(obj_tmp, _Dict):
-                        try:
-                            cval = obj_tmp.get_at('counter')
-                            if isinstance(cval, int) and name not in getattr(self, '_root_counters', {}):
-                                self._root_counters[name] = int(cval)
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
                 return self.transaction_root.get_at(name)
             return None
 
@@ -1235,10 +1220,8 @@ class ObjectTransaction(AbstractTransaction):
         """
         Merge staged roots into the current root under the provider lock.
         Rules under contention:
-        - RepeatedKeysDictionary: always union staged bucket changes onto the current bucket
-          via _rebase_on_concurrent_update; never overwrite with staged.
-        - Dictionary with integer counters: rely on Dictionary._rebase_on_concurrent_update
-          to apply +1 on the current value (idempotent increment).
+        - ConcurrentOptimized roots (Dictionary, RepeatedKeysDictionary): replay the staged
+          changes on top of the current root via _rebase_on_concurrent_update.
         - Other types: last-writer-wins as a fallback.
         """
         current_db_root = current_root
@@ -1364,64 +1347,8 @@ class ObjectTransaction(AbstractTransaction):
                         # Re-check read-locked objects under the root lock; raise on conflicts to allow retry
                         self._check_read_locked_objects(db_root)
                         db_root = self._update_mutable_indexes(db_root)
-                        # Establish strict expected counters under lock prior to applying updates
-                        expected_counters = {}
-                        try:
-                            if self.new_roots and self.new_roots.count > 0:
-                                for _name, _staged in self.new_roots.as_iterable():
-                                    try:
-                                        from .dictionaries import Dictionary as _Dict
-                                        if isinstance(_staged, _Dict):
-                                            base_root = None
-                                            try:
-                                                base_root = db_root.get_at(_name)
-                                            except Exception:
-                                                base_root = None
-                                            if isinstance(base_root, _Dict):
-                                                try:
-                                                    base_val = base_root.get_at('counter')
-                                                    staged_val = _staged.get_at('counter')
-                                                    if isinstance(base_val, int) and isinstance(staged_val, int) and staged_val == base_val + 1:
-                                                        expected_counters[_name] = base_val + 1
-                                                except Exception:
-                                                    pass
-                                    except Exception:
-                                        pass
-                        except Exception:
-                            expected_counters = {}
                         db_root = self._update_database_roots(db_root)
                         db_root.transaction = self
-                        # Under lock, ensure counter increments are not lost under contention:
-                        # for staged dictionary roots where the intent was +1, make sure the merged value
-                        # is strictly greater than the freshest current value; if not, bump by +1.
-                        try:
-                            if expected_counters:
-                                try:
-                                    locked_sr = getattr(self, '_locked_space_root', None)
-                                    freshest_catalog = getattr(locked_sr, 'object_root', None)
-                                except Exception:
-                                    freshest_catalog = None
-                                for _name, exp_val in expected_counters.items():
-                                    try:
-                                        merged_root = db_root.get_at(_name)
-                                        if merged_root is None:
-                                            continue
-                                        from .dictionaries import Dictionary as _Dict
-                                        if not isinstance(merged_root, _Dict):
-                                            continue
-                                        # Fresh base value currently visible under the lock
-                                        base_root = freshest_catalog.get_at(_name) if freshest_catalog else None
-                                        base_val = base_root.get_at('counter') if (base_root and isinstance(base_root, _Dict)) else None
-                                        merged_val = merged_root.get_at('counter')
-                                        if isinstance(base_val, int) and isinstance(merged_val, int):
-                                            if not (merged_val >= base_val + 1):
-                                                merged_root = merged_root.set_at('counter', base_val + 1)
-                                                db_root = db_root.set_at(_name, merged_root)
-                                    except Exception:
-                                        continue
-                        except Exception:
-                            pass
-
                         # Debug final state before save
                         try:
                             import os as _os, threading as _th
@@ -1464,39 +1391,6 @@ class ObjectTransaction(AbstractTransaction):
                             import os as _os, threading as _th
                             if _os.environ.get('PB_DEBUG_CONC'):
                                 logger.debug("[TRACE] persist done tx=%s thr=%s", id(self), _th.get_ident())
-                        except Exception:
-                            pass
-
-                        # Post-commit verification for numeric counters: ensure progress vs original snapshot.
-                        try:
-                            # Only verify for roots we staged in this transaction
-                            if getattr(self, 'new_roots', None) and getattr(self, '_root_counters', None):
-                                try:
-                                    latest_sr = self.object_space.get_space_root()
-                                    latest_catalog = getattr(latest_sr, 'object_root', None)
-                                except Exception:
-                                    latest_catalog = None
-                                if latest_catalog:
-                                    for _name, _staged in self.new_roots.as_iterable():
-                                        if _name in self._root_counters:
-                                            try:
-                                                curr_root = latest_catalog.get_at(_name)
-                                                from .dictionaries import Dictionary as _Dict
-                                                if isinstance(curr_root, _Dict):
-                                                    curr_val = curr_root.get_at('counter')
-                                                    if isinstance(curr_val, int):
-                                                        orig = int(self._root_counters.get(_name, -10**9))
-                                                        if not (curr_val >= orig + 1):
-                                                            raise ProtoLockingException(
-                                                                f"Post-commit verification failed for '{_name}': {curr_val} !>= {orig}+1"
-                                                            )
-                                            except ProtoLockingException:
-                                                raise
-                                            except Exception:
-                                                pass
-                        except ProtoLockingException:
-                            # Force caller retry
-                            raise
                         except Exception:
                             pass
 

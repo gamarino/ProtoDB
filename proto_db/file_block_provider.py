@@ -133,6 +133,11 @@ class PageCache:
         # Cache miss: Read from disk
         page_content = self._read_page_from_disk(str(wal_id), page_number)
 
+        # WALs only grow: a short page read at end of file will gain bytes later, so it is
+        # not cached. Full pages are immutable once written.
+        if len(page_content) < self.page_size:
+            return page_content
+
         with self._lock:
             # Remove the LRU if the cache is full
             if len(self.cache) >= self.capacity:
@@ -232,6 +237,30 @@ class ReadStreamer(BytesIO):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
+
+
+class DurableWalWriter:
+    """
+    Writer over a WAL file that supports positioned writes.
+
+    Used as a context manager: on a clean exit the written data is flushed and fsynced,
+    so it is durable once the block ends. Each writer owns its own file handle.
+    """
+
+    def __init__(self, path: str):
+        self._file = open(path, 'r+b')
+
+    def __enter__(self) -> BinaryIO:
+        return self._file
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            if exc_type is None:
+                self._file.flush()
+                os.fsync(self._file.fileno())
+        finally:
+            self._file.close()
+        return False
 
 
 class FileBlockProvider(common.BlockProvider):
@@ -384,12 +413,14 @@ class FileBlockProvider(common.BlockProvider):
         """
         return self.current_wal_id
 
-    def write_streamer(self, wal_id: uuid.UUID) -> BinaryIO:
+    def write_streamer(self, wal_id: uuid.UUID) -> DurableWalWriter:
         """
+        Get a writer for the given WAL, to be used as a context manager.
 
-        :return:
+        Data written inside the block is durable (flushed and fsynced) once the block exits
+        without an exception.
         """
-        return self.current_wal
+        return DurableWalWriter(os.path.join(self.space_path, str(wal_id)))
 
     def root_context_manager(self):
         class ContextManager:

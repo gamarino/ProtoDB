@@ -925,6 +925,9 @@ class ClusterFileStorage(StandaloneFileStorage):
         Args:
             root_pointer: The new root object pointer
         """
+        # The root must never point at data that is not durable yet
+        self.flush_wal()
+
         # Update the root object locally
         self.block_provider.update_root_object(root_pointer)
 
