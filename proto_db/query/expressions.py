@@ -20,6 +20,11 @@ element without ``x``; ask for presence explicitly (``?!N``) when that matters.
 A ``near[]`` term cannot be evaluated per element (``ProtoNotSupportedError``);
 it is answered by a ``VectorSearch`` plan.
 
+:class:`PythonPredicate` is an opaque leaf wrapping an untranslatable Python
+callable with its description.  The LINQ front end uses it to hand Python
+predicates to a vector plan's residual (``near(k) AND lambda``, ruling R27); no
+index answers it, a ``Filter`` evaluates it, and it has no 0.1 list form.
+
 0.1 prefix syntax (:meth:`Expression.compile`): a list is a stream of
 expressions joined by an implicit AND.  An expression in the stream is
 
@@ -38,11 +43,11 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 
-from ..errors import ProtoValidationError
+from ..errors import ProtoNotSupportedError, ProtoValidationError
 from .terms import BETWEEN, BETWEEN_EXCL_BOTH, BETWEEN_EXCL_HIGH, BETWEEN_EXCL_LOW, NEAR, OPERATORS, \
     UNARY_OPERATORS, NearQuery, Term
 
-__all__ = ["Expression", "Term", "And", "Or", "Not", "evaluate", "iter_terms", "AND_TOKEN", "OR_TOKEN", "NOT_TOKEN"]
+__all__ = ["Expression", "Term", "And", "Or", "Not", "PythonPredicate", "evaluate", "iter_terms", "AND_TOKEN", "OR_TOKEN", "NOT_TOKEN"]
 
 #: Prefix tokens of the 0.1 syntax.
 AND_TOKEN = "&"
@@ -205,6 +210,60 @@ class Not(_Node):
         return [NOT_TOKEN, self.operand.to_list()]
 
 
+class PythonPredicate(Expression):
+    """An opaque predicate: ``bool(fn(element))``, described by ``description`` in ``explain()``.
+
+    Immutable; equal when it wraps the same callable with the same description.
+    Exceptions raised by ``fn`` propagate.  ``to_list`` raises
+    ``ProtoNotSupportedError`` (the 0.1 syntax cannot express a callable).
+    """
+
+    __slots__ = ("_fn", "_description")
+
+    def __init__(self, fn, description: str):
+        if not callable(fn) or isinstance(fn, Expression):
+            raise ProtoValidationError(f"PythonPredicate needs a callable, not {fn!r}")
+        if not isinstance(description, str) or not description:
+            raise ProtoValidationError(f"PythonPredicate needs a non-empty description, not {description!r}")
+        object.__setattr__(self, "_fn", fn)
+        object.__setattr__(self, "_description", description)
+
+    @property
+    def fn(self):
+        """The wrapped callable."""
+        return self._fn
+
+    @property
+    def description(self) -> str:
+        """The description shown by ``explain()``."""
+        return self._description
+
+    def __setattr__(self, name, value):
+        raise AttributeError("PythonPredicate is immutable")
+
+    def __delattr__(self, name):
+        raise AttributeError("PythonPredicate is immutable")
+
+    def __eq__(self, other):
+        if type(other) is not PythonPredicate:
+            return NotImplemented
+        return self._fn is other._fn and self._description == other._description
+
+    def __hash__(self):
+        return hash((id(self._fn), self._description))
+
+    def __repr__(self):
+        return f"PythonPredicate({self._description!r})"
+
+    def describe(self) -> dict:
+        """``{"python": description}``."""
+        return {"python": self._description}
+
+    def to_list(self) -> list:
+        """Not expressible in the 0.1 syntax: ``ProtoNotSupportedError``."""
+        raise ProtoNotSupportedError(f"{self!r} wraps a Python callable and has no 0.1 list form")
+
+
 def evaluate(expr: Expression, element) -> bool:
     """Decide ``expr`` on ``element`` (module docstring); never catches an exception."""
     if isinstance(expr, Term):
@@ -215,6 +274,8 @@ def evaluate(expr: Expression, element) -> bool:
         return any(evaluate(o, element) for o in expr.operands)
     if isinstance(expr, Not):
         return not evaluate(expr.operand, element)
+    if isinstance(expr, PythonPredicate):
+        return bool(expr.fn(element))
     raise ProtoValidationError(f"evaluate needs an Expression, not {expr!r}")
 
 
@@ -225,7 +286,7 @@ def iter_terms(expr: Expression) -> Iterator[Term]:
     elif isinstance(expr, _Node):
         for operand in expr._operands:
             yield from iter_terms(operand)
-    else:
+    elif not isinstance(expr, PythonPredicate):
         raise ProtoValidationError(f"iter_terms needs an Expression, not {expr!r}")
 
 

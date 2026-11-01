@@ -78,6 +78,9 @@ _ABOVE_EVERY_RANK = order_key(MISSING)[0] + 1000
 _NUMPY_MIN = 64
 #: Relative margin of the numpy screening; float64 dot products err by ~1e-16 * dim relative.
 _SCREEN_MARGIN = 1e-9
+#: Norm range in which a numpy cosine is accurate: products of norms stay normal floats (>= 1e-300) and finite.
+_NORM_LOW = 1e-150
+_NORM_HIGH = 1e150
 
 
 # -- vectors and scores -------------------------------------------------------------------------
@@ -385,19 +388,41 @@ def _screen_margin(np, metric: str, approx, norms, qnorm: float):
     return _SCREEN_MARGIN * (1.0 + np.abs(approx) + norms + qnorm)
 
 
+def _unreliable(metric: str, norms, qnorm: float):
+    """Entries whose numpy cosine may be far off: a norm outside [1e-150, 1e150] (subnormal or overflowing
+    products, :data:`_NORM_LOW`); None for the other metrics, whose margins are absolute or scaled."""
+    if metric != "cosine" or qnorm == 0.0:
+        return None  # a zero query scores every entry exactly 0.0 in both computations
+    if not _NORM_LOW <= qnorm <= _NORM_HIGH:
+        return norms > 0.0
+    return (norms > 0.0) & ((norms < _NORM_LOW) | (norms > _NORM_HIGH))
+
+
 def screened_rank(np, metric: str, entries, matrix, norms, q: tuple, k, threshold) -> list:
     """:func:`rank_entries` of ``entries`` (rows of ``matrix``, with their ``norms``), screened by numpy.
 
     numpy scores every entry; only the entries whose score lies within a safe
     margin (:func:`_screen_margin`) of the threshold and of the k-th best score
     are re-scored exactly, so the result equals :func:`rank_entries` over all of
-    them.  Small inputs, and inputs of extreme magnitude (a non-finite numpy
-    score), are scored exactly without screening.
+    them.  Entries whose numpy score is unreliable (:func:`_unreliable`: cosine
+    with tiny or huge norms) are always re-scored.  Small inputs, and inputs of
+    extreme magnitude (a non-finite numpy score), are scored exactly without
+    screening.
     """
     if len(entries) < _NUMPY_MIN:
         return rank_entries(entries, q, metric, k, threshold)
     qv = np.asarray(q, dtype=np.float64)
     qnorm = float(np.sqrt(qv @ qv))
+    forced = _unreliable(metric, norms, qnorm)
+    if forced is not None and not forced.any():
+        forced = None
+    if forced is None:
+        reliable = np.arange(len(entries))
+    else:
+        reliable = np.nonzero(~forced)[0]
+        if len(reliable) == 0:
+            return rank_entries(entries, q, metric, k, threshold)
+        matrix, norms = matrix[reliable], norms[reliable]
     with np.errstate(all="ignore"):
         approx = _numpy_scores(np, metric, qv, qnorm, matrix, norms)
         margin = _screen_margin(np, metric, approx, norms, qnorm)
@@ -411,7 +436,10 @@ def screened_rank(np, metric: str, entries, matrix, norms, q: tuple, k, threshol
         part = approx[keep]
         kth = -np.partition(-part, k - 1)[k - 1]
         keep = keep[part + 2 * float(margin.max()) >= kth]
-    return rank_entries([entries[int(i)] for i in keep], q, metric, k, threshold)
+    chosen = [int(i) for i in reliable[keep]]
+    if forced is not None:
+        chosen += [int(i) for i in np.nonzero(forced)[0]]
+    return rank_entries([entries[i] for i in chosen], q, metric, k, threshold)
 
 
 def _matrix(np, entries, dim: int) -> tuple:
@@ -559,7 +587,8 @@ class IvfFlatBackend(_Backend):
             with np.errstate(all="ignore"):
                 approx = _numpy_scores(np, metric, qv, qnorm, matrix, norms)
                 margin = _screen_margin(np, metric, approx, norms, qnorm)
-            if np.all(np.isfinite(approx)) and np.all(np.isfinite(margin)):
+            forced = _unreliable(metric, norms, qnorm)  # tiny or huge magnitudes: score every centroid
+            if (forced is None or not forced.any()) and np.all(np.isfinite(approx)) and np.all(np.isfinite(margin)):
                 cut = float(approx.max()) - 2 * float(margin.max())
                 candidates = [int(j) for j in np.nonzero(approx >= cut)[0]]
         best, best_score = 0, None
@@ -615,7 +644,8 @@ class IvfFlatBackend(_Backend):
         """Probe the best ``nprobe`` lists (plus list -1); widen while fewer than ``k`` members match."""
         lists = self._lists(index)
         order = [j for j in self._probe_order(index, q) if j in lists]
-        probe = 1 + dict(index.params)["nprobe"]  # list -1 is always probed
+        # list -1 (untrained vectors) is always probed, in addition to nprobe trained lists
+        probe = dict(index.params)["nprobe"] + (1 if order and order[0] == UNTRAINED else 0)
         floor = score_floor(index.metric, threshold)
         done = 0
         probed: list = []

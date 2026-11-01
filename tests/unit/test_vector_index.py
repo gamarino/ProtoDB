@@ -134,6 +134,23 @@ def test_exact_backend_equals_brute_force(metric, use_numpy):
             assert_same_as_oracle(index, elements, term)
 
 
+@pytest.mark.parametrize("metric", ["cosine", "l2", "ip"])
+@pytest.mark.parametrize("scale", [1e-161, 1e-155, 1e-140, 1e140, 1e152])
+def test_exact_backend_equals_brute_force_at_extreme_magnitudes(metric, scale):
+    # Tiny cosine norms make numpy's products subnormal (inaccurate); huge ones approach overflow.
+    rng = random.Random(int(math.log10(scale)) + 400)
+    def vec():  # positive small multiples: many near-equal cosines, so tiny numpy errors reorder them
+        return tuple(rng.choice([1, 2, 3, 5, 7]) * scale for _ in range(4))
+    elements = [DBObject(i=i, vec=vec()) for i in range(200)]
+    index = VectorIndex("v", "vec", 4, metric=metric).build(elements)
+    assert index.explain()["vectors"] == 200
+    for _ in range(25):
+        q = rng.choice([vec(), elements[rng.randrange(200)].vec])
+        for term in (near(q, k=rng.choice([1, 3, 10])), near(q, k=5, threshold=0.5 if metric == "cosine" else
+                                                               (-1.0 if metric == "ip" else 10 * scale))):
+            assert_same_as_oracle(index, elements, term)
+
+
 def test_results_are_nearest_first_and_ties_follow_the_member_key():
     a, b, c = DBObject(vec=(1.0, 0.0)), DBObject(vec=(1.0, 0.0)), DBObject(vec=(0.0, 1.0))
     index = VectorIndex("v", "vec", 2, metric="l2").build([c, b, a])
@@ -399,6 +416,49 @@ def test_commit_through_a_transaction_and_query_after_reopen(tmp_path):
         space.close()
 
 
+def test_linq_near_k_and_lambda_is_k_nearest_among_the_lambda_matches():
+    rng = random.Random(13)
+    elements = records(rng, 200, 4)
+    coll = List.from_iterable(elements).add_index(VectorIndex("by_vec", "vec", 4, metric="l2"))
+    for _ in range(5):
+        q = random_vector(rng, 4)
+        query = from_collection(coll).where(F.vec.near(list(q), k=4) & (lambda e: e.g == 0))
+        got = query.to_list()
+        assert len(got) == 4 and all(e.g == 0 for e in got)
+        expected = near_oracle(elements, KeySpec.path("vec"), NearQuery(q, k=4), "l2", lambda e: e.g == 0)
+        assert ids(got) == ids(expected)
+        info = query.explain()
+        assert info["plan"] == "VectorSearch" and "python" in str(info["where"])
+    # pure and impure parts together: both restrict the search
+    q = random_vector(rng, 4)
+    got = from_collection(coll).where(F.vec.near(list(q), k=3) & (F.i < 100) & (lambda e: e.g == 1)).to_list()
+    assert ids(got) == ids(near_oracle(elements, KeySpec.path("vec"), NearQuery(q, k=3), "l2",
+                                       lambda e: e.i < 100 and e.g == 1))
+    # a threshold-only near keeps the lambda as a PythonFilter on top (exactly equivalent)
+    query = from_collection(coll).where(F.vec.near(list(q), threshold=1.0) & (lambda e: e.g == 1))
+    assert query.explain()["plan"] == "PythonFilter"
+
+
+def test_python_predicate_expression_node():
+    from proto_db.query.expressions import PythonPredicate, evaluate, iter_terms
+    from proto_db.query.planner import normalize
+    from proto_db.query.expressions import Not
+    fn = lambda e: e.g == 1  # noqa: E731
+    p = PythonPredicate(fn, "g is one")
+    assert p == PythonPredicate(fn, "g is one") and hash(p) == hash(PythonPredicate(fn, "g is one"))
+    assert p != PythonPredicate(lambda e: e.g == 1, "g is one")
+    assert p.describe() == {"python": "g is one"} and list(iter_terms(p)) == []
+    assert evaluate(p, DBObject(g=1)) and not evaluate(Not(p), DBObject(g=1))
+    assert normalize(Not(And(p, Term("x", EQ, 1)))) == Or(Not(p), Not(Term("x", EQ, 1)))
+    with pytest.raises(ProtoNotSupportedError):
+        p.to_list()
+    for bad in [(3, "x"), (fn, ""), (Term("x", EQ, 1), "x")]:
+        with pytest.raises(ProtoValidationError):
+            PythonPredicate(*bad)
+    coll = List.from_iterable([DBObject(g=i % 3) for i in range(9)])
+    assert len(list(plan_query(coll, And(Term("g", GE, 1), p)).execute())) == 3
+
+
 # -- concurrency ---------------------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("backend, params", [("exact", {}), ("exact", {"numpy": False}),
@@ -410,12 +470,15 @@ def test_eight_threads_query_one_version(backend, params):
     context = DirectContext(MemoryStorage())
     stub = context.load(context.save(index), VectorIndex.__type_name__)
     terms = [near(random_vector(rng, 8), k=rng.choice([1, 5, 20])) for _ in range(12)]
-    expected = {t: [id(e) for e in index.plan(t).execute()] for t in terms}
+    # The expected answers come from a separate, equal version, so the threads below race to build the
+    # derived structures (snapshot) of `index` and `stub` themselves.
+    twin = VectorIndex("v", "vec", 8, metric="l2", backend=backend, **params).build(elements)
+    expected = {t: [element_identity(e) for e in twin.plan(t).execute()] for t in terms}
     for version in (index, stub):
         barrier = threading.Barrier(8)
         outputs, errors = [None] * 8, []
 
-        def read(slot, version=version):
+        def read(slot, version=version, barrier=barrier, outputs=outputs, errors=errors):
             barrier.wait()
             try:
                 outputs[slot] = {t: [element_identity(e) for e in version.plan(t).execute()] for t in terms}
@@ -429,9 +492,7 @@ def test_eight_threads_query_one_version(backend, params):
         for t in threads:
             t.join()
         assert not errors, errors
-        assert all(out == outputs[0] for out in outputs)
-        if version is index:
-            assert all(len(outputs[0][t]) == len(expected[t]) for t in terms)
+        assert all(out == expected for out in outputs)
 
 
 # -- hnsw ----------------------------------------------------------------------------------------------------

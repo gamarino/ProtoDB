@@ -85,7 +85,7 @@ from dataclasses import dataclass, field
 from ..collections.base import IndexedCollection
 from ..errors import ProtoNotSupportedError, ProtoValidationError
 from ..indexing.keyspec import KeySpec
-from .expressions import And, Expression, Not, Or, iter_terms
+from .expressions import And, Expression, Not, Or, PythonPredicate, iter_terms
 from .plans import (CollectionScanPlan, Filter, Intersect, Limit, QueryPlan, Sort, Union, VectorSearch,
                     ordered_index_scan)
 from .terms import IS_NONE, NEAR, NOT_NONE, Term
@@ -115,6 +115,8 @@ def _normalize(expr: Expression, negate: bool) -> Expression:
             raise ProtoNotSupportedError(f"A negated 'near[]' term cannot be planned ({expr!r}): there is no "
                                          f"per-element semantics to complement a vector search")
         return Not(expr)
+    if isinstance(expr, PythonPredicate):
+        return Not(expr) if negate else expr
     if isinstance(expr, Not):
         return _normalize(expr.operand, not negate)
     if isinstance(expr, (And, Or)):

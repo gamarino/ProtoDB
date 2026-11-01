@@ -50,7 +50,12 @@ they become a PythonFilter (described by qualified name, file and line).
 Mixing: an AND at the top level is split -- its pure conjuncts go to the
 planner (index or residual Filter) and each impure conjunct becomes its own
 PythonFilter on top, applied in order, so a PythonFilter only sees elements
-that satisfy every pure conjunct.  An OR or a NOT holding an impure part is
+that satisfy every pure conjunct.  Exception (ruling R27): when the pure part
+of the leading predicate has exactly one ``near[]`` conjunct and it is a bare
+``near`` with ``k``, the impure conjuncts become ``PythonPredicate`` leaves of
+the predicate handed to the planner, so they join the vector plan's residual
+(``where`` in ``explain()``): ``F.v.near(q, k=5) & fn`` is the 5 nearest among
+the elements satisfying ``fn``.  An OR or a NOT holding an impure part is
 one PythonFilter for the whole predicate: never partially indexed, never
 dropped.  A ``near[]`` term inside such a predicate raises
 ``ProtoNotSupportedError`` (it has no per-element semantics).  Using a
@@ -103,7 +108,7 @@ from ..collections.base import IndexedCollection
 from ..errors import ProtoNotSupportedError, ProtoUserError, ProtoValidationError
 from ..indexing.keyspec import KeySpec
 from ..values import MISSING
-from .expressions import And, Expression, Not, Or, evaluate, iter_terms
+from .expressions import And, Expression, Not, Or, PythonPredicate, evaluate, iter_terms
 from .planner import plan_query
 from .plans import (AGGREGATES, JOIN_KINDS, Count, Distinct, GroupBy, Join, Limit, Project, PythonFilter, QueryPlan,
                     Sort, Unnest, ValuesScan, Filter)
@@ -986,6 +991,11 @@ class Queryable:
             i += 1
         offset, limit, i = _window(ops, i)
         expr, impure = (None, []) if not predicates else _split(_conjunction(predicates))
+        if impure and _single_knn(expr):
+            # near(k) AND lambda is the k nearest among the elements satisfying the lambda (ruling R27): the
+            # Python parts join the vector plan's residual instead of filtering its result.
+            expr = And(expr, *(PythonPredicate(part, part.describe()) for part in impure))
+            impure = []
         path_keys = all(not callable(k) for k, _ in keys)
         if not impure and path_keys:
             plan = plan_query(self._source, expr, keys or None, limit, offset)
@@ -1057,6 +1067,15 @@ def _flag(value) -> bool:
     if not isinstance(value, bool):
         raise ProtoValidationError(f"Expected a bool, not {value!r}")
     return value
+
+
+def _single_knn(expr) -> bool:
+    """True when ``expr`` has exactly one conjunct holding ``near[]`` and it is a bare term with ``k``."""
+    if expr is None:
+        return False
+    conjuncts = expr.operands if isinstance(expr, And) else (expr,)
+    near = [c for c in conjuncts if any(t.op == NEAR for t in iter_terms(c))]
+    return len(near) == 1 and isinstance(near[0], Term) and near[0].value.k is not None
 
 
 def _conjunction(predicates: list) -> Predicate:
