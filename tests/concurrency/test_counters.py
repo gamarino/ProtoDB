@@ -116,3 +116,34 @@ def test_counted_set_blind_adds_merge_without_conflicts(space, request):
     assert attempts.conflicts == 0, attempts
     _check_versions(db, 1)
     report(request.node.name, elapsed, attempts)
+
+
+FSYNC_THREADS = 8
+FSYNC_PER_THREAD = 50
+
+
+def test_plain_int_counter_with_fsync_durability(tmp_path, request):
+    """A smaller counter on FileStorage's default durability (``"fsync"``): exactly 8 x 50."""
+    space = ObjectSpace(FileStorage(str(tmp_path / "space")))
+    try:
+        assert space.storage.durability == "fsync"
+        db = space.new_database("db")
+        with db.new_transaction() as tr:
+            tr.set_root_object("n", 0)
+        attempts = Attempts()
+
+        def increment(tr):
+            tr.set_root_object("n", tr.get_root_object("n") + 1)
+
+        def worker():
+            for _ in range(FSYNC_PER_THREAD):
+                attempts.run(db, increment, **RUN_KW)
+
+        elapsed = run_threads([worker] * FSYNC_THREADS)
+        total = FSYNC_THREADS * FSYNC_PER_THREAD
+        assert _read(db, lambda tr: tr.get_root_object("n")) == total
+        assert attempts.commits == total
+        assert db.history()[0].version == 1 + total
+        report(request.node.name, elapsed, attempts)
+    finally:
+        space.close()

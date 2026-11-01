@@ -8,6 +8,11 @@ whether the GIL was enabled, so a stress run's result can be read against it.
 """
 import sys
 import sysconfig
+import time
+
+import pytest
+
+from tests.concurrency import harness
 
 
 def gil_report() -> str:
@@ -32,3 +37,17 @@ def pytest_report_header(config):
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
     terminalreporter.write_line(gil_report())
+
+
+@pytest.fixture(autouse=True)
+def _join_deadline(request):
+    """Give the harness a join deadline inside the test's ``pytest.mark.timeout`` budget."""
+    marker = request.node.get_closest_marker("timeout")
+    if marker is None or not marker.args:
+        yield
+        return
+    harness.set_test_deadline(time.monotonic() + float(marker.args[0]) - harness.JOIN_MARGIN)
+    try:
+        yield
+    finally:
+        harness.set_test_deadline(None)

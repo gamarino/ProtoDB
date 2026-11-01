@@ -12,6 +12,23 @@ import pytest
 
 #: Seconds a worker waits for its peers at the start barrier.
 BARRIER_TIMEOUT = 30.0
+#: Seconds kept back from the test's ``pytest.mark.timeout`` budget for the checks after
+#: the threads are joined, so the harness reports stuck threads before pytest-timeout fires.
+JOIN_MARGIN = 15.0
+#: Join budget used when no test deadline is set (outside a timed test).
+DEFAULT_JOIN_TIMEOUT = 100.0
+
+_test_deadline = None
+
+
+def set_test_deadline(deadline) -> None:
+    """Set (``time.monotonic()`` value) or clear (``None``) the current test's join deadline.
+
+    Called by the suite's autouse fixture from the test's timeout marker; tests run one
+    at a time, so a module-level value is enough.
+    """
+    global _test_deadline
+    _test_deadline = deadline
 
 
 class Attempts:
@@ -54,12 +71,14 @@ class Attempts:
         return f"{self.commits} commits, {self.attempts} attempts, {self.conflicts} conflicts ({self.rate():.1%})"
 
 
-def run_threads(targets, *, timeout: float = 100.0) -> float:
+def run_threads(targets) -> float:
     """Run each callable of ``targets`` in its own thread, all released by one barrier.
 
     Returns the wall time from release to the last join.  Fails the test if a thread
     raised (the first error is re-raised with every error listed) or if any thread is
-    still alive ``timeout`` seconds after release (a hang or a deadlock).
+    still alive at the join deadline (a hang or a deadlock): the test's timeout budget
+    minus :data:`JOIN_MARGIN` (see :func:`set_test_deadline`), else
+    :data:`DEFAULT_JOIN_TIMEOUT` seconds after release.
     """
     barrier = threading.Barrier(len(targets) + 1)
     errors = []
@@ -83,13 +102,13 @@ def run_threads(targets, *, timeout: float = 100.0) -> float:
     except threading.BrokenBarrierError:
         pass  # a worker failed before the release; its error is reported below
     start = time.monotonic()
-    deadline = start + timeout
+    deadline = _test_deadline if _test_deadline is not None else start + DEFAULT_JOIN_TIMEOUT
     for t in threads:
         t.join(max(0.0, deadline - time.monotonic()))
     elapsed = time.monotonic() - start
     hung = [t.name for t in threads if t.is_alive()]
     if hung:
-        pytest.fail(f"{len(hung)} thread(s) still running after {timeout}s (hang or deadlock): {hung}")
+        pytest.fail(f"{len(hung)} thread(s) still running after {elapsed:.1f}s (hang or deadlock): {hung}")
     if errors:
         summary = "; ".join(f"thread {i}: {type(e).__name__}: {e}" for i, e in errors[:5])
         raise AssertionError(f"{len(errors)} worker thread(s) failed: {summary}") from errors[0][1]

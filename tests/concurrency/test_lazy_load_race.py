@@ -7,7 +7,9 @@ takes one snapshot and hands the *same* stub objects to 8 reader threads, which
 iterate them and query their (also lazily loaded) index at the same time, while 4
 writer threads commit new versions (appending records and updating ``meta``
 atomically with them).  After the shared snapshot each reader keeps taking fresh
-snapshots of its own until the writers finish.
+snapshots of its own until the writers finish.  The writers hold their last
+commit until every reader has taken its first own snapshot, so each reader takes
+at least two snapshots while writers are active, independently of timing.
 
 Every reader must see a complete, consistent snapshot: the element count and the
 checksum of the records it iterates equal the ``meta`` of the version it started
@@ -19,6 +21,8 @@ different state), a stub's content changing under a reader when a later version 
 committed, page-cache races between reads and appends, and index stubs answering
 from a partial load.
 """
+import threading
+
 import pytest
 
 from proto_db.core.dbobject import DBObject
@@ -34,6 +38,8 @@ WRITERS = 4
 COMMITS_PER_WRITER = 40
 APPEND_PER_COMMIT = 10
 MOD = (1 << 61) - 1
+#: Seconds a writer waits for each reader before its last commit.
+READER_WAIT = 60.0
 RUN_KW = dict(retries=10_000, backoff=(0.002, 0.2))
 
 pytestmark = [pytest.mark.freethreaded, pytest.mark.timeout(120)]
@@ -87,8 +93,14 @@ def test_readers_share_lazy_stubs_while_writers_commit(tmp_path, request):
         # Reading a root does not load it (D34 amendment): the readers race on the first load.
         assert object.__getattribute__(shared_items, "_loaded") is False, "the shared root must start as a stub"
         attempts = Attempts()
+        state_lock = threading.Lock()
         writers_left = [WRITERS]
         snapshots = [0] * READERS
+        first_versions = [None] * READERS
+        # Set by each reader once it has checked the shared snapshot and taken one snapshot
+        # of its own; the writers hold their last commit until every reader got there, so
+        # every reader overlaps the writers by construction, whatever the machine's speed.
+        reader_ready = [threading.Event() for _ in range(READERS)]
 
         def writer():
             def commit(tr):
@@ -100,25 +112,36 @@ def test_readers_share_lazy_stubs_while_writers_commit(tmp_path, request):
                 tr.set_root_object("items", items)
                 tr.set_root_object("meta", (version + 1, count + APPEND_PER_COMMIT, checksum))
             try:
-                for _ in range(COMMITS_PER_WRITER):
+                for i in range(COMMITS_PER_WRITER):
+                    if i == COMMITS_PER_WRITER - 1:
+                        for r, ready in enumerate(reader_ready):
+                            assert ready.wait(READER_WAIT), f"reader {r} never reached its first snapshot"
                     attempts.run(db, commit, **RUN_KW)
             finally:
-                with attempts._lock:
+                with state_lock:
                     writers_left[0] -= 1
+
+        def snapshot(r):
+            tr = db.new_transaction()
+            try:
+                items, meta = tr.get_root_object("items"), tr.get_root_object("meta")
+            finally:
+                tr.abort()
+            version = check_snapshot(items, meta, f"reader {r} snapshot")
+            snapshots[r] += 1
+            return version
 
         def reader(r):
             def body():
-                check_snapshot(shared_items, shared_meta, f"reader {r} shared snapshot")
+                try:
+                    check_snapshot(shared_items, shared_meta, f"reader {r} shared snapshot")
+                    first_versions[r] = snapshot(r)     # the writers' last commits are still pending
+                finally:
+                    reader_ready[r].set()               # also on failure: never stall the writers
                 while True:
-                    with attempts._lock:
+                    with state_lock:
                         done = writers_left[0] == 0
-                    tr = db.new_transaction()
-                    try:
-                        items, meta = tr.get_root_object("items"), tr.get_root_object("meta")
-                    finally:
-                        tr.abort()
-                    check_snapshot(items, meta, f"reader {r} snapshot")
-                    snapshots[r] += 1
+                    snapshot(r)
                     if done:
                         return
             return body
@@ -131,7 +154,8 @@ def test_readers_share_lazy_stubs_while_writers_commit(tmp_path, request):
         tr.abort()
         assert final == WRITERS * COMMITS_PER_WRITER
         assert attempts.commits == WRITERS * COMMITS_PER_WRITER
-        assert min(snapshots) >= 2, "every reader must take snapshots while the writers commit"
+        assert min(snapshots) >= 2
+        assert all(v < final for v in first_versions), "a reader's first snapshot did not overlap the writers"
         report(request.node.name, elapsed, attempts, f"reader snapshots {snapshots}")
     finally:
         space.close()
