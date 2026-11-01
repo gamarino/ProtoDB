@@ -23,6 +23,8 @@ CHECKED_ROOTS = [
     "proto_db/storage/format.py",
     "proto_db/storage/base.py",
     "proto_db/storage/memory.py",
+    "proto_db/storage/cache.py",
+    "proto_db/storage/file.py",
 ]
 
 
