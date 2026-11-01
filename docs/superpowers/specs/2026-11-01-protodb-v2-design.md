@@ -148,7 +148,7 @@ truth for the collections (key order), the indexes and the query evaluator.
   only. Classes register by a stable type name (`__type_name__`, default `module.ClassName`), so
   third-party subclasses (custom indexes) cannot collide.
 - `codec.py` converts an atom's state into a msgpack-ready dict using explicit type tags for every
-  canonical type (D3) and `{"@ref": [segment, offset]}` for nested atoms. Round-trip is exact for
+  canonical type (D3) and `{"@ref": [segment_hex, offset, type_name]}` for nested atoms (D18). Round-trip is exact for
   every canonical type (property-tested).
 - Lazy loading: an atom loaded by pointer is a stub until first attribute access; loading is
   thread-safe (per-atom lock or idempotent publish — never a torn half-loaded object visible to
