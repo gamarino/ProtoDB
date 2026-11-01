@@ -127,3 +127,22 @@ def test_missing_sentinel():
 def test_nan_canonical_allowed():
     import math
     assert math.isnan(canonical(float("nan")))
+
+
+def test_fold_and_gap_datetimes_use_resolved_instant():
+    from zoneinfo import ZoneInfo
+    m = ZoneInfo("Europe/Madrid")
+    a0 = datetime(2020, 10, 25, 2, 30, tzinfo=m, fold=0)
+    a1 = a0.replace(fold=1)
+    b0 = a0.astimezone(timezone.utc)
+    b1 = a1.astimezone(timezone.utc)
+    assert b0 != b1
+    for x, y in ((a0, b0), (a1, b1)):
+        assert values_equal(x, y)
+        assert hash_key(x) == hash_key(y)
+    assert not values_equal(a0, a1)
+    assert order_key(a0) < order_key(a1)
+    # nonexistent (gap) local time: resolved with the fold-selected offset
+    g = datetime(2020, 3, 29, 2, 30, tzinfo=m)
+    assert values_equal(g, g.astimezone(timezone.utc))
+    assert hash_key(g) == hash_key(g.astimezone(timezone.utc))

@@ -101,6 +101,6 @@ Source: `docs/superpowers/specs/2026-11-01-protodb-v2-design.md` section 2.
 
 ## D17 - Value model details
 - Context: spec section 4 left list/dict and naive-vs-aware `time` open.
-- Decision: rank order is MISSING < None < bool < number < str < bytes < date < time-naive < time-aware < datetime-naive < datetime-aware < timedelta < UUID < tuple < atom. `list` and `dict` are storable (`canonical` accepts them recursively) but are not orderable keys (`order_key` raises `ProtoValidationError`). Aware `time` orders by its UTC-normalised time of day.
+- Decision: rank order is MISSING < None < bool < number < str < bytes < date < time-naive < time-aware < datetime-naive < datetime-aware < timedelta < UUID < tuple < atom. `list` and `dict` are storable (`canonical` accepts them recursively) but are not orderable keys (`order_key` raises `ProtoValidationError`). Aware `time` orders by its UTC-normalised time of day; aware `datetime` orders by UTC microseconds computed from the fold-resolved offset (never by raw aware comparison, which is fold-sensitive).
 - Alternatives: order lists/dicts; compare naive and aware times as one rank.
 - Consequences: keys and index terms are limited to scalars, tuples and atoms; equal instants in different time zones are equal keys.

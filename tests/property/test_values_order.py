@@ -2,6 +2,9 @@
 import uuid
 from datetime import timedelta
 
+from datetime import datetime, timezone
+from decimal import Decimal
+
 from hypothesis import given, settings, strategies as st
 
 from proto_db.values import MISSING, hash_key, order_key, values_equal
@@ -58,3 +61,30 @@ def test_sorting_never_raises(xs):
     ordered = sorted(xs, key=order_key)
     keys = [order_key(x) for x in ordered]
     assert keys == sorted(keys)
+
+
+def _variants(v):
+    """Values equal to v under values_equal, in different representations."""
+    out = [v]
+    if isinstance(v, int) and not isinstance(v, bool) and abs(v) < 2**53:
+        out += [float(v), Decimal(v)]
+    if isinstance(v, datetime) and v.tzinfo is not None:
+        out += [v.astimezone(timezone.utc), v.astimezone(timezone(timedelta(hours=5, minutes=30)))]
+    if isinstance(v, tuple):
+        out.append(tuple(_variants(e)[-1] for e in v))
+    return out
+
+
+aware = st.one_of(st.datetimes(timezones=st.timezones()),
+                  st.datetimes(timezones=st.timezones()).map(lambda d: d.replace(fold=1)))
+variant_base = st.one_of(st.integers(-2**52, 2**52), aware,
+                         st.lists(st.one_of(st.integers(-2**52, 2**52), aware), max_size=3).map(tuple))
+
+
+@CFG
+@given(variant_base)
+def test_equal_variants_share_hash_and_key(v):
+    for w in _variants(v):
+        assert values_equal(v, w)
+        assert hash_key(v) == hash_key(w)
+        assert order_key(v) == order_key(w)

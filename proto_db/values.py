@@ -53,6 +53,10 @@ MISSING = _Missing()
  _R_UUID, _R_TUPLE, _R_ATOM) = range(15)
 
 
+_MICROSECOND = timedelta(microseconds=1)
+_NAIVE_ORIGIN = datetime(1, 1, 1)
+
+
 def is_atom(value) -> bool:
     """Return True if ``value`` looks like an atom: it has a ``uuid.UUID`` ``oid``."""
     return isinstance(getattr(value, "oid", None), uuid.UUID)
@@ -112,7 +116,12 @@ def order_key(value) -> tuple:
     if isinstance(value, (bytes, bytearray)):
         return (_R_BYTES, bytes(value))
     if isinstance(value, datetime):
-        return (_R_DT_AWARE if _is_aware(value) else _R_DT_NAIVE, value)
+        if _is_aware(value):
+            # UTC microseconds from the fold-resolved offset; never compare the raw
+            # aware datetime, whose comparison is fold-sensitive (PEP 495).
+            local = (value.replace(tzinfo=None) - _NAIVE_ORIGIN) // _MICROSECOND
+            return (_R_DT_AWARE, local - value.utcoffset() // _MICROSECOND)
+        return (_R_DT_NAIVE, value)
     if isinstance(value, date):
         return (_R_DATE, value)
     if isinstance(value, time):
