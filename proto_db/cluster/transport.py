@@ -10,13 +10,14 @@ Two implementations:
 :class:`TcpTransport`
     Length-prefixed msgpack frames over TCP.  One listener thread multiplexes the
     listening socket and every accepted connection with a selector and decodes frames;
-    one sender thread drains an outgoing queue over one outbound connection per peer,
-    connecting on demand with a timeout and reconnecting after a failure (a message that
-    cannot be sent is dropped).  There is no UDP.
+    one sender thread PER PEER drains that peer's outgoing queue over one outbound
+    connection, connecting on demand with a timeout and reconnecting after a failure (a
+    message that cannot be sent is dropped), so an unreachable or stalled peer never
+    delays messages to the others.  There is no UDP.
 :class:`InProcessNetwork` / :class:`InProcessTransport`
     Peers inside one process, for tests and simulations.  Every message goes through the
     wire encoding.  The network injects faults: drop and duplicate probabilities, random
-    delays (which reorder messages), partitions into groups, and crashes (a stopped
+    delays (which reorder messages), fixed per-link delays, partitions into groups, and crashes (a stopped
     endpoint neither sends nor receives).
 
 Handlers are called on the transport's receiving thread, one message at a time per
@@ -91,6 +92,7 @@ class InProcessNetwork:
         self._drop = 0.0
         self._duplicate = 0.0
         self._delay = (0.0, 0.0)
+        self._links = {}          # (src, dst) -> extra delay in seconds
         self._heap = []
         self._seq = 0
         self._closed = False
@@ -108,6 +110,16 @@ class InProcessNetwork:
             raise ProtoValidationError("Faults need probabilities in [0, 1] and 0 <= min delay <= max delay")
         with self._lock:
             self._drop, self._duplicate, self._delay = drop, duplicate, (low, high)
+
+    def set_link_delay(self, src: str, dst: str, seconds: float) -> None:
+        """Add ``seconds`` of delay to every message from ``src`` to ``dst`` (``0`` removes it)."""
+        if not isinstance(seconds, (int, float)) or seconds < 0:
+            raise ProtoValidationError("A link delay must be a non-negative number of seconds")
+        with self._lock:
+            if seconds:
+                self._links[(src, dst)] = float(seconds)
+            else:
+                self._links.pop((src, dst), None)
 
     def partition(self, *groups) -> None:
         """Split the network: messages flow only between nodes of the same group.
@@ -160,6 +172,7 @@ class InProcessNetwork:
                 self._stats["duplicated"] += 1
             for _ in range(copies):
                 delay = self._rng.uniform(*self._delay) if self._delay[1] > 0 else 0.0
+                delay += self._links.get((src, dst), 0.0)
                 if delay <= 0:
                     self._stats["delivered"] += 1
                     target._inbox.put(data)
@@ -299,7 +312,7 @@ class TcpTransport:
         self._send_timeout = send_timeout
         self._backoff = reconnect_backoff
         self._max_queue = max_queue
-        self._queue = queue.SimpleQueue()
+        self._queues = {}         # peer id -> SimpleQueue drained by that peer's sender thread
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -345,11 +358,14 @@ class TcpTransport:
             self._peers = {k: (tuple(v) if v is not None else None) for k, v in peers.items()}
             self._wake_r, self._wake_w = socket.socketpair()
             self._running = True
-            self._threads = [
-                threading.Thread(target=self._listen, args=(handler,), name=f"proto-cluster-tcp-in-{node_id}",
-                                 daemon=True),
-                threading.Thread(target=self._send_loop, name=f"proto-cluster-tcp-out-{node_id}", daemon=True),
-            ]
+            self._threads = [threading.Thread(target=self._listen, args=(handler,),
+                                              name=f"proto-cluster-tcp-in-{node_id}", daemon=True)]
+            for peer, address in self._peers.items():
+                if peer == node_id or address is None:
+                    continue
+                q = self._queues[peer] = queue.SimpleQueue()
+                self._threads.append(threading.Thread(target=self._send_loop, args=(peer, address, q),
+                                                      name=f"proto-cluster-tcp-out-{node_id}-{peer}", daemon=True))
             for t in self._threads:
                 t.start()
 
@@ -358,10 +374,11 @@ class TcpTransport:
         frame = encode_frame(message)
         if not self._running:
             return
-        if self._queue.qsize() >= self._max_queue:
+        q = self._queues.get(node_id)
+        if q is None or q.qsize() >= self._max_queue:
             self._drop()
             return
-        self._queue.put((node_id, frame))
+        q.put(frame)
 
     # -- sending ---------------------------------------------------------------------------
 
@@ -375,29 +392,24 @@ class TcpTransport:
             raise
         return sock
 
-    def _send_loop(self) -> None:
-        conns = {}
-        failed_at = {}
+    def _send_loop(self, node_id: str, address: tuple, q) -> None:
+        """Drain ``q`` to ``node_id``; a blocking connect or send here delays only this peer."""
+        sock = None
+        failed_at = float("-inf")
         try:
             while True:
-                item = self._queue.get()
-                if item is _STOP:
+                frame = q.get()
+                if frame is _STOP:
                     return
-                node_id, frame = item
-                address = self._peers.get(node_id)
-                if address is None:
-                    self._drop()
-                    continue
                 for _ in range(2):  # one retry on a fresh connection
-                    sock = conns.get(node_id)
                     if sock is None:
-                        if time.monotonic() - failed_at.get(node_id, float("-inf")) < self._backoff:
+                        if time.monotonic() - failed_at < self._backoff:
                             self._drop()
                             break
                         try:
-                            sock = conns[node_id] = self._connect(address)
+                            sock = self._connect(address)
                         except OSError as e:
-                            failed_at[node_id] = time.monotonic()
+                            failed_at = time.monotonic()
                             logger.debug("Connecting to %s at %s failed: %s", node_id, address, e)
                             self._drop()
                             break
@@ -406,11 +418,12 @@ class TcpTransport:
                         break
                     except OSError as e:
                         logger.debug("Sending to %s failed: %s; reconnecting", node_id, e)
-                        conns.pop(node_id).close()
+                        sock.close()
+                        sock = None
                 else:
                     self._drop()
         finally:
-            for sock in conns.values():
+            if sock is not None:
                 sock.close()
 
     # -- receiving -------------------------------------------------------------------------
@@ -481,7 +494,8 @@ class TcpTransport:
             self._running = False
             threads = self._threads
         self._wake_w.send(b"x")
-        self._queue.put(_STOP)
+        for q in self._queues.values():
+            q.put(_STOP)
         for t in threads:
             if t is not threading.current_thread():
                 t.join()

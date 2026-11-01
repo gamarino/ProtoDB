@@ -121,7 +121,8 @@ def _throughput(storages_factory, tmp_path, peers, threads=4, seconds=1.5):
         fencing = sum(cl[n].stats()["fencing_events"] for n in cl.ids)
         _, counted = _read(spaces[0])
     commits = sum(done)
-    assert sorted(counted.elements()) == sorted(range(commits)) or len(list(counted.elements())) == commits
+    assert sorted(counted.elements()) == list(range(commits))     # every committed id, no other
+    assert all(c == 1 for _, c in counted.items())                 # none applied twice
     assert sum(s.failed_cas for s in storages) == 0 and fencing == 0
     return commits / elapsed
 

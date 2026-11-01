@@ -234,3 +234,14 @@ def test_a_fencing_event_marks_the_root_suspect_and_is_counted(baseline_threads)
         nxt = cl["n0"].acquire(timeout=5)
         assert not nxt.root_certain
         cl["n0"].release(nxt)
+
+
+def test_the_default_startup_grace_lasts_one_lease(baseline_threads):
+    kw = dict(FAST)
+    del kw["startup_grace"]                        # default: one lease_duration
+    t0 = time.monotonic()
+    with Cluster(3, **kw) as cl:
+        lease = cl["n0"].acquire(timeout=5)
+        waited = time.monotonic() - t0
+        cl["n0"].release(lease)
+    assert waited >= FAST["lease_duration"]

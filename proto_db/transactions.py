@@ -71,8 +71,9 @@ Commit protocol (D34)
        ``ProtoConflictError``, otherwise the original error is raised (wrapped in
        ``ProtoUnexpectedError`` if it was not a ProtoDB error); if the root cannot even
        be read back, ``ProtoOutcomeUnknownError`` reports an unknown outcome.  For a
-       storage with an in-process root lock (``CloudStorage``) an epoch mismatch proves
-       nothing, so an unresolved outcome raises ``ProtoOutcomeUnknownError``.
+       storage with an in-process root lock (``CloudStorage``), and for every commit under
+       a cluster lease, an epoch mismatch proves nothing, so an unresolved outcome raises
+       ``ProtoOutcomeUnknownError`` and any other error propagates as it is.
        ``Database.run`` never retries ``ProtoOutcomeUnknownError``: the commit may have
        been applied.
     7. Nothing after a successful publish can fail the commit: releasing the root
@@ -298,8 +299,12 @@ def _ask_outcome(storage, ptr: AtomPointer, epoch: int) -> Optional[bool]:
     return verdict if verdict is True or verdict is False else None
 
 
-def _publish(storage, ptr: AtomPointer, expected_epoch: int) -> None:
+def _publish(storage, ptr: AtomPointer, expected_epoch: int, *, writers_excluded: Optional[bool] = None) -> None:
     """Publish ``ptr`` by CAS; resolve an unknown outcome (step 6 of D34).
+
+    ``writers_excluded`` overrides the storage's ``root_lock_is_global``: the cluster lease
+    path passes False, because a lease excludes other writers only while it is valid, so an
+    epoch mismatch read back after a failure never proves that nothing was applied.
 
     The verdict comes from the storage's ``publish_outcome`` hook when it has one.
     Inferring a conflict from an epoch mismatch is valid only when the root lock excludes
@@ -320,7 +325,9 @@ def _publish(storage, ptr: AtomPointer, expected_epoch: int) -> None:
             return
         if verdict is False:
             raise ProtoConflictError("Another root was published concurrently; nothing was committed") from error
-    if not getattr(storage, "root_lock_is_global", True):
+    if writers_excluded is None:
+        writers_excluded = getattr(storage, "root_lock_is_global", True)
+    if not writers_excluded:
         # Only an outcome-unknown error leaves doubt; any other error means nothing was applied.
         if isinstance(error, ProtoDBError):
             raise error
@@ -402,7 +409,7 @@ def _commit_under_lease(storage, coordinator, lock_timeout, build: Callable) -> 
             raise ProtoConflictError("The cluster write lease expired before the root was published; "
                                      "nothing was published")
         try:
-            _publish(storage, ptr, lease.expected_epoch)
+            _publish(storage, ptr, lease.expected_epoch, writers_excluded=False)
         except ProtoConflictError as e:
             coordinator.record_fencing_event(lease, e)
             raise
@@ -476,8 +483,13 @@ class ObjectSpace:
         known, record = coordinator.known_root()
         if known:
             return record
+        return self._read_storage_root()
+
+    def _read_storage_root(self):
+        """Read the storage root; a coordinator learns it, so later snapshots never go backwards."""
         record = self._storage.read_root()
-        coordinator.observe_root(record, from_storage=True)
+        if self._coordinator is not None:
+            self._coordinator.observe_root(record, from_storage=True)
         return record
 
     def _check_open(self) -> None:
@@ -486,7 +498,7 @@ class ObjectSpace:
 
     def _current_space(self, context) -> Optional[SpaceRoot]:
         self._check_open()
-        return _load_space(context, self._storage.read_root())
+        return _load_space(context, self._read_storage_root())
 
     def new_database(self, name: str) -> "Database":
         """Create the database ``name`` (``ProtoValidationError`` if it exists) and return it."""
@@ -571,7 +583,7 @@ class Database:
         """The committed versions of this database, newest first, as :class:`HistoryEntry` objects."""
         self._space._check_open()
         context = _SpaceContext(self._space.storage)
-        root = self._root_in(context, self._space.storage.read_root())
+        root = self._root_in(context, self._space._read_storage_root())
         entries = []
         while root is not None:
             entries.append(HistoryEntry(root))

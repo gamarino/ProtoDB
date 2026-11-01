@@ -174,6 +174,16 @@ class LeaseAttempt:
             self.rejected_by.setdefault(peer, (reason, highest, remaining))
 
     @property
+    def replies(self) -> int:
+        """Peers that answered (granted or refused), the requester's own vote included."""
+        return len(self.granted_by) + len(self.rejected_by)
+
+    @property
+    def needed(self) -> int:
+        """Grants needed to win (a majority)."""
+        return self._needed
+
+    @property
     def state(self) -> str:
         """``"won"``, ``"lost"`` or ``"pending"``."""
         if len(self.granted_by) >= self._needed:

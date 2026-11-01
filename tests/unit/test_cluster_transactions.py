@@ -3,7 +3,7 @@ import threading
 
 import pytest
 
-from proto_db.errors import ProtoConflictError
+from proto_db.errors import ProtoConflictError, ProtoUnexpectedError
 from proto_db.storage.cloud import CloudStorage
 from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
@@ -181,3 +181,72 @@ def test_an_expired_lease_never_reaches_the_storage():
         assert _value(space) == 1
         assert storage.publishes == 1 and storage.failed_cas == 0   # first attempt stopped before publishing
         assert log.count("acquire") == 2
+
+
+# -- fix round 1 (R39) ------------------------------------------------------------------------
+
+def test_storage_root_reads_feed_the_coordinator_so_reads_never_go_backwards():
+    shared = MemoryStorage()
+    with Cluster(3, **FAST) as cl:
+        s0 = ObjectSpace(shared, coordinator=cl["n0"])
+        s1 = ObjectSpace(shared, coordinator=cl["n1"])
+        db0 = s0.new_database("db")
+        db0.run(_incr, **RUN_KW)
+        cl.net.partition({"n0", "n2"}, {"n1"})          # n1 misses the next commits' releases
+        for _ in range(3):
+            db0.run(_incr, **RUN_KW)
+        cl.net.heal()
+        latest = shared.read_root()
+        assert cl["n1"].known_root()[1] != latest
+        entries = s1.open_database("db").history()       # a storage read through n1's space
+        assert cl["n1"].known_root() == (True, latest)
+        assert "n" in entries[0].root_names
+        assert _value(s1) == 4                           # the snapshot is at least what history() saw
+
+
+class _AppliedThenFails:
+    """Storage proxy whose next publish is applied, then stalls, then raises (a lost reply)."""
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.entered = threading.Event()
+        self.resume = threading.Event()
+        self.armed = False
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def publish_root(self, ptr, expected_epoch):
+        record = self._inner.publish_root(ptr, expected_epoch)
+        if self.armed:
+            self.armed = False
+            self.entered.set()
+            self.resume.wait(10)
+            raise ProtoUnexpectedError("the connection was lost after the root write was applied")
+        return record
+
+
+def test_an_applied_publish_that_errors_after_the_lease_expired_is_never_applied_twice():
+    shared = MemoryStorage()          # root_lock_is_global = True: the old path would infer a conflict
+    with Cluster(3, **FAST) as cl:
+        flaky = _AppliedThenFails(shared)
+        s0 = ObjectSpace(flaky, coordinator=cl["n0"])
+        s1 = ObjectSpace(shared, coordinator=cl["n1"])
+        s0.new_database("db")
+        flaky.armed = True
+        errors = []
+
+        def first():
+            try:
+                s0.open_database("db").run(_incr, **RUN_KW)
+            except ProtoUnexpectedError as e:
+                errors.append(e)
+
+        t = threading.Thread(target=first)
+        t.start()
+        assert flaky.entered.wait(5)
+        s1.open_database("db").run(_incr, **RUN_KW)     # only after n0's lease expired
+        flaky.resume.set()
+        t.join(10)
+        assert errors, "an error after an applied publish must not be turned into a retried conflict"
+        assert _value(s1) == 2                           # n0's increment applied once, n1's once

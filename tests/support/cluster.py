@@ -2,7 +2,8 @@
 
 ``Cluster(n, ...)`` starts ``n`` coordinators named ``n0`` .. ``n{n-1}`` on one
 :class:`~proto_db.cluster.transport.InProcessNetwork`; extra keyword arguments go to
-every coordinator.  ``crash(node)`` stops the node's transport only (a crashed or frozen
+every coordinator; each coordinator's jitter generator is seeded from ``seed`` and its
+index.  ``crash(node)`` stops the node's transport only (a crashed or frozen
 process: it keeps running its code but neither sends nor receives).  ``restart(node)``
 starts a fresh coordinator with the same id on a new endpoint.  ``close()`` stops every
 node and the network, joining all their threads.
@@ -43,6 +44,7 @@ class Cluster:
     """``n`` in-process coordinators on one network (see the module docstring)."""
 
     def __init__(self, n: int, *, seed: int = 0, clocks=None, **coordinator_kwargs):
+        self.seed = seed
         self.net = InProcessNetwork(seed=seed)
         self.ids = [f"n{i}" for i in range(n)]
         self.peers = [(node_id, "127.0.0.1", 0) for node_id in self.ids]
@@ -59,6 +61,7 @@ class Cluster:
 
     def start(self, node_id: str, **overrides) -> ClusterCoordinator:
         kwargs = dict(self.kwargs)
+        kwargs.setdefault("seed", self.seed * 1000 + self.ids.index(node_id))   # deterministic jitter
         if node_id in self.clocks:
             kwargs["clock"] = self.clocks[node_id]
         kwargs.update(overrides)

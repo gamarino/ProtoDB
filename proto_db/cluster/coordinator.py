@@ -61,6 +61,13 @@ __all__ = ["Peer", "ClusterCoordinator"]
 
 logger = logging.getLogger(__name__)
 
+#: Once a majority has answered an undecided attempt, the remaining replies are awaited for
+#: ``max(_MIN_STRAGGLE, _STRAGGLE_FACTOR * time those replies took)`` seconds at most.
+_MIN_STRAGGLE = 0.005
+_STRAGGLE_FACTOR = 4.0
+#: Upper bound, in seconds, of the random spread a requester adds after being woken by a release.
+_WAKE_SPREAD = 0.003
+
 
 class Peer(NamedTuple):
     """A member of the cluster: its id and the address its transport listens on."""
@@ -164,7 +171,7 @@ class ClusterCoordinator:
         self._held = None
         self._hint = 0                      # highest term learnt from replies
         self._rids = itertools.count(1)
-        self._wakeups = 0                   # winners' releases received
+        self._wakeups = 0                   # releases received
         self._root_known = False
         self._root = None
         self._suspect = True
@@ -225,7 +232,10 @@ class ClusterCoordinator:
     def stop(self) -> None:
         """Stop the transport and wake every waiting acquirer (they raise).  Idempotent.
 
-        A lease still held is not released explicitly; the peers let it expire.
+        A lease still held is not released explicitly; the peers let it expire.  A held
+        :class:`~proto_db.cluster.lease.Lease` object keeps reporting ``is_valid()`` until its
+        ``valid_until``: stopping does not revoke it, so a commit already under the lease may
+        still publish (the storage's conditional write remains the fencing net).
         """
         with self._cond:
             if self._state == "stopped":
@@ -347,8 +357,7 @@ class ClusterCoordinator:
             attempt.on_grant(sender, known, root, msg["certain"])
         else:
             attempt.on_reject(sender, msg["reason"], msg["highest"], msg["remaining"])
-        if attempt.state != "pending":
-            self._cond.notify_all()
+        self._cond.notify_all()   # decided, or a majority answered (straggler rule)
 
     def _on_release(self, sender: str, msg: dict) -> None:
         if self._grants.on_release(sender, msg["term"]):
@@ -417,8 +426,9 @@ class ClusterCoordinator:
                 self._check_running()
                 woken = self._wakeups != seen
             if woken:
-                # Spread the requesters woken by one release so they do not split the votes.
-                time.sleep(self._rng.random() * low * min(failures, 8))
+                # Spread the requesters woken by one release so they do not split the votes; bounded
+                # independently of ``backoff`` so a wake-up is always followed by a prompt retry.
+                time.sleep(self._rng.random() * _WAKE_SPREAD)
 
     def _open_attempt(self) -> tuple:
         with self._lock:
@@ -443,8 +453,16 @@ class ClusterCoordinator:
     def _close_attempt(self, attempt: LeaseAttempt) -> tuple:
         """Wait for the attempt's outcome; return ``(lease, None, 0)`` or ``(None, cancel, wait)``."""
         with self._cond:
-            self._cond.wait_for(lambda: attempt.state != "pending" or self._state != "running",
-                                timeout=self._request_timeout)
+            started = time.monotonic()
+            deadline = started + self._request_timeout
+            self._cond.wait_for(lambda: attempt.state != "pending" or self._state != "running"
+                                or attempt.replies >= attempt.needed, timeout=self._request_timeout)
+            if attempt.state == "pending" and self._state == "running":
+                # A majority answered without deciding: wait for stragglers only a few times as
+                # long as those replies took, so an unreachable member costs little (liveness only).
+                straggle = max(_MIN_STRAGGLE, _STRAGGLE_FACTOR * (time.monotonic() - started))
+                self._cond.wait_for(lambda: attempt.state != "pending" or self._state != "running",
+                                    timeout=max(0.0, min(straggle, deadline - time.monotonic())))
             self._attempt = None
             self._check_running()
             self._hint = max(self._hint, attempt.highest_seen)

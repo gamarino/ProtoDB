@@ -2,7 +2,7 @@
 
 Hypothesis draws a schedule for an in-process cluster of 3 or 5 peers committing to one
 shared storage: message drop, duplicate and delay (reorder) rates, per-node clock drift
-within the bound the drift margin covers, and timed events -- partitions, heals, crashes
+within the bound the drift margin covers, delays up to twice the margin, and timed events -- partitions, heals, crashes
 (a node's transport stops while its threads keep running: a frozen or partitioned
 process), restarts (a fresh coordinator with the default startup grace) and freezes (a
 node's next root publish stalls for longer than a lease: a stale holder).
@@ -38,7 +38,7 @@ MARGIN = 0.03
 RHO = 0.04                  # 2 * RHO * LEASE / (1 + RHO) = 0.023 <= MARGIN
 RUN_SECONDS = 1.2
 THREADS_PER_NODE = 2
-COORD_KW = dict(lease_duration=LEASE, drift_margin=MARGIN, request_timeout=0.08, startup_grace=0.0,
+COORD_KW = dict(lease_duration=LEASE, drift_margin=MARGIN, request_timeout=0.15, startup_grace=0.0,
                 backoff=(0.001, 0.02), acquire_timeout=0.6)
 
 
@@ -134,7 +134,7 @@ schedule_strategy = st.fixed_dictionaries({
     "size": st.sampled_from([3, 5]),
     "drop": st.sampled_from([0.0, 0.05, 0.2]),
     "duplicate": st.sampled_from([0.0, 0.1, 0.3]),
-    "delay": st.sampled_from([0.0, 0.003, 0.01]),
+    "delay": st.sampled_from([0.0, 0.01, 0.06]),     # up to twice the drift margin
     "rates": st.lists(st.floats(1 - RHO, 1 + RHO), min_size=5, max_size=5),
     "events": events_strategy,
     "seed": st.integers(0, 2 ** 16),
@@ -232,3 +232,42 @@ def test_a_frozen_holder_overtaken_by_another_commit_is_fenced():
         "events": [(0.2, "freeze", 0, 0)],
     })
     assert commits > 0 and failed >= 1
+
+
+# -- deterministic cases for the two timing rules of the lease (review R39 item 3) -------------
+
+def _belief_end(lease, clock):
+    return clock.to_real(min(lease.valid_until, lease.released_at or lease.valid_until))
+
+
+def test_the_drift_margin_covers_the_worst_clock_rates():
+    """The holder runs slow (1 - rho), the next requester's granters fast (1 + rho): without
+    ``drift_margin`` the holder still believes in its lease after they granted the next one."""
+    rho, lease = 0.1, 0.4
+    margin = 0.08                        # >= 2 * rho * D / (1 + rho) = 0.0727
+    clocks = {"n0": DriftClock(1 - rho), "n1": DriftClock(1 + rho, 50.0), "n2": DriftClock(1 + rho, 90.0)}
+    with Cluster(3, clocks=clocks, lease_duration=lease, drift_margin=margin, request_timeout=0.05,
+                 startup_grace=0.0, backoff=(0.001, 0.005)) as cl:
+        held = cl["n0"].acquire(timeout=5)          # kept to expiry, never released
+        nxt = cl["n1"].acquire(timeout=5)
+        try:
+            assert _belief_end(held, clocks["n0"]) <= clocks["n1"].to_real(nxt.acquired_at)
+        finally:
+            cl["n1"].release(nxt)
+            cl["n0"].release(held)
+
+
+def test_the_lease_window_is_measured_from_the_send_not_the_win():
+    """Grants to n0 are delayed 0.3 s: counted from its win, n0's window would outlast the
+    promises its granters made when they received the request."""
+    with Cluster(3, lease_duration=1.0, drift_margin=0.1, request_timeout=0.45, startup_grace=0.0,
+                 backoff=(0.001, 0.005)) as cl:
+        cl.net.set_link_delay("n1", "n0", 0.3)
+        cl.net.set_link_delay("n2", "n0", 0.3)
+        held = cl["n0"].acquire(timeout=5)          # won about 0.3 s after sending; never released
+        nxt = cl["n1"].acquire(timeout=5)
+        try:
+            assert held.valid_until <= nxt.acquired_at   # one shared clock (time.monotonic)
+        finally:
+            cl["n1"].release(nxt)
+            cl["n0"].release(held)

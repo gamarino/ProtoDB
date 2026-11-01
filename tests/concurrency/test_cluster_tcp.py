@@ -112,3 +112,85 @@ def test_tcp_throughput_three_peers(tmp_path, capsys):
     with capsys.disabled():
         print(f"\nTHROUGHPUT TCP [file] 3 subprocess peers x 4 threads: {commits / seconds:.0f} commits/s "
               f"({commits} commits in {seconds:.2f}s)")
+
+
+# -- one unreachable member must not stall the others (fix round 1, R39) ----------------------
+
+def _black_hole():
+    """A listening socket whose accept backlog is full: connects to it hang until their timeout."""
+    import socket
+    hole = socket.socket()
+    hole.bind(("127.0.0.1", 0))
+    hole.listen(0)
+    fillers = []
+    for _ in range(4):
+        c = socket.socket()
+        c.settimeout(0.2)
+        try:
+            c.connect(hole.getsockname())
+        except socket.timeout:
+            pass                  # a timed-out filler still occupies a SYN slot
+        fillers.append(c)
+    return hole, fillers
+
+
+def _in_process_tcp_rate(black_holed: bool, seconds: float = 1.5) -> float:
+    import itertools
+    import threading
+    import time
+
+    from proto_db.cluster.coordinator import ClusterCoordinator
+    from proto_db.cluster.transport import TcpTransport
+    from proto_db.storage.memory import MemoryStorage
+
+    transports = [TcpTransport() for _ in range(3)]
+    hole = fillers = None
+    addresses = [t.address for t in transports]
+    if black_holed:
+        transports[2].stop()                   # never started: n2 is unreachable
+        hole, fillers = _black_hole()
+        addresses[2] = hole.getsockname()
+    peers = [(f"n{i}", host, port) for i, (host, port) in enumerate(addresses)]
+    live = 2 if black_holed else 3
+    nodes = [ClusterCoordinator(f"n{i}", peers, transport=transports[i], startup_grace=0.0).start()
+             for i in range(live)]
+    storage = MemoryStorage()
+    try:
+        ObjectSpace(storage).new_database("db")
+        uids = itertools.count()
+        done = []
+        stop_at = time.monotonic() + seconds
+
+        def worker(node):
+            db = ObjectSpace(storage, coordinator=node).open_database("db")
+            n = 0
+            while time.monotonic() < stop_at:
+                uid = next(uids)
+                db.run(lambda tr: tr.set_root_object("ids", tr.new_counted_set().add(uid)),
+                       retries=10_000, backoff=(0.0005, 0.01))
+                n += 1
+            done.append(n)
+
+        threads = [threading.Thread(target=worker, args=(nodes[i % 2],)) for i in range(4)]
+        start = time.monotonic()
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        return sum(done) / (time.monotonic() - start)
+    finally:
+        for node in nodes:
+            node.stop()
+        if hole is not None:
+            for c in fillers:
+                c.close()
+            hole.close()
+
+
+def test_an_unreachable_member_does_not_stall_the_healthy_majority(capsys):
+    healthy = _in_process_tcp_rate(black_holed=False)
+    degraded = _in_process_tcp_rate(black_holed=True)
+    with capsys.disabled():
+        print(f"\nTCP 3 members, 2 committing: all reachable {healthy:.0f} commits/s, "
+              f"one black-holed {degraded:.0f} commits/s")
+    assert degraded >= 0.5 * healthy
