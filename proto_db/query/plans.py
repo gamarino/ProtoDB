@@ -15,13 +15,15 @@ plan ``execute()`` runs::
     {"plan": NodeName, ...node parameters..., "estimate": {"rows": r, "cost": c},
      "children": [child explain, ...]}
 
-Nodes: :class:`CollectionScanPlan` ("CollectionScan"), :class:`IndexPlan` (the
+Nodes: :class:`CollectionScanPlan` ("CollectionScan"), :class:`ValuesScan` (a
+scan of a materialised tuple of values: the LINQ source for a plain Python
+iterable, D38), :class:`IndexPlan` (the
 single index access node; its ``kind`` names the access path: "IndexLookup",
 "IndexRange", "IndexComplement", "IndexOrderedScan", see
 :func:`ordered_index_scan`), :class:`VectorSearch`, :class:`Filter`,
 :class:`PythonFilter`, :class:`Intersect`, :class:`Union`, :class:`Project`,
 :class:`Sort`, :class:`Limit`, :class:`GroupBy`, :class:`Join`,
-:class:`Unnest` and :class:`Count`.
+:class:`Unnest`, :class:`Count` and :class:`Distinct` (D38).
 
 Cost model (D30 units: one per element produced or touched).  A scan costs its
 row count; index access paths cost what ``Index.estimate`` says; a filter
@@ -31,7 +33,8 @@ estimated per term at :data:`FILTER_SELECTIVITY` (And multiplies, Or is
 Union/Intersect touch every row of every source; Sort adds ``n log2 n``;
 Limit caps rows; Project, GroupBy, Join and Unnest add one unit per row they
 touch; Unnest estimates :data:`UNNEST_FANOUT` items per element; Count
-produces one row.
+produces one row; a ValuesScan costs its length; Distinct adds one unit per
+row and keeps the source row count as an upper bound.
 
 Element identity (Union, Intersect, D36): ``(element_identity(e),
 exact_token(e))``, so an atom is identified by oid and a plain value by value
@@ -46,7 +49,7 @@ import math
 import threading
 from abc import ABC, abstractmethod
 from collections import Counter
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from itertools import islice
@@ -56,7 +59,7 @@ from ..values import MISSING, exact_token, is_atom, is_orderable, order_key
 from .expressions import And, Expression, Not, Or, evaluate, iter_terms
 from .terms import NEAR, Term
 
-__all__ = ["Estimate", "QueryPlan", "CollectionScanPlan", "IndexPlan", "ordered_index_scan", "VectorSearch",
+__all__ = ["Estimate", "QueryPlan", "CollectionScanPlan", "ValuesScan", "Distinct", "IndexPlan", "ordered_index_scan", "VectorSearch",
            "Filter", "PythonFilter", "Intersect", "Union", "Project", "Sort", "Limit", "GroupBy", "Join",
            "Unnest", "Count", "JOIN_KINDS", "FILTER_SELECTIVITY", "UNNEST_FANOUT", "AGGREGATES", "element_key"]
 
@@ -205,6 +208,36 @@ class CollectionScanPlan(QueryPlan):
     def estimate(self) -> Estimate:
         """A scan produces and touches every element: rows = cost = count."""
         n = self.collection.count
+        return Estimate(rows=n, cost=n)
+
+
+class ValuesScan(QueryPlan):
+    """Scan of a materialised tuple of plain values (D38): no collection, so no index.
+
+    ``values`` is any iterable; it is copied into a tuple once, at
+    construction, so every ``execute()`` yields the same elements in the same
+    order.  The tuple holds references: the values must not be mutated
+    afterwards (they are not copied).
+    """
+
+    def __init__(self, values):
+        if isinstance(values, (str, bytes, bytearray, Mapping)) or not isinstance(values, Iterable):
+            raise ProtoValidationError(f"ValuesScan needs an iterable of values (not a str, bytes or mapping), "
+                                       f"not {type(values).__name__}")
+        self.values = tuple(values)
+        self._freeze()
+
+    def execute(self) -> Iterator:
+        """Yield every value, in order."""
+        return iter(self.values)
+
+    def explain(self) -> dict:
+        """``{"plan": "ValuesScan", "rows", "estimate", "children": []}``."""
+        return self._explain("ValuesScan", {"rows": len(self.values)})
+
+    def estimate(self) -> Estimate:
+        """rows = cost = number of values."""
+        n = len(self.values)
         return Estimate(rows=n, cost=n)
 
 
@@ -645,6 +678,44 @@ class Count(QueryPlan):
     def estimate(self) -> Estimate:
         """rows = 1; cost = source cost."""
         return Estimate(rows=1, cost=_est(self.source).cost)
+
+
+class Distinct(QueryPlan):
+    """The source elements without repetitions, first occurrence kept, by :func:`element_key` (D38).
+
+    Identity is ``(element_identity, exact_token)`` as for Union/Intersect
+    (ruling R19): ``1``, ``1.0``, ``Decimal("1")`` and ``True`` stay four
+    elements; atoms are identified by oid; lists, tuples and dicts by content
+    (a dict's token follows its insertion order).  A value
+    :func:`element_identity` cannot identify raises ``ProtoValidationError``.
+    """
+
+    def __init__(self, source: QueryPlan):
+        self.source = _check_plan(source, "Distinct")
+        self._freeze()
+
+    def execute(self) -> Iterator:
+        """Stream the first occurrence of each element."""
+        source = self.source
+
+        def produce():
+            seen = set()
+            for element in source.execute():
+                key = element_key(element)
+                if key not in seen:
+                    seen.add(key)
+                    yield element
+
+        return produce()
+
+    def explain(self) -> dict:
+        """``{"plan": "Distinct"}``."""
+        return self._explain("Distinct", {}, (self.source,))
+
+    def estimate(self) -> Estimate:
+        """rows = source rows (upper bound); cost = source cost + source rows."""
+        src = _est(self.source)
+        return Estimate(rows=src.rows, cost=src.cost + src.rows)
 
 
 def _present(values) -> list:

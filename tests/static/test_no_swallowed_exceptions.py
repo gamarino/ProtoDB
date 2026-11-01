@@ -38,6 +38,7 @@ CHECKED_ROOTS = [
     "proto_db/query/expressions.py",
     "proto_db/query/terms.py",
     "proto_db/query/planner.py",
+    "proto_db/query/linq.py",
     "proto_db/indexing/__init__.py",
     "proto_db/indexing/keyspec.py",
     "proto_db/indexing/base.py",
