@@ -199,3 +199,28 @@ def test_hash_key_is_a_signed_64_bit_int():
     for v in ("x", 1, (1, 2), b"q", None):
         h = hash_key(v)
         assert type(h) is int and -(2**63) <= h < 2**63
+
+
+# -- rank_bounds (Task 4.3, D30): range scans restricted to one type rank ------------------
+
+def test_rank_bounds_bracket_exactly_one_rank():
+    """Catches a RangeIndex range that leaks into a neighbouring rank (D28: ``None < 5`` is false)."""
+    from proto_db.values import rank_bounds
+    samples = [MISSING, None, False, True, -10**30, -1.5, 0, Decimal("2.5"), 10**30, float("inf"),
+               float("-inf"), "", "zz", b"", b"\xff", date(1, 1, 1), date(9999, 12, 31),
+               time(0, 0), time(23, 59, tzinfo=timezone.utc), datetime(2020, 1, 1),
+               datetime(2020, 1, 1, tzinfo=timezone.utc), timedelta(days=-5), uuid.UUID(int=0),
+               (), (1, "a"), ((),), FakeAtom(uuid.UUID(int=7))]
+    for v in samples:
+        low, high = rank_bounds(v)
+        for w in samples:
+            k = order_key(w)
+            same = k[0] == order_key(v)[0]
+            assert (low < k < high) == same, (v, w)
+
+
+def test_rank_bounds_rejects_unorderable_values():
+    from proto_db.values import rank_bounds
+    for bad in ([1], {"a": 1}, float("nan")):
+        with pytest.raises(ProtoValidationError):
+            rank_bounds(bad)

@@ -599,3 +599,70 @@ def _register_scan_index() -> None:
 
 
 _register_scan_index()
+
+
+# -- Tasks 4.2 / 4.3: EqualityIndex and RangeIndex ---------------------------------------------
+
+def mixed_value(rng: random.Random):
+    """A key value of almost every type rank, plus unorderable ones (FrozenList, FrozenDict, NaN)."""
+    from datetime import date
+    from decimal import Decimal
+    from proto_db.values import FrozenDict, FrozenList
+    pick = rng.randrange(14)
+    if pick == 0:
+        return rng.randrange(-3, 6)
+    if pick == 1:
+        return rng.randrange(-3, 6) + rng.choice([0.0, 0.5])
+    if pick == 2:
+        return Decimal(rng.randrange(0, 6)) / 2
+    if pick == 3:
+        return f"s{rng.randrange(0, 5)}"
+    if pick == 4:
+        return None
+    if pick == 5:
+        return rng.random() < 0.5
+    if pick == 6:
+        return bytes([rng.randrange(0, 4)])
+    if pick == 7:
+        return date(2026, 1, rng.randrange(1, 5))
+    if pick == 8:
+        return (rng.randrange(0, 3), f"t{rng.randrange(0, 2)}")
+    if pick == 9:
+        return FrozenList([rng.randrange(0, 3)])
+    if pick == 10:
+        return FrozenDict({"k": rng.randrange(0, 2)})
+    if pick == 11:
+        return float("nan")
+    if pick == 12:
+        return (FrozenList([1]), rng.randrange(0, 2))  # a tuple holding a list is unorderable
+    return rng.randrange(0, 3)
+
+
+def mixed_record_strategy(rng: random.Random) -> DBObject:
+    """A DBObject whose ``city`` (sometimes absent) and ``address.zip`` take mixed-type keys."""
+    attrs: dict = {"n": rng.randrange(0, 5)}
+    if rng.random() < 0.8:
+        attrs["city"] = mixed_value(rng)
+    r = rng.random()
+    if r < 0.4:
+        attrs["address"] = {"zip": mixed_value(rng)}
+    elif r < 0.7:
+        attrs["address"] = DBObject(zip=mixed_value(rng))
+    elif r < 0.8:
+        attrs["address"] = None
+    return DBObject(**attrs)
+
+
+def _register_equality_and_range() -> None:
+    from proto_db.indexing.equality import EqualityIndex
+    for cls in (EqualityIndex,):
+        kind = cls.__name__
+        register(IndexContract(name=f"{kind}-records", index_factory=cls, element_strategy=record_strategy,
+                               key_specs=RECORD_KEY_SPECS))
+        register(IndexContract(name=f"{kind}-mixed-records", index_factory=cls,
+                               element_strategy=mixed_record_strategy, key_specs=RECORD_KEY_SPECS))
+        register(IndexContract(name=f"{kind}-values", index_factory=cls, element_strategy=value_strategy))
+        register(IndexContract(name=f"{kind}-mixed-values", index_factory=cls, element_strategy=mixed_value))
+
+
+_register_equality_and_range()

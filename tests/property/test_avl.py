@@ -411,3 +411,39 @@ def test_check_invariants_shared_child_and_cycle_raise_corruption():
     huge = _forge(PosNode, value=0, left=None, right=None, height=10**9, count=1)
     with pytest.raises(ProtoCorruptionError, match="height"):
         check_invariants(huge)
+
+
+# -- order-key level range iteration, ranks and reverse iteration (Task 4.3, D30) ---------
+
+def test_key_iter_okey_range_with_rank_bounds():
+    """Catches order-key bounds that are not honoured (range scans limited to one type rank)."""
+    from proto_db.collections.avl import key_iter_okey_range
+    from proto_db.values import rank_bounds
+    keys = [MISSING, None, False, True, 1, 2.5, 3, "a", "b", (1,)]
+    root = key_from_sorted((k, i) for i, k in enumerate(keys))
+    low, high = rank_bounds(0)
+    assert [k for k, _ in key_iter_okey_range(root, low, high)] == [1, 2.5, 3]
+    assert [k for k, _ in key_iter_okey_range(root, low, order_key(3), True, False)] == [1, 2.5]
+    assert [k for k, _ in key_iter_okey_range(root, order_key(1), high, False, True)] == [2.5, 3]
+    assert [k for k, _ in key_iter_okey_range(root, order_key(None), None, False)] == keys[2:]
+    assert [k for k, _ in key_iter_okey_range(root)] == keys
+
+
+@pytest.mark.parametrize("n", [0, 1, 2, 7, 100])
+def test_key_count_below_matches_a_linear_count(n):
+    """Catches a wrong rank: RangeIndex estimates count key groups in a range with it."""
+    from proto_db.collections.avl import key_count_below
+    root = key_from_sorted((2 * i, i) for i in range(n))
+    for probe in range(-2, 2 * n + 2):
+        k = order_key(probe)
+        assert key_count_below(root, k) == sum(1 for i in range(n) if order_key(2 * i) < k)
+        assert key_count_below(root, k, inclusive=True) == sum(1 for i in range(n) if order_key(2 * i) <= k)
+    assert key_count_below(root, (99,)) == n and key_count_below(root, (-1,)) == 0
+
+
+def test_key_iter_reversed_is_the_exact_reverse():
+    """Catches descending ordered iteration that is not the reverse of key order."""
+    from proto_db.collections.avl import key_iter_reversed
+    for n in (0, 1, 5, 300):
+        root = key_from_sorted((i, -i) for i in range(n))
+        assert list(key_iter_reversed(root)) == list(key_iter(root))[::-1]

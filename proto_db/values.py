@@ -25,7 +25,8 @@ from decimal import Decimal
 
 from .errors import ProtoValidationError
 
-__all__ = ["MISSING", "FrozenList", "FrozenDict", "canonical", "order_key", "values_equal", "hash_key", "is_atom"]
+__all__ = ["MISSING", "FrozenList", "FrozenDict", "canonical", "order_key", "rank_bounds", "values_equal", "hash_key",
+           "is_atom"]
 
 
 class _Missing:
@@ -231,6 +232,19 @@ def order_key(value) -> tuple:
     if isinstance(value, (list, dict)):
         raise ProtoValidationError(f"{type(value).__name__} is not an orderable key")
     raise ProtoValidationError(f"Unsupported value type: {type(value).__name__}")
+
+
+def rank_bounds(value) -> tuple:
+    """Return ``(low, high)``: order keys bracketing every value of ``value``'s type rank (D30).
+
+    For every orderable ``x``, ``low < order_key(x) < high`` holds exactly when
+    ``x`` has the same rank as ``value`` (``low`` and ``high`` are never the
+    order key of any value).  Range scans use them to stay within the operand's
+    rank, since ordering comparisons match same-rank keys only (D28).  Raises
+    ``ProtoValidationError`` for unorderable values, like :func:`order_key`.
+    """
+    rank = order_key(value)[0]
+    return (rank,), (rank + 1,)
 
 
 def values_equal(a, b) -> bool:

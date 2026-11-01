@@ -23,7 +23,9 @@ Complexity (n elements, k elements produced)::
     pos_slice, pos_concat                           O(log n)  (split / join)
     key_get, key_put, key_remove                    O(log n)
     pos_iter, key_iter                              O(n), explicit stack
-    key_iter_range                                  O(log n + k), explicit stack
+    key_iter_range, key_iter_okey_range             O(log n + k), explicit stack
+    key_iter_reversed                               O(n), explicit stack
+    key_count_below                                 O(log n)
     pos_from_iterable, key_from_sorted              O(n)
     check_invariants                                O(n), explicit stack
 
@@ -49,7 +51,8 @@ __all__ = [
     "PosNode", "KeyNode",
     "pos_get", "pos_insert", "pos_set", "pos_remove", "pos_slice", "pos_concat",
     "pos_iter", "pos_count", "pos_from_iterable",
-    "key_get", "key_put", "key_remove", "key_iter", "key_iter_range", "key_from_sorted",
+    "key_get", "key_put", "key_remove", "key_iter", "key_iter_range", "key_iter_okey_range",
+    "key_iter_reversed", "key_count_below", "key_from_sorted",
     "check_invariants", "UNBOUNDED",
 ]
 
@@ -474,9 +477,25 @@ def key_iter_range(root: KeyNode | None, lo=UNBOUNDED, hi=UNBOUNDED,
     ``lo_inc``/``hi_inc`` select inclusive bounds.
     """
     _check_kind(root, KeyNode)
-    # Order keys are never None, so None marks an open side internally.
     lok = None if lo is UNBOUNDED else order_key(lo)
     hik = None if hi is UNBOUNDED else order_key(hi)
+    return key_iter_okey_range(root, lok, hik, lo_inc, hi_inc)
+
+
+def key_iter_okey_range(root: KeyNode | None, lok=None, hik=None,
+                        lo_inc: bool = True, hi_inc: bool = True) -> Iterator[tuple]:
+    """Like :func:`key_iter_range`, with bounds given as order keys (``None`` = open side).
+
+    An order-key bound need not be the order key of a value: with
+    :func:`proto_db.values.rank_bounds` a range can be limited to one type rank
+    (D30).  O(log n + k), explicit stack.
+    """
+    _check_kind(root, KeyNode)
+    return _iter_okey_range(root, lok, hik, lo_inc, hi_inc)
+
+
+def _iter_okey_range(root, lok, hik, lo_inc, hi_inc) -> Iterator[tuple]:
+    # Order keys are never None, so None marks an open side.
     stack = []
     node = root
     while stack or node is not None:
@@ -497,6 +516,43 @@ def key_iter_range(root: KeyNode | None, lo=UNBOUNDED, hi=UNBOUNDED,
                 return
         yield node.key, node.value
         node = node.right
+
+
+def key_iter_reversed(root: KeyNode | None) -> Iterator[tuple]:
+    """Yield ``(key, value)`` pairs in descending key order (no recursion), O(n)."""
+    _check_kind(root, KeyNode)
+    return _iter_reversed(root)
+
+
+def _iter_reversed(root) -> Iterator[tuple]:
+    stack = []
+    node = root
+    while stack or node is not None:
+        while node is not None:
+            stack.append(node)
+            node = node.right
+        node = stack.pop()
+        yield node.key, node.value
+        node = node.left
+
+
+def key_count_below(root: KeyNode | None, okey, inclusive: bool = False) -> int:
+    """Number of keys whose order key is ``< okey`` (``<= okey`` when ``inclusive``), in O(log n).
+
+    ``okey`` is an order key (or a :func:`proto_db.values.rank_bounds` bound);
+    the subtree ``count`` of each node makes this a single root-to-leaf walk.
+    """
+    _check_kind(root, KeyNode)
+    below = 0
+    node = root
+    while node is not None:
+        nk = node._order_key()
+        if nk < okey or (inclusive and nk == okey):
+            below += 1 + _count(node.left)
+            node = node.right
+        else:
+            node = node.left
+    return below
 
 
 def key_from_sorted(pairs: Iterable[tuple]) -> KeyNode | None:

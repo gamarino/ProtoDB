@@ -6,20 +6,22 @@ Index classes persist under their own stable ``__type_name__``
 (``proto_db.indexing.Index`` for the abstract base, D29).
 
 ``KeySpec`` and ``register_extractor`` live in :mod:`.keyspec`; ``Index`` and
-``element_identity`` in :mod:`.base`.  The latter are resolved lazily (PEP 562)
+``element_identity`` in :mod:`.base`; ``EqualityIndex`` in :mod:`.equality` (D30).  All but the first two are resolved lazily (PEP 562)
 because :mod:`proto_db.query.terms` depends on :mod:`.keyspec` while
 :mod:`.base` depends on the terms: importing this package must not import
 :mod:`.base` eagerly, or importing the terms first would form a cycle.
 """
 from .keyspec import ELEMENT, EXTRACTOR, PATH, KeySpec, register_extractor
 
-__all__ = ["KeySpec", "register_extractor", "PATH", "ELEMENT", "EXTRACTOR", "Index", "element_identity"]
+__all__ = ["KeySpec", "register_extractor", "PATH", "ELEMENT", "EXTRACTOR", "Index", "element_identity",
+           "EqualityIndex"]
 
-_LAZY = {"Index", "element_identity"}
+#: Lazily resolved names and their submodules.
+_LAZY = {"Index": "base", "element_identity": "base", "EqualityIndex": "equality"}
 
 
 def __getattr__(name):
     if name in _LAZY:
-        from . import base
-        return getattr(base, name)
+        from importlib import import_module
+        return getattr(import_module(f".{_LAZY[name]}", __name__), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
