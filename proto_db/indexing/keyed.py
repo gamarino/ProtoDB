@@ -30,10 +30,8 @@ state.
 from __future__ import annotations
 
 import math
-import uuid
 from collections import Counter
 from collections.abc import Iterable, Iterator
-from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from ..collections import avl
@@ -42,7 +40,7 @@ from ..errors import ProtoCorruptionError, ProtoValidationError
 from ..query.plans import Estimate, IndexPlan
 from ..query.terms import (BETWEEN, BETWEEN_EXCL_BOTH, BETWEEN_EXCL_HIGH, BETWEEN_EXCL_LOW, EQ, GE, GT, IN,
                            IS_NONE, LE, LT, NE, NOT_NONE, Term, is_orderable)
-from ..values import MISSING, FrozenDict, FrozenList, is_atom, order_key, rank_bounds
+from ..values import MISSING, exact_token, is_atom, order_key, rank_bounds
 from .base import Index, element_identity
 from .keyspec import KeySpec
 
@@ -84,66 +82,6 @@ def surrogate(value):
 
 
 # -- exact member keys ------------------------------------------------------------------------
-
-_EXACT_TAGS = {type(None): "N", bool: "b", int: "i", float: "f", Decimal: "D", str: "s", bytes: "y",
-               date: "d", time: "t", datetime: "dt", timedelta: "td", uuid.UUID: "u", tuple: "T", list: "L",
-               FrozenList: "FL", dict: "M", FrozenDict: "FM"}
-
-
-def _tz_token(value):
-    tz = value.tzinfo
-    if tz is None:
-        return None
-    offset = value.utcoffset()
-    return (None if offset is None else offset // timedelta(microseconds=1), repr(tz))
-
-
-def exact_token(value) -> tuple:
-    """An orderable token that tells apart values a scan would return as different objects (D30).
-
-    ``1``, ``1.0``, ``Decimal("1")`` and ``Decimal("1.00")`` are equal keys but
-    four tokens; so are ``0.0``/``-0.0`` and aware datetimes of one instant in
-    different time zones (offset and ``repr`` of the tzinfo are kept).  Tuples,
-    lists and dicts are encoded item by item, dicts in their own order.  Atoms
-    are identified by oid elsewhere, so their token is ``("a",)``.  The token
-    starts with a type tag (the qualified class name for subclasses), so values
-    of different classes never share a token.  Best effort for exotic tzinfo
-    classes whose ``repr`` is not stable: two tokens for one value only make
-    the index store two entries, never a wrong answer (removal falls back to an
-    equal entry).
-    """
-    if is_atom(value):
-        return ("a",)
-    cls = type(value)
-    tag = _EXACT_TAGS.get(cls) or f"{cls.__module__}.{cls.__qualname__}"
-    if value is None:
-        return (tag,)
-    if isinstance(value, bool):
-        return (tag, int(value))
-    if isinstance(value, int):
-        return (tag, int(value))
-    if isinstance(value, float):
-        return (tag, float.hex(value))
-    if isinstance(value, Decimal):
-        return (tag, str(value))
-    if isinstance(value, (str, bytes)):
-        return (tag, value)
-    if isinstance(value, datetime):
-        return (tag, value.replace(tzinfo=None).isoformat(), value.fold, _tz_token(value))
-    if isinstance(value, date):
-        return (tag, value.toordinal())
-    if isinstance(value, time):
-        return (tag, value.replace(tzinfo=None).isoformat(), value.fold, _tz_token(value))
-    if isinstance(value, timedelta):
-        return (tag, value.days, value.seconds, value.microseconds)
-    if isinstance(value, uuid.UUID):
-        return (tag, value.int)
-    if isinstance(value, (tuple, list)):
-        return (tag, tuple(exact_token(v) for v in value))
-    if isinstance(value, dict):
-        return (tag, tuple((exact_token(k), exact_token(v)) for k, v in value.items()))
-    return (tag, repr(value))
-
 
 def _equality_part(element) -> tuple:
     """The part of a member key shared by every element equal to ``element`` (``element_identity`` classes)."""

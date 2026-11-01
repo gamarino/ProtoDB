@@ -26,7 +26,7 @@ from decimal import Decimal
 from .errors import ProtoValidationError
 
 __all__ = ["MISSING", "FrozenList", "FrozenDict", "canonical", "order_key", "rank_bounds", "values_equal", "hash_key",
-           "is_atom"]
+           "is_atom", "exact_token"]
 
 
 class _Missing:
@@ -333,3 +333,67 @@ def hash_key(value) -> int:
     h = hashlib.blake2b(digest_size=8)
     _feed_hash(h, order_key(value))
     return int.from_bytes(h.digest(), "little", signed=True)
+
+
+# -- exact tokens (D30, D34) -------------------------------------------------------------------
+
+_EXACT_TAGS = {type(None): "N", bool: "b", int: "i", float: "f", Decimal: "D", str: "s", bytes: "y",
+               date: "d", time: "t", datetime: "dt", timedelta: "td", uuid.UUID: "u", tuple: "T", list: "L",
+               FrozenList: "FL", dict: "M", FrozenDict: "FM"}
+
+
+def _tz_token(value):
+    tz = value.tzinfo
+    if tz is None:
+        return None
+    offset = value.utcoffset()
+    return (None if offset is None else offset // timedelta(microseconds=1), repr(tz))
+
+
+def exact_token(value, atom_token=None) -> tuple:
+    """An orderable token that tells apart values a scan would return as different objects (D30).
+
+    ``1``, ``1.0``, ``Decimal("1")`` and ``Decimal("1.00")`` are equal keys but
+    four tokens; so are ``0.0``/``-0.0`` and aware datetimes of one instant in
+    different time zones (offset and ``repr`` of the tzinfo are kept).  Tuples,
+    lists and dicts are encoded item by item, dicts in their own order.  Atoms
+    are identified elsewhere by default, so their token is ``("a",)``;
+    ``atom_token(atom)``, when given, supplies the token of every atom, nested
+    ones included (the transaction read set passes the storage pointer).  The token
+    starts with a type tag (the qualified class name for subclasses), so values
+    of different classes never share a token.  Best effort for exotic tzinfo
+    classes whose ``repr`` is not stable: two tokens for one value only make
+    the index store two entries, never a wrong answer (removal falls back to an
+    equal entry).
+    """
+    if is_atom(value):
+        return ("a",) if atom_token is None else atom_token(value)
+    cls = type(value)
+    tag = _EXACT_TAGS.get(cls) or f"{cls.__module__}.{cls.__qualname__}"
+    if value is None:
+        return (tag,)
+    if isinstance(value, bool):
+        return (tag, int(value))
+    if isinstance(value, int):
+        return (tag, int(value))
+    if isinstance(value, float):
+        return (tag, float.hex(value))
+    if isinstance(value, Decimal):
+        return (tag, str(value))
+    if isinstance(value, (str, bytes)):
+        return (tag, value)
+    if isinstance(value, datetime):
+        return (tag, value.replace(tzinfo=None).isoformat(), value.fold, _tz_token(value))
+    if isinstance(value, date):
+        return (tag, value.toordinal())
+    if isinstance(value, time):
+        return (tag, value.replace(tzinfo=None).isoformat(), value.fold, _tz_token(value))
+    if isinstance(value, timedelta):
+        return (tag, value.days, value.seconds, value.microseconds)
+    if isinstance(value, uuid.UUID):
+        return (tag, value.int)
+    if isinstance(value, (tuple, list)):
+        return (tag, tuple(exact_token(v, atom_token) for v in value))
+    if isinstance(value, dict):
+        return (tag, tuple((exact_token(k, atom_token), exact_token(v, atom_token)) for k, v in value.items()))
+    return (tag, repr(value))

@@ -13,7 +13,8 @@ Layout of a space (D32)
 Snapshot isolation and the read set (D9)
     A transaction reads the storage root once, when it starts, and every read goes to
     that snapshot.  ``get_root_object(name)`` records ``name`` with what the snapshot
-    held -- the stored atom's pointer, the plain value, or ABSENT -- in the read set.
+    held -- an exact token (atoms by storage pointer, plain values by type and exact
+    payload, so ``1 -> 1.0`` is a change) or ABSENT -- in the read set.
     At commit, under the root lock, a recorded root that changed in the current root
     (including one that appeared or disappeared) raises :class:`ProtoConflictError`
     and nothing is published.  ``root_names()`` does not enter the read set.
@@ -29,7 +30,11 @@ Merge of roots written but not read (D9, D33)
     original written version is always the one rebased.  A ``ProtoConflictError``
     raised by ``rebase_onto`` is a conflict like any other.  In every other case the
     written value replaces the current one (last writer wins), and so does
-    ``remove_root_object`` of an unread root.  Reading back a root written before it
+    ``remove_root_object`` of an unread root.  ``set_root_object(name, value,
+    replace=True)``, and a set following ``remove_root_object(name)`` in the same
+    transaction, always replace.  After a successful commit the written values'
+    logs are marked incomplete, so reusing such a value in a later transaction
+    replaces instead of replaying this transaction's operations again.  Reading back a root written before it
     was read returns the value as written, not the merged one.
 
 Commit protocol (D34)
@@ -50,7 +55,9 @@ Commit protocol (D34)
        ``ProtoUnexpectedError`` if it was not a ProtoDB error).  If the root cannot
        even be read back, ``ProtoUnexpectedError`` reports an unknown outcome.
     7. Nothing after a successful publish can fail the commit: releasing the root
-       lock is best-effort and a failure there is logged.
+       lock is best-effort and a failure there is logged, and the written values'
+       logs are marked consumed.  On the failure path a lock-release error is
+       logged too, so it never masks the original error.
 
 Thread safety
     :class:`ObjectSpace` and :class:`Database` are shared freely between threads; any
@@ -76,7 +83,7 @@ import threading
 import time
 from typing import Any, Callable, Optional
 
-from .collections.base import ConcurrentOptimized, _Immutable, same_value
+from .collections.base import ConcurrentOptimized, _Immutable
 from .collections.dictionaries import Dictionary, RepeatedKeysDictionary
 from .collections.hash_dictionaries import HashDictionary
 from .collections.lists import List
@@ -85,7 +92,7 @@ from .core.atom import Atom, AtomPointer, PersistenceContext
 from .core.dbobject import DBObject
 from .errors import (ProtoConflictError, ProtoDBError, ProtoUnexpectedError, ProtoUserError,
                      ProtoValidationError)
-from .values import canonical
+from .values import canonical, exact_token
 
 __all__ = ["ObjectSpace", "Database", "Transaction", "HistoryEntry", "SpaceRoot", "DatabaseRoot"]
 
@@ -207,23 +214,27 @@ def _load_space(context, record) -> Optional[SpaceRoot]:
 
 # -- read-set tokens --------------------------------------------------------------------------
 
+def _atom_token(atom: Atom) -> tuple:
+    return ("@atom", atom.atom_pointer)
+
+
 def _token(value):
-    """What the read set remembers of a root value: ABSENT, the atom's pointer, or the plain value."""
+    """What the read set remembers of a root value (D34): ABSENT or an exact token.
+
+    Plain values are compared exactly (:func:`proto_db.values.exact_token`: same
+    type and same payload, so ``1`` and ``1.0``, ``Decimal("1")`` and
+    ``Decimal("1.00")`` or one instant in two time zones differ); atoms, nested
+    ones included, are identified by their storage pointer.
+    """
     if value is _ABSENT:
         return _ABSENT
-    if isinstance(value, Atom):
-        return ("atom", value.atom_pointer)
-    return ("value", value)
+    return exact_token(value, _atom_token)
 
 
 def _same_token(a, b) -> bool:
     if a is _ABSENT or b is _ABSENT:
         return a is b
-    if a[0] != b[0]:
-        return False
-    if a[0] == "atom":
-        return a[1] == b[1]
-    return same_value(a[1], b[1])
+    return a == b
 
 
 # -- the publish protocol ---------------------------------------------------------------------
@@ -266,7 +277,11 @@ def _commit_root(storage, lock_timeout, build: Callable) -> bool:
             storage.flush()
             _publish(storage, ptr, current.epoch if current is not None else 0)
     except BaseException:
-        lock.__exit__(*sys.exc_info())
+        # Nothing of ours is published: release, but never let a release error mask the original one.
+        try:
+            lock.__exit__(*sys.exc_info())
+        except (ProtoDBError, OSError) as e:
+            logger.error("Releasing the root lock after a failed commit failed: %s", e)
         raise
     # Published (or nothing to publish): nothing below may fail the commit.
     try:
@@ -463,6 +478,7 @@ class Transaction:
         self._state = _ACTIVE
         self._reads: dict = {}
         self._writes: dict = {}
+        self._replaced: set = set()
         record = self.storage.read_root()
         self._epoch = record.epoch if record is not None else 0
         self._snapshot_space = _load_space(self, record)
@@ -510,23 +526,44 @@ class Transaction:
                 self._reads[name] = _token(value)
             return None if value is _ABSENT else value
 
-    def set_root_object(self, name: str, value) -> None:
-        """Set root ``name`` to ``value`` (any canonical value or atom) at commit."""
+    def set_root_object(self, name: str, value, *, replace: bool = False) -> None:
+        """Set root ``name`` to ``value`` (any canonical value or atom) at commit.
+
+        A fresh collection written to an existing root you did not read is merged
+        into it, not substituted: its operations (intent) are replayed onto the
+        value current at commit (D33).  Use ``replace=True`` to substitute: the value
+        is then stored as written, last writer wins, no merge.  A set that follows a
+        :meth:`remove_root_object` of the same name in this transaction is a
+        replacement too.  Once a name is marked for replacement it stays so for the
+        rest of the transaction.  A root read with :meth:`get_root_object` before
+        being written is never merged: a concurrent change to it is a conflict.
+        """
         _check_name(name)
+        if not isinstance(replace, bool):
+            raise ProtoValidationError("replace must be a bool")
         value = canonical(value)
         with self._lock:
             self._check_active()
+            if replace or self._writes.get(name) is _REMOVED:
+                self._replaced.add(name)
             self._writes[name] = value
 
     def remove_root_object(self, name: str) -> None:
-        """Remove root ``name`` at commit (a no-op if it is absent then)."""
+        """Remove root ``name`` at commit (a no-op if it is absent then); a later set of it replaces."""
         _check_name(name)
         with self._lock:
             self._check_active()
             self._writes[name] = _REMOVED
+            self._replaced.add(name)
 
     def root_names(self) -> list:
-        """Sorted names of the roots as this transaction sees them (not recorded in the read set)."""
+        """Sorted names of the roots as this transaction sees them.
+
+        Listing is not recorded in the read set.  To create a root only if it is
+        absent, test it with ``get_root_object(name) is None``: that read is
+        recorded (ABSENT included), so a concurrent creator makes the commit
+        conflict; deciding from ``root_names()`` gives no such protection.
+        """
         with self._lock:
             self._check_active()
             names = set(self._objects.keys())
@@ -604,7 +641,12 @@ class Transaction:
             if isinstance(value, Atom):
                 self.save(value)
         space = self._database.space
-        _commit_root(self.storage, space.lock_timeout, self._build_root)
+        if _commit_root(self.storage, space.lock_timeout, self._build_root):
+            # Post-publish, cannot fail: a committed value's log was consumed by this
+            # commit, so a later transaction reusing it must not replay it again (D33).
+            for value in self._writes.values():
+                if isinstance(value, ConcurrentOptimized):
+                    object.__setattr__(value, "_log_complete", False)
 
     def _build_root(self, current) -> AtomPointer:
         """Under the root lock: check the read set, merge, save and return the new SpaceRoot pointer."""
@@ -628,7 +670,7 @@ class Transaction:
                 if objects.has(name):
                     objects = objects.remove_at(name)
                 continue
-            if name not in self._reads:
+            if name not in self._reads and name not in self._replaced:
                 value = self._merged(value, current_objects.get_at(name, _ABSENT))
             objects = objects.set_at(name, value)
         new_root = DatabaseRoot(objects=objects, previous=db_root, version=db_root.version + 1,

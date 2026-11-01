@@ -6,8 +6,10 @@ to pass tests), anything published after a conflict, commits that raise after th
 is published, unknown publish outcomes reported wrongly, transactions usable after they
 end, and retries of non-conflict errors.
 """
+import datetime
 import threading
 import time
+from decimal import Decimal
 
 import pytest
 
@@ -719,7 +721,7 @@ def test_raw_oserror_from_publish_surfaces_as_proto_error(faulty):
     assert isinstance(info.value.__cause__, OSError) and not tr.is_active
 
 
-def test_publish_failure_with_unreadable_root_raises_the_original_error(faulty):
+def test_publish_failure_with_unreadable_root_reports_an_unknown_outcome(faulty):
     storage, db = faulty
     storage.fail_next_publish("visible")
     storage.fail_read_root_after_fault = True
@@ -901,3 +903,165 @@ def test_read_root_replaced_by_a_fresh_collection_is_stored_as_written(db):
         assert tr.get_root_object("d").get_at("a") == 1
         tr.set_root_object("d", tr.new_dictionary().set_at("b", 2))
     assert dict(read_root(db, "d").items()) == {"b": 2}
+
+
+# -- fix round 1 -----------------------------------------------------------------------------
+
+@pytest.mark.parametrize("before, after", [
+    (1, 1.0),
+    (Decimal("1"), Decimal("1.00")),
+    (datetime.datetime(2026, 1, 1, 12, tzinfo=datetime.timezone.utc),
+     datetime.datetime(2026, 1, 1, 13, tzinfo=datetime.timezone(datetime.timedelta(hours=1)))),
+    (0.0, -0.0),
+    ((1, "a"), (1.0, "a")),
+    (True, 1),
+])
+def test_exactly_different_plain_values_conflict(db, before, after):
+    with db.new_transaction() as tr:
+        tr.set_root_object("x", before)
+    tr = db.new_transaction()
+    tr.get_root_object("x")
+    with db.new_transaction() as other:
+        other.set_root_object("x", after)
+    tr.set_root_object("y", 1)
+    with pytest.raises(ProtoConflictError):
+        tr.commit()
+
+
+def test_identical_plain_value_rewrite_is_not_a_conflict(db):
+    with db.new_transaction() as tr:
+        tr.set_root_object("x", (1, "a", Decimal("2.50")))
+    tr = db.new_transaction()
+    tr.get_root_object("x")
+    with db.new_transaction() as other:
+        other.set_root_object("x", (1, "a", Decimal("2.50")))
+    tr.set_root_object("y", 1)
+    tr.commit()
+
+
+def test_tuple_holding_atoms_compares_atoms_by_pointer(db):
+    with db.new_transaction() as tr:
+        tr.set_root_object("x", (tr.new_object(a=1),))
+    tr = db.new_transaction()
+    tr.get_root_object("x")
+    with db.new_transaction() as other:
+        other.set_root_object("x", (other.new_object(a=1),))
+    tr.set_root_object("y", 1)
+    with pytest.raises(ProtoConflictError):
+        tr.commit()
+
+
+def test_remove_then_set_replaces(db):
+    with db.new_transaction() as tr:
+        tr.set_root_object("x", tr.new_dictionary().set_at("a", 1).set_at("b", 2))
+    with db.new_transaction() as tr:
+        tr.remove_root_object("x")
+        tr.set_root_object("x", tr.new_dictionary().set_at("c", 3))
+    assert dict(read_root(db, "x").items()) == {"c": 3}
+
+
+def test_set_with_replace_substitutes_a_blind_root(db):
+    with db.new_transaction() as tr:
+        tr.set_root_object("x", tr.new_dictionary().set_at("a", 1))
+    tr1, tr2 = db.new_transaction(), db.new_transaction()
+    tr1.set_root_object("x", tr1.new_dictionary().set_at("b", 2))
+    tr2.set_root_object("x", tr2.new_dictionary().set_at("c", 3), replace=True)
+    tr1.commit()
+    tr2.commit()
+    assert dict(read_root(db, "x").items()) == {"c": 3}
+
+
+def test_replace_mark_is_sticky_within_the_transaction(db):
+    with db.new_transaction() as tr:
+        tr.set_root_object("x", tr.new_dictionary().set_at("a", 1))
+    with db.new_transaction() as tr:
+        tr.set_root_object("x", tr.new_dictionary().set_at("b", 2), replace=True)
+        tr.set_root_object("x", tr.new_dictionary().set_at("c", 3))
+    assert dict(read_root(db, "x").items()) == {"c": 3}
+
+
+def test_set_without_replace_still_merges(db):
+    with db.new_transaction() as tr:
+        tr.set_root_object("x", tr.new_dictionary().set_at("a", 1))
+    with db.new_transaction() as tr:
+        tr.set_root_object("x", tr.new_dictionary().set_at("c", 3), replace=False)
+    assert dict(read_root(db, "x").items()) == {"a": 1, "c": 3}
+
+
+def test_replace_must_be_a_bool(db):
+    tr = db.new_transaction()
+    with pytest.raises(ProtoValidationError):
+        tr.set_root_object("x", 1, replace=1)
+    tr.abort()
+
+
+def test_committed_value_reused_later_does_not_replay_its_ops(db):
+    """Reported case: a value committed blind and reused in a later transaction must not
+    re-apply the earlier transaction's ops (here: re-adding a key removed meanwhile)."""
+    with db.new_transaction() as tr:
+        tr.set_root_object("d", tr.new_dictionary().set_at("a", 1))
+    tr = db.new_transaction()
+    held = tr.new_dictionary().set_at("k", 1)
+    tr.set_root_object("d", held)
+    tr.commit()
+    assert not held.log_is_complete
+    with db.new_transaction() as tr:
+        tr.set_root_object("d", tr.get_root_object("d").remove_at("k"))
+    with db.new_transaction() as tr:
+        tr.set_root_object("other", held)
+    assert dict(read_root(db, "d").items()) == {"a": 1}
+    with db.new_transaction() as tr:
+        tr.set_root_object("d", held.set_at("z", 9))
+    assert dict(read_root(db, "d").items()) == {"k": 1, "z": 9}
+
+
+def test_failed_commit_keeps_the_value_mergeable(db):
+    with db.new_transaction() as tr:
+        tr.set_root_object("d", tr.new_dictionary().set_at("a", 1))
+    tr = db.new_transaction()
+    tr.get_root_object("d")
+    held = tr.new_dictionary().set_at("k", 1)
+    tr.set_root_object("d2", held)
+    with db.new_transaction() as other:
+        other.set_root_object("d", other.get_root_object("d").set_at("a", 2))
+    with pytest.raises(ProtoConflictError):
+        tr.commit()
+    assert held.log_is_complete
+
+
+class _ReleaseFailsOnError:
+    """Storage double whose lock release raises when leaving with an exception."""
+
+    def __init__(self):
+        self.inner = MemoryStorage()
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+    def root_lock(self, timeout=None):
+        import contextlib
+
+        @contextlib.contextmanager
+        def cm():
+            with self.inner.root_lock(timeout):
+                try:
+                    yield
+                except ProtoDBError:
+                    raise ProtoUnexpectedError("injected release failure")
+        return cm()
+
+
+def test_release_failure_does_not_mask_a_conflict(caplog):
+    space = ObjectSpace(_ReleaseFailsOnError())
+    db = space.new_database("db")
+    with db.new_transaction() as tr:
+        tr.set_root_object("x", 1)
+    tr = db.new_transaction()
+    tr.get_root_object("x")
+    with db.new_transaction() as other:
+        other.set_root_object("x", 2)
+    tr.set_root_object("x", 3)
+    with pytest.raises(ProtoConflictError):
+        tr.commit()
+    assert "injected release failure" in caplog.text
+    space.close()

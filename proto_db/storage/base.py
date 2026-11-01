@@ -72,6 +72,10 @@ class SharedStorage(ABC):
         raises ``ProtoTimeoutError`` and never proceeds unlocked.  The lock is not
         re-entrant: acquiring it again from the holding thread raises ``ProtoLockingError``
         immediately instead of deadlocking.
+
+        Releasing the lock (exiting the context manager) may raise only a
+        ``ProtoDBError`` subclass or an ``OSError``; transactions rely on this to log,
+        never raise, a release failure after the root is published.
         """
 
     @abstractmethod
