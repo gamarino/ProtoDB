@@ -352,6 +352,17 @@ class ConcurrentOptimized:
         """Key identifying what ``op`` touches, for :func:`net_effect` (default ``order_key(op[1])``)."""
         return order_key(op[1])
 
+    def _net_ops(self, element_ops: list) -> list:
+        """Reduce this log's element ops to the ops :meth:`rebase_onto` replays, in replay order.
+
+        The default keeps the last op per key (:func:`net_effect` with
+        :meth:`_op_key`): the right reduction for ops that force a key to a
+        state.  Collections whose ops compose differently (counters, D26)
+        override it and return their own net ops, which :meth:`_replay_op`
+        must understand.
+        """
+        return net_effect(element_ops, self._op_key)
+
     def _replay_op(self, target, op: tuple):
         """Apply one net element op to ``target`` through its public mutators; return the new version."""
         raise NotImplementedError(f"{type(self).__name__} must implement _replay_op()")
@@ -359,10 +370,10 @@ class ConcurrentOptimized:
     def rebase_onto(self, current):
         """Return ``current`` with the net effect of this version's op log applied.
 
-        Element ops: the last op per key is replayed unconditionally, in order of
-        last occurrence, through :meth:`_replay_op` (public, idempotent mutators,
-        so ``current``'s indexes are maintained and every touched key ends in
-        its last intended state).
+        Element ops: the net ops of :meth:`_net_ops` (by default the last op per
+        key, in order of last occurrence) are replayed unconditionally through
+        :meth:`_replay_op` (public, idempotent mutators, so ``current``'s indexes
+        are maintained and every touched key ends in its last intended state).
         Index-definition changes are then replayed per index name: an index this
         log created is added (``ProtoConflictError`` if ``current`` already has
         one with that name), an index this log removed is removed if still
@@ -376,7 +387,7 @@ class ConcurrentOptimized:
         for op in self._op_log:
             (index_ops if op[0] in (_INDEX_ADD, _INDEX_REMOVE) else element_ops).append(op)
         target = current
-        for op in net_effect(element_ops, self._op_key):
+        for op in self._net_ops(element_ops):
             target = self._replay_op(target, op)
         first_kind: dict = {}
         for op in index_ops:

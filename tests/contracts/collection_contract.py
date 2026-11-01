@@ -450,3 +450,210 @@ def _register_3_3a() -> None:
 
 
 _register_3_3a()
+
+
+# -- Task 3.3b: Set, CountedSet, RepeatedKeysDictionary -----------------------------------
+
+def _random_element(rng):
+    return rng.choice([rng.randrange(0, 60), f"s{rng.randrange(0, 30)}", float(rng.randrange(0, 60)),
+                       rng.random() < 0.5, (rng.randrange(0, 3), "t")])
+
+
+def _fresh_element(member_test, rng):
+    while True:
+        e = rng.choice([rng.randrange(0, 400), f"s{rng.randrange(0, 400)}", float(rng.randrange(0, 400))])
+        if not member_test(e):
+            return e
+
+
+def _pick(items, rng):
+    items = list(items)
+    return rng.choice(items) if items else None
+
+
+def _set_factory() -> CollectionFactory:
+    from proto_db.collections.sets import Set
+
+    def populate(coll, rng):
+        for _ in range(rng.randrange(0, 30)):
+            coll = coll.add(_random_element(rng))
+        return coll
+
+    def add_new(coll, rng):
+        e = _fresh_element(coll.has, rng)
+        return coll.add(e), [("add", e)]
+
+    def add_existing(coll, rng):
+        e = _pick(coll.elements(), rng)
+        if e is None:
+            return None
+        probe = float(e) if type(e) is int and rng.random() < 0.5 else e  # 1 and 1.0 are one member
+        return coll.add(probe), []
+
+    def remove_present(coll, rng):
+        e = _pick(coll.elements(), rng)
+        return None if e is None else (coll.remove(e), [("remove", e)])
+
+    def remove_absent(coll, rng):
+        return coll.remove(_fresh_element(coll.has, rng)), []
+
+    def other_set(coll, rng):
+        other = Set()
+        for e in coll.elements():
+            if rng.random() < 0.4:
+                other = other.add(e)
+        for _ in range(rng.randrange(0, 4)):
+            other = other.add(_fresh_element(coll.has, rng))
+        return other
+
+    def union(coll, rng):
+        other = other_set(coll, rng)
+        return coll.union(other), [("add", e) for e in other.elements() if not coll.has(e)]
+
+    def intersection(coll, rng):
+        other = other_set(coll, rng)
+        return coll.intersection(other), [("remove", e) for e in coll.elements() if not other.has(e)]
+
+    def difference(coll, rng):
+        other = other_set(coll, rng)
+        return coll.difference(other), [("remove", e) for e in other.elements() if coll.has(e)]
+
+    def rebase_model(theirs, op_log):
+        members = {order_key(e) for e in theirs.elements()}
+        for kind, e in op_log:
+            (members.add if kind == "add" else members.discard)(order_key(e))
+        return Counter(members)
+
+    return CollectionFactory(
+        name="Set", empty=Set, populate=populate, rebase_model=rebase_model,
+        mutators={"add_new": add_new, "add_existing": add_existing, "remove_present": remove_present,
+                  "remove_absent": remove_absent, "union": union, "intersection": intersection,
+                  "difference": difference})
+
+
+def _counter_replay(counter: Counter, kind: str, key) -> None:
+    """Apply one counter op to ``counter`` (``add`` increments, ``remove`` decrements, clamped at 0)."""
+    if kind == "add":
+        counter[key] += 1
+    elif counter[key] > 0:
+        counter[key] -= 1
+
+
+def _counted_set_factory() -> CollectionFactory:
+    from proto_db.collections.sets import CountedSet
+
+    def populate(coll, rng):
+        for _ in range(rng.randrange(0, 40)):
+            coll = coll.add(rng.choice([rng.randrange(0, 15), f"s{rng.randrange(0, 8)}", True]))
+        return coll
+
+    def add_new(coll, rng):
+        e = _fresh_element(coll.has, rng)
+        return coll.add(e), [("add", e)]
+
+    def add_existing(coll, rng):
+        e = _pick(coll.elements(), rng)
+        return None if e is None else (coll.add(e), [])
+
+    def remove_last(coll, rng):
+        e = _pick((e for e, n in coll.items() if n == 1), rng)
+        return None if e is None else (coll.remove(e), [("remove", e)])
+
+    def remove_decrement(coll, rng):
+        e = _pick((e for e, n in coll.items() if n > 1), rng)
+        return None if e is None else (coll.remove(e), [])
+
+    def remove_absent(coll, rng):
+        return coll.remove(_fresh_element(coll.has, rng)), []
+
+    def rebase_model(theirs, op_log):
+        counter = Counter({order_key(e): n for e, n in theirs.items()})
+        for kind, e in op_log:
+            _counter_replay(counter, kind, order_key(e))
+        return Counter(k for k, n in counter.items() if n > 0)
+
+    return CollectionFactory(
+        name="CountedSet", empty=CountedSet, populate=populate, rebase_model=rebase_model,
+        mutators={"add_new": add_new, "add_existing": add_existing, "remove_last": remove_last,
+                  "remove_decrement": remove_decrement, "remove_absent": remove_absent})
+
+
+def _repeated_keys_dictionary_factory() -> CollectionFactory:
+    from proto_db.collections.dictionaries import RepeatedKeysDictionary
+
+    def populate(coll, rng):
+        for _ in range(rng.randrange(0, 40)):
+            coll = coll.set_at(rng.choice([rng.randrange(0, 10), f"k{rng.randrange(0, 5)}"]),
+                               rng.choice([rng.randrange(0, 6), f"v{rng.randrange(0, 3)}"]))
+        return coll
+
+    def records(coll):
+        return [(k, v, n) for k, cs in coll.items() for v, n in cs.items()]
+
+    def fresh_key(coll, rng):
+        return _fresh_element(coll.has, rng)
+
+    def add_new_key(coll, rng):
+        k, v = fresh_key(coll, rng), rng.randrange(0, 6)
+        return coll.set_at(k, v), [("add", v)]
+
+    def add_new_value(coll, rng):
+        k = _pick(coll.keys(), rng)
+        if k is None:
+            return None
+        v = _fresh_element(coll.get_at(k).has, rng)
+        return coll.set_at(k, v), [("add", v)]
+
+    def add_existing_value(coll, rng):
+        record = _pick(records(coll), rng)
+        return None if record is None else (coll.set_at(record[0], record[1]), [])
+
+    def remove_record_last(coll, rng):
+        record = _pick((r for r in records(coll) if r[2] == 1), rng)
+        return None if record is None else (coll.remove_record(record[0], record[1]), [("remove", record[1])])
+
+    def remove_record_decrement(coll, rng):
+        record = _pick((r for r in records(coll) if r[2] > 1), rng)
+        return None if record is None else (coll.remove_record(record[0], record[1]), [])
+
+    def remove_record_absent(coll, rng):
+        k = _pick(coll.keys(), rng)
+        if k is None or rng.random() < 0.3:
+            return coll.remove_record(fresh_key(coll, rng), 1), []
+        return coll.remove_record(k, _fresh_element(coll.get_at(k).has, rng)), []
+
+    def remove_key_present(coll, rng):
+        k = _pick(coll.keys(), rng)
+        return None if k is None else (coll.remove_at(k), [("remove", v) for v in coll.get_at(k).elements()])
+
+    def remove_key_absent(coll, rng):
+        return coll.remove_at(fresh_key(coll, rng)), []
+
+    def rebase_model(theirs, op_log):
+        model = {order_key(k): Counter({order_key(v): n for v, n in cs.items()}) for k, cs in theirs.items()}
+        for op in op_log:
+            k = order_key(op[1])
+            if op[0] == "remove_key":
+                model.pop(k, None)
+            else:
+                _counter_replay(model.setdefault(k, Counter()), "add" if op[0] == "add" else "remove",
+                                order_key(op[2]))
+        return Counter(v for counter in model.values() for v, n in counter.items() if n > 0)
+
+    return CollectionFactory(
+        name="RepeatedKeysDictionary", empty=RepeatedKeysDictionary, populate=populate,
+        rebase_model=rebase_model,
+        mutators={"add_new_key": add_new_key, "add_new_value": add_new_value,
+                  "add_existing_value": add_existing_value, "remove_record_last": remove_record_last,
+                  "remove_record_decrement": remove_record_decrement,
+                  "remove_record_absent": remove_record_absent, "remove_key_present": remove_key_present,
+                  "remove_key_absent": remove_key_absent})
+
+
+def _register_3_3b() -> None:
+    register(_set_factory())
+    register(_counted_set_factory())
+    register(_repeated_keys_dictionary_factory())
+
+
+_register_3_3b()

@@ -1,4 +1,5 @@
-"""Stateful model tests: List vs ``list``, Dictionary and HashDictionary vs ``dict`` (Task 3.3a).
+"""Stateful model tests: List vs ``list``, Dictionary and HashDictionary vs ``dict`` (Task 3.3a),
+Set vs ``set``, CountedSet vs ``Counter`` and RepeatedKeysDictionary vs ``dict`` of ``Counter`` (Task 3.3b).
 
 Each machine applies random mutations to a collection and to a Python model, and
 from time to time saves the current version through a ``DirectContext`` and goes
@@ -8,14 +9,16 @@ at the end of a run to prove that no operation mutates its receiver.
 """
 import shutil
 import tempfile
+from collections import Counter
 from decimal import Decimal
 
 from hypothesis import settings, strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, precondition, rule
 
-from proto_db.collections.dictionaries import Dictionary
+from proto_db.collections.dictionaries import Dictionary, RepeatedKeysDictionary
 from proto_db.collections.hash_dictionaries import HashDictionary
 from proto_db.collections.lists import List
+from proto_db.collections.sets import CountedSet, Set
 from proto_db.storage.file import FileStorage
 from proto_db.storage.memory import MemoryStorage
 from proto_db.values import order_key
@@ -213,6 +216,196 @@ class HashDictionaryMachine(_DictMachine):
     ordered = False
 
 
+# -- Sets ---------------------------------------------------------------------------------
+
+class SetMachine(_Persisting):
+    """``Set`` behaves like a Python ``set`` keyed by ``order_key`` (1 and 1.0 one member, True another)."""
+
+    def __init__(self):
+        super().__init__()
+        self.coll = Set()
+        self.model = {}  # order_key -> first element object
+
+    def snapshot(self, coll):
+        return sorted(order_key(e) for e in coll.elements())
+
+    def commit(self, coll, model):
+        self.record(self.coll, sorted(self.model))
+        self.coll, self.model = coll, model
+
+    @rule(e=keys)
+    def add(self, e):
+        model = dict(self.model)
+        model.setdefault(order_key(e), e)
+        self.commit(self.coll.add(e), model)
+
+    @rule(e=keys)
+    def remove(self, e):
+        model = dict(self.model)
+        model.pop(order_key(e), None)
+        self.commit(self.coll.remove(e), model)
+
+    @rule(es=st.lists(keys, max_size=6), kind=st.sampled_from(["union", "intersection", "difference"]),
+          as_set=st.booleans())
+    def algebra(self, es, kind, as_set):
+        other = {order_key(e): e for e in reversed(es)}
+        if kind == "union":
+            model = dict(self.model)
+            for e in es:
+                model.setdefault(order_key(e), e)
+        elif kind == "intersection":
+            model = {k: v for k, v in self.model.items() if k in other}
+        else:
+            model = {k: v for k, v in self.model.items() if k not in other}
+        operand = Set.from_iterable(es) if as_set else es
+        self.commit(getattr(self.coll, kind)(operand), model)
+
+    @rule()
+    def persist(self):
+        self.commit(self.reloaded(self.coll), dict(self.model))
+
+    @rule(e=keys)
+    def lookups(self, e):
+        assert self.coll.has(e) == (order_key(e) in self.model) == (e in self.coll)
+
+    @invariant()
+    def matches(self):
+        elements = list(self.coll.elements())
+        assert self.coll.count == len(self.model) == len(elements)
+        assert {order_key(e): e for e in elements} == self.model
+
+
+class CountedSetMachine(_Persisting):
+    """``CountedSet`` behaves like a ``Counter`` keyed by ``order_key`` whose remove clamps at zero."""
+
+    def __init__(self):
+        super().__init__()
+        self.coll = CountedSet()
+        self.model = Counter()
+
+    def snapshot(self, coll):
+        return sorted((order_key(e), n) for e, n in coll.items())
+
+    def commit(self, coll, model):
+        self.record(self.coll, sorted(self.model.items()))
+        self.coll, self.model = coll, +model
+
+    @rule(e=keys)
+    def add(self, e):
+        model = Counter(self.model)
+        model[order_key(e)] += 1
+        self.commit(self.coll.add(e), model)
+
+    @rule(e=keys)
+    def remove(self, e):
+        model = Counter(self.model)
+        if model[order_key(e)] > 0:
+            model[order_key(e)] -= 1
+        self.commit(self.coll.remove(e), model)
+
+    @precondition(lambda self: self.model)
+    @rule(data=st.data())
+    def remove_present(self, data):
+        e = data.draw(st.sampled_from(list(self.coll.elements())))
+        model = Counter(self.model)
+        model[order_key(e)] -= 1
+        self.commit(self.coll.remove(e), model)
+
+    @rule()
+    def persist(self):
+        self.commit(self.reloaded(self.coll), Counter(self.model))
+
+    @rule(e=keys)
+    def lookups(self, e):
+        assert self.coll.count_of(e) == self.model[order_key(e)]
+        assert self.coll.has(e) == (self.model[order_key(e)] > 0) == (e in self.coll)
+
+    @invariant()
+    def matches(self):
+        assert {order_key(e): n for e, n in self.coll.items()} == dict(self.model)
+        assert self.coll.count == len(self.model) == sum(1 for _ in self.coll.elements())
+        assert self.coll.total_count == sum(self.model.values())
+
+
+class RepeatedKeysDictionaryMachine(_Persisting):
+    """``RepeatedKeysDictionary`` behaves like a ``dict`` of ``Counter`` with no empty counters."""
+
+    def __init__(self):
+        super().__init__()
+        self.coll = RepeatedKeysDictionary()
+        self.model = {}
+
+    def snapshot(self, coll):
+        return sorted((order_key(k), sorted((order_key(v), n) for v, n in cs.items())) for k, cs in coll.items())
+
+    def model_snapshot(self, model):
+        return sorted((k, sorted(c.items())) for k, c in model.items())
+
+    def commit(self, coll, model):
+        self.record(self.coll, self.model_snapshot(self.model))
+        self.coll, self.model = coll, {k: +c for k, c in model.items() if +c}
+
+    def copy(self):
+        return {k: Counter(c) for k, c in self.model.items()}
+
+    @rule(k=keys, v=keys)
+    def set_at(self, k, v):
+        model = self.copy()
+        model.setdefault(order_key(k), Counter())[order_key(v)] += 1
+        self.commit(self.coll.set_at(k, v), model)
+
+    @rule(k=keys, v=keys)
+    def remove_record(self, k, v):
+        model = self.copy()
+        counter = model.get(order_key(k), Counter())
+        if counter[order_key(v)] > 0:
+            counter[order_key(v)] -= 1
+        self.commit(self.coll.remove_record(k, v), model)
+
+    @precondition(lambda self: self.model)
+    @rule(data=st.data())
+    def remove_record_present(self, data):
+        k, v = data.draw(st.sampled_from([(k, v) for k, cs in self.coll.items() for v in cs]))
+        model = self.copy()
+        model[order_key(k)][order_key(v)] -= 1
+        self.commit(self.coll.remove_record(k, v), model)
+
+    @rule(k=keys)
+    def remove_at(self, k):
+        model = self.copy()
+        model.pop(order_key(k), None)
+        self.commit(self.coll.remove_at(k), model)
+
+    @rule()
+    def persist(self):
+        self.commit(self.reloaded(self.coll), self.copy())
+
+    @rule(k=keys, v=keys)
+    def lookups(self, k, v):
+        counter = self.model.get(order_key(k), Counter())
+        assert self.coll.has(k) == (order_key(k) in self.model) == (k in self.coll)
+        assert self.coll.get_at(k).count_of(v) == counter[order_key(v)]
+
+    @invariant()
+    def matches(self):
+        assert self.snapshot(self.coll) == self.model_snapshot(self.model)
+        assert [order_key(k) for k in self.coll.keys()] == sorted(self.model)
+        assert self.coll.count == sum(len(c) for c in self.model.values()) == sum(1 for _ in self.coll)
+        assert self.coll.total_count == sum(sum(c.values()) for c in self.model.values())
+
+
+class SetFileMachine(SetMachine):
+    storage_kind = "file"
+
+
+class CountedSetFileMachine(CountedSetMachine):
+    storage_kind = "file"
+
+
+class RepeatedKeysDictionaryFileMachine(RepeatedKeysDictionaryMachine):
+    storage_kind = "file"
+
+
 class ListFileMachine(ListMachine):
     storage_kind = "file"
 
@@ -237,3 +430,15 @@ TestHashDictionaryModel = HashDictionaryMachine.TestCase
 TestHashDictionaryModel.settings = SM_SETTINGS
 TestHashDictionaryModelFile = HashDictionaryFileMachine.TestCase
 TestHashDictionaryModelFile.settings = SM_SETTINGS
+TestSetModel = SetMachine.TestCase
+TestSetModel.settings = SM_SETTINGS
+TestSetModelFile = SetFileMachine.TestCase
+TestSetModelFile.settings = SM_SETTINGS
+TestCountedSetModel = CountedSetMachine.TestCase
+TestCountedSetModel.settings = SM_SETTINGS
+TestCountedSetModelFile = CountedSetFileMachine.TestCase
+TestCountedSetModelFile.settings = SM_SETTINGS
+TestRepeatedKeysDictionaryModel = RepeatedKeysDictionaryMachine.TestCase
+TestRepeatedKeysDictionaryModel.settings = SM_SETTINGS
+TestRepeatedKeysDictionaryModelFile = RepeatedKeysDictionaryFileMachine.TestCase
+TestRepeatedKeysDictionaryModelFile.settings = SM_SETTINGS

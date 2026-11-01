@@ -31,6 +31,7 @@ CHECKED_ROOTS = [
     "proto_db/collections/lists.py",
     "proto_db/collections/dictionaries.py",
     "proto_db/collections/hash_dictionaries.py",
+    "proto_db/collections/sets.py",
     "proto_db/query/__init__.py",
     "proto_db/query/plans.py",
 ]

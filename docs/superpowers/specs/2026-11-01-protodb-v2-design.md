@@ -221,13 +221,15 @@ Every collection derives from `IndexedCollection(Atom)`:
   set_at, insert_at, remove_at, append_first/last, extend, slice, head, tail`.
 - `Dictionary` — persistent keyed AVL ordered by `order_key(key)` (D8): `get_at, set_at,
   remove_at, has, items, keys, values`. ConcurrentOptimized (per-key replay).
-- `RepeatedKeysDictionary` — multimap key → CountedSet of records: `add(key, record),
-  remove_record(key, record), remove_key(key), get(key)`.
+- `RepeatedKeysDictionary` — multimap key → CountedSet of records: `set_at(key, record)` (alias
+  `add`), `remove_record(key, record)`, `remove_at(key)` (alias `remove_key`), `get_at(key)` (alias
+  `get`), `has`, `keys`, `items`. ConcurrentOptimized (per-key replay, counter transforms, D26).
 - `HashDictionary` — persistent AVL keyed by `hash_key` with collision buckets; arbitrary
   canonical keys (not only ints).
 - `Set` — members keyed by `hash_key`; `add, remove, has, union, intersection, difference`.
-  Never mutates the receiver.
-- `CountedSet` — multiset; `add`, `remove` (decrements), `count(e)`, `total`.
+  Never mutates the receiver. ConcurrentOptimized (per-element replay).
+- `CountedSet` — multiset; `add`, `remove` (decrements), `count_of(e)`, `total_count` (D26).
+  ConcurrentOptimized (per-element counter transforms, D26).
 
 All collections: `count`, iteration, `content_equals(other)` (content comparison; `==` stays oid identity per D10, ruling R12), `__repr__`, and a factory on the
 transaction (`tr.new_list()`, … including `new_set`, `new_counted_set`, `new_repeated_keys_dictionary`).
