@@ -98,7 +98,25 @@ reaches ``backlog_alert_bytes`` (default 80 % of the limit).  At ``backlog_limit
 
 Thread-safety: every public method may be called from any thread.  One lock guards the
 bookkeeping, one serializes shipping, one the ranges log (the roots log has its own); the caches have their own
-locks.  No lock is held across object-store or peer requests.
+locks.  No lock is held across peer requests; object-store writes are made under the shipping
+lock (below).
+
+Closing (8.3d re-review 8, A1; ruling R56): no write reaches the local directory or the object
+store once :meth:`TieredStorage.close` has started, whatever thread captured this storage
+before.  Every write is guarded by the lock that ``close()`` takes before it releases what the
+write uses, and the closed flag is checked under that same lock, so a write either completes
+before ``close()`` passes that lock or is refused with ``ProtoValidationError``:
+
+* ``segments.log`` (its descriptor): the manifest lock;
+* ``ranges.log`` (its descriptor, and the compaction that replaces the file): the ranges lock;
+* copies of other nodes' segments (written by path) and the local release that deletes copies
+  and own segments: the copies lock;
+* object-store writes (segment objects, markers, parts, the persisted root): the shipping lock;
+* own segments and ``roots.log``: the :class:`~proto_db.storage.file.FileStorage` and
+  :class:`~proto_db.cluster.rootlog.RootsLog` they belong to, each with its own lock.
+
+A descriptor is therefore never written after it was closed, so a descriptor number the
+operating system hands to another file meanwhile is never written through a stale storage.
 """
 import contextlib
 import logging
@@ -286,6 +304,7 @@ class TieredStorage(SharedStorage):
                                     os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_BINARY | _O_CLOEXEC, 0o644)
         self._roots = RootsLog(os.path.join(self._path, ROOTS_LOG), durability=durability)
         self._ranges_lock = threading.Lock()
+        self._copies_lock = threading.Lock()
         self._load_ranges()
         self._ranges_fd = self._open_ranges()
 
@@ -324,6 +343,13 @@ class TieredStorage(SharedStorage):
     def _check_open(self) -> None:
         if self._closed:
             raise ProtoValidationError("Storage is closed")
+
+    def _refuse_closed(self, what: str) -> None:
+        """Refuse a write once :meth:`close` has started (``ProtoValidationError``).  Called with
+        the lock guarding ``what`` held, the lock ``close()`` takes before releasing it (module
+        docstring), so a write that passes this check completes before ``close()`` does."""
+        if self._closed:
+            raise ProtoValidationError(f"Storage is closed: {what} refused")
 
     # -- startup -----------------------------------------------------------------------------
 
@@ -392,6 +418,7 @@ class TieredStorage(SharedStorage):
         if entry is None:
             return
         with self._ranges_lock:
+            self._refuse_closed(f"writing {RANGES_LOG}")
             try:
                 os.write(self._ranges_fd, entry)
                 if sync and self._durability == "fsync":
@@ -402,6 +429,7 @@ class TieredStorage(SharedStorage):
     def _compact_ranges(self) -> None:
         """Rewrite ``ranges.log`` with the live entries when it grew past the compaction size."""
         with self._ranges_lock:
+            self._refuse_closed(f"compacting {RANGES_LOG}")
             try:
                 if os.fstat(self._ranges_fd).st_size <= _ROOTS_LOG_COMPACT:
                     return
@@ -417,7 +445,7 @@ class TieredStorage(SharedStorage):
                 self._ranges_fd = self._open_ranges()
             except OSError as e:
                 raise ProtoUnexpectedError(f"Compacting {RANGES_LOG} failed: {e}") from e
-        self._fsync_dir()
+            self._fsync_dir()
 
     # -- writes ------------------------------------------------------------------------------
 
@@ -436,6 +464,7 @@ class TieredStorage(SharedStorage):
             # A new own segment: registered and appended to the manifest in creation order under
             # the manifest lock, never under the bookkeeping lock that every read takes.
             with self._manifest_lock:
+                self._refuse_closed(f"writing {MANIFEST}")
                 with self._lock:
                     write = ptr.segment not in self._own
                     if write:
@@ -471,10 +500,17 @@ class TieredStorage(SharedStorage):
         """Make every pushed record durable in the local tier (``fsync`` per the durability mode)."""
         self._check_open()
         self._local.flush()
-        with self._lock:
-            dirty, self._manifest_dirty = self._manifest_dirty, False
-        if dirty and self._durability == "fsync":
-            os.fsync(self._manifest_fd)
+        with self._manifest_lock:
+            self._refuse_closed(f"syncing {MANIFEST}")
+            with self._lock:
+                dirty, self._manifest_dirty = self._manifest_dirty, False
+            if dirty and self._durability == "fsync":
+                try:
+                    os.fsync(self._manifest_fd)
+                except OSError as e:
+                    with self._lock:
+                        self._manifest_dirty = True
+                    raise ProtoUnexpectedError(f"Syncing {MANIFEST} failed: {e}") from e
 
     # -- reads -------------------------------------------------------------------------------
 
@@ -832,36 +868,41 @@ class TieredStorage(SharedStorage):
         for raw, offset, data in records:
             if data is not None:
                 groups.setdefault(uuid.UUID(bytes=raw), []).append((offset, data))
-        created = False
-        for segment, items in groups.items():
-            with self._lock:
-                if segment in self._own:
-                    continue
-                known = segment in self._copies
-                newest = self._copies.get(segment)
-                if order is not None and (newest is None or order > newest):
-                    newest = order
-                self._copies[segment] = newest
-            path = os.path.join(self._path, segment.hex + SEGMENT_SUFFIX)
-            try:
-                fd = os.open(path, os.O_RDWR | os.O_CREAT | _O_BINARY | _O_CLOEXEC, 0o644)
+        if not groups:
+            return
+        # Under the copies lock, which close() takes: no copy is written once it has started.
+        with self._copies_lock:
+            self._refuse_closed("storing replicated records")
+            created = False
+            for segment, items in groups.items():
+                with self._lock:
+                    if segment in self._own:
+                        continue
+                    known = segment in self._copies
+                    newest = self._copies.get(segment)
+                    if order is not None and (newest is None or order > newest):
+                        newest = order
+                    self._copies[segment] = newest
+                path = os.path.join(self._path, segment.hex + SEGMENT_SUFFIX)
                 try:
-                    if os.fstat(fd).st_size < SEGMENT_HEADER_SIZE:
-                        os.pwrite(fd, encode_segment_header(segment), 0)
-                        created = created or not known
-                    for offset, data in items:
-                        os.pwrite(fd, data, offset)
-                    if self._durability == "fsync":
-                        os.fsync(fd)
-                finally:
-                    os.close(fd)
-            except OSError as e:
-                raise ProtoUnexpectedError(f"Storing replicated records of segment {segment.hex} failed: {e}") from e
-            for offset, data in items:
-                self._cache.put((segment, offset), data)
-            self._count("records_applied", len(items))
-        if created and self._durability == "fsync":
-            self._fsync_dir()
+                    fd = os.open(path, os.O_RDWR | os.O_CREAT | _O_BINARY | _O_CLOEXEC, 0o644)
+                    try:
+                        if os.fstat(fd).st_size < SEGMENT_HEADER_SIZE:
+                            os.pwrite(fd, encode_segment_header(segment), 0)
+                            created = created or not known
+                        for offset, data in items:
+                            os.pwrite(fd, data, offset)
+                        if self._durability == "fsync":
+                            os.fsync(fd)
+                    finally:
+                        os.close(fd)
+                except OSError as e:
+                    raise ProtoUnexpectedError(f"Storing replicated records of segment {segment.hex} failed: {e}") from e
+                for offset, data in items:
+                    self._cache.put((segment, offset), data)
+                self._count("records_applied", len(items))
+            if created and self._durability == "fsync":
+                self._fsync_dir()
 
     def prefetch(self, records: list) -> None:
         """Warm the caches with replicated records (already cached by :meth:`apply`)."""
@@ -933,34 +974,35 @@ class TieredStorage(SharedStorage):
         Returns True when written, False when the store already holds that root or a newer
         one.  Raises ``ProtoUnexpectedError`` when the store stays unreachable.
         """
-        self._check_open()
         data = _encode_root_object(record, label)
-        for attempt in range(self._retries + 1):
-            try:
+        with self._ship_lock:       # object-store writes: never once close() has started
+            self._refuse_closed("persisting the root")
+            for attempt in range(self._retries + 1):
                 try:
-                    current, etag = self._store.get(self._root_key)
-                    current_label, current_root = _decode_root_object(current)
-                except ObjectNotFoundError:
-                    etag, current_label, current_root = None, 0, None
-                if etag is not None and compare_roots(current_label, current_root, label, record) >= 0:
-                    return False
-                if etag is None:
-                    self._store.put_if_absent(self._root_key, data)
-                else:
-                    self._store.put_if_match(self._root_key, data, etag)
-            except PreconditionFailedError:
-                continue            # another node wrote meanwhile: read again, maybe we are behind
-            except (TransientObjectStoreError, OutcomeUnknownError) as e:
-                if attempt == self._retries:
-                    raise ProtoUnexpectedError(f"Persisting root epoch {record.epoch} failed: {e}") from e
-                self._sleep(attempt)
-                continue            # an unknown outcome is decided by reading the root again
-            with self._lock:
-                self._stats["root_writes"] += 1
-                if getattr(self._tls, "critical", False):
-                    self._stats["root_writes_in_critical"] += 1
-            return True
-        raise ProtoUnexpectedError(f"Persisting root epoch {record.epoch} lost {self._retries + 1} races")
+                    try:
+                        current, etag = self._store.get(self._root_key)
+                        current_label, current_root = _decode_root_object(current)
+                    except ObjectNotFoundError:
+                        etag, current_label, current_root = None, 0, None
+                    if etag is not None and compare_roots(current_label, current_root, label, record) >= 0:
+                        return False
+                    if etag is None:
+                        self._store.put_if_absent(self._root_key, data)
+                    else:
+                        self._store.put_if_match(self._root_key, data, etag)
+                except PreconditionFailedError:
+                    continue            # another node wrote meanwhile: read again, maybe we are behind
+                except (TransientObjectStoreError, OutcomeUnknownError) as e:
+                    if attempt == self._retries:
+                        raise ProtoUnexpectedError(f"Persisting root epoch {record.epoch} failed: {e}") from e
+                    self._sleep(attempt)
+                    continue            # an unknown outcome is decided by reading the root again
+                with self._lock:
+                    self._stats["root_writes"] += 1
+                    if getattr(self._tls, "critical", False):
+                        self._stats["root_writes_in_critical"] += 1
+                return True
+            raise ProtoUnexpectedError(f"Persisting root epoch {record.epoch} lost {self._retries + 1} races")
 
     def ship(self, force: bool = False) -> bool:
         """Seal the open segment when due (or ``force``) and upload sealed own segments in order.
@@ -968,8 +1010,8 @@ class TieredStorage(SharedStorage):
         Returns True when something was uploaded.  Stops at the first failure (the order is
         strict) and raises it; the next call resumes.  Called by the persister only.
         """
-        self._check_open()
         with self._ship_lock:
+            self._refuse_closed("shipping")
             with self._lock:
                 pending = [o for o in self._own.values() if not o.uploaded]
             if not pending:
@@ -1161,11 +1203,13 @@ class TieredStorage(SharedStorage):
             return True
         if not upload_copies or len(copies) < len(missing):
             return False
-        for segment, end in copies.items():
-            data = self._copy_prefix(segment, end)
-            if data is None:
-                return False        # a hole: another node's copy must serve
-            self._put_part(segment, data)
+        with self._ship_lock:       # object-store writes: never once close() has started
+            self._refuse_closed("uploading segment parts")
+            for segment, end in copies.items():
+                data = self._copy_prefix(segment, end)
+                if data is None:
+                    return False    # a hole: another node's copy must serve
+                self._put_part(segment, data)
         return True
 
     def release_local(self, persisted_key: tuple) -> int:
@@ -1181,38 +1225,43 @@ class TieredStorage(SharedStorage):
                 for key in [k for k, (order, _) in self._ranges.items() if order <= persisted_key]:
                     del self._ranges[key]
             return 0
-        current = self._local.current_segment
-        with self._lock:
-            candidates = [s for s, k in self._copies.items() if s in self._remote and k is not None
-                          and k <= persisted_key]
-        sizes = {}                  # every byte of a copy must be in the store before it goes
-        for segment in candidates:
-            try:
-                sizes[segment] = os.path.getsize(os.path.join(self._path, segment.hex + SEGMENT_SUFFIX))
-            except FileNotFoundError:
-                sizes[segment] = 0
-            except OSError as e:
-                raise ProtoUnexpectedError(f"Reading the size of local segment {segment.hex} "
-                                           f"failed: {e}") from e
-        with self._lock:
-            for key in [k for k, (order, _) in self._ranges.items() if order <= persisted_key]:
-                del self._ranges[key]
-            own = [o for o in self._own.values() if o.uploaded and not o.released and o.uuid != current
-                   and o.max_key is not None and o.max_key <= persisted_key and self._covered(o.uuid, o.end)]
-            copies = [s for s in candidates if self._copies.get(s) is not None
-                      and self._copies[s] <= persisted_key and self._covered(s, sizes[s])]
-            for o in own:
-                o.released = True
-            for s in copies:
-                del self._copies[s]
-        for segment in [o.uuid for o in own] + copies:
-            self._local.forget_segment(segment)
-            try:
-                os.remove(os.path.join(self._path, segment.hex + SEGMENT_SUFFIX))
-            except FileNotFoundError:
-                pass                # already gone
-            except OSError as e:
-                raise ProtoUnexpectedError(f"Releasing local segment {segment.hex} failed: {e}") from e
+        # Under the copies lock, which close() takes: nothing is deleted once it has started,
+        # and no copy is written between the decision to delete it and its deletion (a write
+        # would extend it past what the store was found to cover).
+        with self._copies_lock:
+            self._refuse_closed("releasing local segments")
+            current = self._local.current_segment
+            with self._lock:
+                candidates = [s for s, k in self._copies.items() if s in self._remote and k is not None
+                              and k <= persisted_key]
+            sizes = {}                  # every byte of a copy must be in the store before it goes
+            for segment in candidates:
+                try:
+                    sizes[segment] = os.path.getsize(os.path.join(self._path, segment.hex + SEGMENT_SUFFIX))
+                except FileNotFoundError:
+                    sizes[segment] = 0
+                except OSError as e:
+                    raise ProtoUnexpectedError(f"Reading the size of local segment {segment.hex} "
+                                               f"failed: {e}") from e
+            with self._lock:
+                for key in [k for k, (order, _) in self._ranges.items() if order <= persisted_key]:
+                    del self._ranges[key]
+                own = [o for o in self._own.values() if o.uploaded and not o.released and o.uuid != current
+                       and o.max_key is not None and o.max_key <= persisted_key and self._covered(o.uuid, o.end)]
+                copies = [s for s in candidates if self._copies.get(s) is not None
+                          and self._copies[s] <= persisted_key and self._covered(s, sizes[s])]
+                for o in own:
+                    o.released = True
+                for s in copies:
+                    del self._copies[s]
+            for segment in [o.uuid for o in own] + copies:
+                self._local.forget_segment(segment)
+                try:
+                    os.remove(os.path.join(self._path, segment.hex + SEGMENT_SUFFIX))
+                except FileNotFoundError:
+                    pass                # already gone
+                except OSError as e:
+                    raise ProtoUnexpectedError(f"Releasing local segment {segment.hex} failed: {e}") from e
         with self._lock:
             self._stats["segments_released"] += len(own)
             self._stats["copies_released"] += len(copies)
@@ -1299,7 +1348,12 @@ class TieredStorage(SharedStorage):
             self._root_lock.release()
 
     def close(self) -> None:
-        """Flush the local tier and release descriptors and caches.  Idempotent."""
+        """Flush the local tier and release descriptors and caches.  Idempotent.
+
+        Waits for the writes in progress; every later write is refused (module docstring):
+        the closed flag is set first, then each lock guarding a descriptor or a kind of write
+        is taken before what it guards is released, and every write checks the flag under its
+        lock.  Object-store writes are excluded by the shipping lock, held throughout."""
         with self._ship_lock:
             with self._lock:
                 if self._closed:
@@ -1311,12 +1365,18 @@ class TieredStorage(SharedStorage):
             except ProtoDBError as e:
                 error = e
             self._local.close()
+            with self._manifest_lock:
+                try:
+                    os.close(self._manifest_fd)
+                except OSError as e:
+                    error = error or e
             with self._ranges_lock:
-                for fd in (self._manifest_fd, self._ranges_fd):
-                    try:
-                        os.close(fd)
-                    except OSError as e:
-                        error = error or e
+                try:
+                    os.close(self._ranges_fd)
+                except OSError as e:
+                    error = error or e
+            with self._copies_lock:
+                pass                # waits for a copy write or a local release in progress
             try:
                 self._roots.close()
             except ProtoDBError as e:

@@ -32,6 +32,10 @@ publish is unknown until the space is reopened.
 Thread-safety: every public method may be called from any thread.  One lock guards the
 write buffer and segment bookkeeping, one serializes flushes, the page cache has its own
 lock, and ``root_lock`` combines a per-instance ``threading.Lock`` with an OS file lock.
+Nothing is written once ``close()`` has started: segment data and the root are written under
+the flush lock, which ``close()`` takes first, after a closed check made under it; read
+descriptors are closed only once no file read is in progress, and a read checks the closed
+flag under the state lock before it uses one.
 """
 import contextlib
 import os
@@ -647,7 +651,9 @@ class FileStorage(SharedStorage):
         self._fetch_record(ptr)
         exclusive = (contextlib.nullcontext() if self._holder == threading.get_ident()
                      else self.root_lock())
-        with exclusive:
+        # The root is written under the flush lock, which close() takes: no root is written
+        # once close() has started (8.3d re-review 8, A1).
+        with exclusive, self._flush_lock:
             with self._state_lock:
                 self._check_writable()
             current = self._load_root()

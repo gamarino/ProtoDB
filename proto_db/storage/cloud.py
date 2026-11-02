@@ -49,7 +49,9 @@ their SDK's own retries off so that no hidden retry re-sends a conditional write
 
 Thread-safety: every public method may be called from any thread.  One lock guards the
 local buffers, one serializes uploads, the read cache (:class:`BoundedCache` of whole
-segment objects, which are immutable) has its own lock.
+segment objects, which are immutable) has its own lock.  Root writes are made under the
+upload lock too, which ``close()`` takes: nothing is written to the store once ``close()``
+has started.
 
 SDKs are optional and imported lazily by the adapters (:class:`S3ObjectStore`, extra
 ``s3``; :class:`GCSObjectStore`, extra ``gcs``); a missing SDK raises
@@ -551,64 +553,67 @@ class CloudStorage(SharedStorage):
             raise ProtoValidationError("expected_epoch must be a non-negative int or None")
         self._check_publishable(ptr)
         self.flush()
-        with self._state_lock:
-            self._check_open()
-            if ptr.segment in self._local:
-                raise ProtoUnexpectedError(f"Segment {ptr.segment.hex} is not uploaded; refusing to publish")
-        failures = 0
-        races = 0
-        uncertain = False   # an earlier attempt may still land: exhaustion is then an unknown outcome
-        while True:
-            current, etag, recent = self._read_root_object()
-            epoch = current.epoch if current is not None else 0
-            if expected_epoch is not None and expected_epoch != epoch:
-                if uncertain:
-                    # An earlier attempt of ours may be what moved the root.
-                    verdict = self._verdict(current, recent, ptr.segment, ptr.offset, expected_epoch + 1)
-                    if verdict is True:
-                        return RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, expected_epoch + 1)
-                    if verdict is None:
+        # The root is written under the upload lock, which close() takes: no root is written
+        # once close() has started (8.3d re-review 8, A1).
+        with self._upload_lock:
+            with self._state_lock:
+                self._check_open()
+                if ptr.segment in self._local:
+                    raise ProtoUnexpectedError(f"Segment {ptr.segment.hex} is not uploaded; refusing to publish")
+            failures = 0
+            races = 0
+            uncertain = False   # an earlier attempt may still land: exhaustion is then an unknown outcome
+            while True:
+                current, etag, recent = self._read_root_object()
+                epoch = current.epoch if current is not None else 0
+                if expected_epoch is not None and expected_epoch != epoch:
+                    if uncertain:
+                        # An earlier attempt of ours may be what moved the root.
+                        verdict = self._verdict(current, recent, ptr.segment, ptr.offset, expected_epoch + 1)
+                        if verdict is True:
+                            return RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, expected_epoch + 1)
+                        if verdict is None:
+                            raise ProtoOutcomeUnknownError(
+                                f"The root moved to epoch {epoch} after an attempt with an unknown outcome "
+                                f"and its history no longer reaches epoch {expected_epoch + 1}")
+                    raise ProtoConflictError(f"Root epoch is {epoch}, expected {expected_epoch}")
+                mine = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, epoch + 1)
+                history = ([(current.segment, current.offset, current.epoch)] + recent
+                           if current is not None else [])
+                data = _encode_root_object(mine, history[:self._root_history])
+                try:
+                    if etag is None:
+                        self._store.put_if_absent(self._root_key, data)
+                    else:
+                        self._store.put_if_match(self._root_key, data, etag)
+                    return mine
+                except TransientObjectStoreError as e:
+                    error, outcome = e, "unchanged"
+                except (PreconditionFailedError, OutcomeUnknownError) as e:
+                    uncertain = uncertain or isinstance(e, OutcomeUnknownError)
+                    error, outcome = e, self._resolve(mine, etag, e)
+                if outcome == "applied":
+                    return mine
+                if isinstance(error, PreconditionFailedError) or outcome == "taken":
+                    if expected_epoch is not None:
+                        raise ProtoConflictError(
+                            f"Another root was published concurrently (epoch {epoch + 1} is taken)") from error
+                    races += 1
+                    if races >= _UNCONDITIONAL_ATTEMPTS:
+                        raise ProtoConflictError(
+                            f"Unconditional publish lost {races} races to other writers") from error
+                    self._sleep(min(races, 10))
+                    continue
+                # Not applied and the root is unchanged: safe to send again (same etag condition).
+                if failures == self._retries:
+                    if uncertain:
                         raise ProtoOutcomeUnknownError(
-                            f"The root moved to epoch {epoch} after an attempt with an unknown outcome "
-                            f"and its history no longer reaches epoch {expected_epoch + 1}")
-                raise ProtoConflictError(f"Root epoch is {epoch}, expected {expected_epoch}")
-            mine = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, epoch + 1)
-            history = ([(current.segment, current.offset, current.epoch)] + recent
-                       if current is not None else [])
-            data = _encode_root_object(mine, history[:self._root_history])
-            try:
-                if etag is None:
-                    self._store.put_if_absent(self._root_key, data)
-                else:
-                    self._store.put_if_match(self._root_key, data, etag)
-                return mine
-            except TransientObjectStoreError as e:
-                error, outcome = e, "unchanged"
-            except (PreconditionFailedError, OutcomeUnknownError) as e:
-                uncertain = uncertain or isinstance(e, OutcomeUnknownError)
-                error, outcome = e, self._resolve(mine, etag, e)
-            if outcome == "applied":
-                return mine
-            if isinstance(error, PreconditionFailedError) or outcome == "taken":
-                if expected_epoch is not None:
-                    raise ProtoConflictError(
-                        f"Another root was published concurrently (epoch {epoch + 1} is taken)") from error
-                races += 1
-                if races >= _UNCONDITIONAL_ATTEMPTS:
-                    raise ProtoConflictError(
-                        f"Unconditional publish lost {races} races to other writers") from error
-                self._sleep(min(races, 10))
-                continue
-            # Not applied and the root is unchanged: safe to send again (same etag condition).
-            if failures == self._retries:
-                if uncertain:
-                    raise ProtoOutcomeUnknownError(
-                        f"Publishing the root failed after {failures + 1} attempt(s) and an earlier "
-                        f"attempt may still be applied; read the root to resolve it: {error}") from error
-                raise ProtoUnexpectedError(
-                    f"Publishing the root failed after {failures + 1} attempt(s) (not applied): {error}") from error
-            self._sleep(failures)
-            failures += 1
+                            f"Publishing the root failed after {failures + 1} attempt(s) and an earlier "
+                            f"attempt may still be applied; read the root to resolve it: {error}") from error
+                    raise ProtoUnexpectedError(
+                        f"Publishing the root failed after {failures + 1} attempt(s) (not applied): {error}") from error
+                self._sleep(failures)
+                failures += 1
 
     # --- locking ---------------------------------------------------------------------------
 

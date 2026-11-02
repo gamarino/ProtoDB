@@ -950,7 +950,14 @@ class ClusterCoordinator:
             if where == "persisted":
                 return None
             if where == "records":
-                tier.store_commit(records, current[1], current[0], ranges)
+                try:
+                    tier.store_commit(records, current[1], current[0], ranges)
+                except (ProtoDBError, OSError):
+                    with self._lock:
+                        if self._tier is not tier:
+                            # Closed once detached: it refuses writes (ruling R56).
+                            return "the tier was detached"
+                    raise
             current = tier.parent_root(current[1])
         return None
 
@@ -1514,17 +1521,29 @@ class ClusterCoordinator:
             # Records are stored even when the root is refused (a newer term was granted here
             # meanwhile): immutable data, and this node may be the next holder, whose base can
             # be this root (adopted from its granters); it then reads nothing under its lease.
-            if records:
-                tier.apply(records, root, label)      # durable before the ack
-            bk, broot, blabel = decode_labeled_root(msg["base"])
-            if bk and broot is not None and getattr(tier, "local_records", False):
-                # A re-proposed base: its records rode with this replication (ruling R50).
-                tier.store_commit([], broot, blabel, protocol.decode_ranges(msg["base_ranges"]) or [])
-            with self._cond:
-                if self._tier is tier:
-                    # Stored on the attached tier.  A tier detached meanwhile is not this
-                    # node's store any more: a reattach starts from an empty set (N4).
-                    self._note_stored(label, root)
+            try:
+                if records:
+                    tier.apply(records, root, label)      # durable before the ack
+                bk, broot, blabel = decode_labeled_root(msg["base"])
+                if bk and broot is not None and getattr(tier, "local_records", False):
+                    # A re-proposed base: its records rode with this replication (ruling R50).
+                    tier.store_commit([], broot, blabel, protocol.decode_ranges(msg["base_ranges"]) or [])
+            except (ProtoDBError, OSError) as e:
+                with self._lock:
+                    gone = self._tier is not tier
+                if not gone:
+                    raise
+                # The space closed under this replication: its tier refuses writes once closed
+                # (ruling R56), so the records may be missing there.  Refused below, never
+                # acknowledged, and not a fault of this node.
+                logger.info("Node %s: the tier was detached while storing a replication: %s", self._node, e)
+                ok = False
+            else:
+                with self._cond:
+                    if self._tier is tier:
+                        # Stored on the attached tier.  A tier detached meanwhile is not this
+                        # node's store any more: a reattach starts from an empty set (N4).
+                        self._note_stored(label, root)
         with self._log_lock:
             # The decision, the log write and the publication form one step against attach,
             # detach and every other acceptor decision (ruling R55): decided only on the tier

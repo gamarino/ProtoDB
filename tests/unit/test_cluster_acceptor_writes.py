@@ -18,10 +18,14 @@ refuses writes on every backend, the in-memory one included.
 * A log closed while still attached (worker and holder): nothing is acknowledged and memory
   stays equal to the log.
 * N4: a stale worker does not refill the stored-records set after the reattach.
+* A1 (re-review 8; ruling R56): a tier refuses writes once closed, so a worker whose tier was
+  closed under its ``apply`` treats the refusal as "tier gone": it refuses the replication
+  (never acknowledges it), stays healthy, and does not count the records as stored.
 """
 import os
 import threading
 import time
+import uuid
 
 import pytest
 
@@ -140,6 +144,29 @@ def _pause_before_decision(monkeypatch, worker):
 
     monkeypatch.setattr(coordinator_module, "decode_labeled_root", paused)
     return in_window, gate
+
+
+class StoringTier(MemoryTier):
+    """A :class:`MemoryTier` whose ``apply`` stores the records it receives and refuses once
+    the tier is closed, checked under the lock ``close()`` takes, as ``TieredStorage`` does
+    (ruling R56)."""
+
+    def __init__(self, storage, node_id):
+        super().__init__(storage, node_id)
+        self._store_lock = threading.Lock()
+        self._closed = False
+        self.applied = []
+
+    def apply(self, records, root=None, label=0):
+        with self._store_lock:
+            if self._closed:
+                raise ProtoValidationError("The tier is closed: storing replicated records refused")
+            self.applied.append((label, root))
+
+    def close(self):
+        with self._store_lock:
+            self._closed = True
+        super().close()
 
 
 def _acks(h):
@@ -438,7 +465,64 @@ def test_a_commit_whose_space_was_reopened_replicates_nothing(harness):
     t1.close()
     a.attach(h.tier_class(h.disks["a"], "a"))
     before = a.stats()["replications"]
+    sent = []
+
+    def refuse_to_send(msg):
+        # Fails the test at once (an AssertionError is not a ProtoDBError: replicate lets it
+        # through) instead of letting a commit that ignored its tier wait for acknowledgements
+        # on the fake clock until the test's timeout (re-review 8, M1).
+        sent.append(msg["type"])
+        raise AssertionError(f"replicate sent a {msg['type']!r} message for a commit whose tier was closed")
+
+    a._broadcast = refuse_to_send
     with pytest.raises(ProtoValidationError, match="nothing was replicated"):
         a.replicate(lease_a, rec(2), tier=t1)
+    assert sent == []
     assert a.stats()["replications"] == before
     assert not h.net.take("a", None, ("records", "replicate"))
+
+
+def test_a1_a_worker_whose_tier_closed_under_its_apply_refuses_and_stays_healthy(harness, tmp_path):
+    """Re-review 8, A1.  c's worker is about to store a replication's records on its tier when
+    c's space is closed and reopened over the same disk.  The closed tier refuses the write
+    (``ProtoValidationError``, as every closed storage does), and the worker treats that as
+    "tier gone": it sends a refusal, so the holder need not wait for c; nothing is logged, c
+    stays healthy (a closed space is no fault of the node), and the records are not counted as
+    stored.  Before, the refusal escaped to the worker loop: no answer at all, and an error
+    logged as if the node had failed."""
+    h = harness()
+    h.tier_class = StoringTier                            # c restarts on a storing tier
+    r0, lease_a = _setup(h, "memory", tmp_path)
+    a, c = h.nodes["a"], h.nodes["c"]
+    a.tier.outgoing = lambda: [[uuid.uuid4().bytes, 64, b"record"]]
+    t1 = c.tier
+    in_window, gate = threading.Event(), threading.Event()
+    apply = t1.apply
+
+    def paused(records, root=None, label=0):
+        if threading.current_thread().name == "proto-cluster-worker-c":
+            in_window.set()
+            assert gate.wait(20)
+        return apply(records, root, label)
+
+    t1.apply = paused
+    R = rec(2)
+    t, out = _start_commit(h, lease_a, R)
+    try:
+        assert in_window.wait(10), "c's worker never stored the records"
+        c.detach(t1)
+        t1.close()
+        c.attach(h.tier_class(h.disks["c"], "c"))
+    finally:
+        gate.set()
+    assert c.wait_idle(5.0)
+    assert _acks(h) == [False], "a replication whose records the closed tier refused was not refused"
+    assert t1.applied == [], "the closed tier stored records"
+    assert c.healthy and not c.stats()["fenced"]
+    assert _logged(c.tier) == r0 and c.accepted_root()[1] == r0
+    with c._lock:
+        assert root_key(lease_a.term, R) not in c._stored
+    a.stop()
+    t.join(10.0)
+    h.retired.append(a)
+    assert isinstance(out.get("r"), ProtoOutcomeUnknownError), out
