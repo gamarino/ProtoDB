@@ -13,7 +13,7 @@ is the newest committed root.  The certainty check and recovery stay as defence 
 """
 import pytest
 
-from tests.support.manual_cluster import D, Harness, rec
+from tests.support.manual_cluster import GRACE, Harness, rec
 
 pytestmark = [pytest.mark.timeout(30)]
 
@@ -46,7 +46,7 @@ def test_a_wiped_acknowledger_granting_another_holder_reports_the_committed_root
     h.replicate("b", lease_b, truth, to={"a"})             # committed by b and a; c keeps r1
     h.release("b", lease_b, to=())                         # the release is lost
     h.restart("a", wipe=True)                              # a, an acknowledger, loses its disk
-    h.clock.t += D                                         # grace over, b's grants expired
+    h.clock.t += GRACE                                         # grace over, b's grants expired
     lease_c = h.attempt("c", {"a"})                        # granters: a (rejoined), c (r1)
     assert lease_c.root == truth                           # a learnt it from the witnesses
     _check(h, "c", lease_c, truth, responders={"a", "b"})
@@ -60,7 +60,7 @@ def test_a_wiped_acknowledger_requesting_the_lease_builds_on_the_committed_root(
     h.replicate("b", lease_b, truth, to={"a"})
     h.release("b", lease_b, to=())
     h.restart("a", wipe=True)                              # the next holder itself lost its disk
-    h.clock.t += D
+    h.clock.t += GRACE
     lease_a = h.attempt("a", {"c"})                        # granters: a (rejoined), c (r1)
     assert lease_a.root == truth
     _check(h, "a", lease_a, truth, responders={"b", "c"})
@@ -75,7 +75,7 @@ def test_two_wiped_acknowledgers_of_five_report_the_committed_root(harness):
     h.release("a", lease_a, to=())
     h.restart("b", wipe=True)                              # a minority (2 of 5) loses its disks
     h.restart("c", wipe=True)
-    h.clock.t += D
+    h.clock.t += GRACE
     lease_d = h.attempt("d", {"b", "c"})                   # granters: b, c (rejoined), d (r1)
     assert lease_d.root == truth
     _check(h, "d", lease_d, truth, responders={"a", "e"})

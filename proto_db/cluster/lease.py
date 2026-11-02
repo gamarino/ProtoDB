@@ -96,6 +96,7 @@ class PeerGrants:
         self._clock = clock
         self._quiet_until = clock() + startup_grace
         self._highest = 0          # highest term seen in any request or release
+        self._seen = 0             # highest term of lease activity: requests, releases, promises
         self._granted_max = 0      # highest term granted or closed here
         self._granted_top = 0      # highest term actually granted here
         self._holder = None
@@ -114,12 +115,23 @@ class PeerGrants:
         """Highest term this peer has granted (the ballot a replicated root must not be below)."""
         return self._granted_top
 
-    def restore(self, term: int) -> None:
+    @property
+    def terms_seen(self) -> int:
+        """Highest term of lease activity this peer knows of: a request or a release it saw,
+        or a promise restored as such (see :meth:`restore`).  Unlike :attr:`highest_term`, a
+        floor restored from root labels alone does not raise it: ``0`` means this peer knows
+        of no lease ever requested in this cluster (a rejoin's first-start test, ruling R51)."""
+        return self._seen
+
+    def restore(self, term: int, *, seen: Optional[int] = None) -> None:
         """Honour a promise logged before a restart: ``term`` (and every lower term) counts as
-        granted here, so it is never granted again."""
+        granted here, so it is never granted again.  ``seen`` is the part of ``term`` that
+        is evidence of lease activity (default all of it); a rejoin passes the promises it
+        learnt, not the root labels that also raise its floor (:attr:`terms_seen`)."""
         self._granted_max = max(self._granted_max, term)
         self._granted_top = max(self._granted_top, term)
         self._highest = max(self._highest, term)
+        self._seen = max(self._seen, term if seen is None else min(seen, term))
 
     @property
     def starting(self) -> bool:
@@ -174,6 +186,7 @@ class PeerGrants:
             return GrantDecision(True, "granted", term, self._duration, bool(ended), ended)
         finally:
             self._highest = max(self._highest, term)
+            self._seen = max(self._seen, term)
 
     def on_release(self, holder: str, term: int, inc: int = 0) -> int:
         """Apply ``holder``'s release (or cancel) of ``term`` from incarnation ``inc``.
@@ -188,6 +201,7 @@ class PeerGrants:
             self._active = False
         self._granted_max = max(self._granted_max, term)
         self._highest = max(self._highest, term)
+        self._seen = max(self._seen, term)
         return expired
 
 

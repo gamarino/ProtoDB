@@ -45,8 +45,11 @@ Rejoining and witnesses
     its own ballots again, never accepts a root below a ballot it granted, and reports a
     root at or above every committed root, as it did before it lost its log.  A node without
     a loaded log answers ``unknown`` and is never counted.  ``empty`` answers count only
-    for a cluster's first start: every other member answered and none has accepted any
-    root.  Any other loss of a majority of logs needs the operator's
+    for a cluster's first start: every other member answered, none has accepted any root,
+    and none knows of any lease term (ruling R51: a lease granted before the first commit
+    leaves its term at its granters and its holder).  A node whose startup grace is shorter
+    than :attr:`ClusterCoordinator.restart_grace` completes any other rejoin only once that
+    much time has passed since its start.  Any other loss of a majority of logs needs the operator's
     :meth:`ClusterCoordinator.force_rejoin`.  With proposer-qualified ballots, two
     different roots never share a label, and no acknowledged root is lost, while at most
     one acceptor log is lost at a time, with its records, whether the object store is
@@ -221,11 +224,13 @@ class ClusterCoordinator:
         acquire_timeout: default seconds :meth:`acquire` tries before ``ProtoTimeoutError``.
         backoff: ``(min_seconds, max_seconds)`` of the jittered back-off between lost attempts.
         startup_grace: seconds after :meth:`start` during which this node grants nothing and
-            accepts no replicated root (default ``lease_duration``): a restarted node does not
-            remember when the grants of its previous life end.  ``0`` is accepted only on a
-            cluster's first start (ruling R50): :meth:`attach` refuses it on an acceptor log
-            that is not empty, and a rejoin with an empty log into a cluster that accepted
-            roots waits one ``lease_duration`` from :meth:`start` instead, as with the default
+            accepts no replicated root (default :attr:`restart_grace`, ``lease_duration +
+            drift_margin``): a restarted node does not remember when the grants of its
+            previous life end.  A shorter grace (``0`` included) is accepted only on a
+            cluster's first start (rulings R50, R51): :meth:`attach` refuses it on an acceptor
+            log that is not empty, and a rejoin with an empty log that is not a first start
+            (some member has accepted a root or seen a lease term) waits
+            :attr:`restart_grace` from :meth:`start` before it completes
             (``stats()["rejoin_blocked"]`` says so meanwhile).
         fetch_timeout: seconds a peer page request waits for an answer; must be shorter than
             ``lease_duration - drift_margin`` (default a quarter of it), and a request made
@@ -279,8 +284,8 @@ class ClusterCoordinator:
         if high < low:
             raise ProtoValidationError("backoff must satisfy min_seconds <= max_seconds")
         self._backoff = (low, high)
-        self._grace = self._duration if startup_grace is None else _number("startup_grace", startup_grace,
-                                                                              positive=False)
+        self._grace = self._duration + margin if startup_grace is None else _number(
+            "startup_grace", startup_grace, positive=False)
         window = self._duration - self._margin
         self._fetch_timeout = window / 4 if fetch_timeout is None else _number("fetch_timeout", fetch_timeout)
         if self._fetch_timeout >= window:
@@ -307,6 +312,7 @@ class ClusterCoordinator:
         self._cond = threading.Condition(self._lock)
         self._local = threading.Lock()      # queues this process's threads
         self._grants = None                 # PeerGrants, created by start()
+        self._started = None                # self._clock() when start() ran
         self._state = "new"
         self._inc = random.SystemRandom().getrandbits(62)
         self._attempt = None
@@ -351,6 +357,18 @@ class ClusterCoordinator:
         return self._node
 
     @property
+    def restart_grace(self) -> float:
+        """The shortest startup grace a node that served the cluster before may use:
+        ``lease_duration + drift_margin`` seconds (ruling R51), also the default grace.
+
+        A grant this node made in a previous life blocks other holders for ``lease_duration``
+        on this node's clock from a moment before :meth:`start`, so ``lease_duration`` alone
+        already outlasts it under the clock-rate bound ``drift_margin`` is sized for; the
+        drift margin is a deliberate cushion on top (for example a disk moved to a host whose
+        clock runs at another rate).  Only a cluster's first start may use less."""
+        return self._duration + self._margin
+
+    @property
     def cluster_size(self) -> int:
         """Number of members, ``N``."""
         return len(self._peers)
@@ -391,7 +409,8 @@ class ClusterCoordinator:
         ``persisting`` and ``failure`` (the exception that fenced the node or stopped its
         persister, or ``None``).  ``rejoin_blocked`` says why a rejoin that has its answers
         cannot complete (the records of the adopted root are unobtainable, or a startup
-        grace of 0 outside a cluster's first start), else ``None``."""
+        grace shorter than :attr:`restart_grace` outside a cluster's first start), else
+        ``None``."""
         with self._lock:
             out = dict(self._stats)
             out["critical"] = dict(self._critical)
@@ -542,14 +561,14 @@ class ClusterCoordinator:
                 self._tier = None
             raise
         accepted, committed, top, promised, empty = logged
-        if not empty and self._grace == 0 and self._others:
+        if not empty and self._grace < self.restart_grace and self._others:
             with self._lock:
                 self._tier = None
             raise ProtoValidationError(
-                f"Node {self._node}: startup_grace=0 is accepted only on a cluster's first start; this "
-                f"node's acceptor log shows it has served the cluster before, so it may have granted a "
-                f"lease that is still running.  Start it with a positive startup_grace (default: "
-                f"lease_duration)")
+                f"Node {self._node}: startup_grace={self._grace:g} is accepted only on a cluster's first "
+                f"start; this node's acceptor log shows it has served the cluster before, so it may "
+                f"have granted a lease that is still running.  Start it with a startup_grace of at "
+                f"least lease_duration + drift_margin = {self.restart_grace:g} s (the default)")
         rejoin = empty and bool(self._others)
         if empty and not self._others:
             tier.log_rejoined()         # a one-member cluster has nobody to learn from
@@ -611,11 +630,22 @@ class ClusterCoordinator:
         above the accepted root it adopts.
 
         On a node that has rejoined (a survivor): forget the committed root it knows when that
-        root orders above every root it accepted.  Such knowledge was learnt from other nodes
-        (answers, grants) and never logged; after a majority loss it names a commit that was
-        lost with the other logs, and the commit guard refuses to build below it
+        root orders above every root it accepted; after a majority loss it names a commit that
+        was lost with the other logs, and the commit guard refuses to build below it
         (``ProtoCorruptionError``).  The node then confirms the committed root under a lease
         before its next snapshot.  A rejoin it may need later is not forced.
+
+        What persists across a restart, precisely.  Committed knowledge comes from two kinds of
+        source.  (1) Knowledge that is not acceptance -- a grant reply, a recovery or rejoin
+        answer, the persisted root of the object store -- is held in memory only, never logged.
+        It is the only knowledge that can order above the accepted root, hence the only
+        knowledge this call drops, and a restart does not bring it back.  (2) A committed root
+        learnt from a release, or from this node's own commit, is logged in the acceptor log
+        (``roots.log``); being known committed through the cluster, it is accepted knowledge as
+        well, in memory and again when a restart reloads it, so it never orders above the
+        accepted root: this call keeps it, and the guard never refuses to build below it,
+        because this node's own accepted root takes part in its next base.  So after this call
+        the operator has nothing more to do on that node, before or after a restart.
 
         Only for an operator who knows that the members that cannot answer lost their acceptor
         logs too (a majority of disks lost: the commits after the persisted root may be lost)
@@ -643,22 +673,37 @@ class ClusterCoordinator:
             logger.warning("Node %s: the operator dropped the committed root (label %d, epoch %d), which "
                            "orders above every root this node accepted", self._node, *dropped)
 
-    def _rejoin_decision(self, answers: dict, states: dict) -> Optional[tuple]:
+    def _rejoin_decision(self, answers: dict, states: dict, promised: dict) -> Optional[tuple]:
         """``(answering members, how)``: the answers a rejoin learns from and why they are
-        enough -- ``"forced"``, ``"witnesses"`` or ``"new"`` (a cluster's first start) -- or
-        ``None`` when they are not enough (lock held).
+        enough -- ``"forced"``, ``"witnesses"``, ``"new"`` (a cluster's first start) or
+        ``"rootless"`` -- or ``None`` when they are not enough (lock held).
 
         Witness answers (``"ok"``) count; ``N - majority + 1`` of them are needed.  Answers of
         empty members (rejoining) are counted only for a cluster's first start: when every
-        other member answered and none of them has accepted any root (each is empty, or a
-        witness that completed its own first start and has accepted nothing since).  Forced, any
-        ``majority - 1`` answers of loaded members do.  ``"unknown"`` answers never count."""
+        other member answered, none of them has accepted any root (each is empty, or a
+        witness that completed its own first start and has accepted nothing since) AND each
+        reports a promised term of 0, i.e. no member has seen any lease term (ruling R51).  "No
+        member accepted a root" alone does not mean "no member granted a lease": a lease
+        granted before any commit leaves its term at its granters and at its holder, whose
+        own grant goes through its :class:`~proto_db.cluster.lease.PeerGrants`, so at least
+        one other member reports it (a lease needs a majority, at least two members, and
+        every granter saw the request).  When every other member answered and none accepted a
+        root but some term was seen, the answers are still enough -- they include every member
+        that granted or requested a term, and no root can have been committed -- but as
+        ``"rootless"``, which is not a first start: a node with a short grace waits
+        :attr:`restart_grace` first (:meth:`_complete_rejoin`).  Without it, a member that
+        finishes its first start and requests a lease at once would leave the members still
+        rejoining with too few witnesses for good.  Forced,
+        any ``majority - 1`` answers of loaded members do.  ``"unknown"`` answers never count."""
         loaded = {p: a for p, a in answers.items() if states.get(p) in ("ok", "empty")}
         witnesses = {p: a for p, a in loaded.items() if states[p] == "ok"}
         if self._rejoin_forced:
             return (list(loaded), "forced") if len(loaded) >= self._majority - 1 else None
         if len(loaded) == len(self._others) and all(self._rootless(a) for a in loaded.values()):
-            return list(loaded), "new"      # a new cluster: nothing was ever accepted or committed
+            if not any(promised.get(p) for p in loaded):
+                return list(loaded), "new"      # a new cluster: no root accepted, no term seen
+            if len(witnesses) < self._rejoin_answers():
+                return list(loaded), "rootless"     # waits, see above
         if len(witnesses) >= self._rejoin_answers():
             return list(witnesses), "witnesses"
         return None
@@ -676,7 +721,7 @@ class ClusterCoordinator:
                                    self._request_timeout)
                 with self._lock:
                     answers, promised = dict(waiter.answers), dict(waiter.promised)
-                    decision = self._rejoin_decision(answers, dict(waiter.states))
+                    decision = self._rejoin_decision(answers, dict(waiter.states), promised)
                 if decision is not None:
                     counted, how = decision
                     if self._complete_rejoin(tier, [answers[p] for p in counted], [promised[p] for p in counted],
@@ -701,10 +746,11 @@ class ClusterCoordinator:
         root durably, then the rejoined marker, and only then act as an acceptor and a
         witness.  Return False, leaving the node rejoining with the reason in ``stats()``,
         when the records cannot be obtained now, or when ``how`` is not a cluster's first
-        start, this node's startup grace is 0 and one ``lease_duration`` has not yet passed
-        since :meth:`start`: an empty acceptor log cannot tell a member that joins its
-        cluster's first start late from a wiped one, so such a node waits the default grace
-        instead (a node whose log is not empty refuses a grace of 0 in :meth:`attach`).
+        start, this node's startup grace is shorter than :attr:`restart_grace` and that much
+        time has not yet passed since :meth:`start`: an empty acceptor log cannot tell a
+        member that joins its cluster's first start late from a wiped one, so such a node
+        waits the safe grace instead (a node whose log is not empty refuses a short grace in
+        :meth:`attach`).
 
         Re-proposing the highest accepted root is what Paxos prescribes, but only together
         with its value: adopted without its records, a root whose records lived on lost disks
@@ -712,11 +758,13 @@ class ClusterCoordinator:
         report are adopted as committed knowledge only (they may have been read from the
         persisted root of the store, which is never acceptance), are not logged, and, for a
         forced rejoin, only up to the adopted root (a majority loss may have lost them)."""
-        if how != "new" and self._grace == 0 and self._clock() < self._started + self._duration:
+        safe = self.restart_grace
+        if how != "new" and self._grace < safe and self._clock() < self._started + safe:
             return self._block_rejoin(
-                tier, "startup_grace=0 is accepted only on a cluster's first start, and this cluster has "
-                      "accepted roots; this node waits one lease_duration from its start (the default "
-                      "grace) before it rejoins")
+                tier, f"startup_grace={self._grace:g} is accepted only on a cluster's first start, and "
+                      f"some member has accepted a root or seen a lease term; this node waits "
+                      f"lease_duration + drift_margin = {safe:g} s from its start (the safe grace) "
+                      f"before it rejoins")
         learnt = max(promised + [max(a[2], c[2]) for a, c, _ in answers] + [0])
         best = committed = None
         for (ak, aroot, alabel), (ck, croot, clabel), _ in answers:
@@ -739,7 +787,8 @@ class ClusterCoordinator:
         with self._cond:
             if self._tier is not tier:
                 return True
-            self._grants.restore(learnt)
+            # The floor is every term and label learnt; the activity is the promises only.
+            self._grants.restore(learnt, seen=max(promised + [0]))
             self._hint = max(self._hint, learnt)
             if best is not None:
                 self._observe_accepted(True, best[1], best[0])
@@ -1049,10 +1098,16 @@ class ClusterCoordinator:
                     reply = make_message("answer", self._node, rid=msg["rid"], root=None, committed=None,
                                          certain=False, promised=0, state=state)
                 else:
+                    # ``promised``: the lease activity this node knows of (terms seen in requests
+                    # and releases, promises) and the accepted root's label -- not the committed
+                    # root's label, which rides in ``committed`` and may come from the persisted
+                    # root of the store, nor a floor restored from such labels.  A rejoin tells a
+                    # cluster's first start by ``promised == 0`` (ruling R51), and a new cluster
+                    # over an existing object store has seen no lease term yet.
                     reply = make_message("answer", self._node, rid=msg["rid"], root=self._wire(self._accepted),
                                          committed=self._wire(self._committed), certain=not self._suspect_term,
-                                         promised=max(self._grants.highest_term, self._accepted[2],
-                                                      self._committed[2]), state=state)
+                                         promised=max(self._grants.terms_seen, self._accepted[2]),
+                                         state=state)
             else:
                 self._on_answer(sender, kind, msg)
         if promise is not None and not self._promise(promise, msg["term"]):
@@ -1568,6 +1623,8 @@ class ClusterCoordinator:
                                base=base_wire, base_ranges=base_ranges)
             self._stats["replications"] += 1
         failure = None
+        acks = nacks = 0
+        stopped = False
         try:
             for part in parts:                         # same ordered link, before the replicate
                 self._broadcast(part)
@@ -1594,7 +1651,9 @@ class ClusterCoordinator:
 
                 while not decided():
                     self._cond.wait(timeout=max(0.001, min(0.05, lease.remaining())))
-                ok = len(waiter.acks) >= self._majority and lease.is_valid()
+                acks, nacks = len(waiter.acks), len(waiter.nacks)
+                ok = acks >= self._majority and lease.is_valid()
+                stopped = self._state != "running"
                 if ok:
                     self._observe_committed(True, root, label, self._node)
                     if self._suspect_term and self._suspect_term <= label:
@@ -1602,7 +1661,6 @@ class ClusterCoordinator:
                 else:
                     self._stats["replication_failures"] += 1
                     self._suspect_term = max(self._suspect_term, label)
-                acks = len(waiter.acks)
         except ProtoCorruptionError:
             # A protocol violation (two roots sharing a key) is an invariant breach, never an
             # unknown outcome: report it as it is.
@@ -1626,9 +1684,26 @@ class ClusterCoordinator:
                 f"Node {self._node}: the commit of root epoch {root.epoch} failed after the root was sent "
                 f"({failure}); peers may have acknowledged it, so it may or may not take effect") from failure
         if not ok:
+            if acks >= self._majority and stopped:
+                why = (f"the coordinator stopped before this node recorded the outcome ({acks} "
+                       f"acknowledgements, {self._majority} needed, had arrived)")
+            elif acks >= self._majority:
+                # A majority acknowledged, but this node observed it only after its lease had
+                # ended (its thread was not scheduled in time, re-review 4 M2).  Reported as
+                # unknown, conservatively: a commit is reported only when its majority is
+                # observed within the lease.
+                why = (f"the lease ended before this node observed the outcome ({acks} acknowledgements, "
+                       f"{self._majority} needed, were counted only after the lease had ended)")
+            elif stopped:
+                why = (f"the coordinator stopped with {acks} of the {self._majority} acknowledgements "
+                       f"needed")
+            elif nacks > self.cluster_size - self._majority:
+                why = (f"{nacks} members refused the root, and only {acks} of the {self._majority} "
+                       f"acknowledgements needed arrived")
+            else:
+                why = f"only {acks} of the {self._majority} acknowledgements needed arrived before the lease ended"
             raise ProtoOutcomeUnknownError(
-                f"Node {self._node}: only {acks} of the {self._majority} acknowledgements needed arrived "
-                f"before the lease ended; the root (epoch {root.epoch}) may or may not take effect")
+                f"Node {self._node}: {why}; the root (epoch {root.epoch}) may or may not take effect")
         try:
             tier.shipped(records, root, label)
             tier.log_root("committed", label, root, sync=False)

@@ -33,6 +33,8 @@ from proto_db.storage.memory import MemoryStorage
 from tests.support.cluster import MemoryTier
 
 D = 10.0
+MARGIN = 1.0                # the drift margin of every harness node
+GRACE = D + MARGIN          # the shortest startup grace a restarted node may use (ruling R51)
 _ids = itertools.count(1)
 
 
@@ -167,14 +169,15 @@ class Harness:
 
     def _node(self, name, grace):
         node = ClusterCoordinator(name, self.peers, transport=self.net.transport(), lease_duration=D,
-                                  drift_margin=1.0, request_timeout=0.5, startup_grace=grace,
+                                  drift_margin=MARGIN, request_timeout=0.5, startup_grace=grace,
                                   clock=self.clock, seed=1, persist_interval=60.0, persist_lag=60.0)
         node.start()
         node.attach(self.tier_class(self.disks[name], name))
         return node
 
     def restart(self, name, *, wipe=False, responders=None):
-        """Restart ``name`` with a startup grace of one lease; ``wipe`` loses its disk, and the
+        """Restart ``name`` with the shortest safe startup grace (:data:`GRACE`, one lease plus
+        the drift margin); ``wipe`` loses its disk, and the
         node then rejoins with the answers of ``responders`` (default: every other node; an
         empty set leaves it rejoining)."""
         old = self.nodes[name]
@@ -182,7 +185,7 @@ class Harness:
         self.retired.append(old)
         if wipe:
             self.disks[name] = MemoryStorage()
-        self.nodes[name] = self._node(name, D)
+        self.nodes[name] = self._node(name, GRACE)
         if wipe and (responders is None or responders):
             self.rejoin(name, responders)
         return self.nodes[name]

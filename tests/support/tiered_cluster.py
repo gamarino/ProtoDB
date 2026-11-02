@@ -14,9 +14,9 @@ constructor returns once every member has finished its first rejoin.
   node rejoins before voting, and ``force_rejoin`` is the operator's disaster-recovery
   decision when a majority of disks is lost
   (:meth:`~proto_db.cluster.coordinator.ClusterCoordinator.force_rejoin`).  A revived node
-  starts with a startup grace of one lease (unless overridden): a grace of 0 is accepted
-  only on a cluster's first start (D46, ruling R50), because a restarted node does not
-  remember when its last grant ends;
+  starts with the coordinator's default startup grace, ``lease_duration + drift_margin``
+  (unless overridden): a shorter grace is accepted only on a cluster's first start (D46,
+  rulings R50 and R51), because a restarted node does not remember when its last grant ends;
 * ``value(node)``: the counter ``n`` of database ``db`` read by a new transaction;
 * ``eventually(node, expected)``: True once ``value(node) == expected`` (within 5 s): a
   node learns another node's commit when its release arrives.
@@ -119,9 +119,9 @@ class TieredCluster:
         shutil.rmtree(os.path.join(self.path, node), ignore_errors=True)
 
     def revive(self, node: str, *, force_rejoin: bool = False, **overrides) -> None:
-        """Start the node again (a fresh coordinator and a reopened storage), with a startup
-        grace of one lease unless ``overrides`` sets one."""
-        overrides.setdefault("startup_grace", self.cluster.kwargs["lease_duration"])
+        """Start the node again (a fresh coordinator and a reopened storage), with the default
+        (safe) startup grace unless ``overrides`` sets one."""
+        overrides.setdefault("startup_grace", None)
         coordinator = self.cluster.restart(node, **overrides)
         if force_rejoin:
             coordinator.force_rejoin()

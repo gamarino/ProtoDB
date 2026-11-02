@@ -24,8 +24,10 @@ node's drifting clock mapped back by ``DriftClock.to_real``):
    epoch was no longer current never succeeds.
 """
 import itertools
+import re
 import threading
 import time
+import warnings
 
 import pytest
 from hypothesis import HealthCheck, given, settings
@@ -43,6 +45,8 @@ MARGIN = 0.03
 RHO = 0.04                  # 2 * RHO * LEASE / (1 + RHO) = 0.023 <= MARGIN
 RUN_SECONDS = 1.2
 THREADS_PER_NODE = 2
+FINAL_RETRIES = []          # (schedule seed, attempt, error type, message) of every final-commit retry
+FINAL_RETRIES_LOCK = threading.Lock()
 COORD_KW = dict(lease_duration=LEASE, drift_margin=MARGIN, request_timeout=0.15, startup_grace=0.0,
                 backoff=(0.001, 0.02), acquire_timeout=0.6)
 
@@ -254,7 +258,7 @@ def _run_schedule(schedule):
                 cl.crash(node_id)
                 crashed.add(node_id)
             elif kind == "restart":
-                cl.restart(node_id, startup_grace=LEASE)
+                cl.restart(node_id, startup_grace=LEASE + MARGIN)   # the safe grace (R51)
                 crashed.discard(node_id)
                 recorder.wrap(cl[node_id], clocks[node_id])
                 freezer.wrap(cl[node_id])
@@ -273,8 +277,11 @@ def _run_schedule(schedule):
             # stopped has none yet, and without a space it grants nothing (Y2: the final commit
             # then found 2 live members of 5 and timed out).  Restarted nodes grant only after
             # their startup grace, so a lease may take a few attempts.  The write is idempotent,
-            # so an outcome left unknown (acknowledgements later than the 0.3 s lease on a loaded
-            # machine) is retried as well; the invariants below do not depend on it.
+            # so an outcome left unknown is retried as well; the invariants below do not depend
+            # on it.  Measured cause of those (re-review 4, M2): the committing thread woke after
+            # its 0.3 s lease had ended (a scheduling convoy under load), often with a majority
+            # already acknowledged; the coordinator then reports the outcome as unknown,
+            # conservatively.  Every retry is reported (count and reason), never hidden.
             for node_id in alive:
                 space_of(node_id)
             final = space_of(alive[0])
@@ -283,7 +290,11 @@ def _run_schedule(schedule):
                     final.open_database("db").run(lambda tr: tr.set_root_object("final", True), retries=50,
                                                   backoff=(0.01, 0.05))
                     break
-                except (ProtoTimeoutError, ProtoOutcomeUnknownError):
+                except (ProtoTimeoutError, ProtoOutcomeUnknownError) as e:
+                    with FINAL_RETRIES_LOCK:
+                        FINAL_RETRIES.append((schedule["seed"], attempt, type(e).__name__, str(e)))
+                    print(f"final commit retry {attempt + 1} (seed {schedule['seed']}): "
+                          f"{type(e).__name__}: {e}")
                     if attempt == 10:
                         raise
             tr = final.open_database("db").new_transaction()
@@ -321,6 +332,24 @@ def _run_schedule(schedule):
 @given(schedule=schedule_strategy)
 def test_random_fault_schedules_keep_the_lease_and_the_data_safe(schedule):
     _run_schedule(schedule)
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _report_final_commit_retries():
+    """Self-report (re-review 4, M2): after this module, a warning states how many final
+    commits were retried and why, so a retry is visible in the run summary, never silent."""
+    with FINAL_RETRIES_LOCK:
+        FINAL_RETRIES.clear()
+    yield
+    with FINAL_RETRIES_LOCK:
+        retries = list(FINAL_RETRIES)
+    if retries:
+        reasons = {}
+        for _, _, kind, message in retries:
+            key = f"{kind}: " + re.sub(r"\bn\d+\b|\d+(\.\d+)?", "#", message.split(";")[0])
+            reasons[key] = reasons.get(key, 0) + 1
+        detail = "; ".join(f"{count} x {reason}" for reason, count in sorted(reasons.items()))
+        warnings.warn(f"{len(retries)} final-commit retries in the safety schedules: {detail}", stacklevel=1)
 
 
 def test_a_frozen_holder_overtaken_by_another_commit_is_fenced():

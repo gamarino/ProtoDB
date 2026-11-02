@@ -24,7 +24,7 @@ from proto_db.errors import ProtoCorruptionError, ProtoOutcomeUnknownError
 from proto_db.storage.format import FORMAT_VERSION, RootRecord
 from proto_db.storage.memory import MemoryStorage
 from tests.support.cluster import Cluster, MemoryTier
-from tests.support.manual_cluster import D, Harness, rec
+from tests.support.manual_cluster import D, GRACE, Harness, rec
 
 pytestmark = [pytest.mark.timeout(60)]
 
@@ -52,7 +52,7 @@ def test_x1_a_rejoined_acknowledger_reports_the_committed_root_it_lost(harness):
     h.release("a", lease_a, to=())                    # c never learns R
     h.restart("b", wipe=True)                         # b rejoins, answered by a and c
     assert h.nodes["b"].accepted_root()[1] == r       # learnt from the witnesses, and logged
-    h.clock.t += D
+    h.clock.t += GRACE
     lease_c = h.attempt("c", {"b"})
     base, label = h.base("c", lease_c, responders={"b"})     # a's answer is late
     assert base == r and base != r1, "c would build on the bootstrap root and lose R"
@@ -111,7 +111,7 @@ def _unattached(h, name):
     old.stop()
     h.retired.append(old)
     node = ClusterCoordinator(name, h.peers, transport=h.net.transport(), lease_duration=D, drift_margin=1.0,
-                              request_timeout=0.5, startup_grace=D, clock=h.clock, seed=1,
+                              request_timeout=0.5, startup_grace=GRACE, clock=h.clock, seed=1,
                               persist_interval=60.0, persist_lag=60.0)
     node.start()
     h.nodes[name] = node
@@ -123,7 +123,7 @@ def test_x2_an_unattached_coordinator_is_never_a_rejoin_witness(harness):
     h.bootstrap("a")
     last = None
     for i in range(3):                                # c leases with b only; a hears nothing
-        h.clock.t += D
+        h.clock.t += GRACE
         lease_c = h.attempt("c", {"b"})
         r = rec(2 + i)
         assert not isinstance(h.replicate("c", lease_c, r, to={"b"}), Exception)
@@ -137,7 +137,7 @@ def test_x2_an_unattached_coordinator_is_never_a_rejoin_witness(harness):
     b = h.nodes["b"]
     assert b._grants.granted_top >= last[0]           # the promise it had made c
     assert b.accepted_root()[1] == last[1]            # and the root it had accepted
-    h.clock.t += D
+    h.clock.t += GRACE
     lease_a = h.attempt("a", {"b"})
     assert lease_a.term > last[0]
     base, _ = h.base("a", lease_a, responders={"b"})  # c's answer is late
@@ -158,7 +158,7 @@ def test_x2_a_node_whose_log_is_still_loading_neither_answers_nor_grants():
         old.stop()
         cl.retired.append(old)
         node = ClusterCoordinator("n2", cl.peers, transport=cl.net.endpoint(), lease_duration=2.0,
-                                  drift_margin=0.2, request_timeout=0.2, startup_grace=0.2)
+                                  drift_margin=0.2, request_timeout=0.2, startup_grace=2.2)
         node.start()
         cl.nodes["n2"] = node
         attaching = threading.Thread(target=node.attach, args=(SlowTier(cl.disks["n2"], "n2"),))
@@ -196,7 +196,7 @@ def test_x3_majority_disk_loss_needs_force_rejoin(harness):
     assert h.nodes["b"].accepted_root()[1] == r       # a answered: nothing lost here
     h.nodes["c"].force_rejoin()
     assert h.rejoin("c", {"a", "b"})
-    h.clock.t += D
+    h.clock.t += GRACE
     lease_c = h.attempt("c", {"b"})
     assert h.base("c", lease_c, responders={"b"})[0] == r
 
@@ -210,7 +210,7 @@ def test_x3_a_new_cluster_starts_even_when_members_finish_their_first_rejoin_at_
 def test_x4_a_protocol_violation_after_the_root_was_sent_is_not_an_unknown_outcome(harness):
     h = harness()
     h.bootstrap("a")
-    h.clock.t += D
+    h.clock.t += GRACE
     lease = h.attempt("a", {"b", "c"})
     node = h.nodes["a"]
     clash = rec(5)
@@ -266,7 +266,7 @@ def test_probe_inflight_a_granter_wiped_during_a_lease(harness):
     r = rec(2)
     assert not isinstance(h.replicate("a", lease_a, r, to={"b", "c"}), Exception)
     h.release("a", lease_a, to={"b", "c"})
-    h.clock.t += D
+    h.clock.t += GRACE
     terms, epoch = {lease_a.term}, r.epoch
     for name, granters in (("c", {"b"}), ("b", {"c"}), ("a", {"c"})):
         lease = h.attempt(name, granters)
@@ -277,7 +277,7 @@ def test_probe_inflight_a_granter_wiped_during_a_lease(harness):
         nxt = rec(epoch + 1)
         assert not isinstance(h.replicate(name, lease, nxt, to=granters), Exception)
         h.release(name, lease, to=set("abc") - {name})
-        h.clock.t += D
+        h.clock.t += GRACE
         epoch += 1
 
 
@@ -291,7 +291,7 @@ def test_probe_inflight_a_holder_wiped_during_its_lease(harness):
     assert not isinstance(h.replicate("a", lease_a, r, to={"b"}), Exception)
     h.restart("a", wipe=True)
     assert h.nodes["a"].accepted_root()[1] == r
-    h.clock.t += D
+    h.clock.t += GRACE
     lease = h.attempt("a", {"c"})
     assert not isinstance(lease, Exception) and lease.term > lease_a.term
     assert h.base("a", lease, responders={"b", "c"})[0] == r

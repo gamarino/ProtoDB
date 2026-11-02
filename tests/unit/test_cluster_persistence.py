@@ -134,8 +134,9 @@ def test_the_whole_cluster_restarting_on_its_disks_loses_nothing_unpersisted(tmp
         _commit(tc, tc.ids, 7)
     store.set_outage(False)
     assert _remote_value(store) is None or _remote_value(store) < 7
-    # Same local directories, so a startup grace of one lease (0 is for a cluster's first start only).
-    with TieredCluster(tmp_path, store=store, startup_grace=FAST["lease_duration"]) as tc:
+    # Same local directories, so the default startup grace (a shorter one is for a cluster's first
+    # start only).
+    with TieredCluster(tmp_path, store=store, startup_grace=None) as tc:
         assert tc.eventually("n1", 7)
         tc.db("n1").run(incr, **RUN_KW)
         tc.spaces["n1"].sync(timeout=15)

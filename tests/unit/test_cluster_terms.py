@@ -16,7 +16,7 @@ import pytest
 
 from proto_db.errors import ProtoCorruptionError, ProtoOutcomeUnknownError, ProtoTimeoutError
 from proto_db.cluster.lease import LeaseAttempt
-from tests.support.manual_cluster import D, Harness, rec
+from tests.support.manual_cluster import GRACE, Harness, rec
 
 pytestmark = [pytest.mark.timeout(30)]
 
@@ -32,13 +32,13 @@ def test_a_restarted_peer_never_grants_a_term_twice_and_the_committed_root_survi
         assert isinstance(outcome, ProtoOutcomeUnknownError)
         h.release("a", lease_a, to=())                        # lost too
         h.restart("b")                                        # disk intact
-        h.clock.t += D                                        # grace over, every grant expired
+        h.clock.t += GRACE                                        # grace over, every grant expired
         lease_c = h.attempt("c", {"b"})
         assert lease_c.term > term, "b granted a term it had already granted before its restart"
         r_prime = rec(2)
         assert not isinstance(h.replicate("c", lease_c, r_prime, to={"b"}), Exception)
         h.release("c", lease_c, to={"a", "b"})
-        h.clock.t += D
+        h.clock.t += GRACE
         lease_a2 = h.attempt("a", {"b", "c"})
         root, _ = h.base("a", lease_a2, responders={"b", "c"})
         assert root == r_prime                                # never the minority root r
@@ -95,20 +95,20 @@ def test_a_wiped_granter_never_lets_two_roots_share_a_label():
         assert isinstance(h.replicate("a", lease_a, r, to=(), expire=True), ProtoOutcomeUnknownError)
         h.release("a", lease_a, to=())
         h.restart("b", wipe=True)                             # the disk is lost; b rejoins
-        h.clock.t += D
+        h.clock.t += GRACE
         lease_c = h.attempt("c", {"b"})
         assert lease_c.term != lease_a.term
         root, _ = h.base("c", lease_c, responders={"b"})      # a's answer is lost
         r_prime = rec(root.epoch + 1)                         # b rejoined knowing a's R: c builds on it
         assert not isinstance(h.replicate("c", lease_c, r_prime, to={"b"}), Exception)
         h.release("c", lease_c, to={"a", "b"})
-        h.clock.t += D
+        h.clock.t += GRACE
         for _ in range(3):                                    # every lease of a now works ...
             lease = h.attempt("a", {"b", "c"})
             assert not isinstance(lease, Exception), lease
             assert h.base("a", lease, responders={"b", "c"})[0] == r_prime
             h.release("a", lease, to={"b", "c"})
-            h.clock.t += D
+            h.clock.t += GRACE
         for _ in range(3):                                    # ... and with b down, c and a commit
             lease = h.attempt("c", {"a"})
             assert not isinstance(lease, Exception), lease
@@ -117,7 +117,7 @@ def test_a_wiped_granter_never_lets_two_roots_share_a_label():
             nxt = rec(base.epoch + 1)
             assert not isinstance(h.replicate("c", lease, nxt, to={"a"}), Exception)
             h.release("c", lease, to={"a"})
-            h.clock.t += D
+            h.clock.t += GRACE
         assert h.nodes["b"].stats()["rejoins"] == 1
     finally:
         h.close()
@@ -138,7 +138,7 @@ def test_a_wiped_proposer_never_wins_its_own_ballot_twice():
         assert not isinstance(h.replicate("a", lease_a, r, to={"b"}), Exception)   # committed: a + b
         h.release("a", lease_a, to=())                        # c never learns it
         h.restart("a", wipe=True, responders=())              # the disk is lost; b is unreachable
-        h.clock.t += D
+        h.clock.t += GRACE
         h.rejoin("a", {"c"}, timeout=1.0)                     # c alone must not be enough
         outcome = h.attempt("a", {"c"}, timeout=1.0)
         assert getattr(outcome, "term", None) != b_term, "a won its ballot B a second time"

@@ -32,7 +32,9 @@ fields of its type:
                refused the replicated root; ``root`` is its accepted root.
 ``query``      ``rid``: ask a peer for the roots it knows (recovery, rejoin).
 ``answer``     ``rid``, ``root``, ``committed``, ``certain``, ``promised``, ``state``: the peer's
-               accepted and committed roots and the highest term it has seen or promised;
+               accepted and committed roots and the highest lease term it has seen in a
+               request or release, promised, or found as its accepted root's label (the
+               committed root's label is not folded in: it travels in ``committed``);
                ``state`` is ``"ok"`` (a witness), ``"empty"`` (it is rejoining) or
                ``"unknown"`` (no acceptor log loaded: the roots are ``None`` and the answer
                never counts).

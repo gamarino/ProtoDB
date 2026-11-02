@@ -99,6 +99,7 @@ def test_contending_peers_never_reach_the_storage(tmp_path, backend):
     ids = itertools.count()
     with Cluster(PEERS, **CLUSTER_KW) as cl:
         spaces = [ObjectSpace(s, coordinator=cl[n]) for s, n in zip(storages, cl.ids)]
+        cl.wait_rejoined()      # every first start done first (a late member waits, R51)
         spaces[0].new_database("db")
         dbs = [s.open_database("db") for s in spaces]
 
@@ -138,6 +139,7 @@ def _throughput(storages_factory, tmp_path, peers, threads=4, seconds=1.5, break
     counter = itertools.count()
     with Cluster(peers, **CLUSTER_KW) as cl:
         spaces = [ObjectSpace(s, coordinator=cl[n]) for s, n in zip(storages, cl.ids)]
+        cl.wait_rejoined()      # every first start done first (a late member waits, R51)
         spaces[0].new_database("db")
         dbs = [s.open_database("db") for s in spaces]
         stop_at = []
@@ -196,6 +198,7 @@ def test_a_read_before_the_release_is_handled_is_stale_never_lost(tmp_path):
     store, storages = _tiered_storages(tmp_path, 2)
     with Cluster(2, **CLUSTER_KW) as cl:
         spaces = [ObjectSpace(s, coordinator=cl[n]) for s, n in zip(storages, cl.ids)]
+        cl.wait_rejoined()      # every first start done first (a late member waits, R51)
         spaces[0].new_database("db")
         dbs = [s.open_database("db") for s in spaces]
         dbs[1].run(lambda tr: tr.set_root_object("ids", tr.new_counted_set().add(0)), **RUN_KW)

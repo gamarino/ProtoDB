@@ -128,7 +128,7 @@ def test_a_restarted_peer_honours_promises_through_its_startup_grace(baseline_th
         held = cl["n0"].acquire(timeout=5)
         cl.net.heal()
         # n1 restarts (forgets its grant); with the grace it still refuses n2 during n0's lease.
-        cl.restart("n1", startup_grace=FAST["lease_duration"])
+        cl.restart("n1", startup_grace=None)        # the default: lease_duration + drift_margin
         lease = cl["n2"].acquire(timeout=5)
         assert lease.acquired_at >= held.valid_until
         cl["n2"].release(lease)
@@ -261,12 +261,13 @@ def test_fetch_timeout_must_leave_part_of_the_lease():
     net.close()
 
 
-def test_the_default_startup_grace_lasts_one_lease(baseline_threads):
+def test_the_default_startup_grace_lasts_one_lease_plus_the_drift_margin(baseline_threads):
     kw = dict(FAST)
-    del kw["startup_grace"]                        # default: one lease_duration
+    del kw["startup_grace"]                        # default: lease_duration + drift_margin
     t0 = time.monotonic()
     with Cluster(3, tiers=True, **kw) as cl:
+        assert cl["n0"].restart_grace == pytest.approx(FAST["lease_duration"] + FAST["drift_margin"])
         lease = cl["n0"].acquire(timeout=5)
         waited = time.monotonic() - t0
         cl["n0"].release(lease)
-    assert waited >= FAST["lease_duration"]
+    assert waited >= FAST["lease_duration"] + FAST["drift_margin"]

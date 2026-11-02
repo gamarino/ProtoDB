@@ -151,6 +151,7 @@ def test_transactions_read_the_committed_root_not_the_storage():
     with Cluster(2, **FAST) as cl:
         storages = [RecordingStorage(shared) for _ in range(2)]
         spaces = [ObjectSpace(s, coordinator=cl[n]) for s, n in zip(storages, cl.ids)]
+        cl.wait_rejoined()      # every first start done first (a late member waits, R51)
         spaces[0].new_database("db")
         dbs = [s.open_database("db") for s in spaces]
         for i in range(10):
@@ -166,6 +167,7 @@ def test_the_commit_point_is_the_majority_acknowledgement():
     with Cluster(3, **FAST) as cl:
         shared = MemoryStorage()
         spaces = [ObjectSpace(shared, coordinator=cl[n], lock_timeout=1.0) for n in cl.ids]
+        cl.wait_rejoined()      # every first start done before any fault (a late member waits, R51)
         db = spaces[0].new_database("db")
         db.run(_incr, **RUN_KW)
         commits = cl["n0"].stats()["replications"] - cl["n0"].stats()["replication_failures"]
@@ -192,6 +194,7 @@ def test_a_holder_paused_past_its_lease_never_replicates():
         s0 = ObjectSpace(shared, coordinator=cl["n0"])
         s1 = ObjectSpace(shared, coordinator=cl["n1"])
         ObjectSpace(shared, coordinator=cl["n2"])        # a new cluster rejoins once every member answers
+        cl.wait_rejoined()      # every first start done before any fault (a late member waits, R51)
         s0.new_database("db")
         entered, resume = threading.Event(), threading.Event()
         original = cl["n0"].tier.outgoing
@@ -232,6 +235,7 @@ def test_a_late_replication_is_refused_by_peers_that_granted_a_newer_term():
         s0 = ObjectSpace(shared, coordinator=cl["n0"])
         s1 = ObjectSpace(shared, coordinator=cl["n1"])
         ObjectSpace(shared, coordinator=cl["n2"])        # a new cluster rejoins once every member answers
+        cl.wait_rejoined()      # every first start done before any fault (a late member waits, R51)
         s0.new_database("db")
         _value(s1)
         late = FAST["lease_duration"] * 1.5
@@ -280,6 +284,7 @@ def test_storage_root_reads_never_make_reads_go_backwards():
         s0 = ObjectSpace(shared, coordinator=cl["n0"])
         s1 = ObjectSpace(shared, coordinator=cl["n1"])
         ObjectSpace(shared, coordinator=cl["n2"])        # n2 grants and acknowledges with a tier only
+        cl.wait_rejoined()      # every first start done before any fault (a late member waits, R51)
         db0 = s0.new_database("db")
         db0.run(_incr, **RUN_KW)
         assert _value(s1) == 1
@@ -302,6 +307,7 @@ def test_sync_waits_for_the_persisted_epoch_and_exposes_both_epochs():
     shared = MemoryStorage()
     with Cluster(3, **FAST) as cl:
         spaces = [ObjectSpace(shared, coordinator=cl[n]) for n in cl.ids]
+        cl.wait_rejoined()      # every first start done before any fault (a late member waits, R51)
         db = spaces[0].new_database("db")
         for i in range(5):
             spaces[i % 3].open_database("db").run(_incr, **RUN_KW)

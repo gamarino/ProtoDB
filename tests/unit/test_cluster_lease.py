@@ -232,6 +232,23 @@ def test_granted_top_ignores_terms_closed_by_releases():
     assert g.granted_top == 1 and g.highest_term == 9
 
 
+
+def test_terms_seen_counts_lease_activity_not_label_floors():
+    """Ruling R51: a rejoin counts a cluster's first start only when no member knows of any
+    lease term.  A floor restored from root labels (a persisted root read from the store)
+    raises the terms this peer will refuse, but is no evidence that a lease was requested."""
+    g = PeerGrants(1.0, FakeClock(0.0), startup_grace=0.0)
+    g.restore(50, seen=0)                            # a rejoin's floor from labels only
+    assert g.highest_term == 50 and g.terms_seen == 0
+    assert not g.on_request("a", 49).granted         # the floor still holds
+    assert g.terms_seen == 49                        # a request is activity, granted or not
+    g.restore(60)                                    # a logged promise: activity
+    assert g.terms_seen == 60
+    g.on_release("b", 70)
+    assert g.terms_seen == 70
+    g.restore(80, seen=90)                           # the activity never exceeds the restored term
+    assert g.terms_seen == 80
+
 # -- Lease and fencing tokens -----------------------------------------------------------------
 
 def test_lease_is_valid_until_its_deadline_or_release():
