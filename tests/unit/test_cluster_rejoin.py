@@ -131,6 +131,7 @@ def test_x2_an_unattached_coordinator_is_never_a_rejoin_witness(harness):
         last = (lease_c.term, r)
     c = _unattached(h, "c")
     h.restart("b", wipe=True, responders=())
+    h.clock.t += GRACE                                # b's answers are fresh from now on (R53)
     assert not h.rejoin("b", {"a", "c"}, timeout=1.0), "the unattached c's answer was counted"
     c.attach(MemoryTier(h.disks["c"], "c"))
     assert h.rejoin("b", {"a", "c"})
@@ -189,6 +190,7 @@ def test_x3_majority_disk_loss_needs_force_rejoin(harness):
     h.release("a", lease, to={"b", "c"})
     h.restart("b", wipe=True, responders=())
     h.restart("c", wipe=True, responders=())          # two of three disks lost, every node up
+    h.clock.t += GRACE                                # their answers are fresh from now on (R53)
     assert not h.rejoin("b", {"a", "c"}, timeout=1.0)
     assert not h.rejoin("c", {"a", "b"}, timeout=1.0)
     h.nodes["b"].force_rejoin()                       # the operator's decision
@@ -258,15 +260,19 @@ def test_x2_a_recovery_counts_only_witness_answers(harness):
 def test_probe_inflight_a_granter_wiped_during_a_lease(harness):
     """Reviewer probe ``probe_inflight`` (granter): ``b`` loses its disk while ``a`` holds a lease
     it granted; ``a``'s commit still reaches a majority, and the following leases have distinct
-    terms and build on each other."""
+    terms and build on each other.  b cannot rejoin while a's lease may run (ruling R53): it
+    refuses a's replication, which c and a carry, and rejoins after the safe grace."""
     h = harness()
     h.bootstrap("a")
     lease_a = h.attempt("a", {"b"})
-    h.restart("b", wipe=True)                         # rejoins from a and c, learns a's term
+    h.restart("b", wipe=True, responders=())          # rejoining until GRACE after its start
+    assert not h.rejoin("b", timeout=1.0)
     r = rec(2)
     assert not isinstance(h.replicate("a", lease_a, r, to={"b", "c"}), Exception)
     h.release("a", lease_a, to={"b", "c"})
     h.clock.t += GRACE
+    assert h.rejoin("b")                              # learns a's term and R from a and c
+    assert h.nodes["b"].accepted_root()[1] == r
     terms, epoch = {lease_a.term}, r.epoch
     for name, granters in (("c", {"b"}), ("b", {"c"}), ("a", {"c"})):
         lease = h.attempt(name, granters)

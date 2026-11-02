@@ -47,9 +47,17 @@ Rejoining and witnesses
     a loaded log answers ``unknown`` and is never counted.  ``empty`` answers count only
     for a cluster's first start: every other member answered, none has accepted any root,
     and none knows of any lease term (ruling R51: a lease granted before the first commit
-    leaves its term at its granters and its holder).  A node whose startup grace is shorter
-    than :attr:`ClusterCoordinator.restart_grace` completes any other rejoin only once that
-    much time has passed since its start.  Any other loss of a majority of logs needs the operator's
+    leaves its term at its granters and its holder).  Any other rejoin decides only on a
+    round of answers sent at or after ``start() + restart_grace``
+    (:attr:`ClusterCoordinator.restart_grace`), whatever the node's startup grace (ruling
+    R53): the node may have accepted and acknowledged a root just before it lost its log,
+    under a lease whose holder has not counted that acknowledgement yet, and answers
+    gathered while that lease runs may all miss the root (the other acceptors have not
+    received it, the holder self-accepts after its broadcast or its answer is lost).  By
+    ``start() + restart_grace`` every lease granted before the loss has ended on its
+    holder's view, and a commit is reported only with acknowledgements counted within the
+    lease, so every acceptor counted for it had durably accepted the root before it
+    answered such a round.  Any other loss of a majority of logs needs the operator's
     :meth:`ClusterCoordinator.force_rejoin`.  With proposer-qualified ballots, two
     different roots never share a label, and no acknowledged root is lost, while at most
     one acceptor log is lost at a time, with its records, whether the object store is
@@ -408,9 +416,9 @@ class ClusterCoordinator:
         ``critical_commits`` commits, and the health metric: ``healthy``, ``fenced``,
         ``persisting`` and ``failure`` (the exception that fenced the node or stopped its
         persister, or ``None``).  ``rejoin_blocked`` says why a rejoin that has its answers
-        cannot complete (the records of the adopted root are unobtainable, or a startup
-        grace shorter than :attr:`restart_grace` outside a cluster's first start), else
-        ``None``."""
+        cannot complete (the records of the adopted root are unobtainable, or, outside a
+        cluster's first start, its answers were gathered before ``start() + restart_grace``),
+        else ``None``."""
         with self._lock:
             out = dict(self._stats)
             out["critical"] = dict(self._critical)
@@ -689,9 +697,11 @@ class ClusterCoordinator:
         one other member reports it (a lease needs a majority, at least two members, and
         every granter saw the request).  When every other member answered and none accepted a
         root but some term was seen, the answers are still enough -- they include every member
-        that granted or requested a term, and no root can have been committed -- but as
-        ``"rootless"``, which is not a first start: a node with a short grace waits
-        :attr:`restart_grace` first (:meth:`_complete_rejoin`).  Without it, a member that
+        that granted or requested a term, and no root had been committed when they were
+        gathered -- but as ``"rootless"``, which is not a first start: like every rejoin but
+        ``"new"``, it completes only on answers gathered at or after ``start() +
+        restart_grace`` (:meth:`_complete_rejoin`); a root in flight when the node lost its
+        log is then visible in them.  Without it, a member that
         finishes its first start and requests a lease at once would leave the members still
         rejoining with too few witnesses for good.  Forced,
         any ``majority - 1`` answers of loaded members do.  ``"unknown"`` answers never count."""
@@ -716,7 +726,9 @@ class ClusterCoordinator:
             with self._cond:
                 if self._state != "running" or self._tier is not tier or not self._rejoining:
                     return
+            wait = self._request_timeout
             try:
+                asked = self._clock()       # every answer below was gathered at or after this
                 waiter = self._ask("query", {}, lambda w: len(w.answers) >= len(self._others),
                                    self._request_timeout)
                 with self._lock:
@@ -725,8 +737,14 @@ class ClusterCoordinator:
                 if decision is not None:
                     counted, how = decision
                     if self._complete_rejoin(tier, [answers[p] for p in counted], [promised[p] for p in counted],
-                                             how):
+                                             how, asked):
                         return
+                    fresh_from = self._started + self.restart_grace
+                    if how != "new" and asked < fresh_from:
+                        # Too early a round: ask again as soon as a fresh one may be sent (at
+                        # once if that instant has passed meanwhile; with a clock that does
+                        # not follow real time, the wait is only an upper bound).
+                        wait = min(wait, max(0.0, fresh_from - self._clock()))
             except (ProtoDBError, OSError) as e:
                 with self._lock:
                     if self._state != "running":
@@ -736,9 +754,9 @@ class ClusterCoordinator:
                 self.fence(e)
                 raise
             with self._cond:
-                self._cond.wait_for(lambda: self._state != "running", timeout=self._request_timeout)
+                self._cond.wait_for(lambda: self._state != "running", timeout=wait)
 
-    def _complete_rejoin(self, tier, answers: list, promised: list, how: str) -> bool:
+    def _complete_rejoin(self, tier, answers: list, promised: list, how: str, asked: float) -> bool:
         """Adopt what the counted ``answers`` teach -- the highest promise and label, and the
         highest accepted root, which orders at or above every committed root (each was
         accepted by a majority, which the counted answers intersect) -- make every record of
@@ -746,11 +764,20 @@ class ClusterCoordinator:
         root durably, then the rejoined marker, and only then act as an acceptor and a
         witness.  Return False, leaving the node rejoining with the reason in ``stats()``,
         when the records cannot be obtained now, or when ``how`` is not a cluster's first
-        start, this node's startup grace is shorter than :attr:`restart_grace` and that much
-        time has not yet passed since :meth:`start`: an empty acceptor log cannot tell a
-        member that joins its cluster's first start late from a wiped one, so such a node
-        waits the safe grace instead (a node whose log is not empty refuses a short grace in
-        :meth:`attach`).
+        start and the round of ``answers`` was sent (at ``asked``, on this node's clock)
+        before ``start() + restart_grace``, whatever this node's startup grace (ruling R53).
+        An empty acceptor log cannot tell a member that joins its cluster's first start late
+        from a wiped one, and a wiped node may have accepted and acknowledged a root just
+        before the loss, under a lease that is still running: answers gathered meanwhile may
+        all miss that root (the other acceptors have not received it yet; the holder
+        self-accepts after its broadcast, or its answer is lost), and its holder may still
+        count the lost node's acknowledgement and report the commit.  Every lease granted
+        before :meth:`start` has ended on its holder's view by ``start() + restart_grace``
+        (see :attr:`restart_grace`), and a commit is reported only with acknowledgements
+        counted within the lease, so each acceptor counted for it had durably accepted the
+        root before it answered a round sent after that instant; the counted answers
+        intersect those acceptors.  A ``"new"`` cluster cannot be stale this way: the holder
+        of any lease records its own term before a grant exists, so its answer reports it.
 
         Re-proposing the highest accepted root is what Paxos prescribes, but only together
         with its value: adopted without its records, a root whose records lived on lost disks
@@ -759,12 +786,13 @@ class ClusterCoordinator:
         persisted root of the store, which is never acceptance), are not logged, and, for a
         forced rejoin, only up to the adopted root (a majority loss may have lost them)."""
         safe = self.restart_grace
-        if how != "new" and self._grace < safe and self._clock() < self._started + safe:
+        if how != "new" and asked < self._started + safe:
             return self._block_rejoin(
-                tier, f"startup_grace={self._grace:g} is accepted only on a cluster's first start, and "
-                      f"some member has accepted a root or seen a lease term; this node waits "
-                      f"lease_duration + drift_margin = {safe:g} s from its start (the safe grace) "
-                      f"before it rejoins")
+                tier, f"this is not a cluster's first start (some member has accepted a root or seen a "
+                      f"lease term), and answers gathered before lease_duration + drift_margin = {safe:g} s "
+                      f"from this node's start may miss a root it accepted before it lost its acceptor log; "
+                      f"it asks again once that much time has passed (whatever its "
+                      f"startup_grace={self._grace:g})")
         learnt = max(promised + [max(a[2], c[2]) for a, c, _ in answers] + [0])
         best = committed = None
         for (ak, aroot, alabel), (ck, croot, clabel), _ in answers:
@@ -1602,11 +1630,14 @@ class ClusterCoordinator:
             base_wire = encode_root(base_root, known=True, term=base_label)
             base_ranges = protocol.encode_ranges(ranges)
             tier.store_commit(extra, base_root, base_label, ranges)     # durable here before our own ack
-        # Records that ride with the replication are made durable by every receiver; records in
-        # a shared storage must be durable there before any peer can acknowledge their root.
-        riding = bool(getattr(tier, "cluster_tier", False))
-        if not riding:
-            tier.flush_local()
+        # Our own records are durable here before any of them leaves this node.  In a shared
+        # storage, no peer may acknowledge their root before they are durable there.  When they
+        # ride with the replication, a holder that died between sending them and making them
+        # durable would keep a strict prefix of its own segment while its peers hold the rest;
+        # restarted, it would seal and upload that prefix as the whole segment, the store would
+        # then "hold" records it lacks, and a root built on them would become unreadable.  So
+        # the bytes of an own segment that any peer holds are always on this node's disk.
+        tier.flush_local()
         chunks = _split_records(extra + records, protocol.CHUNK_BYTES)
         with self._lock:
             self._note_stored(label, root)            # our own records
@@ -1629,8 +1660,6 @@ class ClusterCoordinator:
             for part in parts:                         # same ordered link, before the replicate
                 self._broadcast(part)
             self._broadcast(msg)
-            if riding:
-                tier.flush_local()                     # our own records, durable before our own ack
             with self._lock:
                 self_ok = self._may_accept(label, root, label)
                 if self_ok:
@@ -1741,7 +1770,14 @@ class ClusterCoordinator:
         witnesses count: members whose acceptor log is loaded and not rejoining (this node
         too: when it is not one, a majority of other witnesses is needed).
         Raises ``ProtoConflictError`` when no majority answers within ``request_timeout``.
+
+        The suspicion cleared is only the one this node held when the round was sent: a term
+        whose outcome became unknown while the round ran (its grant expired, or its holder
+        released it uncertain) may have replicated a root after some answers were produced,
+        so answers gathered before it cannot settle it (re-review 5, C1, applied here).
         """
+        with self._lock:
+            suspected = self._suspect_term      # what the answers below can settle
         waiter = self._ask("query", {}, lambda w: len(w.answers) >= len(self._others), self._request_timeout)
         with self._lock:
             answers = {p: a for p, a in waiter.answers.items() if waiter.states.get(p) == "ok"}
@@ -1758,7 +1794,8 @@ class ClusterCoordinator:
                 self._hint = max(self._hint, alabel)
                 if ak and (not best[0] or compare_roots(alabel, aroot, best[2], best[1]) > 0):
                     best = (True, aroot, alabel)
-            self._suspect_term = 0
+            if self._suspect_term <= suspected:
+                self._suspect_term = 0
             return best
 
     def current_root(self) -> tuple:

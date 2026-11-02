@@ -111,6 +111,7 @@ def test_y1_a_rejoin_whose_records_are_unobtainable_stays_unavailable_and_says_w
     h.net.drop(kinds=("release", "replicate", "records", "ack"))
     h.clock.t += D
     b = h.restart("b", wipe=True, responders=())
+    h.clock.t += GRACE                                # b's answers are fresh from now on (R53)
     # a and c answer, but only c (which never had Z) serves records: Z's record is unobtainable.
     assert not h.rejoin("b", {"a", "c"}, timeout=4.0, servers={"c"})      # beyond one fetch_timeout
     stats = b.stats()
@@ -119,7 +120,7 @@ def test_y1_a_rejoin_whose_records_are_unobtainable_stays_unavailable_and_says_w
     assert not h.holds("b", z)
     h.restart("b", responders=())                     # an interrupted rejoin left no marker
     assert h.nodes["b"].stats()["rejoining"]
-    h.clock.t += D
+    h.clock.t += GRACE
     assert isinstance(h.attempt("c", {"b"}, timeout=0.3), ProtoTimeoutError)   # b grants nothing
     assert h.rejoin("b", {"a", "c"}, timeout=5.0)    # a serves Z's record now
     assert h.holds("b", z) and h.nodes["b"].stats()["rejoin_blocked"] is None
@@ -296,7 +297,9 @@ def test_i1_a_wiped_granter_waits_when_a_term_was_granted_although_no_root_was_a
     h.retired.append(old)
     h.disks["c"] = MemoryStorage()                # c, a granter of a's lease, loses its disk
     c = h.nodes["c"] = h._node("c", 0.0)
-    assert not h.rejoin("c", timeout=1.0)         # the clock has not moved
+    deadline = time.monotonic() + 10.0            # the clock has not moved; poll, never a fixed sleep
+    while not c.stats().get("rejoin_blocked") and time.monotonic() < deadline:
+        assert not h.rejoin("c", timeout=0.2)
     assert c.stats()["rejoining"] and "startup_grace" in (c.stats()["rejoin_blocked"] or "")
     lease_b = h.attempt("b", {"c"}, timeout=1.0)
     assert isinstance(lease_b, ProtoTimeoutError), lease_b
@@ -340,6 +343,29 @@ def test_i1_a_genuine_first_start_with_a_grace_of_zero_does_not_wait(harness):
     assert all(not node.stats()["rejoining"] for node in h.nodes.values())
     lease = h.attempt("a", {"b"})
     assert not isinstance(lease, Exception) and lease.is_valid()
+
+
+def test_a_late_first_start_member_cut_off_by_a_partition_rejoins_once_it_heals():
+    """The availability cost R51 accepts, bounded (re-review 5): a member whose first start
+    begins after another member requested a term is not a first start; with a partition cutting
+    it from every witness it stays rejoining well past the safe grace, and it rejoins -- and
+    then votes and proposes -- once the partition heals.  Real clocks, real background rejoin."""
+    with Cluster(3, tiers=True, lease_duration=0.5, drift_margin=0.05, request_timeout=0.1,
+                 startup_grace=0.0) as cl:
+        first = cl["n0"].acquire(timeout=5.0)        # a term is now known: no longer a first start
+        cl["n0"].release(first)
+        cl.net.partition(["n0", "n1"], ["n2"])
+        late = cl.wipe("n2", wait=False, startup_grace=0.0)   # an empty log, as a late member has
+        cut_until = time.monotonic() + 3 * late.restart_grace
+        while time.monotonic() < cut_until:
+            assert late.stats()["rejoining"], "rejoined without a single reachable witness"
+            time.sleep(0.01)
+        cl.net.heal()
+        cl.wait_rejoined(["n2"], timeout=10.0)
+        assert late.stats()["rejoin_blocked"] is None
+        lease = late.acquire(timeout=5.0)
+        assert lease.term > first.term
+        late.release(lease)
 
 
 # -- M2: an outcome observed after the lease -----------------------------------------------------
@@ -388,6 +414,8 @@ def _majority_loss(h):
     assert h.nodes["b"].committed_root()[1] == r and h.nodes["b"].accepted_root()[1] == r1
     for n in ("a", "c"):
         h.restart(n, wipe=True, responders=())
+    h.clock.t += GRACE                            # a forced rejoin also needs fresh answers (R53)
+    for n in ("a", "c"):
         h.nodes[n].force_rejoin()
         assert h.rejoin(n, {"b"}, timeout=3.0)
     return r1, r

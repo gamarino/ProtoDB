@@ -279,3 +279,69 @@ def test_a_commit_racing_the_close_of_the_space_has_an_unknown_outcome(tmp_path)
         cl["n0"].release(lease)
         for n in ("n1", "n2"):
             tiers[n].close()
+
+
+def test_a_holder_never_ships_own_records_it_has_not_made_durable_locally(tmp_path):
+    """Found by the fix round 6 loops (SIGKILL crash test, ``-X gil=1``): the holder sent its
+    own records with the replication and flushed them to its own segment only afterwards.  A
+    holder killed in between kept a strict prefix of its own segment, while its peers held the
+    rest as copies (and accepted the root).  Restarted, it sealed and uploaded that prefix as
+    the whole segment, so the object store "held" the segment; a later holder re-proposed the
+    root as its base, shipped none of its records (the store holds them), and the restarted
+    node read the store's short object: ``ProtoCorruptionError`` ("Truncated record header"),
+    and the peers' copies were the only remaining bytes.  Simulated in process: the crash
+    drops the holder's unflushed buffer once both peers accepted the root."""
+    from proto_db.cluster.protocol import decode_labeled_root
+    from proto_db.errors import ProtoDBError
+    tc = TieredCluster(tmp_path, 3)
+    try:
+        tc.spaces["n0"].new_database("db")
+        for _ in range(3):
+            tc.db("n0").run(incr, **RUN_KW)
+        c0, st0 = tc["n0"], tc.storages["n0"]
+        c0.persister.stop()                         # no background flush in the crash window
+        original = c0._broadcast
+        state = {}
+
+        def dies_after_broadcast(msg):
+            original(msg)
+            if msg["type"] != "replicate" or state:
+                return
+            state["root"] = decode_labeled_root(msg["root"])[1]
+            deadline = time.monotonic() + 10.0
+            while not all(tc[n].accepted_root()[1] == state["root"] for n in ("n1", "n2")):
+                assert time.monotonic() < deadline, "the peers did not accept the root"
+                time.sleep(0.001)
+            local = st0._local
+            with local._state_lock:                 # the process dies: its unflushed buffer is gone
+                local._pending, local._pending_bytes = [], 0
+            tc.cluster.crash("n0")
+            raise OSError("killed")
+
+        def write_z(tr):
+            incr(tr)
+            tr.set_root_object("z", tr.new_dictionary().set_at("k", 42))
+
+        c0._broadcast = dies_after_broadcast
+        with pytest.raises(ProtoDBError):
+            tc.db("n0").run(write_z, retries=0)
+        root = state["root"]
+        tc.kill("n0")
+        tc.revive("n0")
+        st0 = tc.storages["n0"]
+        deadline = time.monotonic() + 10.0
+        while root.segment not in st0._remote:      # n0 ships its own segments after the restart
+            assert time.monotonic() < deadline, "n0 never shipped its segment"
+            time.sleep(0.01)
+        for n in ("n1", "n2"):
+            tc.storages[n].refresh_remote()         # the peers learn what the store holds
+        tc.db("n1").run(incr, **RUN_KW)             # n1 builds on the root a majority accepted
+        for n in ("n1", "n2", "n0"):
+            tr = tc.db(n).new_transaction()
+            try:
+                assert dict(tr.get_root_object("z").items()) == {"k": 42}, n
+                assert tr.get_root_object("n") == 5, n
+            finally:
+                tr.abort()
+    finally:
+        tc.close()
