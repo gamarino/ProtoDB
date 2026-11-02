@@ -22,6 +22,14 @@ Durability modes (D6, D19):
   crash, not a power loss); the root write keeps its fsyncs.
 * ``"none"``: no fsync at all; for tests and benchmarks.
 
+Segments are write-once per instance: each instance writes only segments it created
+(``O_EXCL``) and never reopens one for writing, so a torn record a failed write or a crash
+left at the end of a segment is never followed by a later append; every record is checked
+against its CRC32 when read.  Segments are not trimmed at open: the directory is shared by
+processes, and a segment another live process is writing must never be truncated
+(:class:`~proto_db.storage.tiered.TieredStorage`, whose directory one node owns, trims its
+own segments; ruling R58).
+
 Failure policy: an ``OSError`` while writing segment data or the root raises
 ``ProtoUnexpectedError`` and leaves the instance *failed*: further pushes, flushes and
 publishes raise ``ProtoUnexpectedError`` (reads keep working).  This prevents a later

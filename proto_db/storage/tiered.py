@@ -10,11 +10,19 @@ Layout of the local directory::
                         copies of other nodes' segments: records received with their
                         commits are written at their original offsets, so every
                         AtomPointer is valid cluster-wide; a copy may have holes
-    segments.log        the node's own segments in creation order (16-byte UUIDs)
+    segments.log        the node's own segments in creation order (one 16-byte UUID per entry)
     roots.log           the node's acceptor log: lease promises, roots accepted and committed
-                        (:class:`~proto_db.cluster.rootlog.RootsLog`; fixed-size entries)
+                        (:class:`~proto_db.cluster.rootlog.RootsLog`)
     ranges.log          per accepted commit root, the byte ranges of the records shipped
                         with it (so a restarted node can still upload a lost writer's data)
+
+The three logs are framed log files (:mod:`proto_db.storage.logfile`: a versioned header, then
+entries each framed with a CRC32).  Opening the storage truncates a torn tail of each log to its
+last valid entry, and ``fsync``-s it, before any append; an invalid entry followed by valid ones
+raises ``ProtoCorruptionError`` (8.3d re-review 10, R2; ruling R58).  Own segments are checked the
+same way, record by record, and a torn tail is truncated (:meth:`TieredStorage._repair_own_segment`);
+copies of other nodes' segments are not logs (records are written at their original offsets,
+holes are expected, and a torn record is overwritten when the record is received again).
 
 Layout in the object store under ``prefix``::
 
@@ -123,9 +131,9 @@ directory -- ``segments.log``, ``ranges.log`` (an append, an ``fsync``, or a com
 rewrite, rename, reopen or close), a copy of another node's segment, the directory ``fsync``,
 a local release -- poisons the local tier: every later local write, and every write to
 ``roots.log`` through this storage, raises ``ProtoUnexpectedError`` until the storage is
-closed and reopened.  A log that failed mid-write may end in a torn entry, after which its
-reader stops, and what an ``fsync`` that failed left on disk is unknown, so nothing written
-after the failure could be relied on.  A compaction of ``ranges.log`` opens and fully
+closed and reopened.  A log that failed mid-write may end in a torn entry, and what an ``fsync``
+that failed left on disk is unknown, so nothing written after the failure could be relied on;
+the reopen truncates the torn entry before any append (above).  A compaction of ``ranges.log`` opens and fully
 prepares the replacement before it closes the old descriptor, so the descriptor attribute
 never holds a closed number.  Object-store writes are not affected (they read what is local,
 never write it); the inner :class:`~proto_db.storage.file.FileStorage` poisons itself the same
@@ -148,16 +156,17 @@ import msgpack
 from ..core.atom import AtomPointer
 from ..errors import (ProtoBacklogFullError, ProtoCorruptionError, ProtoDBError, ProtoLockingError,
                       ProtoNotSupportedError, ProtoTimeoutError, ProtoUnexpectedError,
-                      ProtoValidationError)
+                      ProtoValidationError, attach_secondary_errors)
 from ..cluster import protocol as _protocol
-from ..cluster.rootlog import LoggedRoots, RootsLog, compare_roots, prepare_replacement, root_key, write_all
+from ..cluster.rootlog import LoggedRoots, RootsLog, compare_roots, root_key
 from .base import SharedStorage
 from .cache import BoundedCache
 from .cloud import (ObjectNotFoundError, OutcomeUnknownError, PreconditionFailedError,
                     TransientObjectStoreError)
 from .file import DURABILITY_MODES, FileStorage
-from .format import (FORMAT_VERSION, SEGMENT_HEADER_SIZE, RecordKind, RootRecord, decode_root,
-                     decode_segment_header, encode_record, encode_segment_header, read_record)
+from .format import (FORMAT_VERSION, RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind, RootRecord,
+                     decode_root, decode_segment_header, encode_record, encode_segment_header, read_record)
+from .logfile import encode_frame, log_contents, open_log, prepare_replacement, read_fd, write_all
 
 __all__ = ["TieredStorage"]
 
@@ -170,12 +179,16 @@ SEGMENT_SUFFIX = ".seg"
 PART_SUFFIX = ".part"
 SEALED_SUFFIX = ".sealed"
 MANIFEST = "segments.log"
+MANIFEST_KIND = b"SEGS"                          # framed log kinds (:mod:`proto_db.storage.logfile`)
+RANGES_KIND = b"RANG"
 ROOTS_LOG = "roots.log"
 _ROOT_CRC = struct.Struct("<I")
 _ROOTS_LOG_COMPACT = 1 * MIB
 RANGES_LOG = "ranges.log"
 _RANGES_HEAD = struct.Struct("<16sQQQI")         # root segment, root offset, label, epoch, count
 _RANGE = struct.Struct("<16sQQ")                 # segment, start, end
+_RECORD_HEAD = struct.Struct("<IBI")             # a segment record's length, kind, crc32
+_RECORD_KINDS = frozenset(int(k) for k in RecordKind)
 _O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
 _O_BINARY = getattr(os, "O_BINARY", 0)
 
@@ -204,6 +217,28 @@ def _pwrite_all(fd: int, data, offset: int) -> None:
             raise OSError(errno.EIO, f"pwrite returned {n}")
         view = view[n:]
         offset += n
+
+
+def _record_length(data, pos: int, size: int) -> Optional[int]:
+    """The framed length of a valid segment record at ``pos`` of ``data`` (``size`` bytes), or
+    ``None`` (truncated, unknown kind or CRC mismatch)."""
+    if pos + RECORD_HEADER_SIZE > size:
+        return None
+    length, kind, crc = _RECORD_HEAD.unpack_from(data, pos)
+    end = pos + RECORD_HEADER_SIZE + length
+    if kind not in _RECORD_KINDS or end > size:
+        return None
+    if zlib.crc32(data[pos + RECORD_HEADER_SIZE:end], zlib.crc32(data[pos + 4:pos + 5])) != crc:
+        return None
+    return end - pos
+
+
+def _first_valid_record(data, start: int, size: int) -> Optional[int]:
+    """The offset of the first valid segment record starting at or after ``start``, or ``None``."""
+    for pos in range(start, size - RECORD_HEADER_SIZE + 1):
+        if _record_length(data, pos, size) is not None:
+            return pos
+    return None
 
 
 def _encode_root_object(record: RootRecord, label: int) -> bytes:
@@ -326,14 +361,17 @@ class TieredStorage(SharedStorage):
                        "critical_misses": 0, "remote_segment_gets": 0, "segments_uploaded": 0,
                        "root_writes": 0, "root_writes_in_critical": 0, "segments_released": 0,
                        "copies_released": 0, "records_applied": 0, "parts_uploaded": 0}
-        self._load_manifest()
-        self._manifest_fd = os.open(os.path.join(self._path, MANIFEST),
-                                    os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_BINARY | _O_CLOEXEC, 0o644)
-        self._roots = RootsLog(os.path.join(self._path, ROOTS_LOG), durability=durability)
         self._ranges_lock = threading.Lock()
         self._copies_lock = threading.Lock()
-        self._load_ranges()
-        self._ranges_fd = self._open_ranges()
+        self._manifest_fd = self._ranges_fd = -1
+        self._roots = None
+        try:
+            self._load_manifest()
+            self._roots = RootsLog(os.path.join(self._path, ROOTS_LOG), durability=durability)
+            self._load_ranges()
+        except BaseException as e:
+            self._abandon_open(e)
+            raise
 
     # -- properties --------------------------------------------------------------------------
 
@@ -399,24 +437,48 @@ class TieredStorage(SharedStorage):
 
     # -- startup -----------------------------------------------------------------------------
 
-    def _load_manifest(self) -> None:
-        path = os.path.join(self._path, MANIFEST)
+    def _open_log(self, name: str, kind: bytes) -> tuple:
+        """Open the framed log ``name`` of the local directory for appends (a torn tail is
+        trimmed first, :func:`~proto_db.storage.logfile.open_log`); return ``(fd, payloads)``."""
+        path = os.path.join(self._path, name)
         try:
-            with open(path, "rb") as f:
-                data = f.read()
-        except FileNotFoundError:
-            data = b""
+            return open_log(path, kind, durability=self._durability)
         except OSError as e:
-            raise ProtoUnexpectedError(f"Cannot read {path}: {e}") from e
-        for i in range(0, len(data) - len(data) % 16, 16):
-            seg = uuid.UUID(bytes=data[i:i + 16])
+            raise ProtoUnexpectedError(f"Cannot open {path}: {e}") from e
+
+    def _abandon_open(self, error: BaseException) -> None:
+        """Release what a failed constructor opened (``error`` is raised by the caller)."""
+        closing = []
+        for fd in (self._manifest_fd, self._ranges_fd):
+            if fd >= 0:
+                closing.append(lambda fd=fd: os.close(fd))
+        if self._roots is not None:
+            closing.append(self._roots.close)
+        closing.append(self._local.close)
+        secondary = []
+        for close in closing:
+            try:
+                close()
+            except (OSError, ProtoDBError) as e:
+                secondary.append(e)
+        if secondary:
+            attach_secondary_errors(error, secondary)
+
+    def _load_manifest(self) -> None:
+        self._manifest_fd, payloads = self._open_log(MANIFEST, MANIFEST_KIND)
+        for payload in payloads:
+            if len(payload) != 16:
+                raise ProtoCorruptionError(f"{MANIFEST} in {self._path} holds an entry of {len(payload)} bytes")
+            seg = uuid.UUID(bytes=payload)
             own = _Own(seg)
             file = os.path.join(self._path, seg.hex + SEGMENT_SUFFIX)
             try:
-                own.end = os.path.getsize(file)
+                own.end = self._repair_own_segment(file, seg)
                 own.first = time.monotonic()
             except FileNotFoundError:
                 own.uploaded = own.released = True     # released only after the store held it
+            except OSError as e:
+                raise ProtoUnexpectedError(f"Cannot check own segment {seg.hex}: {e}") from e
             self._own[seg] = own
         for name in os.listdir(self._path):
             if name.endswith(SEGMENT_SUFFIX):
@@ -427,38 +489,79 @@ class TieredStorage(SharedStorage):
                 if seg not in self._own:
                     self._copies[seg] = None        # released by key only once written again
 
-    def _open_ranges(self) -> int:
-        return os.open(os.path.join(self._path, RANGES_LOG),
-                       os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_BINARY | _O_CLOEXEC, 0o644)
+    @staticmethod
+    def _repair_own_segment(path: str, segment: uuid.UUID) -> int:
+        """Check the own segment file ``path`` (part of the local WAL) record by record and
+        truncate a torn tail; return its resulting size.
+
+        Own segments are never appended to after a restart (each
+        :class:`~proto_db.storage.file.FileStorage` writes only segments it creates), but one
+        may end in a torn record left by a failed write, a ``SIGKILL`` or a power loss.  Such a
+        tail -- an invalid region after which no valid record starts -- is truncated and the file
+        ``fsync``-ed, so the segment shipped to the object store holds valid records only; a
+        header that is missing or torn is written again.  An invalid record followed by a valid
+        one is mid-log corruption: ``ProtoCorruptionError``, nothing truncated (ruling R58).
+        ``FileNotFoundError`` propagates for a missing file."""
+        fd = os.open(path, os.O_RDWR | _O_BINARY | _O_CLOEXEC)
+        try:
+            data = read_fd(fd)
+            size = len(data)
+            view = memoryview(data)
+            header = encode_segment_header(segment)
+            if size >= SEGMENT_HEADER_SIZE and data[:SEGMENT_HEADER_SIZE] == header:
+                pos = SEGMENT_HEADER_SIZE
+                while pos < size:
+                    length = _record_length(view, pos, size)
+                    if length is None:
+                        break
+                    pos += length
+                if pos == size:
+                    return size
+                later = _first_valid_record(view, pos + 1, size)
+            else:
+                keep = 0
+                while keep < min(size, SEGMENT_HEADER_SIZE) and data[keep] == header[keep]:
+                    keep += 1
+                if any(view[keep:]):
+                    raise ProtoCorruptionError(
+                        f"Own segment {segment.hex} at {path} does not start with its segment header")
+                pos, later = 0, None
+            if later is not None:
+                raise ProtoCorruptionError(
+                    f"Own segment {segment.hex} at {path} is corrupt: the record at offset {pos} is invalid "
+                    f"but a valid record follows at offset {later} (not a torn tail; nothing was truncated)")
+            logger.warning("Own segment %s ends in a torn tail of %d bytes (an interrupted write); truncated "
+                           "to its last valid record at offset %d", path, size - pos, pos)
+            os.ftruncate(fd, pos)
+            if pos == 0:
+                _pwrite_all(fd, header, 0)
+                pos = SEGMENT_HEADER_SIZE
+            os.fsync(fd)
+            return pos
+        finally:
+            os.close(fd)
 
     def _load_ranges(self) -> None:
-        try:
-            with open(os.path.join(self._path, RANGES_LOG), "rb") as f:
-                data = f.read()
-        except FileNotFoundError:
-            return
-        except OSError as e:
-            raise ProtoUnexpectedError(f"Cannot read {RANGES_LOG}: {e}") from e
-        pos = 0
-        while pos + _RANGES_HEAD.size <= len(data):
-            root_seg, root_off, label, epoch, count = _RANGES_HEAD.unpack_from(data, pos)
-            end = pos + _RANGES_HEAD.size + count * _RANGE.size
-            if end + _ROOT_CRC.size > len(data):
-                break               # a torn tail
-            (crc,) = _ROOT_CRC.unpack_from(data, end)
-            if zlib.crc32(data[pos:end]) != crc:
-                break
+        self._ranges_fd, payloads = self._open_log(RANGES_LOG, RANGES_KIND)
+        for payload in payloads:
+            if len(payload) < _RANGES_HEAD.size:
+                raise ProtoCorruptionError(f"{RANGES_LOG} in {self._path} holds a short entry")
+            root_seg, root_off, label, epoch, count = _RANGES_HEAD.unpack_from(payload)
+            if len(payload) != _RANGES_HEAD.size + count * _RANGE.size:
+                raise ProtoCorruptionError(f"{RANGES_LOG} in {self._path} holds an entry of inconsistent length")
             ranges = [(uuid.UUID(bytes=seg), start, stop) for seg, start, stop in
-                      _RANGE.iter_unpack(data[pos + _RANGES_HEAD.size:end])]
+                      _RANGE.iter_unpack(payload[_RANGES_HEAD.size:])]
             root = RootRecord(FORMAT_VERSION, uuid.UUID(bytes=root_seg), root_off, epoch)
             self._ranges[(root.segment, root_off)] = (root_key(label, root), ranges)
-            pos = end + _ROOT_CRC.size
 
     @staticmethod
-    def _encode_ranges(key: tuple, order: tuple, ranges: list) -> bytes:
-        body = _RANGES_HEAD.pack(key[0].bytes, key[1], order[0], order[1], len(ranges)) + b"".join(
+    def _ranges_payload(key: tuple, order: tuple, ranges: list) -> bytes:
+        return _RANGES_HEAD.pack(key[0].bytes, key[1], order[0], order[1], len(ranges)) + b"".join(
             _RANGE.pack(seg.bytes, start, end) for seg, start, end in ranges)
-        return body + _ROOT_CRC.pack(zlib.crc32(body))
+
+    @classmethod
+    def _encode_ranges(cls, key: tuple, order: tuple, ranges: list) -> bytes:
+        return encode_frame(cls._ranges_payload(key, order, ranges))
 
     def _log_ranges(self, entry: Optional[bytes], *, sync: bool) -> None:
         if entry is None:
@@ -481,7 +584,8 @@ class TieredStorage(SharedStorage):
                 if os.fstat(self._ranges_fd).st_size <= _ROOTS_LOG_COMPACT:
                     return
                 with self._lock:
-                    live = b"".join(self._encode_ranges(k, e, r) for k, (e, r) in self._ranges.items())
+                    live = log_contents(RANGES_KIND, [self._ranges_payload(k, e, r)
+                                                      for k, (e, r) in self._ranges.items()])
                 # Open and fully prepare the replacement, swap, and only then close the old
                 # descriptor (8.3d re-review 9, B1): the attribute never holds a closed number.
                 new = prepare_replacement(os.path.join(self._path, RANGES_LOG), live,
@@ -517,7 +621,7 @@ class TieredStorage(SharedStorage):
                         self._own[ptr.segment] = _Own(ptr.segment)
                 if write:
                     try:
-                        write_all(self._manifest_fd, ptr.segment.bytes)
+                        write_all(self._manifest_fd, encode_frame(ptr.segment.bytes))
                     except OSError as e:
                         # The segment is registered but not in the manifest: nothing may be
                         # flushed or shipped as if it were (the tier is poisoned).

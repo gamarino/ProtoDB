@@ -291,3 +291,54 @@ def test_secure_chain_tells_a_detached_tier_from_a_failed_one(harness, monkeypat
         assert c.stats()["tier_failed"] and not c.healthy
         with c._lock:
             assert c._witness_state() == "unknown"
+
+
+def test_r2_an_acceptor_reopened_after_a_torn_append_keeps_what_it_acknowledges_and_promises(harness, tmp_path,
+                                                                                            monkeypatch):
+    """Re-review 10, R2 (ruling R58): c's acceptance write tears (9 bytes, then ``ENOSPC``), its
+    tier fails, and the documented recovery (detach, close, reopen the space on its disk)
+    brings it back.  c then grants a new lease and acknowledges R3.  After a restart its log
+    holds R3 and the new promise.  On 0f9bf1e the reopened log appended after the torn bytes:
+    the reader stopped at them, and after the restart c's log held r0 and the old promise --
+    an acknowledged acceptance and a sent promise lost with no disk lost."""
+    h = harness()
+    r0, c = _file_cluster(h, tmp_path)
+    lease_a = h.attempt("a", {"c"})
+    assert not isinstance(lease_a, Exception), lease_a
+    first_promise = c.tier.load_roots().promised
+    log = c.tier._log
+    state = {"armed": True}
+
+    def write(fd, data):
+        if state["armed"] and fd == log._fd:
+            state["armed"] = False
+            REAL_WRITE(fd, bytes(data)[:9])          # a torn entry
+            raise OSError(errno.ENOSPC, "No space left on device (injected)")
+        return REAL_WRITE(fd, data)
+
+    monkeypatch.setattr(os, "write", write)
+    h.replicate("a", lease_a, rec(2), {"c"}, expire=True)
+    monkeypatch.undo()
+    assert not state["armed"] and c.stats()["tier_failed"]
+    h.release("a", lease_a, to={"c"})
+    _reopen(h, c)
+    h.clock.t += 3 * GRACE
+    lease_a = h.attempt("a", {"c"})
+    assert not isinstance(lease_a, Exception), lease_a
+    promised = c.tier.load_roots().promised
+    assert promised > first_promise
+    sent = _sent(c)
+    R3 = rec(3)
+    h.replicate("a", lease_a, R3, {"c"})
+    acks = [m["ok"] for _, m in sent if m["type"] == "ack"]
+    assert acks == [True], acks
+    assert _logged(c.tier) == R3, "c acknowledged R3 but its own log does not return it"
+    h.release("a", lease_a, to=())
+    tier = c.tier
+    c.detach(tier)
+    tier.close()
+    restarted = h.tier_class(h.disks["c"], "c")
+    roots = restarted.load_roots()
+    assert roots.accepted[1] == R3, "the acknowledged R3 is missing from c's log after a restart"
+    assert roots.promised == promised, "the promise c sent is missing from its log after a restart"
+    restarted.close()

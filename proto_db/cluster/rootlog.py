@@ -19,8 +19,9 @@ Root order
 The acceptor log
     What one node must remember across a crash to keep its promises (the acceptor rules
     of Paxos): the highest lease term it granted (*promise*), the highest root it accepted
-    and the newest root it knows committed.  :class:`RootsLog` keeps them in a file of
-    fixed-size, checksummed entries, appended and ``fsync``-ed per the durability mode; a
+    and the newest root it knows committed.  :class:`RootsLog` keeps them in a framed log
+    file (:mod:`proto_db.storage.logfile`: a versioned header, then fixed-size entries each
+    framed with a CRC32), appended and ``fsync``-ed per the durability mode; a
     promise is always made durable before the grant is sent, an accepted root before the
     acknowledgement.  A *rejoined* marker (written last by the coordinator's rejoin, or at
     a cluster's first start) tells a log that holds what the node knows from a log that is
@@ -35,9 +36,16 @@ Failed writes poison the handle (8.3d re-review 9, B1; ruling R57)
     Any I/O error of a :class:`RootsLog` -- a write, an ``fsync``, a compaction's rewrite,
     rename, reopen or close of the replaced descriptor -- leaves the handle refusing every
     later write with ``ProtoUnexpectedError``: after a failed write the file may end in a torn
-    entry, after which the decoder stops (a later entry would be lost on reload), and after a
-    failed ``fsync`` what reached the disk is unknown.  The node must reopen its log (close
-    and reopen the space) to act as an acceptor again.  A compaction opens and fully
+    entry, and after a failed ``fsync`` what reached the disk is unknown.  The node must
+    reopen its log (close and reopen the space) to act as an acceptor again.
+
+Torn tails are trimmed on open (8.3d re-review 10, R2; ruling R58)
+    Opening a :class:`RootsLog` truncates a torn tail -- what a failed append, a ``SIGKILL``
+    or a power loss left after the last valid entry -- and ``fsync``-s the file before any
+    append, so an entry appended after the reopen is never hidden behind torn bytes (the
+    reader stops at the first invalid entry).  An invalid entry followed by valid ones is
+    mid-log corruption: opening or loading the log raises ``ProtoCorruptionError`` and
+    nothing is truncated (:func:`proto_db.storage.logfile.scan`).  A compaction opens and fully
     prepares the replacement file before it closes the old descriptor (the descriptor
     attribute is swapped, then the old one closed), so the handle never holds a closed
     descriptor number while it accepts writes: a number the operating system hands to
@@ -45,64 +53,30 @@ Failed writes poison the handle (8.3d re-review 9, B1; ruling R57)
 
 Thread-safety: both logs serialize their methods with a lock.
 """
-import errno
 import os
 import struct
 import threading
 import uuid
 import weakref
-import zlib
 from typing import NamedTuple, Optional
 
-from ..errors import ProtoCorruptionError, ProtoUnexpectedError, ProtoValidationError, attach_secondary_errors
+from ..errors import ProtoCorruptionError, ProtoUnexpectedError, ProtoValidationError
 from ..storage.format import FORMAT_VERSION, RootRecord
+from ..storage.logfile import (FRAME_OVERHEAD, encode_frame, fsync_dir, log_contents, open_log,
+                               prepare_replacement, read_log, write_all)
 
 __all__ = ["root_key", "compare_roots", "LoggedRoots", "RootsLog", "MemoryRootsLog", "memory_log_for",
            "write_all", "prepare_replacement"]
 
 _ENTRY = struct.Struct("<BQQ16sQ")          # kind, label (or term), epoch, segment, offset
-_CRC = struct.Struct("<I")
-ENTRY_SIZE = _ENTRY.size + _CRC.size
+#: Size of one framed entry on disk (:mod:`proto_db.storage.logfile` framing).
+ENTRY_SIZE = _ENTRY.size + FRAME_OVERHEAD
+#: Kind of the acceptor log in its file header.
+LOG_KIND = b"ROOT"
 KINDS = {"accepted": 1, "committed": 2, "promise": 3, "rejoined": 4}
 _COMPACT_BYTES = 1024 * 1024
 _O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
 _O_BINARY = getattr(os, "O_BINARY", 0)
-
-
-def write_all(fd: int, data) -> None:
-    """Write every byte of ``data`` to the descriptor ``fd`` (opened with ``O_APPEND``): a
-    short write is continued, a write that makes no progress raises ``OSError``."""
-    view = memoryview(data)
-    while view:
-        n = os.write(fd, view)
-        if n <= 0:
-            raise OSError(errno.EIO, f"write returned {n}")
-        view = view[n:]
-
-
-def prepare_replacement(path: str, data: bytes, flags: int) -> int:
-    """Replace the file ``path`` by one holding ``data`` and return a descriptor open on the
-    new file (``flags`` plus ``O_APPEND``), ready for appends.
-
-    ``data`` is written to ``path + ".tmp"`` through the descriptor returned, ``fsync``-ed,
-    and only then renamed over ``path``; the descriptor follows the file through the rename.
-    On any failure the descriptor is closed and the error raised: ``path`` is either intact
-    or replaced by the complete new contents, and the caller's descriptor on the old file is
-    untouched.  The caller swaps its descriptor attribute to the one returned before it closes
-    the old one (8.3d re-review 9, B1), then makes the directory entry durable."""
-    tmp = path + ".tmp"
-    fd = os.open(tmp, flags | os.O_CREAT | os.O_TRUNC | os.O_APPEND, 0o644)
-    try:
-        write_all(fd, data)
-        os.fsync(fd)
-        os.replace(tmp, path)
-    except BaseException as e:
-        try:
-            os.close(fd)
-        except OSError as close_error:
-            attach_secondary_errors(e, [close_error])
-        raise
-    return fd
 
 
 def root_key(label: int, record: Optional[RootRecord]) -> tuple:
@@ -178,21 +152,25 @@ def _check_kind(kind: str) -> int:
     return code
 
 
-def _encode(code: int, label: int, record: Optional[RootRecord]) -> bytes:
-    body = _ENTRY.pack(code, label, record.epoch if record is not None else 0,
+def _payload(code: int, label: int, record: Optional[RootRecord]) -> bytes:
+    return _ENTRY.pack(code, label, record.epoch if record is not None else 0,
                        record.segment.bytes if record is not None else bytes(16),
                        record.offset if record is not None else 0)
-    return body + _CRC.pack(zlib.crc32(body))
 
 
-def _decode(data: bytes) -> LoggedRoots:
+def _encode(code: int, label: int, record: Optional[RootRecord]) -> bytes:
+    return encode_frame(_payload(code, label, record))
+
+
+def _decode(payloads: list, path: str) -> LoggedRoots:
+    """The roots and the promise held by the entries ``payloads`` of the log at ``path``."""
     best = _Best()
-    for i in range(0, len(data) - ENTRY_SIZE + 1, ENTRY_SIZE):
-        body = data[i:i + _ENTRY.size]
-        (crc,) = _CRC.unpack_from(data, i + _ENTRY.size)
-        if zlib.crc32(body) != crc:
-            break                   # a torn tail: every entry before it is valid
-        code, label, epoch, segment, offset = _ENTRY.unpack(body)
+    for payload in payloads:
+        if len(payload) != _ENTRY.size:
+            raise ProtoCorruptionError(f"The root log {path} holds an entry of {len(payload)} bytes")
+        code, label, epoch, segment, offset = _ENTRY.unpack(payload)
+        if code not in (1, 2, 3, 4):
+            raise ProtoCorruptionError(f"The root log {path} holds an entry of unknown kind {code}")
         record = None if epoch == 0 else RootRecord(FORMAT_VERSION, uuid.UUID(bytes=segment), offset, epoch)
         best.add(code, label, record)
     return best.result()
@@ -217,35 +195,20 @@ class RootsLog:
         self._closed = False
         self._failed = None           # the I/O error that poisoned this handle, if any
         self._promised = 0            # highest promise known durable here
-        directory = os.path.dirname(self._path)
         try:
-            created = not os.path.isdir(directory)
-            os.makedirs(directory, exist_ok=True)
-            exists = os.path.exists(self._path)
-            self._fd = self._open()
-            if (created or not exists) and durability == "fsync":
-                self._fsync_dir(directory)
-                if created:
-                    self._fsync_dir(os.path.dirname(directory))
+            self._fd, payloads = open_log(self._path, LOG_KIND, durability=durability)
         except OSError as e:
             raise ProtoUnexpectedError(f"Cannot open the root log {self._path}: {e}") from e
-        self._promised = self.load().promised
+        try:
+            self._promised = _decode(payloads, self._path).promised
+        except BaseException:
+            os.close(self._fd)
+            raise
 
     @property
     def path(self) -> str:
         """The log file."""
         return self._path
-
-    def _open(self) -> int:
-        return os.open(self._path, os.O_RDWR | os.O_CREAT | os.O_APPEND | _O_BINARY | _O_CLOEXEC, 0o644)
-
-    @staticmethod
-    def _fsync_dir(directory: str) -> None:
-        fd = os.open(directory, os.O_RDONLY | _O_CLOEXEC)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
 
     def _check_writable(self) -> None:
         """Refuse a write through a closed or poisoned handle (lock held)."""
@@ -302,27 +265,27 @@ class RootsLog:
             raise
 
     def _read(self) -> LoggedRoots:
-        with open(self._path, "rb") as f:
-            return _decode(f.read())
+        return _decode(read_log(self._path, LOG_KIND), self._path)
 
     def _compact(self) -> None:
         """Rewrite the log with its newest entry of each kind (lock held)."""
         roots = self._read()
-        data = b""
+        payloads = []
         if roots.accepted is not None:
-            data += _encode(1, *roots.accepted)
+            payloads.append(_payload(1, *roots.accepted))
         if roots.committed is not None:
-            data += _encode(2, *roots.committed)
+            payloads.append(_payload(2, *roots.committed))
         if roots.promised:
-            data += _encode(3, roots.promised, None)
+            payloads.append(_payload(3, roots.promised, None))
         if not roots.empty:
-            data += _encode(4, 0, None)                  # the rejoined marker, last
+            payloads.append(_payload(4, 0, None))        # the rejoined marker, last
+        data = log_contents(LOG_KIND, payloads)
         # Open and fully prepare the replacement, swap, and only then close the old descriptor
         # (8.3d re-review 9, B1): the handle never holds a closed descriptor number.
         new = prepare_replacement(self._path, data, os.O_RDWR | _O_BINARY | _O_CLOEXEC)
         old, self._fd = self._fd, new
         os.close(old)
-        self._fsync_dir(os.path.dirname(self._path))
+        fsync_dir(os.path.dirname(self._path))
 
     def load(self) -> LoggedRoots:
         """The roots and the promise logged (see :class:`LoggedRoots`)."""

@@ -27,6 +27,7 @@ import pytest
 
 from proto_db.cluster import rootlog as rootlog_module
 from proto_db.cluster.rootlog import ENTRY_SIZE, RootsLog
+from proto_db.storage.logfile import HEADER_SIZE
 from proto_db.errors import ProtoOutcomeUnknownError, ProtoUnexpectedError, ProtoValidationError
 from proto_db.storage import tiered as tiered_module
 from proto_db.storage.cloud import CloudStorage
@@ -144,7 +145,7 @@ def test_b1_a_roots_log_compaction_never_writes_through_a_released_number(tmp_pa
     since the replacement is open before the old descriptor is closed) or raises, as does
     every later write: a failed compaction poisons the handle.  Before the fix, the next
     acceptor append returned normally into the victim and ``load()`` lost it."""
-    monkeypatch.setattr(rootlog_module, "_COMPACT_BYTES", 4 * ENTRY_SIZE + 1)
+    monkeypatch.setattr(rootlog_module, "_COMPACT_BYTES", HEADER_SIZE + 4 * ENTRY_SIZE + 1)
     path = str(tmp_path / "n.roots")
     log = RootsLog(path, durability="fsync")
     for i in range(1, 5):
