@@ -1,0 +1,293 @@
+"""A failed write on the attached tier is never acknowledged, and the node stops acting as an
+acceptor until the tier is replaced (8.3d re-review 9, B1 and its coverage notes; ruling R57).
+
+* A failed acceptor-log write -- an acceptance in the worker, a grant's promise, a committed
+  root learnt from a release -- is never acknowledged nor granted.  The tier is then *failed*:
+  the node refuses every grant and replication (``"tier_failed"``), answers ``unknown``,
+  ``acquire`` raises, ``healthy`` is False, and ``detach`` + ``attach`` of a healthy tier (the
+  space reopened) brings it back.  Before, the failed append escaped to the worker loop,
+  which only logged it, and the next acceptance through the poisoned log was acknowledged.
+* The A1 refusal path (re-review 8) on a real :class:`~proto_db.storage.tiered.TieredStorage`:
+  a worker paused at the ranges lock of its ``apply`` while the space closes and reopens is
+  refused by the closed storage and treats it as "tier gone", not as a failed tier.
+* ``_secure_chain``: a refused ``store_commit`` on a detached tier returns "the tier was
+  detached"; on a still-attached tier it fails the tier instead of retrying forever.
+"""
+import errno
+import os
+import threading
+import uuid
+
+import pytest
+
+from proto_db.errors import ProtoUnexpectedError, ProtoValidationError
+from proto_db.storage.tiered import TieredStorage
+from tests.support.cluster import MemoryTier
+from tests.support.fake_object_store import FakeObjectStore
+from tests.support.manual_cluster import GRACE, rec
+from tests.unit.test_cluster_acceptor_writes import (_file_backed, _logged, _start_commit,  # noqa: F401
+                                                     harness)
+
+pytestmark = [pytest.mark.timeout(120)]
+
+REAL_WRITE = os.write
+
+
+def _sent(node):
+    """Record every message ``node`` sends (still forwarded to the harness network)."""
+    sent = []
+    transport = node._transport
+    orig = transport.send
+
+    def send(to, msg):
+        sent.append((to, msg))
+        return orig(to, msg)
+
+    transport.send = send
+    return sent
+
+
+def _fail_next_write(monkeypatch, log):
+    """Make the next ``os.write`` through ``log``'s descriptor fail (``ENOSPC``)."""
+    state = {"armed": True, "fired": False}
+
+    def write(fd, data):
+        if state["armed"] and fd == log._fd:
+            state["armed"] = False
+            state["fired"] = True
+            raise OSError(errno.ENOSPC, "No space left on device (injected)")
+        return REAL_WRITE(fd, data)
+
+    monkeypatch.setattr(os, "write", write)
+    return state
+
+
+def _file_cluster(h, tmp_path):
+    """c on a file-backed acceptor log, r0 committed by a with every node, c restarted with the
+    safe grace; returns ``(r0, c)``."""
+    _file_backed(h, "c", tmp_path / "c")
+    r0 = h.bootstrap("a")
+    h.restart("c")
+    h.clock.t += 3 * GRACE
+    return r0, h.nodes["c"]
+
+
+def _assert_failed_acceptor(h, c):
+    stats = c.stats()
+    assert stats["tier_failed"] and not stats["healthy"] and not stats["fenced"] and not c.healthy
+    with c._lock:
+        assert c._refusal() == "tier_failed" and c._witness_state() == "unknown"
+    sent = _sent(c)
+    lease_b = h.attempt("b", {"c"}, timeout=0.3)
+    if not isinstance(lease_b, Exception):
+        h.release("b", lease_b, to=())
+    replies = [m for to, m in sent if to == "b" and m["type"] in ("grant", "reject")]
+    assert replies and all(m["type"] == "reject" and m["reason"] == "tier_failed" for m in replies), replies
+    result = h.attempt("c", {"a", "b"})
+    assert isinstance(result, ProtoUnexpectedError), result
+
+
+def _reopen(h, c):
+    tier = c.tier
+    c.detach(tier)
+    tier.close()
+    c.attach(h.tier_class(h.disks["c"], "c"))
+    stats = c.stats()
+    assert not stats["tier_failed"] and stats["healthy"] and c.healthy
+
+
+def test_a_failed_acceptance_write_is_refused_and_fails_the_tier(harness, tmp_path, monkeypatch):
+    """c's acceptor-log append of R fails.  c refuses R (an ``ok=False`` ack, never ``ok=True``),
+    publishes nothing, and its tier is failed: it refuses grants and the next replication,
+    answers ``unknown`` and cannot acquire.  Reopened on its disk, it holds r0 and is healthy.
+    Before, the failure only reached the worker loop's log (no answer at all), and the next
+    acceptance through the poisoned log was acknowledged."""
+    h = harness()
+    r0, c = _file_cluster(h, tmp_path)
+    lease_a = h.attempt("a", {"c"})
+    assert not isinstance(lease_a, Exception), lease_a
+    accepted = c.stats()["accepted"]
+    sent = _sent(c)
+    fault = _fail_next_write(monkeypatch, c.tier._log)
+    result = h.replicate("a", lease_a, rec(2), {"c"}, expire=True)
+    assert fault["fired"]
+    assert isinstance(result, Exception), result
+    acks = [m["ok"] for _, m in sent if m["type"] == "ack"]
+    assert acks == [False], acks
+    assert c.stats()["accepted"] == accepted
+    assert c.accepted_root()[1] == r0 and _logged(c.tier) == r0
+    monkeypatch.undo()
+    h.release("a", lease_a, to={"c"})
+    h.clock.t += 3 * GRACE
+    lease_a = h.attempt("a", {"b"})
+    assert not isinstance(lease_a, Exception), lease_a
+    del sent[:]
+    result = h.replicate("a", lease_a, rec(3), {"c"}, expire=True)    # refused without writing
+    assert [m["ok"] for _, m in sent if m["type"] == "ack"] == [False]
+    assert _logged(c.tier) == r0
+    h.release("a", lease_a, to=())
+    _assert_failed_acceptor(h, c)
+    _reopen(h, c)
+    assert _logged(c.tier) == r0 and c.accepted_root()[1] == r0
+
+
+def test_a_failed_promise_write_withholds_the_grant_and_fails_the_tier(harness, tmp_path, monkeypatch):
+    """c cannot make a grant's promise durable: the grant is not sent (never counted), and the
+    tier is failed until it is replaced."""
+    h = harness()
+    r0, c = _file_cluster(h, tmp_path)
+    sent = _sent(c)
+    fault = _fail_next_write(monkeypatch, c.tier._log)
+    result = h.attempt("b", {"c"}, timeout=0.5)
+    assert fault["fired"]
+    assert not any(m["type"] == "grant" for _, m in sent), sent
+    monkeypatch.undo()
+    if not isinstance(result, Exception):
+        h.release("b", result, to=())
+    _assert_failed_acceptor(h, c)
+    _reopen(h, c)
+
+
+def test_a_failed_committed_root_write_fails_the_tier(harness, tmp_path, monkeypatch):
+    """c learns R committed from a's release and cannot log it: its tier is failed (it was
+    only logged before, and c went on acting as an acceptor on a poisoned log)."""
+    h = harness()
+    r0, c = _file_cluster(h, tmp_path)
+    lease_a = h.attempt("a", {"c"})
+    assert not isinstance(lease_a, Exception), lease_a
+    R = rec(2)
+    assert isinstance(h.replicate("a", lease_a, R, {"c"}), float)
+    fault = _fail_next_write(monkeypatch, c.tier._log)
+    h.release("a", lease_a, to={"c"})
+    assert c.wait_idle(5.0)
+    assert fault["fired"]
+    monkeypatch.undo()
+    _assert_failed_acceptor(h, c)
+    _reopen(h, c)
+    assert _logged(c.tier) == R
+
+
+# -- the A1 refusal path on a real TieredStorage ------------------------------------------------
+
+class _PausedLock:
+    """Wraps a lock: the thread named ``worker`` waits before acquiring it until ``gate`` is set."""
+
+    def __init__(self, lock, worker):
+        self._lock, self._worker = lock, worker
+        self.waiting, self.gate = threading.Event(), threading.Event()
+
+    def __enter__(self):
+        if threading.current_thread().name == self._worker and not self.gate.is_set():
+            self.waiting.set()
+            assert self.gate.wait(20)
+        self._lock.acquire()
+        return self
+
+    def __exit__(self, *exc):
+        self._lock.release()
+        return False
+
+
+def test_a1_a_worker_on_a_tiered_storage_refuses_a_replication_its_closed_tier_refused(harness, tmp_path):
+    """Re-review 9 coverage note: the A1 path on a real ``TieredStorage``.  c's worker is about
+    to append the replication's ranges entry (paused before the ranges lock, after the open
+    check) when c's space is closed and reopened over the same directory.  The closed storage
+    refuses the write (``ProtoValidationError``), the worker sends a refusal, c stays healthy
+    (a closed space is "tier gone", not a failed tier), and no file of either storage instance
+    changes."""
+    h = harness()
+    store = FakeObjectStore()
+    path = str(tmp_path / "c")
+
+    def tier_class(disk, name):
+        if name != "c":
+            return MemoryTier(disk, name)
+        return TieredStorage(path, store, durability="fsync", ship_interval=0.0, backoff=(0.0, 0.0), retries=0)
+
+    old = h.nodes["c"]
+    old.stop()
+    h.retired.append(old)
+    h.tier_class = tier_class
+    h.nodes["c"] = h._node("c", 0.0)
+    assert h.rejoin("c")
+    r0 = h.bootstrap("a")
+    t0 = h.nodes["c"].tier
+    h.nodes["c"].detach(t0)
+    t0.close()
+    h.restart("c")                      # a reattach of a non-empty log needs the safe grace
+    h.clock.t += 3 * GRACE
+    lease_a = h.attempt("a", {"c"})
+    assert not isinstance(lease_a, Exception), lease_a
+    a, c = h.nodes["a"], h.nodes["c"]
+    a.tier.outgoing = lambda: [[uuid.uuid4().bytes, 64, b"record"]]
+    t1 = c.tier
+    paused = _PausedLock(t1._ranges_lock, "proto-cluster-worker-c")
+    t1._ranges_lock = paused
+    R = rec(2)
+    t, out = _start_commit(h, lease_a, R)
+    try:
+        assert paused.waiting.wait(10), "c's worker never stored the records"
+        c.detach(t1)
+        t1.close()
+        c.attach(tier_class(None, "c"))
+        before = _snapshot(path)
+    finally:
+        paused.gate.set()
+    assert c.wait_idle(5.0)
+    acks = [m["ok"] for _, _, m in h.net.take("c", {"a"}, ("ack",))]
+    assert acks == [False], acks
+    assert _snapshot(path) == before, "a write after close() changed a file"
+    stats = c.stats()
+    assert c.healthy and not stats["fenced"] and not stats["tier_failed"]
+    assert c.tier.commit_ranges(R) is None
+    a.stop()
+    t.join(10.0)
+    h.retired.append(a)
+    t2 = c.tier
+    c.detach(t2)
+    t2.close()
+    assert t2.load_roots().accepted[1] == r0
+
+
+def _snapshot(root) -> dict:
+    out = {}
+    for directory, _, names in os.walk(root):
+        for name in names:
+            full = os.path.join(directory, name)
+            with open(full, "rb") as f:
+                out[os.path.relpath(full, root)] = f.read()
+    return out
+
+
+# -- _secure_chain ----------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("detached", [True, False])
+def test_secure_chain_tells_a_detached_tier_from_a_failed_one(harness, monkeypatch, detached):
+    """Re-review 9 coverage note.  The rejoin stores the records of the adopted root and
+    ``store_commit`` is refused.  On a tier detached meanwhile (``detached``) the chain returns
+    "the tier was detached", the rejoin records nothing, and the node is healthy.  On a tier
+    still attached, the tier is failed and the reason returned, instead of the error escaping
+    to the rejoin loop, which retried it forever on a poisoned storage."""
+    h = harness(records=True)
+    c = h.nodes["c"]
+    tier = c.tier
+    root = rec(5)
+    monkeypatch.setattr(c, "commit_records", lambda label, r: ("records", [], []))
+
+    def refused(records, r, label, ranges):
+        if detached:
+            c.detach(tier)
+            raise ProtoValidationError("Storage is closed: storing replicated records refused")
+        raise ProtoUnexpectedError("Storing replicated records failed: [Errno 5] Input/output error")
+
+    tier.store_commit = refused
+    reason = c._secure_chain(tier, 5 << 12, root)
+    if detached:
+        assert reason == "the tier was detached"
+        assert c.tier is None and c.healthy and not c.stats()["tier_failed"]
+        assert c._block_rejoin(tier, reason) is False and c.stats()["rejoin_blocked"] is None
+    else:
+        assert reason is not None and "the tier failed" in reason
+        assert c.stats()["tier_failed"] and not c.healthy
+        with c._lock:
+            assert c._witness_state() == "unknown"

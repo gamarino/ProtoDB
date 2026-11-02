@@ -112,6 +112,19 @@ Health
     off the commit path, so the node keeps granting and acknowledging, but it reports
     itself unhealthy.
 
+    A failed write on the attached tier -- an acceptor-log write (an acceptance, a promise,
+    a committed root, a rejoin's entries) or a write of the records an acceptance or a commit
+    vouches for -- makes the tier *failed* (8.3d re-review 9, B1; ruling R57): what was
+    being decided is never acknowledged nor granted, and from then on the node refuses every
+    grant and replication (reason ``"tier_failed"``), answers ``unknown`` (never counted),
+    does not rejoin, and :meth:`ClusterCoordinator.acquire` raises ``ProtoUnexpectedError``.
+    It is not a fence: the coordinator is sound and the failure belongs to that tier (a
+    storage poisons its handles after an I/O error, :mod:`proto_db.cluster.rootlog`,
+    :mod:`proto_db.storage.tiered`).  :meth:`ClusterCoordinator.detach` clears it, so
+    closing the space and reopening it on a healthy disk brings the node back (its log is
+    loaded as after a restart).  ``healthy`` is False meanwhile and ``stats()["tier_failed"]``
+    True.
+
 Acceptor-log writes (8.3d re-review 7, N1; ruling R55)
     Every acceptor decision -- an acceptance (a peer's, or the holder's own), a grant and
     our own vote, a rejoin's adoption, a committed root learnt and logged -- runs under one
@@ -369,6 +382,7 @@ class ClusterCoordinator:
         self._chunks = {}                   # sender -> (rid, {index: records}) awaiting a replicate
         self._failure = None                # the exception that fenced this node, if any
         self._persist_failure = None        # the exception that stopped the persister, if any
+        self._tier_failure = None           # the write error that made the attached tier fail, if any
         self._rejoining = False             # the acceptor log was empty: learning the promised terms
         self._rejoin_forced = False         # the operator accepted a rejoin from a bare majority
         self._rejoin_blocked = None         # why the running rejoin cannot complete, if it cannot
@@ -443,8 +457,9 @@ class ClusterCoordinator:
         requests sent and served, ``critical``: the summed seconds spent inside the critical
         section by stage (validation, intent replay, path copy, replication) over
         ``critical_commits`` commits, and the health metric: ``healthy``, ``fenced``,
-        ``persisting`` and ``failure`` (the exception that fenced the node or stopped its
-        persister, or ``None``).  ``rejoin_blocked`` says why a rejoin that has its answers
+        ``persisting``, ``tier_failed`` (a write on the attached tier failed: the node is no
+        acceptor until the tier is detached) and ``failure`` (the exception that fenced the
+        node, failed its tier or stopped its persister, or ``None``).  ``rejoin_blocked`` says why a rejoin that has its answers
         cannot complete (the records of the adopted root are unobtainable, or, outside a
         cluster's first start, its answers were gathered before the instant its empty log was
         attached plus ``restart_grace``),
@@ -452,9 +467,11 @@ class ClusterCoordinator:
         with self._lock:
             out = dict(self._stats)
             out["critical"] = dict(self._critical)
-            failure = self._failure if self._failure is not None else self._persist_failure
+            failure = next((f for f in (self._failure, self._tier_failure, self._persist_failure)
+                            if f is not None), None)
             out["healthy"] = failure is None
             out["fenced"] = self._failure is not None
+            out["tier_failed"] = self._tier_failure is not None
             out["persisting"] = self._persist_failure is None
             out["rejoining"] = self._rejoining
             out["rejoin_blocked"] = self._rejoin_blocked if self._rejoining else None
@@ -464,9 +481,10 @@ class ClusterCoordinator:
     @property
     def healthy(self) -> bool:
         """False once an internal failure fenced this node (see :meth:`fence`) or stopped its
-        persister (see :meth:`persistence_failed`)."""
+        persister (see :meth:`persistence_failed`), and while the attached tier is failed
+        (module docstring, "Health")."""
         with self._lock:
-            return self._failure is None and self._persist_failure is None
+            return self._failure is None and self._persist_failure is None and self._tier_failure is None
 
     def persistence_failed(self, error: BaseException) -> None:
         """Record that the persister stopped after an unexpected internal failure ``error``:
@@ -496,6 +514,24 @@ class ClusterCoordinator:
         if first:
             logger.error("Node %s is fenced after an internal failure: %r", self._node, error,
                          exc_info=(type(error), error, error.__traceback__))
+
+    def _tier_failed(self, tier, error: BaseException, what: str) -> bool:
+        """A write ``what`` on ``tier`` failed with ``error``.  When ``tier`` is still attached,
+        record it as failed (module docstring, "Health"; the first failure is kept) and return
+        True; return False when it was detached meanwhile (a closed space refuses writes: the
+        tier is gone, not failed).  The caller never acknowledges nor grants what the write
+        was for."""
+        with self._cond:
+            attached = self._tier is tier
+            first = attached and self._tier_failure is None
+            if first:
+                self._tier_failure = error
+            self._cond.notify_all()
+        if first:
+            logger.error("Node %s stops acting as an acceptor: %s failed on its tier (%r); close and reopen "
+                         "the space on a healthy disk to bring it back", self._node, what, error,
+                         exc_info=(type(error), error, error.__traceback__))
+        return attached
 
     def record_critical(self, timings: dict) -> None:
         """Add one commit's critical-section stage timings (seconds) to :meth:`stats`."""
@@ -572,6 +608,9 @@ class ClusterCoordinator:
         if self._failure is not None:
             raise ProtoUnexpectedError(f"Node {self._node} is fenced after an internal failure: "
                                        f"{self._failure!r}") from self._failure
+        if self._tier_failure is not None:
+            raise ProtoUnexpectedError(f"Node {self._node}: a write on its tier failed ({self._tier_failure!r}); "
+                                       f"close and reopen the space on a healthy disk") from self._tier_failure
 
     def attach(self, tier) -> None:
         """Attach the cluster tier of the space this node commits to and start its persister.
@@ -688,7 +727,7 @@ class ClusterCoordinator:
         """What this node's answers are worth (lock held): ``"unknown"`` without a loaded
         acceptor log (no space opened, or stopping), ``"empty"`` while it rejoins, ``"ok"``
         for a witness (its log holds what it promised and accepted)."""
-        if self._state != "running" or self._tier is None or not self._loaded:
+        if self._state != "running" or self._tier is None or not self._loaded or self._tier_failure is not None:
             return "unknown"
         return "empty" if self._rejoining else "ok"
 
@@ -797,7 +836,8 @@ class ClusterCoordinator:
         or the coordinator stops."""
         while True:
             with self._cond:
-                if self._state != "running" or self._tier is not tier or not self._rejoining:
+                if self._state != "running" or self._tier is not tier or not self._rejoining \
+                        or self._tier_failure is not None:
                     return
             wait = self._request_timeout
             try:
@@ -826,7 +866,8 @@ class ClusterCoordinator:
                 self.fence(e)
                 raise
             with self._cond:
-                self._cond.wait_for(lambda: self._state != "running", timeout=wait)
+                self._cond.wait_for(lambda: self._state != "running" or self._tier_failure is not None,
+                                    timeout=wait)
 
     def _complete_rejoin(self, tier, answers: list, promised: list, how: str, asked: float,
                          fresh_from: float) -> bool:
@@ -889,11 +930,18 @@ class ClusterCoordinator:
             with self._lock:
                 if self._tier is not tier:
                     return True
-            if learnt:
-                tier.log_promise(learnt)
-            if best is not None:
-                tier.log_root("accepted", best[0], best[1], sync=True)
-            tier.log_rejoined()             # last: the log now holds what the node must know
+            try:
+                if learnt:
+                    tier.log_promise(learnt)
+                if best is not None:
+                    tier.log_root("accepted", best[0], best[1], sync=True)
+                tier.log_rejoined()             # last: the log now holds what the node must know
+            except (ProtoDBError, OSError) as e:
+                # Attached throughout (_log_lock): the tier failed.  Nothing is published; the
+                # node stays rejoining, not a witness, until the tier is replaced (ruling R57).
+                self._tier_failed(tier, e, "the rejoin's acceptor-log write")
+                return self._block_rejoin(tier, f"writing its acceptor log failed ({e}); close and reopen the "
+                                                f"space on a healthy disk")
             self._publish_rejoin(learnt, promised, best, committed)
         logger.info("Node %s rejoined with an empty acceptor log: highest term %d, accepted root %s",
                     self._node, learnt, None if best is None else root_key(*best)[:2])
@@ -952,12 +1000,12 @@ class ClusterCoordinator:
             if where == "records":
                 try:
                     tier.store_commit(records, current[1], current[0], ranges)
-                except (ProtoDBError, OSError):
-                    with self._lock:
-                        if self._tier is not tier:
-                            # Closed once detached: it refuses writes (ruling R56).
-                            return "the tier was detached"
-                    raise
+                except (ProtoDBError, OSError) as e:
+                    if not self._tier_failed(tier, e, "storing the records of an adopted root"):
+                        # Closed once detached: it refuses writes (ruling R56).
+                        return "the tier was detached"
+                    return (f"storing the records of root epoch {current[1].epoch} (label {current[0]}) failed "
+                            f"({e}); the tier failed")
             current = tier.parent_root(current[1])
         return None
 
@@ -1099,6 +1147,9 @@ class ClusterCoordinator:
                 self._tier = None
                 self._loaded = False
                 self._rejoining = False
+                # A failure belongs to the tier that failed: the next attach starts healthy,
+                # from what its log holds (ruling R57).
+                self._tier_failure = None
                 # A force was the operator's decision about the rejoin of this log; it does not
                 # carry over to another one (nor does it survive a restart).  A force requested
                 # while no log is attached applies to the next attach (force_rejoin).
@@ -1283,13 +1334,15 @@ class ClusterCoordinator:
 
     def _log_promise(self, tier, term: int) -> bool:
         """Write the promise of ``term`` to ``tier`` (``_log_lock`` held, ``tier`` attached);
-        False (logged) if it failed: the grant must not be sent or counted."""
+        False if it failed: the grant must not be sent or counted, and the tier is failed
+        (module docstring, "Health")."""
         try:
             tier.log_promise(term)
             return True
         except (ProtoDBError, OSError) as e:
             logger.error("Node %s could not record its promise of term %d; the grant is withheld: %s",
                          self._node, term, e)
+            self._tier_failed(tier, e, f"recording the promise of term {term}")
             return False
 
     def _refusal(self) -> Optional[str]:
@@ -1298,6 +1351,8 @@ class ClusterCoordinator:
             return "fenced"
         if self._tier is None or not self._loaded:
             return "no_storage"
+        if self._tier_failure is not None:
+            return "tier_failed"
         if self._rejoining:
             return "rejoining"
         return None
@@ -1436,8 +1491,13 @@ class ClusterCoordinator:
                             tier = self._tier
                         if learnt is not None and tier is not None:
                             # Logged so that a restarted node never serves an older root than it
-                            # did; on the tier attached when it was learnt (ruling R55).
-                            tier.log_root("committed", learnt[0], learnt[1], sync=False)
+                            # did; on the tier attached when it was learnt (ruling R55).  A failed
+                            # write fails the tier (ruling R57); the root, majority-accepted
+                            # already, may stay known in memory (module docstring).
+                            try:
+                                tier.log_root("committed", learnt[0], learnt[1], sync=False)
+                            except (ProtoDBError, OSError) as e:
+                                self._tier_failed(tier, e, "logging a committed root")
                 elif kind == "commit_query":
                     self._serve_commit(msg)
                 else:
@@ -1505,6 +1565,7 @@ class ClusterCoordinator:
         records = msg["records"]
         with self._lock:
             tier = self._tier
+            failed = self._tier_failure is not None
             pending = self._chunks.pop(sender, None)
         complete = True
         if msg["chunks"]:
@@ -1517,7 +1578,7 @@ class ClusterCoordinator:
             # Acknowledging needs a durable place for the records and the root: a node without
             # a tier never counts toward the majority.
             ok = valid and tier is not None and self._may_accept(term, root, label)
-        if valid and tier is not None:
+        if valid and tier is not None and not failed:
             # Records are stored even when the root is refused (a newer term was granted here
             # meanwhile): immutable data, and this node may be the next holder, whose base can
             # be this root (adopted from its granters); it then reads nothing under its lease.
@@ -1529,15 +1590,16 @@ class ClusterCoordinator:
                     # A re-proposed base: its records rode with this replication (ruling R50).
                     tier.store_commit([], broot, blabel, protocol.decode_ranges(msg["base_ranges"]) or [])
             except (ProtoDBError, OSError) as e:
-                with self._lock:
-                    gone = self._tier is not tier
-                if not gone:
-                    raise
-                # The space closed under this replication: its tier refuses writes once closed
-                # (ruling R56), so the records may be missing there.  Refused below, never
-                # acknowledged, and not a fault of this node.
-                logger.info("Node %s: the tier was detached while storing a replication: %s", self._node, e)
-                ok = False
+                if self._tier_failed(tier, e, "storing a replication's records"):
+                    # Still attached: the tier failed (ruling R57).  Refused below, never
+                    # acknowledged; the node refuses everything until the tier is replaced.
+                    ok = False
+                else:
+                    # The space closed under this replication: its tier refuses writes once
+                    # closed (ruling R56), so the records may be missing there.  Refused below,
+                    # never acknowledged, and not a fault of this node.
+                    logger.info("Node %s: the tier was detached while storing a replication: %s", self._node, e)
+                    ok = False
             else:
                 with self._cond:
                     if self._tier is tier:
@@ -1555,7 +1617,17 @@ class ClusterCoordinator:
                     self._stats["refused"] += 1
                     reply_root = self._wire(self._accepted)
             if ok:
-                tier.log_root("accepted", label, root, sync=True)     # durable before the ack
+                try:
+                    tier.log_root("accepted", label, root, sync=True)     # durable before the ack
+                except (ProtoDBError, OSError) as e:
+                    # Attached throughout (_log_lock): the tier failed (ruling R57).  Nothing is
+                    # published and the replication is refused, never acknowledged.
+                    self._tier_failed(tier, e, "logging an accepted root")
+                    ok = False
+                    with self._lock:
+                        self._stats["refused"] += 1
+                        reply_root = self._wire(self._accepted)
+            if ok:
                 with self._lock:
                     self._observe_accepted(True, root, label)
                     ck, croot, clabel = decode_labeled_root(msg["committed"])
@@ -1617,7 +1689,8 @@ class ClusterCoordinator:
         """Wait until this node may propose: not while it rejoins (module docstring)."""
         with self._cond:
             self._cond.wait_for(lambda: not self._rejoining or self._state != "running"
-                                or self._failure is not None, timeout=max(0.0, deadline - time.monotonic()))
+                                or self._failure is not None or self._tier_failure is not None,
+                                timeout=max(0.0, deadline - time.monotonic()))
             self._check_running()
             self._check_healthy()
             if self._rejoining:
@@ -1804,7 +1877,11 @@ class ClusterCoordinator:
             extra = list(extra or ())
             base_wire = encode_root(base_root, known=True, term=base_label)
             base_ranges = protocol.encode_ranges(ranges)
-            tier.store_commit(extra, base_root, base_label, ranges)     # durable here before our own ack
+            try:
+                tier.store_commit(extra, base_root, base_label, ranges)     # durable here before our own ack
+            except (ProtoDBError, OSError) as e:
+                self._tier_failed(tier, e, "storing the records of a re-proposed base")
+                raise
         # Our own records are durable here before any of them leaves this node.  In a shared
         # storage, no peer may acknowledge their root before they are durable there.  When they
         # ride with the replication, a holder that died between sending them and making them
@@ -1812,7 +1889,11 @@ class ClusterCoordinator:
         # restarted, it would seal and upload that prefix as the whole segment, the store would
         # then "hold" records it lacks, and a root built on them would become unreadable.  So
         # the bytes of an own segment that any peer holds are always on this node's disk.
-        tier.flush_local()
+        try:
+            tier.flush_local()
+        except (ProtoDBError, OSError) as e:
+            self._tier_failed(tier, e, "making the commit's records durable")
+            raise
         chunks = _split_records(extra + records, protocol.CHUNK_BYTES)
         with self._lock:
             if self._tier is tier:
@@ -1846,8 +1927,14 @@ class ClusterCoordinator:
                     # Where the records of this root are, before its outcome is known: a node
                     # that adopts it later (a rejoin, a holder re-proposing it) copies them
                     # from here.
-                    tier.remember_commit(extra + records, root, label)
-                    tier.log_root("accepted", label, root, sync=True)
+                    try:
+                        tier.remember_commit(extra + records, root, label)
+                        tier.log_root("accepted", label, root, sync=True)
+                    except (ProtoDBError, OSError) as e:
+                        # Attached throughout (_log_lock): the tier failed (ruling R57); our own
+                        # vote is not counted, and the outcome is unknown (below).
+                        self._tier_failed(tier, e, "logging the holder's own acceptance")
+                        raise
                     with self._lock:
                         self._observe_accepted(True, root, label)
                         waiter.acks.add(self._node)
@@ -1921,9 +2008,11 @@ class ClusterCoordinator:
                 if attached:            # never on a detached log (ruling R55)
                     tier.log_root("committed", label, root, sync=False)
         except (ProtoDBError, OSError) as e:
-            # Committed already: the bookkeeping only speeds up a restart and local release,
-            # never fail the commit for it (the space may be closing).
-            logger.warning("Node %s could not record committed root epoch %d: %s", self._node, root.epoch, e)
+            # Committed already (a majority acknowledged within the lease): never fail the
+            # commit for this bookkeeping.  A write that failed on the attached tier fails it
+            # (ruling R57); on a detached one (the space closing) it is only logged.
+            if not self._tier_failed(tier, e, "recording a committed root"):
+                logger.warning("Node %s could not record committed root epoch %d: %s", self._node, root.epoch, e)
         return time.perf_counter() - started
 
     # -- recovery and peer services ----------------------------------------------------------

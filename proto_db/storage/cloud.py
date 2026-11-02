@@ -553,17 +553,24 @@ class CloudStorage(SharedStorage):
             raise ProtoValidationError("expected_epoch must be a non-negative int or None")
         self._check_publishable(ptr)
         self.flush()
-        # The root is written under the upload lock, which close() takes: no root is written
-        # once close() has started (8.3d re-review 8, A1).
-        with self._upload_lock:
-            with self._state_lock:
-                self._check_open()
-                if ptr.segment in self._local:
-                    raise ProtoUnexpectedError(f"Segment {ptr.segment.hex} is not uploaded; refusing to publish")
-            failures = 0
-            races = 0
-            uncertain = False   # an earlier attempt may still land: exhaustion is then an unknown outcome
-            while True:
+        failures = 0
+        races = 0
+        uncertain = False   # an earlier attempt may still land: exhaustion is then an unknown outcome
+        while True:
+            # Each attempt reads and writes the root under the upload lock, which close() takes,
+            # after the closed check made under it: no root is written once close() has started
+            # (8.3d re-review 8, A1).  The lock is released for the back-off sleeps, so close()
+            # and spilling pushes never wait for them (re-review 9, B2).
+            with self._upload_lock:
+                with self._state_lock:
+                    if self._closed and uncertain:
+                        # An earlier attempt of ours may still land: never report "not applied".
+                        raise ProtoOutcomeUnknownError(
+                            "The storage was closed while publishing the root, after an attempt whose "
+                            "outcome is unknown; read the root to resolve it")
+                    self._check_open()
+                    if ptr.segment in self._local:
+                        raise ProtoUnexpectedError(f"Segment {ptr.segment.hex} is not uploaded; refusing to publish")
                 current, etag, recent = self._read_root_object()
                 epoch = current.epoch if current is not None else 0
                 if expected_epoch is not None and expected_epoch != epoch:
@@ -594,26 +601,27 @@ class CloudStorage(SharedStorage):
                     error, outcome = e, self._resolve(mine, etag, e)
                 if outcome == "applied":
                     return mine
-                if isinstance(error, PreconditionFailedError) or outcome == "taken":
-                    if expected_epoch is not None:
-                        raise ProtoConflictError(
-                            f"Another root was published concurrently (epoch {epoch + 1} is taken)") from error
-                    races += 1
-                    if races >= _UNCONDITIONAL_ATTEMPTS:
-                        raise ProtoConflictError(
-                            f"Unconditional publish lost {races} races to other writers") from error
-                    self._sleep(min(races, 10))
-                    continue
-                # Not applied and the root is unchanged: safe to send again (same etag condition).
-                if failures == self._retries:
-                    if uncertain:
-                        raise ProtoOutcomeUnknownError(
-                            f"Publishing the root failed after {failures + 1} attempt(s) and an earlier "
-                            f"attempt may still be applied; read the root to resolve it: {error}") from error
-                    raise ProtoUnexpectedError(
-                        f"Publishing the root failed after {failures + 1} attempt(s) (not applied): {error}") from error
-                self._sleep(failures)
-                failures += 1
+            # The upload lock is released: decide, and back off without holding it.
+            if isinstance(error, PreconditionFailedError) or outcome == "taken":
+                if expected_epoch is not None:
+                    raise ProtoConflictError(
+                        f"Another root was published concurrently (epoch {epoch + 1} is taken)") from error
+                races += 1
+                if races >= _UNCONDITIONAL_ATTEMPTS:
+                    raise ProtoConflictError(
+                        f"Unconditional publish lost {races} races to other writers") from error
+                self._sleep(min(races, 10))
+                continue
+            # Not applied and the root is unchanged: safe to send again (same etag condition).
+            if failures == self._retries:
+                if uncertain:
+                    raise ProtoOutcomeUnknownError(
+                        f"Publishing the root failed after {failures + 1} attempt(s) and an earlier "
+                        f"attempt may still be applied; read the root to resolve it: {error}") from error
+                raise ProtoUnexpectedError(
+                    f"Publishing the root failed after {failures + 1} attempt(s) (not applied): {error}") from error
+            self._sleep(failures)
+            failures += 1
 
     # --- locking ---------------------------------------------------------------------------
 

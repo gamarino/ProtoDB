@@ -117,8 +117,22 @@ before ``close()`` passes that lock or is refused with ``ProtoValidationError``:
 
 A descriptor is therefore never written after it was closed, so a descriptor number the
 operating system hands to another file meanwhile is never written through a stale storage.
+
+Failed local writes (8.3d re-review 9, B1; ruling R57): any I/O error of a write to the local
+directory -- ``segments.log``, ``ranges.log`` (an append, an ``fsync``, or a compaction's
+rewrite, rename, reopen or close), a copy of another node's segment, the directory ``fsync``,
+a local release -- poisons the local tier: every later local write, and every write to
+``roots.log`` through this storage, raises ``ProtoUnexpectedError`` until the storage is
+closed and reopened.  A log that failed mid-write may end in a torn entry, after which its
+reader stops, and what an ``fsync`` that failed left on disk is unknown, so nothing written
+after the failure could be relied on.  A compaction of ``ranges.log`` opens and fully
+prepares the replacement before it closes the old descriptor, so the descriptor attribute
+never holds a closed number.  Object-store writes are not affected (they read what is local,
+never write it); the inner :class:`~proto_db.storage.file.FileStorage` poisons itself the same
+way on a failed segment write.
 """
 import contextlib
+import errno
 import logging
 import os
 import random
@@ -136,7 +150,7 @@ from ..errors import (ProtoBacklogFullError, ProtoCorruptionError, ProtoDBError,
                       ProtoNotSupportedError, ProtoTimeoutError, ProtoUnexpectedError,
                       ProtoValidationError)
 from ..cluster import protocol as _protocol
-from ..cluster.rootlog import LoggedRoots, RootsLog, compare_roots, root_key
+from ..cluster.rootlog import LoggedRoots, RootsLog, compare_roots, prepare_replacement, root_key, write_all
 from .base import SharedStorage
 from .cache import BoundedCache
 from .cloud import (ObjectNotFoundError, OutcomeUnknownError, PreconditionFailedError,
@@ -178,6 +192,18 @@ class _Own:
         self.uploaded = False
         self.max_key = None        # root_key of the newest commit that shipped records of this segment
         self.released = False
+
+
+def _pwrite_all(fd: int, data, offset: int) -> None:
+    """Write every byte of ``data`` at ``offset`` of ``fd``: a short write is continued, a write
+    that makes no progress raises ``OSError``."""
+    view = memoryview(data)
+    while view:
+        n = os.pwrite(fd, view, offset)
+        if n <= 0:
+            raise OSError(errno.EIO, f"pwrite returned {n}")
+        view = view[n:]
+        offset += n
 
 
 def _encode_root_object(record: RootRecord, label: int) -> bytes:
@@ -295,6 +321,7 @@ class TieredStorage(SharedStorage):
         self._manifest_dirty = False
         self._last_alert = 0.0
         self._closed = False
+        self._failed = None            # the I/O error that poisoned the local tier, if any
         self._stats = {"reads_cache": 0, "reads_local": 0, "reads_peer": 0, "reads_remote": 0,
                        "critical_misses": 0, "remote_segment_gets": 0, "segments_uploaded": 0,
                        "root_writes": 0, "root_writes_in_critical": 0, "segments_released": 0,
@@ -344,12 +371,31 @@ class TieredStorage(SharedStorage):
         if self._closed:
             raise ProtoValidationError("Storage is closed")
 
-    def _refuse_closed(self, what: str) -> None:
-        """Refuse a write once :meth:`close` has started (``ProtoValidationError``).  Called with
-        the lock guarding ``what`` held, the lock ``close()`` takes before releasing it (module
-        docstring), so a write that passes this check completes before ``close()`` does."""
+    def _refuse_closed(self, what: str, *, local: bool = True) -> None:
+        """Refuse a write once :meth:`close` has started (``ProtoValidationError``) and, for a
+        ``local`` write, once an earlier local write failed (``ProtoUnexpectedError``; module
+        docstring).  Called with the lock guarding ``what`` held, the lock ``close()`` takes
+        before releasing it (module docstring), so a write that passes this check completes
+        before ``close()`` does."""
         if self._closed:
             raise ProtoValidationError(f"Storage is closed: {what} refused")
+        if local:
+            self._refuse_failed(what)
+
+    def _refuse_failed(self, what: str) -> None:
+        """Refuse a local write once an earlier one failed (``ProtoUnexpectedError``)."""
+        failed = self._failed
+        if failed is not None:
+            raise ProtoUnexpectedError(
+                f"The local tier at {self._path} failed earlier ({failed!r}): {what} refused; close and "
+                f"reopen the storage to write again")
+
+    def _fail(self, error: BaseException) -> None:
+        """Poison the local tier after the failed local write ``error`` (module docstring); the
+        first failure is kept.  Never called with ``_lock`` held."""
+        with self._lock:
+            if self._failed is None:
+                self._failed = error
 
     # -- startup -----------------------------------------------------------------------------
 
@@ -420,10 +466,11 @@ class TieredStorage(SharedStorage):
         with self._ranges_lock:
             self._refuse_closed(f"writing {RANGES_LOG}")
             try:
-                os.write(self._ranges_fd, entry)
+                write_all(self._ranges_fd, entry)
                 if sync and self._durability == "fsync":
                     os.fsync(self._ranges_fd)
             except OSError as e:
+                self._fail(e)
                 raise ProtoUnexpectedError(f"Writing {RANGES_LOG} failed: {e}") from e
 
     def _compact_ranges(self) -> None:
@@ -435,15 +482,14 @@ class TieredStorage(SharedStorage):
                     return
                 with self._lock:
                     live = b"".join(self._encode_ranges(k, e, r) for k, (e, r) in self._ranges.items())
-                tmp = os.path.join(self._path, RANGES_LOG + ".tmp")
-                with open(tmp, "wb") as f:
-                    f.write(live)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp, os.path.join(self._path, RANGES_LOG))
-                os.close(self._ranges_fd)
-                self._ranges_fd = self._open_ranges()
+                # Open and fully prepare the replacement, swap, and only then close the old
+                # descriptor (8.3d re-review 9, B1): the attribute never holds a closed number.
+                new = prepare_replacement(os.path.join(self._path, RANGES_LOG), live,
+                                          os.O_WRONLY | _O_BINARY | _O_CLOEXEC)
+                old, self._ranges_fd = self._ranges_fd, new
+                os.close(old)
             except OSError as e:
+                self._fail(e)
                 raise ProtoUnexpectedError(f"Compacting {RANGES_LOG} failed: {e}") from e
             self._fsync_dir()
 
@@ -471,8 +517,11 @@ class TieredStorage(SharedStorage):
                         self._own[ptr.segment] = _Own(ptr.segment)
                 if write:
                     try:
-                        os.write(self._manifest_fd, ptr.segment.bytes)
+                        write_all(self._manifest_fd, ptr.segment.bytes)
                     except OSError as e:
+                        # The segment is registered but not in the manifest: nothing may be
+                        # flushed or shipped as if it were (the tier is poisoned).
+                        self._fail(e)
                         raise ProtoUnexpectedError(f"Writing {MANIFEST} failed: {e}") from e
                     with self._lock:
                         self._manifest_dirty = True
@@ -508,8 +557,10 @@ class TieredStorage(SharedStorage):
                 try:
                     os.fsync(self._manifest_fd)
                 except OSError as e:
+                    # Never retried: after a failed fsync what reached the disk is unknown.
                     with self._lock:
                         self._manifest_dirty = True
+                    self._fail(e)
                     raise ProtoUnexpectedError(f"Syncing {MANIFEST} failed: {e}") from e
 
     # -- reads -------------------------------------------------------------------------------
@@ -888,15 +939,16 @@ class TieredStorage(SharedStorage):
                     fd = os.open(path, os.O_RDWR | os.O_CREAT | _O_BINARY | _O_CLOEXEC, 0o644)
                     try:
                         if os.fstat(fd).st_size < SEGMENT_HEADER_SIZE:
-                            os.pwrite(fd, encode_segment_header(segment), 0)
+                            _pwrite_all(fd, encode_segment_header(segment), 0)
                             created = created or not known
                         for offset, data in items:
-                            os.pwrite(fd, data, offset)
+                            _pwrite_all(fd, data, offset)
                         if self._durability == "fsync":
                             os.fsync(fd)
                     finally:
                         os.close(fd)
                 except OSError as e:
+                    self._fail(e)
                     raise ProtoUnexpectedError(f"Storing replicated records of segment {segment.hex} failed: {e}") from e
                 for offset, data in items:
                     self._cache.put((segment, offset), data)
@@ -908,30 +960,37 @@ class TieredStorage(SharedStorage):
         """Warm the caches with replicated records (already cached by :meth:`apply`)."""
 
     def _fsync_dir(self) -> None:
+        """Make the local directory's entries durable; a failure poisons the local tier."""
         try:
             fd = os.open(self._path, os.O_RDONLY | _O_CLOEXEC)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
         except OSError as e:
-            raise ProtoUnexpectedError(f"Cannot open {self._path}: {e}") from e
-        try:
-            os.fsync(fd)
-        except OSError as e:
+            self._fail(e)
             raise ProtoUnexpectedError(f"Cannot fsync {self._path}: {e}") from e
-        finally:
-            os.close(fd)
 
     def log_root(self, kind: str, label: int, record: Optional[RootRecord], *, sync: bool) -> None:
         """Append a root this node accepted or learnt committed to ``roots.log`` (``fsync`` with
-        ``sync``; see :class:`~proto_db.cluster.rootlog.RootsLog`)."""
+        ``sync``; see :class:`~proto_db.cluster.rootlog.RootsLog`).  Refused once the local
+        tier failed (an accepted root vouches for records stored here)."""
+        self._check_open()
+        self._refuse_failed(f"writing {ROOTS_LOG}")
         self._roots.append(kind, label, record, sync=sync)
 
     def log_promise(self, term: int) -> None:
-        """Make this node's promise of lease ``term`` durable in ``roots.log`` before it is sent."""
+        """Make this node's promise of lease ``term`` durable in ``roots.log`` before it is sent.
+        Refused once the local tier failed."""
         self._check_open()
+        self._refuse_failed(f"writing {ROOTS_LOG}")
         self._roots.promise(term)
 
     def log_rejoined(self) -> None:
-        """Append the rejoined marker to ``roots.log`` (the node's rejoin completed)."""
+        """Append the rejoined marker to ``roots.log`` (the node's rejoin completed).  Refused
+        once the local tier failed."""
         self._check_open()
+        self._refuse_failed(f"writing {ROOTS_LOG}")
         self._roots.mark_rejoined()
 
     def load_roots(self) -> LoggedRoots:
@@ -976,7 +1035,7 @@ class TieredStorage(SharedStorage):
         """
         data = _encode_root_object(record, label)
         with self._ship_lock:       # object-store writes: never once close() has started
-            self._refuse_closed("persisting the root")
+            self._refuse_closed("persisting the root", local=False)
             for attempt in range(self._retries + 1):
                 try:
                     try:
@@ -1011,7 +1070,7 @@ class TieredStorage(SharedStorage):
         strict) and raises it; the next call resumes.  Called by the persister only.
         """
         with self._ship_lock:
-            self._refuse_closed("shipping")
+            self._refuse_closed("shipping", local=False)     # its flush() checks the local tier
             with self._lock:
                 pending = [o for o in self._own.values() if not o.uploaded]
             if not pending:
@@ -1204,7 +1263,7 @@ class TieredStorage(SharedStorage):
         if not upload_copies or len(copies) < len(missing):
             return False
         with self._ship_lock:       # object-store writes: never once close() has started
-            self._refuse_closed("uploading segment parts")
+            self._refuse_closed("uploading segment parts", local=False)
             for segment, end in copies.items():
                 data = self._copy_prefix(segment, end)
                 if data is None:
@@ -1261,6 +1320,7 @@ class TieredStorage(SharedStorage):
                 except FileNotFoundError:
                     pass                # already gone
                 except OSError as e:
+                    self._fail(e)
                     raise ProtoUnexpectedError(f"Releasing local segment {segment.hex} failed: {e}") from e
         with self._lock:
             self._stats["segments_released"] += len(own)
@@ -1366,13 +1426,15 @@ class TieredStorage(SharedStorage):
                 error = e
             self._local.close()
             with self._manifest_lock:
+                fd, self._manifest_fd = self._manifest_fd, -1
                 try:
-                    os.close(self._manifest_fd)
+                    os.close(fd)
                 except OSError as e:
                     error = error or e
             with self._ranges_lock:
+                fd, self._ranges_fd = self._ranges_fd, -1
                 try:
-                    os.close(self._ranges_fd)
+                    os.close(fd)
                 except OSError as e:
                     error = error or e
             with self._copies_lock:

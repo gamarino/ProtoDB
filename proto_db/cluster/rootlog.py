@@ -31,8 +31,21 @@ The acceptor log
     handle (``ProtoValidationError``), checked under the lock of the append, so a space that
     has closed its log never has a root logged, nor acknowledged, through it.
 
+Failed writes poison the handle (8.3d re-review 9, B1; ruling R57)
+    Any I/O error of a :class:`RootsLog` -- a write, an ``fsync``, a compaction's rewrite,
+    rename, reopen or close of the replaced descriptor -- leaves the handle refusing every
+    later write with ``ProtoUnexpectedError``: after a failed write the file may end in a torn
+    entry, after which the decoder stops (a later entry would be lost on reload), and after a
+    failed ``fsync`` what reached the disk is unknown.  The node must reopen its log (close
+    and reopen the space) to act as an acceptor again.  A compaction opens and fully
+    prepares the replacement file before it closes the old descriptor (the descriptor
+    attribute is swapped, then the old one closed), so the handle never holds a closed
+    descriptor number while it accepts writes: a number the operating system hands to
+    another file is never written through it.
+
 Thread-safety: both logs serialize their methods with a lock.
 """
+import errno
 import os
 import struct
 import threading
@@ -41,10 +54,11 @@ import weakref
 import zlib
 from typing import NamedTuple, Optional
 
-from ..errors import ProtoCorruptionError, ProtoUnexpectedError, ProtoValidationError
+from ..errors import ProtoCorruptionError, ProtoUnexpectedError, ProtoValidationError, attach_secondary_errors
 from ..storage.format import FORMAT_VERSION, RootRecord
 
-__all__ = ["root_key", "compare_roots", "LoggedRoots", "RootsLog", "MemoryRootsLog", "memory_log_for"]
+__all__ = ["root_key", "compare_roots", "LoggedRoots", "RootsLog", "MemoryRootsLog", "memory_log_for",
+           "write_all", "prepare_replacement"]
 
 _ENTRY = struct.Struct("<BQQ16sQ")          # kind, label (or term), epoch, segment, offset
 _CRC = struct.Struct("<I")
@@ -53,6 +67,42 @@ KINDS = {"accepted": 1, "committed": 2, "promise": 3, "rejoined": 4}
 _COMPACT_BYTES = 1024 * 1024
 _O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
 _O_BINARY = getattr(os, "O_BINARY", 0)
+
+
+def write_all(fd: int, data) -> None:
+    """Write every byte of ``data`` to the descriptor ``fd`` (opened with ``O_APPEND``): a
+    short write is continued, a write that makes no progress raises ``OSError``."""
+    view = memoryview(data)
+    while view:
+        n = os.write(fd, view)
+        if n <= 0:
+            raise OSError(errno.EIO, f"write returned {n}")
+        view = view[n:]
+
+
+def prepare_replacement(path: str, data: bytes, flags: int) -> int:
+    """Replace the file ``path`` by one holding ``data`` and return a descriptor open on the
+    new file (``flags`` plus ``O_APPEND``), ready for appends.
+
+    ``data`` is written to ``path + ".tmp"`` through the descriptor returned, ``fsync``-ed,
+    and only then renamed over ``path``; the descriptor follows the file through the rename.
+    On any failure the descriptor is closed and the error raised: ``path`` is either intact
+    or replaced by the complete new contents, and the caller's descriptor on the old file is
+    untouched.  The caller swaps its descriptor attribute to the one returned before it closes
+    the old one (8.3d re-review 9, B1), then makes the directory entry durable."""
+    tmp = path + ".tmp"
+    fd = os.open(tmp, flags | os.O_CREAT | os.O_TRUNC | os.O_APPEND, 0o644)
+    try:
+        write_all(fd, data)
+        os.fsync(fd)
+        os.replace(tmp, path)
+    except BaseException as e:
+        try:
+            os.close(fd)
+        except OSError as close_error:
+            attach_secondary_errors(e, [close_error])
+        raise
+    return fd
 
 
 def root_key(label: int, record: Optional[RootRecord]) -> tuple:
@@ -151,6 +201,10 @@ def _decode(data: bytes) -> LoggedRoots:
 class RootsLog:
     """A node's acceptor log in the file ``path`` (see the module docstring).
 
+    Writes are refused once the log is closed (``ProtoValidationError``) and once any write,
+    ``fsync`` or compaction step failed (``ProtoUnexpectedError``; the handle is poisoned,
+    module docstring).  Reads (:meth:`load`) go by path and keep working.
+
     Args:
         path: the log file (created with its directory if missing).
         durability: ``"fsync"`` (synced appends are ``fsync``-ed), ``"flush"`` or ``"none"``.
@@ -161,6 +215,7 @@ class RootsLog:
         self._durability = durability
         self._lock = threading.Lock()
         self._closed = False
+        self._failed = None           # the I/O error that poisoned this handle, if any
         self._promised = 0            # highest promise known durable here
         directory = os.path.dirname(self._path)
         try:
@@ -192,25 +247,32 @@ class RootsLog:
         finally:
             os.close(fd)
 
+    def _check_writable(self) -> None:
+        """Refuse a write through a closed or poisoned handle (lock held)."""
+        if self._closed:
+            raise ProtoValidationError(f"The root log {self._path} is closed")
+        if self._failed is not None:
+            raise ProtoUnexpectedError(
+                f"The root log {self._path} refuses writes after an earlier I/O failure ({self._failed!r}); "
+                f"reopen it (close and reopen the space) to write again")
+
     def append(self, kind: str, label: int, record: Optional[RootRecord], *, sync: bool) -> None:
         """Append an ``"accepted"`` or ``"committed"`` root (``fsync`` with ``sync``, per the
         durability mode).  Raises ``ProtoValidationError`` when the log is closed: an
         acknowledgement must never be sent for a root that was not logged."""
         entry = _encode(_check_kind(kind), label, record)
         with self._lock:
-            if self._closed:
-                raise ProtoValidationError(f"The root log {self._path} is closed")
+            self._check_writable()
             self._write(entry, sync)
 
     def promise(self, term: int) -> None:
         """Make the promise of ``term`` durable (per the durability mode) before it is sent.
 
-        Raises ``ProtoValidationError`` when the log is closed: a promise that cannot be
-        recorded must not be made.
+        Raises ``ProtoValidationError`` when the log is closed and ``ProtoUnexpectedError`` when
+        it is poisoned: a promise that cannot be recorded must not be made.
         """
         with self._lock:
-            if self._closed:
-                raise ProtoValidationError(f"The root log {self._path} is closed")
+            self._check_writable()
             if term <= self._promised:
                 return              # a higher or equal promise is already durable
             self._write(_encode(3, term, None), True)
@@ -220,20 +282,24 @@ class RootsLog:
         """Append the rejoined marker, durable per the durability mode (written last, after
         the promise and the roots the rejoin learnt)."""
         with self._lock:
-            if self._closed:
-                raise ProtoValidationError(f"The root log {self._path} is closed")
+            self._check_writable()
             self._write(_encode(4, 0, None), True)
 
     def _write(self, entry: bytes, sync: bool) -> None:
-        """Append ``entry`` (lock held)."""
+        """Append ``entry`` (lock held, handle writable).  Any failure poisons the handle: the
+        file may end in a torn entry, or hold what an ``fsync`` could not confirm."""
         try:
-            os.write(self._fd, entry)
+            write_all(self._fd, entry)
             if sync and self._durability == "fsync":
                 os.fsync(self._fd)
             if os.fstat(self._fd).st_size > _COMPACT_BYTES:
                 self._compact()
         except OSError as e:
+            self._failed = e
             raise ProtoUnexpectedError(f"Writing the root log {self._path} failed: {e}") from e
+        except BaseException as e:
+            self._failed = e
+            raise
 
     def _read(self) -> LoggedRoots:
         with open(self._path, "rb") as f:
@@ -251,14 +317,11 @@ class RootsLog:
             data += _encode(3, roots.promised, None)
         if not roots.empty:
             data += _encode(4, 0, None)                  # the rejoined marker, last
-        tmp = self._path + ".tmp"
-        with open(tmp, "wb") as f:
-            f.write(data)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, self._path)
-        os.close(self._fd)
-        self._fd = self._open()
+        # Open and fully prepare the replacement, swap, and only then close the old descriptor
+        # (8.3d re-review 9, B1): the handle never holds a closed descriptor number.
+        new = prepare_replacement(self._path, data, os.O_RDWR | _O_BINARY | _O_CLOEXEC)
+        old, self._fd = self._fd, new
+        os.close(old)
         self._fsync_dir(os.path.dirname(self._path))
 
     def load(self) -> LoggedRoots:
@@ -275,8 +338,9 @@ class RootsLog:
             if self._closed:
                 return
             self._closed = True
+            fd, self._fd = self._fd, -1
             try:
-                os.close(self._fd)
+                os.close(fd)
             except OSError as e:
                 raise ProtoUnexpectedError(f"Closing the root log {self._path} failed: {e}") from e
 
