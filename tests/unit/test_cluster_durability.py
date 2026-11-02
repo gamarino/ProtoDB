@@ -56,7 +56,8 @@ def test_a_shared_file_storage_commit_survives_a_whole_cluster_crash_before_any_
             cl[n].stop()                                   # the whole cluster dies: no close, no persister pass
     for storage in storages:
         storage.close()                                    # file descriptors only; publishes no root
-    with Cluster(3, **FAST) as cl:
+    # Restarted on their logs: a startup grace of one lease (0 is for a cluster's first start only).
+    with Cluster(3, **dict(FAST, startup_grace=FAST["lease_duration"])) as cl:
         spaces = [ObjectSpace(FileStorage(path, durability="fsync"), coordinator=cl[n]) for n in cl.ids]
         try:
             assert _value(spaces[2]) == 1                  # recovered from the nodes' acceptor logs

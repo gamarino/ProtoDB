@@ -182,7 +182,9 @@ def _in_process_tcp_rate(black_holed: bool, seconds: float = 1.5) -> float:
         addresses[2] = hole.getsockname()
     peers = [(f"n{i}", host, port) for i, (host, port) in enumerate(addresses)]
     live = 2 if black_holed else 3
-    nodes = [ClusterCoordinator(f"n{i}", peers, transport=transports[i], startup_grace=0.0).start()
+    # A restarted cluster (below): a grace of 0 is refused on a non-empty acceptor log (R50).
+    grace = 0.2
+    nodes = [ClusterCoordinator(f"n{i}", peers, transport=transports[i], startup_grace=grace).start()
              for i in range(live)]
     storage = MemoryStorage()
     from proto_db.cluster.rootlog import memory_log_for
@@ -194,7 +196,6 @@ def _in_process_tcp_rate(black_holed: bool, seconds: float = 1.5) -> float:
         ObjectSpace(storage).new_database("db")
         uids = itertools.count()
         done = []
-        stop_at = time.monotonic() + seconds
 
         def worker(node):
             db = ObjectSpace(storage, coordinator=node).open_database("db")
@@ -207,12 +208,17 @@ def _in_process_tcp_rate(black_holed: bool, seconds: float = 1.5) -> float:
             done.append(n)
 
         threads = [threading.Thread(target=worker, args=(nodes[i % 2],)) for i in range(4)]
+        time.sleep(grace)                      # the members grant nothing during their grace
+        stop_at = time.monotonic() + seconds
         start = time.monotonic()
         for t in threads:
             t.start()
         for t in threads:
             t.join()
-        return sum(done) / (time.monotonic() - start)
+        elapsed = time.monotonic() - start
+        # Self-report: a worker that raised never appends (a share of 0 is contention, not failure).
+        assert len(done) == len(threads) and sum(done) > 0, f"a worker failed or nothing committed: {done}"
+        return sum(done) / elapsed
     finally:
         for node in nodes:
             node.stop()

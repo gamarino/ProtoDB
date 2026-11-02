@@ -48,7 +48,11 @@ The cluster tier
     ``persist(label, record)``, ``ship(force)``, ``refresh_remote()``, ``commit_ranges(root)``,
     ``ensure_remote(needs, upload_copies=)``,
     ``release_local(persisted_key)``, ``check_backlog()``, ``check_commit_allowed()``,
-    ``critical_section()``.
+    ``critical_section()``, ``remember_commit(records, root, label)``.  A tier whose records live
+    on each node's disk sets ``local_records = True`` and also provides
+    ``commit_records(ranges)``, ``store_commit(records, root, label, ranges)`` and
+    ``parent_root(record)``: a root adopted without its replication then travels with its
+    records (ruling R50; see :mod:`proto_db.storage.tiered`).
 """
 import collections
 import contextlib
@@ -154,6 +158,9 @@ class PlainTier:
 
     def shipped(self, records: list, root=None, label: int = 0) -> None:
         """Nothing to track."""
+
+    def remember_commit(self, records: list, root, label: int) -> None:
+        """Nothing to remember: every record is in the shared storage."""
 
     def apply(self, records: list, root=None, label: int = 0) -> None:
         """Nothing to store."""
@@ -284,6 +291,13 @@ class Persister:
         with self._lock:
             record = self._persisted[1]
             return record.epoch if record is not None else 0
+
+    def covers(self, label: int, record: Optional[RootRecord]) -> bool:
+        """True when the newest persisted root this node knows orders at or above the root
+        ``record`` labelled ``label``: that commit and every earlier one on its chain are in
+        the object store with all their records."""
+        with self._lock:
+            return not self._behind(label, record)
 
     def _behind(self, label: int, record: Optional[RootRecord]) -> bool:
         """True when the root ``record`` labelled ``label`` orders after the persisted one (lock held)."""

@@ -20,11 +20,14 @@ fields of its type:
 ``records``    ``term``, ``rid``, ``index``, ``records``: one chunk of the records of the
                replication ``rid`` that do not fit in its ``replicate`` frame (sent before it,
                on the same ordered link; ``index`` counts from 0).
-``replicate``  ``term``, ``rid``, ``root``, ``committed``, ``records``, ``chunks``: the lease
-               holder of ``term`` replicates its new root (the commit point, D46) together
-               with the records the receiver needs: ``[segment UUID bytes, offset, framed
-               record bytes or None]`` (``None``: the records live in a shared storage; only
-               prefetch), after ``chunks`` ``records`` messages carrying the rest.
+``replicate``  ``term``, ``rid``, ``root``, ``committed``, ``records``, ``chunks``, ``base``,
+               ``base_ranges``: the lease holder of ``term`` replicates its new root (the
+               commit point, D46) together with the records the receiver needs: ``[segment
+               UUID bytes, offset, framed record bytes or None]`` (``None``: the records live
+               in a shared storage; only prefetch), after ``chunks`` ``records`` messages
+               carrying the rest.  When the new root re-proposes a base nobody knew committed,
+               ``base`` is that base and ``base_ranges`` the byte ranges of its commit, whose
+               records ride with this replication (ruling R50); otherwise both are ``None``.
 ``ack``        ``term``, ``rid``, ``ok``, ``root``: the receiver durably accepted (``ok``) or
                refused the replicated root; ``root`` is its accepted root.
 ``query``      ``rid``: ask a peer for the roots it knows (recovery, rejoin).
@@ -35,6 +38,12 @@ fields of its type:
                never counts).
 ``fetch``      ``rid``, ``segment``, ``offset``: a peer page request for one record.
 ``fetched``    ``rid``, ``data``: the framed record bytes, or ``None`` when the peer lacks it.
+``commit_query`` ``rid``, ``root``: where are the records of the commit of ``root``?
+``commit_info``  ``rid``, ``persisted``, ``ranges``: ``persisted`` is True when the peer knows a
+               persisted root ordering at or above ``root`` (that commit and every earlier one
+               are in the object store); ``ranges`` lists ``[segment UUID bytes, start, end]``,
+               the byte ranges of the records shipped with that commit, when the peer knows
+               them (else ``None``).
 
 ``root`` and ``committed`` use :func:`encode_root`: a root with the term of the lease that
 replicated it (its *label*); roots are ordered by
@@ -62,10 +71,11 @@ from ..storage.format import FORMAT_VERSION, RootRecord
 __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYTES", "MESSAGE_TYPES",
            "ClusterProtocolError",
            "make_message", "validate_message", "encode_message", "decode_message", "check_frame_size",
-           "encode_frame", "FrameDecoder", "encode_root", "decode_root", "decode_labeled_root"]
+           "encode_frame", "FrameDecoder", "encode_root", "decode_root", "decode_labeled_root",
+           "encode_ranges", "decode_ranges"]
 
 #: Version carried by every message; a receiver drops messages of any other version.
-PROTOCOL_VERSION = 4
+PROTOCOL_VERSION = 5
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
 #: Record bytes a replication puts in one frame at most (a single record may fill one alone).
@@ -82,6 +92,7 @@ _ROOT = "root"
 _RECORDS = "records"
 _UUID = "uuid"
 _OPT_BYTES = "optional bytes"
+_RANGES = "ranges"
 
 #: Fields of each message type (besides ``v``, ``type`` and ``from``).
 MESSAGE_TYPES = {
@@ -93,13 +104,15 @@ MESSAGE_TYPES = {
                 "held": _BOOL},
     "records": {"term": _INT, "rid": _INT, "index": _INT, "records": _RECORDS},
     "replicate": {"term": _INT, "rid": _INT, "root": _ROOT, "committed": _ROOT, "records": _RECORDS,
-                  "chunks": _INT},
+                  "chunks": _INT, "base": _ROOT, "base_ranges": _RANGES},
     "ack": {"term": _INT, "rid": _INT, "ok": _BOOL, "root": _ROOT},
     "query": {"rid": _INT},
     "answer": {"rid": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL, "promised": _INT,
                "state": _STR},
     "fetch": {"rid": _INT, "segment": _UUID, "offset": _INT},
     "fetched": {"rid": _INT, "data": _OPT_BYTES},
+    "commit_query": {"rid": _INT, "root": _ROOT},
+    "commit_info": {"rid": _INT, "persisted": _BOOL, "ranges": _RANGES},
 }
 
 
@@ -120,6 +133,10 @@ def _check_field(kind: str, name: str, value, expected: str) -> None:
         ok = isinstance(value, bytes) and len(value) == 16
     elif expected == _OPT_BYTES:
         ok = value is None or isinstance(value, bytes)
+    elif expected == _RANGES:
+        ok = value is None or (isinstance(value, list) and all(
+            isinstance(r, (list, tuple)) and len(r) == 3 and isinstance(r[0], bytes) and len(r[0]) == 16
+            and type(r[1]) is int and type(r[2]) is int and 0 <= r[1] <= r[2] for r in value))
     elif expected == _RECORDS:
         ok = isinstance(value, list) and all(
             isinstance(r, (list, tuple)) and len(r) == 3 and isinstance(r[0], bytes) and len(r[0]) == 16
@@ -248,3 +265,17 @@ def decode_root(value) -> tuple:
     """``(known, RootRecord or None)`` of a wire root (its label is dropped)."""
     known, record, _ = decode_labeled_root(value)
     return known, record
+
+
+def encode_ranges(ranges) -> Optional[list]:
+    """Wire form of byte ranges ``[(segment UUID, start, end)]`` (``None`` stays ``None``)."""
+    if ranges is None:
+        return None
+    return [[segment.bytes, start, end] for segment, start, end in ranges]
+
+
+def decode_ranges(value) -> Optional[list]:
+    """Inverse of :func:`encode_ranges` (the message was validated)."""
+    if value is None:
+        return None
+    return [(uuid.UUID(bytes=segment), start, end) for segment, start, end in value]

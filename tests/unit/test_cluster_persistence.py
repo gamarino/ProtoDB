@@ -8,7 +8,7 @@ from proto_db.errors import ProtoTimeoutError
 from proto_db.storage.cloud import CloudStorage
 from proto_db.transactions import ObjectSpace
 from tests.support.fake_object_store import FakeObjectStore
-from tests.support.tiered_cluster import RUN_KW, TieredCluster, incr
+from tests.support.tiered_cluster import FAST, RUN_KW, TieredCluster, incr
 
 pytestmark = [pytest.mark.timeout(120)]
 
@@ -134,7 +134,8 @@ def test_the_whole_cluster_restarting_on_its_disks_loses_nothing_unpersisted(tmp
         _commit(tc, tc.ids, 7)
     store.set_outage(False)
     assert _remote_value(store) is None or _remote_value(store) < 7
-    with TieredCluster(tmp_path, store=store) as tc:     # same local directories
+    # Same local directories, so a startup grace of one lease (0 is for a cluster's first start only).
+    with TieredCluster(tmp_path, store=store, startup_grace=FAST["lease_duration"]) as tc:
         assert tc.eventually("n1", 7)
         tc.db("n1").run(incr, **RUN_KW)
         tc.spaces["n1"].sync(timeout=15)

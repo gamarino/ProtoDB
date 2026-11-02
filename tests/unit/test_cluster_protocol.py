@@ -30,19 +30,35 @@ def test_every_message_carries_the_protocol_version_and_sender():
                      held=True)),
     ("replicate", dict(term=3, rid=4, root=[5, uuid.UUID(int=2).bytes, 80, 3], committed=None,
                        records=[[uuid.UUID(int=2).bytes, 80, b"framed"], [uuid.UUID(int=3).bytes, 26, None]],
-                       chunks=1)),
+                       chunks=1, base=None, base_ranges=None)),
+    ("replicate", dict(term=3, rid=4, root=[5, uuid.UUID(int=2).bytes, 80, 3], committed=None, records=[],
+                       chunks=0, base=[4, uuid.UUID(int=4).bytes, 64, 2],
+                       base_ranges=[[uuid.UUID(int=4).bytes, 26, 90]])),
     ("records", dict(term=3, rid=4, index=0, records=[[uuid.UUID(int=2).bytes, 40, b"framed"]])),
     ("ack", dict(term=3, rid=4, ok=True, root=None)),
     ("query", dict(rid=1)),
     ("answer", dict(rid=1, root=None, committed=[0, None, None, 0], certain=True, promised=4, state="ok")),
     ("fetch", dict(rid=2, segment=uuid.UUID(int=9).bytes, offset=26)),
     ("fetched", dict(rid=2, data=None)),
+    ("commit_query", dict(rid=3, root=[4, uuid.UUID(int=4).bytes, 64, 2])),
+    ("commit_info", dict(rid=3, persisted=False, ranges=[[uuid.UUID(int=4).bytes, 26, 90]])),
+    ("commit_info", dict(rid=3, persisted=True, ranges=None)),
 ])
 def test_message_roundtrip_through_a_frame(kind, fields):
     msg = make_message(kind, "peer-a", **fields)
     decoder = FrameDecoder()
     [out] = decoder.feed(encode_frame(msg))
     assert out == msg
+
+
+def test_ranges_must_be_segment_start_end_triples():
+    root = [4, uuid.UUID(int=4).bytes, 64, 2]
+    for bad in ([[b"short", 1, 2]], [[uuid.UUID(int=4).bytes, 9, 2]], [[uuid.UUID(int=4).bytes, -1, 2]], "x"):
+        with pytest.raises(ClusterProtocolError):
+            make_message("commit_info", "n1", rid=1, persisted=False, ranges=bad)
+    with pytest.raises(ClusterProtocolError):
+        make_message("replicate", "n1", term=1, rid=1, root=root, committed=None, records=[], chunks=0,
+                     base=root, base_ranges=[[b"short", 1, 2]])
 
 
 def test_make_message_rejects_unknown_types_and_missing_fields():

@@ -75,6 +75,13 @@ class _Stub:
         return self._committed + (None, 0.0, 1)
 
 
+class _NoPersisted:
+    """A tier whose object store holds no persisted root."""
+
+    def read_persisted(self):
+        return None
+
+
 def test_x1_guard_a_base_older_than_the_known_committed_root_is_refused():
     from proto_db.transactions import _lease_base
     old = RootRecord(FORMAT_VERSION, uuid.uuid4(), 64, 2)
@@ -82,8 +89,8 @@ def test_x1_guard_a_base_older_than_the_known_committed_root_is_refused():
     lease = Lease(term=3 * 4096, acquired_at=0.0, valid_until=1e9, root=old, root_certain=True,
                   clock=lambda: 0.0, root_term=4096)
     with pytest.raises(ProtoCorruptionError, match="below the committed root"):
-        _lease_base(_Stub((True, newer, 8192)), None, lease)
-    assert _lease_base(_Stub((True, old, 4096)), None, lease) == (old, 4096, True)
+        _lease_base(_Stub((True, newer, 8192)), _NoPersisted(), lease)
+    assert _lease_base(_Stub((True, old, 4096)), _NoPersisted(), lease) == (old, 4096, True)
 
 
 def test_x1_guard_a_holder_overtaken_by_a_later_term_acquires_again_instead_of_raising():
@@ -151,7 +158,7 @@ def test_x2_a_node_whose_log_is_still_loading_neither_answers_nor_grants():
         old.stop()
         cl.retired.append(old)
         node = ClusterCoordinator("n2", cl.peers, transport=cl.net.endpoint(), lease_duration=2.0,
-                                  drift_margin=0.2, request_timeout=0.2, startup_grace=0.0)
+                                  drift_margin=0.2, request_timeout=0.2, startup_grace=0.2)
         node.start()
         cl.nodes["n2"] = node
         attaching = threading.Thread(target=node.attach, args=(SlowTier(cl.disks["n2"], "n2"),))

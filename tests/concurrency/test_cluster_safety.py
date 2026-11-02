@@ -15,9 +15,9 @@ node's drifting clock mapped back by ``DriftClock.to_real``):
 2. no committed update is lost or duplicated: every ``Database.run`` that returned added
    its unique id to a blind-written ``CountedSet`` exactly once, and no other id appears
    except those whose commit ended with ``ProtoOutcomeUnknownError`` (present at most
-   once).  The final state is read from the cluster after the faults stop (one more
-   commit on the newest lineage), then from the storage once it is persisted (D46): both
-   agree;
+   once).  The final state is read from the cluster after the faults stop (every live
+   node reopens its space; one more commit on the newest lineage), then from the storage
+   once it is persisted (D46): both agree;
 3. a stale holder never commits: a holder whose replication resumed after its lease ended
    was refused (``ProtoConflictError`` or ``ProtoOutcomeUnknownError``); the persisters'
    root writes (the only ones, D46) all pass an expected epoch, and one whose expected
@@ -120,16 +120,16 @@ class Freezer:
     def wrap(self, node):
         replicate = node.replicate
 
-        def frozen_replicate(lease, root):
+        def frozen_replicate(lease, root, **kw):
             with self._lock:
                 stall = self.freezes.pop(node.node_id, None)
             if stall is None:
-                return replicate(lease, root)
+                return replicate(lease, root, **kw)
             before = self._top()
             time.sleep(stall)
             moved = self._top() != before
             try:
-                result = replicate(lease, root)
+                result = replicate(lease, root, **kw)
             except (ProtoConflictError, ProtoOutcomeUnknownError):
                 with self._lock:
                     self.results.append((moved, True))
@@ -269,9 +269,23 @@ def _run_schedule(schedule):
         cl.net.heal()
         alive = [n for n in cl.ids if n not in crashed]
         if len(alive) * 2 > size:
+            # Every live process has its space open again: a node restarted after the workers
+            # stopped has none yet, and without a space it grants nothing (Y2: the final commit
+            # then found 2 live members of 5 and timed out).  Restarted nodes grant only after
+            # their startup grace, so a lease may take a few attempts.  The write is idempotent,
+            # so an outcome left unknown (acknowledgements later than the 0.3 s lease on a loaded
+            # machine) is retried as well; the invariants below do not depend on it.
+            for node_id in alive:
+                space_of(node_id)
             final = space_of(alive[0])
-            final.open_database("db").run(lambda tr: tr.set_root_object("final", True), retries=50,
-                                          backoff=(0.01, 0.05))
+            for attempt in itertools.count():
+                try:
+                    final.open_database("db").run(lambda tr: tr.set_root_object("final", True), retries=50,
+                                                  backoff=(0.01, 0.05))
+                    break
+                except (ProtoTimeoutError, ProtoOutcomeUnknownError):
+                    if attempt == 10:
+                        raise
             tr = final.open_database("db").new_transaction()
             counted = tr.get_root_object("ids")
             in_cluster = {} if counted is None else dict(counted.items())

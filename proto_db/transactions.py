@@ -452,8 +452,8 @@ def _commit_under_lease(coordinator, lock_timeout, build: Callable) -> bool:
                     # with an unchanged root on top, so that transactions starting from the
                     # committed root see it (otherwise a transaction that read what it
                     # changed would conflict against it forever).  One holder may commit
-                    # several roots in one term.
-                    current = _commit_base(coordinator, lease, current)
+                    # several roots in one term.  The base travels with its records.
+                    current = _commit_base(coordinator, lease, label, current)
                     lease.bind_root(current, lease.term)
                 stamp = _ClusterStamp(lease.term, lease.expected_epoch + 1)
                 ptr = build(current, stamp)
@@ -487,12 +487,16 @@ def _lease_base(coordinator, tier, lease) -> Optional[tuple]:
 
     Hard guard: the base never orders below the committed root this node knows.  Every
     committed root was accepted by a majority, which every recovery and every granting
-    majority of witnesses intersects, so an older base means a lost acceptor log answered as a
-    witness; committing over it would silently drop an acknowledged commit, so it raises
-    ``ProtoCorruptionError`` instead.  The guard concerns roots committed before this lease
-    was granted (labelled below its term); a committed root labelled with this term or a
-    later one means another holder committed after this lease was granted -- the holder was
-    paused past its lease -- so the lease is superseded and the caller acquires again.
+    majority of witnesses intersects, so an older base means acceptor logs were lost beyond
+    the failure model (a majority of them); committing over it would silently drop an
+    acknowledged commit.  When the committed root it knows is the persisted root (or an older
+    one), the cluster refounds from the persisted root, whose records are in the object store,
+    as for any majority loss (D46).  Otherwise it raises ``ProtoCorruptionError``, naming the
+    operator's remedy (``force_rejoin()`` on this node once the loss is established).  The
+    guard concerns roots committed before this lease was granted (labelled below its term); a
+    committed root labelled with this term or a later one means another holder committed
+    after this lease was granted -- the holder was paused past its lease -- so the lease is
+    superseded and the caller acquires again.
     """
     replicated = True
     if lease.root_certain:
@@ -511,24 +515,53 @@ def _lease_base(coordinator, tier, lease) -> Optional[tuple]:
     if known and committed_label >= lease.term:
         return None                 # superseded by a later holder's commit: acquire again
     if known and compare_roots(label, current, committed_label, committed) < 0:
-        raise ProtoCorruptionError(
-            f"Protocol violation: the base root (label {label}, epoch {current.epoch if current else 0}) "
-            f"orders below the committed root this node knows (label {committed_label}, epoch "
-            f"{committed.epoch if committed else 0}); refusing to commit over it")
+        try:
+            persisted = tier.read_persisted()
+        except (ProtoDBError, OSError) as e:
+            raise _guard_error(label, current, committed_label, committed) from e
+        if persisted is None or compare_roots(persisted[0], persisted[1], committed_label, committed) < 0:
+            raise _guard_error(label, current, committed_label, committed)
+        # The witnesses lost the persisted root (a majority of logs lost): refound from it.
+        label, current = persisted
+        replicated = False
+        coordinator.observe_root(current, from_storage=True, term=label, accept=False)
+        if lease.term < label + REFOUND_TERM_STEP:
+            coordinator.refound(label)
+            return None
     if label >= lease.term:
         return None                 # acquire learnt the label: the next term is above it
     return current, label, replicated
 
 
-def _commit_base(coordinator, lease, base: RootRecord) -> RootRecord:
-    """Replicate a root equal to ``base`` (same databases), labelled with the lease term, on top of
-    it; return the new root's record (see :func:`_commit_under_lease`)."""
+def _guard_error(label, current, committed_label, committed) -> ProtoCorruptionError:
+    """The error of the commit guard of :func:`_lease_base`, naming the operator's remedy."""
+    return ProtoCorruptionError(
+        f"Protocol violation: the base root (label {label}, epoch {current.epoch if current else 0}) "
+        f"orders below the committed root this node knows (label {committed_label}, epoch "
+        f"{committed.epoch if committed else 0}); refusing to commit over it.  This follows the loss "
+        f"of a majority of acceptor logs, which lost that commit.  Once an operator has established "
+        f"that loss, call force_rejoin() on this node: it forgets the commit it cannot recover and "
+        f"continues from the highest root the cluster accepted (D46)")
+
+
+def _commit_base(coordinator, lease, label: int, base: RootRecord) -> RootRecord:
+    """Replicate a root equal to ``base`` (labelled ``label``; same databases), labelled with the
+    lease term, on top of it, together with the base's records the object store lacks; return
+    the new root's record (see :func:`_commit_under_lease`).
+
+    Re-proposing the base is what makes it committed; without its records, a base whose
+    records lived only on its holder's disk would be lost with that disk (ruling R50).
+    ``ProtoConflictError`` (nothing replicated) when they are on no reachable peer.
+    """
+    where, records, ranges = coordinator.commit_records(label, base)
+    if where is None:
+        raise ProtoConflictError(f"The base root (epoch {base.epoch}) cannot be re-committed now: {records}")
     context = _SpaceContext(coordinator.tier.storage)
     space = _load_space(context, base)
     stamp = _ClusterStamp(lease.term, base.epoch + 1)
     ptr = context.save(_new_space_root(space.databases, context, stamp, space))
     record = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, stamp.epoch)
-    coordinator.replicate(lease, record)
+    coordinator.replicate(lease, record, base=(label, base, records, ranges) if where == "records" else None)
     return record
 
 

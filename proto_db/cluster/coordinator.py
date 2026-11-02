@@ -35,7 +35,11 @@ Rejoining and witnesses
     learnt, from ``N - majority + 1`` other witnesses (``query``/``answer``; for three
     nodes, both others), the highest term they promised or saw AND the highest root they
     accepted, it neither grants, nor acknowledges, nor proposes, and its answers are marked
-    ``empty``; it then logs that term and that root, then the rejoined marker.  Its own
+    ``empty``.  It then makes every record of that root durable on its own disk (copied from
+    its peers, commit by commit back to the persisted root) or confirms that the object
+    store holds it -- a root travels with its records (ruling R50) -- and only then logs that
+    term and that root, then the rejoined marker; records it cannot obtain leave it
+    rejoining, with the reason in ``stats()["rejoin_blocked"]``.  Its own
     knowledge counts for nothing, so the answering witnesses intersect, outside this node,
     every majority that granted a term or acknowledged a root: it never proposes one of
     its own ballots again, never accepts a root below a ballot it granted, and reports a
@@ -45,7 +49,8 @@ Rejoining and witnesses
     root.  Any other loss of a majority of logs needs the operator's
     :meth:`ClusterCoordinator.force_rejoin`.  With proposer-qualified ballots, two
     different roots never share a label, and no acknowledged root is lost, while at most
-    one acceptor log is lost at a time (D46, rulings R47 and R49).  The price is
+    one acceptor log is lost at a time, with its records, whether the object store is
+    reachable or not (D46, rulings R47, R49 and R50).  The price is
     availability: a node with an empty log -- every node on a cluster's first start --
     needs those answers before it votes.
 Roots and their labels (D46)
@@ -78,8 +83,9 @@ Certainty
     labelled with that term or later.  An uncertain lease runs a recovery round
     (:meth:`ClusterCoordinator.recover_root`): the roots of a majority of peers.
 Peer services
-    ``query``/``answer`` (recovery, joining peers) and ``fetch``/``fetched`` (peer page
-    requests for records not yet in the object store).
+    ``query``/``answer`` (recovery, joining peers), ``fetch``/``fetched`` (peer page
+    requests for records not yet in the object store) and ``commit_query``/``commit_info``
+    (where the records of a commit are: covered by the persisted root, or their byte ranges).
 
 Health
     An unexpected exception in the worker thread fences the node
@@ -215,8 +221,12 @@ class ClusterCoordinator:
         acquire_timeout: default seconds :meth:`acquire` tries before ``ProtoTimeoutError``.
         backoff: ``(min_seconds, max_seconds)`` of the jittered back-off between lost attempts.
         startup_grace: seconds after :meth:`start` during which this node grants nothing and
-            accepts no replicated root (default ``lease_duration``).  ``0`` is safe only on a
-            cluster's first start.
+            accepts no replicated root (default ``lease_duration``): a restarted node does not
+            remember when the grants of its previous life end.  ``0`` is accepted only on a
+            cluster's first start (ruling R50): :meth:`attach` refuses it on an acceptor log
+            that is not empty, and a rejoin with an empty log into a cluster that accepted
+            roots waits one ``lease_duration`` from :meth:`start` instead, as with the default
+            (``stats()["rejoin_blocked"]`` says so meanwhile).
         fetch_timeout: seconds a peer page request waits for an answer; must be shorter than
             ``lease_duration - drift_margin`` (default a quarter of it), and a request made
             under the lease never waits beyond what remains of the lease.
@@ -318,6 +328,7 @@ class ClusterCoordinator:
         self._persist_failure = None        # the exception that stopped the persister, if any
         self._rejoining = False             # the acceptor log was empty: learning the promised terms
         self._rejoin_forced = False         # the operator accepted a rejoin from a bare majority
+        self._rejoin_blocked = None         # why the running rejoin cannot complete, if it cannot
         self._rejoiners = []                # every rejoin thread started (joined by stop)
         self._loaded = False                # the attached tier's acceptor log is loaded
         self._tier = None
@@ -378,7 +389,9 @@ class ClusterCoordinator:
         section by stage (validation, intent replay, path copy, replication) over
         ``critical_commits`` commits, and the health metric: ``healthy``, ``fenced``,
         ``persisting`` and ``failure`` (the exception that fenced the node or stopped its
-        persister, or ``None``)."""
+        persister, or ``None``).  ``rejoin_blocked`` says why a rejoin that has its answers
+        cannot complete (the records of the adopted root are unobtainable, or a startup
+        grace of 0 outside a cluster's first start), else ``None``."""
         with self._lock:
             out = dict(self._stats)
             out["critical"] = dict(self._critical)
@@ -387,6 +400,7 @@ class ClusterCoordinator:
             out["fenced"] = self._failure is not None
             out["persisting"] = self._persist_failure is None
             out["rejoining"] = self._rejoining
+            out["rejoin_blocked"] = self._rejoin_blocked if self._rejoining else None
             out["failure"] = None if failure is None else repr(failure)
             return out
 
@@ -441,6 +455,7 @@ class ClusterCoordinator:
             if self._state != "new":
                 raise ProtoValidationError(f"The coordinator is {self._state}; it cannot be started")
             self._grants = PeerGrants(self._duration, self._clock, startup_grace=self._grace)
+            self._started = self._clock()
             self._state = "running"
         self._worker = threading.Thread(target=self._work, name=f"proto-cluster-worker-{self._node}",
                                         daemon=True)
@@ -527,6 +542,14 @@ class ClusterCoordinator:
                 self._tier = None
             raise
         accepted, committed, top, promised, empty = logged
+        if not empty and self._grace == 0 and self._others:
+            with self._lock:
+                self._tier = None
+            raise ProtoValidationError(
+                f"Node {self._node}: startup_grace=0 is accepted only on a cluster's first start; this "
+                f"node's acceptor log shows it has served the cluster before, so it may have granted a "
+                f"lease that is still running.  Start it with a positive startup_grace (default: "
+                f"lease_duration)")
         rejoin = empty and bool(self._others)
         if empty and not self._others:
             tier.log_rejoined()         # a one-member cluster has nobody to learn from
@@ -540,6 +563,7 @@ class ClusterCoordinator:
             tier.set_fetcher(self.fetch_record)
             self._confirmed = False
             self._rejoining = rejoin
+            self._rejoin_blocked = None
             self._loaded = True
             persister = Persister(self, tier, interval=self._persist_interval, lag=self._persist_lag)
             self._persister = persister
@@ -578,23 +602,51 @@ class ClusterCoordinator:
         return not ak
 
     def force_rejoin(self) -> None:
-        """Disaster recovery: let this node's rejoin (now or at the next :meth:`attach`)
-        complete with the answers of a bare majority counting itself, ``majority - 1`` other
-        members whose log is loaded (witnesses or rejoining), instead of ``N - majority + 1``
-        witnesses.
+        """Disaster recovery after the loss of a majority of acceptor logs.
+
+        On a node that has not rejoined yet (rejoining now, or not attached yet: the next
+        :meth:`attach`): let its rejoin complete with the answers of a bare majority counting
+        itself, ``majority - 1`` other members whose log is loaded (witnesses or rejoining),
+        instead of ``N - majority + 1`` witnesses.  A forced rejoin adopts no committed root
+        above the accepted root it adopts.
+
+        On a node that has rejoined (a survivor): forget the committed root it knows when that
+        root orders above every root it accepted.  Such knowledge was learnt from other nodes
+        (answers, grants) and never logged; after a majority loss it names a commit that was
+        lost with the other logs, and the commit guard refuses to build below it
+        (``ProtoCorruptionError``).  The node then confirms the committed root under a lease
+        before its next snapshot.  A rejoin it may need later is not forced.
 
         Only for an operator who knows that the members that cannot answer lost their acceptor
-        logs too (a majority of disks lost: the cluster then refounds from the persisted root)
+        logs too (a majority of disks lost: the commits after the persisted root may be lost)
         or that the cluster is new.  Used otherwise, two leases may share a term and a
         committed root may be lost; that is why it is never automatic.
         """
+        dropped = None
         with self._cond:
-            self._rejoin_forced = True
+            survivor = self._loaded and not self._rejoining
+            if survivor:
+                ck, croot, clabel = self._committed
+                ak, aroot, alabel = self._accepted
+                if ck and (not ak or compare_roots(clabel, croot, alabel, aroot) > 0):
+                    dropped = (clabel, croot.epoch if croot is not None else 0)
+                    self._committed = (False, None, 0)
+                    self._committed_by = None
+                    self._committed_version += 1
+                    self._confirmed = False
+            else:
+                self._rejoin_forced = True
             self._cond.notify_all()
-        logger.warning("Node %s: rejoin forced by the operator (bare majority)", self._node)
+        if not survivor:
+            logger.warning("Node %s: rejoin forced by the operator (bare majority)", self._node)
+        elif dropped is not None:
+            logger.warning("Node %s: the operator dropped the committed root (label %d, epoch %d), which "
+                           "orders above every root this node accepted", self._node, *dropped)
 
-    def _rejoin_decision(self, answers: dict, states: dict) -> Optional[list]:
-        """The answers a rejoin learns from, or ``None`` when they are not enough (lock held).
+    def _rejoin_decision(self, answers: dict, states: dict) -> Optional[tuple]:
+        """``(answering members, how)``: the answers a rejoin learns from and why they are
+        enough -- ``"forced"``, ``"witnesses"`` or ``"new"`` (a cluster's first start) -- or
+        ``None`` when they are not enough (lock held).
 
         Witness answers (``"ok"``) count; ``N - majority + 1`` of them are needed.  Answers of
         empty members (rejoining) are counted only for a cluster's first start: when every
@@ -604,11 +656,11 @@ class ClusterCoordinator:
         loaded = {p: a for p, a in answers.items() if states.get(p) in ("ok", "empty")}
         witnesses = {p: a for p, a in loaded.items() if states[p] == "ok"}
         if self._rejoin_forced:
-            return list(loaded) if len(loaded) >= self._majority - 1 else None
-        if len(witnesses) >= self._rejoin_answers():
-            return list(witnesses)
+            return (list(loaded), "forced") if len(loaded) >= self._majority - 1 else None
         if len(loaded) == len(self._others) and all(self._rootless(a) for a in loaded.values()):
-            return list(loaded)     # a new cluster: nothing was ever accepted or committed
+            return list(loaded), "new"      # a new cluster: nothing was ever accepted or committed
+        if len(witnesses) >= self._rejoin_answers():
+            return list(witnesses), "witnesses"
         return None
 
     def _rejoin(self, tier) -> None:
@@ -624,10 +676,12 @@ class ClusterCoordinator:
                                    self._request_timeout)
                 with self._lock:
                     answers, promised = dict(waiter.answers), dict(waiter.promised)
-                    counted = self._rejoin_decision(answers, dict(waiter.states))
-                if counted is not None:
-                    self._complete_rejoin(tier, [answers[p] for p in counted], [promised[p] for p in counted])
-                    return
+                    decision = self._rejoin_decision(answers, dict(waiter.states))
+                if decision is not None:
+                    counted, how = decision
+                    if self._complete_rejoin(tier, [answers[p] for p in counted], [promised[p] for p in counted],
+                                             how):
+                        return
             except (ProtoDBError, OSError) as e:
                 with self._lock:
                     if self._state != "running":
@@ -639,16 +693,30 @@ class ClusterCoordinator:
             with self._cond:
                 self._cond.wait_for(lambda: self._state != "running", timeout=self._request_timeout)
 
-    def _complete_rejoin(self, tier, answers: list, promised: list) -> None:
+    def _complete_rejoin(self, tier, answers: list, promised: list, how: str) -> bool:
         """Adopt what the counted ``answers`` teach -- the highest promise and label, and the
         highest accepted root, which orders at or above every committed root (each was
-        accepted by a majority, which the counted answers intersect) -- log both durably, then
-        the rejoined marker, and only then act as an acceptor and a witness.  Committed roots
-        the answers report are adopted as committed knowledge only (they may have been read
-        from the persisted root of the store, which is never acceptance) and are not logged.
+        accepted by a majority, which the counted answers intersect) -- make every record of
+        that root durable here or confirm it is in the object store, log the promise and the
+        root durably, then the rejoined marker, and only then act as an acceptor and a
+        witness.  Return False, leaving the node rejoining with the reason in ``stats()``,
+        when the records cannot be obtained now, or when ``how`` is not a cluster's first
+        start, this node's startup grace is 0 and one ``lease_duration`` has not yet passed
+        since :meth:`start`: an empty acceptor log cannot tell a member that joins its
+        cluster's first start late from a wiped one, so such a node waits the default grace
+        instead (a node whose log is not empty refuses a grace of 0 in :meth:`attach`).
 
-        The node adopts the accepted root without its records: they are read from the peers
-        that hold them (page requests) until the object store has them."""
+        Re-proposing the highest accepted root is what Paxos prescribes, but only together
+        with its value: adopted without its records, a root whose records lived on lost disks
+        would become every later commit's base (ruling R50).  Committed roots the answers
+        report are adopted as committed knowledge only (they may have been read from the
+        persisted root of the store, which is never acceptance), are not logged, and, for a
+        forced rejoin, only up to the adopted root (a majority loss may have lost them)."""
+        if how != "new" and self._grace == 0 and self._clock() < self._started + self._duration:
+            return self._block_rejoin(
+                tier, "startup_grace=0 is accepted only on a cluster's first start, and this cluster has "
+                      "accepted roots; this node waits one lease_duration from its start (the default "
+                      "grace) before it rejoins")
         learnt = max(promised + [max(a[2], c[2]) for a, c, _ in answers] + [0])
         best = committed = None
         for (ak, aroot, alabel), (ck, croot, clabel), _ in answers:
@@ -656,6 +724,13 @@ class ClusterCoordinator:
                 best = (alabel, aroot)
             if ck and (committed is None or compare_roots(clabel, croot, committed[0], committed[1]) > 0):
                 committed = (clabel, croot)
+        if how == "forced" and committed is not None and (
+                best is None or compare_roots(committed[0], committed[1], best[0], best[1]) > 0):
+            committed = None
+        if best is not None:
+            reason = self._secure_chain(tier, best[0], best[1])
+            if reason is not None:
+                return self._block_rejoin(tier, reason)
         if learnt:
             tier.log_promise(learnt)
         if best is not None:
@@ -663,19 +738,117 @@ class ClusterCoordinator:
         tier.log_rejoined()                 # last: the log now holds what the node must know
         with self._cond:
             if self._tier is not tier:
-                return
+                return True
             self._grants.restore(learnt)
             self._hint = max(self._hint, learnt)
             if best is not None:
                 self._observe_accepted(True, best[1], best[0])
+                self._note_stored(best[0], best[1])
             if committed is not None:
                 self._observe_committed(True, committed[1], committed[0], None, accept=False)
             self._rejoining = False
             self._rejoin_forced = False
+            self._rejoin_blocked = None
             self._stats["rejoins"] += 1
             self._cond.notify_all()
         logger.info("Node %s rejoined with an empty acceptor log: highest term %d, accepted root %s",
                     self._node, learnt, None if best is None else root_key(*best)[:2])
+        return True
+
+    def _block_rejoin(self, tier, reason: str) -> bool:
+        """Record why the rejoin on ``tier`` cannot complete (logged when it changes); False."""
+        with self._cond:
+            changed = self._tier is tier and self._rejoin_blocked != reason
+            if self._tier is tier:
+                self._rejoin_blocked = reason
+        if changed:
+            logger.warning("Node %s stays unavailable (rejoining): %s", self._node, reason)
+        return False
+
+    def _secure_chain(self, tier, label: int, root: Optional[RootRecord]) -> Optional[str]:
+        """Make every record of the root ``root`` labelled ``label`` durable on ``tier`` or
+        confirm that the object store holds it; return ``None`` when done, else why not.
+
+        Walks the chain of cluster roots from ``root`` back to the persisted root: every commit
+        on it shipped records that only its acknowledgers hold until the store has them, and
+        this node restores that copy (rejoin after a lost disk).  For each commit
+        (:meth:`commit_records`): stop at a persisted one, skip one whose records the store
+        holds, else store the records of its byte ranges here.  A storage shared by every node
+        holds every record: nothing to do."""
+        if root is None or not getattr(tier, "local_records", False):
+            return None
+        current = (label, root)
+        while current is not None and current[1] is not None and current[0] > 0:
+            with self._lock:
+                if self._state != "running" or self._tier is not tier:
+                    return "the node is stopping"
+            where, records, ranges = self.commit_records(*current)
+            if where is None:
+                return records
+            if where == "persisted":
+                return None
+            if where == "records":
+                tier.store_commit(records, current[1], current[0], ranges)
+            current = tier.parent_root(current[1])
+        return None
+
+    def commit_records(self, label: int, root: Optional[RootRecord]) -> tuple:
+        """Where the records of the commit of ``root`` labelled ``label`` are, gathering those
+        this node must hold to adopt that root without its replication (ruling R50): a rejoin,
+        or a lease holder re-proposing a base nobody knew committed.
+
+        Returns ``("persisted", None, None)`` when the persisted root orders at or above it
+        (this commit and every earlier one are in the object store; also for a storage shared
+        by every node), ``("remote", None, None)`` when the store holds this commit's records,
+        ``("records", records, ranges)`` with the records of the commit's byte ``ranges`` that
+        the store is not known to hold (``[segment bytes, offset, framed record]``; read here
+        or from the peers), or ``(None, reason, None)`` when some record is nowhere reachable.
+        The ranges come from this node's own knowledge, else from the peers (``commit_query``).
+        """
+        tier = self._tier
+        if root is None or tier is None or not getattr(tier, "local_records", False):
+            return "persisted", None, None
+        persister = self._persister
+        if persister is not None and persister.covers(label, root):
+            return "persisted", None, None
+        ranges = tier.commit_ranges(root)
+        if ranges is None:
+            persisted, ranges = self._ask_commit(label, root)
+            if persisted:
+                return "persisted", None, None
+        what = f"root epoch {root.epoch} (label {label})"
+        if ranges is None:
+            try:
+                remote = tier.ensure_remote([(root.segment, None)])
+            except (ProtoDBError, OSError) as e:
+                logger.info("Node %s: the object store could not be checked for %s: %s", self._node, what, e)
+                remote = False
+            if remote:
+                return "remote", None, None
+            return None, (f"no reachable peer knows where the records of {what} are, and the object store "
+                          f"does not hold them"), None
+        records = tier.commit_records(ranges)
+        if records is None:
+            return None, (f"some records of {what} are on no reachable peer and not in the object store"), None
+        return "records", records, ranges
+
+    def _ask_commit(self, label: int, root: RootRecord) -> tuple:
+        """``(persisted, ranges)`` for the commit of ``root`` from the first peer that knows
+        (``commit_query``), within ``fetch_timeout`` (and what remains of a held lease)."""
+        others = len(self._others)
+        if not others:
+            return False, None
+        with self._lock:
+            if self._state != "running":
+                return False, None
+            timeout = self._fetch_timeout
+            if self._held is not None:
+                timeout = min(timeout, max(0.0, self._held.remaining()))
+        waiter = self._ask("commit_query", {"root": encode_root(root, known=True, term=label)},
+                           lambda w: w.data is not None or w.missing >= others, timeout)
+        if waiter.data is None:
+            return False, None
+        return waiter.data
 
     def wait_idle(self, timeout: Optional[float] = None) -> bool:
         """Wait until every queued peer message (replications, releases, fetches) has been
@@ -846,7 +1019,7 @@ class ClusterCoordinator:
             logger.warning("Node %s ignored a %r message from unknown sender %r", self._node, msg["type"], sender)
             return
         kind = msg["type"]
-        if kind in ("records", "replicate", "release", "fetch"):
+        if kind in ("records", "replicate", "release", "fetch", "commit_query"):
             # A release follows its replicate (and a replicate its record chunks) through the
             # same queue, so a root is never known committed here before its records are stored.
             with self._lock:
@@ -1005,6 +1178,17 @@ class ClusterCoordinator:
                 waiter.data = msg["data"]
             else:
                 waiter.missing += 1
+        elif kind == "commit_info":
+            if waiter.kind != "commit_query":
+                return
+            if waiter.data is not None:
+                return
+            if msg["persisted"]:
+                waiter.data = (True, None)
+            elif msg["ranges"] is not None:
+                waiter.data = (False, protocol.decode_ranges(msg["ranges"]))
+            else:
+                waiter.missing += 1
         self._cond.notify_all()
 
     def _broadcast(self, msg: dict) -> None:
@@ -1031,6 +1215,8 @@ class ClusterCoordinator:
                     if learnt is not None and tier is not None:
                         # Logged so that a restarted node never serves an older root than it did.
                         tier.log_root("committed", learnt[0], learnt[1], sync=False)
+                elif kind == "commit_query":
+                    self._serve_commit(msg)
                 else:
                     self._serve_fetch(msg)
             except (ProtoDBError, OSError) as e:
@@ -1114,6 +1300,10 @@ class ClusterCoordinator:
             # be this root (adopted from its granters); it then reads nothing under its lease.
             if records:
                 tier.apply(records, root, label)      # durable before the ack
+            bk, broot, blabel = decode_labeled_root(msg["base"])
+            if bk and broot is not None and getattr(tier, "local_records", False):
+                # A re-proposed base: its records rode with this replication (ruling R50).
+                tier.store_commit([], broot, blabel, protocol.decode_ranges(msg["base_ranges"]) or [])
             with self._cond:
                 self._note_stored(label, root)
         with self._lock:
@@ -1141,6 +1331,18 @@ class ClusterCoordinator:
             if data is not None:
                 self._stats["fetches_served"] += 1
         self._transport.send(msg["from"], make_message("fetched", self._node, rid=msg["rid"], data=data))
+
+    def _serve_commit(self, msg: dict) -> None:
+        """Answer a ``commit_query``: whether the persisted root covers that commit, else the
+        byte ranges of its records if this node knows them (worker thread)."""
+        known, root, label = decode_labeled_root(msg["root"])
+        tier, persister = self._tier, self._persister
+        persisted = root is not None and persister is not None and persister.covers(label, root)
+        ranges = None
+        if not persisted and root is not None and tier is not None and getattr(tier, "local_records", False):
+            ranges = tier.commit_ranges(root)
+        self._transport.send(msg["from"], make_message("commit_info", self._node, rid=msg["rid"], persisted=persisted,
+                                                       ranges=protocol.encode_ranges(ranges)))
 
     # -- acquiring and releasing -------------------------------------------------------------
 
@@ -1310,13 +1512,19 @@ class ClusterCoordinator:
         self._waiters[rid] = waiter
         return rid, waiter
 
-    def replicate(self, lease: Lease, root: RootRecord) -> float:
+    def replicate(self, lease: Lease, root: RootRecord, *, base: Optional[tuple] = None) -> float:
         """Commit ``root`` (built on ``lease.root``) by majority-acknowledged replication (D46).
 
         Sends ``(epoch, root pointer)`` labelled with the lease term, with the records the
         tier has not shipped yet, to every peer; makes them durable locally and accepts the
         root here; returns once a majority (this node included) has acknowledged, before the
         lease ends; then records the root as committed.  Returns the seconds spent.
+
+        ``base`` is ``(label, record, records, ranges)`` when ``root`` re-proposes a base that
+        nobody knew committed (``records`` and ``ranges`` from :meth:`commit_records`): the
+        base's records the object store lacks are made durable here and ride with the
+        replication, and every acknowledger remembers the base's byte ranges, so the base is
+        re-proposed together with its records (ruling R50).
 
         Raises ``ProtoConflictError`` when the lease ended before anything was sent (nothing
         was replicated: safe to retry), and ``ProtoOutcomeUnknownError`` when no majority
@@ -1332,12 +1540,19 @@ class ClusterCoordinator:
             raise ProtoUserError("This lease is not held by this coordinator")
         records = tier.outgoing()
         label = lease.term
+        extra, base_wire, base_ranges = [], None, None
+        if base is not None:
+            base_label, base_root, extra, ranges = base
+            extra = list(extra or ())
+            base_wire = encode_root(base_root, known=True, term=base_label)
+            base_ranges = protocol.encode_ranges(ranges)
+            tier.store_commit(extra, base_root, base_label, ranges)     # durable here before our own ack
         # Records that ride with the replication are made durable by every receiver; records in
         # a shared storage must be durable there before any peer can acknowledge their root.
         riding = bool(getattr(tier, "cluster_tier", False))
         if not riding:
             tier.flush_local()
-        chunks = _split_records(records, protocol.CHUNK_BYTES)
+        chunks = _split_records(extra + records, protocol.CHUNK_BYTES)
         with self._lock:
             self._note_stored(label, root)            # our own records
             self._check_running()
@@ -1349,7 +1564,8 @@ class ClusterCoordinator:
                      for i, chunk in enumerate(chunks[:-1])]
             msg = make_message("replicate", self._node, term=label, rid=rid,
                                root=encode_root(root, known=True, term=label),
-                               committed=self._wire(self._committed), records=chunks[-1], chunks=len(parts))
+                               committed=self._wire(self._committed), records=chunks[-1], chunks=len(parts),
+                               base=base_wire, base_ranges=base_ranges)
             self._stats["replications"] += 1
         failure = None
         try:
@@ -1363,6 +1579,9 @@ class ClusterCoordinator:
                 if self_ok:
                     self._observe_accepted(True, root, label)
             if self_ok:
+                # Where the records of this root are, before its outcome is known: a node that
+                # adopts it later (a rejoin, a holder re-proposing it) copies them from here.
+                tier.remember_commit(extra + records, root, label)
                 tier.log_root("accepted", label, root, sync=True)
                 with self._lock:
                     waiter.acks.add(self._node)

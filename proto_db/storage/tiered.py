@@ -57,6 +57,16 @@ header; a copy with a hole before the needed end cannot be uploaded and another 
 copy must serve).  The bytes of a prefix are identical at every node (records are written
 at their original offsets), so concurrent part uploads agree.
 
+Records of an adopted root (ruling R50): a root a node adopts without receiving its
+replication -- a rejoin after a lost disk, or a lease holder re-proposing a base nobody
+knew committed -- must travel with its records.  The coordinator asks the peers which byte
+ranges a commit shipped (:meth:`TieredStorage.commit_ranges` on the peer), then
+:meth:`TieredStorage.commit_records` gathers the records of those ranges that the object
+store is not known to hold, from the local disk or by peer page requests, and
+:meth:`TieredStorage.store_commit` makes them durable here as copies (with the ranges, so
+this node can serve the next node that needs them and upload parts).  A holder remembers
+the ranges of its own commit before its outcome is known (:meth:`TieredStorage.remember_commit`).
+
 Local release: an own segment or a copy is deleted locally once the object store holds
 it and every commit that referenced it orders at or below the persisted root in the full
 order of roots (:func:`~proto_db.cluster.rootlog.root_key`; ``release_local``).
@@ -178,6 +188,9 @@ class TieredStorage(SharedStorage):
     root_lock_is_global = False
     #: Marks a storage that provides the cluster tier operations natively (D46).
     cluster_tier = True
+    #: Records live on each node's disk, not in a storage every node reads: a root adopted
+    #: without its replication must be given its records (ruling R50).
+    local_records = True
 
     def __init__(self, path: str, store, prefix: str = "", *, durability: str = "fsync",
                  cache_bytes: int = 64 * MIB, segment_cache_bytes: int = 64 * MIB,
@@ -615,6 +628,96 @@ class TieredStorage(SharedStorage):
             entry = self._ranges.get((root.segment, root.offset))
         return None if entry is None else list(entry[1])
 
+    def remember_commit(self, records: list, root: Optional[RootRecord], label: int) -> None:
+        """Remember the byte ranges of ``records``, shipped by this node with the commit of
+        ``root`` labelled ``label``, before the outcome of that commit is known (logged without
+        ``fsync``: own records reach the store in order anyway).  A peer that adopts the root
+        later (a rejoin, or a holder re-proposing it) learns from here where its records are."""
+        with self._lock:
+            entry = self._remember(records, root, label)
+        self._log_ranges(entry, sync=False)
+
+    def commit_records(self, ranges: list) -> Optional[list]:
+        """The records of one commit's byte ``ranges`` (``[(segment, start, end)]``) that the
+        object store is not known to hold, as ``[segment bytes, offset, framed record]``: read
+        from this node's disk, else from the peers (page requests).  Records of a commit are
+        contiguous in each range, so each range is walked record by record.  Returns ``None``
+        when a record is nowhere -- not here, not on a peer that answered, and its segment not
+        in the store (listed once, as a last resort).  Never writes."""
+        out = []
+        listed = False
+        for segment, start, end in ranges:
+            with self._lock:
+                covered = self._covered(segment, end)
+            offset = start
+            found = []
+            while not covered and offset < end:
+                ptr = AtomPointer(segment, offset)
+                framed = self.local_record(ptr)
+                if framed is None:
+                    framed = self._peer_framed(ptr)
+                if framed is None:
+                    if listed:
+                        return None
+                    listed = True
+                    try:
+                        self._list_remote()
+                    except (ProtoDBError, OSError) as e:
+                        logger.info("Listing the object store failed while gathering records: %s", e)
+                    with self._lock:
+                        covered = self._covered(segment, end)
+                    if covered:
+                        found = []
+                        break
+                    return None
+                found.append([segment.bytes, offset, framed])
+                offset += len(framed)
+            out.extend(found)
+        return out
+
+    def _peer_framed(self, ptr: AtomPointer) -> Optional[bytes]:
+        """The framed record at ``ptr`` from a peer (page request), validated, or ``None``."""
+        fetcher = self._fetcher
+        data = fetcher(ptr) if fetcher is not None else None
+        if data is None:
+            return None
+        try:
+            kind, payload = read_record(data, 0)
+        except ProtoCorruptionError as e:
+            logger.warning("A peer answered a corrupt record for %s: %s", ptr, e)
+            return None
+        if len(encode_record(kind, payload)) != len(data):
+            logger.warning("A peer answered a malformed record for %s", ptr)
+            return None
+        return data
+
+    def store_commit(self, records: list, root: RootRecord, label: int, ranges: list) -> None:
+        """Store ``records`` of the commit of ``root`` labelled ``label`` at their original
+        offsets (durable per the durability mode, like :meth:`apply`; own records are skipped)
+        and remember the commit's byte ``ranges`` (logged with ``fsync``): this node then
+        holds every record of that commit the object store lacks, can serve them to its peers
+        and can upload them as parts."""
+        self._check_open()
+        order = root_key(label, root)
+        self._write_copies(records, order)
+        with self._lock:
+            key = (root.segment, root.offset)
+            self._ranges[key] = (order, list(ranges))
+            entry = self._encode_ranges(key, order, ranges)
+        self._log_ranges(entry, sync=True)
+
+    def parent_root(self, record: RootRecord) -> Optional[tuple]:
+        """``(label, RootRecord)`` of the cluster root the root ``record`` was built on, or
+        ``None`` when it has none (the first root, or a root written outside cluster mode:
+        persisted before the cluster).  Reads the root's space root atom."""
+        from ..cluster.persister import cluster_fields
+        _, _, previous = cluster_fields(self, record)
+        if previous is None or previous.cluster_epoch is None:
+            return None
+        ptr = previous.atom_pointer
+        return previous.cluster_term or 0, RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset,
+                                                      previous.cluster_epoch)
+
     def shipped(self, records: list, root: Optional[RootRecord] = None, label: int = 0) -> None:
         """``records`` (a prefix returned by :meth:`outgoing`) reached a majority with the commit
         of ``root`` labelled ``label``."""
@@ -627,7 +730,10 @@ class TieredStorage(SharedStorage):
                 own = self._own.get(uuid.UUID(bytes=raw))
                 if own is not None and order is not None and (own.max_key is None or order > own.max_key):
                     own.max_key = order
-            entry = self._remember(records, root, label)
+            # Remembered when the root was sent (:meth:`remember_commit`), maybe with the records
+            # of a re-proposed base too: keep that entry.
+            known = root is not None and (root.segment, root.offset) in self._ranges
+            entry = None if known else self._remember(records, root, label)
         self._log_ranges(entry, sync=False)     # own records reach the store in order anyway
 
     def apply(self, records: list, root: Optional[RootRecord] = None, label: int = 0) -> None:
@@ -639,6 +745,12 @@ class TieredStorage(SharedStorage):
         with self._lock:
             entry = self._remember(records, root, label)
         self._log_ranges(entry, sync=True)
+        self._write_copies(records, order)
+
+    def _write_copies(self, records: list, order: Optional[tuple]) -> None:
+        """Write other nodes' ``records`` into the local copies of their segments at their
+        original offsets (``fsync`` per the durability mode) and cache them; ``order`` is the
+        root_key of the commit that wrote them (local release, see :meth:`release_local`)."""
         groups = {}
         for raw, offset, data in records:
             if data is not None:

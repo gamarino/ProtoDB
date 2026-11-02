@@ -14,11 +14,17 @@ with them); commits go through the real replicate path.
 * ``release(name, lease, to)``; ``recover(name, responders)``: a recovery round answered
   by ``responders``; ``base(name, lease, responders)``: the base a commit under ``lease``
   would build on (the lease root when certain, else the recovered root).
+
+``Harness(names, records=True)`` gives every node a :class:`RecordTier` instead: each fake
+root then has a record that lives on the disks of the nodes that accepted it through a
+replication (``holds(name, root)``), served to peers by page requests, and a rejoin must
+copy it before the node acts as an acceptor (D46, ruling R50).
 """
 import itertools
 import threading
 import time
 import uuid
+import weakref
 
 from proto_db.cluster.coordinator import ClusterCoordinator
 from proto_db.errors import ProtoDBError
@@ -28,6 +34,64 @@ from tests.support.cluster import MemoryTier
 
 D = 10.0
 _ids = itertools.count(1)
+
+
+_held = weakref.WeakKeyDictionary()       # disk (MemoryStorage) -> {(segment, offset)} of records it holds
+
+
+class RecordTier(MemoryTier):
+    """A :class:`MemoryTier` whose roots have records kept on the node's disk (see the module
+    docstring).  A root's record is one fake record at the root's pointer; the harness
+    registers it on the disks of the nodes that accepted the root by replication
+    (:meth:`Harness.replicate`), never on a node that only learnt the root otherwise."""
+
+    local_records = True
+
+    def __init__(self, storage, node_id):
+        super().__init__(storage, node_id)
+        self.disk = storage
+        self._fetcher = None
+
+    @property
+    def held(self) -> set:
+        """The ``(segment, offset)`` of the records on this node's disk."""
+        return _held.setdefault(self.disk, set())
+
+    def set_fetcher(self, fetcher) -> None:
+        self._fetcher = fetcher
+
+    def local_record(self, ptr):
+        return b"record" if (ptr.segment, ptr.offset) in self.held else None
+
+    def commit_ranges(self, root):
+        if root is None or (root.segment, root.offset) not in self.held:
+            return None
+        return [(root.segment, root.offset, root.offset + 1)]
+
+    def commit_records(self, ranges):
+        from proto_db.core.atom import AtomPointer
+        out = []
+        for segment, start, _ in ranges:
+            data = self.local_record(AtomPointer(segment, start))
+            if data is None and self._fetcher is not None:
+                data = self._fetcher(AtomPointer(segment, start))
+            if data is None:
+                return None
+            out.append([segment.bytes, start, data])
+        return out
+
+    def store_commit(self, records, root, label, ranges) -> None:
+        for raw, offset, _ in records:
+            self.held.add((uuid.UUID(bytes=raw), offset))
+
+    def remember_commit(self, records, root, label) -> None:
+        pass
+
+    def parent_root(self, record):
+        return None
+
+    def ensure_remote(self, needs, *, upload_copies=False):
+        return False                # no object store
 
 
 def rec(epoch: int) -> RootRecord:
@@ -89,8 +153,9 @@ class ManualNet:
 class Harness:
     """Real coordinators over a :class:`ManualNet` and a :class:`FakeClock` (module docstring)."""
 
-    def __init__(self, names="abc"):
+    def __init__(self, names="abc", *, records=False):
         self.names = list(names)
+        self.tier_class = RecordTier if records else MemoryTier
         self.net = ManualNet()
         self.clock = FakeClock()
         self.peers = [(n, "h", 0) for n in self.names]
@@ -105,7 +170,7 @@ class Harness:
                                   drift_margin=1.0, request_timeout=0.5, startup_grace=grace,
                                   clock=self.clock, seed=1, persist_interval=60.0, persist_lag=60.0)
         node.start()
-        node.attach(MemoryTier(self.disks[name], name))
+        node.attach(self.tier_class(self.disks[name], name))
         return node
 
     def restart(self, name, *, wipe=False, responders=None):
@@ -122,20 +187,27 @@ class Harness:
             self.rejoin(name, responders)
         return self.nodes[name]
 
-    def rejoin(self, name, responders=None, timeout=5.0):
+    def rejoin(self, name, responders=None, timeout=5.0, *, servers=None):
         """Deliver ``name``'s rejoin queries to ``responders`` (default: every other node) and
-        their answers until it has rejoined; return True, or False after ``timeout``."""
+        their answers, and its record requests to ``servers`` (default: the responders) and
+        their replies, until it has rejoined; return True, or False after ``timeout``."""
         responders = set(self.names) - {name} if responders is None else set(responders)
+        servers = responders if servers is None else set(servers)
         node = self.nodes[name]
         deadline = time.monotonic() + timeout
         while node.stats()["rejoining"]:
             if time.monotonic() > deadline:
                 return False
             self.net.deliver(src=name, dst=responders, kinds=("query",))
-            self.net.drop(src=name, kinds=("query",))
-            self.net.deliver(src=None, dst={name}, kinds=("answer",))
+            self.net.deliver(src=name, dst=servers, kinds=("commit_query", "fetch"))
+            self.net.drop(src=name, kinds=("query", "commit_query", "fetch"))
+            self.net.deliver(src=None, dst={name}, kinds=("answer", "commit_info", "fetched"))
             time.sleep(0.001)
         return True
+
+    def holds(self, name, root) -> bool:
+        """True when ``name``'s disk holds the record of ``root`` (``Harness(records=True)``)."""
+        return (root.segment, root.offset) in self.nodes[name].tier.held
 
     def close(self):
         for node in list(self.nodes.values()) + self.retired:
@@ -191,7 +263,13 @@ class Harness:
                 state["sent"] = True
                 self.clock.t = max(self.clock.t, lease.valid_until + 0.001)
 
-        return self._run(lambda: self.nodes[name].replicate(lease, root), pump)
+        result = self._run(lambda: self.nodes[name].replicate(lease, root), pump)
+        if self.tier_class is RecordTier:
+            # The records ride with the replication: every node that accepted the root stores them.
+            for node in [name] + sorted(to):
+                if self.nodes[node].accepted_root()[1] == root:
+                    self.nodes[node].tier.held.add((root.segment, root.offset))
+        return result
 
     def release(self, name, lease, to=()):
         self.nodes[name].release(lease)

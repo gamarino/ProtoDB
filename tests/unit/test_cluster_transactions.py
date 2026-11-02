@@ -237,11 +237,11 @@ def test_a_late_replication_is_refused_by_peers_that_granted_a_newer_term():
         late = FAST["lease_duration"] * 1.5
         original = cl["n0"].replicate
 
-        def slow_replicate(lease, root):
+        def slow_replicate(lease, root, **kw):
             cl.net.set_link_delay("n0", "n1", late)
             cl.net.set_link_delay("n0", "n2", late)
             try:
-                return original(lease, root)
+                return original(lease, root, **kw)
             finally:
                 cl.net.set_link_delay("n0", "n1", 0)
                 cl.net.set_link_delay("n0", "n2", 0)
