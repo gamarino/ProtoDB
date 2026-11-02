@@ -27,7 +27,9 @@ The acceptor log
     new, wiped, or whose rejoin was interrupted: only a marked log makes the node an
     acceptor and a witness (:attr:`LoggedRoots.empty` is True without it).  :class:`MemoryRootsLog` keeps them in memory, for storages that have
     no directory (``MemoryStorage``): such a cluster is not durable; the log survives a
-    coordinator restart in the same process only.
+    coordinator restart in the same process only.  Both refuse writes through a closed
+    handle (``ProtoValidationError``), checked under the lock of the append, so a space that
+    has closed its log never has a root logged, nor acknowledged, through it.
 
 Thread-safety: both logs serialize their methods with a lock.
 """
@@ -279,51 +281,78 @@ class RootsLog:
                 raise ProtoUnexpectedError(f"Closing the root log {self._path} failed: {e}") from e
 
 
-class MemoryRootsLog:
-    """An acceptor log kept in memory (not durable; see the module docstring)."""
+class _MemoryLogContents:
+    """What one node's in-memory acceptor log holds, shared by every handle on it."""
 
     def __init__(self):
-        self._lock = threading.Lock()
-        self._best = _Best()
+        self.lock = threading.Lock()
+        self.best = _Best()
+
+
+class MemoryRootsLog:
+    """A handle on an acceptor log kept in memory (not durable; see the module docstring).
+
+    Every handle :func:`memory_log_for` returns for one storage and node shares the same
+    contents, like file handles on one :class:`RootsLog` file.  A closed handle refuses
+    writes (``ProtoValidationError``), exactly as a closed :class:`RootsLog` does, and the
+    check is made under the lock of the append: a write through a handle whose space has
+    closed never lands, so an acknowledgement is never sent for it (8.3d re-review 7, N1).
+
+    Args:
+        contents: the shared contents (a new, empty log when omitted).
+    """
+
+    def __init__(self, contents: Optional[_MemoryLogContents] = None):
+        self._contents = contents if contents is not None else _MemoryLogContents()
+        self._closed = False
+
+    def _add(self, code: int, label: int, record: Optional[RootRecord]) -> None:
+        with self._contents.lock:
+            if self._closed:
+                raise ProtoValidationError("This in-memory root log handle is closed")
+            self._contents.best.add(code, label, record)
 
     def append(self, kind: str, label: int, record: Optional[RootRecord], *, sync: bool) -> None:
-        """Record an ``"accepted"`` or ``"committed"`` root."""
-        code = _check_kind(kind)
-        with self._lock:
-            self._best.add(code, label, record)
+        """Record an ``"accepted"`` or ``"committed"`` root.  Raises ``ProtoValidationError``
+        when this handle is closed."""
+        self._add(_check_kind(kind), label, record)
 
     def promise(self, term: int) -> None:
-        """Record the promise of ``term``."""
-        with self._lock:
-            self._best.add(3, term, None)
+        """Record the promise of ``term``.  Raises ``ProtoValidationError`` when this handle
+        is closed."""
+        self._add(3, term, None)
 
     def mark_rejoined(self) -> None:
-        """Record the rejoined marker."""
-        with self._lock:
-            self._best.add(4, 0, None)
+        """Record the rejoined marker.  Raises ``ProtoValidationError`` when this handle is
+        closed."""
+        self._add(4, 0, None)
 
     def load(self) -> LoggedRoots:
         """The roots and the promise recorded (see :class:`LoggedRoots`)."""
-        with self._lock:
-            return self._best.result()
+        with self._contents.lock:
+            return self._contents.best.result()
 
     def close(self) -> None:
-        """Nothing to release: the log lives as long as its storage object."""
+        """Refuse every later write through this handle (the contents live on, as long as their
+        storage object, for the other handles).  Idempotent."""
+        with self._contents.lock:
+            self._closed = True
 
 
-_memory_logs = weakref.WeakKeyDictionary()      # storage object -> {node id: MemoryRootsLog}
+_memory_logs = weakref.WeakKeyDictionary()      # storage object -> {node id: _MemoryLogContents}
 _memory_lock = threading.Lock()
 
 
 def memory_log_for(storage, node_id: str) -> MemoryRootsLog:
-    """The in-memory acceptor log of node ``node_id`` for ``storage`` (a storage without a
-    directory): one per storage object and node, so it survives a coordinator restart in
-    the same process, like a disk, but not the process."""
+    """A new handle on the in-memory acceptor log of node ``node_id`` for ``storage`` (a
+    storage without a directory).  The log is one per storage object and node, so it
+    survives a coordinator restart in the same process, like a disk, but not the process;
+    each handle closes on its own (see :class:`MemoryRootsLog`)."""
     with _memory_lock:
         logs = _memory_logs.get(storage)
         if logs is None:
             logs = _memory_logs[storage] = {}
-        log = logs.get(node_id)
-        if log is None:
-            log = logs[node_id] = MemoryRootsLog()
-        return log
+        contents = logs.get(node_id)
+        if contents is None:
+            contents = logs[node_id] = _MemoryLogContents()
+    return MemoryRootsLog(contents)

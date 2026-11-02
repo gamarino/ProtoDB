@@ -112,10 +112,31 @@ Health
     off the commit path, so the node keeps granting and acknowledging, but it reports
     itself unhealthy.
 
+Acceptor-log writes (8.3d re-review 7, N1; ruling R55)
+    Every acceptor decision -- an acceptance (a peer's, or the holder's own), a grant and
+    our own vote, a rejoin's adoption, a committed root learnt and logged -- runs under one
+    acceptor-log lock together with its log write: decided on the tier the decision is
+    about (for an acceptance, the tier its records went to) and only while that tier is
+    attached, written to that tier's log, and, for an acceptance, published in memory only
+    once written; the acknowledgement is sent after.  :meth:`ClusterCoordinator.attach` and
+    :meth:`ClusterCoordinator.detach` change the tier under the same lock, so no write lands
+    on a log after it was detached, a decision in flight finishes before the detach
+    returns, and an attach never loads a log that a decision is still writing to.  Memory
+    therefore never holds an acceptance its attached log lacks.  Grants are decided under
+    that lock too because a grant reports the accepted root: an acceptance decided but not
+    yet published would otherwise be missing from it.  A grant's promise is raised in memory
+    when it is decided and logged before the grant is sent; a promise in memory that failed
+    to log only refuses more.  A closed log handle refuses writes on every backend
+    (:mod:`proto_db.cluster.rootlog`), as a second line of defence.  Committed roots learnt
+    from the cluster are majority-accepted already; holding one in memory before (or
+    without) logging it is safe, and a restart drops it as it drops any unlogged knowledge.
+
 Threads: the transport's own threads, plus one worker started by :meth:`start` that
 applies replicated records, serves page requests and prefetches, and the persister
 started by :meth:`attach`.  One lock guards the coordinator's state; it is never held
-while sending, while doing I/O, or while calling user code.
+while sending, while doing I/O, or while calling user code.  The acceptor-log lock is held
+across acceptor-log writes (above) but never while sending or waiting; ``attach`` and
+``detach`` are serialized by a third lock, taken first.
 """
 import collections
 import itertools
@@ -323,6 +344,10 @@ class ClusterCoordinator:
 
         self._lock = threading.Lock()
         self._cond = threading.Condition(self._lock)
+        # Acceptor-log writes (module docstring, "Acceptor-log writes"; ruling R55).  Order:
+        # _attach_lock, then _log_lock, then _lock; never send or wait on _cond holding either.
+        self._attach_lock = threading.Lock()    # attach() and detach(), whole
+        self._log_lock = threading.Lock()       # every acceptor decision with its log write
         self._local = threading.Lock()      # queues this process's threads
         self._grants = None                 # PeerGrants, created by start()
         self._state = "new"
@@ -559,14 +584,29 @@ class ClusterCoordinator:
         reopened) starts from what it holds, as after a restart.  An empty log starts a
         rejoin (module docstring) in a background thread; its freshness instant is this
         attach plus :attr:`restart_grace`.  Attaching the same tier again is a no-op; another
-        one raises ``ProtoValidationError``.
+        one raises ``ProtoValidationError``.  Runs after any :meth:`detach` in progress has
+        finished, and no acceptor decision runs while it loads the log (module docstring,
+        "Acceptor-log writes").
         """
         from .persister import Persister
+        with self._attach_lock:
+            with self._log_lock:
+                # No acceptor decision or log write runs while the tier changes: each one is
+                # made, logged and published on the tier attached throughout (ruling R55).
+                persister, rejoiner = self._attach_locked(tier, Persister)
+            if persister is not None:
+                persister.start()
+            if rejoiner is not None:
+                rejoiner.start()
+
+    def _attach_locked(self, tier, persister_class) -> tuple:
+        """The body of :meth:`attach` (``_attach_lock`` and ``_log_lock`` held); returns the
+        persister and the rejoin thread to start, ``(None, None)`` for a no-op."""
         with self._lock:
             self._check_running()
             if self._tier is not None:
                 if self._tier is tier or self._tier.storage is tier.storage:
-                    return
+                    return None, None
                 raise ProtoValidationError("This coordinator already serves another storage")
             self._tier = tier
         try:
@@ -586,7 +626,13 @@ class ClusterCoordinator:
                 f"least lease_duration + drift_margin = {self.restart_grace:g} s (the default)")
         rejoin = empty and bool(self._others)
         if empty and not self._others:
-            tier.log_rejoined()         # a one-member cluster has nobody to learn from
+            try:
+                tier.log_rejoined()     # a one-member cluster has nobody to learn from
+            except BaseException:
+                with self._lock:
+                    self._tier = None
+                raise
+        rejoiner = None
         with self._cond:
             # The acceptor state is what this log holds, exactly as after a restart (round 7
             # audit): a log attached to a coordinator that keeps running -- a space closed and
@@ -595,7 +641,8 @@ class ClusterCoordinator:
             # kept in memory without its records became the base of every lease this node
             # granted (ruling R50).  Lease activity (the grants running, the terms seen, the
             # suspicion, the term hint) stays: it is this process's own, and keeping it is
-            # conservative.
+            # conservative.  No acceptance can be half done here (logged on the old tier but
+            # not yet published, or the reverse): those hold _log_lock (ruling R55).
             self._accepted = (False, None, 0)
             if self._committed[0]:
                 self._committed = (False, None, 0)
@@ -614,7 +661,7 @@ class ClusterCoordinator:
             self._rejoining = rejoin
             self._rejoin_blocked = None
             self._loaded = True
-            persister = Persister(self, tier, interval=self._persist_interval, lag=self._persist_lag)
+            persister = persister_class(self, tier, interval=self._persist_interval, lag=self._persist_lag)
             self._persister = persister
             if rejoin:
                 # The freshness instant of this log's rejoin (rulings R53, R54): anchored here,
@@ -624,9 +671,7 @@ class ClusterCoordinator:
                 rejoiner = threading.Thread(target=self._rejoin, args=(tier, fresh_from),
                                             name=f"proto-cluster-rejoin-{self._node}", daemon=True)
                 self._rejoiners = [t for t in self._rejoiners if t.is_alive()] + [rejoiner]
-        persister.start()
-        if rejoin:
-            rejoiner.start()
+        return persister, rejoiner
 
     def _rejoin_answers(self) -> int:
         """Witness answers from other members a rejoin needs: ``N - majority + 1`` (every member
@@ -838,14 +883,26 @@ class ClusterCoordinator:
             reason = self._secure_chain(tier, best[0], best[1])
             if reason is not None:
                 return self._block_rejoin(tier, reason)
-        if learnt:
-            tier.log_promise(learnt)
-        if best is not None:
-            tier.log_root("accepted", best[0], best[1], sync=True)
-        tier.log_rejoined()                 # last: the log now holds what the node must know
+        with self._log_lock:
+            # Logged and published only on the tier this rejoin serves, attached throughout
+            # (ruling R55); an abandoned rejoin writes nothing.
+            with self._lock:
+                if self._tier is not tier:
+                    return True
+            if learnt:
+                tier.log_promise(learnt)
+            if best is not None:
+                tier.log_root("accepted", best[0], best[1], sync=True)
+            tier.log_rejoined()             # last: the log now holds what the node must know
+            self._publish_rejoin(learnt, promised, best, committed)
+        logger.info("Node %s rejoined with an empty acceptor log: highest term %d, accepted root %s",
+                    self._node, learnt, None if best is None else root_key(*best)[:2])
+        return True
+
+    def _publish_rejoin(self, learnt: int, promised: list, best: Optional[tuple],
+                        committed: Optional[tuple]) -> None:
+        """Adopt in memory what :meth:`_complete_rejoin` logged (``_log_lock`` held)."""
         with self._cond:
-            if self._tier is not tier:
-                return True
             # The floor is every term and label learnt; the activity is the promises only.
             self._grants.restore(learnt, seen=max(promised + [0]))
             self._hint = max(self._hint, learnt)
@@ -859,9 +916,6 @@ class ClusterCoordinator:
             self._rejoin_blocked = None
             self._stats["rejoins"] += 1
             self._cond.notify_all()
-        logger.info("Node %s rejoined with an empty acceptor log: highest term %d, accepted root %s",
-                    self._node, learnt, None if best is None else root_key(*best)[:2])
-        return True
 
     def _block_rejoin(self, tier, reason: str) -> bool:
         """Record why the rejoin on ``tier`` cannot complete (logged when it changes); False."""
@@ -913,10 +967,10 @@ class ClusterCoordinator:
         or from the peers), or ``(None, reason, None)`` when some record is nowhere reachable.
         The ranges come from this node's own knowledge, else from the peers (``commit_query``).
         """
-        tier = self._tier
+        with self._lock:
+            tier, persister = self._tier, self._persister   # one attach's pair
         if root is None or tier is None or not getattr(tier, "local_records", False):
             return "persisted", None, None
-        persister = self._persister
         if persister is not None and persister.covers(label, root):
             return "persisted", None, None
         ranges = tier.commit_ranges(root)
@@ -1024,22 +1078,29 @@ class ClusterCoordinator:
     def detach(self, tier) -> None:
         """Stop the persister of ``tier`` and forget the tier (the space is closing).  A
         rejoin forced for this tier (:meth:`force_rejoin`) is dropped; the acceptor state held
-        in memory is replaced by the next :meth:`attach` with what that tier's log holds."""
-        with self._lock:
-            if self._tier is None or (self._tier is not tier and self._tier.storage is not tier.storage):
-                return
-            persister, self._persister = self._persister, None
-            self._tier = None
-            self._loaded = False
-            self._rejoining = False
-            # A force was the operator's decision about the rejoin of this log; it does not
-            # carry over to another one (nor does it survive a restart).  A force requested
-            # while no log is attached applies to the next attach (force_rejoin).
-            self._rejoin_forced = False
-            self._cond.notify_all()
-        if persister is not None:
-            persister.stop()
-        tier.set_fetcher(None)
+        in memory is replaced by the next :meth:`attach` with what that tier's log holds.
+        An acceptor decision in flight on ``tier`` finishes (logged and published) before the
+        tier is forgotten, and none is made on it afterwards, so the caller may close its log
+        once this returns (module docstring, "Acceptor-log writes")."""
+        with self._attach_lock:
+            # Waits for an acceptor decision in flight (its log write and its publication)
+            # to finish on this tier; none starts on it afterwards (ruling R55).
+            with self._log_lock, self._lock:
+                if self._tier is None or (self._tier is not tier and self._tier.storage is not tier.storage):
+                    return
+                persister, self._persister = self._persister, None
+                self._tier = None
+                self._loaded = False
+                self._rejoining = False
+                # A force was the operator's decision about the rejoin of this log; it does not
+                # carry over to another one (nor does it survive a restart).  A force requested
+                # while no log is attached applies to the next attach (force_rejoin).
+                self._rejoin_forced = False
+                self._cond.notify_all()
+            # Still under _attach_lock: the next attach starts once this persister is gone.
+            if persister is not None:
+                persister.stop()
+            tier.set_fetcher(None)
 
     # -- known roots -------------------------------------------------------------------------
 
@@ -1112,13 +1173,18 @@ class ClusterCoordinator:
         return True
 
     def observe_root(self, root: Optional[RootRecord], *, from_storage: bool = False, term: int = 0,
-                     accept: bool = True) -> None:
+                     accept: bool = True, tier=None) -> None:
         """Learn ``root`` (``None``: the empty space), committed with label ``term``.
 
         ``from_storage=True`` counts a storage root read.  ``accept=False`` (the persisted
         root, D46) does not make it accepted knowledge (see :meth:`_observe_committed`).
+        ``tier``: the tier ``root`` was read from; the observation is dropped unless that
+        tier is still attached (a root read from a detached tier's storage says nothing about
+        the log attached since).
         """
         with self._lock:
+            if tier is not None and self._tier is not tier:
+                return
             self._observe_committed(True, root, term, None, accept=accept)
             if from_storage:
                 self._stats["storage_root_reads"] += 1
@@ -1146,16 +1212,14 @@ class ClusterCoordinator:
             if fenced:
                 self._refuse_queued(msg)
             return
+        if kind == "request":
+            self._on_request(sender, msg)
+            return
         reply = None
-        promise = None
         with self._cond:
             if self._state != "running":
                 return
-            if kind == "request":
-                reply = self._decide(sender, msg["term"], msg["rid"], msg["inc"])
-                if reply["type"] == "grant":
-                    promise = self._tier
-            elif kind in ("grant", "reject"):
+            if kind in ("grant", "reject"):
                 self._on_reply(sender, msg)
             elif kind == "query":
                 state = self._witness_state()
@@ -1177,14 +1241,42 @@ class ClusterCoordinator:
                                          state=state)
             else:
                 self._on_answer(sender, kind, msg)
-        if promise is not None and not self._promise(promise, msg["term"]):
-            return                  # a promise that could not be made durable is not sent
         if reply is not None:
             self._transport.send(sender, reply)
 
+    def _on_request(self, sender: str, msg: dict) -> None:
+        """Decide a lease request and make a grant's promise durable before it is sent.  The
+        decision reports the accepted root and raises the promise in memory, so it is atomic
+        with acceptances: under ``_log_lock``, no acceptance is decided but not yet published
+        meanwhile (ruling R55; module docstring, "Acceptor-log writes")."""
+        with self._log_lock:
+            with self._cond:
+                if self._state != "running":
+                    return
+                reply = self._decide(sender, msg["term"], msg["rid"], msg["inc"])
+                tier = self._tier if reply["type"] == "grant" else None
+            # ``tier`` is attached until _log_lock is released: a grant needs one (_decide).
+            if tier is not None and not self._log_promise(tier, msg["term"]):
+                return              # a promise that could not be made durable is not sent
+        self._transport.send(sender, reply)
+
     def _promise(self, tier, term: int) -> bool:
-        """Make the promise of ``term`` durable in ``tier``'s acceptor log; False (logged) if it
-        failed, in which case the grant must not be sent or counted."""
+        """Make this node's promise of ``term`` to itself durable in ``tier``'s acceptor log;
+        False if ``tier`` is no longer attached or the write failed (logged), in which case
+        the vote must not be counted.  Checked and written under ``_log_lock``, so the
+        promise lands only in the log attached when it is written (ruling R55)."""
+        with self._log_lock:
+            with self._lock:
+                attached = self._tier is tier
+            if not attached:
+                logger.info("Node %s: its acceptor log was detached before it recorded its own promise "
+                            "of term %d; its vote is withdrawn", self._node, term)
+                return False
+            return self._log_promise(tier, term)
+
+    def _log_promise(self, tier, term: int) -> bool:
+        """Write the promise of ``term`` to ``tier`` (``_log_lock`` held, ``tier`` attached);
+        False (logged) if it failed: the grant must not be sent or counted."""
         try:
             tier.log_promise(term)
             return True
@@ -1331,12 +1423,14 @@ class ClusterCoordinator:
                 elif kind == "records":
                     self._buffer_records(msg)
                 elif kind == "release":
-                    with self._cond:
-                        learnt = self._on_release(msg["from"], msg) if self._state == "running" else None
-                        tier = self._tier
-                    if learnt is not None and tier is not None:
-                        # Logged so that a restarted node never serves an older root than it did.
-                        tier.log_root("committed", learnt[0], learnt[1], sync=False)
+                    with self._log_lock:
+                        with self._cond:
+                            learnt = self._on_release(msg["from"], msg) if self._state == "running" else None
+                            tier = self._tier
+                        if learnt is not None and tier is not None:
+                            # Logged so that a restarted node never serves an older root than it
+                            # did; on the tier attached when it was learnt (ruling R55).
+                            tier.log_root("committed", learnt[0], learnt[1], sync=False)
                 elif kind == "commit_query":
                     self._serve_commit(msg)
                 else:
@@ -1427,19 +1521,28 @@ class ClusterCoordinator:
                 # A re-proposed base: its records rode with this replication (ruling R50).
                 tier.store_commit([], broot, blabel, protocol.decode_ranges(msg["base_ranges"]) or [])
             with self._cond:
-                self._note_stored(label, root)
-        with self._lock:
-            ok = ok and self._may_accept(term, root, label)
+                if self._tier is tier:
+                    # Stored on the attached tier.  A tier detached meanwhile is not this
+                    # node's store any more: a reattach starts from an empty set (N4).
+                    self._note_stored(label, root)
+        with self._log_lock:
+            # The decision, the log write and the publication form one step against attach,
+            # detach and every other acceptor decision (ruling R55): decided only on the tier
+            # the records went to, logged on it while it is still attached, published in
+            # memory only once logged; the acknowledgement follows.
+            with self._lock:
+                ok = ok and self._tier is tier and self._may_accept(term, root, label)
+                if not ok:
+                    self._stats["refused"] += 1
+                    reply_root = self._wire(self._accepted)
             if ok:
-                self._observe_accepted(True, root, label)
-                ck, croot, clabel = decode_labeled_root(msg["committed"])
-                self._observe_committed(ck, croot, clabel, None)
-                self._stats["accepted"] += 1
-            else:
-                self._stats["refused"] += 1
-            reply_root = self._wire(self._accepted)
-        if ok:
-            tier.log_root("accepted", label, root, sync=True)     # durable before the ack
+                tier.log_root("accepted", label, root, sync=True)     # durable before the ack
+                with self._lock:
+                    self._observe_accepted(True, root, label)
+                    ck, croot, clabel = decode_labeled_root(msg["committed"])
+                    self._observe_committed(ck, croot, clabel, None)
+                    self._stats["accepted"] += 1
+                    reply_root = self._wire(self._accepted)
         self._transport.send(sender, make_message("ack", self._node, term=term, rid=rid, ok=ok, root=reply_root))
         if ok and records:
             tier.prefetch(records)
@@ -1458,7 +1561,8 @@ class ClusterCoordinator:
         """Answer a ``commit_query``: whether the persisted root covers that commit, else the
         byte ranges of its records if this node knows them (worker thread)."""
         known, root, label = decode_labeled_root(msg["root"])
-        tier, persister = self._tier, self._persister
+        with self._lock:
+            tier, persister = self._tier, self._persister   # one attach's pair
         persisted = root is not None and persister is not None and persister.covers(label, root)
         ranges = None
         if not persisted and root is not None and tier is not None and getattr(tier, "local_records", False):
@@ -1537,9 +1641,12 @@ class ClusterCoordinator:
 
     def _open_attempt(self) -> tuple:
         """Open an attempt with this node's own vote decided; return ``(attempt, request,
-        wakeups seen, tier whose log must record our own promise or None)``."""
+        wakeups seen, tier whose log must record our own promise or None)``.  Our own vote reads
+        the accepted root and raises the promise in memory, so it is decided under
+        ``_log_lock``, atomically with acceptances (ruling R55); its promise is written by
+        :meth:`_promise` after the broadcast."""
         promise = None
-        with self._lock:
+        with self._log_lock, self._lock:
             self._check_running()
             self._check_healthy()
             term = ballot_after(max(self._grants.highest_term, self._hint, self._accepted[2], self._committed[2]),
@@ -1634,7 +1741,7 @@ class ClusterCoordinator:
         self._waiters[rid] = waiter
         return rid, waiter
 
-    def replicate(self, lease: Lease, root: RootRecord, *, base: Optional[tuple] = None) -> float:
+    def replicate(self, lease: Lease, root: RootRecord, *, base: Optional[tuple] = None, tier=None) -> float:
         """Commit ``root`` (built on ``lease.root``) by majority-acknowledged replication (D46).
 
         Sends ``(epoch, root pointer)`` labelled with the lease term, with the records the
@@ -1648,6 +1755,12 @@ class ClusterCoordinator:
         replication, and every acknowledger remembers the base's byte ranges, so the base is
         re-proposed together with its records (ruling R50).
 
+        ``tier`` is the tier the commit's records were written to (the space's, captured when
+        the commit began); when it is no longer the attached tier (the space was closed, or
+        closed and reopened, meanwhile) nothing is sent and ``ProtoValidationError`` is
+        raised.  This node's own acceptance is in any case decided only on the tier attached
+        when the replication started, and only while it stays attached (ruling R55).
+
         Raises ``ProtoConflictError`` when the lease ended before anything was sent (nothing
         was replicated: safe to retry), and ``ProtoOutcomeUnknownError`` when no majority
         acknowledged in time, or when anything fails once the root was sent (the space
@@ -1655,9 +1768,13 @@ class ClusterCoordinator:
         holder may still adopt it, so the commit may or may not take effect.
         """
         started = time.perf_counter()
-        tier = self._tier
-        if tier is None:
+        attached = self._tier
+        if attached is None:
             raise ProtoValidationError("replicate needs an attached tier (ObjectSpace attaches it)")
+        if tier is not None and tier is not attached:
+            raise ProtoValidationError("The space this commit belongs to was closed: its tier is no longer "
+                                       "attached to the coordinator; nothing was replicated")
+        tier = attached
         if lease is not self._held:
             raise ProtoUserError("This lease is not held by this coordinator")
         records = tier.outgoing()
@@ -1679,7 +1796,8 @@ class ClusterCoordinator:
         tier.flush_local()
         chunks = _split_records(extra + records, protocol.CHUNK_BYTES)
         with self._lock:
-            self._note_stored(label, root)            # our own records
+            if self._tier is tier:
+                self._note_stored(label, root)        # our own records, on the attached tier
             self._check_running()
             if not lease.is_valid():
                 raise ProtoConflictError("The cluster write lease expired before the root was replicated; "
@@ -1699,17 +1817,21 @@ class ClusterCoordinator:
             for part in parts:                         # same ordered link, before the replicate
                 self._broadcast(part)
             self._broadcast(msg)
-            with self._lock:
-                self_ok = self._may_accept(label, root, label)
-                if self_ok:
-                    self._observe_accepted(True, root, label)
-            if self_ok:
-                # Where the records of this root are, before its outcome is known: a node that
-                # adopts it later (a rejoin, a holder re-proposing it) copies them from here.
-                tier.remember_commit(extra + records, root, label)
-                tier.log_root("accepted", label, root, sync=True)
+            with self._log_lock:
+                # Our own acceptance follows the acceptor rule (ruling R55): decided only on
+                # the tier this commit's records went to, logged on it while it is attached,
+                # then published and counted.
                 with self._lock:
-                    waiter.acks.add(self._node)
+                    self_ok = self._tier is tier and self._may_accept(label, root, label)
+                if self_ok:
+                    # Where the records of this root are, before its outcome is known: a node
+                    # that adopts it later (a rejoin, a holder re-proposing it) copies them
+                    # from here.
+                    tier.remember_commit(extra + records, root, label)
+                    tier.log_root("accepted", label, root, sync=True)
+                    with self._lock:
+                        self._observe_accepted(True, root, label)
+                        waiter.acks.add(self._node)
             with self._cond:
                 total = self.cluster_size
 
@@ -1774,7 +1896,11 @@ class ClusterCoordinator:
                 f"Node {self._node}: {why}; the root (epoch {root.epoch}) may or may not take effect")
         try:
             tier.shipped(records, root, label)
-            tier.log_root("committed", label, root, sync=False)
+            with self._log_lock:
+                with self._lock:
+                    attached = self._tier is tier
+                if attached:            # never on a detached log (ruling R55)
+                    tier.log_root("committed", label, root, sync=False)
         except (ProtoDBError, OSError) as e:
             # Committed already: the bookkeeping only speeds up a restart and local release,
             # never fail the commit for it (the space may be closing).
@@ -1856,7 +1982,9 @@ class ClusterCoordinator:
             persisted = tier.read_persisted()
             with self._lock:
                 self._stats["storage_root_reads"] += 1
-                if persisted is None:
+                if self._tier is not tier:
+                    pass            # read from a tier detached meanwhile: says nothing now
+                elif persisted is None:
                     self._observe_committed(True, None, 0, None, accept=False)
                 else:
                     self._observe_committed(True, persisted[1], persisted[0], None, accept=False)

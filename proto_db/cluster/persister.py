@@ -395,7 +395,7 @@ class Persister:
             self._stats["refreshes"] += 1
         if persisted is not None:
             label, record = persisted
-            self._coordinator.observe_root(record, term=label, accept=False)
+            self._coordinator.observe_root(record, term=label, accept=False, tier=self._tier)
             self._set_persisted(label, record)
 
     def _persistable(self, record_label: int, record: RootRecord, upload_copies: bool) -> bool:

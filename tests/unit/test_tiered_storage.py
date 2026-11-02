@@ -328,6 +328,25 @@ def _short_sealed_segment(tmp_path, store):
     return peer, ptrs, root, records
 
 
+def test_a_sealed_object_requirement_never_absorbs_a_length_requirement(tmp_path):
+    """8.3d re-review 7, N2.  ``(segment, None)`` asks for a sealed object of a known length;
+    ``(segment, end)`` for ``end`` bytes.  Together, on one segment, both must hold: ``None``
+    used to replace the length requirement, so a short sealed object satisfied
+    ``[(s, None), (s, end)]`` whatever ``end``."""
+    store = FakeObjectStore()
+    peer, ptrs, root, records = _short_sealed_segment(tmp_path, store)
+    segment = ptrs[0].segment
+    end = max(e for s, _, e in peer.commit_ranges(root) if s == segment)
+    assert peer.ensure_remote([(segment, None)])                   # sealed, known (short) length
+    assert not peer.ensure_remote([(segment, end)])
+    assert not peer.ensure_remote([(segment, None), (segment, end)]), "None absorbed the length"
+    assert not peer.ensure_remote([(segment, end), (segment, None)]), "None absorbed the length"
+    # A part covers the length; the sealed object, the sealed requirement.
+    assert peer.ensure_remote([(segment, None), (segment, end)], upload_copies=True)
+    assert peer.stats()["parts_uploaded"] == 1
+    peer.close()
+
+
 def test_a_short_sealed_object_never_covers_records_past_its_length(tmp_path):
     store = FakeObjectStore()
     peer, ptrs, root, records = _short_sealed_segment(tmp_path, store)

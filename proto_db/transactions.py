@@ -453,14 +453,14 @@ def _commit_under_lease(coordinator, lock_timeout, build: Callable) -> bool:
                     # committed root see it (otherwise a transaction that read what it
                     # changed would conflict against it forever).  One holder may commit
                     # several roots in one term.  The base travels with its records.
-                    current = _commit_base(coordinator, lease, label, current)
+                    current = _commit_base(coordinator, tier, lease, label, current)
                     lease.bind_root(current, lease.term)
                 stamp = _ClusterStamp(lease.term, lease.expected_epoch + 1)
                 ptr = build(current, stamp)
                 if ptr is None:
                     return False
                 record = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, stamp.epoch)
-                stamp.timings["replication"] = coordinator.replicate(lease, record)
+                stamp.timings["replication"] = coordinator.replicate(lease, record, tier=tier)
             coordinator.record_critical(stamp.timings)
             return True
         finally:
@@ -507,7 +507,7 @@ def _lease_base(coordinator, tier, lease) -> Optional[tuple]:
             persisted = tier.read_persisted()
             label, current = persisted if persisted is not None else (0, None)
             replicated = False
-            coordinator.observe_root(current, from_storage=True, term=label, accept=False)
+            coordinator.observe_root(current, from_storage=True, term=label, accept=False, tier=tier)
             if lease.term < label + REFOUND_TERM_STEP:
                 coordinator.refound(label)
                 return None
@@ -524,7 +524,7 @@ def _lease_base(coordinator, tier, lease) -> Optional[tuple]:
         # The witnesses lost the persisted root (a majority of logs lost): refound from it.
         label, current = persisted
         replicated = False
-        coordinator.observe_root(current, from_storage=True, term=label, accept=False)
+        coordinator.observe_root(current, from_storage=True, term=label, accept=False, tier=tier)
         if lease.term < label + REFOUND_TERM_STEP:
             coordinator.refound(label)
             return None
@@ -544,7 +544,7 @@ def _guard_error(label, current, committed_label, committed) -> ProtoCorruptionE
         f"continues from the highest root the cluster accepted (D46)")
 
 
-def _commit_base(coordinator, lease, label: int, base: RootRecord) -> RootRecord:
+def _commit_base(coordinator, tier, lease, label: int, base: RootRecord) -> RootRecord:
     """Replicate a root equal to ``base`` (labelled ``label``; same databases), labelled with the
     lease term, on top of it, together with the base's records the object store lacks; return
     the new root's record (see :func:`_commit_under_lease`).
@@ -556,12 +556,13 @@ def _commit_base(coordinator, lease, label: int, base: RootRecord) -> RootRecord
     where, records, ranges = coordinator.commit_records(label, base)
     if where is None:
         raise ProtoConflictError(f"The base root (epoch {base.epoch}) cannot be re-committed now: {records}")
-    context = _SpaceContext(coordinator.tier.storage)
+    context = _SpaceContext(tier.storage)      # the commit's tier, captured when it began
     space = _load_space(context, base)
     stamp = _ClusterStamp(lease.term, base.epoch + 1)
     ptr = context.save(_new_space_root(space.databases, context, stamp, space))
     record = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, stamp.epoch)
-    coordinator.replicate(lease, record, base=(label, base, records, ranges) if where == "records" else None)
+    coordinator.replicate(lease, record, base=(label, base, records, ranges) if where == "records" else None,
+                          tier=tier)
     return record
 
 

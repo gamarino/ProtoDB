@@ -33,13 +33,18 @@ TieredStorage reads both.
 
 What the store holds is judged by length (8.3d re-review 6, M2; ruling R54): a sealed object
 covers a byte range only up to its recorded length -- from this node's upload, its marker,
-or a download, the shortest known -- and a part up to its ``end``.  A sealed object shorter
-than the records a peer holds (a writer that restarted on a segment missing its tail, a store
-or a disk that acknowledged bytes it did not keep) therefore never makes a commit look
+or a download, the shortest known -- and a part up to its ``end``.  The marker records the
+length its writer *uploaded*, not what the store kept.  So a sealed object uploaded shorter
+than the records a peer holds (a writer that restarted on a segment missing its tail, for
+instance after a host crash under ``flush`` or ``none`` durability) never makes a commit look
 persisted, never lets a holder skip shipping those records, and never lets a peer release
-its longer copy; a sealed object whose length is unknown covers nothing.  A record read from
-a store object that turns out short or corrupt is read from the peers, then from a part;
-with no full copy anywhere the read raises ``ProtoCorruptionError``, never short data.
+its longer copy; a sealed object whose length is unknown covers nothing.  A store that loses
+bytes after acknowledging an upload is not detected here: the marker still claims the
+uploaded length, and peers may release their copies on its strength.  Such a loss shows at
+the first download that reaches it: the object is then recorded at its downloaded length,
+and a record read from a store object that turns out short or corrupt is read from the
+peers, then from a part; with no full copy anywhere the read raises
+``ProtoCorruptionError``, never short data.
 
 Write path: a record larger than :data:`~proto_db.cluster.protocol.MAX_RECORD_BYTES` is
 refused (``ProtoValidationError``): it could never be replicated in one frame.
@@ -1122,27 +1127,36 @@ class TieredStorage(SharedStorage):
     def ensure_remote(self, needs, *, upload_copies: bool = False) -> bool:
         """True when the store holds every ``(segment, end)`` of ``needs``: the segment's sealed
         object with a recorded length of at least ``end`` bytes, or a part at least that long
-        (``end`` ``None``: a sealed object of a known length, see :meth:`_covered`).
+        (``end`` ``None``: a sealed object of a known length, see :meth:`_covered`).  Several
+        requirements on one segment must all hold: the longest ``end``, and, if any is
+        ``None``, a sealed object of a known length too (neither implies the other: a part
+        satisfies an ``end`` but is no sealed object, and a short sealed object is one).
 
         Lists the store once when something is not known to be there.  With
         ``upload_copies``, a missing segment this node holds a copy of (not an own segment,
         which its writer ships in order) is uploaded as a part when the copy's contiguous
-        prefix reaches ``end``.  Called by the persister only.
+        prefix reaches ``end``; a part never satisfies a ``None`` requirement.  Called by the
+        persister only.
         """
-        needed = {}
+        needed = {}                 # segment -> (a sealed object required, longest end)
         for segment, end in needs:
-            if segment in needed and (needed[segment] is None or end is None):
-                needed[segment] = None
-            else:
-                needed[segment] = max(needed.get(segment, 0), end) if end is not None else None
+            sealed, longest = needed.get(segment, (False, 0))
+            needed[segment] = (sealed or end is None, longest if end is None else max(longest, end))
+
+        def covered(segment, need):
+            sealed, end = need
+            return (not sealed or self._covered(segment, None)) and self._covered(segment, end)
+
         with self._lock:
-            missing = {s: e for s, e in needed.items() if not self._covered(s, e)}
+            missing = {s: n for s, n in needed.items() if not covered(s, n)}
         if not missing:
             return True
         self._list_remote()
         with self._lock:
-            missing = {s: e for s, e in missing.items() if not self._covered(s, e)}
-            copies = {s: e for s, e in missing.items() if e is not None and s not in self._own}
+            missing = {s: n for s, n in missing.items() if not covered(s, n)}
+            # A part covers only a length; a missing sealed object stays missing.
+            copies = {s: n[1] for s, n in missing.items()
+                      if s not in self._own and (not n[0] or self._covered(s, None))}
         if not missing:
             return True
         if not upload_copies or len(copies) < len(missing):
