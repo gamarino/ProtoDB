@@ -48,17 +48,21 @@ Rejoining and witnesses
     for a cluster's first start: every other member answered, none has accepted any root,
     and none knows of any lease term (ruling R51: a lease granted before the first commit
     leaves its term at its granters and its holder).  Any other rejoin decides only on a
-    round of answers sent at or after ``start() + restart_grace``
-    (:attr:`ClusterCoordinator.restart_grace`), whatever the node's startup grace (ruling
-    R53): the node may have accepted and acknowledged a root just before it lost its log,
-    under a lease whose holder has not counted that acknowledgement yet, and answers
-    gathered while that lease runs may all miss the root (the other acceptors have not
-    received it, the holder self-accepts after its broadcast or its answer is lost).  By
-    ``start() + restart_grace`` every lease granted before the loss has ended on its
-    holder's view, and a commit is reported only with acknowledgements counted within the
-    lease, so every acceptor counted for it had durably accepted the root before it
-    answered such a round.  Any other loss of a majority of logs needs the operator's
-    :meth:`ClusterCoordinator.force_rejoin`.  With proposer-qualified ballots, two
+    round of answers sent at or after ``attach + restart_grace``
+    (:attr:`ClusterCoordinator.restart_grace`), the instant the empty log was attached plus
+    the safe grace, whatever the node's startup grace (rulings R53, R54): the node may have
+    accepted and acknowledged a root just before it lost its log, under a lease whose holder
+    has not counted that acknowledgement yet, and answers gathered while that lease runs may
+    all miss the root (the other acceptors have not received it, the holder self-accepts
+    after its broadcast or its answer is lost).  The lost log accepted nothing after it was
+    detached (a node without an attached log neither grants nor accepts), so every lease it
+    served was granted before the empty log was attached -- by a previous process, or by
+    this one before :meth:`ClusterCoordinator.detach` when a space is closed and reopened
+    over a replaced disk on a coordinator that keeps running -- and has ended on its
+    holder's view by ``attach + restart_grace``.  A commit is reported only with
+    acknowledgements counted within the lease, so every acceptor counted for it had durably
+    accepted the root before it answered such a round.  Any other loss of a majority of logs
+    needs the operator's :meth:`ClusterCoordinator.force_rejoin`.  With proposer-qualified ballots, two
     different roots never share a label, and no acknowledged root is lost, while at most
     one acceptor log is lost at a time, with its records, whether the object store is
     reachable or not (D46, rulings R47, R49 and R50).  The price is
@@ -236,10 +240,11 @@ class ClusterCoordinator:
             drift_margin``): a restarted node does not remember when the grants of its
             previous life end.  A shorter grace (``0`` included) is accepted only on a
             cluster's first start (rulings R50, R51): :meth:`attach` refuses it on an acceptor
-            log that is not empty, and a rejoin with an empty log that is not a first start
-            (some member has accepted a root or seen a lease term) waits
-            :attr:`restart_grace` from :meth:`start` before it completes
-            (``stats()["rejoin_blocked"]`` says so meanwhile).
+            log that is not empty.  It never shortens a rejoin: whatever the grace, a rejoin
+            with an empty log that is not a first start (some member has accepted a root or
+            seen a lease term) decides only on a round of answers sent at or after the
+            instant the log was attached plus :attr:`restart_grace` (rulings R53, R54;
+            ``stats()["rejoin_blocked"]`` says so meanwhile).
         fetch_timeout: seconds a peer page request waits for an answer; must be shorter than
             ``lease_duration - drift_margin`` (default a quarter of it), and a request made
             under the lease never waits beyond what remains of the lease.
@@ -320,7 +325,6 @@ class ClusterCoordinator:
         self._cond = threading.Condition(self._lock)
         self._local = threading.Lock()      # queues this process's threads
         self._grants = None                 # PeerGrants, created by start()
-        self._started = None                # self._clock() when start() ran
         self._state = "new"
         self._inc = random.SystemRandom().getrandbits(62)
         self._attempt = None
@@ -417,7 +421,8 @@ class ClusterCoordinator:
         ``persisting`` and ``failure`` (the exception that fenced the node or stopped its
         persister, or ``None``).  ``rejoin_blocked`` says why a rejoin that has its answers
         cannot complete (the records of the adopted root are unobtainable, or, outside a
-        cluster's first start, its answers were gathered before ``start() + restart_grace``),
+        cluster's first start, its answers were gathered before the instant its empty log was
+        attached plus ``restart_grace``),
         else ``None``."""
         with self._lock:
             out = dict(self._stats)
@@ -482,7 +487,6 @@ class ClusterCoordinator:
             if self._state != "new":
                 raise ProtoValidationError(f"The coordinator is {self._state}; it cannot be started")
             self._grants = PeerGrants(self._duration, self._clock, startup_grace=self._grace)
-            self._started = self._clock()
             self._state = "running"
         self._worker = threading.Thread(target=self._work, name=f"proto-cluster-worker-{self._node}",
                                         daemon=True)
@@ -550,9 +554,12 @@ class ClusterCoordinator:
         ``tier`` provides the storage and the tier operations described in
         :mod:`proto_db.cluster.persister`.  The roots and the promise the tier logged (its
         acceptor log) are loaded, so a restarted node knows what it accepted and never
-        grants a term it granted before; an empty log starts a rejoin (module docstring)
-        in a background thread.  Attaching the same tier again is a no-op; another one
-        raises ``ProtoValidationError``.
+        grants a term it granted before; they replace the accepted and committed roots held
+        in memory, so a log attached to a coordinator that keeps running (a space closed and
+        reopened) starts from what it holds, as after a restart.  An empty log starts a
+        rejoin (module docstring) in a background thread; its freshness instant is this
+        attach plus :attr:`restart_grace`.  Attaching the same tier again is a no-op; another
+        one raises ``ProtoValidationError``.
         """
         from .persister import Persister
         with self._lock:
@@ -581,6 +588,21 @@ class ClusterCoordinator:
         if empty and not self._others:
             tier.log_rejoined()         # a one-member cluster has nobody to learn from
         with self._cond:
+            # The acceptor state is what this log holds, exactly as after a restart (round 7
+            # audit): a log attached to a coordinator that keeps running -- a space closed and
+            # reopened, possibly over a replaced disk -- must not inherit the accepted root, the
+            # committed root or the stored records of the log it replaces.  An accepted root
+            # kept in memory without its records became the base of every lease this node
+            # granted (ruling R50).  Lease activity (the grants running, the terms seen, the
+            # suspicion, the term hint) stays: it is this process's own, and keeping it is
+            # conservative.
+            self._accepted = (False, None, 0)
+            if self._committed[0]:
+                self._committed = (False, None, 0)
+                self._committed_by = None
+                self._committed_version += 1
+            self._stored.clear()
+            self._chunks.clear()
             if accepted is not None:
                 self._observe_accepted(True, accepted[1], accepted[0])
             if committed is not None:
@@ -595,7 +617,11 @@ class ClusterCoordinator:
             persister = Persister(self, tier, interval=self._persist_interval, lag=self._persist_lag)
             self._persister = persister
             if rejoin:
-                rejoiner = threading.Thread(target=self._rejoin, args=(tier,),
+                # The freshness instant of this log's rejoin (rulings R53, R54): anchored here,
+                # not at start(), because an empty log also arrives on a coordinator that keeps
+                # running (a space closed and reopened over a replaced disk).
+                fresh_from = self._clock() + self.restart_grace
+                rejoiner = threading.Thread(target=self._rejoin, args=(tier, fresh_from),
                                             name=f"proto-cluster-rejoin-{self._node}", daemon=True)
                 self._rejoiners = [t for t in self._rejoiners if t.is_alive()] + [rejoiner]
         persister.start()
@@ -699,9 +725,9 @@ class ClusterCoordinator:
         root but some term was seen, the answers are still enough -- they include every member
         that granted or requested a term, and no root had been committed when they were
         gathered -- but as ``"rootless"``, which is not a first start: like every rejoin but
-        ``"new"``, it completes only on answers gathered at or after ``start() +
-        restart_grace`` (:meth:`_complete_rejoin`); a root in flight when the node lost its
-        log is then visible in them.  Without it, a member that
+        ``"new"``, it completes only on answers gathered at or after the attach of the empty
+        log plus ``restart_grace`` (:meth:`_complete_rejoin`); a root in flight when the node
+        lost its log is then visible in them.  Without it, a member that
         finishes its first start and requests a lease at once would leave the members still
         rejoining with too few witnesses for good.  Forced,
         any ``majority - 1`` answers of loaded members do.  ``"unknown"`` answers never count."""
@@ -718,10 +744,12 @@ class ClusterCoordinator:
             return list(witnesses), "witnesses"
         return None
 
-    def _rejoin(self, tier) -> None:
+    def _rejoin(self, tier, fresh_from: float) -> None:
         """Learn the highest term promised or seen by a majority, record it, and start voting
-        (see "Rejoining" in the module docstring).  Retries until it succeeds, the tier is
-        detached or the coordinator stops."""
+        (see "Rejoining" in the module docstring).  ``fresh_from`` is the instant, on this
+        node's clock, from which a round counts outside a first start: when ``tier`` was
+        attached plus :attr:`restart_grace`.  Retries until it succeeds, the tier is detached
+        or the coordinator stops."""
         while True:
             with self._cond:
                 if self._state != "running" or self._tier is not tier or not self._rejoining:
@@ -737,9 +765,8 @@ class ClusterCoordinator:
                 if decision is not None:
                     counted, how = decision
                     if self._complete_rejoin(tier, [answers[p] for p in counted], [promised[p] for p in counted],
-                                             how, asked):
+                                             how, asked, fresh_from):
                         return
-                    fresh_from = self._started + self.restart_grace
                     if how != "new" and asked < fresh_from:
                         # Too early a round: ask again as soon as a fresh one may be sent (at
                         # once if that instant has passed meanwhile; with a clock that does
@@ -756,7 +783,8 @@ class ClusterCoordinator:
             with self._cond:
                 self._cond.wait_for(lambda: self._state != "running", timeout=wait)
 
-    def _complete_rejoin(self, tier, answers: list, promised: list, how: str, asked: float) -> bool:
+    def _complete_rejoin(self, tier, answers: list, promised: list, how: str, asked: float,
+                         fresh_from: float) -> bool:
         """Adopt what the counted ``answers`` teach -- the highest promise and label, and the
         highest accepted root, which orders at or above every committed root (each was
         accepted by a majority, which the counted answers intersect) -- make every record of
@@ -765,18 +793,21 @@ class ClusterCoordinator:
         witness.  Return False, leaving the node rejoining with the reason in ``stats()``,
         when the records cannot be obtained now, or when ``how`` is not a cluster's first
         start and the round of ``answers`` was sent (at ``asked``, on this node's clock)
-        before ``start() + restart_grace``, whatever this node's startup grace (ruling R53).
+        before ``fresh_from`` -- the instant ``tier`` was attached plus :attr:`restart_grace`
+        -- whatever this node's startup grace (rulings R53, R54).
         An empty acceptor log cannot tell a member that joins its cluster's first start late
         from a wiped one, and a wiped node may have accepted and acknowledged a root just
         before the loss, under a lease that is still running: answers gathered meanwhile may
         all miss that root (the other acceptors have not received it yet; the holder
         self-accepts after its broadcast, or its answer is lost), and its holder may still
-        count the lost node's acknowledgement and report the commit.  Every lease granted
-        before :meth:`start` has ended on its holder's view by ``start() + restart_grace``
-        (see :attr:`restart_grace`), and a commit is reported only with acknowledgements
-        counted within the lease, so each acceptor counted for it had durably accepted the
-        root before it answered a round sent after that instant; the counted answers
-        intersect those acceptors.  A ``"new"`` cluster cannot be stale this way: the holder
+        count the lost node's acknowledgement and report the commit.  The lost log accepted
+        nothing once it was detached, so every lease it served was granted before ``tier`` was
+        attached -- by a previous process, or by this one before :meth:`detach` -- and has
+        ended on its holder's view by ``fresh_from`` (see :attr:`restart_grace`); anchoring
+        at :meth:`start` missed a log replaced while the coordinator kept running.  A commit
+        is reported only with acknowledgements counted within the lease, so each acceptor
+        counted for it had durably accepted the root before it answered a round sent after
+        that instant; the counted answers intersect those acceptors.  A ``"new"`` cluster cannot be stale this way: the holder
         of any lease records its own term before a grant exists, so its answer reports it.
 
         Re-proposing the highest accepted root is what Paxos prescribes, but only together
@@ -786,13 +817,13 @@ class ClusterCoordinator:
         persisted root of the store, which is never acceptance), are not logged, and, for a
         forced rejoin, only up to the adopted root (a majority loss may have lost them)."""
         safe = self.restart_grace
-        if how != "new" and asked < self._started + safe:
+        if how != "new" and asked < fresh_from:
             return self._block_rejoin(
                 tier, f"this is not a cluster's first start (some member has accepted a root or seen a "
                       f"lease term), and answers gathered before lease_duration + drift_margin = {safe:g} s "
-                      f"from this node's start may miss a root it accepted before it lost its acceptor log; "
-                      f"it asks again once that much time has passed (whatever its "
-                      f"startup_grace={self._grace:g})")
+                      f"from the attach of this node's empty acceptor log may miss a root it accepted "
+                      f"before it lost its log; it asks again once that much time has passed (whatever "
+                      f"its startup_grace={self._grace:g})")
         learnt = max(promised + [max(a[2], c[2]) for a, c, _ in answers] + [0])
         best = committed = None
         for (ak, aroot, alabel), (ck, croot, clabel), _ in answers:
@@ -896,7 +927,9 @@ class ClusterCoordinator:
         what = f"root epoch {root.epoch} (label {label})"
         if ranges is None:
             try:
-                remote = tier.ensure_remote([(root.segment, None)])
+                # At least the root record's offset (a sealed object counts only up to its
+                # recorded length, ruling R54).
+                remote = tier.ensure_remote([(root.segment, root.offset + 1)])
             except (ProtoDBError, OSError) as e:
                 logger.info("Node %s: the object store could not be checked for %s: %s", self._node, what, e)
                 remote = False
@@ -989,7 +1022,9 @@ class ClusterCoordinator:
             self._confirmed = True
 
     def detach(self, tier) -> None:
-        """Stop the persister of ``tier`` and forget the tier (the space is closing)."""
+        """Stop the persister of ``tier`` and forget the tier (the space is closing).  A
+        rejoin forced for this tier (:meth:`force_rejoin`) is dropped; the acceptor state held
+        in memory is replaced by the next :meth:`attach` with what that tier's log holds."""
         with self._lock:
             if self._tier is None or (self._tier is not tier and self._tier.storage is not tier.storage):
                 return
@@ -997,6 +1032,10 @@ class ClusterCoordinator:
             self._tier = None
             self._loaded = False
             self._rejoining = False
+            # A force was the operator's decision about the rejoin of this log; it does not
+            # carry over to another one (nor does it survive a restart).  A force requested
+            # while no log is attached applies to the next attach (force_rejoin).
+            self._rejoin_forced = False
             self._cond.notify_all()
         if persister is not None:
             persister.stop()

@@ -80,8 +80,10 @@ def test_segments_ship_sealed_and_in_order_and_cloud_storage_reads_the_persisted
     second = st.push_atom({"n": 2})
     assert second.segment != first.segment             # shipping sealed the first segment
     assert st.ship(force=True)
-    uploads = [k for op, k in store.log if op == "put_if_absent"]
+    uploads = [k for op, k in store.log if op == "put_if_absent" and k.endswith(".seg")]
     assert uploads == [st.segment_key(first.segment), st.segment_key(second.segment)]
+    markers = [k for op, k in store.log if op == "put_if_absent" and k.endswith(".sealed")]
+    assert [m.split("/")[-1].split(".")[0] for m in markers] == [first.segment.hex, second.segment.hex]
     assert st.ensure_remote([(first.segment, None), (second.segment, None)])
     assert st.persist(3, _root(second, 2))
     assert not st.persist(3, _root(first, 1))          # never backwards
@@ -297,3 +299,104 @@ def test_a_copy_with_a_hole_is_never_uploaded(tmp_path):
     assert survivor.stats()["parts_uploaded"] == 0
     writer.close()
     survivor.close()
+
+
+# -- sealed objects carry their length (8.3d re-review 6, M2; ruling R54) ----------------------
+
+
+def _short_sealed_segment(tmp_path, store):
+    """A writer ships three records to a peer, loses the tail of its segment (a crash dropped
+    its unflushed buffer: only the first record is on its disk), restarts, and seals and uploads
+    that prefix as the whole segment.  Returns ``(peer, ptrs, root, records)``; the peer holds
+    the full copy, accepted with ``root`` labelled 1."""
+    writer = _tiered(tmp_path, store, "w")
+    ptrs = [writer.push_atom({"i": i}) for i in range(3)]
+    records = writer.outgoing()
+    root = _root(ptrs[2], 3)
+    peer = _tiered(tmp_path, store, "s")
+    peer.apply(records, root, 1)
+    writer.flush()
+    writer.close()
+    path = os.path.join(str(tmp_path / "w"), ptrs[0].segment.hex + ".seg")
+    with open(path, "r+b") as f:
+        f.truncate(records[1][1])                  # only the first record survived the crash
+    writer = _tiered(tmp_path, store, "w")
+    writer.ship(force=True)
+    assert store.get(writer.segment_key(ptrs[0].segment))[0] == open(path, "rb").read()
+    writer.close()
+    peer.refresh_remote()
+    return peer, ptrs, root, records
+
+
+def test_a_short_sealed_object_never_covers_records_past_its_length(tmp_path):
+    store = FakeObjectStore()
+    peer, ptrs, root, records = _short_sealed_segment(tmp_path, store)
+    segment = ptrs[0].segment
+    needs = [(s, end) for s, _, end in peer.commit_ranges(root)]
+    assert peer.ensure_remote([(segment, records[1][1])])          # the prefix is in the store
+    assert not peer.ensure_remote(needs), "a short sealed object counted as covering the commit"
+    # A holder re-proposing the root gathers the records the store lacks instead of skipping them.
+    gathered = peer.commit_records(peer.commit_ranges(root))
+    assert [r[1] for r in gathered] == [r[1] for r in records]
+    # A lagging peer uploads its copy as a part; the part then covers the commit.
+    assert peer.ensure_remote(needs, upload_copies=True)
+    assert peer.stats()["parts_uploaded"] == 1
+    peer.close()
+
+
+def test_a_copy_longer_than_the_sealed_object_is_never_released(tmp_path):
+    store = FakeObjectStore()
+    peer, ptrs, root, _ = _short_sealed_segment(tmp_path, store)
+    copy = os.path.join(peer.path, ptrs[0].segment.hex + ".seg")
+    assert peer.release_local(root_key(1, root)) == 0, "the only full copy was released"
+    assert os.path.exists(copy)
+    assert peer.get_atom(ptrs[2]) == {"i": 2}
+    # Once the store holds every byte of the copy (a part), the copy may go.
+    assert peer.ensure_remote([(ptrs[0].segment, os.path.getsize(copy))], upload_copies=True)
+    assert peer.release_local(root_key(1, root)) == 1
+    peer.close()
+
+
+def _truncated_in_the_store(tmp_path, store):
+    """A writer uploads a full sealed segment (and its length), shipped to a peer as a copy;
+    the store's object is later found truncated (a store or disk that acknowledged bytes it did
+    not keep).  Returns ``(peer, ptrs)``."""
+    writer = _tiered(tmp_path, store, "w")
+    ptrs = [writer.push_atom({"i": i}) for i in range(3)]
+    records = writer.outgoing()
+    peer = _tiered(tmp_path, store, "s")
+    peer.apply(records, _root(ptrs[2], 3), 1)
+    writer.ship(force=True)
+    key = writer.segment_key(ptrs[0].segment)
+    writer.close()
+    store.overwrite(key, store.get(key)[0][:records[1][1]])
+    return peer, ptrs
+
+
+def test_a_truncated_read_from_the_store_falls_back_to_the_peers(tmp_path):
+    store = FakeObjectStore()
+    peer, ptrs = _truncated_in_the_store(tmp_path, store)
+    reader = _tiered(tmp_path, store, "r")
+    reader.refresh_remote()                       # the recorded length says the store has it all
+    reader.set_fetcher(peer.local_record)
+    # Believed in the store, past the short object's end: the store read is truncated and the
+    # record comes from the peer.
+    assert reader.get_atom(ptrs[2]) == {"i": 2}
+    assert reader.stats()["reads_peer"] == 1 and reader.stats()["remote_segment_gets"] >= 1
+    assert reader.get_atom(ptrs[0]) == {"i": 0}   # inside the short object: from the store
+    # The short download is remembered: the store no longer counts as covering those bytes.
+    assert not reader.ensure_remote([(ptrs[2].segment, ptrs[2].offset + 1)])
+    reader.close()
+    peer.close()
+
+
+def test_a_truncated_read_with_no_full_copy_anywhere_raises_corruption(tmp_path):
+    store = FakeObjectStore()
+    peer, ptrs = _truncated_in_the_store(tmp_path, store)
+    peer.close()
+    reader = _tiered(tmp_path, store, "r")
+    reader.refresh_remote()
+    reader.set_fetcher(lambda ptr: None)          # no peer holds it
+    with pytest.raises(ProtoCorruptionError, match="no full copy"):
+        reader.get_atom(ptrs[2])
+    reader.close()

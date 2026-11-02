@@ -355,3 +355,143 @@ def test_a_recovery_round_does_not_clear_a_suspicion_that_arose_after_it_was_sen
     assert not t.is_alive() and not isinstance(out["r"], Exception), out
     with b._lock:
         assert b._suspect_term == lease_a.term, "a round sent before the suspicion cleared it"
+
+
+def _reattach_empty(h, name):
+    """``name``'s space is closed and reopened over a replaced, empty disk on the same running
+    coordinator (``ObjectSpace.close()`` detaches without stopping it); no rejoin yet."""
+    node = h.nodes[name]
+    node.detach(node.tier)
+    h.disks[name] = MemoryStorage()
+    node.attach(h.tier_class(h.disks[name], name))
+    return node
+
+
+def test_c2_a_reattach_over_an_empty_disk_ignores_answers_gathered_before_the_attach_grace(harness):
+    """``probe_reattach_stale`` (re-review 6, C2).  The freshness instant must be anchored at the
+    attach of the acceptor log, not at the coordinator's start: an empty log also arrives through
+    ``detach()`` + ``attach()`` on a coordinator that keeps running, long after ``start()``.
+    N=3; the coordinators started long ago.  a holds a lease granted by c and is descheduled
+    between its broadcast of R and its own accept; old-disk c accepts and acknowledges (held), b
+    never gets R.  c's space closes, its disk is replaced, and the space reopens on the same
+    coordinator: before the fix its rejoin completed at once on answers lacking R and logged R0;
+    a then counted old c's ack (R committed); c restarted normally (disk intact, R0 loaded), and
+    b's lease from {b, c} built on R0 with ``root_certain=True``: an acknowledged commit lost."""
+    h = harness()
+    r0 = h.bootstrap("a")
+    h.clock.t += 3 * GRACE                       # the coordinators started long ago
+    a = h.nodes["a"]
+    lease_a = h.attempt("a", {"c"})
+    assert not isinstance(lease_a, Exception), lease_a
+    gate, sent = threading.Event(), threading.Event()
+    orig = a._broadcast
+
+    def paused(msg):
+        orig(msg)
+        if msg["type"] == "replicate":
+            sent.set()
+            gate.wait(20)
+
+    a._broadcast = paused
+    R = rec(2)
+    t, out = _replicate_in_background(a, lease_a, R)
+    assert sent.wait(10)
+    h.net.deliver(src="a", dst={"c"}, kinds=("records", "replicate"))
+    acks = h.net.take("c", {"a"}, ("ack",))
+    h.net.drop(src="a", dst={"b"}, kinds=("records", "replicate"))
+    assert h.nodes["c"].accepted_root()[1] == R
+    c = _reattach_empty(h, "c")
+    try:
+        assert not h.rejoin("c", timeout=1.5), "the reattached node rejoined on stale answers"
+        _assert_blocked_on_freshness(c)
+    finally:
+        gate.set()
+    outcome = _finish(h, "a", t, out, acks)
+    assert isinstance(outcome, float), outcome
+    assert a.committed_root()[1] == R
+    h.clock.t += GRACE + 0.5
+    assert h.rejoin("c")
+    assert c.accepted_root()[1] == R
+    h.restart("c")                               # a clean restart: c reloads what its log holds
+    h.clock.t += GRACE + 0.5
+    assert h.nodes["c"].accepted_root()[1] == R
+    lease_b = h.attempt("b", {"c"})
+    assert not isinstance(lease_b, Exception), lease_b
+    base, _ = h.base("b", lease_b, responders={"c"})
+    assert base == R and base != r0, "an acknowledged commit was lost"
+
+
+def test_c2_audit_a_reattached_log_replaces_the_acceptor_state_held_in_memory(harness):
+    """Round 7 audit of per-attach state.  A node's acceptor state is what its attached log
+    holds, as after a restart: an empty log attached to a coordinator that keeps running must
+    not inherit the accepted root of the log it replaced.  N=3 with records: a (lease granted
+    by c) replicates R; only c accepts it, and R's record reaches c's disk only; a crashes
+    before its own accept and restarts on its intact disk (no R).  c's disk is replaced on the
+    running coordinator and c rejoins on fresh answers (R0 from a and b).  Before the fix c
+    still reported R as accepted (memory) while its log held R0, so b's lease from {b, c}
+    adopted R as its base, whose record is nowhere: every lease c granted was stuck until c
+    restarted (a root adopted without its records, ruling R50)."""
+    h = harness(records=True)
+    r0 = h.bootstrap("a")
+    h.clock.t += 3 * GRACE
+    a = h.nodes["a"]
+    lease_a = h.attempt("a", {"c"})
+    assert not isinstance(lease_a, Exception), lease_a
+    gate, sent = threading.Event(), threading.Event()
+    orig = a._broadcast
+
+    def paused(msg):
+        orig(msg)
+        if msg["type"] == "replicate":
+            sent.set()
+            gate.wait(20)
+
+    a._broadcast = paused
+    R = rec(2)
+    t, _ = _replicate_in_background(a, lease_a, R)
+    try:
+        assert sent.wait(10)
+        h.net.deliver(src="a", dst={"c"}, kinds=("records", "replicate"))
+        assert h.nodes["c"].wait_idle(5.0)
+        h.nodes["c"].tier.held.add((R.segment, R.offset))      # R's record rode to c only
+        h.net.drop(src="c", dst={"a"}, kinds=("ack",))
+        h.net.drop(src="a", dst={"b"}, kinds=("records", "replicate"))
+        assert h.nodes["c"].accepted_root()[1] == R
+        a.stop()                                                # a crashes before its own accept
+    finally:
+        gate.set()
+    t.join(10.0)
+    h.retired.append(a)
+    h.nodes["a"] = h._node("a", GRACE)
+    assert h.nodes["a"].accepted_root()[1] == r0
+    c = _reattach_empty(h, "c")
+    assert c.accepted_root() == (False, None, 0), "the replaced log's accepted root survived in memory"
+    h.clock.t += GRACE + 0.5
+    assert h.rejoin("c")
+    logged = c.tier.load_roots()[0]
+    assert logged is not None and logged[1] == r0
+    assert c.accepted_root()[1] == r0, "c's memory disagrees with its log"
+    lease_b = h.attempt("b", {"c"})
+    assert not isinstance(lease_b, Exception), lease_b
+    base, _ = h.base("b", lease_b, responders={"c"})
+    assert base == r0
+
+
+def test_c2_audit_a_forced_rejoin_does_not_outlive_the_log_it_was_forced_for(harness):
+    """Round 7 audit of per-attach state.  ``force_rejoin()`` is an operator decision about one
+    acceptor log (a majority of logs lost).  Forced while a rejoin runs, it must not carry over
+    to a different empty log attached after a detach, as it does not survive a restart: with
+    the other members back, a forced rejoin from a bare majority could miss a committed root."""
+    h = harness("abcde")
+    h.bootstrap("a")
+    h.clock.t += 3 * GRACE
+    c = _reattach_empty(h, "c")
+    c.force_rejoin()                             # the operator forces this log's rejoin
+    c.detach(c.tier)                             # ... which is abandoned: the space closes
+    h.disks["c"] = MemoryStorage()
+    c.attach(h.tier_class(h.disks["c"], "c"))
+    h.clock.t += GRACE + 0.5
+    # A bare majority (majority - 1 = 2 answers) completes only a forced rejoin; this one needs
+    # N - majority + 1 = 3 witnesses.
+    assert not h.rejoin("c", responders={"a", "b"}, timeout=5.0), "the abandoned force carried over"
+    assert h.rejoin("c", responders={"a", "b", "d"})

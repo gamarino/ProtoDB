@@ -413,7 +413,9 @@ class Persister:
         while True:
             ranges = self._tier.commit_ranges(current)
             if ranges is None:
-                needs.append((current.segment, None))
+                # Ranges unknown here: at least the root record's offset must be in the store
+                # (a sealed object counts only up to its recorded length, ruling R54).
+                needs.append((current.segment, current.offset + 1))
             else:
                 needs.extend((segment, end) for segment, _, end in ranges)
             _, _, previous = cluster_fields(storage, current)

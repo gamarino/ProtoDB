@@ -21,12 +21,25 @@ Layout in the object store under ``prefix``::
     <prefix>space.root                         the persisted root: cluster epoch and label term
     <prefix>segments/<uuid4-hex>.seg           segment objects, uploaded whole and sealed by
                                                their writer, in creation order
+    <prefix>segments/<uuid4-hex>.<len>.sealed  empty marker written after a segment object:
+                                               its length in bytes (16 hex digits)
     <prefix>segments/<uuid4-hex>.<end>.part    the first ``end`` bytes (16 hex digits) of a
                                                segment, uploaded from a copy by another node
                                                when the writer lags (a lost node)
 
 While no part object exists the layout is the :class:`~proto_db.storage.cloud.CloudStorage`
-one, which can then read the persisted space; a TieredStorage reads both.
+one (which never lists, so it ignores the markers) and can then read the persisted space; a
+TieredStorage reads both.
+
+What the store holds is judged by length (8.3d re-review 6, M2; ruling R54): a sealed object
+covers a byte range only up to its recorded length -- from this node's upload, its marker,
+or a download, the shortest known -- and a part up to its ``end``.  A sealed object shorter
+than the records a peer holds (a writer that restarted on a segment missing its tail, a store
+or a disk that acknowledged bytes it did not keep) therefore never makes a commit look
+persisted, never lets a holder skip shipping those records, and never lets a peer release
+its longer copy; a sealed object whose length is unknown covers nothing.  A record read from
+a store object that turns out short or corrupt is read from the peers, then from a part;
+with no full copy anywhere the read raises ``ProtoCorruptionError``, never short data.
 
 Write path: a record larger than :data:`~proto_db.cluster.protocol.MAX_RECORD_BYTES` is
 refused (``ProtoValidationError``): it could never be replicated in one frame.
@@ -68,8 +81,9 @@ this node can serve the next node that needs them and upload parts).  A holder r
 the ranges of its own commit before its outcome is known (:meth:`TieredStorage.remember_commit`).
 
 Local release: an own segment or a copy is deleted locally once the object store holds
-it and every commit that referenced it orders at or below the persisted root in the full
-order of roots (:func:`~proto_db.cluster.rootlog.root_key`; ``release_local``).
+every byte of it (a sealed object or a part at least as long as the local file) and every
+commit that referenced it orders at or below the persisted root in the full order of roots
+(:func:`~proto_db.cluster.rootlog.root_key`; ``release_local``).
 
 Backlog: bytes and age of own data not yet in the object store, exposed by
 :meth:`TieredStorage.backlog`.  ``on_backlog_alert(backlog)`` is called when the backlog
@@ -117,6 +131,7 @@ ROOT_OBJECT = "space.root"
 SEGMENT_PREFIX = "segments/"
 SEGMENT_SUFFIX = ".seg"
 PART_SUFFIX = ".part"
+SEALED_SUFFIX = ".sealed"
 MANIFEST = "segments.log"
 ROOTS_LOG = "roots.log"
 _ROOT_CRC = struct.Struct("<I")
@@ -250,6 +265,7 @@ class TieredStorage(SharedStorage):
         self._own = {}                 # UUID -> _Own, in creation order (dicts keep it)
         self._copies = {}              # UUID -> root_key of the newest commit that wrote into the copy
         self._remote = set()           # segments whose sealed object is in the store
+        self._sealed = {}              # UUID -> known length of its sealed object (the shortest seen)
         self._parts = {}               # UUID -> largest end of a part object in the store
         self._ranges = {}              # (root segment, offset) -> (root_key, [(UUID, start, end)])
         self._unshipped = []           # [segment bytes, offset, framed record], push order
@@ -506,14 +522,61 @@ class TieredStorage(SharedStorage):
         if found is not None:
             self._count("reads_local")
         else:
-            found = None if self._known_remote(ptr) else self._from_peer(ptr)
+            asked = not self._known_remote(ptr)
+            found = self._from_peer(ptr) if asked else None
             if found is not None:
                 self._count("reads_peer")
             else:
-                found = self._remote_record(ptr)
-                self._count("reads_remote")
+                found = self._store_record(ptr, ask_peers=not asked)
         self._cache.put(key, encode_record(found[0], found[1]))
         return found
+
+    def _store_record(self, ptr: AtomPointer, *, ask_peers: bool) -> tuple:
+        """The record at ``ptr`` from the object store.  When the store's object turns out
+        short or corrupt there, the record is read from the peers (unless they were just asked,
+        ``ask_peers`` False), then from a part; ``ProtoCorruptionError`` when no full copy is
+        anywhere -- never short data."""
+        try:
+            found = self._remote_record(ptr)
+            self._count("reads_remote")
+            return found
+        except ProtoCorruptionError as e:
+            failure = e
+        found = self._from_peer(ptr) if ask_peers else None
+        if found is not None:
+            logger.warning("The object store's copy of the record at %s is short or corrupt (%s); read "
+                           "from a peer", ptr, failure)
+            self._count("reads_peer")
+            return found
+        found = self._part_record(ptr)
+        if found is not None:
+            logger.warning("The object store's sealed copy of the record at %s is short or corrupt (%s); "
+                           "read from a part", ptr, failure)
+            self._count("reads_remote")
+            return found
+        raise ProtoCorruptionError(f"There is no full copy of the record at {ptr}: the object store's "
+                                   f"copy is short or corrupt ({failure}) and no reachable peer holds "
+                                   f"it") from failure
+
+    def _part_record(self, ptr: AtomPointer) -> Optional[tuple]:
+        """The record at ``ptr`` from the largest part of its segment in the store, or ``None``."""
+        try:
+            self._list_remote()
+        except (ProtoDBError, OSError) as e:
+            logger.info("Listing the object store failed while looking for a part: %s", e)
+        with self._lock:
+            end = self._parts.get(ptr.segment)
+        if end is None or end <= ptr.offset:
+            return None
+        part = self._part_key(ptr.segment, end)
+        try:
+            data, _ = self._retrying(lambda: self._store.get(part), f"Reading segment part {part}")
+            if decode_segment_header(data) != ptr.segment:
+                return None
+            return read_record(data, ptr.offset)
+        except (ObjectNotFoundError, ProtoCorruptionError) as e:
+            logger.warning("Segment part %s cannot serve the record at %s: %s", part, ptr, e)
+            return None
 
     def _known_remote(self, ptr: AtomPointer) -> bool:
         """True when the store is known to hold the record at ``ptr`` (from uploads, downloads
@@ -562,10 +625,19 @@ class TieredStorage(SharedStorage):
         if decode_segment_header(data) != segment:
             raise ProtoCorruptionError(f"Segment object of {segment.hex} has a foreign header")
         self._segments.put(segment, data)
-        with self._lock:
-            if sealed:
-                self._remote.add(segment)
+        if sealed:
+            self._note_sealed(segment, len(data))
         return data
+
+    def _note_sealed(self, segment: uuid.UUID, length: int) -> None:
+        """The sealed object of ``segment`` is in the store, ``length`` bytes long as uploaded,
+        listed (marker) or downloaded; the shortest length known is kept, so an object found
+        shorter than recorded covers only what it holds."""
+        with self._lock:
+            self._remote.add(segment)
+            known = self._sealed.get(segment)
+            if known is None or length < known:
+                self._sealed[segment] = length
 
     def _remote_record(self, ptr: AtomPointer) -> tuple:
         data = self._segment_object(ptr.segment)
@@ -920,10 +992,11 @@ class TieredStorage(SharedStorage):
                 except OSError as e:
                     raise ProtoUnexpectedError(f"Reading segment {own.uuid.hex} for upload failed: {e}") from e
                 self._put_segment(own.uuid, data)
+                self._put_sealed_marker(own.uuid, len(data))
+                self._note_sealed(own.uuid, len(data))
                 with self._lock:
                     own.uploaded = True
                     own.first = None
-                    self._remote.add(own.uuid)
                     self._stats["segments_uploaded"] += 1
                 self._segments.put(own.uuid, data)
                 uploaded = True
@@ -944,6 +1017,20 @@ class TieredStorage(SharedStorage):
 
         self._retrying(attempt, f"Uploading segment {key}")
 
+    def _put_sealed_marker(self, segment: uuid.UUID, length: int) -> None:
+        """Record the length of ``segment``'s sealed object in the store (an empty marker
+        object whose key holds it), after the object itself: a listing that shows the marker
+        shows the object, and peers judge what the object covers without downloading it."""
+        key = f"{self._prefix}{SEGMENT_PREFIX}{segment.hex}.{length:016x}{SEALED_SUFFIX}"
+
+        def attempt():
+            try:
+                self._store.put_if_absent(key, b"")
+            except PreconditionFailedError:
+                pass                # our own earlier upload: the same empty marker
+
+        self._retrying(attempt, f"Recording the length of segment object {segment.hex}")
+
     def _part_key(self, segment: uuid.UUID, end: int) -> str:
         return f"{self._prefix}{SEGMENT_PREFIX}{segment.hex}.{end:016x}{PART_SUFFIX}"
 
@@ -951,7 +1038,7 @@ class TieredStorage(SharedStorage):
         """List the segment objects and parts in the store and record them."""
         prefix = self._prefix + SEGMENT_PREFIX
         keys = self._retrying(lambda: self._store.list(prefix), f"Listing {prefix}")
-        sealed, parts = set(), {}
+        sealed, lengths, parts = set(), {}, {}
         for key in keys:
             name = key[len(prefix):]
             try:
@@ -959,20 +1046,31 @@ class TieredStorage(SharedStorage):
                     hex_id, end = name[:-len(PART_SUFFIX)].split(".")
                     segment = uuid.UUID(hex=hex_id)
                     parts[segment] = max(parts.get(segment, 0), int(end, 16))
+                elif name.endswith(SEALED_SUFFIX):
+                    hex_id, length = name[:-len(SEALED_SUFFIX)].split(".")
+                    segment = uuid.UUID(hex=hex_id)
+                    lengths[segment] = min(lengths.get(segment, int(length, 16)), int(length, 16))
                 elif name.endswith(SEGMENT_SUFFIX):
                     sealed.add(uuid.UUID(hex=name[:-len(SEGMENT_SUFFIX)]))
             except ValueError:
                 continue            # not ours
         with self._lock:
             self._remote |= sealed
+            for segment, length in lengths.items():
+                if segment in sealed:
+                    known = self._sealed.get(segment)
+                    self._sealed[segment] = length if known is None else min(known, length)
             for segment, end in parts.items():
                 self._parts[segment] = max(self._parts.get(segment, 0), end)
 
     def _covered(self, segment: uuid.UUID, end: Optional[int]) -> bool:
-        """True when the store holds ``segment`` up to ``end`` (``None``: its sealed object) (lock held)."""
-        if segment in self._remote:
-            return True
-        return end is not None and self._parts.get(segment, 0) >= end
+        """True when the store holds ``segment`` up to ``end`` (lock held): its sealed object of
+        a known length of at least ``end`` bytes, or a part at least that long.  ``None`` asks
+        for the sealed object of a known length, whatever it is (module docstring)."""
+        length = self._sealed.get(segment) if segment in self._remote else None
+        if end is None:
+            return length is not None
+        return (length is not None and length >= end) or self._parts.get(segment, 0) >= end
 
     def _copy_prefix(self, segment: uuid.UUID, end: int) -> Optional[bytes]:
         """The first bytes of the local copy of ``segment``, up to the end of the last valid
@@ -1023,7 +1121,8 @@ class TieredStorage(SharedStorage):
 
     def ensure_remote(self, needs, *, upload_copies: bool = False) -> bool:
         """True when the store holds every ``(segment, end)`` of ``needs``: the segment's sealed
-        object, or (``end`` not ``None``) a part at least ``end`` bytes long.
+        object with a recorded length of at least ``end`` bytes, or a part at least that long
+        (``end`` ``None``: a sealed object of a known length, see :meth:`_covered`).
 
         Lists the store once when something is not known to be there.  With
         ``upload_copies``, a missing segment this node holds a copy of (not an own segment,
@@ -1056,7 +1155,8 @@ class TieredStorage(SharedStorage):
         return True
 
     def release_local(self, persisted_key: tuple) -> int:
-        """Delete local segments (own and copies) the store holds and whose commits all order
+        """Delete local segments (own and copies) the store holds in full (as long as the local
+        file, see :meth:`_covered`) and whose commits all order
         at or below the persisted root whose :func:`~proto_db.cluster.rootlog.root_key` is
         ``persisted_key``; return how many were deleted.  A segment written by a commit that
         orders above it (a new lineage after a refound, say) is kept."""
@@ -1069,12 +1169,24 @@ class TieredStorage(SharedStorage):
             return 0
         current = self._local.current_segment
         with self._lock:
+            candidates = [s for s, k in self._copies.items() if s in self._remote and k is not None
+                          and k <= persisted_key]
+        sizes = {}                  # every byte of a copy must be in the store before it goes
+        for segment in candidates:
+            try:
+                sizes[segment] = os.path.getsize(os.path.join(self._path, segment.hex + SEGMENT_SUFFIX))
+            except FileNotFoundError:
+                sizes[segment] = 0
+            except OSError as e:
+                raise ProtoUnexpectedError(f"Reading the size of local segment {segment.hex} "
+                                           f"failed: {e}") from e
+        with self._lock:
             for key in [k for k, (order, _) in self._ranges.items() if order <= persisted_key]:
                 del self._ranges[key]
             own = [o for o in self._own.values() if o.uploaded and not o.released and o.uuid != current
-                   and o.max_key is not None and o.max_key <= persisted_key]
-            copies = [s for s, k in self._copies.items() if s in self._remote and k is not None
-                      and k <= persisted_key]
+                   and o.max_key is not None and o.max_key <= persisted_key and self._covered(o.uuid, o.end)]
+            copies = [s for s in candidates if self._copies.get(s) is not None
+                      and self._copies[s] <= persisted_key and self._covered(s, sizes[s])]
             for o in own:
                 o.released = True
             for s in copies:
