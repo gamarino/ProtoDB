@@ -118,6 +118,7 @@ from .errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, Pro
                      ProtoTimeoutError, ProtoUnexpectedError, ProtoUserError,
                      ProtoValidationError)
 from .storage.base import check_lock_timeout
+from .storage.cache import BoundedCache
 from .storage.format import FORMAT_VERSION, RootRecord
 from .cluster.coordinator import REFOUND_TERM_STEP
 from .cluster.lease import Permission
@@ -281,6 +282,50 @@ class _SpaceContext:
     def load(self, ptr: AtomPointer, type_name: str) -> Atom:
         """Return a lazy stub of the atom stored at ``ptr``."""
         return Atom._stub(self, ptr, type_name)
+
+
+def _one(_value) -> int:
+    return 1
+
+
+#: Default number of atoms an :class:`ObjectSpace` keeps decoded for every transaction (R75).
+ATOM_CACHE_ENTRIES = 50_000
+
+
+class _AtomCache:
+    """Decoded atoms shared by every transaction of one space, by pointer (ruling R75, D53).
+
+    Safe without invalidation: a storage instance never changes the content at a pointer
+    (records are appended, never rewritten), and a decoded atom is immutable.  An atom
+    served here is bound to a space-level context whose ``load`` goes through this cache, so
+    the children of a shared atom are shared too.  Bounded LRU by entry count; an evicted
+    atom stays valid for whoever holds it.  Thread-safe (:class:`BoundedCache`; loading a
+    stub is thread-safe, :meth:`Atom._load`).
+    """
+
+    def __init__(self, storage, entries: int):
+        self.storage = storage
+        self._cache = BoundedCache(entries, sizeof=_one)
+
+    def save(self, atom: Atom) -> AtomPointer:
+        """Persist ``atom`` (children first) and return its pointer."""
+        return _save_atom(self, atom)
+
+    def load(self, ptr: AtomPointer, type_name: str) -> Atom:
+        """The shared atom stored at ``ptr`` (a lazy stub on a miss, cached)."""
+        atom = self._cache.get(ptr)
+        if atom is not None and type(atom).__type_name__ == type_name:
+            return atom
+        stub = Atom._stub(self, ptr, type_name)
+        if atom is None:
+            self._cache.put(ptr, stub)
+        return stub
+
+    def stats(self) -> dict:
+        """``hits``, ``misses``, ``entries`` and ``capacity`` (in atoms)."""
+        stats = self._cache.stats()
+        stats.pop("bytes", None)
+        return stats
 
 
 def _load_space(context, record) -> Optional[SpaceRoot]:
@@ -905,12 +950,20 @@ class ObjectSpace:
             durable.  A node grants and acknowledges only while a space is open on it.  Every writer of the space must use a coordinator of the
             same cluster.  The caller owns the coordinator (:meth:`close` detaches it but
             does not stop it).  ``None`` (default): no cluster, unchanged behaviour.
+        atom_cache_entries: how many decoded atoms the space shares between its
+            transactions and threads, by storage pointer (ruling R75): a pointer's content
+            never changes, so the cache needs no invalidation and is never stale.  ``0``
+            disables it (each transaction decodes what it reads).
     """
 
-    def __init__(self, storage, *, lock_timeout: Optional[float] = None, coordinator=None):
+    def __init__(self, storage, *, lock_timeout: Optional[float] = None, coordinator=None,
+                 atom_cache_entries: int = ATOM_CACHE_ENTRIES):
         if lock_timeout is not None:
             check_lock_timeout(lock_timeout)
+        if type(atom_cache_entries) is not int or atom_cache_entries < 0:
+            raise ProtoValidationError("atom_cache_entries must be a non-negative int")
         self._storage = storage
+        self._atoms = _AtomCache(storage, atom_cache_entries) if atom_cache_entries else None
         self._lock_timeout = lock_timeout
         self._coordinator = coordinator
         self._tier = None
@@ -929,6 +982,11 @@ class ObjectSpace:
     def storage(self):
         """The underlying storage."""
         return self._storage
+
+    def atom_cache_stats(self) -> Optional[dict]:
+        """Counters of the shared decoded-atom cache (``hits``, ``misses``, ``entries``,
+        ``capacity``), or ``None`` when it is disabled."""
+        return None if self._atoms is None else self._atoms.stats()
 
     @property
     def lock_timeout(self) -> Optional[float]:
@@ -1165,6 +1223,9 @@ class Transaction:
         """Start a transaction on ``database``'s current snapshot (use :meth:`Database.new_transaction`)."""
         self._database = database
         self.storage = database.space.storage
+        atoms = database.space._atoms
+        # Shared decoded atoms only when they read the storage this transaction writes to.
+        self._atoms = atoms if atoms is not None and atoms.storage is self.storage else None
         self._lock = threading.RLock()
         self._state = _ACTIVE
         self._reads: dict = {}
@@ -1188,7 +1249,11 @@ class Transaction:
         return _save_atom(self, atom)
 
     def load(self, ptr: AtomPointer, type_name: str) -> Atom:
-        """Return a lazy stub of the atom stored at ``ptr``."""
+        """Return the atom stored at ``ptr``: the space's shared decoded atom (R75), or a lazy
+        stub of this transaction when the space's atom cache is disabled."""
+        atoms = self._atoms
+        if atoms is not None:
+            return atoms.load(ptr, type_name)
         return Atom._stub(self, ptr, type_name)
 
     # -- state ------------------------------------------------------------------------------
