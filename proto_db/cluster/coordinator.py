@@ -1481,7 +1481,11 @@ class ClusterCoordinator:
                     return
                 if not renew:
                     self._note_request(sender)
-                self._note_owner(msg["term"])
+                else:
+                    # Only a renewal proves its term was won: a plain request may lose, and
+                    # taking it as the owner's would send every permission request to a
+                    # loser (measured: 8 TCP peers, members starved for seconds).
+                    self._note_owner(msg["term"])
                 reply = self._decide(sender, msg["term"], msg["rid"], msg["inc"], renew=renew)
                 tier = self._tier if reply["type"] == "grant" else None
             # ``tier`` is attached until _log_lock is released: a grant needs one (_decide).  A
@@ -2303,10 +2307,9 @@ class ClusterCoordinator:
             raise
         if lease is None:
             self._broadcast(cancel)
-            with self._lock:
-                busy = [r[1] for r in attempt.rejected_by.values() if r[0] == "busy"]
-                if busy:
-                    self._note_owner(max(busy))
+            # A "busy" rejection names the granter's highest REQUESTED term, not the owner's:
+            # the owner is learnt from what only an owner's term carries (renew, permit,
+            # replicate, done), all broadcast or sent within one round.
             self._local.release()
             return False
         with self._cond:
@@ -2359,7 +2362,6 @@ class ClusterCoordinator:
         with self._cond:
             if self._state != "running":
                 return
-            self._note_owner(msg["term"])
             own = self._ownership
             if own is not None and own.term == msg["term"] and own.serving(self._clock()) \
                     and self._failure is None:
@@ -2380,7 +2382,8 @@ class ClusterCoordinator:
         with self._cond:
             if self._state != "running":
                 return
-            self._note_owner(msg["term"])
+            if msg["type"] == "permit":
+                self._note_owner(msg["term"])        # a permit proves its term; a refusal does not
             wait = self._permit_waits.get(msg["rid"])
             if msg["type"] == "permit_no":
                 if wait is not None and wait.reply is None:
@@ -2401,8 +2404,10 @@ class ClusterCoordinator:
             else:
                 known, root, label = decode_labeled_root(msg["root"])
                 now = self._clock()
+                # Measured from the request's send (the D45 argument): the owner issued the
+                # permission later, so it never outlasts the owner's lease here.
                 wait.reply = Permission(term=msg["term"], seq=msg["seq"], owner=sender, acquired_at=now,
-                                        valid_until=now + msg["valid"], root=root if known else None,
+                                        valid_until=wait.sent_at + msg["valid"], root=root if known else None,
                                         root_certain=msg["certain"] and known, clock=self._clock,
                                         root_term=label, rid=msg["rid"])
                 self._cond.notify_all()

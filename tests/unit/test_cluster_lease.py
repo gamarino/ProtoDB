@@ -273,3 +273,59 @@ def test_fencing_token_combines_term_and_the_base_epoch():
 
 def test_fencing_tokens_order_by_term_first():
     assert FencingToken(3, 9) < FencingToken(4, 0) < FencingToken(4, 1)
+
+
+# -- renewal (Task 8.3f, D50) -------------------------------------------------------------------
+
+def test_a_renewal_extends_the_active_grant_from_now():
+    clock = FakeClock()
+    g = _grants(clock)
+    assert g.on_request("a", 10, 1).granted
+    clock.t += 0.6
+    d = g.on_request("a", 10, 1, renew=True)
+    assert d.granted and d.remaining == pytest.approx(1.0)
+    clock.t += 0.6                                            # past the first expiry
+    assert not g.on_request("b", 11, 1).granted               # still promised to a
+
+
+def test_a_plain_duplicate_never_extends_the_grant():
+    clock = FakeClock()
+    g = _grants(clock)
+    g.on_request("a", 10, 1)
+    clock.t += 0.6
+    assert g.on_request("a", 10, 1).remaining == pytest.approx(0.4)
+    clock.t += 0.5
+    assert g.on_request("b", 11, 1).granted
+
+
+def test_a_renewal_of_an_expired_or_released_term_is_never_granted():
+    clock = FakeClock()
+    g = _grants(clock)
+    g.on_request("a", 10, 1)
+    clock.t += 1.1
+    assert not g.on_request("a", 10, 1, renew=True).granted   # expired: the term is taken
+    g2 = _grants(clock)
+    g2.on_request("a", 10, 1)
+    g2.on_release("a", 10, 1)
+    assert not g2.on_request("a", 10, 1, renew=True).granted
+
+
+def test_a_renewal_of_another_incarnation_is_not_an_extension():
+    clock = FakeClock()
+    g = _grants(clock)
+    g.on_request("a", 10, 1)
+    assert not g.on_request("a", 10, 2, renew=True).granted
+
+
+def test_a_refused_higher_request_does_not_block_the_renewal():
+    """A contender asked for a higher term while the grant was active ("busy"): nothing was
+    promised to it, so the owner's renewal still extends its grant (measured failure: every
+    renewal refused as a stale term, the owner's term ended while in use)."""
+    clock = FakeClock()
+    g = _grants(clock)
+    g.on_request("a", 10, 1)
+    assert g.on_request("b", 11, 1).reason == "busy"
+    clock.t += 0.6
+    assert g.on_request("a", 10, 1, renew=True).granted
+    clock.t += 0.6
+    assert g.on_request("b", 11, 1).reason == "busy"

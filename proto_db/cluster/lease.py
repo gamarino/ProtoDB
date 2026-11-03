@@ -168,7 +168,8 @@ class PeerGrants:
         lease_duration`` on this peer's clock, which follows the renewal's send exactly as a
         first grant follows its request (the D45 argument, measured from the renewal); any
         other renewal is decided by the ordinary rules (so an expired or released term is
-        never granted again).  A plain duplicate of the same request still never extends the
+        never granted again).  The extension is decided before the stale-term rule: a higher
+        term that was only requested here (and refused) promised nothing.  A plain duplicate of the same request still never extends the
         promise.
         """
         now = self._clock()
@@ -179,13 +180,17 @@ class PeerGrants:
         try:
             if now < self._quiet_until:
                 return GrantDecision(False, "starting", self._highest, self._quiet_until - now, bool(ended), ended)
+            if renew and self._active and self._holder == holder and self._term == term and self._inc == inc:
+                # Before the stale-term rule: a higher term that was only REQUESTED here (and
+                # refused, "busy") promised nothing, so the active grant may still be extended.
+                # Otherwise one contender's refused request would make every renewal fail
+                # and end the owner's term while it is in use (measured: 2 TCP peers, GIL on).
+                self._expiry = now + self._duration
+                return GrantDecision(True, "granted", self._highest, self._duration, False, 0)
             if term < self._highest:
                 return GrantDecision(False, "stale_term", self._highest, 0.0, bool(ended), ended)
             if self._active:
                 if self._holder == holder and self._term == term:
-                    if renew and self._inc == inc:
-                        self._expiry = now + self._duration
-                        return GrantDecision(True, "granted", self._highest, self._duration, False, 0)
                     # A duplicate: grant again, but never extend the promise.
                     return GrantDecision(True, "granted", self._highest, self._expiry - now, False, 0)
                 if self._holder != holder:
