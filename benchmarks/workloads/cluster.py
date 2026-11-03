@@ -27,7 +27,7 @@ import time
 from benchmarks.harness import BenchResult, benchmark, latency_ms
 from benchmarks.support import MemoryObjectStore
 
-COORDINATOR_KW = dict(lease_duration=2.0, request_timeout=0.25, startup_grace=0.0,
+COORDINATOR_KW = dict(lease_duration=6.0, request_timeout=0.25, startup_grace=0.0,
                       backoff=(0.001, 0.02))
 RUN_KW = dict(retries=100_000, backoff=(0.0005, 0.01))
 CRITICAL_KEYS = ("validation", "replay", "path_copy", "replication")
