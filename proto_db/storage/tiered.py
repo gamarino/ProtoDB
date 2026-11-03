@@ -4,31 +4,28 @@ In cluster mode the object store is entirely off the commit path.  Each node kee
 local directory (the commit-durability tier) and a background
 replicator (:mod:`proto_db.cluster.persister`) ships it to the object store.
 
-Durability (Task 8.3e, defect D-SAFE-2): the acceptor log ``roots.log`` -- lease promises,
-accepted roots, the rejoined marker -- is ``fsync``-ed before the reply each entry justifies
-(the grant, the acknowledgement, the node acting as an acceptor) **whatever the durability
-mode** (:class:`~proto_db.cluster.rootlog.RootsLog`), so the lease's safety (no term granted
-twice, no two roots with one label and epoch, no committed root lost while at most one
-acceptor log is lost at a time) holds across power loss in every mode.  ``durability``
-governs the data only -- own segments, copies of other nodes' records, ``ranges.log`` and
-``segments.log``:
+Durability (Task 8.3e, defect D-SAFE-2; Task 8.3f phase B, D50): the acceptor log
+``roots.log`` -- lease promises, accepted roots, the rejoined marker -- is ``fsync``-ed before
+the reply each entry justifies **whatever the durability mode**
+(:class:`~proto_db.cluster.rootlog.RootsLog`).  An acceptance of a replicated root
+(:meth:`TieredStorage.accept_replication`) is ONE kind-5 entry holding the root and every
+record its replication carried, synced once; the copies of other nodes' records, the own
+segment's buffered records and ``ranges.log`` are written without a sync.  When the storage
+opens, the kind-5 entries are *redone* (each record written again at its offset, each commit's
+ranges remembered) before anything reads or repairs the data files; a *checkpoint*
+(:meth:`TieredStorage.checkpoint`: own segments, copies, ``ranges.log``, ``segments.log`` and
+the directory synced, then the acceptor log compacted up to the checkpoint's mark) runs before
+any kind-5 entry loses its records -- when the entries reach :data:`CHECKPOINT_BYTES`, after a
+redo, and before :meth:`TieredStorage.release_local` deletes anything.  So in every mode a
+root is durable exactly when its records are: an acknowledged commit survives power loss of
+any set of nodes, and the open defect D-AVAIL-1 of Task 8.3e (a durable root whose records a
+majority power loss erased in ``"flush"``/``"none"``) cannot arise.  Records a rejoin adopts,
+and the base records a holder re-proposes (ruling R50), are synced in every mode before the
+root that needs them is logged (:meth:`TieredStorage.store_commit`).
 
-* ``"fsync"`` (default): data is synced before the node acknowledges, so an acknowledged
-  commit is on the local disk of a majority and survives power loss of any minority, and
-  of every node at once (D46);
-* ``"flush"`` / ``"none"``: data is written to the operating system without a sync (no data
-  sync on the commit path).  An acknowledged commit survives any process crash, but a power
-  loss can drop the records of roots a node accepted: one node's power loss leaves the
-  commit on the other acknowledgers (records are fetched from them), a power loss of a
-  majority can lose acknowledged commits, and a later read of a lost record with no copy
-  left raises ``ProtoCorruptionError``, never wrong data.  Because the accepted root is
-  durable while its records may not be, such a majority loss leaves the cluster stuck --
-  every node, including those that kept power, fails reads and commits that need the lost
-  records, and wiping nodes one at a time or ``force_rejoin`` does not recover; only wiping
-  every node back to the persisted root does (open defect D-AVAIL-1, to be closed by Task
-  8.3f).  A rejoin's records (ruling R50) are not synced either in these modes.
-
-Use ``fsync`` for any cluster whose acknowledged commits must survive power loss.
+``durability`` (``"fsync"``, ``"flush"``, ``"none"``) now governs only writes outside the commit
+path: the persister's flush of an own segment before its upload, the closing flush, and the
+records of a replication this node refused (:meth:`TieredStorage.apply`).
 
 Layout of the local directory::
 
@@ -223,6 +220,9 @@ RANGES_KIND = b"RANG"
 ROOTS_LOG = "roots.log"
 _ROOT_CRC = struct.Struct("<I")
 _ROOTS_LOG_COMPACT = 1 * MIB
+#: Bytes of kind-5 acceptor-log entries after which an acceptance first checkpoints the local
+#: tier (Task 8.3f phase B): it bounds the log and the work of a redo.
+CHECKPOINT_BYTES = 8 * MIB
 RANGES_LOG = "ranges.log"
 #: Lock file held by the live instance of a local directory (ruling R59).
 TIER_LOCK = "tier.lock"
@@ -362,10 +362,9 @@ class TieredStorage(SharedStorage):
         store: the :class:`~proto_db.storage.cloud.ObjectStore` shared by the cluster.
         prefix: key prefix of the space in the store.
         durability: ``"fsync"`` (default), ``"flush"`` or ``"none"`` for the local tier's
-            data (segments, copies, ``ranges.log``, ``segments.log``).  Only ``"fsync"``
-            makes acknowledged commits survive power loss; the acceptor log ``roots.log`` is
-            synced in every mode, so the lease's safety never depends on this choice (module
-            docstring, Task 8.3e).
+            writes outside the commit path (module docstring).  Acknowledged commits survive
+            power loss in every mode: an acceptance logs the root with its records in the
+            always-synced acceptor log (Task 8.3f phase B).
         cache_bytes: capacity of the in-memory record cache.
         segment_cache_bytes: capacity of the cache of downloaded segment objects.
         segment_max_bytes: a local segment rolls over before exceeding this size.
@@ -474,9 +473,16 @@ class TieredStorage(SharedStorage):
         self._stats = {"reads_cache": 0, "reads_local": 0, "reads_peer": 0, "reads_remote": 0,
                        "critical_misses": 0, "remote_segment_gets": 0, "segments_uploaded": 0,
                        "root_writes": 0, "root_writes_in_critical": 0, "segments_released": 0,
-                       "copies_released": 0, "records_applied": 0, "parts_uploaded": 0}
+                       "copies_released": 0, "records_applied": 0, "parts_uploaded": 0,
+                       "acceptances_logged": 0, "checkpoints": 0, "redo_entries": 0, "redo_records": 0}
         self._ranges_lock = threading.Lock()
         self._copies_lock = threading.Lock()
+        # Phase B (Task 8.3f): an acceptance (its kind-5 entry and the unsynced data writes it
+        # covers) is atomic against the start of a checkpoint, so a checkpoint's mark never
+        # separates an entry from its data writes.
+        self._accept_lock = threading.Lock()
+        self._dirty_copies = set()     # copies written without a sync since the last checkpoint
+        self._dirty_dir = False        # files created without a directory sync since then
         self._manifest_fd = self._ranges_fd = -1
         self._roots = None
         self._local = None
@@ -498,9 +504,18 @@ class TieredStorage(SharedStorage):
         repaired on open).  The caller releases what was opened when this raises."""
         self._local = FileStorage(self._path, durability=durability, cache_bytes=min(cache_bytes, 16 * MIB),
                                   lock_timeout=lock_timeout, segment_max_bytes=segment_max_bytes)
-        self._load_manifest()
+        present = self._load_manifest()
         self._roots = RootsLog(os.path.join(self._path, ROOTS_LOG))     # always synced (Task 8.3e)
         self._load_ranges()
+        # Phase B (Task 8.3f): rebuild the data files from the acceptances logged since the
+        # last checkpoint before anything reads or repairs them, then check own segments.
+        entries = self._roots.take_redo()
+        redone = self._redo(entries, present)
+        self._repair_own_segments(present)
+        if entries:
+            self.checkpoint()
+        elif redone:
+            self._checkpoint_data()
 
     # -- properties --------------------------------------------------------------------------
 
@@ -610,21 +625,20 @@ class TieredStorage(SharedStorage):
         if interrupt is not None:
             attach_secondary_errors(error, [interrupt])  # ``error`` is itself an interrupt: it propagates
 
-    def _load_manifest(self) -> None:
+    def _load_manifest(self) -> set:
+        """Load ``segments.log`` and list the copies; return the own segments whose file exists.
+        Own segments are checked (:meth:`_repair_own_segments`) only after the redo."""
         self._manifest_fd, payloads = self._open_log(MANIFEST, MANIFEST_KIND)
+        present = set()
         for payload in payloads:
             if len(payload) != 16:
                 raise ProtoCorruptionError(f"{MANIFEST} in {self._path} holds an entry of {len(payload)} bytes")
             seg = uuid.UUID(bytes=payload)
             own = _Own(seg)
-            file = os.path.join(self._path, seg.hex + SEGMENT_SUFFIX)
-            try:
-                own.end = self._repair_own_segment(file, seg)
-                own.first = time.monotonic()
-            except FileNotFoundError:
+            if os.path.exists(os.path.join(self._path, seg.hex + SEGMENT_SUFFIX)):
+                present.add(seg)
+            else:
                 own.uploaded = own.released = True     # released only after the store held it
-            except OSError as e:
-                raise ProtoUnexpectedError(f"Cannot check own segment {seg.hex}: {e}") from e
             self._own[seg] = own
         for name in os.listdir(self._path):
             if name.endswith(SEGMENT_SUFFIX):
@@ -634,6 +648,86 @@ class TieredStorage(SharedStorage):
                     continue
                 if seg not in self._own:
                     self._copies[seg] = None        # released by key only once written again
+        return present
+
+    def _repair_own_segments(self, present: set) -> None:
+        """Check every own segment whose file exists (after the redo) and truncate a torn tail
+        (:meth:`_repair_own_segment`)."""
+        for seg, own in self._own.items():
+            if seg not in present:
+                continue
+            file = os.path.join(self._path, seg.hex + SEGMENT_SUFFIX)
+            try:
+                own.end = self._repair_own_segment(file, seg)
+                own.first = time.monotonic()
+            except FileNotFoundError:
+                own.uploaded = own.released = True
+            except OSError as e:
+                raise ProtoUnexpectedError(f"Cannot check own segment {seg.hex}: {e}") from e
+
+    def _redo(self, entries: list, present: set) -> bool:
+        """Rebuild the data files from the kind-5 entries ``entries`` of the acceptor log (Task
+        8.3f phase B; at open, before anything reads them): each record is written at its
+        original offset into its own segment or into the copy of another node's segment
+        (identical bytes wherever they already are), and each entry's byte ranges are
+        remembered and logged.  An own segment listed in the manifest whose file is missing is
+        recreated: a released own segment never appears in an entry kept after the checkpoint
+        that preceded its release (:meth:`release_local`), so a missing file here was never
+        written out.  Nothing is synced here; the caller checkpoints.  Return True when
+        anything was written."""
+        if not entries:
+            return False
+        written = False
+        files = {}
+        try:
+            for entry in entries:
+                if entry.root is None:
+                    continue
+                order = root_key(entry.label, entry.root)
+                for raw, offset, data in entry.records:
+                    segment = uuid.UUID(bytes=raw)
+                    own = self._own.get(segment)
+                    fd = files.get(segment)
+                    if fd is None:
+                        path = os.path.join(self._path, segment.hex + SEGMENT_SUFFIX)
+                        fd = os.open(path, os.O_RDWR | os.O_CREAT | _O_BINARY | _O_CLOEXEC, 0o644)
+                        files[segment] = fd
+                        if os.fstat(fd).st_nlink > 1:
+                            raise ProtoLockingError(
+                                f"Segment {segment.hex} at {path} has {os.fstat(fd).st_nlink} hard links; a "
+                                f"local segment must have exactly one name because opening repairs it")
+                        if os.fstat(fd).st_size < SEGMENT_HEADER_SIZE:
+                            _pwrite_all(fd, encode_segment_header(segment), 0)
+                            self._dirty_dir = True
+                        if own is not None:
+                            if segment not in present:
+                                own.uploaded = own.released = False
+                                present.add(segment)
+                        elif segment not in self._copies or self._copies[segment] is None or \
+                                order > self._copies[segment]:
+                            self._copies[segment] = order
+                    elif own is None and (self._copies.get(segment) is None or order > self._copies[segment]):
+                        self._copies[segment] = order
+                    _pwrite_all(fd, data, offset)
+                    self._stats["redo_records"] += 1
+                    self._dirty_copies.add(segment)     # own or copy: synced by path at the checkpoint
+                    written = True
+                key = (entry.root.segment, entry.root.offset)
+                if key not in self._ranges:
+                    ranges = self._ranges_of(entry.records)
+                    self._ranges[key] = (order, ranges)
+                    write_all(self._ranges_fd, self._encode_ranges(key, order, ranges))
+                    written = True
+                self._stats["redo_entries"] += 1
+        except OSError as e:
+            raise ProtoUnexpectedError(f"Redoing the acceptor log's records in {self._path} failed: {e}") from e
+        finally:
+            for fd in files.values():
+                os.close(fd)
+        if written:
+            logger.info("Rebuilt the local tier at %s from %d acceptor-log entries (%d records)", self._path,
+                        self._stats["redo_entries"], self._stats["redo_records"])
+        return written
 
     @staticmethod
     def _repair_own_segment(path: str, segment: uuid.UUID) -> int:
@@ -753,14 +847,14 @@ class TieredStorage(SharedStorage):
     def _encode_ranges(cls, key: tuple, order: tuple, ranges: list) -> bytes:
         return encode_frame(cls._ranges_payload(key, order, ranges))
 
-    def _log_ranges(self, entry: Optional[bytes], *, sync: bool) -> None:
+    def _log_ranges(self, entry: Optional[bytes], *, sync: bool, force: bool = False) -> None:
         if entry is None:
             return
         with self._ranges_lock:
             self._refuse_closed(f"writing {RANGES_LOG}")
             try:
                 write_all(self._ranges_fd, entry)
-                if sync and self._durability == "fsync":
+                if sync and (force or self._durability == "fsync"):
                     os.fsync(self._ranges_fd)
             except OSError as e:
                 self._fail(e)
@@ -1055,9 +1149,117 @@ class TieredStorage(SharedStorage):
         with self._lock:
             return list(self._unshipped)
 
-    def flush_local(self) -> None:
-        """Make this node's records durable (the commit-durability tier)."""
-        self.flush()
+    def flush_local(self, force: bool = False) -> None:
+        """Make this node's records durable (the commit-durability tier): per the durability
+        mode, or with ``force`` synced whatever the mode (a holder whose own acceptance is
+        refused still makes its records durable before they leave the node, Task 8.3f)."""
+        if not force:
+            self.flush()
+            return
+        self._check_open()
+        self._local.sync()
+        self._sync_manifest()
+
+    def _sync_manifest(self) -> None:
+        """``fsync`` ``segments.log`` when an own segment was registered since its last sync,
+        whatever the durability mode."""
+        with self._manifest_lock:
+            self._refuse_closed(f"syncing {MANIFEST}")
+            with self._lock:
+                dirty, self._manifest_dirty = self._manifest_dirty, False
+            if dirty:
+                try:
+                    os.fsync(self._manifest_fd)
+                except OSError as e:
+                    with self._lock:
+                        self._manifest_dirty = True
+                    self._fail(e)
+                    raise ProtoUnexpectedError(f"Syncing {MANIFEST} failed: {e}") from e
+
+    def accept_replication(self, label: int, root: RootRecord, records: list, *, seq: int = 0,
+                           pred: Optional[tuple] = None) -> None:
+        """Accept the replicated root ``root`` labelled ``label`` with the ``records`` its
+        replication carried (``[segment bytes, offset, framed record]``) by ONE append to
+        ``roots.log`` (kind 5: the root, ``seq``, ``pred`` and the records), ``fsync``-ed in
+        every durability mode, before this returns (Task 8.3f phase B, D50).  The copies of
+        other nodes' records and the commit's byte ranges are then written without a sync (own
+        records are already in this node's segment buffer): a crash or a power loss is
+        repaired from the entry when the storage opens (redo), and a checkpoint syncs them
+        before the entry loses its records.  So the root is durable exactly when its records
+        are (D-AVAIL-1).  When an own segment was registered since the manifest's last sync,
+        the manifest is synced first: a redo must know its own segments.
+
+        Raises ``ProtoValidationError`` once closed and ``ProtoUnexpectedError`` once the local
+        tier failed; a failure after the append poisons the tier (the entry may be durable: the
+        node then never acknowledges, which an acceptor may always do)."""
+        self._check_open()
+        self._refuse_failed(f"writing {ROOTS_LOG}")
+        if self._roots.pending_records() >= CHECKPOINT_BYTES:
+            self.checkpoint()        # before the append: a failure here accepts nothing
+        with self._lock:
+            own_dirty = self._manifest_dirty and any(uuid.UUID(bytes=raw) in self._own for raw, _, _ in records)
+        if own_dirty:
+            self._sync_manifest()
+        order = root_key(label, root)
+        with self._accept_lock:
+            self._refuse_closed(f"writing {ROOTS_LOG}")
+            self._roots.append_records(label, root, records, seq=seq, pred=pred)
+            with self._lock:
+                entry = self._remember(records, root, label)
+                self._stats["acceptances_logged"] += 1
+            self._log_ranges(entry, sync=False)
+            self._write_copies(records, order, sync=False)
+
+    def checkpoint(self) -> None:
+        """Sync every data write of the acceptances logged so far -- own segments, copies of
+        other nodes' segments, ``ranges.log``, ``segments.log`` and the directory -- whatever
+        the durability mode, then compact ``roots.log``, whose entries before the checkpoint
+        no longer need their records (Task 8.3f phase B).  Entries appended meanwhile keep
+        theirs.  A failure poisons the local tier."""
+        self._check_open()
+        with self._accept_lock:
+            mark = self._roots.size()
+        self._checkpoint_data()
+        self._roots.compact_records(mark)
+        with self._lock:
+            self._stats["checkpoints"] += 1
+
+    def _checkpoint_data(self) -> None:
+        """The sync half of :meth:`checkpoint` (every data write made before this call)."""
+        with self._lock:
+            dirty, self._dirty_copies = self._dirty_copies, set()
+            dirty_dir, self._dirty_dir = self._dirty_dir, False
+        try:
+            self._local.sync()
+            with self._copies_lock:
+                self._refuse_closed("checkpointing copies")
+                for segment in sorted(dirty):
+                    path = os.path.join(self._path, segment.hex + SEGMENT_SUFFIX)
+                    try:
+                        fd = os.open(path, os.O_RDONLY | _O_BINARY | _O_CLOEXEC)
+                    except FileNotFoundError:
+                        continue            # released meanwhile (the store holds it)
+                    try:
+                        os.fsync(fd)
+                    finally:
+                        os.close(fd)
+            with self._ranges_lock:
+                self._refuse_closed(f"syncing {RANGES_LOG}")
+                os.fsync(self._ranges_fd)
+            self._sync_manifest()
+            if dirty_dir:
+                self._fsync_dir()
+        except OSError as e:
+            with self._lock:
+                self._dirty_copies |= dirty
+                self._dirty_dir = self._dirty_dir or dirty_dir
+            self._fail(e)
+            raise ProtoUnexpectedError(f"Checkpointing the local tier at {self._path} failed: {e}") from e
+        except BaseException:
+            with self._lock:
+                self._dirty_copies |= dirty
+                self._dirty_dir = self._dirty_dir or dirty_dir
+            raise
 
     @staticmethod
     def _ranges_of(records: list) -> list:
@@ -1151,18 +1353,20 @@ class TieredStorage(SharedStorage):
 
     def store_commit(self, records: list, root: RootRecord, label: int, ranges: list) -> None:
         """Store ``records`` of the commit of ``root`` labelled ``label`` at their original
-        offsets (durable per the durability mode, like :meth:`apply`; own records are skipped)
-        and remember the commit's byte ``ranges`` (logged with ``fsync``): this node then
+        offsets and remember the commit's byte ``ranges``, both ``fsync``-ed whatever the
+        durability mode (own records are skipped): the caller then logs the root as accepted
+        (a rejoin) or sends it (a re-proposed base), so the records must be durable first
+        (D-AVAIL-1, Task 8.3f).  This node then
         holds every record of that commit the object store lacks, can serve them to its peers
         and can upload them as parts."""
         self._check_open()
         order = root_key(label, root)
-        self._write_copies(records, order)
+        self._write_copies(records, order, sync=True)
         with self._lock:
             key = (root.segment, root.offset)
             self._ranges[key] = (order, list(ranges))
             entry = self._encode_ranges(key, order, ranges)
-        self._log_ranges(entry, sync=True)
+        self._log_ranges(entry, sync=True, force=True)
 
     def parent_root(self, record: RootRecord) -> Optional[tuple]:
         """``(label, RootRecord)`` of the cluster root the root ``record`` was built on, or
@@ -1205,10 +1409,13 @@ class TieredStorage(SharedStorage):
         self._log_ranges(entry, sync=True)
         self._write_copies(records, order)
 
-    def _write_copies(self, records: list, order: Optional[tuple]) -> None:
+    def _write_copies(self, records: list, order: Optional[tuple], *, sync: Optional[bool] = None) -> None:
         """Write other nodes' ``records`` into the local copies of their segments at their
-        original offsets (``fsync`` per the durability mode) and cache them; ``order`` is the
-        root_key of the commit that wrote them (local release, see :meth:`release_local`)."""
+        original offsets and cache them; ``order`` is the root_key of the commit that wrote
+        them (local release, see :meth:`release_local`).  ``sync``: ``None`` syncs per the
+        durability mode, ``True`` always, ``False`` never (an acceptance's records, made
+        durable by its kind-5 entry and synced at the next checkpoint)."""
+        sync = self._durability == "fsync" if sync is None else sync
         groups = {}
         for raw, offset, data in records:
             if data is not None:
@@ -1237,8 +1444,11 @@ class TieredStorage(SharedStorage):
                             created = created or not known
                         for offset, data in items:
                             _pwrite_all(fd, data, offset)
-                        if self._durability == "fsync":
+                        if sync:
                             os.fsync(fd)
+                        else:
+                            with self._lock:
+                                self._dirty_copies.add(segment)
                     finally:
                         os.close(fd)
                 except OSError as e:
@@ -1247,8 +1457,11 @@ class TieredStorage(SharedStorage):
                 for offset, data in items:
                     self._cache.put((segment, offset), data)
                 self._count("records_applied", len(items))
-            if created and self._durability == "fsync":
+            if created and sync:
                 self._fsync_dir()
+            elif created:
+                with self._lock:
+                    self._dirty_dir = True
 
     def prefetch(self, records: list) -> None:
         """Warm the caches with replicated records (already cached by :meth:`apply`)."""
@@ -1579,6 +1792,17 @@ class TieredStorage(SharedStorage):
                 for key in [k for k, (order, _) in self._ranges.items() if order <= persisted_key]:
                     del self._ranges[key]
             return 0
+        # Phase B (Task 8.3f): checkpoint first, so the acceptor log keeps no record of a
+        # segment about to be deleted (a redo would recreate it) and every acceptance logged
+        # so far has its data synced.  Only when something may be released: a checkpoint
+        # costs a few syncs.
+        current = self._local.current_segment
+        with self._lock:
+            releasable = any(o.uploaded and not o.released and o.uuid != current and o.max_key is not None
+                             and o.max_key <= persisted_key for o in self._own.values()) or any(
+                s in self._remote and k is not None and k <= persisted_key for s, k in self._copies.items())
+        if releasable:
+            self.checkpoint()
         # Under the copies lock, which close() takes: nothing is deleted once it has started,
         # and no copy is written between the decision to delete it and its deletion (a write
         # would extend it past what the store was found to cover).
@@ -1600,8 +1824,12 @@ class TieredStorage(SharedStorage):
             with self._lock:
                 for key in [k for k, (order, _) in self._ranges.items() if order <= persisted_key]:
                     del self._ranges[key]
+                unshipped = {raw for raw, _, _ in self._unshipped}
+                # An own segment with records not yet shipped is kept: they ride with a later
+                # replication, so a kind-5 entry after the checkpoint above may name it.
                 own = [o for o in self._own.values() if o.uploaded and not o.released and o.uuid != current
-                       and o.max_key is not None and o.max_key <= persisted_key and self._covered(o.uuid, o.end)]
+                       and o.max_key is not None and o.max_key <= persisted_key and self._covered(o.uuid, o.end)
+                       and o.uuid.bytes not in unshipped]
                 copies = [s for s in candidates if self._copies.get(s) is not None
                           and self._copies[s] <= persisted_key and self._covered(s, sizes[s])]
                 for o in own:

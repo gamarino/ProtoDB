@@ -281,6 +281,7 @@ class FileStorage(SharedStorage):
         self._pending_bytes = 0
         self._flushing = []           # chunks a flush is writing; still served from memory
         self._dir_dirty = False       # a segment file was created since the last dir fsync
+        self._unsynced_closed = set() # paths of segments closed with data no fsync covered
         self._read_fds = {}
         self._readers = 0
         self._failed = None
@@ -418,6 +419,8 @@ class FileStorage(SharedStorage):
                     if s.sealed and s.written == s.end and (s.synced == s.written or not need_sync)]
             for seg in done:
                 self._segments.remove(seg)
+                if seg.synced < seg.written:
+                    self._unsynced_closed.add(seg.path)     # a later sync() reaches it by path
         for seg in done:
             if seg.fd is not None:
                 fd, seg.fd = seg.fd, None
@@ -441,6 +444,34 @@ class FileStorage(SharedStorage):
         """Write the buffer and make it durable according to the durability mode."""
         self._check_open()
         self._write_out(sync=self._durability == "fsync")
+
+    def sync(self) -> None:
+        """Write the buffer and ``fsync`` every segment written since its last sync, and the
+        directory, whatever the durability mode: the checkpoint of a cluster tier (Task 8.3f
+        phase B), which must make its own segments durable before its acceptor log drops the
+        records it holds for them."""
+        self._check_open()
+        self._write_out(sync=True)
+        with self._flush_lock:
+            with self._state_lock:
+                self._check_writable()
+                paths, self._unsynced_closed = self._unsynced_closed, set()
+            try:
+                for path in sorted(paths):
+                    try:
+                        fd = self._fs.open(path, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0), 0o644)
+                    except FileNotFoundError:
+                        continue            # released meanwhile: nothing left to sync
+                    try:
+                        self._fs.fsync(fd)
+                    finally:
+                        self._fs.close(fd)
+                self._fs.fsync_dir(self._path)
+            except OSError as e:
+                with self._state_lock:
+                    self._failed = e
+                    self._unsynced_closed |= paths
+                raise ProtoUnexpectedError(f"Syncing segment data of {self._path} failed: {e}") from e
 
     def append_record(self, kind: RecordKind, payload: bytes) -> AtomPointer:
         """Append an already encoded record payload of ``kind`` (``push_atom`` without the msgpack step).
@@ -603,6 +634,7 @@ class FileStorage(SharedStorage):
                 self._idle.wait()
             with self._fd_lock:
                 fd = self._read_fds.pop(segment, None)
+            self._unsynced_closed.discard(os.path.join(self._path, segment.hex + SEGMENT_SUFFIX))
             if fd is not None:
                 os.close(fd)
 

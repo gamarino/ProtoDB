@@ -144,10 +144,11 @@ def test_an_unexpected_worker_failure_fences_the_node(tmp_path):
         tc.db("n0").run(incr, **RUN_KW)
         assert tc["n1"].healthy and tc["n1"].stats()["healthy"]
 
-        def broken(records, root=None, label=0):
+        def broken(*args, **kwargs):
             raise RuntimeError("disk controller on fire")
 
         tc.storages["n1"].apply = broken
+        tc.storages["n1"].accept_replication = broken       # the acceptance path (Task 8.3f phase B)
         tc.db("n0").run(incr, **RUN_KW)                     # n0 and n2 still form a majority
         assert tc.eventually("n0", 2)
         assert _wait_for(lambda: not tc["n1"].healthy)

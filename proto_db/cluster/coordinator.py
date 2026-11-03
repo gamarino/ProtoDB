@@ -139,19 +139,18 @@ The commit point (D46)
     tier (``fsync``), then acknowledges -- unless it has no tier, is fenced or
     has granted a higher term (the ballot rule).  The accepted root -- like every promise and
     the rejoined marker -- is ``fsync``-ed before the acknowledgement in every durability
-    mode (Task 8.3e, defect D-SAFE-2 fixed); the mode governs the records only:
-
-    * ``durability="fsync"``: the commit point is the local WAL ``fsync`` of a majority; an
-      acknowledged commit survives power loss of any set of nodes.
-    * ``"flush"`` / ``"none"``: records are not synced.  An acknowledged commit survives any
-      process crash and a power loss of a minority (the other acknowledgers keep its
-      records).  A power loss of a majority can lose its records while its root stays
-      durable: every node -- including nodes that never lost power -- then raises
-      ``ProtoCorruptionError`` on reads and commits that need them (never wrong data), and
-      neither wiping the affected nodes one at a time nor :meth:`force_rejoin` recovers;
-      only wiping every node's local directory, back to the persisted root, does.  Open
-      defect D-AVAIL-1, to be closed by Task 8.3f (ruling R68: a root is never durable
-      without its records).
+    mode (Task 8.3e, defect D-SAFE-2 fixed).  On a :class:`~proto_db.storage.tiered.TieredStorage`
+    the acceptance is ONE kind-5 entry of the acceptor log that holds the root together with
+    every record its replication carried (Task 8.3f phase B, D50): the holder writes its own
+    before it sends the replication, each follower before it acknowledges; data files are
+    written without a sync and rebuilt from these entries when the storage opens.  So in
+    every durability mode a root is durable exactly when its records are: an acknowledged
+    commit survives power loss of any set of nodes, and D-AVAIL-1 (a durable root whose
+    records were lost, in ``"flush"``/``"none"``) is closed by construction.  The mode now
+    governs only writes outside the commit path (the persister's flush of an own segment
+    before its upload, records of a refused replication).  On a shared-storage
+    :class:`~proto_db.cluster.persister.PlainTier` the records live in the shared storage
+    and the holder flushes them per that storage's mode before sending (unchanged).
 
     In every mode the lease's safety -- no term granted twice, no two roots with one label
     and epoch -- holds across power loss.  A cluster over ``MemoryStorage`` (Task 8.3e
@@ -235,6 +234,7 @@ across acceptor-log writes (above) but never while sending or waiting; ``attach`
 ``detach`` are serialized by a third lock, taken first.
 """
 import collections
+import contextlib
 import itertools
 import logging
 import queue
@@ -1886,6 +1886,9 @@ class ClusterCoordinator:
             # a tier never counts toward the majority.
             self._note_owner(term)
             ok = valid and tier is not None and self._may_accept(term, root, label, pred, pred_committed, seq)
+        if tier is not None and callable(getattr(tier, "accept_replication", None)):
+            self._accept_with_records(msg, tier, failed, valid, ok, root, label, pred, pred_committed, seq, records)
+            return
         if valid and tier is not None and not failed:
             # Records are stored even when the root is refused (a newer term was granted here
             # meanwhile): immutable data, and this node may be the next holder, whose base can
@@ -1946,6 +1949,69 @@ class ClusterCoordinator:
         self._transport.send(sender, make_message("ack", self._node, term=term, rid=rid, ok=ok, root=reply_root))
         if ok and records:
             tier.prefetch(records)
+
+    def _accept_with_records(self, msg: dict, tier, failed: bool, valid: bool, ok: bool, root, label: int,
+                             pred, pred_committed: bool, seq: int, records: list) -> None:
+        """The acceptor side of a replication on a tier that accepts with its records (Task
+        8.3f phase B, D50): the decision, ONE ``fsync``-ed kind-5 entry holding the root and
+        every record the replication carried, the publication, then the acknowledgement.  A
+        refused root's records are still stored (per the durability mode, without being
+        vouched for by any entry): this node may be the next holder, whose base can be that
+        root."""
+        sender, term, rid = msg["from"], msg["term"], msg["rid"]
+        if valid and not failed:
+            bk, broot, blabel = decode_labeled_root(msg["base"])
+            if bk and broot is not None and getattr(tier, "local_records", False):
+                # A re-proposed base: its records rode with this replication (ruling R50); its
+                # ranges are remembered (synced) before the root is accepted.
+                try:
+                    tier.store_commit([], broot, blabel, protocol.decode_ranges(msg["base_ranges"]) or [])
+                except (ProtoDBError, OSError) as e:
+                    if not self._tier_failed(tier, e, "remembering a re-proposed base"):
+                        logger.info("Node %s: the tier was detached while storing a replication: %s", self._node, e)
+                    ok = False
+        with self._log_lock:
+            # The decision, the log write and the publication form one step against attach,
+            # detach and every other acceptor decision (ruling R55).
+            with self._lock:
+                ok = ok and not failed and self._tier is tier and self._may_accept(term, root, label, pred,
+                                                                                    pred_committed, seq)
+            if ok:
+                try:
+                    tier.accept_replication(label, root, records, seq=seq,
+                                            pred=(pred[2], pred[1]) if pred is not None and pred[0] else None)
+                except (ProtoDBError, OSError) as e:
+                    # Attached throughout (_log_lock): the tier failed (ruling R57), or the space
+                    # closed under it.  Nothing is published; never acknowledged.
+                    if not self._tier_failed(tier, e, "logging an accepted root with its records"):
+                        logger.info("Node %s: the tier was detached while accepting a replication: %s",
+                                    self._node, e)
+                    ok = False
+            with self._lock:
+                if ok:
+                    self._observe_accepted(True, root, label)
+                    self._note_seq(label, seq)
+                    ck, croot, clabel = decode_labeled_root(msg["committed"])
+                    self._observe_committed(ck, croot, clabel, None)
+                    self._stats["accepted"] += 1
+                    if self._tier is tier:
+                        self._note_stored(label, root)
+                else:
+                    self._stats["refused"] += 1
+                reply_root = self._wire(self._accepted)
+        self._transport.send(sender, make_message("ack", self._node, term=term, rid=rid, ok=ok, root=reply_root))
+        if ok or not valid or failed or not records:
+            return
+        # Refused: keep the records anyway (immutable data; see the docstring).
+        try:
+            tier.apply(records, root, label)
+        except (ProtoDBError, OSError) as e:
+            if not self._tier_failed(tier, e, "storing a refused replication's records"):
+                logger.info("Node %s: the tier was detached while storing a replication: %s", self._node, e)
+            return
+        with self._cond:
+            if self._tier is tier:
+                self._note_stored(label, root)
 
     def _serve_fetch(self, msg: dict) -> None:
         tier = self._tier
@@ -2652,11 +2718,15 @@ class ClusterCoordinator:
         # restarted, it would seal and upload that prefix as the whole segment, the store would
         # then "hold" records it lacks, and a root built on them would become unreadable.  So
         # the bytes of an own segment that any peer holds are always on this node's disk.
-        try:
-            tier.flush_local()
-        except (ProtoDBError, OSError) as e:
-            self._tier_failed(tier, e, "making the commit's records durable")
-            raise
+        # Phase B (Task 8.3f): a tier that accepts with its records makes them durable together
+        # with this node's own acceptance, in one synced append, before anything is sent (below).
+        with_records = callable(getattr(tier, "accept_replication", None))
+        if not with_records:
+            try:
+                tier.flush_local()
+            except (ProtoDBError, OSError) as e:
+                self._tier_failed(tier, e, "making the commit's records durable")
+                raise
         chunks = _split_records(extra + records, protocol.CHUNK_BYTES)
         with self._lock:
             if self._tier is tier:
@@ -2682,15 +2752,19 @@ class ClusterCoordinator:
         acks = nacks = 0
         stopped = False
         try:
+            if with_records:
+                self._self_accept_with_records(tier, waiter, label, root, seq, pred, pred_committed, pred_label,
+                                               pred_root, extra + records)
             for part in parts:                         # same ordered link, before the replicate
                 self._broadcast(part)
             self._broadcast(msg)
-            with self._log_lock:
+            with self._log_lock if not with_records else contextlib.nullcontext():
                 # Our own acceptance follows the acceptor rule (ruling R55): decided only on
                 # the tier this commit's records went to, logged on it while it is attached,
                 # then published and counted.
                 with self._lock:
-                    self_ok = self._tier is tier and self._may_accept(label, root, label, pred, pred_committed, seq)
+                    self_ok = not with_records and self._tier is tier and self._may_accept(
+                        label, root, label, pred, pred_committed, seq)
                 if self_ok:
                     # Where the records of this root are, before its outcome is known: a node
                     # that adopts it later (a rejoin, a holder re-proposing it) copies them
@@ -2783,6 +2857,35 @@ class ClusterCoordinator:
             if not self._tier_failed(tier, e, "recording a committed root"):
                 logger.warning("Node %s could not record committed root epoch %d: %s", self._node, root.epoch, e)
         return time.perf_counter() - started
+
+    def _self_accept_with_records(self, tier, waiter: _Waiter, label: int, root: RootRecord, seq: int, pred: tuple,
+                                  pred_committed: bool, pred_label: int, pred_root, records: list) -> None:
+        """The holder's own acceptance on a tier that accepts with its records (Task 8.3f phase
+        B): decided by the acceptor rule (ruling R55) and logged as ONE synced kind-5 entry with
+        every record of the replication, BEFORE the replication is sent, so the bytes of an own
+        segment that a peer may hold are always durable here.  When the holder may not accept
+        its own root, its records are synced anyway (whatever the durability mode) before they
+        leave the node.  Called inside :meth:`replicate`'s outcome handling: a failure here
+        leaves the outcome unknown (the entry may be durable)."""
+        with self._log_lock:
+            with self._lock:
+                self_ok = self._tier is tier and self._may_accept(label, root, label, pred, pred_committed, seq)
+            if self_ok:
+                try:
+                    tier.accept_replication(label, root, records, seq=seq, pred=(pred_label, pred_root))
+                except (ProtoDBError, OSError) as e:
+                    self._tier_failed(tier, e, "logging the holder's own acceptance")
+                    raise
+                with self._lock:
+                    self._observe_accepted(True, root, label)
+                    self._note_seq(label, seq)
+                    waiter.acks.add(self._node)
+                return
+        try:
+            tier.flush_local(force=True)
+        except (ProtoDBError, OSError) as e:
+            self._tier_failed(tier, e, "making the commit's records durable")
+            raise
 
     # -- recovery and peer services ----------------------------------------------------------
 

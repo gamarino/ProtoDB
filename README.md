@@ -51,11 +51,10 @@ same project. The old spelling survives in `ProtoBaseException`, a deprecated al
   commit by default); `CloudStorage` over S3 or Google Cloud Storage; `TieredStorage` and a cluster
   coordinator for several writer processes. Every node syncs its acceptor log (lease promises,
   accepted roots) before replying in every durability mode, so the lease never grants a term twice,
-  even across power loss. Acknowledged commits survive power loss only with `durability="fsync"`
-  (the default) on every node's TieredStorage; with `"flush"` or `"none"` the data is not synced and
-  survives process crashes and the power loss of a minority of nodes (see `docs/decisions.md`, D46
-  Amendment (Task 8.3e)); after a majority power loss in those modes the cluster can stay stuck
-  until every node is wiped (open defect D-AVAIL-1). Two to four contending writer processes take
+  even across power loss. On a TieredStorage a node accepts a root with ONE synced acceptor-log
+  entry that also holds the root's records (D50, Task 8.3f), so acknowledged commits survive power
+  loss of any set of nodes in every durability mode; the mode governs only writes outside the
+  commit path. Two to four contending writer processes take
   the lease in turn; at eight, and for hot-key read-modify-write transactions, fairness is not
   yet guaranteed (open defect D-LIVE-2).
 - **Free-threading**: tested on CPython 3.14t (GIL disabled) and with the GIL; `parallel_scan` and

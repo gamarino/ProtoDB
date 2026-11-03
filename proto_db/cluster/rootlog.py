@@ -45,6 +45,23 @@ The acceptor log
     handle (``ProtoValidationError``), checked under the lock of the append, so a space that
     has closed its log never has a root logged, nor acknowledged, through it.
 
+Self-describing acceptances (Task 8.3f phase B, D50)
+    An acceptance of a replicated root is ONE entry of kind 5 (:meth:`RootsLog.append_records`):
+    the root, its label, the permission ``seq``, the root it was built on (``pred``) and every
+    record the replication carried, framed with the log's CRC and ``fsync``-ed once, before
+    the acknowledgement.  The data files of the local tier (own segments, copies of other
+    nodes' segments, ``ranges.log``) are then written without a sync: the storage rebuilds
+    them from the kind-5 entries when it opens (*redo*), and syncs them in a *checkpoint*
+    before any kind-5 entry loses its records.  So a root is durable exactly when its records
+    are (defect D-AVAIL-1 closed by construction).  A kind-5 entry counts as an accepted root
+    for every reader of the log (:class:`LoggedRoots`).  Compaction never drops the records of
+    an entry that a checkpoint has not covered: the automatic compaction of :meth:`_write`
+    runs only while no such entry exists, and :meth:`RootsLog.compact_records` summarizes only
+    the entries before the offset its caller checkpointed (:meth:`RootsLog.size`), keeping
+    every later entry verbatim.  Kinds 1 to 4 are unchanged; a reader older than kind 5
+    refuses such a log with ``ProtoCorruptionError`` (an entry of an unexpected size), never
+    misreads it, so the log's header version is unchanged.
+
 Failed writes poison the handle (8.3d re-review 9, B1; ruling R57)
     Any I/O error of a :class:`RootsLog` -- a write, an ``fsync``, a compaction's rewrite,
     rename, reopen or close of the replaced descriptor -- leaves the handle refusing every
@@ -89,13 +106,19 @@ from typing import NamedTuple, Optional
 from ..errors import ProtoCorruptionError, ProtoUnexpectedError, ProtoValidationError, attach_secondary_errors
 from ..storage.format import FORMAT_VERSION, RootRecord
 from ..storage.ownerlock import OwnerLock
-from ..storage.logfile import (FRAME_OVERHEAD, encode_frame, fsync_dir, log_contents, open_log,
+from ..storage.logfile import (FRAME_OVERHEAD, HEADER_SIZE, encode_frame, fsync_dir, log_contents, open_log,
                                prepare_replacement, read_log, write_all)
 
-__all__ = ["root_key", "compare_roots", "LoggedRoots", "RootsLog", "MemoryRootsLog", "memory_log_for",
-           "write_all", "prepare_replacement"]
+__all__ = ["root_key", "compare_roots", "LoggedRoots", "RedoEntry", "RootsLog", "MemoryRootsLog",
+           "memory_log_for", "write_all", "prepare_replacement", "encode_records_entry", "decode_records_entry"]
 
 _ENTRY = struct.Struct("<BQQ16sQ")          # kind, label (or term), epoch, segment, offset
+#: Head of a kind-5 entry: kind, label, epoch, segment, offset, seq, pred label, pred epoch,
+#: pred segment, pred offset, record count.
+_RECORDS_HEAD = struct.Struct("<BQQ16sQQQQ16sQI")
+_RECORD_ITEM = struct.Struct("<16sQI")      # segment, offset, framed length (then the framed bytes)
+#: Kind code of an acceptance carrying its records (Task 8.3f phase B).
+RECORDS_KIND = 5
 #: Size of one framed entry on disk (:mod:`proto_db.storage.logfile` framing).
 ENTRY_SIZE = _ENTRY.size + FRAME_OVERHEAD
 #: Kind of the acceptor log in its file header.
@@ -189,10 +212,77 @@ def _encode(code: int, label: int, record: Optional[RootRecord]) -> bytes:
     return encode_frame(_payload(code, label, record))
 
 
+class RedoEntry(NamedTuple):
+    """A kind-5 entry: the accepted root (``label``, ``root``), its permission ``seq``, the
+    root it was built on (``pred``: ``(label, RootRecord or None)`` or ``None``) and its
+    ``records`` as ``[segment bytes, offset, framed record]``."""
+
+    label: int
+    root: Optional[RootRecord]
+    seq: int
+    pred: Optional[tuple]
+    records: list
+
+
+def _record_or_none(epoch: int, segment: bytes, offset: int) -> Optional[RootRecord]:
+    return None if epoch == 0 else RootRecord(FORMAT_VERSION, uuid.UUID(bytes=segment), offset, epoch)
+
+
+def encode_records_entry(label: int, root: Optional[RootRecord], seq: int, pred: Optional[tuple],
+                         records: list) -> bytes:
+    """The payload of a kind-5 entry (see the module docstring); ``records`` are
+    ``[segment bytes, offset, framed record]`` items (an item whose record is ``None`` is
+    skipped)."""
+    items = [(raw, offset, data) for raw, offset, data in records if data is not None]
+    pred_label, pred_root = pred if pred is not None else (0, None)
+    parts = [_RECORDS_HEAD.pack(
+        RECORDS_KIND, label, root.epoch if root is not None else 0,
+        root.segment.bytes if root is not None else bytes(16), root.offset if root is not None else 0,
+        seq, pred_label, pred_root.epoch if pred_root is not None else 0,
+        pred_root.segment.bytes if pred_root is not None else bytes(16),
+        pred_root.offset if pred_root is not None else 0, len(items))]
+    for raw, offset, data in items:
+        parts.append(_RECORD_ITEM.pack(bytes(raw), offset, len(data)))
+        parts.append(bytes(data))
+    return b"".join(parts)
+
+
+def decode_records_entry(payload, path: str = "") -> RedoEntry:
+    """Decode the payload of a kind-5 entry; ``ProtoCorruptionError`` when it is malformed
+    (the frame's CRC matched, so only a writer bug or another format can cause it)."""
+    view = memoryview(payload)
+    if len(view) < _RECORDS_HEAD.size:
+        raise ProtoCorruptionError(f"The root log {path} holds a short records entry")
+    (code, label, epoch, segment, offset, seq, pred_label, pred_epoch, pred_segment, pred_offset,
+     count) = _RECORDS_HEAD.unpack_from(view, 0)
+    if code != RECORDS_KIND:
+        raise ProtoCorruptionError(f"The root log {path} holds an entry of kind {code}, not {RECORDS_KIND}")
+    pos = _RECORDS_HEAD.size
+    records = []
+    for _ in range(count):
+        if pos + _RECORD_ITEM.size > len(view):
+            raise ProtoCorruptionError(f"The root log {path} holds a records entry cut inside an item")
+        raw, roff, length = _RECORD_ITEM.unpack_from(view, pos)
+        pos += _RECORD_ITEM.size
+        if pos + length > len(view):
+            raise ProtoCorruptionError(f"The root log {path} holds a records entry cut inside a record")
+        records.append([raw, roff, bytes(view[pos:pos + length])])
+        pos += length
+    if pos != len(view):
+        raise ProtoCorruptionError(f"The root log {path} holds a records entry with trailing bytes")
+    pred_root = _record_or_none(pred_epoch, pred_segment, pred_offset)
+    pred = None if pred_label == 0 and pred_root is None else (pred_label, pred_root)
+    return RedoEntry(label, _record_or_none(epoch, segment, offset), seq, pred, records)
+
+
 def _decode(payloads: list, path: str) -> LoggedRoots:
     """The roots and the promise held by the entries ``payloads`` of the log at ``path``."""
     best = _Best()
     for payload in payloads:
+        if len(payload) and payload[0] == RECORDS_KIND:
+            entry = decode_records_entry(payload, path)
+            best.add(1, entry.label, entry.root)          # an accepted root, with its records
+            continue
         if len(payload) != _ENTRY.size:
             raise ProtoCorruptionError(f"The root log {path} holds an entry of {len(payload)} bytes")
         code, label, epoch, segment, offset = _ENTRY.unpack(payload)
@@ -233,6 +323,8 @@ class RootsLog:
         self._closed = False
         self._failed = None           # the I/O error that poisoned this handle, if any
         self._promised = 0            # highest promise known durable here
+        self._pending = 0             # bytes of kind-5 entries no checkpoint has covered yet
+        self._redo = []               # the kind-5 entries found at open (taken by take_redo)
         try:
             os.makedirs(os.path.dirname(self._path), exist_ok=True)
         except OSError as e:
@@ -253,6 +345,11 @@ class RootsLog:
                 raise ProtoUnexpectedError(f"Cannot open the root log {self._path}: {e}") from e
             self._owner.track(fd)         # the file exists now: register its inode (M3)
             self._promised = _decode(payloads, self._path).promised
+            # Every kind-5 entry is uncheckpointed at open: its records are redone by the
+            # storage (take_redo), which then checkpoints and compacts.
+            self._redo = [decode_records_entry(p, self._path) for p in payloads
+                          if len(p) and p[0] == RECORDS_KIND]
+            self._pending = sum(FRAME_OVERHEAD + len(p) for p in payloads if len(p) and p[0] == RECORDS_KIND)
         except BaseException as e:
             closing = ([lambda: os.close(fd)] if fd >= 0 else []) + [self._owner.release]
             secondary = []
@@ -303,6 +400,63 @@ class RootsLog:
             self._check_writable()
             self._write(entry, sync=code != KINDS["committed"])
 
+    def append_records(self, label: int, record: Optional[RootRecord], records: list, *, seq: int = 0,
+                       pred: Optional[tuple] = None) -> int:
+        """Append the acceptance of ``record`` labelled ``label`` together with ``records``
+        (``[segment bytes, offset, framed record]``) as ONE kind-5 entry, ``fsync``-ed before
+        this returns (module docstring, Task 8.3f phase B); return the bytes of kind-5 entries
+        no checkpoint has covered yet, this one included.  ``seq`` and ``pred`` (``(label,
+        RootRecord or None)``) describe the permission and the root it was built on (kept for
+        the record; acceptance never reads them back).  Raises ``ProtoValidationError`` when the
+        log is closed, ``ProtoUnexpectedError`` when it is poisoned."""
+        entry = encode_frame(encode_records_entry(label, record, seq, pred, records))
+        with self._lock:
+            self._check_writable()
+            self._write(entry, sync=True)
+            self._pending += len(entry)
+            return self._pending
+
+    def size(self) -> int:
+        """The current size of the log file: an entry boundary, since appends hold the lock.  A
+        checkpoint taken after this call covers every entry before it
+        (:meth:`compact_records`)."""
+        with self._lock:
+            self._check_writable()
+            try:
+                return os.fstat(self._fd).st_size
+            except OSError as e:
+                self._failed = e
+                raise ProtoUnexpectedError(f"Reading the size of the root log {self._path} failed: {e}") from e
+
+    def pending_records(self) -> int:
+        """Bytes of kind-5 entries that no checkpoint has covered yet."""
+        with self._lock:
+            return self._pending
+
+    def take_redo(self) -> list:
+        """The kind-5 entries found when the log was opened (:class:`RedoEntry` list, oldest
+        first), handed over once: the storage rebuilds its data files from them."""
+        with self._lock:
+            entries, self._redo = self._redo, []
+            return entries
+
+    def compact_records(self, upto: int) -> None:
+        """Rewrite the log once every data write of the entries before offset ``upto`` (a
+        value of :meth:`size`) has been synced by the caller's checkpoint: the entries before
+        ``upto`` are summarized (newest of each kind, a kind-5 entry as an accepted root
+        without its records) and every later entry is kept verbatim, so no record a checkpoint
+        has not covered is ever dropped."""
+        with self._lock:
+            self._check_writable()
+            try:
+                self._compact(keep_from=upto)
+            except OSError as e:
+                self._failed = e
+                raise ProtoUnexpectedError(f"Compacting the root log {self._path} failed: {e}") from e
+            except BaseException as e:
+                self._failed = e
+                raise
+
     def promise(self, term: int) -> None:
         """Make the promise of ``term`` durable (``fsync``) before it is sent.
 
@@ -331,7 +485,9 @@ class RootsLog:
             write_all(self._fd, entry)
             if sync:
                 os.fsync(self._fd)
-            if os.fstat(self._fd).st_size > _COMPACT_BYTES:
+            if self._pending == 0 and os.fstat(self._fd).st_size > _COMPACT_BYTES:
+                # Only while no kind-5 entry awaits a checkpoint: its records must stay until
+                # the storage has synced their data files (compact_records).
                 self._compact()
         except OSError as e:
             self._failed = e
@@ -343,9 +499,19 @@ class RootsLog:
     def _read(self) -> LoggedRoots:
         return _decode(read_log(self._path, LOG_KIND), self._path)
 
-    def _compact(self) -> None:
-        """Rewrite the log with its newest entry of each kind (lock held)."""
-        roots = self._read()
+    def _compact(self, keep_from: Optional[int] = None) -> None:
+        """Rewrite the log with its newest entry of each kind (lock held); with ``keep_from``,
+        only the entries before that offset are summarized and the later ones are kept
+        verbatim (:meth:`compact_records`)."""
+        all_payloads = read_log(self._path, LOG_KIND)
+        kept = []
+        if keep_from is not None:
+            offset, before = HEADER_SIZE, []
+            for payload in all_payloads:
+                (before if offset < keep_from else kept).append(payload)
+                offset += FRAME_OVERHEAD + len(payload)
+            all_payloads = before
+        roots = _decode(all_payloads, self._path)
         payloads = []
         if roots.accepted is not None:
             payloads.append(_payload(1, *roots.accepted))
@@ -355,6 +521,7 @@ class RootsLog:
             payloads.append(_payload(3, roots.promised, None))
         if not roots.empty:
             payloads.append(_payload(4, 0, None))        # the rejoined marker, last
+        payloads.extend(kept)
         data = log_contents(LOG_KIND, payloads)
         # Open and fully prepare the replacement, swap, and only then close the old descriptor
         # (8.3d re-review 9, B1): the handle never holds a closed descriptor number.
@@ -363,6 +530,7 @@ class RootsLog:
         os.close(old)
         self._owner.track(new)             # the log is a new file (M3)
         fsync_dir(os.path.dirname(self._path))
+        self._pending = sum(FRAME_OVERHEAD + len(p) for p in kept if len(p) and p[0] == RECORDS_KIND)
 
     def load(self) -> LoggedRoots:
         """The roots and the promise logged (see :class:`LoggedRoots`)."""

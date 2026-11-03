@@ -22,6 +22,7 @@ import pytest
 
 from proto_db.errors import ProtoUnexpectedError, ProtoValidationError
 from proto_db.storage.tiered import TieredStorage
+from proto_db.storage.format import RecordKind, encode_record
 from tests.support.cluster import MemoryTier
 from tests.support.fake_object_store import FakeObjectStore
 from tests.support.manual_cluster import GRACE, rec
@@ -188,13 +189,14 @@ class _PausedLock:
         return False
 
 
-def test_a1_a_worker_on_a_tiered_storage_refuses_a_replication_its_closed_tier_refused(harness, tmp_path):
-    """Re-review 9 coverage note: the A1 path on a real ``TieredStorage``.  c's worker is about
-    to append the replication's ranges entry (paused before the ranges lock, after the open
-    check) when c's space is closed and reopened over the same directory.  The closed storage
-    refuses the write (``ProtoValidationError``), the worker sends a refusal, c stays healthy
-    (a closed space is "tier gone", not a failed tier), and no file of either storage instance
-    changes."""
+def test_a1_a_detach_waits_for_an_acceptance_in_flight_on_a_tiered_storage(harness, tmp_path):
+    """Re-review 9 coverage note, adapted to Task 8.3f phase B: the A1 path on a real
+    ``TieredStorage``.  An acceptance (its kind-5 entry and the data writes it covers) runs
+    under the coordinator's acceptor lock, so a detach that races it waits until it has
+    completed on the still-attached tier: c's worker, paused inside the acceptance (before the
+    ranges lock), acknowledges once released, and only then is the tier detached.  The closed
+    storage is never written again (no file changes after ``close()``), c stays healthy, and the
+    root is in the closed storage's acceptor log."""
     h = harness()
     store = FakeObjectStore()
     path = str(tmp_path / "c")
@@ -210,7 +212,7 @@ def test_a1_a_worker_on_a_tiered_storage_refuses_a_replication_its_closed_tier_r
     h.tier_class = tier_class
     h.nodes["c"] = h._node("c", 0.0)
     assert h.rejoin("c")
-    r0 = h.bootstrap("a")
+    h.bootstrap("a")
     t0 = h.nodes["c"].tier
     h.nodes["c"].detach(t0)
     t0.close()
@@ -219,34 +221,39 @@ def test_a1_a_worker_on_a_tiered_storage_refuses_a_replication_its_closed_tier_r
     lease_a = h.attempt("a", {"c"})
     assert not isinstance(lease_a, Exception), lease_a
     a, c = h.nodes["a"], h.nodes["c"]
-    a.tier.outgoing = lambda: [[uuid.uuid4().bytes, 64, b"record"]]
+    a.tier.outgoing = lambda: [[uuid.uuid4().bytes, 64, encode_record(RecordKind.BLOB, b"record")]]
     t1 = c.tier
     paused = _PausedLock(t1._ranges_lock, "proto-cluster-worker-c")
     t1._ranges_lock = paused
     R = rec(2)
     t, out = _start_commit(h, lease_a, R)
+    detached = threading.Event()
+
+    def detach():
+        c.detach(t1)
+        detached.set()
+
+    d = threading.Thread(target=detach)
     try:
         assert paused.waiting.wait(10), "c's worker never stored the records"
-        c.detach(t1)
-        t1.close()
-        c.attach(tier_class(None, "c"))
-        before = _snapshot(path)
+        d.start()
+        assert not detached.wait(0.3), "a detach did not wait for the acceptance in flight"
     finally:
         paused.gate.set()
+    d.join(10)
+    assert detached.is_set()
+    t1.close()
+    before = _snapshot(path)
     assert c.wait_idle(5.0)
     acks = [m["ok"] for _, _, m in h.net.take("c", {"a"}, ("ack",))]
-    assert acks == [False], acks
-    assert _snapshot(path) == before, "a write after close() changed a file"
+    assert acks == [True], acks
     stats = c.stats()
     assert c.healthy and not stats["fenced"] and not stats["tier_failed"]
-    assert c.tier.commit_ranges(R) is None
     a.stop()
     t.join(10.0)
     h.retired.append(a)
-    t2 = c.tier
-    c.detach(t2)
-    t2.close()
-    assert t2.load_roots().accepted[1] == r0
+    assert _snapshot(path) == before, "a write after close() changed a file"
+    assert t1.load_roots().accepted[1] == R
 
 
 def _snapshot(root) -> dict:
