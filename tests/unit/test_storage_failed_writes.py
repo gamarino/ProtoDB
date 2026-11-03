@@ -147,13 +147,13 @@ def test_b1_a_roots_log_compaction_never_writes_through_a_released_number(tmp_pa
     acceptor append returned normally into the victim and ``load()`` lost it."""
     monkeypatch.setattr(rootlog_module, "_COMPACT_BYTES", HEADER_SIZE + 4 * ENTRY_SIZE + 1)
     path = str(tmp_path / "n.roots")
-    log = RootsLog(path, durability="fsync")
+    log = RootsLog(path)
     for i in range(1, 5):
-        log.append("accepted", 1, rec(i), sync=True)
+        log.append("accepted", 1, rec(i))
     fault = CompactionFault(monkeypatch, step, path, log._fd, str(tmp_path / "victim.log"))
     failed = None
     try:
-        log.append("accepted", 1, rec(5), sync=True)     # compacts
+        log.append("accepted", 1, rec(5))     # compacts
     except ProtoUnexpectedError as e:
         failed = e
     assert fault.fired or step == "number_reused"
@@ -161,7 +161,7 @@ def test_b1_a_roots_log_compaction_never_writes_through_a_released_number(tmp_pa
     assert _is_open(log._fd)
     before = fault.victim_size()
     try:
-        log.append("accepted", 2, rec(99), sync=True)
+        log.append("accepted", 2, rec(99))
         appended = True
     except ProtoUnexpectedError:
         appended = False
@@ -179,9 +179,9 @@ def test_b1_a_roots_log_compaction_never_writes_through_a_released_number(tmp_pa
             log.mark_rejoined()
         assert log.load().accepted[0] == 1, "load() must keep working on a poisoned log"
     log.close()
-    reopened = RootsLog(path, durability="fsync")
+    reopened = RootsLog(path)
     assert reopened.load().accepted == ((2, rec(99)) if appended else (1, rec(5)))
-    reopened.append("accepted", 3, rec(100), sync=True)     # a new handle writes again
+    reopened.append("accepted", 3, rec(100))     # a new handle writes again
     assert reopened.load().accepted == (3, rec(100))
     reopened.close()
     if fault.victim is not None:
@@ -194,8 +194,8 @@ def test_a_failed_roots_log_write_poisons_the_handle(tmp_path, monkeypatch, faul
     which the decoder stops) or hold what the ``fsync`` could not confirm, so no later write is
     accepted.  Before, the next append was made after the torn bytes and lost on reload."""
     path = str(tmp_path / "n.roots")
-    log = RootsLog(path, durability="fsync")
-    log.append("accepted", 1, rec(1), sync=True)
+    log = RootsLog(path)
+    log.append("accepted", 1, rec(1))
     target = log._fd
     armed = {"on": True}
 
@@ -214,21 +214,21 @@ def test_a_failed_roots_log_write_poisons_the_handle(tmp_path, monkeypatch, faul
 
     monkeypatch.setattr(os, fault_on, failing_write if fault_on == "write" else failing_fsync)
     with pytest.raises(ProtoUnexpectedError):
-        log.append("accepted", 2, rec(2), sync=True)
+        log.append("accepted", 2, rec(2))
     with pytest.raises(ProtoUnexpectedError, match="refuses writes"):
-        log.append("accepted", 3, rec(3), sync=True)
+        log.append("accepted", 3, rec(3))
     with pytest.raises(ProtoUnexpectedError, match="refuses writes"):
         log.promise(9)
     monkeypatch.undo()
     log.close()
     with pytest.raises(ProtoValidationError):
-        log.append("accepted", 4, rec(4), sync=True)
+        log.append("accepted", 4, rec(4))
 
 
 def test_a_short_roots_log_write_is_completed(tmp_path, monkeypatch):
     """A short ``write`` (allowed by POSIX) is continued, not mistaken for a full entry."""
     path = str(tmp_path / "n.roots")
-    log = RootsLog(path, durability="fsync")
+    log = RootsLog(path)
     target = log._fd
 
     def short_write(fd, data):
@@ -237,7 +237,7 @@ def test_a_short_roots_log_write_is_completed(tmp_path, monkeypatch):
         return REAL["write"](fd, data)
 
     monkeypatch.setattr(os, "write", short_write)
-    log.append("accepted", 1, rec(1), sync=True)
+    log.append("accepted", 1, rec(1))
     log.promise(4)
     monkeypatch.undo()
     roots = log.load()
@@ -296,7 +296,7 @@ def test_b1_a_ranges_log_compaction_never_writes_through_a_released_number(tmp_p
         assert failed is not None, "the injected failure was not reported"
         assert not applied, "a storage whose compaction failed accepted a write"
         with pytest.raises(ProtoUnexpectedError, match="failed earlier"):
-            s.log_root("accepted", 2, root2, sync=True)
+            s.log_root("accepted", 2, root2)
         with pytest.raises(ProtoUnexpectedError, match="failed earlier"):
             s.log_promise(5)
     s.close()
@@ -354,13 +354,13 @@ def test_a_failed_local_write_poisons_the_tiered_storage(tmp_path, monkeypatch, 
     with pytest.raises(ProtoUnexpectedError, match="failed earlier"):
         s.apply(records, RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, 2), 2)
     with pytest.raises(ProtoUnexpectedError, match="failed earlier"):
-        s.log_root("accepted", 2, root, sync=True)
+        s.log_root("accepted", 2, root)
     with pytest.raises(ProtoUnexpectedError, match="failed earlier"):
         s.log_rejoined()
     s.close()
     writer.close()
     reopened = _tiered(tmp_path, store, "s")          # a new instance writes again
-    reopened.log_root("accepted", 3, root, sync=True)
+    reopened.log_root("accepted", 3, root)
     assert reopened.load_roots().accepted == (3, root)
     reopened.close()
 

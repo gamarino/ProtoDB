@@ -49,10 +49,12 @@ same project. The old spelling survives in `ProtoBaseException`, a deprecated al
   Python lambdas are allowed and appear as an explicit `PythonFilter` node.
 - **Storage**: `MemoryStorage`; `FileStorage` (append-only segments, CRC-checked records, `fsync` per
   commit by default); `CloudStorage` over S3 or Google Cloud Storage; `TieredStorage` and a cluster
-  coordinator for several writer processes. A cluster survives power loss only with
-  `durability="fsync"` (the default) on every node's TieredStorage: with `"flush"` or `"none"` it
-  syncs nothing and is process-crash safe only (open defect D-SAFE-2, see
-  `docs/source/performance.rst`).
+  coordinator for several writer processes. Every node syncs its acceptor log (lease promises,
+  accepted roots) before replying in every durability mode, so the lease never grants a term twice,
+  even across power loss. Acknowledged commits survive power loss only with `durability="fsync"`
+  (the default) on every node's TieredStorage; with `"flush"` or `"none"` the data is not synced and
+  survives process crashes and the power loss of a minority of nodes (see `docs/decisions.md`, D46
+  Amendment (Task 8.3e)). Contending writer processes take the lease in turn.
 - **Free-threading**: tested on CPython 3.14t (GIL disabled) and with the GIL; `parallel_scan` and
   `parallel_filter` scale on free-threaded builds.
 - **Interop**: export to Apache Arrow and Parquet (`to_arrow`, `to_parquet`).

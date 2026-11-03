@@ -4,13 +4,27 @@ In cluster mode the object store is entirely off the commit path.  Each node kee
 local directory (the commit-durability tier) and a background
 replicator (:mod:`proto_db.cluster.persister`) ships it to the object store.
 
-Durability: only ``durability="fsync"`` (the default) makes the local tier a commit-durability
-tier: records, the ranges log, accepted roots and lease promises are fsynced before a node
-acknowledges.  With ``"flush"`` or ``"none"`` this storage issues no sync at all (measured: 0
-sync syscalls per process), so a cluster is process-crash safe only: a power loss on a
-majority can lose acknowledged commits, and a power loss on even one node can make it forget a
-promise (reasoned).  Tracked as defect D-SAFE-2, to be fixed by Task 8.3e (acceptor metadata
-always fsynced).  Use ``fsync`` for any cluster that must survive power loss.
+Durability (Task 8.3e, defect D-SAFE-2): the acceptor log ``roots.log`` -- lease promises,
+accepted roots, the rejoined marker -- is ``fsync``-ed before the reply each entry justifies
+(the grant, the acknowledgement, the node acting as an acceptor) **whatever the durability
+mode** (:class:`~proto_db.cluster.rootlog.RootsLog`), so the lease's safety (no term granted
+twice, no two roots with one label and epoch, no committed root lost while at most one
+acceptor log is lost at a time) holds across power loss in every mode.  ``durability``
+governs the data only -- own segments, copies of other nodes' records, ``ranges.log`` and
+``segments.log``:
+
+* ``"fsync"`` (default): data is synced before the node acknowledges, so an acknowledged
+  commit is on the local disk of a majority and survives power loss of any minority, and
+  of every node at once (D46);
+* ``"flush"`` / ``"none"``: data is written to the operating system without a sync (no data
+  sync on the commit path).  An acknowledged commit survives any process crash, but a power
+  loss can drop the records of roots a node accepted: one node's power loss leaves the
+  commit on the other acknowledgers (records are fetched from them), a power loss of a
+  majority can lose acknowledged commits, and a later read of a lost record with no copy
+  left raises ``ProtoCorruptionError``, never wrong data.  A rejoin's records (ruling R50)
+  are not synced either in these modes.
+
+Use ``fsync`` for any cluster whose acknowledged commits must survive power loss.
 
 Layout of the local directory::
 
@@ -343,10 +357,11 @@ class TieredStorage(SharedStorage):
         path: local directory (created if missing).
         store: the :class:`~proto_db.storage.cloud.ObjectStore` shared by the cluster.
         prefix: key prefix of the space in the store.
-        durability: ``"fsync"`` (default), ``"flush"`` or ``"none"`` for the local tier.
-            Only ``"fsync"`` keeps the cluster's guarantees across power loss; ``"flush"``
-            and ``"none"`` sync nothing (process-crash safe only; see the module docstring,
-            defect D-SAFE-2).
+        durability: ``"fsync"`` (default), ``"flush"`` or ``"none"`` for the local tier's
+            data (segments, copies, ``ranges.log``, ``segments.log``).  Only ``"fsync"``
+            makes acknowledged commits survive power loss; the acceptor log ``roots.log`` is
+            synced in every mode, so the lease's safety never depends on this choice (module
+            docstring, Task 8.3e).
         cache_bytes: capacity of the in-memory record cache.
         segment_cache_bytes: capacity of the cache of downloaded segment objects.
         segment_max_bytes: a local segment rolls over before exceeding this size.
@@ -480,7 +495,7 @@ class TieredStorage(SharedStorage):
         self._local = FileStorage(self._path, durability=durability, cache_bytes=min(cache_bytes, 16 * MIB),
                                   lock_timeout=lock_timeout, segment_max_bytes=segment_max_bytes)
         self._load_manifest()
-        self._roots = RootsLog(os.path.join(self._path, ROOTS_LOG), durability=durability)
+        self._roots = RootsLog(os.path.join(self._path, ROOTS_LOG))     # always synced (Task 8.3e)
         self._load_ranges()
 
     # -- properties --------------------------------------------------------------------------
@@ -1246,13 +1261,14 @@ class TieredStorage(SharedStorage):
             self._fail(e)
             raise ProtoUnexpectedError(f"Cannot fsync {self._path}: {e}") from e
 
-    def log_root(self, kind: str, label: int, record: Optional[RootRecord], *, sync: bool) -> None:
-        """Append a root this node accepted or learnt committed to ``roots.log`` (``fsync`` with
-        ``sync``; see :class:`~proto_db.cluster.rootlog.RootsLog`).  Refused once the local
-        tier failed (an accepted root vouches for records stored here)."""
+    def log_root(self, kind: str, label: int, record: Optional[RootRecord]) -> None:
+        """Append a root this node accepted or learnt committed to ``roots.log``, ``fsync``-ed
+        whatever this storage's durability mode (Task 8.3e; see
+        :class:`~proto_db.cluster.rootlog.RootsLog`).  Refused once the local tier failed (an
+        accepted root vouches for records stored here)."""
         self._check_open()
         self._refuse_failed(f"writing {ROOTS_LOG}")
-        self._roots.append(kind, label, record, sync=sync)
+        self._roots.append(kind, label, record)
 
     def log_promise(self, term: int) -> None:
         """Make this node's promise of lease ``term`` durable in ``roots.log`` before it is sent.

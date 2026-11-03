@@ -190,6 +190,9 @@ _MIN_STRAGGLE = 0.005
 _STRAGGLE_FACTOR = 4.0
 #: Upper bound, in seconds, of the random spread a requester adds after being woken by a release.
 _WAKE_SPREAD = 0.003
+#: Seconds a member defers to the member whose turn a release named, if that member's request
+#: has not been seen by then (lease fairness, Task 8.3e; capped by ``request_timeout``).
+_TURN_SILENCE = 0.05
 _STOP = object()
 #: Roots whose records this node stored, remembered for :meth:`ClusterCoordinator.await_records`.
 _STORED_MEMORY = 256
@@ -406,8 +409,18 @@ class ClusterCoordinator:
                        "grants_refused_no_storage": 0, "releases_received": 0, "storage_root_reads": 0,
                        "replications": 0, "replication_failures": 0, "accepted": 0, "refused": 0,
                        "recoveries": 0, "rejoins": 0, "fetches_requested": 0, "fetches_served": 0,
-                       "critical_commits": 0}
+                       "critical_commits": 0, "turns_named": 0, "turns_taken": 0, "deferrals": 0,
+                       "deferral_timeouts": 0}
         self._critical = {k: 0.0 for k in _CRITICAL_KEYS}
+        # Lease fairness (module docstring, "Fairness"; Task 8.3e, D-LIVE-1): proposer-side
+        # timing only, never consulted by a grant, an acceptance or a commit.
+        self._turn_silence = min(_TURN_SILENCE, self._request_timeout)
+        self._waiting = {}                  # member -> since: seen wanting the lease, turn not named yet
+        self._wanting_since = {}            # member -> since: seen wanting the lease, not served since
+        self._turn = None                   # (member, named at, its request seen at or None): defer to it
+        self._my_turn = False               # the last winner's release named this node
+        self._acquirers = 0                 # threads of this process inside acquire()
+        self._registered = False            # the others queue this node: it asked, or released wanting more
 
     # -- properties --------------------------------------------------------------------------
 
@@ -943,7 +956,7 @@ class ClusterCoordinator:
                 if learnt:
                     tier.log_promise(learnt)
                 if best is not None:
-                    tier.log_root("accepted", best[0], best[1], sync=True)
+                    tier.log_root("accepted", best[0], best[1])
                 tier.log_rejoined()             # last: the log now holds what the node must know
             except (ProtoDBError, OSError) as e:
                 # Attached throughout (_log_lock): the tier failed.  Nothing is published; the
@@ -1268,9 +1281,10 @@ class ClusterCoordinator:
             logger.warning("Node %s ignored a %r message from unknown sender %r", self._node, msg["type"], sender)
             return
         kind = msg["type"]
-        if kind in ("records", "replicate", "release", "fetch", "commit_query"):
+        if kind in ("records", "replicate", "release", "want", "fetch", "commit_query"):
             # A release follows its replicate (and a replicate its record chunks) through the
-            # same queue, so a root is never known committed here before its records are stored.
+            # same queue, so a root is never known committed here before its records are stored;
+            # a ``want`` follows the sender's release, which it must not precede (fairness).
             with self._lock:
                 fenced = self._failure is not None
                 if not fenced:
@@ -1320,6 +1334,7 @@ class ClusterCoordinator:
             with self._cond:
                 if self._state != "running":
                     return
+                self._note_request(sender)
                 reply = self._decide(sender, msg["term"], msg["rid"], msg["inc"])
                 tier = self._tier if reply["type"] == "grant" else None
             # ``tier`` is attached until _log_lock is released: a grant needs one (_decide).
@@ -1417,6 +1432,7 @@ class ClusterCoordinator:
         """Handle a release (lock held); return ``(label, root)`` when it taught a newer
         committed root (logged by the caller, outside the lock)."""
         learnt = None
+        self._note_release(sender, msg)
         ended = self._grants.on_release(sender, msg["term"], msg["inc"])
         if ended:
             self._suspect_term = max(self._suspect_term, ended)
@@ -1438,6 +1454,98 @@ class ClusterCoordinator:
         self._wakeups += 1
         self._cond.notify_all()
         return learnt
+
+    # -- lease fairness (module docstring, "Fairness"; Task 8.3e) ----------------------------
+
+    def _note_wanting(self, member: str, now: float) -> None:
+        """Queue ``member`` as wanting the lease (lock held), at the place it first wanted it
+        since it was last served."""
+        if member == self._node or member not in self._peers:
+            return
+        since = self._wanting_since.setdefault(member, now)
+        self._waiting.setdefault(member, since)
+
+    def _note_request(self, sender: str) -> None:
+        """A lease request of ``sender`` arrived (lock held): it wants the lease, and if this node
+        defers to it, its turn is being taken."""
+        now = time.monotonic()
+        self._note_wanting(sender, now)
+        turn = self._turn
+        if turn is not None and turn[0] == sender and turn[2] is None:
+            self._turn = (sender, turn[1], now)
+
+    def _note_release(self, sender: str, msg: dict) -> None:
+        """Update the fairness state for a release or a cancel of ``sender`` (lock held)."""
+        now = time.monotonic()
+        if msg["held"]:
+            self._waiting.pop(sender, None)             # served
+            self._wanting_since.pop(sender, None)
+            if msg["more"]:
+                self._note_wanting(sender, now)         # it wants the lease again: the tail
+        else:
+            self._note_wanting(sender, now)             # a lost attempt still wants the lease
+        if self._turn is not None and self._turn[0] == sender:
+            self._turn = None                           # its attempt, or its lease, ended
+        if msg["held"]:
+            successor = msg["next"]
+            if successor is not None and successor not in self._peers:
+                successor = None
+            if successor is not None:
+                self._waiting.pop(successor, None)      # its turn is named (its place is kept)
+            if successor == self._node:
+                # Our turn: the others took us out of their queues (we are back in with the
+                # request we send now; if we send none, we are no longer queued).
+                self._turn, self._my_turn, self._registered = None, True, False
+            elif successor is not None:
+                self._turn = (successor, now, None)
+            else:
+                self._turn = None
+        # The caller notifies the condition (a release wakes waiting requesters).
+
+    def _next_turn(self) -> Optional[str]:
+        """The member seen waiting longest (lock held), taken out of the queue (its place is
+        kept until it is served, so a turn it does not take does not cost it its place), or
+        ``None``."""
+        if not self._waiting:
+            return None
+        member = min(self._waiting, key=lambda m: (self._waiting[m], m))
+        del self._waiting[member]
+        return member
+
+    def _await_turn(self, deadline: float) -> None:
+        """Wait while a release named another member's turn (module docstring, "Fairness"):
+        until that member's request has been seen and its attempt or lease ended, at most
+        ``lease_duration`` after its request, or :data:`_TURN_SILENCE` when its request is not
+        seen.  A node the others do not queue (it neither asked, nor released wanting more,
+        nor said ``want`` since it was last served or named) first broadcasts ``want``, so that
+        a later release names it.  Timing only: it never decides a grant."""
+        waited = False
+        while True:
+            with self._cond:
+                while True:
+                    self._check_running()
+                    turn = self._turn
+                    if turn is None:
+                        return
+                    member, named, seen = turn
+                    now = time.monotonic()
+                    end = seen + self._duration if seen is not None else named + self._turn_silence
+                    if now >= end:
+                        self._turn = None
+                        self._stats["deferral_timeouts"] += 1
+                        return
+                    if now >= deadline:
+                        return              # the attempt that follows reports the timeout
+                    if not waited:
+                        waited = True
+                        self._stats["deferrals"] += 1
+                    if not self._registered:
+                        # Nobody queues this node: say so before deferring, or no release would
+                        # ever name it (sent outside the lock, then the wait goes on).
+                        self._registered = True
+                        break
+                    self._cond.wait(timeout=min(end, deadline) - now)
+            self._broadcast(make_message("want", self._node))
 
     def _on_answer(self, sender: str, kind: str, msg: dict) -> None:
         waiter = self._waiters.get(msg["rid"])
@@ -1504,9 +1612,13 @@ class ClusterCoordinator:
                             # write fails the tier (ruling R57); the root, majority-accepted
                             # already, may stay known in memory (module docstring).
                             try:
-                                tier.log_root("committed", learnt[0], learnt[1], sync=False)
+                                tier.log_root("committed", learnt[0], learnt[1])
                             except (ProtoDBError, OSError) as e:
                                 self._tier_failed(tier, e, "logging a committed root")
+                elif kind == "want":
+                    with self._cond:
+                        if self._state == "running":
+                            self._note_wanting(msg["from"], time.monotonic())
                 elif kind == "commit_query":
                     self._serve_commit(msg)
                 else:
@@ -1627,7 +1739,7 @@ class ClusterCoordinator:
                     reply_root = self._wire(self._accepted)
             if ok:
                 try:
-                    tier.log_root("accepted", label, root, sync=True)     # durable before the ack
+                    tier.log_root("accepted", label, root)     # durable before the ack
                 except (ProtoDBError, OSError) as e:
                     # Attached throughout (_log_lock): the tier failed (ruling R57).  Nothing is
                     # published and the replication is refused, never acknowledged.
@@ -1685,13 +1797,18 @@ class ClusterCoordinator:
         with self._lock:
             self._check_running()
             self._check_healthy()
-        if not self._local.acquire(timeout=timeout):
-            raise ProtoTimeoutError(f"Node {self._node}: another thread held the cluster lease for {timeout} s")
+            self._acquirers += 1        # tells a release of ours that this node still wants the lease
         try:
-            lease = self._acquire(deadline, timeout)
-        except BaseException:
-            self._local.release()
-            raise
+            if not self._local.acquire(timeout=timeout):
+                raise ProtoTimeoutError(f"Node {self._node}: another thread held the cluster lease for {timeout} s")
+            try:
+                lease = self._acquire(deadline, timeout)
+            except BaseException:
+                self._local.release()
+                raise
+        finally:
+            with self._lock:
+                self._acquirers -= 1
         return lease
 
     def _await_rejoin(self, deadline: float, timeout: float) -> None:
@@ -1710,6 +1827,7 @@ class ClusterCoordinator:
         failures = 0
         while True:
             self._await_rejoin(deadline, timeout)
+            self._await_turn(deadline)
             attempt, request, seen, promise = self._open_attempt()
             self._broadcast(request)
             if promise is not None and not self._promise(promise, attempt.term):
@@ -1737,7 +1855,10 @@ class ClusterCoordinator:
                 self._cond.wait_for(lambda: self._wakeups != seen or self._state != "running", timeout=delay)
                 self._check_running()
                 woken = self._wakeups != seen
-            if woken:
+                # The member whose turn a release named asks at once; the others spread out
+                # (and defer to it, :meth:`_await_turn`).
+                spread = woken and not self._my_turn
+            if spread:
                 time.sleep(self._rng.random() * _WAKE_SPREAD)
 
     def _open_attempt(self) -> tuple:
@@ -1757,6 +1878,10 @@ class ClusterCoordinator:
                                    drift_margin=self._margin)
             self._attempt = attempt
             self._stats["attempts"] += 1
+            if self._my_turn:
+                self._my_turn = False
+                self._stats["turns_taken"] += 1
+            self._registered = True             # every member that receives the request queues us
             refusal = self._refusal()
             if refusal is not None:
                 attempt.on_reject(self._node, refusal, self._grants.highest_term, 0.0)
@@ -1806,7 +1931,7 @@ class ClusterCoordinator:
             self._grants.on_release(self._node, attempt.term, self._inc)
             cancel = make_message("release", self._node, term=attempt.term, inc=self._inc,
                                   root=self._wire(self._accepted), committed=self._wire(self._committed),
-                                  certain=False, held=False)
+                                  certain=False, held=False, next=None, more=True)
             return None, cancel, min(attempt.busy_remaining, self._duration)
 
     def release(self, lease: Lease) -> None:
@@ -1821,9 +1946,19 @@ class ClusterCoordinator:
             self._held = None
             self._grants.on_release(self._node, lease.term, self._inc)
             running = self._state == "running"
+            # Fairness hints (module docstring, "Fairness"): the member seen waiting longest gets
+            # the turn, and this node defers to it like every other member.
+            more = self._acquirers > 0
+            self._registered = more
+            successor = self._next_turn()
+            self._my_turn = False
+            self._turn = None if successor is None else (successor, time.monotonic(), None)
+            if successor is not None:
+                self._stats["turns_named"] += 1
             msg = make_message("release", self._node, term=lease.term, inc=self._inc,
                                root=self._wire(self._accepted), committed=self._wire(self._committed),
-                               certain=not self._suspect_term, held=True)
+                               certain=not self._suspect_term, held=True, next=successor,
+                               more=more)
         try:
             if running:
                 self._broadcast(msg)
@@ -1938,7 +2073,7 @@ class ClusterCoordinator:
                     # from here.
                     try:
                         tier.remember_commit(extra + records, root, label)
-                        tier.log_root("accepted", label, root, sync=True)
+                        tier.log_root("accepted", label, root)
                     except (ProtoDBError, OSError) as e:
                         # Attached throughout (_log_lock): the tier failed (ruling R57); our own
                         # vote is not counted, and the outcome is unknown (below).
@@ -2015,7 +2150,7 @@ class ClusterCoordinator:
                 with self._lock:
                     attached = self._tier is tier
                 if attached:            # never on a detached log (ruling R55)
-                    tier.log_root("committed", label, root, sync=False)
+                    tier.log_root("committed", label, root)
         except (ProtoDBError, OSError) as e:
             # Committed already (a majority acknowledged within the lease): never fail the
             # commit for this bookkeeping.  A write that failed on the attached tier fails it

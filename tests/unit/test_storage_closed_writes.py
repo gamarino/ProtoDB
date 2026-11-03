@@ -185,7 +185,7 @@ def test_a1_an_apply_paused_across_close_writes_through_no_reused_descriptor(tmp
             opened.append(os.open(os.devnull, os.O_RDONLY))
             x = _tiered(tmp_path, store, "x")
             x.log_promise(3)
-            x.log_root("accepted", 4, RootRecord(FORMAT_VERSION, uuid.uuid4(), 64, 5), sync=True)
+            x.log_root("accepted", 4, RootRecord(FORMAT_VERSION, uuid.uuid4(), 64, 5))
         s2 = _tiered(tmp_path, store, "s")
         before = _files(tmp_path)
     finally:
@@ -194,7 +194,7 @@ def test_a1_an_apply_paused_across_close_writes_through_no_reused_descriptor(tmp
     assert _files(tmp_path) == before, "a write after close() changed a file"
     if variant == "other2":
         r8 = RootRecord(FORMAT_VERSION, uuid.uuid4(), 64, 8)
-        x.log_root("accepted", 6, r8, sync=True)
+        x.log_root("accepted", 6, r8)
         x.close()
         x = _tiered(tmp_path, store, "x")
         assert x.load_roots().accepted == (6, r8), "an accepted root was lost on reload"

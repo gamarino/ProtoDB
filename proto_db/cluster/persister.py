@@ -42,7 +42,7 @@ The cluster tier
     every node (``MemoryStorage`` in one process, ``FileStorage`` on a shared filesystem),
     where records need no shipping and the persisted root is the storage's own root.
     Methods: ``storage``, ``outgoing()``, ``flush_local()``, ``shipped(records, root, label)``,
-    ``apply(records, root, label)``, ``prefetch(records)``, ``log_root(kind, label, record, sync=)``,
+    ``apply(records, root, label)``, ``prefetch(records)``, ``log_root(kind, label, record)``,
     ``log_promise(term)``, ``log_rejoined()``, ``load_roots()`` (a :class:`~proto_db.cluster.rootlog.LoggedRoots`),
     ``local_record(ptr)``, ``set_fetcher(fn)``, ``read_persisted()``,
     ``persist(label, record)``, ``ship(force)``, ``refresh_remote()``, ``commit_ranges(root)``,
@@ -117,9 +117,8 @@ def _node_log(storage, node_id: str):
     path = getattr(storage, "path", None)
     if isinstance(path, str) and os.path.isdir(path):
         name = node_id if re.fullmatch(r"[A-Za-z0-9._-]{1,64}", node_id) else node_id.encode("utf-8").hex()
-        durability = getattr(storage, "durability", "fsync")
-        return RootsLog(os.path.join(path, NODE_LOG_DIR, name + ".roots"),
-                        durability=durability if isinstance(durability, str) else "fsync")
+        # Synced whatever the storage's durability mode (Task 8.3e, D-SAFE-2).
+        return RootsLog(os.path.join(path, NODE_LOG_DIR, name + ".roots"))
     return memory_log_for(storage, node_id)
 
 
@@ -130,10 +129,12 @@ class PlainTier:
     space root's cluster fields.  Records live in the shared storage, so nothing is shipped
     or applied.  Each node keeps its acceptor log (promises, accepted and committed roots;
     :mod:`proto_db.cluster.rootlog`): for a ``FileStorage``, in the file
-    ``<directory>/cluster/<node_id>.roots``, written with the storage's durability mode, so
-    an acknowledged commit survives a crash of the whole cluster before the persister
-    writes the storage root; for a storage without a directory (``MemoryStorage``), in
-    memory: such a cluster is not durable.
+    ``<directory>/cluster/<node_id>.roots``, every entry ``fsync``-ed whatever the storage's
+    durability mode (Task 8.3e; the mode governs the shared data only), so no promise is
+    forgotten in a power loss, and with ``durability="fsync"`` an acknowledged commit survives
+    a crash of the whole cluster before the persister writes the storage root; for a storage
+    without a directory (``MemoryStorage``), in memory: such a cluster is not durable and has
+    no power-loss story (a process that dies loses its log, like a lost disk).
 
     Args:
         storage: the shared storage.
@@ -168,9 +169,10 @@ class PlainTier:
     def prefetch(self, records: list) -> None:
         """Nothing to prefetch."""
 
-    def log_root(self, kind: str, label: int, record, *, sync: bool) -> None:
-        """Log a root this node accepted or learnt committed (``fsync`` with ``sync``)."""
-        self._log.append(kind, label, record, sync=sync)
+    def log_root(self, kind: str, label: int, record) -> None:
+        """Log a root this node accepted or learnt committed (durable before this returns,
+        whatever the storage's durability mode; Task 8.3e)."""
+        self._log.append(kind, label, record)
 
     def log_promise(self, term: int) -> None:
         """Make this node's promise of lease ``term`` durable before it is sent."""

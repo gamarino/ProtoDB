@@ -59,17 +59,22 @@ rqlite                         v10.6.6 official linux-amd64 release, SHA-256 ver
 Summary
 -------
 
-**Open defect: lease starvation under TCP with fsync (D-LIVE-1)**
+**Resolved defect: lease starvation under TCP with fsync (D-LIVE-1, fixed by Task 8.3e)**
 
-The cluster lease has no fairness mechanism, and with fsync-durable local tiers over TCP one
-peer can starve. With 2 TCP peers x 4 threads for 3 s, the per-peer commit counts of the three
+The figures in this paragraph are from the Phase 9 run, before the fix. Task 8.3e measured the
+cause (the releasing process re-asked 0.17 ms after its release, contenders 3.3 ms after it)
+and added lease fairness: releases name the member waiting longest and the others defer to it
+(``docs/decisions.md``, D46 Amendment (Task 8.3e)). Afterwards 2/3/4/8 TCP peers split their
+commits evenly (min/max 0.86-1.00) at about the same throughput; the before/after benchmark
+figures are in the Task 8.3e report and will replace this run's when the results are
+regenerated. Before the fix, the cluster lease had no fairness mechanism, and with fsync-durable
+local tiers over TCP one peer could starve. With 2 TCP peers x 4 threads for 3 s, the per-peer commit counts of the three
 runs were 113/49, 142/40 and **178/4** with the GIL off, and 85/87, 113/55 and **169/4** with
 it on; the starved peer's p95 commit latency was 2.4 s. In the first run of the suite one peer
 made 4 commits in 3 s with a median latency of 3.1 s. This contradicts the "every thread
 progresses" / "no starvation remained" statements of D45 and ruling R39, which were measured
 with peers that do not fsync; ``docs/decisions.md`` carries the amendment. Data safety is
-not affected. The defect is tracked as **D-LIVE-1**; it is not fixed in Phase 9 (a lease
-hand-off or queue needs its own safety review).
+not affected.
 
 **Where ProtoDB wins**
 
@@ -112,7 +117,8 @@ hand-off or queue needs its own safety review).
   mode.* A 3-peer TCP cluster (4 threads per peer) commits **61/s with fsync-durable local
   tiers, 183/s with ``flush`` and 191/s with ``none``** (GIL off; 48 / 128 / 115 with the GIL
   on). Only the ``fsync`` figure carries the cluster's power-loss guarantees; ``flush`` and
-  ``none`` sync nothing (open defect D-SAFE-2, see `Cluster mode`_). The concurrency tests report ~230/s because their peers run with ``none``/``flush``
+  ``none`` do not sync data (see `Cluster mode`_; in this pre-8.3e run they synced nothing, and
+  since Task 8.3e they sync the acceptor log, about 3 syncs per commit across the nodes). The concurrency tests report ~230/s because their peers run with ``none``/``flush``
   local tiers; the benchmark's headline uses ``fsync``, the D46 commit point. With fsync a
   commit causes **12.6 syncs across the 3 nodes** (see `Syncs per commit`_), and replication
   (11.3 ms) is 83 % of a 13.6 ms critical section; without syncs the critical section is 4.5 ms.
@@ -304,16 +310,16 @@ network without the disk.
 
 .. warning::
 
-   **The cluster's guarantees hold only with** ``durability="fsync"``. An acknowledged commit
-   survives power loss, and no lease term is granted twice across power loss, only when every
-   node's TieredStorage runs in ``fsync`` mode. With ``flush`` or ``none`` TieredStorage syncs
-   nothing (0 sync syscalls per process, measured), so the cluster is process-crash safe only:
-   a power loss on a majority can lose acknowledged commits, and a power loss on even one node
-   can make it forget a promise and void the one-holder-per-term argument (reasoned, not
-   reproduced). This is open defect **D-SAFE-2**, to be fixed by Task 8.3e (acceptor metadata
-   always fsynced). Use ``fsync`` for any cluster that must survive power loss; the ``flush``
-   and ``none`` figures above are not durability-equivalent to the ``fsync`` headline or to
-   rqlite.
+   **Acknowledged commits survive power loss only with** ``durability="fsync"``. Since Task
+   8.3e (defect D-SAFE-2 fixed) every node syncs its acceptor log -- lease promises, accepted
+   roots, the rejoined marker -- before the reply each entry justifies, in every mode, so no
+   lease term is granted twice and no two roots share a label, across power loss, whatever the
+   mode. The mode governs the data: with ``fsync`` an acknowledged commit survives power loss
+   of any set of nodes; with ``flush`` or ``none`` it survives every process crash and a power
+   loss of a minority, but a power loss of a majority can lose it (a read of a lost record then
+   raises ``ProtoCorruptionError``). The ``flush`` and ``none`` figures above come from the
+   Phase 9 run, before the acceptor syncs were added; neither mode is durability-equivalent to
+   the ``fsync`` headline or to rqlite.
 
 Critical-section breakdown per commit (ms, GIL off, TCP peers, ``fsync``): validation, intent
 replay, path copy, replication:
@@ -398,7 +404,9 @@ Other findings
 
 - **Lease contention grows with the peer count**: lease acquisitions tried per commit are
   1.0 (1 peer), 2.1 (2), 5.8 (3), 13 (4) and 54 (8) over TCP, and the in-process counter
-  workload reaches 119 at 8 peers. See the summary for the starvation defect (D-LIVE-1).
+  workload reaches 119 at 8 peers (Phase 9 run). See the summary for the starvation defect
+  (D-LIVE-1, fixed by Task 8.3e: with fairness the TCP figures fall to about 1.0-1.3 attempts
+  per commit at 2-4 peers and 1.7-4.4 at 8).
 - "Hundreds of commits per second" is reached by the cluster without syncs (183-191/s at 3
   peers, process-crash safe only), by the single peer in-process with ``fsync`` (122/s) and by the CAS-only path without
   store latency, not by multi-peer ``fsync`` clusters on this machine (20-61/s).

@@ -79,7 +79,7 @@ def test_the_lock_survives_a_compaction_that_replaces_the_log_file(tmp_path, mon
     try:
         ino = os.stat(path).st_ino
         for i in range(1, 20):
-            a.append("accepted", i, rec(i), sync=True)
+            a.append("accepted", i, rec(i))
         assert os.stat(path).st_ino != ino, "no compaction happened"
         with pytest.raises(ProtoLockingError):
             RootsLog(path)
@@ -148,8 +148,8 @@ def test_a_failed_tiered_open_releases_the_lock(tmp_path):
 def test_a_failed_roots_log_open_releases_the_lock(tmp_path):
     path = str(tmp_path / "n.roots")
     log = RootsLog(path)
-    log.append("accepted", 1, rec(1), sync=True)
-    log.append("accepted", 2, rec(2), sync=True)
+    log.append("accepted", 1, rec(1))
+    log.append("accepted", 2, rec(2))
     log.close()
     _corrupt_mid_log(path)
     for _ in range(2):
@@ -333,7 +333,7 @@ def test_r12_a_second_roots_log_during_a_short_append_is_refused_and_nothing_is_
     acknowledged acceptance was lost.  The second open is refused now."""
     path = str(tmp_path / "roots.log")
     a = RootsLog(path)
-    a.append("accepted", 1, rec(1), sync=True)
+    a.append("accepted", 1, rec(1))
     a.mark_rejoined()
     gate, resume = threading.Event(), threading.Event()
     state = {"armed": True}
@@ -348,7 +348,7 @@ def test_r12_a_second_roots_log_during_a_short_append_is_refused_and_nothing_is_
         return REAL_WRITE(fd, data)
 
     monkeypatch.setattr(os, "write", write)
-    t = threading.Thread(target=lambda: a.append("accepted", 2, rec(2), sync=True))
+    t = threading.Thread(target=lambda: a.append("accepted", 2, rec(2)))
     t.start()
     try:
         assert gate.wait(10)
@@ -647,7 +647,7 @@ def test_a_compaction_through_a_symlink_replaces_the_target_not_the_link(tmp_pat
     try:
         ino = os.stat(real).st_ino
         for i in range(1, 20):
-            a.append("accepted", i, rec(i), sync=True)
+            a.append("accepted", i, rec(i))
         assert os.stat(real).st_ino != ino, "no compaction happened"
         assert os.path.islink(link)
         with pytest.raises(ProtoLockingError):
@@ -665,7 +665,7 @@ def test_a_roots_log_through_a_hard_link_is_refused_in_this_process_and_another(
     real = str(tmp_path / "n.roots")
     hard = str(tmp_path / "hard.roots")
     a = RootsLog(real)
-    a.append("accepted", 1, rec(1), sync=True)
+    a.append("accepted", 1, rec(1))
     os.link(real, hard)
     before = open(real, "rb").read()
     try:

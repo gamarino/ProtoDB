@@ -662,7 +662,11 @@ class ObjectSpace:
             return self._storage.read_root()
         if coordinator.needs_confirmation:
             # One attempt per attach: under contention the node learns newer roots anyway, and
-            # its logged committed root already keeps its reads from going backwards.
+            # its logged committed root keeps its reads from going backwards across a process
+            # crash.  Across a power loss a committed entry not yet synced by a later acceptor
+            # entry can be lost (committed knowledge is not acceptor state, rootlog module
+            # docstring, Task 8.3e); if this confirmation fails too, a read can then start from
+            # an older committed root -- a committed state still, never a wrong one.
             coordinator.confirmed()
             try:
                 _commit_under_lease(coordinator, self._lock_timeout, _confirm_build)

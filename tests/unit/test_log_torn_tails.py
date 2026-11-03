@@ -70,7 +70,7 @@ class RootsAdapter:
         self.path = str(tmp_path / "n.roots")
 
     def open(self):
-        return RootsLog(self.path, durability="fsync")
+        return RootsLog(self.path)
 
     def file(self, h) -> str:
         return self.path
@@ -79,7 +79,7 @@ class RootsAdapter:
         return h._fd
 
     def append(self, h, i: int) -> None:
-        h.append("accepted", i, rec(i), sync=True)
+        h.append("accepted", i, rec(i))
 
     def has(self, h, i: int) -> bool:
         """The log holds the accepted root ``i`` or a newer one (``load()`` keeps the newest)."""
@@ -264,7 +264,7 @@ def test_a_sigkilled_writer_leaves_torn_tails_that_the_next_open_trims(tmp_path)
         s.flush()
         rec = RootRecord(FORMAT_VERSION, uuid.UUID(int=1), 64, 1)
         s.store_commit([], rec, 1, [(uuid.UUID(int=9), 64, 96)])
-        s.log_root("accepted", 1, rec, sync=True)
+        s.log_root("accepted", 1, rec)
         frame = encode_frame(b"y" * 41)
         os.write(s._roots._fd, frame[:13])
         os.write(s._ranges_fd, frame[:13])
@@ -289,7 +289,7 @@ def test_a_sigkilled_writer_leaves_torn_tails_that_the_next_open_trims(tmp_path)
     assert os.path.getsize(seg_file) == seg_size - 20
     assert s.get_atom(first) == {"i": 1}
     assert s.load_roots().accepted == (1, rec(1))
-    s.log_root("accepted", 2, rec(2), sync=True)
+    s.log_root("accepted", 2, rec(2))
     s.store_commit([], rec(2), 2, [(uuid.UUID(int=10), 64, 96)])
     second = s.push_atom({"i": 2})
     s.flush()
@@ -341,7 +341,7 @@ def test_a_roots_log_load_reports_mid_log_corruption(tmp_path):
     path = str(tmp_path / "n.roots")
     log = RootsLog(path)
     for i in (1, 2, 3):
-        log.append("accepted", i, rec(i), sync=True)
+        log.append("accepted", i, rec(i))
     with open(path, "ab") as f:
         f.write(logfile.encode_frame(b"q" * 41)[:9])
     assert log.load().accepted == (3, rec(3))
@@ -362,7 +362,7 @@ def test_a_torn_header_is_a_new_log(tmp_path):
         f.write(logfile.encode_header(b"ROOT")[:5] + bytes(30))
     log = RootsLog(path)
     assert log.load().accepted is None
-    log.append("accepted", 1, rec(1), sync=True)
+    log.append("accepted", 1, rec(1))
     log.close()
     assert RootsLog(path).load().accepted == (1, rec(1))
 

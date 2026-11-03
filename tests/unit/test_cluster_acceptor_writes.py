@@ -120,11 +120,11 @@ def _pause_log_write(tier, worker):
     in_window, gate = threading.Event(), threading.Event()
     orig = tier.log_root
 
-    def paused(kind, label, record, *, sync):
+    def paused(kind, label, record):
         if kind == "accepted" and threading.current_thread().name == worker:
             in_window.set()
             gate.wait(20)
-        return orig(kind, label, record, sync=sync)
+        return orig(kind, label, record)
 
     tier.log_root = paused
     return in_window, gate
@@ -184,9 +184,9 @@ def _moved_disk(old_tier, name):
     roots = old_tier.load_roots()
     log = memory_log_for(disk, name)
     if roots.accepted is not None:
-        log.append("accepted", *roots.accepted, sync=True)
+        log.append("accepted", *roots.accepted)
     if roots.committed is not None:
-        log.append("committed", *roots.committed, sync=True)
+        log.append("committed", *roots.committed)
     if roots.promised:
         log.promise(roots.promised)
     if not roots.empty:
@@ -431,7 +431,7 @@ def test_a_closed_acceptor_log_handle_refuses_writes_on_every_backend(tmp_path, 
     one = MemoryTier(disk, "n")
     two = MemoryTier(disk, "n") if kind == "memory" else None
     r1, r2 = rec(1), rec(2)
-    one.log_root("accepted", 1, r1, sync=True)
+    one.log_root("accepted", 1, r1)
     if kind == "file":
         with pytest.raises(ProtoLockingError):
             MemoryTier(disk, "n")
@@ -443,14 +443,14 @@ def test_a_closed_acceptor_log_handle_refuses_writes_on_every_backend(tmp_path, 
         assert _logged(two) == r1
     one.close()                                            # idempotent
     with pytest.raises(ProtoValidationError):
-        one.log_root("accepted", 2, r2, sync=True)
+        one.log_root("accepted", 2, r2)
     with pytest.raises(ProtoValidationError):
-        one.log_root("committed", 2, r2, sync=False)
+        one.log_root("committed", 2, r2)
     with pytest.raises(ProtoValidationError):
         one.log_promise(9)
     with pytest.raises(ProtoValidationError):
         one.log_rejoined()
-    two.log_root("accepted", 2, r2, sync=True)
+    two.log_root("accepted", 2, r2)
     two.log_promise(9)
     if kind == "file":
         two.close()

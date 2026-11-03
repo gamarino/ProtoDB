@@ -27,7 +27,9 @@ def test_every_message_carries_the_protocol_version_and_sender():
     ("reject", dict(term=1, rid=2, root=[0, None, None], certain=True, reason="busy",
                     highest=5, remaining=0.25)),
     ("release", dict(term=9, inc=11, root=None, committed=[4, uuid.UUID(int=1).bytes, 64, 2], certain=False,
-                     held=True)),
+                     held=True, next="n2", more=True)),
+    ("release", dict(term=9, inc=11, root=None, committed=None, certain=True, held=False, next=None,
+                     more=False)),
     ("replicate", dict(term=3, rid=4, root=[5, uuid.UUID(int=2).bytes, 80, 3], committed=None,
                        records=[[uuid.UUID(int=2).bytes, 80, b"framed"], [uuid.UUID(int=3).bytes, 26, None]],
                        chunks=1, base=None, base_ranges=None)),
@@ -59,6 +61,13 @@ def test_ranges_must_be_segment_start_end_triples():
     with pytest.raises(ClusterProtocolError):
         make_message("replicate", "n1", term=1, rid=1, root=root, committed=None, records=[], chunks=0,
                      base=root, base_ranges=[[b"short", 1, 2]])
+
+
+def test_release_fairness_hints_are_typed():
+    base = dict(term=9, inc=11, root=None, committed=None, certain=True, held=True)
+    for bad in (dict(next=3, more=True), dict(next=b"n2", more=True), dict(next="n2", more=1), dict(next="n2")):
+        with pytest.raises(ClusterProtocolError):
+            make_message("release", "n1", **base, **bad)
 
 
 def test_make_message_rejects_unknown_types_and_missing_fields():

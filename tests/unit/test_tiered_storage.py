@@ -128,9 +128,9 @@ def test_the_roots_log_survives_a_restart_and_a_torn_tail(tmp_path):
     store = FakeObjectStore()
     st = _tiered(tmp_path, store)
     ptr = st.push_atom({"n": 1})
-    st.log_root("accepted", 2, _root(ptr, 5), sync=True)
-    st.log_root("accepted", 3, _root(ptr, 4), sync=True)   # higher label wins over higher epoch
-    st.log_root("committed", 2, _root(ptr, 5), sync=True)
+    st.log_root("accepted", 2, _root(ptr, 5))
+    st.log_root("accepted", 3, _root(ptr, 4))   # higher label wins over higher epoch
+    st.log_root("committed", 2, _root(ptr, 5))
     st.close()
     with open(tmp_path / "n0" / "roots.log", "ab") as f:
         f.write(b"\x01torn")
@@ -149,10 +149,10 @@ def test_the_roots_log_orders_committed_roots_by_label_first_so_a_refound_lineag
     st = _tiered(tmp_path, store)
     dead = _root(st.push_atom({"n": 1}), 10)
     fresh = _root(st.push_atom({"n": 2}), 7)
-    st.log_root("committed", 5, dead, sync=True)
-    st.log_root("accepted", 5, dead, sync=True)
-    st.log_root("committed", 5 + REFOUND_TERM_STEP, fresh, sync=True)
-    st.log_root("accepted", 5 + REFOUND_TERM_STEP, fresh, sync=True)
+    st.log_root("committed", 5, dead)
+    st.log_root("accepted", 5, dead)
+    st.log_root("committed", 5 + REFOUND_TERM_STEP, fresh)
+    st.log_root("accepted", 5 + REFOUND_TERM_STEP, fresh)
     st.close()
     st = _tiered(tmp_path, store)
     logged = st.load_roots()
@@ -170,11 +170,11 @@ def test_promises_are_logged_and_two_roots_with_one_label_and_epoch_are_refused(
     st.log_promise(3)                                   # lower: already covered
     a = _root(st.push_atom({"n": 1}), 4)
     b = _root(st.push_atom({"n": 2}), 4)
-    st.log_root("accepted", 7, a, sync=True)
+    st.log_root("accepted", 7, a)
     st.close()
     st = _tiered(tmp_path, store)
     assert st.load_roots().promised == 7
-    st.log_root("accepted", 7, b, sync=True)            # a protocol violation, reported on load
+    st.log_root("accepted", 7, b)            # a protocol violation, reported on load
     with pytest.raises(ProtoCorruptionError, match="Protocol violation"):
         st.load_roots()
     st.close()

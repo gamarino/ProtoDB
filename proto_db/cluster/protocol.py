@@ -13,10 +13,15 @@ fields of its type:
 ``reject``     ``term``, ``rid``, ``root``, ``certain``, ``reason``, ``highest``, ``remaining``:
                the sender refuses; ``highest`` is the highest term it has seen and
                ``remaining`` the seconds left of the promise that blocks the grant.
-``release``    ``term``, ``inc``, ``root``, ``committed``, ``certain``, ``held``: the sender gives
-               up ``term``; ``held`` is True when it actually held the lease (a winner's
-               release, which wakes waiting requesters) and False for the cancel of a lost
-               attempt.
+``release``    ``term``, ``inc``, ``root``, ``committed``, ``certain``, ``held``, ``next``,
+               ``more``: the sender gives up ``term``; ``held`` is True when it actually held
+               the lease (a winner's release, which wakes waiting requesters) and False for
+               the cancel of a lost attempt.  ``next`` is the member whose turn the sender
+               names (the one it has seen waiting longest, or ``None``) and ``more`` tells
+               whether the sender still wants the lease: lease fairness hints (Task 8.3e),
+               used only to time requests, never by a grant or an acceptance.
+``want``       (no field): the sender wants the lease but defers to another member's turn; the
+               receivers queue it (a fairness hint like ``next``/``more``, Task 8.3e).
 ``records``    ``term``, ``rid``, ``index``, ``records``: one chunk of the records of the
                replication ``rid`` that do not fit in its ``replicate`` frame (sent before it,
                on the same ordered link; ``index`` counts from 0).
@@ -79,7 +84,9 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
 #: Version carried by every message; a receiver drops messages of any other version.
 #: 6: the framed record bytes carried by ``replicate``, ``records`` and ``fetched`` use the
 #: version 2 record format (self-validating headers, D46 fix round 13).
-PROTOCOL_VERSION = 6
+#: 7: ``release`` carries the fairness hints ``next`` and ``more``, and the ``want`` message
+#: (Task 8.3e, D46).
+PROTOCOL_VERSION = 7
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
 #: Record bytes a replication puts in one frame at most (a single record may fill one alone).
@@ -96,6 +103,7 @@ _ROOT = "root"
 _RECORDS = "records"
 _UUID = "uuid"
 _OPT_BYTES = "optional bytes"
+_OPT_STR = "optional str"
 _RANGES = "ranges"
 
 #: Fields of each message type (besides ``v``, ``type`` and ``from``).
@@ -105,11 +113,12 @@ MESSAGE_TYPES = {
     "reject": {"term": _INT, "rid": _INT, "root": _ROOT, "certain": _BOOL, "reason": _STR,
                "highest": _INT, "remaining": _NUM},
     "release": {"term": _INT, "inc": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL,
-                "held": _BOOL},
+                "held": _BOOL, "next": _OPT_STR, "more": _BOOL},
     "records": {"term": _INT, "rid": _INT, "index": _INT, "records": _RECORDS},
     "replicate": {"term": _INT, "rid": _INT, "root": _ROOT, "committed": _ROOT, "records": _RECORDS,
                   "chunks": _INT, "base": _ROOT, "base_ranges": _RANGES},
     "ack": {"term": _INT, "rid": _INT, "ok": _BOOL, "root": _ROOT},
+    "want": {},
     "query": {"rid": _INT},
     "answer": {"rid": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL, "promised": _INT,
                "state": _STR},
@@ -137,6 +146,8 @@ def _check_field(kind: str, name: str, value, expected: str) -> None:
         ok = isinstance(value, bytes) and len(value) == 16
     elif expected == _OPT_BYTES:
         ok = value is None or isinstance(value, bytes)
+    elif expected == _OPT_STR:
+        ok = value is None or isinstance(value, str)
     elif expected == _RANGES:
         ok = value is None or (isinstance(value, list) and all(
             isinstance(r, (list, tuple)) and len(r) == 3 and isinstance(r[0], bytes) and len(r[0]) == 16

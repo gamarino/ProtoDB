@@ -21,14 +21,27 @@ The acceptor log
     of Paxos): the highest lease term it granted (*promise*), the highest root it accepted
     and the newest root it knows committed.  :class:`RootsLog` keeps them in a framed log
     file (:mod:`proto_db.storage.logfile`: a versioned header, then fixed-size entries each
-    framed with a CRC32), appended and ``fsync``-ed per the durability mode; a
-    promise is always made durable before the grant is sent, an accepted root before the
-    acknowledgement.  A *rejoined* marker (written last by the coordinator's rejoin, or at
+    framed with a CRC32), appended and ``fsync``-ed **whatever the data durability mode** of
+    the storage it belongs to (Task 8.3e, defect D-SAFE-2): a promise is made durable before
+    the grant is sent, an accepted root before the acknowledgement, and the rejoined marker
+    before the node acts as an acceptor.  The storage's ``"flush"``/``"none"`` modes govern its
+    data segments only, as Raft persists ``currentTerm``, ``votedFor`` and its log whatever
+    else it caches.  A *committed* entry records knowledge, not a promise: like Raft's
+    ``commitIndex`` (volatile state in Raft) nothing in the safety argument depends on it --
+    committed knowledge learnt from grants, answers or the store is never logged at all -- so
+    it is appended without its own ``fsync`` and becomes durable with the next synced entry;
+    reads stay monotonic across a restart through the confirmation under a lease
+    (:attr:`~proto_db.cluster.coordinator.ClusterCoordinator.needs_confirmation`).  Opening the log makes
+    its file, its directory and that directory's parent entry durable too, so a log that
+    holds a promise never vanishes from its directory in a power loss.  A *rejoined* marker (written last by the coordinator's rejoin, or at
     a cluster's first start) tells a log that holds what the node knows from a log that is
     new, wiped, or whose rejoin was interrupted: only a marked log makes the node an
     acceptor and a witness (:attr:`LoggedRoots.empty` is True without it).  :class:`MemoryRootsLog` keeps them in memory, for storages that have
-    no directory (``MemoryStorage``): such a cluster is not durable; the log survives a
-    coordinator restart in the same process only.  Both refuse writes through a closed
+    no directory (``MemoryStorage``): such a cluster is not durable and has no power-loss
+    story at all; the log survives a coordinator restart in the same process only.  The
+    storage, and so every node of such a cluster, lives in one process: the process's death
+    ends the space, its data and every log together (Task 8.3e decision; coordinator module
+    docstring, "The commit point").  Both refuse writes through a closed
     handle (``ProtoValidationError``), checked under the lock of the append, so a space that
     has closed its log never has a root logged, nor acknowledged, through it.
 
@@ -206,14 +219,16 @@ class RootsLog:
             ``os.path.realpath``.  ``<resolved path>.lock`` is held exclusively until
             :meth:`close`; a second open of the file while this handle is open, by any path
             (a symbolic or hard link included), raises ``ProtoLockingError`` (module docstring).
-        durability: ``"fsync"`` (synced appends are ``fsync``-ed), ``"flush"`` or ``"none"``.
+
+    Every promise, accepted root and rejoined marker is ``fsync``-ed before the call returns
+    (committed entries ride on the next sync): there is no durability knob, because the acceptor state is
+    what the cluster's safety argument rests on (module docstring; Task 8.3e, D-SAFE-2).
     """
 
-    def __init__(self, path: str, *, durability: str = "fsync"):
+    def __init__(self, path: str):
         # Resolved (8.3d re-review 12, M3): a symbolic link to the log names the same lock file,
         # and a compaction replaces the file itself, never the link.
         self._path = os.path.realpath(os.fspath(path))
-        self._durability = durability
         self._lock = threading.Lock()
         self._closed = False
         self._failed = None           # the I/O error that poisoned this handle, if any
@@ -227,7 +242,13 @@ class RootsLog:
         fd = -1
         try:
             try:
-                fd, payloads = open_log(self._path, LOG_KIND, durability=durability)
+                fd, payloads = open_log(self._path, LOG_KIND, durability="fsync")
+                # Whatever made the file (an older version writing without syncs included), its
+                # contents, its name and its directory's name are durable from now on.
+                directory = os.path.dirname(self._path)
+                os.fsync(fd)
+                fsync_dir(directory)
+                fsync_dir(os.path.dirname(directory))
             except OSError as e:
                 raise ProtoUnexpectedError(f"Cannot open the root log {self._path}: {e}") from e
             self._owner.track(fd)         # the file exists now: register its inode (M3)
@@ -271,17 +292,19 @@ class RootsLog:
                 f"The root log {self._path} refuses writes after an earlier I/O failure ({self._failed!r}); "
                 f"reopen it (close and reopen the space) to write again")
 
-    def append(self, kind: str, label: int, record: Optional[RootRecord], *, sync: bool) -> None:
-        """Append an ``"accepted"`` or ``"committed"`` root (``fsync`` with ``sync``, per the
-        durability mode).  Raises ``ProtoValidationError`` when the log is closed: an
-        acknowledgement must never be sent for a root that was not logged."""
-        entry = _encode(_check_kind(kind), label, record)
+    def append(self, kind: str, label: int, record: Optional[RootRecord]) -> None:
+        """Append an ``"accepted"`` root, ``fsync``-ed before this returns, or a ``"committed"``
+        root, durable with the next synced entry (module docstring; Task 8.3e).  Raises
+        ``ProtoValidationError`` when the log is closed: an acknowledgement must never be sent
+        for a root that was not logged."""
+        code = _check_kind(kind)
+        entry = _encode(code, label, record)
         with self._lock:
             self._check_writable()
-            self._write(entry, sync)
+            self._write(entry, sync=code != KINDS["committed"])
 
     def promise(self, term: int) -> None:
-        """Make the promise of ``term`` durable (per the durability mode) before it is sent.
+        """Make the promise of ``term`` durable (``fsync``) before it is sent.
 
         Raises ``ProtoValidationError`` when the log is closed and ``ProtoUnexpectedError`` when
         it is poisoned: a promise that cannot be recorded must not be made.
@@ -290,22 +313,23 @@ class RootsLog:
             self._check_writable()
             if term <= self._promised:
                 return              # a higher or equal promise is already durable
-            self._write(_encode(3, term, None), True)
+            self._write(_encode(3, term, None), sync=True)
             self._promised = term
 
     def mark_rejoined(self) -> None:
-        """Append the rejoined marker, durable per the durability mode (written last, after
-        the promise and the roots the rejoin learnt)."""
+        """Append the rejoined marker, ``fsync``-ed (written last, after the promise and the
+        roots the rejoin learnt)."""
         with self._lock:
             self._check_writable()
-            self._write(_encode(4, 0, None), True)
+            self._write(_encode(4, 0, None), sync=True)
 
-    def _write(self, entry: bytes, sync: bool) -> None:
-        """Append ``entry`` (lock held, handle writable).  Any failure poisons the handle: the
-        file may end in a torn entry, or hold what an ``fsync`` could not confirm."""
+    def _write(self, entry: bytes, *, sync: bool) -> None:
+        """Append ``entry``, ``fsync``-ed with ``sync`` whatever the storage's data durability
+        mode (lock held, handle writable).  Any failure poisons the handle: the file may end in
+        a torn entry, or hold what an ``fsync`` could not confirm."""
         try:
             write_all(self._fd, entry)
-            if sync and self._durability == "fsync":
+            if sync:
                 os.fsync(self._fd)
             if os.fstat(self._fd).st_size > _COMPACT_BYTES:
                 self._compact()
@@ -406,7 +430,7 @@ class MemoryRootsLog:
                 raise ProtoValidationError("This in-memory root log handle is closed")
             self._contents.best.add(code, label, record)
 
-    def append(self, kind: str, label: int, record: Optional[RootRecord], *, sync: bool) -> None:
+    def append(self, kind: str, label: int, record: Optional[RootRecord]) -> None:
         """Record an ``"accepted"`` or ``"committed"`` root.  Raises ``ProtoValidationError``
         when this handle is closed."""
         self._add(_check_kind(kind), label, record)
