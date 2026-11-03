@@ -26,7 +26,7 @@ pytestmark = [pytest.mark.timeout(240)]
 
 _SECONDS = 2.0
 _MIN_RATIO = 0.3
-KW = dict(lease_duration=2.0, drift_margin=0.2, request_timeout=0.25)
+KW = dict(lease_duration=2.0, request_timeout=0.25)
 
 
 def _hot_key_run(tmp_path, n: int, threads: int, *, blind: bool = False) -> dict:

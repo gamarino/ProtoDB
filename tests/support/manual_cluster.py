@@ -33,7 +33,7 @@ from proto_db.storage.memory import MemoryStorage
 from tests.support.cluster import MemoryTier
 
 D = 10.0
-MARGIN = 1.0                # the drift margin of every harness node
+MARGIN = D * 2 / 3          # the drift margin of every harness node (the minimum, ruling R78b)
 GRACE = D + MARGIN          # the shortest startup grace a restarted node may use (ruling R51)
 _ids = itertools.count(1)
 

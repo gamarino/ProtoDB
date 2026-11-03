@@ -41,7 +41,7 @@ PEERS = 4
 THREADS = 4
 PER_THREAD = 12
 RUN_KW = dict(retries=10_000, backoff=(0.0005, 0.01))
-CLUSTER_KW = dict(lease_duration=2.0, drift_margin=0.2, request_timeout=0.2, startup_grace=0.0,
+CLUSTER_KW = dict(lease_duration=2.0, request_timeout=0.2, startup_grace=0.0,
                   backoff=(0.001, 0.02))
 
 pytestmark = [pytest.mark.freethreaded, pytest.mark.timeout(240)]

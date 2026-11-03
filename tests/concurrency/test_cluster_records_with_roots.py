@@ -30,7 +30,7 @@ from tests.support.tiered_cluster import RUN_KW, TieredCluster, incr
 pytestmark = [pytest.mark.timeout(240),
               pytest.mark.skipif(not os.path.isdir("/proc/self/fd"), reason="needs /proc/self/fd")]
 
-LEASE = dict(lease_duration=0.4, drift_margin=0.04, request_timeout=0.1)
+LEASE = dict(lease_duration=0.6, request_timeout=0.1)
 COMMITS = 10
 
 

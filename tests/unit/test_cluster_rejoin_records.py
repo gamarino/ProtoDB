@@ -233,13 +233,14 @@ def test_a_restart_on_a_log_needs_a_grace_of_one_lease_plus_the_drift_margin():
     """M1 (re-review 4): a restarted node does not remember when the grants of its previous
     life end, so any startup grace shorter than ``lease_duration + drift_margin`` is refused on
     a log that is not empty -- not only 0."""
-    with Cluster(3, tiers=True, lease_duration=1.0, drift_margin=0.1, request_timeout=0.2,
+    with Cluster(3, tiers=True, lease_duration=1.0, request_timeout=0.2,
                  startup_grace=0.0) as cl:           # a cluster's first start: 0 is fine
-        assert cl["n0"].restart_grace == pytest.approx(1.1)
-        for unsafe in (0.0, 0.2, 1.0, 1.09):
+        safe = 1.0 + 2.0 / 3.0                          # the default margin is 2/3 D (ruling R78b)
+        assert cl["n0"].restart_grace == pytest.approx(safe)
+        for unsafe in (0.0, 0.2, 1.0, safe - 0.01):
             with pytest.raises(ProtoValidationError, match="startup_grace"):
                 cl.restart("n1", startup_grace=unsafe)
-        cl.restart("n1", startup_grace=1.1)
+        cl.restart("n1", startup_grace=safe)
         node = cl.restart("n2", startup_grace=None)   # the default grace is the safe one
         assert node.stats()["rejoining"] is False
 
@@ -328,7 +329,7 @@ def test_a_late_first_start_member_cut_off_by_a_partition_rejoins_once_it_heals(
     begins after another member requested a term is not a first start; with a partition cutting
     it from every witness it stays rejoining well past the safe grace, and it rejoins -- and
     then votes and proposes -- once the partition heals.  Real clocks, real background rejoin."""
-    with Cluster(3, tiers=True, lease_duration=0.5, drift_margin=0.05, request_timeout=0.1,
+    with Cluster(3, tiers=True, lease_duration=0.5, request_timeout=0.1,
                  startup_grace=0.0) as cl:
         first = cl["n0"].acquire(timeout=5.0)        # a term is now known: no longer a first start
         cl["n0"].release(first)

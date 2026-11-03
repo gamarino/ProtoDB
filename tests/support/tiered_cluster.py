@@ -30,7 +30,7 @@ from proto_db.transactions import ObjectSpace
 from tests.support.cluster import Cluster
 from tests.support.fake_object_store import FakeObjectStore
 
-FAST = dict(lease_duration=0.4, drift_margin=0.04, request_timeout=0.1, startup_grace=0.0,
+FAST = dict(lease_duration=0.6, request_timeout=0.1, startup_grace=0.0,
             backoff=(0.001, 0.02), persist_interval=0.02, persist_lag=0.3)
 RUN_KW = dict(retries=200, backoff=(0.001, 0.01))
 

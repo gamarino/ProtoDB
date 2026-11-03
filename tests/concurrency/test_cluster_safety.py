@@ -40,9 +40,9 @@ from tests.support.cluster import Cluster, DriftClock
 
 pytestmark = [pytest.mark.freethreaded, pytest.mark.timeout(240)]
 
-LEASE = 0.3
-MARGIN = 0.03
-RHO = 0.04                  # 2 * RHO * LEASE / (1 + RHO) = 0.023 <= MARGIN
+LEASE = 0.6
+MARGIN = 0.4                # the minimum, ruling R78b: 2 * RHO * LEASE / (1 + RHO) = MARGIN
+RHO = 0.5
 RUN_SECONDS = 1.2
 THREADS_PER_NODE = 2
 FINAL_RETRIES = []          # (schedule seed, attempt, error type, message) of every final-commit retry
@@ -366,13 +366,16 @@ def _belief_end(lease, clock):
     return clock.to_real(min(lease.valid_until, lease.released_at or lease.valid_until))
 
 
-def test_the_drift_margin_covers_the_worst_clock_rates():
-    """The holder runs slow (1 - rho), the next requester's granters fast (1 + rho): without
-    ``drift_margin`` the holder still believes in its lease after they granted the next one."""
-    rho, lease = 0.1, 0.4
-    margin = 0.08                        # >= 2 * rho * D / (1 + rho) = 0.0727
-    clocks = {"n0": DriftClock(1 - rho), "n1": DriftClock(1 + rho, 50.0), "n2": DriftClock(1 + rho, 90.0)}
-    with Cluster(3, tiers=True, clocks=clocks, lease_duration=lease, drift_margin=margin, request_timeout=0.05,
+@pytest.mark.parametrize("ratio", [1.5, 2.0, 2.9])
+def test_the_default_drift_margin_covers_timers_running_at_different_rates(ratio):
+    """Ruling R78b: the holder's timer runs ``ratio`` times slower than the next requester's
+    granters' (1.5x, 2x, and just below the 3x the default margin covers).  The holder believes
+    its lease for a third of the granters' promise, so it stops believing before they grant
+    the next one."""
+    lease = 0.6
+    slow, fast = 1.0 / ratio ** 0.5, ratio ** 0.5
+    clocks = {"n0": DriftClock(slow), "n1": DriftClock(fast, 50.0), "n2": DriftClock(fast, 90.0)}
+    with Cluster(3, tiers=True, clocks=clocks, lease_duration=lease, request_timeout=0.05,
                  startup_grace=0.0, backoff=(0.001, 0.005)) as cl:
         held = cl["n0"].acquire(timeout=5)          # kept to expiry, never released
         nxt = cl["n1"].acquire(timeout=5)
@@ -386,7 +389,7 @@ def test_the_drift_margin_covers_the_worst_clock_rates():
 def test_the_lease_window_is_measured_from_the_send_not_the_win():
     """Grants to n0 are delayed 0.3 s: counted from its win, n0's window would outlast the
     promises its granters made when they received the request."""
-    with Cluster(3, tiers=True, lease_duration=1.0, drift_margin=0.1, request_timeout=0.45, startup_grace=0.0,
+    with Cluster(3, tiers=True, lease_duration=2.0, request_timeout=0.45, startup_grace=0.0,
                  backoff=(0.001, 0.005)) as cl:
         cl.net.set_link_delay("n1", "n0", 0.3)
         cl.net.set_link_delay("n2", "n0", 0.3)

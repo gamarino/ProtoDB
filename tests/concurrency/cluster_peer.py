@@ -68,7 +68,7 @@ def main():
     _say({"port": transport.address[1]})
     peers = [tuple(p) for p in _hear()["peers"]]
     coordinator = ClusterCoordinator(node_id, peers, transport=transport, lease_duration=2.0,
-                                     drift_margin=0.2, request_timeout=0.25, startup_grace=0.0,
+                                     request_timeout=0.25, startup_grace=0.0,
                                      backoff=(0.001, 0.02))
     with coordinator:
         _say({"ready": True})

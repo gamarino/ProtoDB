@@ -15,7 +15,7 @@ from tests.support.cluster import Cluster
 
 pytestmark = pytest.mark.timeout(60)
 
-FAST = dict(lease_duration=0.4, drift_margin=0.04, request_timeout=0.1, startup_grace=0.0,
+FAST = dict(lease_duration=0.6, request_timeout=0.1, startup_grace=0.0,
             backoff=(0.001, 0.02))
 
 
@@ -53,9 +53,10 @@ def test_constructor_validates_membership_and_timing():
         ClusterCoordinator("a", peers + [("a", "h", 4)], transport=net.endpoint())
     with pytest.raises(ProtoValidationError):
         ClusterCoordinator("a", peers, transport=net.endpoint(), lease_duration=1.0, drift_margin=1.0)
-    with pytest.raises(ProtoValidationError):
-        ClusterCoordinator("a", peers, transport=net.endpoint(), lease_duration=1.0, drift_margin=0.1,
-                           request_timeout=0.95)
+    with pytest.raises(ProtoValidationError, match="request_timeout"):
+        ClusterCoordinator("a", peers, transport=net.endpoint(), lease_duration=1.0, request_timeout=0.35)
+    with pytest.raises(ProtoValidationError, match="at least"):       # ruling R78b
+        ClusterCoordinator("a", peers, transport=net.endpoint(), lease_duration=1.0, drift_margin=0.6)
     c = ClusterCoordinator("a", peers, transport=net.endpoint())
     assert c.cluster_size == 3 and c.majority == 2
     net.close()
@@ -136,7 +137,7 @@ def test_a_restarted_peer_honours_promises_through_its_startup_grace(baseline_th
 
 
 def test_a_waiting_requester_is_woken_by_the_release(baseline_threads):
-    with Cluster(3, tiers=True, lease_duration=2.0, drift_margin=0.2, request_timeout=0.1, startup_grace=0.0,
+    with Cluster(3, tiers=True, lease_duration=2.0, request_timeout=0.1, startup_grace=0.0,
                  backoff=(0.5, 0.5)) as cl:
         held = cl["n0"].acquire(timeout=5)
         got = {}
@@ -254,10 +255,10 @@ def test_fetch_timeout_must_leave_part_of_the_lease():
     net = InProcessNetwork()
     peers = [("a", "h", 1)]
     with pytest.raises(ProtoValidationError, match="fetch_timeout"):
-        ClusterCoordinator("a", peers, transport=net.endpoint(), lease_duration=2.0, drift_margin=0.2,
-                           fetch_timeout=1.8)
-    c = ClusterCoordinator("a", peers, transport=net.endpoint(), lease_duration=2.0, drift_margin=0.2)
-    assert c._fetch_timeout == pytest.approx(0.45)
+        ClusterCoordinator("a", peers, transport=net.endpoint(), lease_duration=2.0,
+                           fetch_timeout=0.7)
+    c = ClusterCoordinator("a", peers, transport=net.endpoint(), lease_duration=2.0)
+    assert c._fetch_timeout == pytest.approx(2.0 / 3 / 4)
     net.close()
 
 
@@ -266,8 +267,9 @@ def test_the_default_startup_grace_lasts_one_lease_plus_the_drift_margin(baselin
     del kw["startup_grace"]                        # default: lease_duration + drift_margin
     t0 = time.monotonic()
     with Cluster(3, tiers=True, **kw) as cl:
-        assert cl["n0"].restart_grace == pytest.approx(FAST["lease_duration"] + FAST["drift_margin"])
+        grace = FAST["lease_duration"] * 5 / 3              # D + the default margin 2D/3 (ruling R78b)
+        assert cl["n0"].restart_grace == pytest.approx(grace)
         lease = cl["n0"].acquire(timeout=5)
         waited = time.monotonic() - t0
         cl["n0"].release(lease)
-    assert waited >= FAST["lease_duration"] + FAST["drift_margin"]
+    assert waited >= grace

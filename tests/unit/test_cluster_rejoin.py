@@ -24,7 +24,7 @@ from proto_db.errors import ProtoCorruptionError, ProtoOutcomeUnknownError
 from proto_db.storage.format import FORMAT_VERSION, RootRecord
 from proto_db.storage.memory import MemoryStorage
 from tests.support.cluster import Cluster, MemoryTier
-from tests.support.manual_cluster import D, GRACE, Harness, rec
+from tests.support.manual_cluster import D, GRACE, MARGIN, Harness, rec
 
 pytestmark = [pytest.mark.timeout(60)]
 
@@ -110,7 +110,7 @@ def _unattached(h, name):
     old = h.nodes[name]
     old.stop()
     h.retired.append(old)
-    node = ClusterCoordinator(name, h.peers, transport=h.net.transport(), lease_duration=D, drift_margin=1.0,
+    node = ClusterCoordinator(name, h.peers, transport=h.net.transport(), lease_duration=D, drift_margin=MARGIN,
                               request_timeout=0.5, startup_grace=GRACE, clock=h.clock, seed=1,
                               persist_interval=60.0, persist_lag=60.0)
     node.start()
@@ -153,13 +153,13 @@ def test_x2_a_node_whose_log_is_still_loading_neither_answers_nor_grants():
             gate.wait(10.0)
             return super().load_roots()
 
-    with Cluster(3, lease_duration=2.0, drift_margin=0.2, request_timeout=0.2, startup_grace=0.0,
+    with Cluster(3, lease_duration=2.0, request_timeout=0.2, startup_grace=0.0,
                  tiers=True) as cl:
         old = cl["n2"]
         old.stop()
         cl.retired.append(old)
         node = ClusterCoordinator("n2", cl.peers, transport=cl.net.endpoint(), lease_duration=2.0,
-                                  drift_margin=0.2, request_timeout=0.2, startup_grace=2.2)
+                                  request_timeout=0.2)        # the default grace, restart_grace
         node.start()
         cl.nodes["n2"] = node
         attaching = threading.Thread(target=node.attach, args=(SlowTier(cl.disks["n2"], "n2"),))
@@ -224,7 +224,7 @@ def test_x4_a_protocol_violation_after_the_root_was_sent_is_not_an_unknown_outco
 
 
 def test_x5_every_rejoin_thread_is_joined_by_stop():
-    with Cluster(3, lease_duration=2.0, drift_margin=0.2, request_timeout=0.5, startup_grace=0.0) as cl:
+    with Cluster(3, lease_duration=2.0, request_timeout=0.5, startup_grace=0.0) as cl:
         cl.net.partition({"n0"}, {"n1", "n2"})        # n0 cannot rejoin
         node = cl["n0"]
         from proto_db.errors import ProtoValidationError

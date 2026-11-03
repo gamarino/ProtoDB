@@ -40,7 +40,7 @@ _TRIALS = 3
 #: margin of about 2x over the worst loaded fair trial.
 _MAX_GAP = 1.0          # fair: about (N - 1) x (hold + hand-off), under 0.1 s for N <= 5 at rest
 _MIN_RATIO = 0.5        # fair: about 1.0; starved before the fix: 0.03 to 0.32 (median trials)
-KW = dict(lease_duration=2.0, drift_margin=0.2, request_timeout=0.25, startup_grace=0.0,
+KW = dict(lease_duration=2.0, request_timeout=0.25, startup_grace=0.0,
           backoff=(0.001, 0.02))
 
 

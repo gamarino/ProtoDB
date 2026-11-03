@@ -13,7 +13,7 @@ from tests.support.fake_object_store import FakeObjectStore
 
 pytestmark = pytest.mark.timeout(60)
 
-FAST = dict(lease_duration=0.4, drift_margin=0.04, request_timeout=0.1, startup_grace=0.0,
+FAST = dict(lease_duration=0.6, request_timeout=0.1, startup_grace=0.0,
             backoff=(0.001, 0.02))
 RUN_KW = dict(retries=200, backoff=(0.001, 0.01))
 

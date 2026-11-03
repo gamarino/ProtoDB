@@ -41,7 +41,7 @@ from benchmarks.support import DirObjectStore  # noqa: E402
 from proto_db import ClusterCoordinator, ObjectSpace, TcpTransport, TieredStorage  # noqa: E402
 from proto_db.errors import ProtoValidationError  # noqa: E402
 
-COORDINATOR_KW = dict(lease_duration=2.0, drift_margin=0.2, request_timeout=0.25, startup_grace=0.0,
+COORDINATOR_KW = dict(lease_duration=2.0, request_timeout=0.25, startup_grace=0.0,
                       backoff=(0.001, 0.02))
 RUN_KW = dict(retries=100_000, backoff=(0.0005, 0.01))
 

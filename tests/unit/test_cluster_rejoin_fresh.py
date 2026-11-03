@@ -271,7 +271,7 @@ def test_c1_plain_answers_delivered_late_never_complete_a_rejoin(harness):
     h.disks["c"] = MemoryStorage()
     # A long request timeout keeps the first round open while its answers are held.
     c = ClusterCoordinator("c", h.peers, transport=h.net.transport(), lease_duration=D, drift_margin=MARGIN,
-                           request_timeout=5.0, startup_grace=GRACE, clock=h.clock, seed=1,
+                           request_timeout=3.0, startup_grace=GRACE, clock=h.clock, seed=1,
                            persist_interval=60.0, persist_lag=60.0)
     c.start()
     c.attach(MemoryTier(h.disks["c"], "c"))
@@ -319,7 +319,7 @@ def test_a_recovery_round_does_not_clear_a_suspicion_that_arose_after_it_was_sen
     h.retired.append(old)
     # b restarts on its intact disk with a long request timeout, so the round stays open.
     b = ClusterCoordinator("b", h.peers, transport=h.net.transport(), lease_duration=D, drift_margin=MARGIN,
-                           request_timeout=5.0, startup_grace=GRACE, clock=h.clock, seed=1,
+                           request_timeout=3.0, startup_grace=GRACE, clock=h.clock, seed=1,
                            persist_interval=60.0, persist_lag=60.0)
     b.start()
     b.attach(MemoryTier(h.disks["b"], "b"))

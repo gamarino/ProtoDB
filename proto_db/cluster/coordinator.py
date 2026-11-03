@@ -277,6 +277,9 @@ _STORED_MEMORY = 256
 _CRITICAL_KEYS = ("validation", "replay", "path_copy", "replication")
 
 
+#: Smallest drift margin, as a fraction of ``lease_duration`` (ruling R78b): the holder believes
+#: its lease for at most a third of the granters' promise.
+MIN_MARGIN_FRACTION = 2.0 / 3.0
 #: Low bits of a term (a ballot) holding the proposer's rank; a cluster has at most
 #: ``1 << RANK_BITS`` members.
 RANK_BITS = 12
@@ -396,9 +399,13 @@ class ClusterCoordinator:
             :class:`~proto_db.cluster.transport.TcpTransport` listening on this node's
             peer address.
         lease_duration: seconds a grant blocks other holders on the granter's clock.
-        drift_margin: seconds subtracted from the holder's view of its lease (default 10 %
-            of ``lease_duration``); at least ``2 * rho * D / (1 + rho)`` for clock rates
-            within ``1 +/- rho``.
+        drift_margin: seconds subtracted from the holder's view of its lease: at least, and by
+            default, two thirds of ``lease_duration`` (ruling R78b), so the holder believes
+            its lease for at most ``lease_duration / 3`` on its own timer, while each granter
+            keeps its promise for ``lease_duration`` on its timer.  Exclusion then holds for
+            timer rates up to 3x apart (``m >= 2 * rho * D / (1 + rho)`` with ``rho = 0.5``),
+            far beyond real oscillators; it is a liveness and efficiency aid, never a premise
+            of commit safety (D46, D50).
         request_timeout: seconds an attempt (and a recovery query) waits for a majority.
         acquire_timeout: default seconds :meth:`acquire` tries before ``ProtoTimeoutError``.
         backoff: ``(min_seconds, max_seconds)`` of the jittered back-off between lost attempts.
@@ -444,11 +451,17 @@ class ClusterCoordinator:
         if len(ids) > MAX_MEMBERS:
             raise ProtoValidationError(f"A cluster has at most {MAX_MEMBERS} members")
         self._duration = _number("lease_duration", lease_duration)
-        margin = self._duration * 0.1 if drift_margin is None else _number("drift_margin", drift_margin,
-                                                                             positive=False)
+        margin = self._duration * MIN_MARGIN_FRACTION if drift_margin is None else _number(
+            "drift_margin", drift_margin, positive=False)
         if margin >= self._duration:
             raise ProtoValidationError("drift_margin must be smaller than lease_duration")
+        if margin < self._duration * MIN_MARGIN_FRACTION * (1 - 1e-9):
+            raise ProtoValidationError(
+                f"drift_margin must be at least {MIN_MARGIN_FRACTION:.3g} x lease_duration "
+                f"({self._duration * MIN_MARGIN_FRACTION:g} s): a holder believes its lease for at most a third "
+                f"of the granters' promise, so timers may run at rates up to 3x apart (ruling R78b)")
         self._margin = margin
+        self._belief = self._duration - margin
         self._request_timeout = _number("request_timeout", request_timeout)
         if self._request_timeout >= self._duration - self._margin:
             raise ProtoValidationError("request_timeout must be shorter than lease_duration - drift_margin")
@@ -2477,7 +2490,7 @@ class ClusterCoordinator:
         messages to send."""
         if own.outstanding is not None or not own.queue or not own.serving(self._clock()):
             return []
-        if own.lease.remaining() < self._duration / 4:
+        if own.lease.remaining() < self._belief / 4:
             # Too little lease left for a replication to finish under it: the ownership
             # thread renews first and dispatches once renewed (or ends the term).
             self._cond.notify_all()
@@ -2717,9 +2730,11 @@ class ClusterCoordinator:
                     sends += self._refuse_queue(own, "ending")
                 else:
                     demand = own.outstanding is not None or own.queue or mono - own.last_demand <= self._duration / 2
-                    renew = demand and own.lease.remaining() < self._duration / 2
+                    # Renewed when half of the holder's belief is left (ruling R78b: with the
+                    # default margin, every lease_duration / 6 -- a message, no fsync).
+                    renew = demand and own.lease.remaining() < self._belief / 2
                     if not renew:
-                        waits = [max(0.001, own.lease.remaining() - self._duration / 2) if demand else idle]
+                        waits = [max(0.001, own.lease.remaining() - self._belief / 2) if demand else idle]
                         if own.outstanding is not None:
                             waits.append(max(0.001, own.outstanding[2] - now))
                         elif not own.queue:

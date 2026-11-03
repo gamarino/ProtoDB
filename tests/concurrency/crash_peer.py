@@ -34,7 +34,7 @@ from tests.support.dir_object_store import DirObjectStore  # noqa: E402
 
 # No startup_grace: the default, lease_duration + drift_margin, is the shortest a restart may
 # use (ruling R51); the peers restart on their logs.
-LEASE = dict(lease_duration=1.0, drift_margin=0.1, request_timeout=0.25,
+LEASE = dict(lease_duration=1.0, request_timeout=0.25,
              backoff=(0.001, 0.02), persist_interval=0.05, persist_lag=0.5)
 
 
