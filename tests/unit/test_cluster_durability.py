@@ -53,7 +53,11 @@ def test_a_shared_file_storage_commit_survives_a_whole_cluster_crash_before_any_
         assert reader.read_root() is None                  # nothing persisted: the storage root is empty
         reader.close()
         for n in cl.ids:
+            tier = cl[n].tier
             cl[n].stop()                                   # the whole cluster dies: no close, no persister pass
+            # A dead process's descriptors and locks die with it; here the acceptor log's
+            # descriptor (and its lock, ruling R59) is closed by hand, writing nothing.
+            tier.close()
     for storage in storages:
         storage.close()                                    # file descriptors only; publishes no root
     # Restarted on their logs: the default startup grace (a shorter one is for a cluster's first

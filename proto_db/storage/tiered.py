@@ -15,6 +15,8 @@ Layout of the local directory::
                         (:class:`~proto_db.cluster.rootlog.RootsLog`)
     ranges.log          per accepted commit root, the byte ranges of the records shipped
                         with it (so a restarted node can still upload a lost writer's data)
+    tier.lock           held exclusively by the open instance (no data; never delete it)
+    roots.log.lock      held exclusively by the open ``roots.log`` handle (no data)
 
 The three logs are framed log files (:mod:`proto_db.storage.logfile`: a versioned header, then
 entries each framed with a CRC32).  Opening the storage truncates a torn tail of each log to its
@@ -23,6 +25,12 @@ raises ``ProtoCorruptionError`` (8.3d re-review 10, R2; ruling R58).  Own segmen
 same way, record by record, and a torn tail is truncated (:meth:`TieredStorage._repair_own_segment`);
 copies of other nodes' segments are not logs (records are written at their original offsets,
 holes are expected, and a torn record is overwritten when the record is received again).
+
+Because opening repairs files, one directory has one live instance (8.3d re-review 11, I1;
+ruling R59): the constructor takes an exclusive :class:`~proto_db.storage.ownerlock.OwnerLock`
+on ``tier.lock`` before it opens, reads or repairs anything, and :meth:`TieredStorage.close`
+releases it last (a failed constructor releases it too).  A second open of the directory while
+an instance is live, in this process or another one, raises ``ProtoLockingError``.
 
 Layout in the object store under ``prefix``::
 
@@ -144,6 +152,7 @@ import errno
 import logging
 import os
 import random
+import re
 import struct
 import threading
 import time
@@ -167,6 +176,7 @@ from .file import DURABILITY_MODES, FileStorage
 from .format import (FORMAT_VERSION, RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind, RootRecord,
                      decode_root, decode_segment_header, encode_record, encode_segment_header, read_record)
 from .logfile import encode_frame, log_contents, open_log, prepare_replacement, read_fd, write_all
+from .ownerlock import OwnerLock
 
 __all__ = ["TieredStorage"]
 
@@ -185,6 +195,8 @@ ROOTS_LOG = "roots.log"
 _ROOT_CRC = struct.Struct("<I")
 _ROOTS_LOG_COMPACT = 1 * MIB
 RANGES_LOG = "ranges.log"
+#: Lock file held by the live instance of a local directory (ruling R59).
+TIER_LOCK = "tier.lock"
 _RANGES_HEAD = struct.Struct("<16sQQQI")         # root segment, root offset, label, epoch, count
 _RANGE = struct.Struct("<16sQQ")                 # segment, start, end
 _RECORD_HEAD = struct.Struct("<IBI")             # a segment record's length, kind, crc32
@@ -233,12 +245,157 @@ def _record_length(data, pos: int, size: int) -> Optional[int]:
     return end - pos
 
 
-def _first_valid_record(data, start: int, size: int) -> Optional[int]:
-    """The offset of the first valid segment record starting at or after ``start``, or ``None``."""
-    for pos in range(start, size - RECORD_HEADER_SIZE + 1):
-        if _record_length(data, pos, size) is not None:
-            return pos
-    return None
+# -- the search for a valid record after an invalid one (8.3d re-review 11, M1) -------------
+#
+# A segment record's CRC32 covers its kind byte and its payload, not its length field, so the
+# claimed extent of an invalid record cannot be trusted to skip the search for a later valid
+# record (a damaged length would turn mid-segment corruption into a silent truncation): every
+# later offset must be tried.  Trying them one by one in Python, each with a CRC over the
+# claimed payload, was quadratic (48 s for a torn 64 MiB blob).  The search below gives the
+# same answer: candidate offsets are those whose kind byte is valid and whose length's most
+# significant byte can fit the file (found by the regular expression engine, not a Python loop
+# over every byte), then those whose claimed extent fits the file; a candidate's CRC is computed from CRCs of the data up to its start and up to its end,
+# kept at checkpoints, with the GF(2) arithmetic of zlib's ``crc32_combine`` (exact), so each
+# candidate costs at most two checkpoint intervals of CRC instead of its whole payload.
+
+_CRC_POLY = 0xEDB88320                          # CRC-32 polynomial, reflected (zlib)
+_CRC_CHECKPOINT = 16 * 1024                     # bytes between prefix-CRC checkpoints
+_CRC_DIRECT = 4 * _CRC_CHECKPOINT               # payloads up to this size get a direct CRC
+#: At most this many candidate CRCs are evaluated before the search gives up; the caller then
+#: refuses to classify the region (never a truncation; ruling R59, M1).  A torn region of random
+#: bytes needs about 65,000 at 256 MiB (under 4 s); a budget-exhausted search takes 10-20 s.
+_SEARCH_BUDGET = 1_000_000
+_CANDIDATE_PATTERNS = {}                        # high length byte bound -> compiled candidate pattern
+
+
+def _crc_multmodp(a: int, b: int) -> int:
+    """``a * b`` modulo the CRC-32 polynomial (reflected bit order), as zlib's ``multmodp``."""
+    m = 1 << 31
+    p = 0
+    while True:
+        if a & m:
+            p ^= b
+            if (a & (m - 1)) == 0:
+                break
+        m >>= 1
+        b = (b >> 1) ^ _CRC_POLY if b & 1 else b >> 1
+    return p
+
+
+def _crc_x2n_table() -> list:
+    table = [1 << 30]                            # x^1
+    for _ in range(31):
+        table.append(_crc_multmodp(table[-1], table[-1]))
+    return table
+
+
+_CRC_X2N = _crc_x2n_table()
+
+
+def _crc_constant_tables(constant: int) -> tuple:
+    """Four 256-entry tables giving ``constant * v`` (modulo the polynomial) for a 32-bit ``v``
+    as the XOR of one entry per byte of ``v`` (multiplication is linear over GF(2))."""
+    tables = []
+    for j in range(4):
+        table = [0] * 256
+        for bit in range(8):
+            table[1 << bit] = _crc_multmodp(constant, 1 << (8 * j + bit))
+        for v in range(3, 256):
+            low = v & -v
+            if v != low:
+                table[v] = table[v ^ low] ^ table[low]
+        tables.append(tuple(table))
+    return tuple(tables)
+
+
+_CRC_SHIFT_TABLES = {}                           # k -> tables multiplying by x^(2^k)
+
+
+def _crc_shift(crc: int, nbytes: int) -> int:
+    """``crc * x^(8 * nbytes)`` modulo the polynomial: the term ``crc32_combine`` applies to the
+    CRC of a prefix followed by ``nbytes`` more bytes (as zlib's ``x2nmodp`` and ``multmodp``,
+    one table-driven multiplication by ``x^(2^k)`` per set bit ``k`` of ``8 * nbytes``)."""
+    p = crc
+    k = 3
+    n = nbytes
+    while n:
+        if n & 1:
+            tables = _CRC_SHIFT_TABLES.get(k)
+            if tables is None:
+                tables = _CRC_SHIFT_TABLES[k] = _crc_constant_tables(_CRC_X2N[k & 31])
+            t0, t1, t2, t3 = tables
+            p = t0[p & 0xFF] ^ t1[(p >> 8) & 0xFF] ^ t2[(p >> 16) & 0xFF] ^ t3[p >> 24]
+        n >>= 1
+        k += 1
+    return p
+
+
+class _PrefixCrc:
+    """CRC32 of ``data[base:offset]`` for any offset, from checkpoints every
+    ``_CRC_CHECKPOINT`` bytes computed on demand (each lookup costs at most one interval)."""
+
+    def __init__(self, data, base: int):
+        self._data = data
+        self._base = base
+        self._points = [0]                       # CRC of data[base:base + i * _CRC_CHECKPOINT]
+
+    def at(self, offset: int) -> int:
+        """The CRC32 of ``data[base:offset]``."""
+        index = (offset - self._base) // _CRC_CHECKPOINT
+        points = self._points
+        while len(points) <= index:
+            start = self._base + (len(points) - 1) * _CRC_CHECKPOINT
+            points.append(zlib.crc32(self._data[start:start + _CRC_CHECKPOINT], points[-1]))
+        start = self._base + index * _CRC_CHECKPOINT
+        return zlib.crc32(self._data[start:offset], points[index])
+
+
+def _candidate_pattern(high: int):
+    """A compiled pattern matching a byte at most ``high`` followed by a valid kind byte: the
+    most significant length byte and the kind byte of a candidate record header."""
+    pattern = _CANDIDATE_PATTERNS.get(high)
+    if pattern is None:
+        kinds = b"".join(re.escape(bytes([k])) for k in sorted(_RECORD_KINDS))
+        pattern = _CANDIDATE_PATTERNS[high] = re.compile(
+            b"[" + re.escape(b"\x00") + b"-" + re.escape(bytes([high])) + b"](?=[" + kinds + b"])", re.DOTALL)
+    return pattern
+
+
+def _first_valid_record(data, start: int, size: int) -> tuple:
+    """Search ``data`` (``size`` bytes) for a valid segment record starting at or after ``start``.
+
+    Returns ``(offset, complete)``: ``offset`` is the first offset holding a valid record, or
+    ``None``; ``complete`` is False when the search stopped after ``_SEARCH_BUDGET`` candidate
+    CRCs without finding one (the region could not be classified).  The answer equals that of
+    trying :func:`_record_length` at every offset (see the comment above)."""
+    last = size - RECORD_HEADER_SIZE              # the last offset where a header fits
+    if start > last:
+        return None, True
+    # A candidate's length is below ``size - start``, so its most significant byte is at most
+    # ``high``; the pattern matches that byte when a valid kind byte follows it.
+    pattern = _candidate_pattern(min(255, (size - start) >> 24))
+    kind_crcs = {k: zlib.crc32(bytes([k])) for k in _RECORD_KINDS}
+    prefix = _PrefixCrc(data, start)
+    budget = _SEARCH_BUDGET
+    for match in pattern.finditer(data, start + 3, last + 5):
+        pos = match.start() - 3
+        length, kind, crc = _RECORD_HEAD.unpack_from(data, pos)
+        payload = pos + RECORD_HEADER_SIZE
+        end = payload + length
+        if end > size:
+            continue
+        budget -= 1
+        if budget < 0:
+            return None, False
+        if length <= _CRC_DIRECT:
+            actual = zlib.crc32(data[payload:end], kind_crcs[kind])
+        else:
+            # crc32(kind | payload) = crc(end) ^ shift(crc(payload start) ^ crc32(kind), length),
+            # crc() being the CRC from ``start`` (linearity of crc32_combine).
+            actual = prefix.at(end) ^ _crc_shift(prefix.at(payload) ^ kind_crcs[kind], length)
+        if actual == crc:
+            return pos, True
+    return None, True
 
 
 def _encode_root_object(record: RootRecord, label: int) -> bytes:
@@ -322,8 +479,23 @@ class TieredStorage(SharedStorage):
         if on_backlog_alert is not None and not callable(on_backlog_alert):
             raise ProtoValidationError("on_backlog_alert must be callable")
         self._path = os.path.abspath(os.fspath(path))
-        self._local = FileStorage(self._path, durability=durability, cache_bytes=min(cache_bytes, 16 * MIB),
-                                  lock_timeout=lock_timeout, segment_max_bytes=segment_max_bytes)
+        if os.path.exists(self._path) and not os.path.isdir(self._path):
+            raise ProtoValidationError(f"{self._path} exists and is not a directory")
+        try:
+            os.makedirs(self._path, exist_ok=True)
+        except OSError as e:
+            raise ProtoUnexpectedError(f"Cannot create the local directory {self._path}: {e}") from e
+        # Held for the instance's lifetime, taken before anything is opened or repaired (R59).
+        self._owner = OwnerLock(os.path.join(self._path, TIER_LOCK), f"the tiered storage directory {self._path}")
+        try:
+            self._local = FileStorage(self._path, durability=durability, cache_bytes=min(cache_bytes, 16 * MIB),
+                                      lock_timeout=lock_timeout, segment_max_bytes=segment_max_bytes)
+        except BaseException as e:
+            try:
+                self._owner.release()
+            except ProtoDBError as release_error:
+                attach_secondary_errors(e, [release_error])
+            raise
         self._store = store
         self._prefix = prefix
         self._root_key = prefix + ROOT_OBJECT
@@ -455,6 +627,7 @@ class TieredStorage(SharedStorage):
         if self._roots is not None:
             closing.append(self._roots.close)
         closing.append(self._local.close)
+        closing.append(self._owner.release)          # last: nothing of this instance remains open
         secondary = []
         for close in closing:
             try:
@@ -500,8 +673,11 @@ class TieredStorage(SharedStorage):
         tail -- an invalid region after which no valid record starts -- is truncated and the file
         ``fsync``-ed, so the segment shipped to the object store holds valid records only; a
         header that is missing or torn is written again.  An invalid record followed by a valid
-        one is mid-log corruption: ``ProtoCorruptionError``, nothing truncated (ruling R58).
-        ``FileNotFoundError`` propagates for a missing file."""
+        one is mid-log corruption: ``ProtoCorruptionError``, nothing truncated (ruling R58); the
+        message says when the valid record lies inside the extent the invalid one claims (a torn
+        blob that embeds a record looks the same).  A region whose search exceeds its budget is
+        refused the same way (:func:`_first_valid_record`).  ``FileNotFoundError`` propagates for
+        a missing file."""
         fd = os.open(path, os.O_RDWR | _O_BINARY | _O_CLOEXEC)
         try:
             data = read_fd(fd)
@@ -517,7 +693,13 @@ class TieredStorage(SharedStorage):
                     pos += length
                 if pos == size:
                     return size
-                later = _first_valid_record(view, pos + 1, size)
+                later, complete = _first_valid_record(data, pos + 1, size)
+                if not complete:
+                    raise ProtoCorruptionError(
+                        f"Own segment {segment.hex} at {path}: the record at offset {pos} is invalid and the "
+                        f"{size - pos} bytes after it hold too many candidate records to prove that no valid "
+                        f"record follows; it cannot be classified as a torn tail, so nothing was truncated "
+                        f"(see D46 for the operator procedure)")
             else:
                 keep = 0
                 while keep < min(size, SEGMENT_HEADER_SIZE) and data[keep] == header[keep]:
@@ -527,9 +709,15 @@ class TieredStorage(SharedStorage):
                         f"Own segment {segment.hex} at {path} does not start with its segment header")
                 pos, later = 0, None
             if later is not None:
+                length, kind, _ = _RECORD_HEAD.unpack_from(data, pos) if pos + RECORD_HEADER_SIZE <= size \
+                    else (0, 0, 0)
+                inside = kind in _RECORD_KINDS and later < pos + RECORD_HEADER_SIZE + length
                 raise ProtoCorruptionError(
                     f"Own segment {segment.hex} at {path} is corrupt: the record at offset {pos} is invalid "
-                    f"but a valid record follows at offset {later} (not a torn tail; nothing was truncated)")
+                    f"but a valid record follows at offset {later} (not a torn tail; nothing was truncated)"
+                    + ("; the valid record lies inside the extent the invalid record claims, so it may be "
+                       "the content of a torn record (for example a blob holding segment data) rather than "
+                       "a later record: ambiguous (see D46 for the operator procedure)" if inside else ""))
             logger.warning("Own segment %s ends in a torn tail of %d bytes (an interrupted write); truncated "
                            "to its last valid record at offset %d", path, size - pos, pos)
             os.ftruncate(fd, pos)
@@ -1528,7 +1716,10 @@ class TieredStorage(SharedStorage):
                 self._local.flush()
             except ProtoDBError as e:
                 error = e
-            self._local.close()
+            try:
+                self._local.close()
+            except (ProtoDBError, OSError) as e:
+                error = error or e
             with self._manifest_lock:
                 fd, self._manifest_fd = self._manifest_fd, -1
                 try:
@@ -1549,5 +1740,11 @@ class TieredStorage(SharedStorage):
                 error = error or e
             self._cache.clear()
             self._segments.clear()
+            # Released last (ruling R59): every descriptor is closed and every write refused or
+            # finished, so a new instance can repair the directory without racing this one.
+            try:
+                self._owner.release()
+            except ProtoDBError as e:
+                error = error or e
             if error is not None:
                 raise ProtoUnexpectedError(f"Closing the tiered storage at {self._path} failed: {error}") from error

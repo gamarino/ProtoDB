@@ -51,6 +51,15 @@ Torn tails are trimmed on open (8.3d re-review 10, R2; ruling R58)
     descriptor number while it accepts writes: a number the operating system hands to
     another file is never written through it.
 
+One live handle per log file (8.3d re-review 11, I1; ruling R59)
+    Because opening trims, a second live handle on the same file could truncate an entry the
+    first is still appending, which the first then completes past the cut; the next open
+    would trim that acknowledged entry.  A :class:`RootsLog` therefore holds an exclusive
+    :class:`~proto_db.storage.ownerlock.OwnerLock` on ``<path>.lock`` from before it opens the
+    log until :meth:`RootsLog.close`; a second open, from this process or another one, raises
+    ``ProtoLockingError``.  This also refuses two processes using the same ``node_id`` on a
+    shared ``FileStorage`` (``cluster/<node>.roots``).
+
 Thread-safety: both logs serialize their methods with a lock.
 """
 import os
@@ -60,8 +69,9 @@ import uuid
 import weakref
 from typing import NamedTuple, Optional
 
-from ..errors import ProtoCorruptionError, ProtoUnexpectedError, ProtoValidationError
+from ..errors import ProtoCorruptionError, ProtoUnexpectedError, ProtoValidationError, attach_secondary_errors
 from ..storage.format import FORMAT_VERSION, RootRecord
+from ..storage.ownerlock import OwnerLock
 from ..storage.logfile import (FRAME_OVERHEAD, encode_frame, fsync_dir, log_contents, open_log,
                                prepare_replacement, read_log, write_all)
 
@@ -176,6 +186,10 @@ def _decode(payloads: list, path: str) -> LoggedRoots:
     return best.result()
 
 
+#: Suffix of the lock file held next to a :class:`RootsLog` file while it is open.
+LOCK_SUFFIX = ".lock"
+
+
 class RootsLog:
     """A node's acceptor log in the file ``path`` (see the module docstring).
 
@@ -184,7 +198,9 @@ class RootsLog:
     module docstring).  Reads (:meth:`load`) go by path and keep working.
 
     Args:
-        path: the log file (created with its directory if missing).
+        path: the log file (created with its directory if missing).  ``path + ".lock"`` is
+            held exclusively until :meth:`close`; a second open of ``path`` while this handle
+            is open raises ``ProtoLockingError`` (module docstring).
         durability: ``"fsync"`` (synced appends are ``fsync``-ed), ``"flush"`` or ``"none"``.
     """
 
@@ -196,14 +212,30 @@ class RootsLog:
         self._failed = None           # the I/O error that poisoned this handle, if any
         self._promised = 0            # highest promise known durable here
         try:
-            self._fd, payloads = open_log(self._path, LOG_KIND, durability=durability)
+            os.makedirs(os.path.dirname(self._path), exist_ok=True)
         except OSError as e:
-            raise ProtoUnexpectedError(f"Cannot open the root log {self._path}: {e}") from e
+            raise ProtoUnexpectedError(f"Cannot create the directory of the root log {self._path}: {e}") from e
+        # Held for the handle's lifetime, taken before the open trims anything (ruling R59).
+        self._owner = OwnerLock(self._path + LOCK_SUFFIX, f"the root log {self._path}")
+        fd = -1
         try:
+            try:
+                fd, payloads = open_log(self._path, LOG_KIND, durability=durability)
+            except OSError as e:
+                raise ProtoUnexpectedError(f"Cannot open the root log {self._path}: {e}") from e
             self._promised = _decode(payloads, self._path).promised
-        except BaseException:
-            os.close(self._fd)
+        except BaseException as e:
+            closing = ([lambda: os.close(fd)] if fd >= 0 else []) + [self._owner.release]
+            secondary = []
+            for close in closing:
+                try:
+                    close()
+                except (OSError, ProtoUnexpectedError) as close_error:
+                    secondary.append(close_error)
+            if secondary:
+                attach_secondary_errors(e, secondary)
             raise
+        self._fd = fd
 
     @property
     def path(self) -> str:
@@ -306,6 +338,9 @@ class RootsLog:
                 os.close(fd)
             except OSError as e:
                 raise ProtoUnexpectedError(f"Closing the root log {self._path} failed: {e}") from e
+            finally:
+                # Released last: no write through this handle can follow (ruling R59).
+                self._owner.release()
 
 
 class _MemoryLogContents:

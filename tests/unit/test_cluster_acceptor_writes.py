@@ -31,7 +31,7 @@ import pytest
 
 from proto_db.cluster import coordinator as coordinator_module
 from proto_db.cluster.rootlog import memory_log_for, root_key
-from proto_db.errors import ProtoDBError, ProtoOutcomeUnknownError, ProtoValidationError
+from proto_db.errors import ProtoDBError, ProtoLockingError, ProtoOutcomeUnknownError, ProtoValidationError
 from proto_db.storage.memory import MemoryStorage
 from tests.support.cluster import MemoryTier
 from tests.support.manual_cluster import GRACE, Harness, rec
@@ -425,13 +425,22 @@ def test_n1_a_holder_moved_to_another_disk_mid_commit_does_not_accept_on_the_old
 def test_a_closed_acceptor_log_handle_refuses_writes_on_every_backend(tmp_path, kind):
     """Every backend's acceptor-log handle refuses writes once closed (``ProtoValidationError``);
     another handle on the same log (the space reopened) is unaffected and sees what was
-    written.  The in-memory log used to ignore ``close()``."""
+    written.  The in-memory log used to ignore ``close()``.  A file log admits one live handle
+    (ruling R59), so there the second handle is opened after the first is closed."""
     disk = MemoryStorage() if kind == "memory" else DirStorage(tmp_path)
-    one, two = MemoryTier(disk, "n"), MemoryTier(disk, "n")
+    one = MemoryTier(disk, "n")
+    two = MemoryTier(disk, "n") if kind == "memory" else None
     r1, r2 = rec(1), rec(2)
     one.log_root("accepted", 1, r1, sync=True)
-    assert _logged(two) == r1
+    if kind == "file":
+        with pytest.raises(ProtoLockingError):
+            MemoryTier(disk, "n")
+    else:
+        assert _logged(two) == r1
     one.close()
+    if two is None:
+        two = MemoryTier(disk, "n")
+        assert _logged(two) == r1
     one.close()                                            # idempotent
     with pytest.raises(ProtoValidationError):
         one.log_root("accepted", 2, r2, sync=True)
@@ -443,8 +452,12 @@ def test_a_closed_acceptor_log_handle_refuses_writes_on_every_backend(tmp_path, 
         one.log_rejoined()
     two.log_root("accepted", 2, r2, sync=True)
     two.log_promise(9)
-    roots = MemoryTier(disk, "n").load_roots()
+    if kind == "file":
+        two.close()
+    third = MemoryTier(disk, "n")
+    roots = third.load_roots()
     assert roots.accepted[1] == r2 and roots.promised == 9
+    third.close()
     two.close()
 
 

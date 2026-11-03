@@ -185,7 +185,12 @@ class Harness:
         has ended by then.  A test that needs the wiped node during such a lease passes
         ``responders=()`` and calls :meth:`rejoin` itself once the clock allows it."""
         old = self.nodes[name]
+        tier = old.tier
         old.stop()
+        if tier is not None:
+            # A process restart ends the old process, whose OS locks die with it; in one process
+            # the old tier is closed before the new one opens the same disk (ruling R59).
+            tier.close()
         self.retired.append(old)
         if wipe:
             self.disks[name] = MemoryStorage()
