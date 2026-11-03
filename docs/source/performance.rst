@@ -439,6 +439,47 @@ in-memory store): it is not a durability-equivalent reference, only a statement 
 arbitration costs once the store is remote. At 30 ms the commit pays several sequential store
 round trips and contention turns into retries and multi-second tails.
 
+Payload size (Task 8.3f, D50 phase A)
+-------------------------------------
+
+The claim tested: under D50 each node builds and writes its own data, so total throughput
+should depend less on transaction size than in a system that ships all data to one leader.
+Measured at commit ``976e52c`` (``cluster_tcp`` and ``rqlite_reference``, full mode): 3 peers
+or 3 rqlite nodes on loopback, ``fsync``, 4 client threads per node, one value of the given
+size per commit (ProtoDB: a blind write into a ``Dictionary`` root; rqlite: one row per HTTP
+request with a TEXT value). Both sides are verified value by value or by count and total
+length. Medians of 3 runs (ProtoDB, ``cluster_tcp``) and 2 runs (``rqlite_reference``), GIL off.
+
+=================  ==============  ==============  =================  =================
+payload            ProtoDB         rqlite          ProtoDB bytes on   rqlite bytes on
+                   commits/s       requests/s      loopback / commit  loopback / commit
+=================  ==============  ==============  =================  =================
+100 B              69-72           564             19 KB              2.0 KB
+10 KB              59-99           455             190-212 KB         19 KB
+100 KB             40-41           287             1.63 MB            172 KB
+=================  ==============  ==============  =================  =================
+
+ProtoDB p50 commit latency 160 / 113-199 / 293-302 ms; rqlite p50 21 / 22 / 40 ms. Fsyncs per
+node per commit (ProtoDB, counted in-process): 2.2, 1.1-2.3 and 2.5.
+
+What the numbers show, honestly:
+
+- The claim does **not** hold in this implementation. ProtoDB's throughput falls with payload
+  (72 -> 41 commits/s, about 1.8x from 100 B to 100 KB); rqlite's falls by about 2x as well
+  (564 -> 287), and rqlite stays 6-8x faster at every size.
+- D50 does not avoid replication: a commit's records travel to every follower with the
+  replication, as rqlite's leader fans entries out. ProtoDB saves only the client-to-leader hop
+  and spreads the build and serialization CPU over the nodes.
+- ProtoDB puts about **8x the payload on the wire per follower**: 1.63 MB per 100 KB commit
+  against rqlite's 172 KB (about 1.7x the payload, client hop included). The cause is the data
+  model, not the commit path: a commit's records are the path-copied tree nodes of the roots it
+  changed, and a ``Dictionary`` node carries its values inline, so each copied node along the
+  path re-ships the value (about log2 of the dictionary's size). Even at 100 B a commit ships
+  about 16 KB of tree nodes. A value stored once as its own record and referenced from the
+  tree would bring this to about payload x followers; that is not done.
+- Under these conditions the bytes, not the syncs, bound ProtoDB at 100 KB: about 4 MB/s of
+  payload against rqlite's 30 MB/s.
+
 GIL on versus GIL off
 ---------------------
 
