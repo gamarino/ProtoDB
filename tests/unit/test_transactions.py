@@ -17,7 +17,7 @@ from proto_db.collections.dictionaries import Dictionary
 from proto_db.collections.lists import List
 from proto_db.collections.sets import CountedSet, Set
 from proto_db.core.dbobject import DBObject
-from proto_db.errors import (ProtoOutcomeUnknownError, ProtoConflictError, ProtoDBError, ProtoLockingError, ProtoTimeoutError,
+from proto_db.errors import (ProtoOutcomeUnknownError, ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoLockingError, ProtoTimeoutError,
                              ProtoUnexpectedError, ProtoUserError, ProtoValidationError)
 from proto_db.storage.file import FileStorage
 from proto_db.storage.memory import MemoryStorage
@@ -1177,7 +1177,16 @@ def test_release_failure_does_not_mask_a_conflict(caplog):
     with db.new_transaction() as other:
         other.set_root_object("x", 2)
     tr.set_root_object("x", 3)
+    # Group commit (R71): a conflict is decided per commit and the lock is released cleanly.
     with pytest.raises(ProtoConflictError):
         tr.commit()
+    # A failure of the round itself (here the publish) leaves the lock with an exception: the
+    # release fails too, is logged, and never replaces the original error.
+    def failing_publish(ptr, expected_epoch):
+        raise ProtoCorruptionError("injected publish failure")
+    space.storage.inner.publish_root = failing_publish
+    with pytest.raises(ProtoCorruptionError, match="injected publish failure"):
+        with db.new_transaction() as again:
+            again.set_root_object("x", 4)
     assert "injected release failure" in caplog.text
     space.close()

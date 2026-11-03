@@ -389,30 +389,100 @@ def _commit_root(storage, lock_timeout, build: Callable, coordinator=None) -> bo
     the pointer of the saved new :class:`SpaceRoot`, or ``None`` to publish nothing.
     With a cluster ``coordinator`` the cluster lease replaces the root lock and majority
     replication replaces the publish (:func:`_commit_under_lease`).
+
+    Without one, the commit joins the storage's *group* (group commit, ruling R71): one thread
+    at a time takes every queued commit, holds the root lock once, builds each commit on the
+    root the previous one produced, and makes the last root durable with ONE flush and ONE
+    publish (:func:`_standalone_round`).  A commit alone in the queue is exactly the
+    single-commit protocol.
     """
     if coordinator is not None:
         return _commit_under_lease(coordinator, lock_timeout, build)
-    lock = storage.root_lock(lock_timeout)
-    lock.__enter__()
+    group = _group_of(storage)
+    entry = _Entry(build, storage, group)
+    with group.cond:
+        group.queue.append(entry)
+        group.cond.notify_all()
+        while not entry.done and group.running:
+            group.cond.wait()
+        runner = not entry.done
+        if runner:
+            group.running = True
+            batch, group.queue = group.queue, []
+    if runner:
+        try:
+            _standalone_round(storage, lock_timeout, batch)
+        finally:
+            with group.cond:
+                group.running = False
+                group.cond.notify_all()
+    if entry.error is not None:
+        if entry.error_shared:
+            error = copy.copy(entry.error)
+            error.__cause__ = entry.error
+            raise error
+        raise entry.error
+    return entry.result
+
+
+def _standalone_round(storage, lock_timeout, batch: list) -> None:
+    """Decide ``batch`` under one root lock with one flush and one publish (group commit, R71).
+
+    Each commit is built on the root the previous one produced (its validation reads that
+    root, so conflicts within the group are detected as between sequential commits).  A
+    commit whose build raises a ProtoDB error gets that error alone; the others go on.  The
+    flush and the publish decide every built commit together: on failure each gets the same
+    error (``ProtoOutcomeUnknownError`` only when the publish outcome is unknown, as alone).
+    Nothing of the round is visible before the publish.
+    """
+    try:
+        lock = storage.root_lock(lock_timeout)
+        lock.__enter__()
+    except BaseException as e:
+        for entry in batch:
+            entry.finish(error=e, shared=len(batch) > 1)
+        if not isinstance(e, ProtoDBError):
+            raise
+        return
+    built = []
     try:
         current = storage.read_root()
-        ptr = build(current, None)
-        if ptr is not None:
+        expected = current.epoch if current is not None else 0
+        ptr = None
+        for entry in batch:
+            try:
+                built_ptr = entry.build(current, None)
+            except ProtoDBError as e:
+                entry.finish(error=e)
+                continue
+            if built_ptr is None:
+                entry.finish(result=False)
+                continue
+            ptr = built_ptr
+            current = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, expected + 1)
+            built.append(entry)
+        if built:
             storage.flush()
-            _publish(storage, ptr, current.epoch if current is not None else 0)
-    except BaseException:
+            _publish(storage, ptr, expected)
+    except BaseException as e:
         # Nothing of ours is published: release, but never let a release error mask the original one.
         try:
             lock.__exit__(*sys.exc_info())
-        except (ProtoDBError, OSError) as e:
-            logger.error("Releasing the root lock after a failed commit failed: %s", e)
-        raise
-    # Published (or nothing to publish): nothing below may fail the commit.
+        except (ProtoDBError, OSError) as release_error:
+            logger.error("Releasing the root lock after a failed commit failed: %s", release_error)
+        undecided = [entry for entry in batch if not entry.done]
+        for entry in undecided:     # one error object raised in several threads: each gets a copy
+            entry.finish(error=e, shared=len(undecided) > 1)
+        if not isinstance(e, ProtoDBError):
+            raise
+        return
+    # Published (or nothing to publish): nothing below may fail the commits.
     try:
         lock.__exit__(None, None, None)
     except (ProtoDBError, OSError) as e:
         logger.error("Releasing the root lock after a commit failed: %s", e)
-    return ptr is not None
+    for entry in built:
+        entry.finish(result=True)
 
 
 def _confirm_build(current, stamp):
@@ -492,8 +562,8 @@ _RETRY_WAIT = 0.005
 
 
 class _Entry:
-    """One commit in a node's group (D50): its build step and the tier it wrote to, then its
-    result (``True``/``False``) or error."""
+    """One commit in a group (D50 for a cluster node, R71 for a standalone storage): its build
+    step and the tier (or storage) it wrote to, then its result (``True``/``False``) or error."""
 
     __slots__ = ("build", "tier", "done", "result", "error", "error_shared", "group")
 
@@ -515,7 +585,8 @@ class _Entry:
 
 
 class _Group:
-    """The commits of one coordinator (one node) waiting for a round (D50)."""
+    """The commits of one coordinator (one node, D50) or one standalone storage (R71) waiting
+    for a round."""
 
     def __init__(self):
         self.cond = threading.Condition()
@@ -527,11 +598,12 @@ _GROUPS = weakref.WeakKeyDictionary()
 _GROUPS_LOCK = threading.Lock()
 
 
-def _group_of(coordinator) -> _Group:
+def _group_of(owner) -> _Group:
+    """The commit group of ``owner`` (a coordinator or a standalone storage)."""
     with _GROUPS_LOCK:
-        group = _GROUPS.get(coordinator)
+        group = _GROUPS.get(owner)
         if group is None:
-            group = _GROUPS[coordinator] = _Group()
+            group = _GROUPS[owner] = _Group()
         return group
 
 
