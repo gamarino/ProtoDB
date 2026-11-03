@@ -150,6 +150,7 @@ way on a failed segment write.
 import contextlib
 import errno
 import logging
+import math
 import os
 import random
 import re
@@ -173,8 +174,9 @@ from .cache import BoundedCache
 from .cloud import (ObjectNotFoundError, OutcomeUnknownError, PreconditionFailedError,
                     TransientObjectStoreError)
 from .file import DURABILITY_MODES, FileStorage
-from .format import (FORMAT_VERSION, RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind, RootRecord,
-                     decode_root, decode_segment_header, encode_record, encode_segment_header, read_record)
+from .format import (FORMAT_VERSION, RECORD_HEADER_SIZE, RECORD_MAGIC, SEGMENT_HEADER_SIZE, RecordKind,
+                     RootRecord, decode_root, decode_segment_header, encode_record, encode_segment_header,
+                     read_record, record_header)
 from .logfile import encode_frame, log_contents, open_log, prepare_replacement, read_fd, write_all
 from .ownerlock import OwnerLock
 
@@ -199,7 +201,6 @@ RANGES_LOG = "ranges.log"
 TIER_LOCK = "tier.lock"
 _RANGES_HEAD = struct.Struct("<16sQQQI")         # root segment, root offset, label, epoch, count
 _RANGE = struct.Struct("<16sQQ")                 # segment, start, end
-_RECORD_HEAD = struct.Struct("<IBI")             # a segment record's length, kind, crc32
 _RECORD_KINDS = frozenset(int(k) for k in RecordKind)
 _O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
 _O_BINARY = getattr(os, "O_BINARY", 0)
@@ -219,6 +220,17 @@ class _Own:
         self.released = False
 
 
+def _is_seconds(value) -> bool:
+    """True for a finite non-negative ``int`` or ``float`` (not a ``bool``)."""
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        seconds = float(value)
+    except OverflowError:
+        return False
+    return math.isfinite(seconds) and seconds >= 0
+
+
 def _pwrite_all(fd: int, data, offset: int) -> None:
     """Write every byte of ``data`` at ``offset`` of ``fd``: a short write is continued, a write
     that makes no progress raises ``OSError``."""
@@ -233,39 +245,41 @@ def _pwrite_all(fd: int, data, offset: int) -> None:
 
 def _record_length(data, pos: int, size: int) -> Optional[int]:
     """The framed length of a valid segment record at ``pos`` of ``data`` (``size`` bytes), or
-    ``None`` (truncated, unknown kind or CRC mismatch)."""
+    ``None`` (truncated, invalid header -- magic, kind or header CRC -- or payload CRC mismatch)."""
     if pos + RECORD_HEADER_SIZE > size:
         return None
-    length, kind, crc = _RECORD_HEAD.unpack_from(data, pos)
-    end = pos + RECORD_HEADER_SIZE + length
-    if kind not in _RECORD_KINDS or end > size:
+    header = record_header(data, pos)
+    if header is None:
         return None
-    if zlib.crc32(data[pos + RECORD_HEADER_SIZE:end], zlib.crc32(data[pos + 4:pos + 5])) != crc:
+    _, length, crc = header
+    end = pos + RECORD_HEADER_SIZE + length
+    if end > size or zlib.crc32(data[pos + RECORD_HEADER_SIZE:end]) != crc:
         return None
     return end - pos
 
 
-# -- the search for a valid record after an invalid one (8.3d re-review 11, M1) -------------
+# -- the search for a valid record after an invalid one (8.3d re-review 12, I3; ruling R60) ---
 #
-# A segment record's CRC32 covers its kind byte and its payload, not its length field, so the
-# claimed extent of an invalid record cannot be trusted to skip the search for a later valid
-# record (a damaged length would turn mid-segment corruption into a silent truncation): every
-# later offset must be tried.  Trying them one by one in Python, each with a CRC over the
-# claimed payload, was quadratic (48 s for a torn 64 MiB blob).  The search below gives the
-# same answer: candidate offsets are those whose kind byte is valid and whose length's most
-# significant byte can fit the file (found by the regular expression engine, not a Python loop
-# over every byte), then those whose claimed extent fits the file; a candidate's CRC is computed from CRCs of the data up to its start and up to its end,
-# kept at checkpoints, with the GF(2) arithmetic of zlib's ``crc32_combine`` (exact), so each
-# candidate costs at most two checkpoint intervals of CRC instead of its whole payload.
+# Segment records have self-validating headers (format version 2, :mod:`proto_db.storage.format`):
+# a header CRC covers the magic, kind, length and payload CRC.  The repair of an own segment is
+# therefore framing-driven (:meth:`TieredStorage._repair_own_segment`): an invalid record whose
+# header is valid has a trustworthy extent, and the search below only runs over the bytes after
+# that extent, or, when the header itself is invalid, over every offset after it.  The search
+# answers exactly as trying :func:`_record_length` at every offset, in time linear in the region
+# and with no cap: candidate offsets (the record magic followed by a valid kind byte) are found
+# by the regular-expression engine; a candidate's header CRC costs eleven bytes; and a candidate
+# whose header is valid and whose extent fits has its payload CRC computed from CRCs of the data
+# up to its start and up to its end, kept at checkpoints, with the GF(2) arithmetic of zlib's
+# ``crc32_combine`` (exact), so it costs at most two checkpoint intervals of CRC, never its
+# whole claimed payload.
 
 _CRC_POLY = 0xEDB88320                          # CRC-32 polynomial, reflected (zlib)
-_CRC_CHECKPOINT = 16 * 1024                     # bytes between prefix-CRC checkpoints
+_CRC_CHECKPOINT = 4 * 1024                      # bytes between prefix-CRC checkpoints
 _CRC_DIRECT = 4 * _CRC_CHECKPOINT               # payloads up to this size get a direct CRC
-#: At most this many candidate CRCs are evaluated before the search gives up; the caller then
-#: refuses to classify the region (never a truncation; ruling R59, M1).  A torn region of random
-#: bytes needs about 65,000 at 256 MiB (under 4 s); a budget-exhausted search takes 10-20 s.
-_SEARCH_BUDGET = 1_000_000
-_CANDIDATE_PATTERNS = {}                        # high length byte bound -> compiled candidate pattern
+_CANDIDATE = re.compile(
+    re.escape(RECORD_MAGIC[:1]) + b"(?=" + re.escape(RECORD_MAGIC[1:]) + b"["
+    + b"".join(re.escape(bytes([k])) for k in sorted(_RECORD_KINDS)) + b"])", re.DOTALL)
+_CANDIDATE_SPAN = len(RECORD_MAGIC) + 1         # bytes the candidate pattern inspects
 
 
 def _crc_multmodp(a: int, b: int) -> int:
@@ -309,6 +323,7 @@ def _crc_constant_tables(constant: int) -> tuple:
 
 
 _CRC_SHIFT_TABLES = {}                           # k -> tables multiplying by x^(2^k)
+_CRC_SHIFT_LOCK = threading.Lock()
 
 
 def _crc_shift(crc: int, nbytes: int) -> int:
@@ -322,7 +337,10 @@ def _crc_shift(crc: int, nbytes: int) -> int:
         if n & 1:
             tables = _CRC_SHIFT_TABLES.get(k)
             if tables is None:
-                tables = _CRC_SHIFT_TABLES[k] = _crc_constant_tables(_CRC_X2N[k & 31])
+                with _CRC_SHIFT_LOCK:
+                    tables = _CRC_SHIFT_TABLES.get(k)
+                    if tables is None:
+                        tables = _CRC_SHIFT_TABLES[k] = _crc_constant_tables(_CRC_X2N[k & 31])
             t0, t1, t2, t3 = tables
             p = t0[p & 0xFF] ^ t1[(p >> 8) & 0xFF] ^ t2[(p >> 16) & 0xFF] ^ t3[p >> 24]
         n >>= 1
@@ -350,52 +368,33 @@ class _PrefixCrc:
         return zlib.crc32(self._data[start:offset], points[index])
 
 
-def _candidate_pattern(high: int):
-    """A compiled pattern matching a byte at most ``high`` followed by a valid kind byte: the
-    most significant length byte and the kind byte of a candidate record header."""
-    pattern = _CANDIDATE_PATTERNS.get(high)
-    if pattern is None:
-        kinds = b"".join(re.escape(bytes([k])) for k in sorted(_RECORD_KINDS))
-        pattern = _CANDIDATE_PATTERNS[high] = re.compile(
-            b"[" + re.escape(b"\x00") + b"-" + re.escape(bytes([high])) + b"](?=[" + kinds + b"])", re.DOTALL)
-    return pattern
-
-
-def _first_valid_record(data, start: int, size: int) -> tuple:
-    """Search ``data`` (``size`` bytes) for a valid segment record starting at or after ``start``.
-
-    Returns ``(offset, complete)``: ``offset`` is the first offset holding a valid record, or
-    ``None``; ``complete`` is False when the search stopped after ``_SEARCH_BUDGET`` candidate
-    CRCs without finding one (the region could not be classified).  The answer equals that of
-    trying :func:`_record_length` at every offset (see the comment above)."""
+def _first_valid_record(data, start: int, size: int) -> Optional[int]:
+    """The first offset at or after ``start`` of ``data`` (``size`` bytes) that holds a valid
+    segment record, or ``None``.  Exact (the answer of trying :func:`_record_length` at every
+    offset) and linear in ``size - start`` with no cap (see the comment above)."""
     last = size - RECORD_HEADER_SIZE              # the last offset where a header fits
     if start > last:
-        return None, True
-    # A candidate's length is below ``size - start``, so its most significant byte is at most
-    # ``high``; the pattern matches that byte when a valid kind byte follows it.
-    pattern = _candidate_pattern(min(255, (size - start) >> 24))
-    kind_crcs = {k: zlib.crc32(bytes([k])) for k in _RECORD_KINDS}
+        return None
     prefix = _PrefixCrc(data, start)
-    budget = _SEARCH_BUDGET
-    for match in pattern.finditer(data, start + 3, last + 5):
-        pos = match.start() - 3
-        length, kind, crc = _RECORD_HEAD.unpack_from(data, pos)
+    for match in _CANDIDATE.finditer(data, start, last + _CANDIDATE_SPAN):
+        pos = match.start()
+        header = record_header(data, pos)
+        if header is None:
+            continue
+        _, length, crc = header
         payload = pos + RECORD_HEADER_SIZE
         end = payload + length
         if end > size:
             continue
-        budget -= 1
-        if budget < 0:
-            return None, False
         if length <= _CRC_DIRECT:
-            actual = zlib.crc32(data[payload:end], kind_crcs[kind])
+            actual = zlib.crc32(data[payload:end])
         else:
-            # crc32(kind | payload) = crc(end) ^ shift(crc(payload start) ^ crc32(kind), length),
-            # crc() being the CRC from ``start`` (linearity of crc32_combine).
-            actual = prefix.at(end) ^ _crc_shift(prefix.at(payload) ^ kind_crcs[kind], length)
+            # crc32(payload) = crc(end) ^ shift(crc(payload start), length), crc() being the CRC
+            # from ``start`` (crc32_combine: crc(A + B) = shift(crc(A), len(B)) ^ crc32(B)).
+            actual = prefix.at(end) ^ _crc_shift(prefix.at(payload), length)
         if actual == crc:
-            return pos, True
-    return None, True
+            return pos
+    return None
 
 
 def _encode_root_object(record: RootRecord, label: int) -> bytes:
@@ -462,14 +461,25 @@ class TieredStorage(SharedStorage):
             raise ProtoValidationError(f"durability must be one of {DURABILITY_MODES}")
         if not isinstance(prefix, str):
             raise ProtoValidationError("prefix must be a str")
-        if not isinstance(ship_interval, (int, float)) or isinstance(ship_interval, bool) or ship_interval < 0:
-            raise ProtoValidationError("ship_interval must be a non-negative number of seconds")
+        if not _is_seconds(ship_interval):
+            raise ProtoValidationError("ship_interval must be a finite non-negative number of seconds")
         if type(retries) is not int or retries < 0:
             raise ProtoValidationError("retries must be a non-negative int")
         try:
             low, high = backoff
         except (TypeError, ValueError) as e:
             raise ProtoValidationError("backoff must be a (min_seconds, max_seconds) pair") from e
+        if not all(_is_seconds(x) for x in (low, high)) or low > high:
+            raise ProtoValidationError("backoff must be a (min_seconds, max_seconds) pair of finite "
+                                       "non-negative numbers with min_seconds <= max_seconds")
+        for name, value in (("cache_bytes", cache_bytes), ("segment_cache_bytes", segment_cache_bytes)):
+            if type(value) is not int or value < 0:
+                raise ProtoValidationError(f"{name} must be a non-negative int")
+        if type(segment_max_bytes) is not int or segment_max_bytes <= SEGMENT_HEADER_SIZE + RECORD_HEADER_SIZE:
+            raise ProtoValidationError(
+                f"segment_max_bytes must be an int above {SEGMENT_HEADER_SIZE + RECORD_HEADER_SIZE}")
+        if not isinstance(lock_timeout, (int, float)) or lock_timeout < 0:      # FileStorage's rule
+            raise ProtoValidationError("lock_timeout must be a non-negative number of seconds")
         if backlog_limit_bytes is not None and (type(backlog_limit_bytes) is not int or backlog_limit_bytes <= 0):
             raise ProtoValidationError("backlog_limit_bytes must be a positive int or None")
         if backlog_alert_bytes is None and backlog_limit_bytes is not None:
@@ -481,21 +491,9 @@ class TieredStorage(SharedStorage):
         self._path = os.path.abspath(os.fspath(path))
         if os.path.exists(self._path) and not os.path.isdir(self._path):
             raise ProtoValidationError(f"{self._path} exists and is not a directory")
-        try:
-            os.makedirs(self._path, exist_ok=True)
-        except OSError as e:
-            raise ProtoUnexpectedError(f"Cannot create the local directory {self._path}: {e}") from e
-        # Held for the instance's lifetime, taken before anything is opened or repaired (R59).
-        self._owner = OwnerLock(os.path.join(self._path, TIER_LOCK), f"the tiered storage directory {self._path}")
-        try:
-            self._local = FileStorage(self._path, durability=durability, cache_bytes=min(cache_bytes, 16 * MIB),
-                                      lock_timeout=lock_timeout, segment_max_bytes=segment_max_bytes)
-        except BaseException as e:
-            try:
-                self._owner.release()
-            except ProtoDBError as release_error:
-                attach_secondary_errors(e, [release_error])
-            raise
+        # Every argument is validated and every attribute that holds no resource is set before
+        # the owner lock is taken (8.3d re-review 12, I2; ruling R60); everything after the lock
+        # runs under one handler that releases what was opened, the lock last.
         self._store = store
         self._prefix = prefix
         self._root_key = prefix + ROOT_OBJECT
@@ -537,13 +535,28 @@ class TieredStorage(SharedStorage):
         self._copies_lock = threading.Lock()
         self._manifest_fd = self._ranges_fd = -1
         self._roots = None
+        self._local = None
         try:
-            self._load_manifest()
-            self._roots = RootsLog(os.path.join(self._path, ROOTS_LOG), durability=durability)
-            self._load_ranges()
+            os.makedirs(self._path, exist_ok=True)
+        except OSError as e:
+            raise ProtoUnexpectedError(f"Cannot create the local directory {self._path}: {e}") from e
+        # Held for the instance's lifetime, taken before anything is opened or repaired (R59).
+        self._owner = OwnerLock(os.path.join(self._path, TIER_LOCK), f"the tiered storage directory {self._path}",
+                                target=self._path)
+        try:
+            self._open_local(durability, cache_bytes, lock_timeout, segment_max_bytes)
         except BaseException as e:
             self._abandon_open(e)
             raise
+
+    def _open_local(self, durability: str, cache_bytes: int, lock_timeout: float, segment_max_bytes: int) -> None:
+        """Open the local tier (owner lock held): the segment storage, then the logs (each
+        repaired on open).  The caller releases what was opened when this raises."""
+        self._local = FileStorage(self._path, durability=durability, cache_bytes=min(cache_bytes, 16 * MIB),
+                                  lock_timeout=lock_timeout, segment_max_bytes=segment_max_bytes)
+        self._load_manifest()
+        self._roots = RootsLog(os.path.join(self._path, ROOTS_LOG), durability=durability)
+        self._load_ranges()
 
     # -- properties --------------------------------------------------------------------------
 
@@ -619,23 +632,32 @@ class TieredStorage(SharedStorage):
             raise ProtoUnexpectedError(f"Cannot open {path}: {e}") from e
 
     def _abandon_open(self, error: BaseException) -> None:
-        """Release what a failed constructor opened (``error`` is raised by the caller)."""
-        closing = []
-        for fd in (self._manifest_fd, self._ranges_fd):
-            if fd >= 0:
-                closing.append(lambda fd=fd: os.close(fd))
-        if self._roots is not None:
-            closing.append(self._roots.close)
-        closing.append(self._local.close)
-        closing.append(self._owner.release)          # last: nothing of this instance remains open
+        """Release what a failed constructor opened (``error`` is raised by the caller).  Every
+        release runs even when an earlier one raised, and the owner lock is released last,
+        whatever was raised (8.3d re-review 12, I2; ruling R60)."""
         secondary = []
-        for close in closing:
-            try:
-                close()
-            except (OSError, ProtoDBError) as e:
-                secondary.append(e)
-        if secondary:
-            attach_secondary_errors(error, secondary)
+
+        def attempt(release):
+            def run():
+                try:
+                    release()
+                except (OSError, ProtoDBError) as e:
+                    secondary.append(e)
+            return run
+
+        try:
+            with contextlib.ExitStack() as steps:
+                steps.callback(attempt(self._owner.release))  # last: nothing of this instance remains open
+                if self._local is not None:
+                    steps.callback(attempt(self._local.close))
+                if self._roots is not None:
+                    steps.callback(attempt(self._roots.close))
+                for fd in (self._ranges_fd, self._manifest_fd):
+                    if fd >= 0:
+                        steps.callback(attempt(lambda fd=fd: os.close(fd)))
+        finally:
+            if secondary:
+                attach_secondary_errors(error, secondary)
 
     def _load_manifest(self) -> None:
         self._manifest_fd, payloads = self._open_log(MANIFEST, MANIFEST_KIND)
@@ -670,14 +692,28 @@ class TieredStorage(SharedStorage):
         Own segments are never appended to after a restart (each
         :class:`~proto_db.storage.file.FileStorage` writes only segments it creates), but one
         may end in a torn record left by a failed write, a ``SIGKILL`` or a power loss.  Such a
-        tail -- an invalid region after which no valid record starts -- is truncated and the file
-        ``fsync``-ed, so the segment shipped to the object store holds valid records only; a
-        header that is missing or torn is written again.  An invalid record followed by a valid
-        one is mid-log corruption: ``ProtoCorruptionError``, nothing truncated (ruling R58); the
-        message says when the valid record lies inside the extent the invalid one claims (a torn
-        blob that embeds a record looks the same).  A region whose search exceeds its budget is
-        refused the same way (:func:`_first_valid_record`).  ``FileNotFoundError`` propagates for
-        a missing file."""
+        tail is truncated and the file ``fsync``-ed, so the segment shipped to the object store
+        holds valid records only; a header that is missing or torn is written again.
+
+        The classification is framing-driven (record headers are self-validating, format
+        version 2; 8.3d re-review 12, I3, ruling R60).  At the first invalid record, at offset
+        ``pos``:
+
+        * fewer bytes than a record header remain, or the header is valid and its record
+          extends past the end of the file: a torn tail (the writer stopped inside that
+          record; any later record of the writer would start past the end), trimmed without a
+          search;
+        * the header is valid and the record fits but its payload CRC fails: a torn tail when
+          no valid record starts at or after the record's end (searched; the bytes inside its
+          extent are its payload);
+        * the header is invalid (its extent is unknown): a torn tail when no valid record starts
+          at any offset after ``pos`` (searched).
+
+        A valid record found by a search is mid-log corruption: ``ProtoCorruptionError``,
+        nothing truncated (ruling R58); when the header was invalid the message says that the
+        valid record may be the content of the torn record (ambiguous).  The search is exact
+        and linear, with no cap (:func:`_first_valid_record`), so an ordinary torn tail is
+        always trimmed.  ``FileNotFoundError`` propagates for a missing file."""
         fd = os.open(path, os.O_RDWR | _O_BINARY | _O_CLOEXEC)
         try:
             data = read_fd(fd)
@@ -693,31 +729,34 @@ class TieredStorage(SharedStorage):
                     pos += length
                 if pos == size:
                     return size
-                later, complete = _first_valid_record(data, pos + 1, size)
-                if not complete:
-                    raise ProtoCorruptionError(
-                        f"Own segment {segment.hex} at {path}: the record at offset {pos} is invalid and the "
-                        f"{size - pos} bytes after it hold too many candidate records to prove that no valid "
-                        f"record follows; it cannot be classified as a torn tail, so nothing was truncated "
-                        f"(see D46 for the operator procedure)")
+                decoded = record_header(view, pos)
+                if decoded is None:
+                    later = _first_valid_record(data, pos + 1, size)
+                    ambiguous = True
+                elif pos + RECORD_HEADER_SIZE + decoded[1] > size:
+                    later = None                    # the writer's record, cut short
+                    ambiguous = False
+                else:
+                    later = _first_valid_record(data, pos + RECORD_HEADER_SIZE + decoded[1], size)
+                    ambiguous = False
             else:
                 keep = 0
                 while keep < min(size, SEGMENT_HEADER_SIZE) and data[keep] == header[keep]:
                     keep += 1
                 if any(view[keep:]):
                     raise ProtoCorruptionError(
-                        f"Own segment {segment.hex} at {path} does not start with its segment header")
-                pos, later = 0, None
+                        f"Own segment {segment.hex} at {path} does not start with its segment header but holds "
+                        f"other data (no entry offset applies: see D46 for the operator procedure, wipe and "
+                        f"rejoin)")
+                pos, later, ambiguous = 0, None, False
             if later is not None:
-                length, kind, _ = _RECORD_HEAD.unpack_from(data, pos) if pos + RECORD_HEADER_SIZE <= size \
-                    else (0, 0, 0)
-                inside = kind in _RECORD_KINDS and later < pos + RECORD_HEADER_SIZE + length
                 raise ProtoCorruptionError(
                     f"Own segment {segment.hex} at {path} is corrupt: the record at offset {pos} is invalid "
                     f"but a valid record follows at offset {later} (not a torn tail; nothing was truncated)"
-                    + ("; the valid record lies inside the extent the invalid record claims, so it may be "
-                       "the content of a torn record (for example a blob holding segment data) rather than "
-                       "a later record: ambiguous (see D46 for the operator procedure)" if inside else ""))
+                    + ("; the invalid record's header is damaged, so its extent is unknown and the valid "
+                       "record may be the content of a torn record (for example a blob holding segment "
+                       "data) rather than a later record: ambiguous (see D46 for the operator procedure)"
+                       if ambiguous else ""))
             logger.warning("Own segment %s ends in a torn tail of %d bytes (an interrupted write); truncated "
                            "to its last valid record at offset %d", path, size - pos, pos)
             os.ftruncate(fd, pos)
@@ -1711,40 +1750,48 @@ class TieredStorage(SharedStorage):
                 if self._closed:
                     return
                 self._closed = True
-            error = None
-            try:
-                self._local.flush()
-            except ProtoDBError as e:
-                error = e
-            try:
-                self._local.close()
-            except (ProtoDBError, OSError) as e:
-                error = error or e
-            with self._manifest_lock:
-                fd, self._manifest_fd = self._manifest_fd, -1
-                try:
-                    os.close(fd)
-                except OSError as e:
-                    error = error or e
-            with self._ranges_lock:
-                fd, self._ranges_fd = self._ranges_fd, -1
-                try:
-                    os.close(fd)
-                except OSError as e:
-                    error = error or e
-            with self._copies_lock:
-                pass                # waits for a copy write or a local release in progress
-            try:
-                self._roots.close()
-            except ProtoDBError as e:
-                error = error or e
-            self._cache.clear()
-            self._segments.clear()
-            # Released last (ruling R59): every descriptor is closed and every write refused or
-            # finished, so a new instance can repair the directory without racing this one.
-            try:
-                self._owner.release()
-            except ProtoDBError as e:
-                error = error or e
-            if error is not None:
+            errors = []
+
+            def attempt(step, *expected):
+                def run():
+                    try:
+                        step()
+                    except expected as e:
+                        errors.append(e)
+                return run
+
+            def close_fd(lock, name):
+                def run():
+                    with lock:
+                        fd = getattr(self, name)
+                        setattr(self, name, -1)
+                        os.close(fd)
+                return run
+
+            def wait_copies():
+                with self._copies_lock:
+                    pass                # waits for a copy write or a local release in progress
+
+            def clear_caches():
+                self._cache.clear()
+                self._segments.clear()
+
+            # Every step runs even when an earlier one raised, whatever it raised (an exit stack
+            # runs each callback and propagates the exceptions, 8.3d re-review 12, I2); the
+            # owner lock is released last (ruling R59): every descriptor is closed and every
+            # write refused or finished, so a new instance can repair the directory without
+            # racing this one, and a closed instance never keeps the lock.
+            with contextlib.ExitStack() as steps:
+                steps.callback(attempt(self._owner.release, ProtoDBError))
+                steps.callback(clear_caches)
+                steps.callback(attempt(self._roots.close, ProtoDBError))
+                steps.callback(wait_copies)
+                steps.callback(attempt(close_fd(self._ranges_lock, "_ranges_fd"), OSError))
+                steps.callback(attempt(close_fd(self._manifest_lock, "_manifest_fd"), OSError))
+                steps.callback(attempt(self._local.close, ProtoDBError, OSError))
+                attempt(self._local.flush, ProtoDBError)()
+            if errors:
+                error = errors[0]
+                if len(errors) > 1:
+                    attach_secondary_errors(error, errors[1:])
                 raise ProtoUnexpectedError(f"Closing the tiered storage at {self._path} failed: {error}") from error

@@ -77,7 +77,9 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
            "encode_ranges", "decode_ranges"]
 
 #: Version carried by every message; a receiver drops messages of any other version.
-PROTOCOL_VERSION = 5
+#: 6: the framed record bytes carried by ``replicate``, ``records`` and ``fetched`` use the
+#: version 2 record format (self-validating headers, D46 fix round 13).
+PROTOCOL_VERSION = 6
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
 #: Record bytes a replication puts in one frame at most (a single record may fill one alone).

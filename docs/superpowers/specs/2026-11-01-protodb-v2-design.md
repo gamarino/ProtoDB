@@ -159,8 +159,11 @@ truth for the collections (key order), the indexes and the query evaluator.
 
 - A space directory holds `space.root` and WAL segments named `<uuid4-hex>.seg`.
 - Segment header (once): magic `b"PDB2SEG\0"`, format version (u16 LE), segment UUID.
-- Record: `length:u32 LE | kind:u8 | crc32:u32 LE | payload[length]` where payload is msgpack.
-  kinds: `ATOM=1`, `BLOB=2`. CRC32 (zlib) covers kind+payload.
+- Record (format version 2, D46 amendment "fix round 13"): `magic b"\xc1\xd2" | kind:u8 | length:u32 LE |
+  payload_crc:u32 LE | header_crc:u32 LE | payload[length]` where payload is msgpack.
+  kinds: `ATOM=1`, `BLOB=2`. `payload_crc` is the CRC32 (zlib) of the payload; `header_crc` the CRC32 of
+  the eleven header bytes before it, so a record's length is trusted only when its own header
+  checks. (Version 1 was `length:u32 | kind:u8 | crc32 over kind+payload | payload`.)
 - An `AtomPointer` is `(segment_uuid, offset)`.
 - Each process writes only to segments it created; segments are never appended to after the
   process that created them closes them (no shared append; fixes the 0.1 two-writer issue).

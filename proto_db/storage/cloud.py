@@ -77,7 +77,7 @@ from .base import SharedStorage
 from .cache import BoundedCache
 from .format import (FORMAT_VERSION, RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind,
                      RootRecord, decode_root, decode_segment_header, encode_record,
-                     encode_segment_header, read_record)
+                     encode_segment_header, read_record, record_size)
 
 __all__ = ["ObjectStore", "ObjectStoreError", "ObjectNotFoundError", "PreconditionFailedError",
            "TransientObjectStoreError", "OutcomeUnknownError", "CloudStorage", "S3ObjectStore",
@@ -88,7 +88,6 @@ ROOT_OBJECT = "space.root"
 SEGMENT_PREFIX = "segments/"
 SEGMENT_SUFFIX = ".seg"
 _ROOT_CRC = struct.Struct("<I")
-_LENGTH = struct.Struct("<I")
 #: Attempts of an unconditional publish (``expected_epoch=None``) losing races to other writers.
 _UNCONDITIONAL_ATTEMPTS = 100
 
@@ -433,7 +432,7 @@ class CloudStorage(SharedStorage):
                 data = seg.data
                 if ptr.offset + RECORD_HEADER_SIZE > len(data):
                     raise ProtoCorruptionError(f"No record at {ptr}")
-                end = ptr.offset + RECORD_HEADER_SIZE + _LENGTH.unpack_from(data, ptr.offset)[0]
+                end = ptr.offset + record_size(data[ptr.offset:ptr.offset + RECORD_HEADER_SIZE], ptr)
                 raw = bytes(data[ptr.offset:end])
         if raw is not None:
             return read_record(raw, 0)

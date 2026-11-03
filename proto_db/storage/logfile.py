@@ -4,24 +4,36 @@ Every append-only log of the local tier -- the acceptor log (``roots.log`` and t
 ``*.roots`` files of a shared storage), ``ranges.log`` and ``segments.log`` -- uses this file
 format and opens through :func:`open_log`.
 
-File layout::
+File layout (format version 2, D46 fix round 13)::
 
     header  LOG_MAGIC (8 bytes) | LOG_FORMAT_VERSION (u16 LE) | kind (4 ASCII bytes)
-    frame   length (u32 LE, > 0) | crc32 (u32 LE) | payload (``length`` bytes)
+    frame   FRAME_MAGIC (2 bytes) | length (u32 LE, > 0) | payload_crc (u32 LE) | header_crc (u32 LE)
+            | payload (``length`` bytes)
 
-The CRC32 of a frame covers its four length bytes and its payload, so a damaged length is
-detected like a damaged payload.  The kind names the log (``b"ROOT"``, ``b"RANG"``,
-``b"SEGS"``), so one log is never read as another.
+``payload_crc`` is the CRC32 of the payload and ``header_crc`` the CRC32 of the ten bytes
+before it, so a frame header is self-validating: its length is trusted only when its own CRC
+matches, without reading the payload.  The kind names the log (``b"ROOT"``, ``b"RANG"``,
+``b"SEGS"``), so one log is never read as another.  (Version 1 framed ``length | crc32 over
+the length and the payload | payload``: a damaged length was detected, but only by reading
+the extent it claimed, which made the search below quadratic in the worst case.)
 
-Reading a log (:func:`scan`) walks the frames from the header.  At the first position that
-does not hold a valid frame it distinguishes two cases:
+Reading a log (:func:`scan`) walks the frames from the header.  At the first position ``pos``
+that does not hold a valid frame it decides, framing first, between two cases:
 
-* **a torn tail**: no valid frame starts anywhere after that position.  The region is what
-  an interrupted append left (a failed ``write``, a ``SIGKILL`` or a power loss before the
-  bytes were synced): it is dropped, and every frame before it is valid;
-* **mid-log corruption**: a valid frame starts somewhere after it.  The log lost or damaged
-  bytes that later entries were written after; nothing silently drops those later entries,
+* **a torn tail**: what an interrupted append left (a failed ``write``, a ``SIGKILL`` or a
+  power loss before the bytes were synced): it is dropped, and every frame before it is
+  valid.  It is one when fewer bytes than a frame header remain, or when the frame header at
+  ``pos`` is valid and its frame extends past the end of the file (the writer stopped inside
+  it), or otherwise when no valid frame starts after it: after the frame's extent when its
+  header is valid (only the payload is damaged), at any offset after ``pos`` when the header
+  itself is invalid (its extent is unknown);
+* **mid-log corruption**: such a search finds a valid frame.  The log lost or damaged bytes
+  that later entries were written after; nothing silently drops those later entries,
   :class:`~proto_db.errors.ProtoCorruptionError` is raised instead.
+
+The search is exact (the answer of trying every offset) and linear in the bytes searched: the
+regular-expression engine finds the candidate offsets (the frame magic), each costs a header
+CRC, and only a candidate with a valid header has its payload checked.
 
 A header that is only partly there (a prefix of the expected header, possibly followed by
 zero bytes, and nothing else) is a torn tail too: the log is new.  Any other header (a
@@ -37,13 +49,14 @@ middle of an append alike.  A trim is logged at warning level.
 import errno
 import logging
 import os
+import re
 import struct
 import zlib
 from typing import NamedTuple
 
-from ..errors import ProtoCorruptionError, ProtoNotSupportedError, attach_secondary_errors
+from ..errors import ProtoCorruptionError, ProtoLockingError, ProtoNotSupportedError, attach_secondary_errors
 
-__all__ = ["LOG_MAGIC", "LOG_FORMAT_VERSION", "HEADER_SIZE", "FRAME_OVERHEAD", "ScanResult",
+__all__ = ["LOG_MAGIC", "LOG_FORMAT_VERSION", "FRAME_MAGIC", "HEADER_SIZE", "FRAME_OVERHEAD", "ScanResult",
            "encode_header", "encode_frame", "scan", "read_fd", "read_log", "open_log", "log_contents",
            "write_all", "prepare_replacement", "fsync_dir"]
 
@@ -51,12 +64,16 @@ logger = logging.getLogger(__name__)
 
 LOG_MAGIC = b"PDB2LOG\0"
 #: Version of the framed log format; bump it when the header or the framing changes.
-LOG_FORMAT_VERSION = 1
+#: 2: self-validating frame headers (D46 fix round 13).
+LOG_FORMAT_VERSION = 2
+#: First two bytes of every frame (a search candidate marker; the header CRC decides).
+FRAME_MAGIC = b"\xc1\xf7"
 _HEADER = struct.Struct("<8sH4s")
-_FRAME = struct.Struct("<II")
-_LENGTH = struct.Struct("<I")
+_FRAME = struct.Struct("<2sIII")                # magic, length, payload crc, header crc
+_FRAME_BODY = _FRAME.size - 4                   # the bytes the header CRC covers
 HEADER_SIZE = _HEADER.size
 FRAME_OVERHEAD = _FRAME.size
+_CANDIDATE = re.compile(re.escape(FRAME_MAGIC), re.DOTALL)
 _O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
 _O_BINARY = getattr(os, "O_BINARY", 0)
 
@@ -78,29 +95,45 @@ def encode_header(kind: bytes) -> bytes:
 
 def encode_frame(payload: bytes) -> bytes:
     """Frame ``payload`` (non-empty) for appending to a log."""
-    length = _LENGTH.pack(len(payload))
-    return length + _LENGTH.pack(zlib.crc32(payload, zlib.crc32(length))) + payload
+    body = _FRAME.pack(FRAME_MAGIC, len(payload), zlib.crc32(payload), 0)[:_FRAME_BODY]
+    return body + zlib.crc32(body).to_bytes(4, "little") + payload
+
+
+def _frame_header(data, pos: int, size: int):
+    """The payload length of a valid frame header at ``pos`` of ``data`` (``size`` bytes) and
+    its payload CRC, as ``(length, crc)``, or ``None`` (truncated or invalid header)."""
+    if pos + FRAME_OVERHEAD > size:
+        return None
+    magic, length, crc, header_crc = _FRAME.unpack_from(data, pos)
+    if magic != FRAME_MAGIC or length == 0 or zlib.crc32(data[pos:pos + _FRAME_BODY]) != header_crc:
+        return None
+    return length, crc
 
 
 def _frame_at(data, pos: int, size: int):
     """The payload of a valid frame at ``pos`` of ``data`` (``size`` bytes), or ``None``."""
-    if pos + FRAME_OVERHEAD > size:
+    header = _frame_header(data, pos, size)
+    if header is None:
         return None
-    length, crc = _FRAME.unpack_from(data, pos)
+    length, crc = header
     end = pos + FRAME_OVERHEAD + length
-    if length == 0 or end > size:
+    if end > size:
         return None
     payload = data[pos + FRAME_OVERHEAD:end]
-    if zlib.crc32(payload, zlib.crc32(data[pos:pos + 4])) != crc:
+    if zlib.crc32(payload) != crc:
         return None
     return payload
 
 
 def _first_valid_frame(data, start: int, size: int):
-    """The offset of the first valid frame starting at or after ``start``, or ``None``."""
-    for pos in range(start, size - FRAME_OVERHEAD):
-        if _frame_at(data, pos, size) is not None:
-            return pos
+    """The offset of the first valid frame starting at or after ``start``, or ``None`` (exact:
+    the answer of trying :func:`_frame_at` at every offset; linear, module docstring)."""
+    last = size - FRAME_OVERHEAD
+    if start > last:
+        return None
+    for match in _CANDIDATE.finditer(data, start, last + len(FRAME_MAGIC)):
+        if _frame_at(data, match.start(), size) is not None:
+            return match.start()
     return None
 
 
@@ -126,13 +159,21 @@ def scan(data: bytes, kind: bytes, path: str) -> ScanResult:
                 f"The log {path} has format version {version}; this version reads {LOG_FORMAT_VERSION}")
         if magic == LOG_MAGIC and version == LOG_FORMAT_VERSION and found != kind:
             raise ProtoCorruptionError(f"The log {path} is a {found!r} log, not a {kind!r} log")
-        raise ProtoCorruptionError(f"The log {path} does not start with a valid {kind!r} log header")
+        raise ProtoCorruptionError(
+            f"The log {path} does not start with a valid {kind!r} log header but holds other data (no entry "
+            f"offset applies: see D46 for the operator procedure, wipe and rejoin)")
     payloads = []
     pos = HEADER_SIZE
     while pos < size:
         payload = _frame_at(view, pos, size)
         if payload is None:
-            later = _first_valid_frame(view, pos + 1, size)
+            header = _frame_header(view, pos, size)
+            if header is None:
+                later = _first_valid_frame(data, pos + 1, size)
+            elif pos + FRAME_OVERHEAD + header[0] > size:
+                later = None                        # the writer's frame, cut short
+            else:
+                later = _first_valid_frame(data, pos + FRAME_OVERHEAD + header[0], size)
             if later is not None:
                 raise ProtoCorruptionError(
                     f"The log {path} is corrupt: the entry at offset {pos} is invalid but a valid entry "
@@ -204,7 +245,9 @@ def open_log(path: str, kind: bytes, *, durability: str) -> tuple:
     is returned (module docstring), whatever ``durability``; the header of a new log and the
     directory entries of a new file are synced under ``"fsync"`` durability.  Raises
     ``ProtoCorruptionError`` (mid-log corruption, foreign header), ``ProtoNotSupportedError``
-    (another format version) or ``OSError``; the descriptor is closed on every failure.
+    (another format version), ``ProtoLockingError`` (the file has more than one hard link,
+    checked before anything is read or repaired) or ``OSError``; the descriptor is closed on
+    every failure.
     """
     directory = os.path.dirname(path)
     created_dir = not os.path.isdir(directory)
@@ -212,6 +255,14 @@ def open_log(path: str, kind: bytes, *, durability: str) -> tuple:
     existed = os.path.exists(path)
     fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_APPEND | _O_BINARY | _O_CLOEXEC, 0o644)
     try:
+        links = os.fstat(fd).st_nlink
+        if links > 1:
+            # A second name for the file would name a second lock file, so the owner lock could
+            # not exclude an instance opened through it (8.3d re-review 12, M3); a compaction
+            # would also split the names into two diverging logs.  Refused before any repair.
+            raise ProtoLockingError(
+                f"The log {path} has {links} hard links; a log must have exactly one name (remove the "
+                f"other links) because opening repairs the file and its lock is named after the path")
         result = scan(read_fd(fd), kind, path)
         if result.torn:
             size = os.fstat(fd).st_size

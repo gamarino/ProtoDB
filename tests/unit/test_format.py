@@ -15,7 +15,8 @@ from proto_db.storage.format import (FORMAT_VERSION, SEGMENT_MAGIC, RecordKind, 
 
 
 def test_constants():
-    assert SEGMENT_MAGIC == b"PDB2SEG\0" and FORMAT_VERSION == 1
+    assert SEGMENT_MAGIC == b"PDB2SEG\0" and FORMAT_VERSION == 2
+    assert fmt.RECORD_MAGIC == b"\xc1\xd2" and fmt.RECORD_HEADER_SIZE == 15
     assert RecordKind.ATOM == 1 and RecordKind.BLOB == 2
 
 
@@ -23,7 +24,7 @@ def test_segment_header_round_trip():
     seg = uuid.uuid4()
     raw = encode_segment_header(seg)
     assert raw[:8] == SEGMENT_MAGIC and len(raw) == fmt.SEGMENT_HEADER_SIZE == 26
-    assert struct.unpack("<H", raw[8:10])[0] == 1 and raw[10:] == seg.bytes
+    assert struct.unpack("<H", raw[8:10])[0] == 2 and raw[10:] == seg.bytes
     assert decode_segment_header(raw) == seg
     assert decode_segment_header(raw + b"extra") == seg
 
@@ -44,9 +45,11 @@ def test_segment_header_rejects_bad_input():
 def test_record_round_trip(kind, payload):
     rec = encode_record(kind, payload)
     assert len(rec) == fmt.RECORD_HEADER_SIZE + len(payload)
-    length, k, crc = struct.unpack("<IBI", rec[:9])
-    assert (length, k) == (len(payload), kind)
-    assert crc == zlib.crc32(bytes([kind]) + payload)
+    magic, k, length, crc, header_crc = struct.unpack("<2sBIII", rec[:15])
+    assert (magic, length, k) == (fmt.RECORD_MAGIC, len(payload), kind)
+    assert crc == zlib.crc32(payload) and header_crc == zlib.crc32(rec[:11])
+    assert fmt.record_header(rec) == (kind, len(payload), crc)
+    assert fmt.record_size(rec[:15]) == len(rec)
     assert read_record(io.BytesIO(rec), 0) == (kind, payload)
     assert read_record(rec, 0) == (kind, payload)
 
@@ -96,14 +99,38 @@ def test_truncated_record_detected():
 
 def test_bad_kind_with_valid_crc_detected():
     payload = b"abc"
-    rec = struct.pack("<IBI", 3, 9, zlib.crc32(bytes([9]) + payload)) + payload
+    body = struct.pack("<2sBII", fmt.RECORD_MAGIC, 9, 3, zlib.crc32(payload))
+    rec = body + struct.pack("<I", zlib.crc32(body)) + payload
+    with pytest.raises(ProtoCorruptionError):
+        read_record(io.BytesIO(rec), 0)
+    assert fmt.record_header(rec) is None
+    with pytest.raises(ProtoCorruptionError):
+        fmt.record_size(rec)
+
+
+def test_version_1_records_are_not_readable():
+    """The version 1 framing (length | kind | crc over kind + payload) is refused (D46 fix round 13)."""
+    payload = b"abc"
+    rec = struct.pack("<IBI", 3, 1, zlib.crc32(bytes([1]) + payload)) + payload + bytes(8)
     with pytest.raises(ProtoCorruptionError):
         read_record(io.BytesIO(rec), 0)
 
 
+def test_record_header_is_self_validating():
+    """Every single-byte change of a header is caught without reading the payload."""
+    rec = encode_record(RecordKind.BLOB, b"payload" * 100)
+    for i in range(fmt.RECORD_HEADER_SIZE):
+        for flip in (0x01, 0x80, 0xFF):
+            bad = bytearray(rec[:fmt.RECORD_HEADER_SIZE])
+            bad[i] ^= flip
+            assert fmt.record_header(bytes(bad)) is None
+            with pytest.raises(ProtoCorruptionError):
+                fmt.record_size(bytes(bad))
+
+
 def test_root_round_trip():
     seg = uuid.uuid4()
-    root = RootRecord(version=1, segment=seg, offset=12345, epoch=7)
+    root = RootRecord(version=FORMAT_VERSION, segment=seg, offset=12345, epoch=7)
     raw = encode_root(root)
     assert decode_root(raw) == root
     assert root.pointer == AtomPointer(seg, 12345)
@@ -111,7 +138,7 @@ def test_root_round_trip():
 
 
 def test_root_every_byte_corruption_detected():
-    raw = encode_root(RootRecord(1, uuid.uuid4(), 99, 3))
+    raw = encode_root(RootRecord(FORMAT_VERSION, uuid.uuid4(), 99, 3))
     for i in range(len(raw)):
         bad = bytearray(raw)
         bad[i] ^= 0x01
@@ -120,7 +147,7 @@ def test_root_every_byte_corruption_detected():
 
 
 def test_root_truncated_or_garbage():
-    raw = encode_root(RootRecord(1, uuid.uuid4(), 99, 3))
+    raw = encode_root(RootRecord(FORMAT_VERSION, uuid.uuid4(), 99, 3))
     for data in (b"", raw[:3], raw[:-1], b"\x00" * 40):
         with pytest.raises(ProtoCorruptionError):
             decode_root(data)

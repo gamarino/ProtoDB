@@ -26,6 +26,14 @@ Mechanism (choice and justification):
   semantics differ per platform).  Exclusion between instances of one process thus never
   depends on the file system.
 
+Aliases (8.3d re-review 12, M3; ruling R60): the lock file path is resolved with
+``os.path.realpath`` (owners derive it from the resolved path of what they protect, so a
+symbolic link to a log or a directory names the same lock file), and the registry also holds
+the device and inode of the protected *target* (the log file or the directory), so a hard
+link to a log cannot be opened a second time in this process.  Between processes a hard link
+is refused by :func:`~proto_db.storage.logfile.open_log`, which refuses a log file with more
+than one link before it reads or repairs anything.
+
 The lock file holds no data and is never deleted (deleting it while held would let a second
 instance lock a new file of the same name).  It is a separate file, not the log itself,
 because log compactions replace the log file by a rename, which would leave a lock on the
@@ -59,7 +67,7 @@ _O_BINARY = getattr(os, "O_BINARY", 0)
 _O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
 
 _held_lock = threading.Lock()
-_held = set()                  # (st_dev, st_ino) of the lock files held by this process
+_held = set()                  # ("lock" | "target", st_dev, st_ino) of the lock files and targets held
 
 
 def locking_supported() -> bool:
@@ -97,21 +105,23 @@ class OwnerLock:
     must exist), held from construction until :meth:`release` (see the module docstring).
 
     Args:
-        path: the lock file.
+        path: the lock file (resolved with ``os.path.realpath``).
         what: a description of the owner for error messages (for example "the tiered storage
             directory /data/node1").
+        target: the file or directory the lock protects; when it exists, its device and inode
+            are registered too, so an alias of it (a hard link) is refused in this process.
 
     Raises ``ProtoLockingError`` when another instance, in this process or another one, holds
     the lock; ``ProtoNotSupportedError`` when the platform has no lock primitive;
     ``ProtoUnexpectedError`` when the lock file cannot be opened or locked.
     """
 
-    def __init__(self, path: str, what: str):
+    def __init__(self, path: str, what: str, *, target=None):
         if not locking_supported():  # pragma: no cover - platforms without advisory locks
             raise ProtoNotSupportedError(
                 f"No OS advisory file locking is available; {what} cannot be opened safely "
                 f"(opening repairs files another instance could be writing)")
-        self._path = os.path.abspath(os.fspath(path))
+        self._path = os.path.realpath(os.fspath(path))
         self._what = what
         try:
             fd = os.open(self._path, os.O_RDWR | os.O_CREAT | _O_BINARY | _O_CLOEXEC, 0o644)
@@ -119,17 +129,30 @@ class OwnerLock:
             raise ProtoUnexpectedError(f"Cannot open the lock file {self._path} of {what}: {e}") from e
         try:
             st = os.fstat(fd)
-            key = (st.st_dev, st.st_ino)
+            keys = [("lock", st.st_dev, st.st_ino)]
+            if target is not None:
+                try:
+                    tst = os.stat(os.fspath(target))
+                except FileNotFoundError:
+                    tst = None              # not created yet: no alias of it can exist
+                except OSError as e:
+                    raise ProtoUnexpectedError(f"Cannot inspect {target} for {what}: {e}") from e
+                if tst is not None:
+                    keys.append(("target", tst.st_dev, tst.st_ino))
+            keys = tuple(keys)
             with _held_lock:
-                if key in _held:
+                if keys[0] in _held:
                     raise self._busy("another instance in this process")
+                if any(key in _held for key in keys[1:]):
+                    raise self._busy(f"another instance in this process through another path to {target} "
+                                     f"(a link)")
                 try:
                     acquired = _try_os_lock(fd)
                 except OSError as e:
                     raise ProtoUnexpectedError(f"Cannot lock {self._path} for {what}: {e}") from e
                 if not acquired:
                     raise self._busy("another process")
-                _held.add(key)
+                _held.update(keys)
         except BaseException as e:
             try:
                 os.close(fd)
@@ -137,9 +160,24 @@ class OwnerLock:
                 attach_secondary_errors(e, [close_error])
             raise
         self._fd = fd
-        self._key = key
+        self._keys = keys
         self._released = False
         self._release_lock = threading.Lock()
+
+    def track(self, fd: int) -> None:
+        """Register the file open on ``fd`` as this lock's target, replacing the target
+        registered before: called by an owner once it has created its file and after a
+        compaction renamed a new file over it, so a hard link to the current file is refused
+        in this process.  ``OSError`` from ``fstat`` propagates."""
+        st = os.fstat(fd)
+        key = ("target", st.st_dev, st.st_ino)
+        with _held_lock:
+            if self._released:
+                return
+            old = [k for k in self._keys if k[0] == "target"]
+            _held.difference_update(old)
+            _held.add(key)
+            self._keys = tuple(k for k in self._keys if k[0] != "target") + (key,)
 
     def _busy(self, holder: str) -> ProtoLockingError:
         return ProtoLockingError(
@@ -175,6 +213,6 @@ class OwnerLock:
         except OSError as e:
             error = error or e
         with _held_lock:
-            _held.discard(self._key)
+            _held.difference_update(self._keys)
         if error is not None:
             raise ProtoUnexpectedError(f"Releasing the lock {self._path} of {self._what} failed: {error}") from error

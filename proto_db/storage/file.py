@@ -47,7 +47,6 @@ flag under the state lock before it uses one.
 """
 import contextlib
 import os
-import struct
 import threading
 import time
 import uuid
@@ -63,7 +62,7 @@ from .base import SharedStorage
 from .cache import BoundedCache
 from .format import (FORMAT_VERSION, RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind,
                      RootRecord, decode_root, decode_segment_header, encode_record,
-                     encode_root, encode_segment_header, read_record)
+                     encode_root, encode_segment_header, read_record, record_size)
 
 try:
     import fcntl
@@ -88,7 +87,6 @@ _O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
 _SEGMENT_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_EXCL | _O_BINARY | _O_CLOEXEC
 _ROOT_TMP_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | _O_BINARY | _O_CLOEXEC
 _READ_FLAGS = os.O_RDONLY | _O_BINARY | _O_CLOEXEC
-_LENGTH = struct.Struct("<I")
 _DIRECT_READ_PAGES = 4
 _seek_lock = threading.Lock()
 
@@ -483,7 +481,7 @@ class FileStorage(SharedStorage):
                 data = chunk.data
                 if rel + RECORD_HEADER_SIZE > len(data):
                     raise ProtoCorruptionError(f"No record at {ptr}")
-                end = rel + RECORD_HEADER_SIZE + _LENGTH.unpack_from(data, rel)[0]
+                end = rel + record_size(data[rel:rel + RECORD_HEADER_SIZE], ptr)
                 if end > len(data):
                     raise ProtoCorruptionError(f"No record at {ptr}")
                 return bytes(data[rel:end])
@@ -571,7 +569,7 @@ class FileStorage(SharedStorage):
             header = self._read_range(ptr.segment, fd, ptr.offset, RECORD_HEADER_SIZE, use_cache)
             if len(header) < RECORD_HEADER_SIZE:
                 raise ProtoCorruptionError(f"Truncated record header at {ptr}")
-            total = RECORD_HEADER_SIZE + _LENGTH.unpack_from(header)[0]
+            total = record_size(header, ptr)
             if total > _DIRECT_READ_PAGES * self._page_size and ptr.offset + total > os.fstat(fd).st_size:
                 raise ProtoCorruptionError(f"Truncated record at {ptr}")
             return read_record(self._read_range(ptr.segment, fd, ptr.offset, total, use_cache), 0)

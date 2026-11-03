@@ -25,7 +25,7 @@ from proto_db.storage.cloud import (CloudStorage, GCSObjectStore, ObjectNotFound
                                     ObjectStoreError, OutcomeUnknownError,
                                     PreconditionFailedError, S3ObjectStore,
                                     TransientObjectStoreError)
-from proto_db.storage.format import RootRecord, decode_root, encode_root
+from proto_db.storage.format import FORMAT_VERSION, RootRecord, decode_root, encode_root
 from proto_db.transactions import ObjectSpace
 from tests.contracts.storage_contract import StorageContract, atom_payload
 from tests.support.fake_object_store import FakeObjectStore
@@ -153,7 +153,7 @@ def test_unconditional_publish_retries_through_contention():
     s.publish_root(s.push_atom(atom_payload(1)), 0)
     store.inject("put_if_match", "precondition", times=3)
     p = s.push_atom(atom_payload(2))
-    assert s.publish_root(p, None) == RootRecord(1, p.segment, p.offset, 2)
+    assert s.publish_root(p, None) == RootRecord(FORMAT_VERSION, p.segment, p.offset, 2)
 
 
 # --- unknown outcomes -----------------------------------------------------------------------

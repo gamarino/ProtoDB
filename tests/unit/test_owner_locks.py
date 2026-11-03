@@ -1,5 +1,6 @@
 """One live instance per local directory and per acceptor log file (8.3d re-review 11, I1;
-ruling R59), and the own-segment search for a valid record (M1).
+ruling R59); every failed open releases the lock, and aliases of one log are refused (re-review
+12, I2 and M3; ruling R60).  The own-segment search is tested in test_self_validating_framing.py.
 
 Opening a :class:`~proto_db.storage.tiered.TieredStorage` directory or a
 :class:`~proto_db.cluster.rootlog.RootsLog` truncates torn tails.  Before the fix nothing
@@ -120,9 +121,10 @@ def test_two_plain_tiers_with_one_node_id_on_a_shared_file_storage_are_refused(t
 def _corrupt_mid_log(path: str) -> None:
     """Damage the first frame's payload of the framed log ``path`` (its second frame stays
     valid): opening it raises ``ProtoCorruptionError``."""
+    from proto_db.storage import logfile
     with open(path, "r+b") as f:
         data = bytearray(f.read())
-        data[14 + 8] ^= 0xFF
+        data[logfile.HEADER_SIZE + logfile.FRAME_OVERHEAD] ^= 0xFF     # first payload byte
         f.seek(0)
         f.write(data)
 
@@ -365,106 +367,228 @@ def test_r12_a_second_roots_log_during_a_short_append_is_refused_and_nothing_is_
         c.close()
 
 
-# -- M1: the own-segment search -----------------------------------------------------------------
+# -- I2 (re-review 12; ruling R60): every failed open releases the lock --------------------------
 
-def _brute_first_valid(data, start, size):
-    for pos in range(start, size - RECORD_HEADER_SIZE + 1):
-        if tiered_module._record_length(data, pos, size) is not None:
-            return pos
-    return None
-
-
-def test_crc_shift_matches_zlib_crc32_combine():
-    import random
-    rng = random.Random(7)
-    for _ in range(300):
-        a = rng.randbytes(rng.randint(0, 200))
-        b = rng.randbytes(rng.choice([0, 1, 5, rng.randint(0, 70000)]))
-        assert tiered_module._crc_shift(zlib.crc32(a), len(b)) ^ zlib.crc32(b) == zlib.crc32(a + b)
-
-
-@pytest.mark.parametrize("checkpoint,direct", [(7, 0), (64, 16), (16384, 65536)])
-def test_the_fast_search_equals_trying_every_offset(monkeypatch, checkpoint, direct):
-    """The search answers exactly as trying :func:`_record_length` at every offset, on regions
-    mixing valid records, random bytes, runs of kind and zero bytes and forged headers."""
-    import random
-    monkeypatch.setattr(tiered_module, "_CRC_CHECKPOINT", checkpoint)
-    monkeypatch.setattr(tiered_module, "_CRC_DIRECT", direct)
-    rng = random.Random(checkpoint)
-    found = 0
-    for _ in range(250):
-        parts = []
-        for _ in range(rng.randint(0, 4)):
-            c = rng.random()
-            if c < 0.3:
-                parts.append(encode_record(rng.choice([1, 2]), rng.randbytes(rng.randint(1, 2000))))
-            elif c < 0.6:
-                parts.append(bytes([rng.choice([0, 1, 2, 255])]) * rng.randint(1, 400))
-            else:
-                parts.append(rng.randbytes(rng.randint(1, 2000)))
-        data = b"".join(parts)
-        if len(data) > 20 and rng.random() < 0.4:
-            p = rng.randrange(len(data) - 10)
-            length = rng.randint(0, len(data) - p)
-            data = data[:p] + length.to_bytes(4, "little") + bytes([rng.choice([1, 2])]) + data[p + 5:]
-        start = rng.randint(0, len(data))
-        expected = _brute_first_valid(data, start, len(data))
-        found += expected is not None
-        assert tiered_module._first_valid_record(data, start, len(data)) == (expected, True)
-    assert found > 20
+BAD_CONFIGS = [
+    ("segment_cache_bytes=-1", dict(segment_cache_bytes=-1)),
+    ("segment_cache_bytes=1.5e6", dict(segment_cache_bytes=1.5e6)),
+    ("cache_bytes=-1", dict(cache_bytes=-1)),
+    ("backoff=('x','y')", dict(backoff=("x", "y"))),
+    ("backoff=(None,1)", dict(backoff=(None, 1))),
+    ("backoff=(2,1)", dict(backoff=(2.0, 1.0))),
+    ("backoff=(-1,1)", dict(backoff=(-1.0, 1.0))),
+    ("backoff=(nan,1)", dict(backoff=(float("nan"), 1.0))),
+    ("backoff=(0,inf)", dict(backoff=(0.0, float("inf")))),
+    ("backoff=(True,1)", dict(backoff=(True, 1.0))),
+    ("backoff=(10**400,10**400)", dict(backoff=(10 ** 400, 10 ** 400))),
+    ("backoff=3", dict(backoff=3)),
+    ("segment_max_bytes=10", dict(segment_max_bytes=10)),
+    ("lock_timeout=-1", dict(lock_timeout=-1)),
+    ("ship_interval=nan", dict(ship_interval=float("nan"))),
+]
 
 
-def test_candidate_patterns_match_exactly_a_bounded_high_byte_before_a_kind_byte():
-    probe = bytes(x for b in range(256) for k in range(4) for x in (b, k))   # (byte, kind) pairs
-    for high in (0, 1, 15, 16, 91, 92, 93, 254, 255):
-        hits = {m.start() for m in tiered_module._candidate_pattern(high).finditer(probe)}
-        assert hits == {i for i in range(len(probe) - 1) if probe[i] <= high and probe[i + 1] in (1, 2)}, high
-        assert len(hits) >= 2 * (high + 1)
+@pytest.mark.parametrize("name,bad", BAD_CONFIGS, ids=[n for n, _ in BAD_CONFIGS])
+def test_a_bad_argument_is_refused_before_the_lock_and_a_correct_open_then_succeeds(tmp_path, name, bad):
+    """Every argument is validated before the directory is created or locked: a service that
+    retries with corrected settings is not locked out by a phantom instance (before the fix,
+    ``segment_cache_bytes`` and the ``backoff`` elements were checked after the lock, which
+    leaked)."""
+    from proto_db.errors import ProtoValidationError
+    d = str(tmp_path / "node")
+    store = FakeObjectStore()
+    kw = dict(KW, **bad)
+    for _ in range(2):
+        with pytest.raises(ProtoValidationError):
+            TieredStorage(d, store, **kw)
+        assert not os.path.exists(d), "the directory was touched before validation"
+    TieredStorage(d, store, **KW).close()
+    os.makedirs(d, exist_ok=True)
+    with pytest.raises(ProtoValidationError):              # an existing directory: still no lock
+        TieredStorage(d, store, **kw)
+    TieredStorage(d, store, **KW).close()
 
 
-def test_a_torn_random_blob_tail_is_trimmed_quickly(tmp_path):
-    """A torn 64 MiB random blob (the reviewer's scan-cost case: 48 s before, about 0.5 s now) is
-    trimmed; the time bound is generous so that a loaded machine does not fail it."""
-    import time
-    seg = uuid.uuid4()
-    path = str(tmp_path / (seg.hex + ".seg"))
-    from proto_db.storage.format import encode_segment_header
-    good = encode_segment_header(seg) + encode_record(1, b"atom")
-    with open(path, "wb") as f:
-        f.write(good + encode_record(2, os.urandom(64 << 20))[:-(1 << 20)])
-    t0 = time.monotonic()
-    assert TieredStorage._repair_own_segment(path, seg) == len(good)
-    assert time.monotonic() - t0 < 20
-    assert os.path.getsize(path) == len(good)
+class _Injected(Exception):
+    """A failure that is not a ProtoDBError (an unexpected bug), injected after the lock."""
 
 
-def test_a_valid_record_inside_a_torn_record_is_reported_as_ambiguous(tmp_path):
-    """A torn blob whose bytes embed a valid record cannot be told from mid-segment corruption:
-    the open refuses (nothing truncated) and says the case is ambiguous."""
-    seg = uuid.uuid4()
-    path = str(tmp_path / (seg.hex + ".seg"))
-    from proto_db.storage.format import encode_segment_header
-    inner = encode_record(1, b"an embedded record")
-    torn = encode_record(2, b"\x00" * 100 + inner + os.urandom(5000))[:-1000]
-    data = encode_segment_header(seg) + encode_record(1, b"atom") + torn
-    with open(path, "wb") as f:
-        f.write(data)
-    with pytest.raises(ProtoCorruptionError, match="ambiguous"):
-        TieredStorage._repair_own_segment(path, seg)
-    with open(path, "rb") as f:
-        assert f.read() == data
+@pytest.mark.parametrize("where", ["FileStorage", "_load_manifest", "RootsLog", "_load_ranges"])
+def test_an_unexpected_failure_after_the_lock_releases_it(tmp_path, monkeypatch, where):
+    d = str(tmp_path / "node")
+    store = FakeObjectStore()
+    TieredStorage(d, store, **KW).close()
+
+    def boom(*args, **kwargs):
+        raise _Injected(where)
+
+    if where in ("FileStorage", "RootsLog"):
+        monkeypatch.setattr(tiered_module, where, boom)
+    else:
+        monkeypatch.setattr(TieredStorage, where, boom)
+    for _ in range(2):
+        with pytest.raises(_Injected):
+            TieredStorage(d, store, **KW)
+    monkeypatch.undo()
+    TieredStorage(d, store, **KW).close()
+    r = RootsLog(os.path.join(d, tiered_module.ROOTS_LOG))   # the acceptor log's lock was released too
+    r.close()
 
 
-def test_an_exhausted_search_refuses_and_truncates_nothing(tmp_path, monkeypatch):
-    monkeypatch.setattr(tiered_module, "_SEARCH_BUDGET", 3)
-    seg = uuid.uuid4()
-    path = str(tmp_path / (seg.hex + ".seg"))
-    from proto_db.storage.format import encode_segment_header
-    forged = b"".join((0).to_bytes(4, "little") + b"\x01" + b"\x00\x00\x00\x00" for _ in range(10))
-    data = encode_segment_header(seg) + encode_record(1, b"atom") + b"\xff" + forged
-    with open(path, "wb") as f:
-        f.write(data)
-    with pytest.raises(ProtoCorruptionError, match="cannot be classified"):
-        TieredStorage._repair_own_segment(path, seg)
-    with open(path, "rb") as f:
-        assert f.read() == data
+def test_a_failing_release_step_of_a_failed_open_still_releases_the_lock(tmp_path, monkeypatch):
+    """When closing what a failed open opened raises something unexpected too, every later
+    step still runs and the lock is released last."""
+    d = str(tmp_path / "node")
+    store = FakeObjectStore()
+
+    def ranges_boom(self):
+        raise _Injected("ranges")
+
+    def local_close_boom(self):
+        raise _Injected("local close")
+
+    monkeypatch.setattr(TieredStorage, "_load_ranges", ranges_boom)
+    monkeypatch.setattr(FileStorage, "close", local_close_boom)
+    with pytest.raises(_Injected):
+        TieredStorage(d, store, **KW)
+    monkeypatch.undo()
+    TieredStorage(d, store, **KW).close()
+
+
+def test_close_releases_the_lock_whatever_a_step_raises(tmp_path, monkeypatch):
+    """``close()`` runs every step and releases the lock last even when a step raises an
+    exception that is not a ProtoDBError (re-review 12, out-of-diff note)."""
+    d = str(tmp_path / "node")
+    store = FakeObjectStore()
+    a = TieredStorage(d, store, **KW)
+    roots = a._roots
+
+    def flush_boom():
+        raise _Injected("flush")
+
+    monkeypatch.setattr(a._local, "flush", flush_boom)
+    with pytest.raises(_Injected):
+        a.close()
+    assert roots._closed and a._manifest_fd == -1 and a._ranges_fd == -1   # later steps still ran
+    a.close()                                                               # idempotent
+    TieredStorage(d, store, **KW).close()
+
+
+def test_roots_log_close_releases_the_lock_and_keeps_the_close_error_primary(tmp_path, monkeypatch):
+    from proto_db.errors import ProtoUnexpectedError, secondary_errors
+    path = str(tmp_path / "n.roots")
+    a = RootsLog(path)
+    fd = a._fd
+    real_close = os.close
+
+    def close(n):
+        if n == fd:
+            real_close(n)
+            raise OSError(5, "injected close failure")
+        return real_close(n)
+
+    def release_boom():
+        a._owner.__class__.release(a._owner)
+        raise ProtoUnexpectedError("injected release failure")
+
+    monkeypatch.setattr(os, "close", close)
+    monkeypatch.setattr(a._owner, "release", release_boom)
+    with pytest.raises(ProtoUnexpectedError, match="Closing the root log") as info:
+        a.close()
+    monkeypatch.undo()
+    assert any("injected release failure" in str(e) for e in secondary_errors(info.value))
+    RootsLog(path).close()
+
+
+# -- M3 (re-review 12; ruling R60): aliases of one acceptor log --------------------------------
+
+def test_a_roots_log_through_a_file_symlink_is_refused_while_the_target_is_open(tmp_path):
+    real = str(tmp_path / "n.roots")
+    link = str(tmp_path / "link.roots")
+    a = RootsLog(real)
+    os.symlink(real, link)
+    try:
+        with pytest.raises(ProtoLockingError, match="already open"):
+            RootsLog(link)
+        assert _open_in_child("roots", link) == "REFUSED"
+    finally:
+        a.close()
+    b = RootsLog(link)                    # resolved: the log and its lock are the target's
+    try:
+        assert b.path == os.path.realpath(real)
+        with pytest.raises(ProtoLockingError):
+            RootsLog(real)
+    finally:
+        b.close()
+    assert os.path.islink(link) and not os.path.exists(link + ".lock")
+
+
+def test_a_compaction_through_a_symlink_replaces_the_target_not_the_link(tmp_path, monkeypatch):
+    monkeypatch.setattr(rootlog_module, "_COMPACT_BYTES", 200)
+    real = str(tmp_path / "n.roots")
+    link = str(tmp_path / "link.roots")
+    RootsLog(real).close()
+    os.symlink(real, link)
+    a = RootsLog(link)
+    try:
+        ino = os.stat(real).st_ino
+        for i in range(1, 20):
+            a.append("accepted", i, rec(i), sync=True)
+        assert os.stat(real).st_ino != ino, "no compaction happened"
+        assert os.path.islink(link)
+        with pytest.raises(ProtoLockingError):
+            RootsLog(real)
+    finally:
+        a.close()
+    b = RootsLog(real)
+    try:
+        assert b.load().accepted[0] == 19
+    finally:
+        b.close()
+
+
+def test_a_roots_log_through_a_hard_link_is_refused_in_this_process_and_another(tmp_path):
+    real = str(tmp_path / "n.roots")
+    hard = str(tmp_path / "hard.roots")
+    a = RootsLog(real)
+    a.append("accepted", 1, rec(1), sync=True)
+    os.link(real, hard)
+    before = open(real, "rb").read()
+    try:
+        with pytest.raises(ProtoLockingError):
+            RootsLog(hard)
+        assert _open_in_child("roots", hard) == "REFUSED"
+    finally:
+        a.close()
+    assert open(real, "rb").read() == before
+    # A log with two names is refused by either name, even with no instance open: its lock is
+    # named after the path, so it could not exclude an instance opened through the other name.
+    for name in (real, hard):
+        with pytest.raises(ProtoLockingError, match="hard links"):
+            RootsLog(name)
+        assert _open_in_child("roots", name) == "REFUSED"
+    os.remove(hard)
+    b = RootsLog(real)
+    try:
+        assert b.load().accepted[0] == 1
+    finally:
+        b.close()
+
+
+def test_the_registry_also_refuses_a_hard_link_created_after_the_open(tmp_path, monkeypatch):
+    """In this process the registry holds the log file's inode, so a hard link is refused by
+    the registry even before the link count is looked at."""
+    from proto_db.storage import logfile
+    real = str(tmp_path / "n.roots")
+    hard = str(tmp_path / "hard.roots")
+    a = RootsLog(real)
+    os.link(real, hard)
+    opened = []
+    real_open_log = logfile.open_log
+    monkeypatch.setattr(rootlog_module, "open_log", lambda *x, **k: opened.append(x) or real_open_log(*x, **k))
+    try:
+        with pytest.raises(ProtoLockingError, match="another path"):
+            RootsLog(hard)
+        assert opened == []
+    finally:
+        a.close()

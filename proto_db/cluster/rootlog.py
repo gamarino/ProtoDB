@@ -58,7 +58,11 @@ One live handle per log file (8.3d re-review 11, I1; ruling R59)
     :class:`~proto_db.storage.ownerlock.OwnerLock` on ``<path>.lock`` from before it opens the
     log until :meth:`RootsLog.close`; a second open, from this process or another one, raises
     ``ProtoLockingError``.  This also refuses two processes using the same ``node_id`` on a
-    shared ``FileStorage`` (``cluster/<node>.roots``).
+    shared ``FileStorage`` (``cluster/<node>.roots``).  Aliases are refused too (8.3d
+    re-review 12, M3): the path is resolved with ``os.path.realpath`` before the lock file is
+    named, the lock registers the log file's device and inode in this process, and a log file
+    with more than one hard link is refused before it is read or repaired
+    (:func:`~proto_db.storage.logfile.open_log`).
 
 Thread-safety: both logs serialize their methods with a lock.
 """
@@ -198,14 +202,17 @@ class RootsLog:
     module docstring).  Reads (:meth:`load`) go by path and keep working.
 
     Args:
-        path: the log file (created with its directory if missing).  ``path + ".lock"`` is
-            held exclusively until :meth:`close`; a second open of ``path`` while this handle
-            is open raises ``ProtoLockingError`` (module docstring).
+        path: the log file (created with its directory if missing), resolved with
+            ``os.path.realpath``.  ``<resolved path>.lock`` is held exclusively until
+            :meth:`close`; a second open of the file while this handle is open, by any path
+            (a symbolic or hard link included), raises ``ProtoLockingError`` (module docstring).
         durability: ``"fsync"`` (synced appends are ``fsync``-ed), ``"flush"`` or ``"none"``.
     """
 
     def __init__(self, path: str, *, durability: str = "fsync"):
-        self._path = os.path.abspath(os.fspath(path))
+        # Resolved (8.3d re-review 12, M3): a symbolic link to the log names the same lock file,
+        # and a compaction replaces the file itself, never the link.
+        self._path = os.path.realpath(os.fspath(path))
         self._durability = durability
         self._lock = threading.Lock()
         self._closed = False
@@ -216,13 +223,14 @@ class RootsLog:
         except OSError as e:
             raise ProtoUnexpectedError(f"Cannot create the directory of the root log {self._path}: {e}") from e
         # Held for the handle's lifetime, taken before the open trims anything (ruling R59).
-        self._owner = OwnerLock(self._path + LOCK_SUFFIX, f"the root log {self._path}")
+        self._owner = OwnerLock(self._path + LOCK_SUFFIX, f"the root log {self._path}", target=self._path)
         fd = -1
         try:
             try:
                 fd, payloads = open_log(self._path, LOG_KIND, durability=durability)
             except OSError as e:
                 raise ProtoUnexpectedError(f"Cannot open the root log {self._path}: {e}") from e
+            self._owner.track(fd)         # the file exists now: register its inode (M3)
             self._promised = _decode(payloads, self._path).promised
         except BaseException as e:
             closing = ([lambda: os.close(fd)] if fd >= 0 else []) + [self._owner.release]
@@ -317,6 +325,7 @@ class RootsLog:
         new = prepare_replacement(self._path, data, os.O_RDWR | _O_BINARY | _O_CLOEXEC)
         old, self._fd = self._fd, new
         os.close(old)
+        self._owner.track(new)             # the log is a new file (M3)
         fsync_dir(os.path.dirname(self._path))
 
     def load(self) -> LoggedRoots:
@@ -334,13 +343,24 @@ class RootsLog:
                 return
             self._closed = True
             fd, self._fd = self._fd, -1
+            error = None
             try:
                 os.close(fd)
             except OSError as e:
-                raise ProtoUnexpectedError(f"Closing the root log {self._path} failed: {e}") from e
+                error = ProtoUnexpectedError(f"Closing the root log {self._path} failed: {e}")
+                error.__cause__ = e
             finally:
-                # Released last: no write through this handle can follow (ruling R59).
-                self._owner.release()
+                # Released last, whatever was raised: no write through this handle can follow
+                # (rulings R59, R60).  A release error is reported, as a secondary error of a
+                # close error when there is one.
+                try:
+                    self._owner.release()
+                except ProtoUnexpectedError as release_error:
+                    if error is None:
+                        raise
+                    attach_secondary_errors(error, [release_error])
+            if error is not None:
+                raise error
 
 
 class _MemoryLogContents:
