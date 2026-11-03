@@ -33,6 +33,24 @@ fields of its type:
                carrying the rest.  When the new root re-proposes a base nobody knew committed,
                ``base`` is that base and ``base_ranges`` the byte ranges of its commit, whose
                records ride with this replication (ruling R50); otherwise both are ``None``.
+               Since protocol 8 (D50) it also carries ``seq`` (the write permission it runs
+               under, ``0`` under a plain lease), ``pred`` (the root it was built on) and
+               ``pred_committed`` (the sender knows ``pred`` committed): an acceptor holding a
+               root of the same term takes it only if it extends that root or catches it up
+               along a committed ``pred`` (the chain rule).
+``renew``      ``term``, ``rid``, ``inc``: the owner of ``term`` asks its granters to extend the
+               active grant they gave it (D50); answered by ``grant`` or ``reject``.
+``permit_req`` ``term``, ``rid``, ``inc``: ask the owner of ``term`` for a write permission (D50).
+``permit``     ``term``, ``rid``, ``seq``, ``root``, ``certain``, ``valid``: write permission
+               ``seq`` of ``term``; ``root`` is the newest root the owner knows (committed
+               unless ``certain`` is False, the first permission of an uncertain lease) and
+               ``valid`` the seconds the permission may be used from the request's send.
+``permit_no``  ``term``, ``rid``, ``reason``: the sender does not grant (not the owner of that
+               term, lease ended, term abandoned); ``term`` is the highest term it knows.
+``done``       ``term``, ``seq``, ``inc``, ``outcome``, ``root``: the holder ends permission
+               ``seq`` of ``term``: ``outcome`` is ``"committed"`` (``root`` is the last root it
+               committed), ``"none"`` (nothing sent) or ``"unknown"``; broadcast, so every member
+               learns the committed root (processed after the sender's replications).
 ``ack``        ``term``, ``rid``, ``ok``, ``root``: the receiver durably accepted (``ok``) or
                refused the replicated root; ``root`` is its accepted root.
 ``query``      ``rid``: ask a peer for the roots it knows (recovery, rejoin).
@@ -86,7 +104,7 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
 #: version 2 record format (self-validating headers, D46 fix round 13).
 #: 7: ``release`` carries the fairness hints ``next`` and ``more``, and the ``want`` message
 #: (Task 8.3e, D46).
-PROTOCOL_VERSION = 7
+PROTOCOL_VERSION = 8
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
 #: Record bytes a replication puts in one frame at most (a single record may fill one alone).
@@ -116,7 +134,13 @@ MESSAGE_TYPES = {
                 "held": _BOOL, "next": _OPT_STR, "more": _BOOL},
     "records": {"term": _INT, "rid": _INT, "index": _INT, "records": _RECORDS},
     "replicate": {"term": _INT, "rid": _INT, "root": _ROOT, "committed": _ROOT, "records": _RECORDS,
-                  "chunks": _INT, "base": _ROOT, "base_ranges": _RANGES},
+                  "chunks": _INT, "base": _ROOT, "base_ranges": _RANGES, "seq": _INT, "pred": _ROOT,
+                  "pred_committed": _BOOL},
+    "renew": {"term": _INT, "rid": _INT, "inc": _INT},
+    "permit_req": {"term": _INT, "rid": _INT, "inc": _INT},
+    "permit": {"term": _INT, "rid": _INT, "seq": _INT, "root": _ROOT, "certain": _BOOL, "valid": _NUM},
+    "permit_no": {"term": _INT, "rid": _INT, "reason": _STR},
+    "done": {"term": _INT, "seq": _INT, "inc": _INT, "outcome": _STR, "root": _ROOT},
     "ack": {"term": _INT, "rid": _INT, "ok": _BOOL, "root": _ROOT},
     "want": {},
     "query": {"rid": _INT},

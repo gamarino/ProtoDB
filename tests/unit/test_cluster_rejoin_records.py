@@ -19,6 +19,8 @@ import time
 
 import pytest
 
+from proto_db.cluster.rootlog import compare_roots
+
 from proto_db.errors import ProtoCorruptionError, ProtoOutcomeUnknownError, ProtoTimeoutError, ProtoValidationError
 from tests.support.cluster import Cluster
 from tests.support.manual_cluster import D, GRACE, MARGIN, Harness, rec
@@ -169,7 +171,10 @@ def test_y1_a_recommitted_base_carries_its_records(tmp_path):
         with pytest.raises(ProtoOutcomeUnknownError):
             tc.db("n0").run(create_z, retries=0)
         n0.replicate = replicate
-        assert n0.accepted_root()[2] > n0.committed_root()[2]
+        # Z is accepted on n0 only, above what n0 knows committed (D50: possibly with the
+        # same label, a root of the same owner term).
+        acc, com = n0.accepted_root(), n0.committed_root()
+        assert compare_roots(acc[2], acc[1], com[2], com[1]) > 0
         net.heal()
         net.partition({"n2"}, {"n0", "n1"})
         tc.db("n1").run(incr, **RUN_KW)           # base Z re-committed, then n = 2 on top

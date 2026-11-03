@@ -78,15 +78,16 @@ def _eventually(predicate, timeout=5.0):
     return True
 
 
-def _record_acquires(node, log):
-    original = node.acquire
+def _record_replications(node, log):
+    """Log ``"replicate"`` when the node sends a replication (D50: the commit's round)."""
+    original = node._broadcast
 
-    def acquire(timeout=None):
-        lease = original(timeout)
-        log.append("acquire")
-        return lease
+    def broadcast(msg):
+        if msg["type"] == "replicate":
+            log.append("replicate")
+        return original(msg)
 
-    node.acquire = acquire
+    node._broadcast = broadcast
 
 
 def _incr(tr):
@@ -115,13 +116,13 @@ def test_commits_under_a_single_node_cluster():
         assert cl["n0"].stats()["critical_commits"] == 6      # new_database + 5 commits
 
 
-def test_records_reach_the_storage_before_the_lease_and_no_root_is_published_under_it():
+def test_records_reach_the_storage_before_the_replication_and_no_root_is_published_under_it():
     with Cluster(1, **FAST) as cl:
         log = []
         storage = RecordingStorage(MemoryStorage(), log)
         space = ObjectSpace(storage, coordinator=cl["n0"])
         db = space.new_database("db")
-        _record_acquires(cl["n0"], log)
+        _record_replications(cl["n0"], log)
         _value(space)                                  # the first snapshot confirms under a lease
         space.sync(timeout=5)
         log.clear()
@@ -132,7 +133,7 @@ def test_records_reach_the_storage_before_the_lease_and_no_root_is_published_und
             tr.set_root_object("d", d)
 
         db.run(write)
-        before = log[:log.index("acquire")]
+        before = log[:log.index("replicate")]
         assert "push" in before and before[-1] == "flush", log
         space.sync(timeout=5)
         # The root reached the storage only through the persister thread, after the commit.
@@ -184,6 +185,15 @@ def test_the_commit_point_is_the_majority_acknowledgement():
         db.run(_incr, **RUN_KW)
         assert _value(spaces[1]) == 2
         cl.crash("n1")                                           # a majority down: no commit
+        # D50: n0 may still own its lease term (renewed while it had demand), so its first
+        # attempt can replicate and find no majority (unknown outcome, never retried); the
+        # term is then abandoned and no majority grants a new lease.
+        try:
+            spaces[0].open_database("db").run(_incr, retries=0)
+        except (ProtoOutcomeUnknownError, ProtoTimeoutError):
+            pass
+        else:
+            pytest.fail("a commit succeeded without a majority")
         with pytest.raises(ProtoTimeoutError):              # no majority grants the lease
             spaces[0].open_database("db").run(_incr, retries=0)
 

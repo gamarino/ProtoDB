@@ -74,6 +74,15 @@ class Peer:
         with self.cond:
             return {m["acked"] for m in self.lines if "acked" in m}
 
+    def owner(self):
+        """The owner of the current term this peer reported with its latest commit (D50)."""
+        with self.cond:
+            return next((m.get("owner") for m in reversed(self.lines) if "acked" in m), None)
+
+    def signal(self, sig):
+        if self.proc.poll() is None:
+            os.kill(self.proc.pid, sig)
+
     def kill(self):
         if self.proc.poll() is None:
             os.kill(self.proc.pid, signal.SIGKILL)
@@ -117,19 +126,61 @@ def _wait_acked(peers, count, timeout=60.0):
         time.sleep(0.02)
 
 
-def test_sigkilled_peers_lose_no_acknowledged_commit(tmp_path):
+def _victim(peers, role):
+    """Index of the peer with ``role`` (D50): the owner of the current term as the peers
+    report it, a permission holder (a committing peer that is not the owner), or the last."""
+    if role == "any":
+        return 2
+    owners = [p.owner() for p in peers]
+    owner = max(set(o for o in owners if o), key=owners.count, default="n0")
+    index = IDS.index(owner)
+    return index if role == "owner" else (index + 1) % len(IDS)
+
+
+@pytest.mark.parametrize("role", ["any", "owner", "holder"])
+def test_sigkilled_peers_lose_no_acknowledged_commit(tmp_path, role):
     peers = _start(tmp_path, "load")
     try:
         _wait_acked(peers, 30)
-        peers[2].kill()                                  # a minority dies mid-commit
+        victim = _victim(peers, role)
+        peers[victim].kill()                             # a minority dies mid-commit
         before = _total_acked(peers)
         _wait_acked(peers, before + 30)                  # the majority goes on
-        peers[0].kill()
-        peers[1].kill()                                  # then the whole cluster
+        for i, p in enumerate(peers):
+            if i != victim:
+                p.kill()                                 # then the whole cluster
         acked = set().union(*(p.acked() for p in peers))
     finally:
         for p in peers:
             p.close()
+    _verify(tmp_path, acked)
+
+
+def test_an_owner_stopped_past_its_lease_loses_no_acknowledged_commit(tmp_path):
+    """SIGSTOP of the owner for several leases while the others commit, then SIGCONT (D50)."""
+    peers = _start(tmp_path, "load")
+    try:
+        _wait_acked(peers, 30)
+        victim = _victim(peers, "owner")
+        peers[victim].signal(signal.SIGSTOP)
+        before = _total_acked(peers)
+        time.sleep(3.0)                                  # three leases (crash_peer.LEASE)
+        _wait_acked(peers, before + 30)                  # a new owner serves the majority
+        peers[victim].signal(signal.SIGCONT)
+        before = _total_acked(peers)
+        _wait_acked(peers, before + 30)
+        for p in peers:
+            p.kill()
+        acked = set().union(*(p.acked() for p in peers))
+    finally:
+        for p in peers:
+            if p.proc.poll() is None:
+                p.signal(signal.SIGCONT)
+            p.close()
+    _verify(tmp_path, acked)
+
+
+def _verify(tmp_path, acked):
     assert len(acked) >= 60
     peers = _start(tmp_path, "verify")
     try:

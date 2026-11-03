@@ -181,13 +181,22 @@ def _delay_releases(node, gate):
     """Make ``node``'s worker handle winners' releases only once ``gate`` is set (the wait
     releases the coordinator lock, as a slow worker would not hold it)."""
     original = node._on_release
+    original_done = node._on_done
 
     def delayed(sender, msg):
         if msg["held"]:
             node._cond.wait_for(gate.is_set, timeout=10.0)
         return original(sender, msg)
 
+    def delayed_done(msg):
+        # D50: a write permission's end ("done") carries the committed root like a release.
+        if msg["outcome"] == "committed":
+            with node._cond:
+                node._cond.wait_for(gate.is_set, timeout=10.0)
+        return original_done(msg)
+
     node._on_release = delayed
+    node._on_done = delayed_done
 
 
 def test_a_read_before_the_release_is_handled_is_stale_never_lost(tmp_path):

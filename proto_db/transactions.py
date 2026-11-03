@@ -97,12 +97,14 @@ Persistence context (ruling R3)
 """
 from __future__ import annotations
 
+import copy
 import datetime
 import logging
 import random
 import sys
 import threading
 import time
+import weakref
 from typing import Any, Callable, Optional
 
 from .collections.base import ConcurrentOptimized, _Immutable
@@ -118,6 +120,7 @@ from .errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, Pro
 from .storage.base import check_lock_timeout
 from .storage.format import FORMAT_VERSION, RootRecord
 from .cluster.coordinator import REFOUND_TERM_STEP
+from .cluster.lease import Permission
 from .cluster.rootlog import compare_roots
 from .values import canonical, exact_token
 
@@ -418,58 +421,271 @@ def _confirm_build(current, stamp):
 
 
 def _commit_under_lease(coordinator, lock_timeout, build: Callable) -> bool:
-    """Steps 3-7 of the commit protocol in cluster mode (D44, D45, D46).
+    """Steps 3-7 of the commit protocol in cluster mode (D44, D45, D46, D50).
 
-    The caller has saved its records and flushed them to the local tier.  A node whose
-    backlog reached its limit refuses the commit first (``ProtoBacklogFullError``).  Under
-    the lease: the base root is the highest accepted root of the granting majority (a
-    recovery round when the lease is not certain); ``build`` validates and merges against
-    it and builds the new root, labelled with the lease term; then
-    :meth:`~proto_db.cluster.coordinator.ClusterCoordinator.replicate` sends it with its
-    records and returns once a majority acknowledged it -- the commit point.  No storage
-    root is written here: the persister writes it later.  ``replicate`` raises
-    ``ProtoConflictError`` when the lease ended before anything was sent (retryable) and
-    ``ProtoOutcomeUnknownError`` when no majority acknowledged in time (never retried).
-    The release, which tells the peers the root is committed, is best effort.
+    The caller has saved its records to the local tier.  A node whose backlog reached its
+    limit refuses the commit first (``ProtoBacklogFullError``).  The commit joins this node's
+    *group* (D50): one round is in flight per node; the thread that finds none running takes
+    every queued commit, obtains a write permission (:meth:`~proto_db.cluster.coordinator.
+    ClusterCoordinator.permit`) and, under it, builds each commit in turn on the root the
+    previous one produced -- the base being the newest committed root the owner piggybacked
+    (a recovery round when it is not certain) -- then replicates the last root with the
+    records of all of them; :meth:`~proto_db.cluster.coordinator.ClusterCoordinator.replicate`
+    returns once a majority acknowledged it -- the commit point.  No storage root is written
+    here: the persister writes it later.  A commit whose validation fails gets
+    ``ProtoConflictError`` alone (after the round's replication, so its retry starts from the
+    root the round committed), and the round keeps the permission for the retries of such
+    commits (D-LIVE-2; :data:`_PERMIT_RETRIES`).  ``ProtoConflictError`` when the permission
+    ended before anything was sent (retryable), ``ProtoOutcomeUnknownError`` when no majority
+    acknowledged in time (never retried).
     """
     tier = coordinator.tier
     if build is not _confirm_build:
         tier.check_commit_allowed()
-    for _ in range(_TERM_RETRIES):
-        lease = coordinator.acquire(lock_timeout)
+    group = _group_of(coordinator)
+    entry = _Entry(build, tier, group)
+    with group.cond:
+        group.queue.append(entry)
+        group.cond.notify_all()
+        while not entry.done and group.running:
+            group.cond.wait()
+        runner = not entry.done
+        if runner:
+            group.running = True
+    if runner:
         try:
-            with tier.critical_section():
-                base = _lease_base(coordinator, tier, lease)
-                if base is None:
-                    continue        # the lease's term is too low: acquire again (finally releases)
-                current, label, replicated = base
-                if replicated:
-                    coordinator.await_records(current, label, lease)    # its records: never read under the lease
-                lease.bind_root(current, label)
-                committed = coordinator.known_root()
-                if current is not None and committed != (True, current):
-                    # The base was accepted by some peer but is not known committed (its
-                    # holder's replication failed or its release was lost).  Commit it first
-                    # with an unchanged root on top, so that transactions starting from the
-                    # committed root see it (otherwise a transaction that read what it
-                    # changed would conflict against it forever).  One holder may commit
-                    # several roots in one term.  The base travels with its records.
-                    current = _commit_base(coordinator, tier, lease, label, current)
-                    lease.bind_root(current, lease.term)
-                stamp = _ClusterStamp(lease.term, lease.expected_epoch + 1)
-                ptr = build(current, stamp)
-                if ptr is None:
-                    return False
-                record = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, stamp.epoch)
-                stamp.timings["replication"] = coordinator.replicate(lease, record, tier=tier)
-            coordinator.record_critical(stamp.timings)
-            return True
+            stale = 0
+            while not entry.done:
+                with group.cond:
+                    batch, group.queue = group.queue, []
+                if not batch:
+                    break               # pragma: no cover -- our own entry is queued or done
+                if _run_round(coordinator, lock_timeout, batch, group):
+                    stale = 0
+                else:
+                    stale += 1
+                    if stale >= _TERM_RETRIES:
+                        with group.cond:
+                            pending, group.queue = group.queue, []
+                        error = ProtoConflictError(
+                            f"No permission with a base at or above the committed root after {_TERM_RETRIES} "
+                            f"attempts")
+                        for other in pending:
+                            other.finish(error=error)
         finally:
+            with group.cond:
+                group.running = False
+                group.cond.notify_all()
+    if entry.error is not None:
+        if entry.error_shared:
+            error = copy.copy(entry.error)
+            error.__cause__ = entry.error
+            raise error
+        raise entry.error
+    return entry.result
+
+
+#: Extra rounds a permission runs for the retries of commits that conflicted in it (D50, D-LIVE-2).
+_PERMIT_RETRIES = 3
+#: Seconds a round waits for those retries before it ends the permission.
+_RETRY_WAIT = 0.005
+
+
+class _Entry:
+    """One commit in a node's group (D50): its build step and the tier it wrote to, then its
+    result (``True``/``False``) or error."""
+
+    __slots__ = ("build", "tier", "done", "result", "error", "error_shared", "group")
+
+    def __init__(self, build: Callable, tier, group: "_Group"):
+        self.build = build
+        self.tier = tier
+        self.done = False
+        self.result = None
+        self.error = None
+        self.error_shared = False
+        self.group = group
+
+    def finish(self, *, result=None, error=None, shared: bool = False) -> None:
+        """Decide this commit and wake its thread."""
+        group = self.group
+        with group.cond:
+            self.result, self.error, self.error_shared, self.done = result, error, shared, True
+            group.cond.notify_all()
+
+
+class _Group:
+    """The commits of one coordinator (one node) waiting for a round (D50)."""
+
+    def __init__(self):
+        self.cond = threading.Condition()
+        self.queue = []
+        self.running = False
+
+
+_GROUPS = weakref.WeakKeyDictionary()
+_GROUPS_LOCK = threading.Lock()
+
+
+def _group_of(coordinator) -> _Group:
+    with _GROUPS_LOCK:
+        group = _GROUPS.get(coordinator)
+        if group is None:
+            group = _GROUPS[coordinator] = _Group()
+        return group
+
+
+def _requeue(group: _Group, entries: list) -> None:
+    """Put undecided commits back at the head of the queue (nothing of theirs was sent)."""
+    with group.cond:
+        group.queue[:0] = [e for e in entries if not e.done]
+        group.cond.notify_all()
+
+
+def _run_round(coordinator, lock_timeout, batch: list, group: _Group) -> bool:
+    """Run one permission's rounds for ``batch`` (D50); return False when the permission's base
+    was stale (its commits were put back in the queue for the next permission)."""
+    attached = coordinator.tier
+    live = []
+    for entry in batch:
+        if entry.tier is not attached:
+            entry.finish(error=ProtoValidationError(
+                "The space this commit belongs to was closed: its tier is no longer attached to the "
+                "coordinator; nothing was replicated"))
+        else:
+            live.append(entry)
+    if not live:
+        return True
+    tier = attached
+    try:
+        permission = coordinator.permit(lock_timeout)
+    except BaseException as e:
+        for entry in live:
+            entry.finish(error=e, shared=True)
+        raise_now = not isinstance(e, ProtoDBError)
+        if raise_now:
+            raise
+        return True
+    fresh = True
+    try:
+        with tier.critical_section():
+            rounds = 0
+            while live:
+                rounds += 1
+                result = _permit_round(coordinator, tier, permission, live, group)
+                if result is None:
+                    fresh = False
+                    break
+                if not result or rounds > _PERMIT_RETRIES or not permission.is_valid() \
+                        or permission.outcome == "unknown":
+                    break
+                live = _await_retries(group, len(result), attached)
+    finally:
+        try:
+            coordinator.finish(permission)
+        except (ProtoDBError, OSError) as e:
+            logger.error("Ending the cluster write permission failed: %s", e)
+    return fresh
+
+
+def _await_retries(group: _Group, wanted: int, tier) -> list:
+    """The commits queued within :data:`_RETRY_WAIT` (until ``wanted`` arrived): the retries of
+    the round's conflicting commits, and whatever else arrived meanwhile."""
+    deadline = time.monotonic() + _RETRY_WAIT
+    with group.cond:
+        while len(group.queue) < wanted:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            group.cond.wait(timeout=remaining)
+        batch, group.queue = group.queue, []
+    live = []
+    for entry in batch:
+        if entry.tier is not tier:
+            entry.finish(error=ProtoValidationError(
+                "The space this commit belongs to was closed: its tier is no longer attached to the "
+                "coordinator; nothing was replicated"))
+        else:
+            live.append(entry)
+    return live
+
+
+def _permit_round(coordinator, tier, permission, entries: list, group: _Group) -> Optional[list]:
+    """Build ``entries`` on the permission's base and replicate the result (one round, D50).
+
+    Returns the commits that conflicted (decided only after the replication), or ``None`` when
+    the base is stale -- the commits go back to the queue and the permission ends with an
+    outcome its owner cannot take for granted (``"unknown"``: it abandons the term, D50).
+    """
+    sent = False
+    built = []
+    conflicted = []
+    try:
+        base = _lease_base(coordinator, tier, permission)
+        if base is None:
+            if permission.outcome != "committed":
+                permission.outcome = "unknown"
+            _requeue(group, entries)
+            return None
+        current, label, replicated = base
+        if replicated:
+            coordinator.await_records(current, label, permission)   # its records: never read under the lease
+        permission.bind_root(current, label)
+        if current is not None and coordinator.known_root() != (True, current):
+            # The base was accepted by some peer but is not known committed (its holder's
+            # replication failed or its release was lost).  Commit it first with an unchanged
+            # root on top, so that transactions starting from the committed root see it.  The
+            # base travels with its records.
+            sent = True
+            current = _commit_base(coordinator, tier, permission, label, current)
+            permission.outcome, permission.committed = "committed", (permission.term, current)
+            permission.bind_root(current, permission.term)
+            sent = False
+        for entry in entries:
+            stamp = _ClusterStamp(permission.term, (current.epoch if current is not None else 0) + 1)
             try:
-                coordinator.release(lease)
-            except (ProtoDBError, OSError) as e:
-                logger.error("Releasing the cluster write lease failed: %s", e)
-    raise ProtoConflictError(f"No lease with a term above the base root's after {_TERM_RETRIES} attempts")
+                ptr = entry.build(current, stamp)
+            except ProtoConflictError as e:
+                entry.error = e
+                conflicted.append(entry)
+                continue
+            except ProtoDBError as e:
+                entry.finish(error=e)
+                continue
+            if ptr is None:
+                entry.finish(result=False)
+                continue
+            current = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, stamp.epoch)
+            built.append((entry, stamp))
+        if built:
+            sent = True
+            replication = coordinator.replicate(permission, current, tier=tier)
+            sent = False
+            permission.outcome, permission.committed = "committed", (permission.term, current)
+            permission.bind_root(current, permission.term)
+            for entry, stamp in built:
+                stamp.timings["replication"] = replication
+                coordinator.record_critical(stamp.timings)
+                entry.finish(result=True)
+        for entry in conflicted:
+            entry.finish(error=entry.error)
+        return conflicted
+    except BaseException as e:
+        # Nothing sent (a conflict or validation error raised before the replication left this
+        # node): the commits may be retried.  Otherwise the outcome is unknown, for every
+        # commit of the round, and the owner abandons the term.
+        nothing_sent = not sent or isinstance(e, (ProtoConflictError, ProtoValidationError, ProtoUserError))
+        if not nothing_sent:
+            permission.outcome = "unknown"
+        for entry in conflicted:
+            if not entry.done:
+                entry.finish(error=entry.error)     # not part of what was sent
+        for entry in entries:
+            if not entry.done:
+                entry.finish(error=e, shared=True)
+        if not isinstance(e, ProtoDBError):
+            raise
+        return []
 
 
 #: Leases :func:`_commit_under_lease` acquires before giving up on finding a high enough term.
@@ -513,8 +729,12 @@ def _lease_base(coordinator, tier, lease) -> Optional[tuple]:
                 coordinator.refound(label)
                 return None
     known, committed, committed_label = coordinator.committed_root()[:3]
-    if known and committed_label >= lease.term:
-        return None                 # superseded by a later holder's commit: acquire again
+    permission = isinstance(lease, Permission)
+    if known and (committed_label > lease.term or (committed_label == lease.term and (
+            not permission or compare_roots(committed_label, committed, label, current) > 0))):
+        # Superseded: by a later owner's commit, or (under a permission, D50) by a commit of
+        # this term after the base the owner gave: acquire again.
+        return None
     if known and compare_roots(label, current, committed_label, committed) < 0:
         try:
             persisted = tier.read_persisted()
@@ -529,7 +749,7 @@ def _lease_base(coordinator, tier, lease) -> Optional[tuple]:
         if lease.term < label + REFOUND_TERM_STEP:
             coordinator.refound(label)
             return None
-    if label >= lease.term:
+    if label > lease.term or (label == lease.term and not permission):
         return None                 # acquire learnt the label: the next term is above it
     return current, label, replicated
 
@@ -1133,8 +1353,8 @@ class Transaction:
             if isinstance(value, Atom):
                 self.save(value)
         space = self._database.space
-        if space.coordinator is not None:
-            self.storage.flush()   # the records reach the local tier before the cluster lease (D44, D46)
+        # In cluster mode the round's replication makes every record of the round durable with
+        # one local sync (D50); no flush per transaction.
         if _commit_root(self.storage, space.lock_timeout, self._build_root, space.coordinator):
             # Post-publish, cannot fail: a committed value's log was consumed by this
             # commit, so a later transaction reusing it must not replay it again (D33).

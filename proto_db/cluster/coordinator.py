@@ -1,5 +1,20 @@
 """ClusterCoordinator: the majority-granted write lease and the cluster commit point
-(Tasks 8.3c and 8.3d, decisions D44, D45, D46).
+(Tasks 8.3c, 8.3d and 8.3f, decisions D44, D45, D46, D50).
+
+Write permissions (D50)
+    Commits no longer acquire the lease each.  The member holding the lease is the *owner*
+    of its term: it renews the lease (same term, no acceptor-log write) while there is
+    demand and grants short, sequenced write permissions -- ``permit(term, seq, root,
+    valid)`` -- in FIFO order, at most one outstanding, piggybacking the newest root it knows
+    committed.  The holder of a permission does its own commit round (:meth:`permit`,
+    :meth:`replicate`, :meth:`finish`): it replicates under the owner's term with the
+    permission's ``seq`` and the root it built on (``pred``), and ends the permission with
+    ``done``.  Safety does not rest on the permission: an acceptor takes a root of the same
+    term only when it extends (or catches up along a committed predecessor of) its accepted
+    root, refuses siblings and stale sequence numbers, and keeps every D46 rule.  An outcome
+    the owner cannot know makes it abandon its term; the next owner's recovery round decides
+    the root, as after any D46 lease.  The acquiring and lease rules below are the D45/D46
+    mechanics an owner uses to obtain and renew its term.
 
 A cluster is a static list of peers ``(node_id, host, port)``; its size ``N`` is fixed at
 construction and a majority is ``floor(N/2) + 1`` votes, the requester's own included.
@@ -121,7 +136,7 @@ The commit point (D46)
     :meth:`ClusterCoordinator.replicate` sends ``(epoch, root pointer)`` with the records
     the commit added to every peer (split into several frames when they do not fit in
     one).  A peer accepts it -- stores the records and logs the root on its own durable
-    tier (``fsync``), then acknowledges -- unless it is starting, has no tier, is fenced or
+    tier (``fsync``), then acknowledges -- unless it has no tier, is fenced or
     has granted a higher term (the ballot rule).  The accepted root -- like every promise and
     the rejoined marker -- is ``fsync``-ed before the acknowledgement in every durability
     mode (Task 8.3e, defect D-SAFE-2 fixed); the mode governs the records only:
@@ -234,7 +249,7 @@ from ..errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, Pr
                       ProtoUnexpectedError, ProtoUserError, ProtoValidationError)
 from ..storage.format import RootRecord
 from . import protocol
-from .lease import Lease, LeaseAttempt, PeerGrants, majority
+from .lease import Lease, LeaseAttempt, PeerGrants, Permission, majority
 from .protocol import decode_labeled_root, encode_root, make_message
 from .rootlog import compare_roots, root_key
 
@@ -322,6 +337,46 @@ class _Waiter:
         self.states = {}
         self.data = None
         self.missing = 0
+
+
+class _PermitWait:
+    """A request for a write permission awaiting the owner's answer (``reply``: a
+    :class:`~proto_db.cluster.lease.Permission`, ``"refused"``, or ``"gone"`` once abandoned)."""
+
+    def __init__(self, rid: int, sent_at: float):
+        self.rid = rid
+        self.sent_at = sent_at
+        self.reply = None
+
+
+def _siblings(label_a: int, a: Optional[RootRecord], label_b: int, b: Optional[RootRecord]) -> bool:
+    """True when ``a`` and ``b`` are different roots with the same label and epoch (D50: two
+    roots built on one base in one term, which the chain rule refuses)."""
+    return a is not None and b is not None and label_a == label_b and a.epoch == b.epoch \
+        and (a.segment, a.offset) != (b.segment, b.offset)
+
+
+class _Ownership:
+    """What this node does as the owner of its lease's term (D50): a FIFO of permission
+    requests ``(node, rid, inc, local wait or None)``, at most one outstanding permission
+    ``(node, seq, deadline on the owner's clock)``, and the base it piggybacks:
+    ``(known, root, label)``, known committed when ``committed``."""
+
+    def __init__(self, lease: Lease, base: tuple, committed: bool, now: float):
+        self.lease = lease
+        self.term = lease.term
+        self.seq = 0
+        self.outstanding = None
+        self.base = base
+        self.committed = committed
+        self.queue = collections.deque()
+        self.last_demand = now
+        self.abandoned = False
+        self.ended = False
+
+    def serving(self, now: float) -> bool:
+        """True while permissions may be issued: neither abandoned nor ended, lease valid."""
+        return not self.abandoned and not self.ended and self.lease.is_valid()
 
 
 class ClusterCoordinator:
@@ -480,6 +535,22 @@ class ClusterCoordinator:
         self._my_turn = False               # the last winner's release named this node
         self._acquirers = 0                 # threads of this process inside acquire()
         self._registered = False            # the others queue this node: it asked, or released wanting more
+        # Write permissions (D50, Task 8.3f).
+        self._by_rank = {rank: peer for peer, rank in self._ranks.items()}
+        self._logged_promise = (None, 0)    # (tier, highest promise logged on it): re-grants write nothing
+        self._ownership = None              # _Ownership while this node owns its lease's term
+        self._owner_threads = []            # every ownership thread started (joined by stop)
+        self._owner_hint = (0, None)        # (term, node): the newest owner this node learnt of
+        self._permit = None                 # the Permission this node holds
+        self._permit_waits = {}             # rid -> _PermitWait of a request sent to an owner
+        # (term, seq) of the permits received lately: a duplicated permit (the transport may
+        # deliver a message twice) is ignored; answering it with done("none") would end, at
+        # the owner, a permission this node is still using.
+        self._permits_seen = collections.deque(maxlen=64)
+        self._seq_seen = (0, 0)             # (term, seq): highest permission accepted here
+        for key in ("permits_issued", "permits_held", "permit_requests_sent", "permits_refused", "renewals",
+                    "renewal_failures", "ownerships", "terms_abandoned", "permit_rounds"):
+            self._stats[key] = 0
 
     # -- properties --------------------------------------------------------------------------
 
@@ -666,6 +737,11 @@ class ClusterCoordinator:
         for rejoiner in rejoiners:      # woken by the notify above; each checks the state first
             if rejoiner is not threading.current_thread() and rejoiner.ident is not None:
                 rejoiner.join()
+        with self._lock:
+            owners = list(self._owner_threads)
+        for owner in owners:            # woken by the notify above; each checks the state first
+            if owner is not threading.current_thread() and owner.ident is not None:
+                owner.join()
         if started:
             self._transport.stop()
         worker = self._worker
@@ -776,6 +852,7 @@ class ClusterCoordinator:
                 self._observe_committed(True, committed[1], committed[0], None)
             self._hint = max(self._hint, top)
             self._grants.restore(max(promised, accepted[0] if accepted is not None else 0))
+            self._logged_promise = (tier, promised)
             tier.set_fetcher(self.fetch_record)
             self._confirmed = False
             self._rejoining = rejoin
@@ -1340,7 +1417,7 @@ class ClusterCoordinator:
             logger.warning("Node %s ignored a %r message from unknown sender %r", self._node, msg["type"], sender)
             return
         kind = msg["type"]
-        if kind in ("records", "replicate", "release", "want", "fetch", "commit_query"):
+        if kind in ("records", "replicate", "release", "want", "fetch", "commit_query", "done"):
             # A release follows its replicate (and a replicate its record chunks) through the
             # same queue, so a root is never known committed here before its records are stored;
             # a ``want`` follows the sender's release, which it must not precede (fairness).
@@ -1354,6 +1431,15 @@ class ClusterCoordinator:
             return
         if kind == "request":
             self._on_request(sender, msg)
+            return
+        if kind == "renew":
+            self._on_request(sender, msg, renew=True)
+            return
+        if kind == "permit_req":
+            self._on_permit_req(sender, msg)
+            return
+        if kind in ("permit", "permit_no"):
+            self._on_permit_reply(sender, msg)
             return
         reply = None
         with self._cond:
@@ -1384,7 +1470,7 @@ class ClusterCoordinator:
         if reply is not None:
             self._transport.send(sender, reply)
 
-    def _on_request(self, sender: str, msg: dict) -> None:
+    def _on_request(self, sender: str, msg: dict, *, renew: bool = False) -> None:
         """Decide a lease request and make a grant's promise durable before it is sent.  The
         decision reports the accepted root and raises the promise in memory, so it is atomic
         with acceptances: under ``_log_lock``, no acceptance is decided but not yet published
@@ -1393,11 +1479,16 @@ class ClusterCoordinator:
             with self._cond:
                 if self._state != "running":
                     return
-                self._note_request(sender)
-                reply = self._decide(sender, msg["term"], msg["rid"], msg["inc"])
+                if not renew:
+                    self._note_request(sender)
+                self._note_owner(msg["term"])
+                reply = self._decide(sender, msg["term"], msg["rid"], msg["inc"], renew=renew)
                 tier = self._tier if reply["type"] == "grant" else None
-            # ``tier`` is attached until _log_lock is released: a grant needs one (_decide).
-            if tier is not None and not self._log_promise(tier, msg["term"]):
+            # ``tier`` is attached until _log_lock is released: a grant needs one (_decide).  A
+            # term at or below the promise already logged on that tier needs no new write (a
+            # renewal or a duplicate; D50): the log keeps only the highest promise.
+            if tier is not None and not (self._logged_promise[0] is tier and msg["term"] <= self._logged_promise[1]) \
+                    and not self._log_promise(tier, msg["term"]):
                 return              # a promise that could not be made durable is not sent
         self._transport.send(sender, reply)
 
@@ -1421,6 +1512,11 @@ class ClusterCoordinator:
         (module docstring, "Health")."""
         try:
             tier.log_promise(term)
+            with self._lock:
+                if self._logged_promise[0] is tier:
+                    self._logged_promise = (tier, max(self._logged_promise[1], term))
+                else:
+                    self._logged_promise = (tier, term)
             return True
         except (ProtoDBError, OSError) as e:
             logger.error("Node %s could not record its promise of term %d; the grant is withheld: %s",
@@ -1440,7 +1536,7 @@ class ClusterCoordinator:
             return "rejoining"
         return None
 
-    def _decide(self, requester: str, term: int, rid: int, inc: int) -> dict:
+    def _decide(self, requester: str, term: int, rid: int, inc: int, *, renew: bool = False) -> dict:
         """Apply the grant rules to a request (lock held); return the reply.  A node without
         an attached tier (nowhere durable to record the promise) or fenced refuses."""
         refusal = self._refusal()
@@ -1457,7 +1553,7 @@ class ClusterCoordinator:
             return make_message("reject", self._node, term=term, rid=rid, root=self._wire(self._accepted),
                                 certain=not self._suspect_term, reason="bad_ballot",
                                 highest=self._grants.highest_term, remaining=0.0)
-        decision = self._grants.on_request(requester, term, inc)
+        decision = self._grants.on_request(requester, term, inc, renew=renew)
         if decision.previous_expired:
             self._suspect_term = max(self._suspect_term, decision.ended_term)
         root = self._wire(self._accepted)
@@ -1674,6 +1770,8 @@ class ClusterCoordinator:
                                 tier.log_root("committed", learnt[0], learnt[1])
                             except (ProtoDBError, OSError) as e:
                                 self._tier_failed(tier, e, "logging a committed root")
+                elif kind == "done":
+                    self._on_done(msg)
                 elif kind == "want":
                     with self._cond:
                         if self._state == "running":
@@ -1730,18 +1828,43 @@ class ClusterCoordinator:
                 pending = self._chunks[sender] = (msg["rid"], {})   # an older replication is void
             pending[1][msg["index"]] = msg["records"]
 
-    def _may_accept(self, term: int, root: Optional[RootRecord], label: int) -> bool:
+    def _may_accept(self, term: int, root: Optional[RootRecord], label: int, pred: Optional[tuple] = None,
+                    pred_committed: bool = False, seq: int = 0) -> bool:
         """The acceptance rules of a replicated root (lock held): running, healthy, a tier
-        attached, not starting, no higher term granted here (ballot rule), and not older
-        than the accepted root."""
-        if self._state != "running" or self._refusal() is not None or self._grants.starting \
-                or self._grants.granted_top > term:
+        attached (its acceptor log loaded), no higher term granted here (ballot rule), not older
+        than the accepted root, and the chain rule of D50 (Task 8.3f).  The startup grace does
+        not apply (D50): it keeps a restarted node from granting while a lease it may have
+        granted before the restart could still run, a timing promise; an acceptance reads only
+        the promise and the accepted root, both restored from the log at attach.  When the accepted root carries
+        the same label, the new root must be that root (a duplicate), extend it (``pred``,
+        the ``(known, root, label)`` it was built on, is the accepted root) or catch it up
+        along a committed ``pred`` that orders above it; a permission ``seq`` below the
+        highest accepted in this term is refused (a stale permission's late message)."""
+        if self._state != "running" or self._refusal() is not None or self._grants.granted_top > term:
             return False
-        return not self._accepted[0] or compare_roots(label, root, self._accepted[2], self._accepted[1]) >= 0
+        if not self._accepted[0]:
+            return True
+        _, accepted, accepted_label = self._accepted
+        if _siblings(label, root, accepted_label, accepted):
+            # Two roots of one term on one base: two holders of one term (the owner's
+            # sequencing broke).  Refused, never a protocol violation: D50, S3.
+            return False
+        order = compare_roots(label, root, accepted_label, accepted)
+        if order <= 0:
+            return order == 0
+        if accepted_label != label:
+            return True             # the first root of a newer term: its base came out of phase 1
+        if self._seq_seen[0] == label and seq < self._seq_seen[1]:
+            return False
+        if pred is None or not pred[0] or _siblings(pred[2], pred[1], accepted_label, accepted):
+            return False
+        link = compare_roots(pred[2], pred[1], accepted_label, accepted)
+        return link == 0 or (link > 0 and pred_committed)
 
     def _apply_replicate(self, msg: dict) -> None:
         sender, term, rid = msg["from"], msg["term"], msg["rid"]
         known, root, label = decode_labeled_root(msg["root"])
+        pred, seq, pred_committed = decode_labeled_root(msg["pred"]), msg["seq"], msg["pred_committed"]
         records = msg["records"]
         with self._lock:
             tier = self._tier
@@ -1757,7 +1880,8 @@ class ClusterCoordinator:
         with self._lock:
             # Acknowledging needs a durable place for the records and the root: a node without
             # a tier never counts toward the majority.
-            ok = valid and tier is not None and self._may_accept(term, root, label)
+            self._note_owner(term)
+            ok = valid and tier is not None and self._may_accept(term, root, label, pred, pred_committed, seq)
         if valid and tier is not None and not failed:
             # Records are stored even when the root is refused (a newer term was granted here
             # meanwhile): immutable data, and this node may be the next holder, whose base can
@@ -1792,7 +1916,7 @@ class ClusterCoordinator:
             # the records went to, logged on it while it is still attached, published in
             # memory only once logged; the acknowledgement follows.
             with self._lock:
-                ok = ok and self._tier is tier and self._may_accept(term, root, label)
+                ok = ok and self._tier is tier and self._may_accept(term, root, label, pred, pred_committed, seq)
                 if not ok:
                     self._stats["refused"] += 1
                     reply_root = self._wire(self._accepted)
@@ -1810,6 +1934,7 @@ class ClusterCoordinator:
             if ok:
                 with self._lock:
                     self._observe_accepted(True, root, label)
+                    self._note_seq(label, seq)
                     ck, croot, clabel = decode_labeled_root(msg["committed"])
                     self._observe_committed(ck, croot, clabel, None)
                     self._stats["accepted"] += 1
@@ -2028,6 +2153,432 @@ class ClusterCoordinator:
         """Context manager: :meth:`acquire` on entry (yielding the lease), :meth:`release` on exit."""
         return _LeaseContext(self, timeout)
 
+    # -- write permissions (D50, Task 8.3f) ---------------------------------------------------
+
+    def _note_owner(self, term: int) -> None:
+        """A message of the lease term ``term`` was seen (lock held): remember the newest owner."""
+        if term > self._owner_hint[0]:
+            self._owner_hint = (term, self._by_rank.get(ballot_rank(term)))
+
+    def _note_seq(self, label: int, seq: int) -> None:
+        """A root of term ``label`` under permission ``seq`` was accepted here (lock held)."""
+        if (label, seq) > self._seq_seen:
+            self._seq_seen = (label, seq)
+
+    @property
+    def owner(self) -> Optional[str]:
+        """The node this node believes owns the current lease term (D50), or ``None``."""
+        with self._lock:
+            if self._ownership is not None and not self._ownership.ended:
+                return self._node
+            return self._owner_hint[1]
+
+    def permit(self, timeout: Optional[float] = None) -> Permission:
+        """Obtain a write permission (D50): from this node's own ownership, from the owner this
+        node knows of, or by becoming the owner (acquiring the lease).  Raises
+        ``ProtoTimeoutError`` after ``timeout`` seconds (default ``acquire_timeout``),
+        ``ProtoValidationError`` if the coordinator stops and ``ProtoUnexpectedError`` if the
+        node is fenced.  One permission at a time per node (``ProtoUserError`` otherwise); end
+        it with :meth:`finish`."""
+        timeout = self._acquire_timeout if timeout is None else _number("timeout", timeout, positive=False)
+        deadline = time.monotonic() + timeout
+        with self._lock:
+            self._check_running()
+            self._check_healthy()
+            if self._permit is not None:
+                raise ProtoUserError(f"Node {self._node} already holds a write permission")
+            self._acquirers += 1
+        try:
+            failures = 0
+            while True:
+                self._await_rejoin(deadline, timeout)
+                permission = self._permission_from_owner(deadline)
+                if permission is not None:
+                    return permission
+                if self._become_owner(deadline):
+                    continue
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ProtoTimeoutError(
+                        f"Node {self._node} could not obtain a write permission within {timeout} s")
+                low, high = self._backoff
+                delay = min(high, low * (2 ** min(failures, 30))) * (0.5 + self._rng.random() / 2)
+                failures += 1
+                with self._cond:
+                    self._check_running()
+                    seen = self._wakeups
+                    self._cond.wait_for(lambda: self._wakeups != seen or self._state != "running",
+                                        timeout=min(delay, remaining))
+                    self._check_running()
+        finally:
+            with self._lock:
+                self._acquirers -= 1
+
+    def _permission_from_owner(self, deadline: float) -> Optional[Permission]:
+        """A permission from this node's ownership or from the owner it knows of, or ``None``
+        (no owner known, refused, or no answer in time)."""
+        sends = []
+        with self._cond:
+            self._check_running()
+            self._check_healthy()
+            own = self._ownership
+            if own is not None and own.serving(self._clock()):
+                wait = _PermitWait(next(self._rids), self._clock())
+                own.queue.append((self._node, wait.rid, self._inc, wait))
+                own.last_demand = time.monotonic()
+                sends = self._dispatch(own)
+                target = None
+            else:
+                term, target = self._owner_hint
+                if target is None or target == self._node or term == 0:
+                    return None
+                wait = _PermitWait(next(self._rids), self._clock())
+                self._permit_waits[wait.rid] = wait
+                self._stats["permit_requests_sent"] += 1
+                request = make_message("permit_req", self._node, term=term, rid=wait.rid, inc=self._inc)
+        self._send_all(sends)
+        if target is not None:
+            self._transport.send(target, request)
+        # A remote owner answers when this request reaches the head of its queue; one lease
+        # duration without an answer means it is gone or busy elsewhere: look again.
+        limit = time.monotonic() + (self._duration if target is not None else self._duration * 2)
+        with self._cond:
+            try:
+                while wait.reply is None:
+                    if self._state != "running" or self._failure is not None or self._tier_failure is not None:
+                        break
+                    if target is None and (self._ownership is not own or own.ended):
+                        break
+                    now = time.monotonic()
+                    if now >= min(limit, deadline):
+                        break
+                    self._cond.wait(timeout=min(limit, deadline) - now)
+                reply = wait.reply
+                wait.reply = wait.reply or "gone"   # a permit arriving later is handed back
+            finally:
+                self._permit_waits.pop(wait.rid, None)
+            if isinstance(reply, Permission):
+                self._permit = reply
+                self._stats["permits_held"] += 1
+                if reply.root_certain:
+                    # The owner knows its base committed: so does this node now.
+                    self._observe_committed(True, reply.root, reply.root_term, reply.owner)
+                return reply
+            if target is None and own is not None and wait in [q[3] for q in own.queue]:
+                own.queue = collections.deque(q for q in own.queue if q[3] is not wait)
+        if reply is None and target is not None:
+            with self._lock:
+                if self._owner_hint[1] == target:
+                    self._owner_hint = (self._owner_hint[0], None)     # unresponsive: try to own
+        self._check_running()
+        self._check_healthy()
+        return None
+
+    def _send_all(self, sends: list) -> None:
+        for target, msg in sends:
+            if target is None:
+                self._broadcast(msg)
+            else:
+                self._transport.send(target, msg)
+
+    def _become_owner(self, deadline: float) -> bool:
+        """Try once to acquire the lease and own its term; True when this node now owns it."""
+        if not self._local.acquire(timeout=max(0.0, deadline - time.monotonic())):
+            return False
+        try:
+            with self._lock:
+                if self._ownership is not None:
+                    self._local.release()
+                    return True
+            self._await_turn(deadline)
+            attempt, request, seen, promise = self._open_attempt()
+            self._broadcast(request)
+            if promise is not None and not self._promise(promise, attempt.term):
+                with self._lock:
+                    attempt.granted_by.pop(self._node, None)
+                    attempt.on_reject(self._node, "promise_failed", attempt.term, 0.0)
+            lease, cancel, wait = self._close_attempt(attempt)
+        except BaseException:
+            self._local.release()
+            raise
+        if lease is None:
+            self._broadcast(cancel)
+            with self._lock:
+                busy = [r[1] for r in attempt.rejected_by.values() if r[0] == "busy"]
+                if busy:
+                    self._note_owner(max(busy))
+            self._local.release()
+            return False
+        with self._cond:
+            if self._state != "running":
+                return False
+            known = lease.root is not None or lease.root_certain
+            committed = lease.root_certain and self._committed == (True, lease.root, lease.root_term)
+            own = _Ownership(lease, (known, lease.root, lease.root_term), committed, time.monotonic())
+            self._ownership = own
+            self._owner_hint = (lease.term, self._node)
+            self._stats["ownerships"] += 1
+            thread = threading.Thread(target=self._own_loop, args=(own,), name=f"proto-cluster-owner-{self._node}",
+                                      daemon=True)
+            self._owner_threads = [t for t in self._owner_threads if t.is_alive()] + [thread]
+        thread.start()
+        return True
+
+    def _dispatch(self, own: "_Ownership") -> list:
+        """Issue the next permission of ``own`` if none is outstanding (lock held); return the
+        messages to send."""
+        if own.outstanding is not None or not own.queue or not own.serving(self._clock()):
+            return []
+        if own.lease.remaining() < self._duration / 4:
+            # Too little lease left for a replication to finish under it: the ownership
+            # thread renews first and dispatches once renewed (or ends the term).
+            self._cond.notify_all()
+            return []
+        node, rid, inc, wait = own.queue.popleft()
+        own.seq += 1
+        # Valid for what remains of the owner's lease (never longer): a holder's commit may
+        # include a recovery round, which can take the whole request timeout.
+        valid = max(0.0, own.lease.remaining())
+        now = self._clock()
+        own.outstanding = (node, own.seq, now + valid + self._request_timeout)
+        self._stats["permits_issued"] += 1
+        known, root, label = own.base
+        certain = known and own.committed
+        if wait is not None:            # one of this node's own threads
+            wait.reply = Permission(term=own.term, seq=own.seq, owner=self._node, acquired_at=now,
+                                    valid_until=now + valid, root=root, root_certain=certain,
+                                    clock=self._clock, root_term=label, rid=rid)
+            self._cond.notify_all()
+            return []
+        return [(node, make_message("permit", self._node, term=own.term, rid=rid, seq=own.seq,
+                                    root=encode_root(root, known=known, term=label), certain=certain,
+                                    valid=valid))]
+
+    def _on_permit_req(self, sender: str, msg: dict) -> None:
+        """A member asks this node, as owner of ``term``, for a permission (transport thread)."""
+        with self._cond:
+            if self._state != "running":
+                return
+            self._note_owner(msg["term"])
+            own = self._ownership
+            if own is not None and own.term == msg["term"] and own.serving(self._clock()) \
+                    and self._failure is None:
+                if not any(q[0] == sender and q[1] == msg["rid"] for q in own.queue):
+                    own.queue.append((sender, msg["rid"], msg["inc"], None))
+                own.last_demand = time.monotonic()
+                sends = self._dispatch(own)
+            else:
+                reason = "not_owner" if own is None or own.term != msg["term"] else "ending"
+                term = max(self._grants.highest_term, own.term if own is not None else 0)
+                sends = [(sender, make_message("permit_no", self._node, term=term, rid=msg["rid"],
+                                               reason=reason))]
+        self._send_all(sends)
+
+    def _on_permit_reply(self, sender: str, msg: dict) -> None:
+        """An owner answered a permit request of this node (transport thread)."""
+        sends = []
+        with self._cond:
+            if self._state != "running":
+                return
+            self._note_owner(msg["term"])
+            wait = self._permit_waits.get(msg["rid"])
+            if msg["type"] == "permit_no":
+                if wait is not None and wait.reply is None:
+                    wait.reply = "refused"
+                    self._stats["permits_refused"] += 1
+                    if self._owner_hint[1] == sender and msg["term"] <= self._owner_hint[0]:
+                        self._owner_hint = (self._owner_hint[0], None)
+                    self._cond.notify_all()
+                return
+            key = (msg["term"], msg["seq"])
+            if key in self._permits_seen:
+                return                      # a duplicate: the first copy was used or handed back
+            self._permits_seen.append(key)
+            if wait is None or wait.reply is not None:
+                # Nobody waits for it any more: hand it back at once, so the owner moves on.
+                sends = [(sender, make_message("done", self._node, term=msg["term"], seq=msg["seq"], inc=self._inc,
+                                               outcome="none", root=None))]
+            else:
+                known, root, label = decode_labeled_root(msg["root"])
+                now = self._clock()
+                wait.reply = Permission(term=msg["term"], seq=msg["seq"], owner=sender, acquired_at=now,
+                                        valid_until=now + msg["valid"], root=root if known else None,
+                                        root_certain=msg["certain"] and known, clock=self._clock,
+                                        root_term=label, rid=msg["rid"])
+                self._cond.notify_all()
+        self._send_all(sends)
+
+    def finish(self, permission: Permission) -> None:
+        """End ``permission`` with its ``outcome`` (and ``committed`` root): tell its owner and
+        every member (D50).  Never raises for the permission this node holds; twice is a no-op."""
+        sends = []
+        with self._cond:
+            if permission is not self._permit:
+                if permission.released_at is not None:
+                    return
+                raise ProtoUserError("This permission is not held by this coordinator")
+            self._permit = None
+            permission._mark_released()
+            outcome = permission.outcome
+            label, root = permission.committed if permission.committed is not None else (0, None)
+            if permission.owner == self._node:
+                own = self._ownership
+                if own is not None and own.term == permission.term and own.outstanding is not None \
+                        and own.outstanding[:2] == (self._node, permission.seq):
+                    sends = self._permit_outcome(own, outcome, root, label)
+            running = self._state == "running"
+            msg = make_message("done", self._node, term=permission.term, seq=permission.seq, inc=self._inc,
+                               outcome=outcome, root=encode_root(root, known=outcome == "committed", term=label))
+        if running:
+            self._broadcast(msg)
+            self._send_all(sends)
+
+    def _permit_outcome(self, own: "_Ownership", outcome: str, root: Optional[RootRecord], label: int) -> list:
+        """The outstanding permission of ``own`` ended with ``outcome`` (lock held); return the
+        messages to send.  An outcome the owner cannot know abandons the term (D50)."""
+        own.outstanding = None
+        if outcome == "committed":
+            own.base = (True, root, label)
+            own.committed = True
+        elif outcome != "none":
+            return self._abandon(own, outcome)
+        return self._dispatch(own)
+
+    def _abandon(self, own: "_Ownership", why: str) -> list:
+        """Stop issuing permissions of ``own``'s term (lock held): an outcome it cannot know.
+        The lease is released as uncertain by the ownership thread."""
+        if own.abandoned:
+            return []
+        own.abandoned = True
+        self._stats["terms_abandoned"] += 1
+        self._suspect_term = max(self._suspect_term, own.term)
+        logger.info("Node %s abandons lease term %d: %s", self._node, own.term, why)
+        sends = self._refuse_queue(own, "abandoned")
+        self._cond.notify_all()
+        return sends
+
+    def _refuse_queue(self, own: "_Ownership", reason: str) -> list:
+        sends = []
+        while own.queue:
+            node, rid, _, wait = own.queue.popleft()
+            if wait is None:
+                sends.append((node, make_message("permit_no", self._node, term=own.term, rid=rid, reason=reason)))
+        self._cond.notify_all()         # local waiters see the ownership end
+        return sends
+
+    def _on_done(self, msg: dict) -> None:
+        """A permission ended (worker thread, after the sender's replications): learn its
+        committed root, and sequence the next permission when this node owns that term."""
+        sender = msg["from"]
+        learnt, sends, tier = None, [], None
+        with self._log_lock:
+            with self._cond:
+                if self._state != "running":
+                    return
+                self._note_owner(msg["term"])
+                known, root, label = decode_labeled_root(msg["root"])
+                if msg["outcome"] == "committed" and known and self._observe_committed(True, root, label, sender):
+                    learnt = (label, root)
+                own = self._ownership
+                if own is not None and own.term == msg["term"] and own.outstanding is not None \
+                        and own.outstanding[:2] == (sender, msg["seq"]):
+                    sends = self._permit_outcome(own, msg["outcome"], root, label)
+                self._wakeups += 1
+                self._cond.notify_all()
+                tier = self._tier
+            if learnt is not None and tier is not None:
+                try:
+                    tier.log_root("committed", learnt[0], learnt[1])
+                except (ProtoDBError, OSError) as e:
+                    self._tier_failed(tier, e, "logging a committed root")
+        self._send_all(sends)
+
+    def _own_loop(self, own: "_Ownership") -> None:
+        """The ownership thread: renews the lease while there is demand, abandons a term whose
+        outstanding permission timed out, releases the lease when idle (D50)."""
+        idle = self._duration / 4
+        while True:
+            renew = False
+            sends = []
+            with self._cond:
+                if self._state != "running" or self._ownership is not own:
+                    return
+                now, mono = self._clock(), time.monotonic()
+                if own.outstanding is not None and now > own.outstanding[2]:
+                    sends = self._abandon(own, f"permission {own.outstanding[1]} of {own.outstanding[0]} timed out")
+                    own.outstanding = None
+                end = None
+                if own.abandoned:
+                    end = "abandoned"
+                elif not own.lease.is_valid():
+                    end = "expired"
+                elif own.outstanding is None and not own.queue and mono - own.last_demand > idle:
+                    end = "idle"
+                if end is not None:
+                    own.ended = True
+                    self._ownership = None
+                    sends += self._refuse_queue(own, "ending")
+                else:
+                    demand = own.outstanding is not None or own.queue or mono - own.last_demand <= self._duration / 2
+                    renew = demand and own.lease.remaining() < self._duration / 2
+                    if not renew:
+                        waits = [max(0.001, own.lease.remaining() - self._duration / 2) if demand else idle]
+                        if own.outstanding is not None:
+                            waits.append(max(0.001, own.outstanding[2] - now))
+                        elif not own.queue:
+                            waits.append(max(0.001, idle - (mono - own.last_demand)))
+                        self._cond.wait(timeout=min(waits))
+            self._send_all(sends)
+            if end is not None:
+                try:
+                    self.release(own.lease)
+                except (ProtoDBError, OSError) as e:
+                    logger.error("Node %s: releasing its lease (%s) failed: %s", self._node, end, e)
+                return
+            if renew:
+                self._renew(own)
+
+    def _renew(self, own: "_Ownership") -> None:
+        """Ask the granters to extend the lease of ``own`` (same term; D50, renewal)."""
+        with self._log_lock, self._lock:
+            if self._state != "running" or self._ownership is not own:
+                return
+            attempt = LeaseAttempt(term=own.term, rid=next(self._rids), sent_at=self._clock(),
+                                   cluster_size=self.cluster_size, lease_duration=self._duration,
+                                   drift_margin=self._margin)
+            self._attempt = attempt
+            refusal = self._refusal()
+            if refusal is None:
+                decision = self._grants.on_request(self._node, own.term, self._inc, renew=True)
+                if decision.granted:
+                    known, root, label = self._accepted
+                    attempt.on_grant(self._node, known, root, True, label)
+                else:
+                    attempt.on_reject(self._node, decision.reason, decision.highest, decision.remaining)
+            else:
+                attempt.on_reject(self._node, refusal, self._grants.highest_term, 0.0)
+            msg = make_message("renew", self._node, term=own.term, rid=attempt.rid, inc=self._inc)
+        self._broadcast(msg)
+        with self._cond:
+            started = time.monotonic()
+            self._cond.wait_for(lambda: attempt.state != "pending" or self._state != "running"
+                                or attempt.replies >= attempt.needed, timeout=self._request_timeout)
+            if attempt.state == "pending" and self._state == "running":
+                straggle = max(_MIN_STRAGGLE, _STRAGGLE_FACTOR * (time.monotonic() - started))
+                self._cond.wait_for(lambda: attempt.state != "pending" or self._state != "running",
+                                    timeout=max(0.0, min(straggle, started + self._request_timeout - time.monotonic())))
+            if self._attempt is attempt:
+                self._attempt = None
+            sends = []
+            if attempt.state == "won" and self._clock() < attempt.valid_until and self._ownership is own:
+                own.lease.valid_until = max(own.lease.valid_until, attempt.valid_until)
+                self._stats["renewals"] += 1
+                sends = self._dispatch(own)        # a request may have waited for the renewal
+            else:
+                self._stats["renewal_failures"] += 1
+            self._cond.notify_all()
+        self._send_all(sends)
+
     # -- the commit point --------------------------------------------------------------------
 
     def _new_waiter(self, kind: str, term: int = 0) -> tuple:
@@ -2070,10 +2621,14 @@ class ClusterCoordinator:
             raise ProtoValidationError("The space this commit belongs to was closed: its tier is no longer "
                                        "attached to the coordinator; nothing was replicated")
         tier = attached
-        if lease is not self._held:
+        if lease is not self._held and lease is not self._permit:
             raise ProtoUserError("This lease is not held by this coordinator")
         records = tier.outgoing()
         label = lease.term
+        seq = getattr(lease, "seq", 0)
+        # The root this one is built on (D50, chain rule): the last root sent under this lease
+        # or permission, else its base.
+        pred_label, pred_root = lease.sent if lease.sent is not None else (lease.root_term, lease.root)
         extra, base_wire, base_ranges = [], None, None
         if base is not None:
             base_label, base_root, extra, ranges = base
@@ -2108,10 +2663,15 @@ class ClusterCoordinator:
             rid, waiter = self._new_waiter("replicate", label)
             parts = [make_message("records", self._node, term=label, rid=rid, index=i, records=chunk)
                      for i, chunk in enumerate(chunks[:-1])]
+            pred = (True, pred_root, pred_label)
+            pred_committed = self._committed == pred
             msg = make_message("replicate", self._node, term=label, rid=rid,
                                root=encode_root(root, known=True, term=label),
                                committed=self._wire(self._committed), records=chunks[-1], chunks=len(parts),
-                               base=base_wire, base_ranges=base_ranges)
+                               base=base_wire, base_ranges=base_ranges, seq=seq,
+                               pred=encode_root(pred_root, known=True, term=pred_label),
+                               pred_committed=pred_committed)
+            lease.sent = (label, root)        # the next root of this lease extends this one
             self._stats["replications"] += 1
         failure = None
         acks = nacks = 0
@@ -2125,7 +2685,7 @@ class ClusterCoordinator:
                 # the tier this commit's records went to, logged on it while it is attached,
                 # then published and counted.
                 with self._lock:
-                    self_ok = self._tier is tier and self._may_accept(label, root, label)
+                    self_ok = self._tier is tier and self._may_accept(label, root, label, pred, pred_committed, seq)
                 if self_ok:
                     # Where the records of this root are, before its outcome is known: a node
                     # that adopts it later (a rejoin, a holder re-proposing it) copies them
@@ -2140,6 +2700,7 @@ class ClusterCoordinator:
                         raise
                     with self._lock:
                         self._observe_accepted(True, root, label)
+                        self._note_seq(label, seq)
                         waiter.acks.add(self._node)
             with self._cond:
                 total = self.cluster_size

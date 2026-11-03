@@ -10,8 +10,8 @@ the default (safe) startup grace.  Protocol with the parent, one JSON line each 
 2. the parent writes ``{"peers": [[id, host, port], ...]}``; the peer starts and prints
    ``{"ready": true}``; the parent writes ``{"go": true}``.
 3. ``MODE`` ``load``: the peer commits forever (each commit increments ``n`` and adds a
-   unique id to the ``ids`` CountedSet) and prints ``{"acked": id}`` after each commit that
-   returned, ``{"unknown": id}`` after an unknown outcome.  It never stops by itself: the
+   unique id to the ``ids`` CountedSet) and prints ``{"acked": id, "owner": ..}`` after each
+   commit that returned (``owner``: the member it believes owns the current term, D50), ``{"unknown": id}`` after an unknown outcome.  It never stops by itself: the
    parent kills it.
    ``MODE`` ``verify``: the peer reads ``n`` and ``ids`` and prints ``{"n": .., "ids": [..]}``,
    waits until the persisted root covers what it read, prints ``{"synced": true}``, then
@@ -87,7 +87,7 @@ def main():
                     continue
                 except (ProtoConflictError, ProtoTimeoutError):
                     continue
-                _say({"acked": uid})
+                _say({"acked": uid, "owner": coordinator.owner})
         tr = db.new_transaction()
         n, ids = tr.get_root_object("n"), tr.get_root_object("ids")
         tr.abort()

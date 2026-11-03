@@ -47,7 +47,7 @@ from typing import Callable, NamedTuple, Optional
 from ..storage.format import RootRecord
 from .rootlog import compare_roots
 
-__all__ = ["majority", "FencingToken", "GrantDecision", "PeerGrants", "LeaseAttempt", "Lease"]
+__all__ = ["majority", "FencingToken", "GrantDecision", "PeerGrants", "LeaseAttempt", "Lease", "Permission"]
 
 
 def majority(cluster_size: int) -> int:
@@ -156,12 +156,20 @@ class PeerGrants:
             return self._term
         return 0
 
-    def on_request(self, holder: str, term: int, inc: int = 0) -> GrantDecision:
+    def on_request(self, holder: str, term: int, inc: int = 0, *, renew: bool = False) -> GrantDecision:
         """Decide a request of ``holder`` (incarnation ``inc``) for ``term`` (see :class:`GrantDecision`).
 
         A request from another incarnation of the node holding an active grant proves that
         node restarted: the old grant is void (its process is gone) and ends here, reported
         as ``previous_expired`` because its holder may have used it before restarting.
+
+        ``renew`` (D50): the holder of an active grant asks to keep it.  Only an active,
+        unreleased grant of that holder, incarnation and term is extended, to ``now +
+        lease_duration`` on this peer's clock, which follows the renewal's send exactly as a
+        first grant follows its request (the D45 argument, measured from the renewal); any
+        other renewal is decided by the ordinary rules (so an expired or released term is
+        never granted again).  A plain duplicate of the same request still never extends the
+        promise.
         """
         now = self._clock()
         ended = self._settle(now)
@@ -175,6 +183,9 @@ class PeerGrants:
                 return GrantDecision(False, "stale_term", self._highest, 0.0, bool(ended), ended)
             if self._active:
                 if self._holder == holder and self._term == term:
+                    if renew and self._inc == inc:
+                        self._expiry = now + self._duration
+                        return GrantDecision(True, "granted", self._highest, self._duration, False, 0)
                     # A duplicate: grant again, but never extend the promise.
                     return GrantDecision(True, "granted", self._highest, self._expiry - now, False, 0)
                 if self._holder != holder:
@@ -306,6 +317,8 @@ class Lease:
         self.root_certain = root_certain
         self.root_term = root_term
         self.released_at = None
+        #: ``(label, root)`` of the last root replicated under this lease (D50, chain rule)
+        self.sent = None
         self._clock = clock
         self._released = False
 
@@ -345,3 +358,33 @@ class Lease:
     def __repr__(self):
         return (f"Lease(term={self.term}, epoch={self.expected_epoch}, "
                 f"remaining={self.remaining():.3f}s, released={self._released})")
+
+
+class Permission(Lease):
+    """A write permission of the owner of ``term`` (D50): number ``seq`` of that term, held by
+    this node to commit its own round of transactions and replicate it.
+
+    It behaves as a :class:`Lease` for the commit path (``term``, ``root``, ``root_term``,
+    ``root_certain``, :meth:`is_valid`, :meth:`remaining`, :meth:`bind_root`): ``root`` is the
+    base the owner piggybacked (the newest root it knows committed), ``valid_until`` runs on
+    this node's clock from the moment the request was SENT.  Safety never rests on it: an
+    acceptor takes a root only if it extends the root it holds of the same term (D50, the
+    chain rule), and the ballot rule refuses the term once a newer owner was granted.
+    ``owner`` is the node that issued it; ``outcome`` and ``committed`` are what the holder
+    reports when it ends the permission (``"none"``, ``"committed"`` or ``"unknown"``).
+    """
+
+    def __init__(self, *, term: int, seq: int, owner: str, acquired_at: float, valid_until: float,
+                 root: Optional[RootRecord], root_certain: bool, clock: Callable[[], float], root_term: int = 0,
+                 rid: int = 0):
+        super().__init__(term=term, acquired_at=acquired_at, valid_until=valid_until, root=root,
+                         root_certain=root_certain, clock=clock, root_term=root_term)
+        self.seq = seq
+        self.owner = owner
+        self.rid = rid
+        self.outcome = "none"
+        self.committed = None           # (label, RootRecord) of the last root it committed
+
+    def __repr__(self):
+        return (f"Permission(term={self.term}, seq={self.seq}, owner={self.owner!r}, epoch={self.expected_epoch}, "
+                f"remaining={self.remaining():.3f}s, outcome={self.outcome})")
