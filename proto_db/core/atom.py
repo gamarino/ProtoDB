@@ -45,10 +45,16 @@ Saving
     :meth:`Atom._save` is idempotent and thread-safe: children are saved first
     (through ``context.save``, with no stripe held), then, under the atom's
     stripe, the atom's own payload
-    ``{"t": type_name, "oid": oid_bytes, "s": encoded_state}`` is pushed to
+    ``{"t": type_tag, "oid": oid_bytes, "s": encoded_state}`` is pushed to
     ``context.storage`` unless another thread published a pointer first.
     Concurrent calls push exactly one payload and return one pointer (racing
     callers may encode the state more than once; only one result is pushed).
+
+Type tags (format version 3, D51)
+    A built-in type is written as its small integer alias, its index in
+    :data:`BUILTIN_TYPE_ALIASES` (:func:`type_tag`); any other type as its name.  Readers
+    accept both forms (:func:`type_name_of`), so format-2 data, which always wrote names,
+    still loads.
 """
 from __future__ import annotations
 
@@ -60,7 +66,8 @@ from typing import Any, Protocol, runtime_checkable
 
 from ..errors import ProtoCorruptionError, ProtoUserError, ProtoValidationError
 
-__all__ = ["AtomPointer", "PersistenceContext", "Atom", "register_atom_class", "RESERVED_NAMES"]
+__all__ = ["AtomPointer", "PersistenceContext", "Atom", "register_atom_class", "RESERVED_NAMES",
+           "BUILTIN_TYPE_ALIASES", "type_tag", "type_name_of"]
 
 #: Public attribute names managed by :class:`Atom` itself; never part of the persisted state.
 RESERVED_NAMES = frozenset({"oid", "atom_pointer", "context"})
@@ -126,6 +133,7 @@ BUILTIN_ATOM_MODULES: dict[str, str] = {
     "proto_db.avl._Node": "proto_db.collections.avl",
     "proto_db.avl.PosNode": "proto_db.collections.avl",
     "proto_db.avl.KeyNode": "proto_db.collections.avl",
+    "proto_db.avl.ValueBox": "proto_db.collections.avl",
     "proto_db.collections.IndexSet": "proto_db.collections.base",
     "proto_db.collections.IndexedCollection": "proto_db.collections.base",
     "proto_db.collections.List": "proto_db.collections.lists",
@@ -143,6 +151,49 @@ BUILTIN_ATOM_MODULES: dict[str, str] = {
     "proto_db.transactions.SpaceRoot": "proto_db.transactions",
     "proto_db.transactions.DatabaseRoot": "proto_db.transactions",
 }
+
+
+#: Built-in atom type names by their persisted alias (the index): APPEND-ONLY -- an alias, once
+#: written, must keep naming the same type forever (format version 3, D51).
+BUILTIN_TYPE_ALIASES: tuple[str, ...] = (
+    "proto_db.avl.KeyNode",
+    "proto_db.avl.PosNode",
+    "proto_db.avl.ValueBox",
+    "proto_db.collections.IndexSet",
+    "proto_db.collections.IndexedCollection",
+    "proto_db.collections.List",
+    "proto_db.collections.Dictionary",
+    "proto_db.collections.RepeatedKeysDictionary",
+    "proto_db.collections.HashDictionary",
+    "proto_db.collections.sets._HashBuckets",
+    "proto_db.collections.Set",
+    "proto_db.collections.CountedSet",
+    "proto_db.indexing.Index",
+    "proto_db.indexing.keyed.KeyGroupIndex",
+    "proto_db.indexing.EqualityIndex",
+    "proto_db.indexing.RangeIndex",
+    "proto_db.indexing.VectorIndex",
+    "proto_db.transactions.SpaceRoot",
+    "proto_db.transactions.DatabaseRoot",
+    "proto_db.core.dbobject.DBObject",
+    "proto_db.avl._Node",
+)
+_ALIAS_OF = {name: i for i, name in enumerate(BUILTIN_TYPE_ALIASES)}
+
+
+def type_tag(type_name: str):
+    """Return the persisted tag of ``type_name``: its alias for a built-in type, else the name."""
+    alias = _ALIAS_OF.get(type_name)
+    return type_name if alias is None else alias
+
+
+def type_name_of(tag) -> str:
+    """Return the type name a persisted tag stands for; ``ProtoCorruptionError`` if malformed."""
+    if type(tag) is str:
+        return tag
+    if type(tag) is int and 0 <= tag < len(BUILTIN_TYPE_ALIASES):
+        return BUILTIN_TYPE_ALIASES[tag]
+    raise ProtoCorruptionError(f"Malformed atom type tag {tag!r}")
 
 
 def register_atom_class(cls: type) -> type:
@@ -292,9 +343,10 @@ class Atom:
                 payload = self.context.storage.get_atom(self.atom_pointer)
                 if not isinstance(payload, dict) or set(payload) != {"t", "oid", "s"}:
                     raise ProtoCorruptionError(f"Malformed atom payload at {self.atom_pointer}")
-                if payload["t"] != type(self).__type_name__:
+                stored = type_name_of(payload["t"])
+                if stored != type(self).__type_name__:
                     raise ProtoCorruptionError(
-                        f"Atom at {self.atom_pointer} is a {payload['t']!r}, expected {type(self).__type_name__!r}")
+                        f"Atom at {self.atom_pointer} is a {stored!r}, expected {type(self).__type_name__!r}")
                 raw_oid = payload["oid"]
                 if not isinstance(raw_oid, bytes) or len(raw_oid) != 16:
                     raise ProtoCorruptionError(f"Malformed oid in atom at {self.atom_pointer}")
@@ -357,7 +409,7 @@ class Atom:
             ptr = self.atom_pointer
             if ptr is not None:
                 return ptr
-            payload = {"t": cls.__type_name__, "oid": self._oid_locked().bytes, "s": encoded}
+            payload = {"t": type_tag(cls.__type_name__), "oid": self._oid_locked().bytes, "s": encoded}
             ptr = context.storage.push_atom(payload)
             object.__setattr__(self, "atom_pointer", ptr)
             return ptr

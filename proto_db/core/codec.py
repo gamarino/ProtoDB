@@ -20,7 +20,10 @@ Wire form of a value:
   ``@map``     array of ``[key, value]`` pairs in insertion order (keys may be any
                canonical value, so a msgpack map is never used for a dict)
   ``@missing`` the ``MISSING`` sentinel (value ``0``)
-  ``@ref``     ``[segment_hex, offset, type_name]`` for a nested atom
+  ``@ref``     ``[segment, offset, type]`` for a nested atom: the 16 segment UUID bytes
+               and the type tag of :func:`proto_db.core.atom.type_tag` (an alias for a
+               built-in type, else the name).  Format version 2 wrote the segment as 32
+               hex digits and the type as its name; both forms are still read (D51).
   ``@mut``     the cell name of a ``MutableObject`` handle (a non-empty str, D35)
   ===========  ==================================================================
 
@@ -44,7 +47,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..errors import ProtoCorruptionError, ProtoValidationError
 from ..values import MISSING, FrozenDict, FrozenList
-from .atom import Atom, AtomPointer
+from .atom import Atom, AtomPointer, type_name_of, type_tag
 from .dbobject import MutableObject
 
 __all__ = ["encode_state", "decode_state", "encode_value", "decode_value"]
@@ -113,7 +116,7 @@ def encode_value(value, save_child: Callable[[Atom], AtomPointer]):
         ptr = save_child(value)
         if not isinstance(ptr, AtomPointer):
             raise ProtoValidationError(f"save_child returned {type(ptr).__name__}, expected AtomPointer")
-        return {"@ref": [ptr.segment.hex, ptr.offset, type(value).__type_name__]}
+        return {"@ref": [ptr.segment.bytes, ptr.offset, type_tag(type(value).__type_name__)]}
     raise ProtoValidationError(f"Unsupported value type: {type(value).__name__}")
 
 
@@ -251,10 +254,20 @@ def _dec_missing(body, _):
 
 
 def _dec_ref(body, load_ref):
-    seg_hex, offset, type_name = _fields(body, 3, (str, int, str))
+    segment, offset, tag = _fields(body, 3, (None, int, None))
+    if type(segment) is bytes and len(segment) == 16:
+        segment = uuid.UUID(bytes=segment)
+    elif type(segment) is str:                       # format version 2
+        segment = uuid.UUID(hex=segment)
+    else:
+        raise TypeError("expected 16 segment bytes")
     try:
-        ptr = AtomPointer(uuid.UUID(hex=seg_hex), offset)
+        ptr = AtomPointer(segment, offset)
     except ProtoValidationError as e:
+        raise ValueError(str(e)) from e
+    try:
+        type_name = type_name_of(tag)
+    except ProtoCorruptionError as e:
         raise ValueError(str(e)) from e
     return load_ref(ptr, type_name)
 

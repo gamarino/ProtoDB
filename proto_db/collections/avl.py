@@ -37,7 +37,11 @@ violations raise ``ProtoValidationError``.  Negative indexes are not accepted
 here; collections translate Python-style indexes before calling in.
 
 Values are stored as given; validating them (``values.canonical``) is the
-caller's job.  Keys must be orderable (``order_key`` raises
+caller's job.  A ``bytes`` or ``str`` value of at least :data:`VALUE_BOX_MIN` bytes or
+characters is held by its node through a :class:`ValueBox`, an atom of its own (D51): a path
+copy then re-writes a small reference instead of the value, so a commit writes a large value
+once rather than once per copied ancestor.  Boxing is invisible to callers: every function
+here takes and returns plain values.  Keys must be orderable (``order_key`` raises
 ``ProtoValidationError`` otherwise).
 """
 from __future__ import annotations
@@ -49,7 +53,7 @@ from ..errors import ProtoCorruptionError, ProtoUserError, ProtoValidationError
 from ..values import order_key
 
 __all__ = [
-    "PosNode", "KeyNode",
+    "PosNode", "KeyNode", "ValueBox", "VALUE_BOX_MIN", "boxed", "unboxed",
     "pos_get", "pos_insert", "pos_set", "pos_remove", "pos_slice", "pos_concat",
     "pos_iter", "pos_count", "pos_from_iterable",
     "key_get", "key_put", "key_remove", "key_iter", "key_iter_range", "key_iter_okey_range",
@@ -81,6 +85,52 @@ class _Unbounded:
 
 #: Range bound meaning "no limit on this side"; ``None`` and ``MISSING`` are ordinary bounds.
 UNBOUNDED = _Unbounded()
+
+
+#: Smallest ``bytes`` (in bytes) or ``str`` (in characters) a node stores out of line, in a
+#: :class:`ValueBox` (D51).  Below it a box would cost more than the copies it saves.
+VALUE_BOX_MIN = 256
+
+
+class ValueBox(Atom):
+    """An immutable holder of one large node value, persisted as an atom of its own (D51).
+
+    A node built with a large ``bytes`` or ``str`` value keeps it through a box; copies of the
+    node made by path copying keep the same box, which is saved once.  ``value`` is the
+    held value (loading the box when it is a stub)."""
+
+    __type_name__ = "proto_db.avl.ValueBox"
+
+    def __init__(self, value, *, context: PersistenceContext | None = None):
+        super().__init__(context=context)
+        object.__setattr__(self, "value", value)
+
+    def __setattr__(self, name, value):
+        if name.startswith("_"):
+            object.__setattr__(self, name, value)
+            return
+        raise ProtoUserError(f"A value box is immutable; cannot set {name!r}")
+
+    def __delattr__(self, name):
+        if name.startswith("_"):
+            object.__delattr__(self, name)
+            return
+        raise ProtoUserError(f"A value box is immutable; cannot delete {name!r}")
+
+
+def boxed(value):
+    """The form a node stores ``value`` in: a :class:`ValueBox` for a large ``bytes`` or
+    ``str`` (an existing box is kept), the value itself otherwise."""
+    if type(value) is ValueBox:
+        return value
+    if isinstance(value, (bytes, str)) and len(value) >= VALUE_BOX_MIN:
+        return ValueBox(value)
+    return value
+
+
+def unboxed(stored):
+    """The value a node holds in ``stored`` (the inverse of :func:`boxed`)."""
+    return stored.value if type(stored) is ValueBox else stored
 
 
 # -- nodes --------------------------------------------------------------------------------
@@ -126,7 +176,7 @@ class PosNode(_Node):
     def __init__(self, value, left: "PosNode | None" = None, right: "PosNode | None" = None, *,
                  context: PersistenceContext | None = None):
         super().__init__(context=context)
-        object.__setattr__(self, "value", value)
+        object.__setattr__(self, "value", boxed(value))
         self._init_shape(left, right)
 
     def _with_children(self, left, right) -> "PosNode":
@@ -146,7 +196,7 @@ class KeyNode(_Node):
         super().__init__(context=context)
         object.__setattr__(self, "_okey", order_key(key) if _okey is None else _okey)
         object.__setattr__(self, "key", key)
-        object.__setattr__(self, "value", value)
+        object.__setattr__(self, "value", boxed(value))
         self._init_shape(left, right)
 
     def _order_key(self):
@@ -265,7 +315,7 @@ def pos_get(root: PosNode | None, index: int):
         if index < lc:
             node = node.left
         elif index == lc:
-            return node.value
+            return unboxed(node.value)
         else:
             index -= lc + 1
             node = node.right
@@ -372,7 +422,7 @@ def pos_iter(root: PosNode | None) -> Iterator:
     """Yield the elements of a positional tree in order (no recursion)."""
     _check_kind(root, PosNode)
     for node in _inorder(root):
-        yield node.value
+        yield unboxed(node.value)
 
 
 def _build_balanced(items: list, make) -> _Node | None:
@@ -408,7 +458,7 @@ def key_get(root: KeyNode | None, key, default=None):
         elif k > nk:
             node = node.right
         else:
-            return node.value
+            return unboxed(node.value)
     return default
 
 
@@ -431,7 +481,7 @@ def key_put(root: KeyNode | None, key, value):
             return _balance(node, put(node.left), node.right)
         if k > nk:
             return _balance(node, node.left, put(node.right))
-        out[0], out[1] = True, node.value
+        out[0], out[1] = True, unboxed(node.value)
         return node._with_value(value)
 
     new_root = put(root)
@@ -454,7 +504,7 @@ def key_remove(root: KeyNode | None, key):
         if k > nk:
             child = remove(node.right)
             return node if child is node.right else _balance(node, node.left, child)
-        out[0], out[1] = True, node.value
+        out[0], out[1] = True, unboxed(node.value)
         return _remove_node(node)
 
     new_root = remove(root)
@@ -465,7 +515,7 @@ def key_iter(root: KeyNode | None) -> Iterator[tuple]:
     """Yield ``(key, value)`` pairs in key order (no recursion)."""
     _check_kind(root, KeyNode)
     for node in _inorder(root):
-        yield node.key, node.value
+        yield node.key, unboxed(node.value)
 
 
 def key_iter_range(root: KeyNode | None, lo=UNBOUNDED, hi=UNBOUNDED,
@@ -515,7 +565,7 @@ def _iter_okey_range(root, lok, hik, lo_inc, hi_inc) -> Iterator[tuple]:
             nk = node._order_key()
             if nk > hik or (nk == hik and not hi_inc):
                 return
-        yield node.key, node.value
+        yield node.key, unboxed(node.value)
         node = node.right
 
 
@@ -533,7 +583,7 @@ def _iter_reversed(root) -> Iterator[tuple]:
             stack.append(node)
             node = node.right
         node = stack.pop()
-        yield node.key, node.value
+        yield node.key, unboxed(node.value)
         node = node.left
 
 

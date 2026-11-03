@@ -30,14 +30,19 @@ import msgpack
 from ..core.atom import AtomPointer
 from ..errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoValidationError
 
-__all__ = ["SEGMENT_MAGIC", "FORMAT_VERSION", "SEGMENT_HEADER_SIZE", "RECORD_HEADER_SIZE", "RECORD_MAGIC",
+__all__ = ["SEGMENT_MAGIC", "FORMAT_VERSION", "READABLE_FORMAT_VERSIONS", "SEGMENT_HEADER_SIZE", "RECORD_HEADER_SIZE", "RECORD_MAGIC",
            "RecordKind", "RootRecord", "encode_segment_header", "decode_segment_header", "encode_record",
            "record_header", "record_size", "read_record", "encode_root", "decode_root"]
 
 SEGMENT_MAGIC = b"PDB2SEG\0"
 #: Version of the segment, record and root formats; bump it when any of them changes.
 #: 2: self-validating record headers (D46 fix round 13).
-FORMAT_VERSION = 2
+#: 3: compact atom references (the segment as 16 bytes, built-in types as small integers) and
+#: large node values in atoms of their own (D51).  The root record's shape is unchanged.
+FORMAT_VERSION = 3
+#: Versions this code reads: a format-2 segment still decodes (its references are read by the
+#: codec's format-2 branch); a root record of either version is read as the current version.
+READABLE_FORMAT_VERSIONS = frozenset({2, 3})
 _SEGMENT_HEADER = struct.Struct("<8sH16s")
 #: First two bytes of every record header.  ``0xC1`` is the one byte msgpack never emits as a
 #: type byte, so the magic is rare in msgpack payloads (it only marks candidates: the header
@@ -87,7 +92,7 @@ def decode_segment_header(data: bytes) -> uuid.UUID:
     magic, version, raw = _SEGMENT_HEADER.unpack_from(data)
     if magic != SEGMENT_MAGIC:
         raise ProtoCorruptionError("Bad segment magic")
-    if version != FORMAT_VERSION:
+    if version not in READABLE_FORMAT_VERSIONS:
         raise ProtoNotSupportedError(f"Unsupported segment format version {version}")
     return uuid.UUID(bytes=raw)
 
@@ -184,6 +189,6 @@ def decode_root(data: bytes) -> RootRecord:
     if (type(version) is not int or type(offset) is not int or type(epoch) is not int
             or offset < 0 or epoch < 0 or not isinstance(raw, bytes) or len(raw) != 16):
         raise ProtoCorruptionError("Malformed root record")
-    if version != FORMAT_VERSION:
+    if version not in READABLE_FORMAT_VERSIONS:
         raise ProtoNotSupportedError(f"Unsupported root format version {version}")
-    return RootRecord(version, uuid.UUID(bytes=raw), offset, epoch)
+    return RootRecord(FORMAT_VERSION, uuid.UUID(bytes=raw), offset, epoch)

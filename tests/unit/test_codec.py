@@ -136,11 +136,33 @@ def test_nested_atom_refs():
 
 
 def test_ref_wire_shape():
+    """Format 3 (D51): the segment as its 16 bytes, the type as its name (a user type)."""
     refs = _Refs()
     leaf = CodecLeaf("x")
     encoded = codec.encode_state({"r": leaf}, refs.save_child)
-    seg_hex, offset, type_name = encoded["r"]["@ref"]
-    assert seg_hex == refs.segment.hex and offset == 0 and type_name == CodecLeaf.__type_name__
+    segment, offset, type_name = encoded["r"]["@ref"]
+    assert segment == refs.segment.bytes and offset == 0 and type_name == CodecLeaf.__type_name__
+
+
+def test_ref_of_a_builtin_type_uses_its_alias():
+    from proto_db.collections.avl import KeyNode
+    from proto_db.core.atom import BUILTIN_TYPE_ALIASES, type_name_of, type_tag
+    refs = _Refs()
+    encoded = codec.encode_state({"r": KeyNode(1, 2)}, refs.save_child)
+    tag = encoded["r"]["@ref"][2]
+    assert type(tag) is int and BUILTIN_TYPE_ALIASES[tag] == KeyNode.__type_name__
+    assert type_name_of(type_tag("my.Type")) == "my.Type"
+    with pytest.raises(ProtoCorruptionError):
+        type_name_of(len(BUILTIN_TYPE_ALIASES))
+
+
+def test_a_format_2_ref_still_decodes():
+    """Format 2 wrote ``[segment_hex, offset, type_name]``; it is still read."""
+    refs = _Refs()
+    leaf = CodecLeaf("x")
+    ptr = refs.save_child(leaf)
+    out = codec.decode_state({"r": {"@ref": [ptr.segment.hex, ptr.offset, CodecLeaf.__type_name__]}}, refs.load_ref)
+    assert out["r"] is leaf and refs.loaded[-1] == (ptr, CodecLeaf.__type_name__)
 
 
 def test_encoded_output_is_plain_msgpack_types():
@@ -170,6 +192,9 @@ def test_unknown_tag_raises_corruption():
     {"v": {"@date": [2026, 13, 1]}},
     {"v": {"@td": "x"}},
     {"v": {"@ref": ["zz", 0, "T"]}},
+    {"v": {"@ref": [b"short", 0, "T"]}},
+    {"v": {"@ref": [b"0123456789abcdef", 0, 999]}},
+    {"v": {"@ref": [b"0123456789abcdef", 0, 1.5]}},
     {"v": {"@dt": [2026, 1, 1, 0, 0, 0, 0, 0, ["bogus"]]}},
     {"v": {"@map": [[1]]}},
     {"v": {"@int": "xyz"}},
@@ -219,3 +244,22 @@ def test_keyless_zoneinfo_raises_validation():
 def test_non_str_state_key_raises_validation():
     with pytest.raises(ProtoValidationError):
         codec.encode_state({1: "x"}, _Refs().save_child)
+
+
+def test_builtin_type_aliases_are_append_only():
+    """Format 3 writes these indexes into every segment: an alias must keep naming its type
+    (append new built-in types at the end, never reorder or remove)."""
+    from proto_db.core.atom import BUILTIN_ATOM_MODULES, BUILTIN_TYPE_ALIASES
+    pinned = ("proto_db.avl.KeyNode", "proto_db.avl.PosNode", "proto_db.avl.ValueBox",
+              "proto_db.collections.IndexSet", "proto_db.collections.IndexedCollection",
+              "proto_db.collections.List", "proto_db.collections.Dictionary",
+              "proto_db.collections.RepeatedKeysDictionary", "proto_db.collections.HashDictionary",
+              "proto_db.collections.sets._HashBuckets", "proto_db.collections.Set",
+              "proto_db.collections.CountedSet", "proto_db.indexing.Index",
+              "proto_db.indexing.keyed.KeyGroupIndex", "proto_db.indexing.EqualityIndex",
+              "proto_db.indexing.RangeIndex", "proto_db.indexing.VectorIndex",
+              "proto_db.transactions.SpaceRoot", "proto_db.transactions.DatabaseRoot",
+              "proto_db.core.dbobject.DBObject", "proto_db.avl._Node")
+    assert BUILTIN_TYPE_ALIASES[:len(pinned)] == pinned
+    assert len(set(BUILTIN_TYPE_ALIASES)) == len(BUILTIN_TYPE_ALIASES)
+    assert set(BUILTIN_ATOM_MODULES) <= set(BUILTIN_TYPE_ALIASES)

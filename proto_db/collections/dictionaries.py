@@ -125,9 +125,12 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
 
     def set_at(self, key, value) -> "Dictionary":
         """Return a dictionary with ``key`` mapped to ``value`` (add or replace event)."""
-        key, value = _canonical_key(key), canonical(value)
-        root, replaced, old = avl.key_put(self.root, key, value)
-        log = self._logged((_SET, key, value))
+        key, stored = _canonical_key(key), avl.boxed(canonical(value))
+        value = avl.unboxed(stored)
+        root, replaced, old = avl.key_put(self.root, key, stored)
+        # The log keeps the stored form: a merge replaying it (D33) reuses the box, which the
+        # transaction saved before the merge, instead of writing a large value twice (D51).
+        log = self._logged((_SET, key, stored))
         if replaced:
             return self._with(root=root, indexes=self._after_replace(old, value), _op_log=log)
         return self._with(root=root, count=self.count + 1, indexes=self._after_add(value), _op_log=log)
