@@ -8,11 +8,14 @@ is exact, every committed id appears once and no committing thread wrote a root 
 the persisters did, D46).  The throughput tests print commits per second through the TCP
 transport (informational, for the Phase 9 record).
 """
+import itertools
 import json
 import os
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 
 import pytest
 
@@ -164,52 +167,54 @@ def _black_hole():
     return hole, fillers
 
 
-def _in_process_tcp_rate(black_holed: bool, seconds: float = 1.5) -> float:
-    import itertools
-    import threading
-    import time
+class _InProcessTcpCluster:
+    """Three members over real TCP transports in this process, the first two committing
+    through ``ObjectSpace``; with ``black_holed`` the third member's address is a socket whose
+    accept backlog is full, so connects to it hang until their timeout."""
 
-    from proto_db.cluster.coordinator import ClusterCoordinator
-    from proto_db.cluster.transport import TcpTransport
-    from proto_db.storage.memory import MemoryStorage
+    def __init__(self, black_holed: bool):
+        from proto_db.cluster.coordinator import ClusterCoordinator
+        from proto_db.cluster.rootlog import memory_log_for
+        from proto_db.cluster.transport import TcpTransport
+        from proto_db.storage.memory import MemoryStorage
 
-    transports = [TcpTransport() for _ in range(3)]
-    hole = fillers = None
-    addresses = [t.address for t in transports]
-    if black_holed:
-        transports[2].stop()                   # never started: n2 is unreachable
-        hole, fillers = _black_hole()
-        addresses[2] = hole.getsockname()
-    peers = [(f"n{i}", host, port) for i, (host, port) in enumerate(addresses)]
-    live = 2 if black_holed else 3
-    # A restarted cluster (below): on a non-empty acceptor log any startup grace shorter than
-    # lease_duration + drift_margin is refused (rulings R50, R51), so the members use the default.
-    nodes = [ClusterCoordinator(f"n{i}", peers, transport=transports[i]).start() for i in range(live)]
-    grace = nodes[0].restart_grace
-    storage = MemoryStorage()
-    from proto_db.cluster.rootlog import memory_log_for
-    for i in range(live):
-        # A cluster that ran before n2 became unreachable: non-empty acceptor logs.  A fresh
-        # log would rejoin first, which needs both other members of three (D46, R47).
-        memory_log_for(storage, f"n{i}").mark_rejoined()
-    try:
-        ObjectSpace(storage).new_database("db")
-        uids = itertools.count()
+        transports = [TcpTransport() for _ in range(3)]
+        self._hole = self._fillers = None
+        addresses = [t.address for t in transports]
+        if black_holed:
+            transports[2].stop()                   # never started: n2 is unreachable
+            self._hole, self._fillers = _black_hole()
+            addresses[2] = self._hole.getsockname()
+        peers = [(f"n{i}", host, port) for i, (host, port) in enumerate(addresses)]
+        live = 2 if black_holed else 3
+        # A restarted cluster (below): on a non-empty acceptor log any startup grace shorter than
+        # lease_duration + drift_margin is refused (rulings R50, R51), so the members use the default.
+        self.nodes = [ClusterCoordinator(f"n{i}", peers, transport=transports[i]).start() for i in range(live)]
+        self.grace = self.nodes[0].restart_grace
+        self.storage = MemoryStorage()
+        for i in range(live):
+            # A cluster that ran before n2 became unreachable: non-empty acceptor logs.  A fresh
+            # log would rejoin first, which needs both other members of three (D46, R47).
+            memory_log_for(self.storage, f"n{i}").mark_rejoined()
+        ObjectSpace(self.storage).new_database("db")
+        self._uids = itertools.count()
+
+    def rate(self, seconds: float) -> float:
+        """Commits per second of four threads (two per committing member) over ``seconds``."""
         done = []
+        stop_at = time.monotonic() + seconds
 
         def worker(node):
-            db = ObjectSpace(storage, coordinator=node).open_database("db")
+            db = ObjectSpace(self.storage, coordinator=node).open_database("db")
             n = 0
             while time.monotonic() < stop_at:
-                uid = next(uids)
+                uid = next(self._uids)
                 db.run(lambda tr: tr.set_root_object("ids", tr.new_counted_set().add(uid)),
                        retries=10_000, backoff=(0.0005, 0.01))
                 n += 1
             done.append(n)
 
-        threads = [threading.Thread(target=worker, args=(nodes[i % 2],)) for i in range(4)]
-        time.sleep(grace)                      # the members grant nothing during their grace
-        stop_at = time.monotonic() + seconds
+        threads = [threading.Thread(target=worker, args=(self.nodes[i % 2],)) for i in range(4)]
         start = time.monotonic()
         for t in threads:
             t.start()
@@ -219,22 +224,54 @@ def _in_process_tcp_rate(black_holed: bool, seconds: float = 1.5) -> float:
         # Self-report: a worker that raised never appends (a share of 0 is contention, not failure).
         assert len(done) == len(threads) and sum(done) > 0, f"a worker failed or nothing committed: {done}"
         return sum(done) / elapsed
-    finally:
-        for node in nodes:
+
+    def stop(self) -> None:
+        """Stop the members and close the black hole."""
+        for node in self.nodes:
             node.stop()
-        if hole is not None:
-            for c in fillers:
+        if self._hole is not None:
+            for c in self._fillers:
                 c.close()
-            hole.close()
+            self._hole.close()
+
+
+#: Interleaved (healthy, degraded) sample pairs and the length of each sample.
+_PAIRS = 5
+_WINDOW = 1.0
+#: The degraded cluster's median rate must reach both bounds.  The stall this test guards
+#: against ran at 8 commits/s against 460 healthy (a ratio of 0.017): every commit waited on a
+#: connect to the unreachable member.  Healthy runs measure about 160 commits/s and degraded
+#: ones about 140 on the development machine, single-sample ratios spread from 0.22 (full-suite
+#: load) to 1.6 (8.3d re-review 13, N5).
+_MIN_DEGRADED_RATE = 20.0
+_MIN_MEDIAN_RATIO = 0.1
 
 
 def test_an_unreachable_member_does_not_stall_the_healthy_majority(capsys):
-    healthy = _in_process_tcp_rate(black_holed=False)
-    degraded = _in_process_tcp_rate(black_holed=True)
+    """One unreachable member of three must not stall the two live ones.  Both clusters run
+    side by side and are sampled alternately (healthy, degraded, healthy, ...), so a load phase
+    of the machine affects both alike; the assertion is on medians, and on an absolute floor a
+    stalled majority cannot reach (8.3d re-review 13, N5: the single-pair ratio was flaky)."""
+    import statistics
+
+    clusters = []
+    try:
+        clusters.append(_InProcessTcpCluster(black_holed=False))
+        clusters.append(_InProcessTcpCluster(black_holed=True))
+        time.sleep(max(c.grace for c in clusters))     # the members grant nothing during their grace
+        healthy, degraded = [], []
+        for _ in range(_PAIRS):
+            healthy.append(clusters[0].rate(_WINDOW))
+            degraded.append(clusters[1].rate(_WINDOW))
+    finally:
+        for c in clusters:
+            c.stop()
+    ratios = [d / h for h, d in zip(healthy, degraded)]
     with capsys.disabled():
-        print(f"\nTCP 3 members, 2 committing: all reachable {healthy:.0f} commits/s, "
-              f"one black-holed {degraded:.0f} commits/s")
-    # The stall this guards against was 8 against 460 commits/s.  Since D46 every commit needs
-    # a majority ack: with one member of three down, each needs the other (busy) live member,
-    # while the healthy run has an idle spare acker, so the expected ratio is lower than 0.5.
-    assert degraded >= 0.3 * healthy
+        print(f"\nTCP 3 members, 2 committing, {_PAIRS} interleaved samples of {_WINDOW:g} s: all reachable "
+              f"{' '.join(f'{r:.0f}' for r in healthy)} commits/s, one black-holed "
+              f"{' '.join(f'{r:.0f}' for r in degraded)} commits/s, ratios {' '.join(f'{r:.2f}' for r in ratios)}")
+    # Since D46 every commit needs a majority ack: with one member of three down, each needs the
+    # other (busy) live member, while the healthy cluster has an idle spare acker.
+    assert statistics.median(degraded) >= _MIN_DEGRADED_RATE, (healthy, degraded)
+    assert statistics.median(ratios) >= _MIN_MEDIAN_RATIO, (healthy, degraded)

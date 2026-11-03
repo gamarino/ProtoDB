@@ -32,7 +32,10 @@ symbolic link to a log or a directory names the same lock file), and the registr
 the device and inode of the protected *target* (the log file or the directory), so a hard
 link to a log cannot be opened a second time in this process.  Between processes a hard link
 is refused by :func:`~proto_db.storage.logfile.open_log`, which refuses a log file with more
-than one link before it reads or repairs anything.
+than one link before it reads or repairs anything.  That holds only while the names share the
+inode: a compaction renames a new file over the protected name, after which the other name is a
+stale, independent copy of the log with one link, which is not detected and must never be
+opened (D46 fix round 14, item 2).
 
 The lock file holds no data and is never deleted (deleting it while held would let a second
 instance lock a new file of the same name).  It is a separate file, not the log itself,

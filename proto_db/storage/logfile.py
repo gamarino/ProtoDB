@@ -31,9 +31,14 @@ that does not hold a valid frame it decides, framing first, between two cases:
   that later entries were written after; nothing silently drops those later entries,
   :class:`~proto_db.errors.ProtoCorruptionError` is raised instead.
 
-The search is exact (the answer of trying every offset) and linear in the bytes searched: the
-regular-expression engine finds the candidate offsets (the frame magic), each costs a header
-CRC, and only a candidate with a valid header has its payload checked.
+The search is exact (the answer of trying every offset) and linear in the bytes searched, with
+no cap: the regular-expression engine finds the candidate offsets (the frame magic), each costs
+a 10-byte header CRC, and only a candidate with a valid header whose extent fits has its
+payload checked.  A payload of at most 16 KiB gets a direct CRC; a longer one's CRC is derived
+from prefix CRCs of the searched region kept at 4 KiB checkpoints, with zlib's
+``crc32_combine`` arithmetic (:mod:`proto_db.storage.crc`), so even crafted header-valid
+frames cost at most 16 KiB of CRC each (8.3d re-review 13, N1: round 13 checked every such
+payload in full, which was quadratic).
 
 A header that is only partly there (a prefix of the expected header, possibly followed by
 zero bytes, and nothing else) is a torn tail too: the log is new.  Any other header (a
@@ -55,6 +60,7 @@ import zlib
 from typing import NamedTuple
 
 from ..errors import ProtoCorruptionError, ProtoLockingError, ProtoNotSupportedError, attach_secondary_errors
+from .crc import PrefixCrc
 
 __all__ = ["LOG_MAGIC", "LOG_FORMAT_VERSION", "FRAME_MAGIC", "HEADER_SIZE", "FRAME_OVERHEAD", "ScanResult",
            "encode_header", "encode_frame", "scan", "read_fd", "read_log", "open_log", "log_contents",
@@ -74,6 +80,8 @@ _FRAME_BODY = _FRAME.size - 4                   # the bytes the header CRC cover
 HEADER_SIZE = _HEADER.size
 FRAME_OVERHEAD = _FRAME.size
 _CANDIDATE = re.compile(re.escape(FRAME_MAGIC), re.DOTALL)
+_CRC_CHECKPOINT = 4 * 1024                      # bytes between prefix-CRC checkpoints of a search
+_CRC_DIRECT = 4 * _CRC_CHECKPOINT               # payloads up to this size get a direct CRC
 _O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
 _O_BINARY = getattr(os, "O_BINARY", 0)
 
@@ -126,14 +134,31 @@ def _frame_at(data, pos: int, size: int):
 
 
 def _first_valid_frame(data, start: int, size: int):
-    """The offset of the first valid frame starting at or after ``start``, or ``None`` (exact:
-    the answer of trying :func:`_frame_at` at every offset; linear, module docstring)."""
+    """The offset of the first valid frame starting at or after ``start``, or ``None``.  Exact
+    (the answer of trying :func:`_frame_at` at every offset) and linear in ``size - start``
+    with no cap: a candidate costs its 10-byte header CRC, and one whose header is valid and
+    whose extent fits at most ``_CRC_DIRECT`` bytes of CRC (a longer payload's CRC comes from
+    prefix CRCs, :class:`~proto_db.storage.crc.PrefixCrc`; 8.3d re-review 13, N1)."""
     last = size - FRAME_OVERHEAD
     if start > last:
         return None
+    prefix = PrefixCrc(data, start, _CRC_CHECKPOINT)
     for match in _CANDIDATE.finditer(data, start, last + len(FRAME_MAGIC)):
-        if _frame_at(data, match.start(), size) is not None:
-            return match.start()
+        pos = match.start()
+        header = _frame_header(data, pos, size)
+        if header is None:
+            continue
+        length, crc = header
+        payload = pos + FRAME_OVERHEAD
+        end = payload + length
+        if end > size:
+            continue
+        if length <= _CRC_DIRECT:
+            actual = zlib.crc32(data[payload:end])
+        else:
+            actual = prefix.payload_crc(payload, end)
+        if actual == crc:
+            return pos
     return None
 
 

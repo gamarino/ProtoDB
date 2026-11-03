@@ -23,7 +23,7 @@ import pytest
 from proto_db.cluster import rootlog as rootlog_module
 from proto_db.cluster.persister import PlainTier
 from proto_db.cluster.rootlog import RootsLog
-from proto_db.errors import ProtoCorruptionError, ProtoLockingError
+from proto_db.errors import ProtoCorruptionError, ProtoLockingError, secondary_errors
 from proto_db.storage import tiered as tiered_module
 from proto_db.storage.file import FileStorage
 from proto_db.storage.format import FORMAT_VERSION, RECORD_HEADER_SIZE, RootRecord, encode_record
@@ -449,10 +449,79 @@ def test_a_failing_release_step_of_a_failed_open_still_releases_the_lock(tmp_pat
 
     monkeypatch.setattr(TieredStorage, "_load_ranges", ranges_boom)
     monkeypatch.setattr(FileStorage, "close", local_close_boom)
-    with pytest.raises(_Injected):
+    with pytest.raises(_Injected, match="ranges") as info:
         TieredStorage(d, store, **KW)
     monkeypatch.undo()
+    assert [str(e) for e in secondary_errors(info.value)] == ["local close"]
     TieredStorage(d, store, **KW).close()
+
+
+class _InjectedBase(BaseException):
+    """A release failure that is not even an ``Exception``."""
+
+
+def _real_then_raise(real, error):
+    def step(self):
+        real(self)                  # the resource is released, then the step reports a failure
+        raise error
+    return step
+
+
+@pytest.mark.parametrize("error", [RuntimeError("release"), OSError(5, "release"), _InjectedBase("release")],
+                         ids=["RuntimeError", "OSError", "BaseException"])
+@pytest.mark.parametrize("step", ["FileStorage.close", "RootsLog.close", "OwnerLock.release"])
+def test_a_release_error_never_masks_the_open_error(tmp_path, monkeypatch, step, error):
+    """Re-review 13, N4 (ruling R61): an exception of any type raised by a release step of a
+    failed open is attached to the open error as a secondary error; the open error is what the
+    constructor raises, every other step still runs and the lock is released."""
+    from proto_db.storage.ownerlock import OwnerLock
+    d = str(tmp_path / "node")
+    store = FakeObjectStore()
+    TieredStorage(d, store, **KW).close()
+    owner, name = {"FileStorage.close": (FileStorage, "close"), "RootsLog.close": (RootsLog, "close"),
+                   "OwnerLock.release": (OwnerLock, "release")}[step]
+    real = getattr(owner, name)
+    released = []
+    real_os_close = os.close
+
+    def ranges_boom(self):
+        raise _Injected("open")
+
+    def tracking_close(fd):
+        released.append(fd)
+        return real_os_close(fd)
+
+    monkeypatch.setattr(TieredStorage, "_load_ranges", ranges_boom)
+    monkeypatch.setattr(owner, name, _real_then_raise(real, error))
+    monkeypatch.setattr(os, "close", tracking_close)
+    with pytest.raises(_Injected, match="open") as info:
+        TieredStorage(d, store, **KW)
+    monkeypatch.undo()
+    # OwnerLock.release fails for both locks: roots.log's (inside RootsLog.close) and the tier's
+    assert secondary_errors(info.value) == (error,) * (2 if step == "OwnerLock.release" else 1)
+    assert len(released) >= 3        # segments.log, the segment storage's files, roots.log, the lock
+    TieredStorage(d, store, **KW).close()       # every lock was released, the acceptor log's included
+    RootsLog(os.path.join(d, tiered_module.ROOTS_LOG)).close()
+
+
+@pytest.mark.parametrize("error", [RuntimeError("release"), _InjectedBase("release")],
+                         ids=["RuntimeError", "BaseException"])
+def test_a_roots_log_release_error_never_masks_its_open_error(tmp_path, monkeypatch, error):
+    """The same rule for :class:`RootsLog`'s own failed open (re-review 13, N4)."""
+    from proto_db.storage.ownerlock import OwnerLock
+    path = str(tmp_path / "n.roots")
+    RootsLog(path).close()
+
+    def decode_boom(payloads, where):
+        raise _Injected("open")
+
+    monkeypatch.setattr(rootlog_module, "_decode", decode_boom)
+    monkeypatch.setattr(OwnerLock, "release", _real_then_raise(OwnerLock.release, error))
+    with pytest.raises(_Injected, match="open") as info:
+        RootsLog(path)
+    monkeypatch.undo()
+    assert secondary_errors(info.value) == (error,)
+    RootsLog(path).close()
 
 
 def test_close_releases_the_lock_whatever_a_step_raises(tmp_path, monkeypatch):

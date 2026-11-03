@@ -173,6 +173,7 @@ from .base import SharedStorage
 from .cache import BoundedCache
 from .cloud import (ObjectNotFoundError, OutcomeUnknownError, PreconditionFailedError,
                     TransientObjectStoreError)
+from .crc import PrefixCrc
 from .file import DURABILITY_MODES, FileStorage
 from .format import (FORMAT_VERSION, RECORD_HEADER_SIZE, RECORD_MAGIC, SEGMENT_HEADER_SIZE, RecordKind,
                      RootRecord, decode_root, decode_segment_header, encode_record, encode_segment_header,
@@ -270,102 +271,17 @@ def _record_length(data, pos: int, size: int) -> Optional[int]:
 # by the regular-expression engine; a candidate's header CRC costs eleven bytes; and a candidate
 # whose header is valid and whose extent fits has its payload CRC computed from CRCs of the data
 # up to its start and up to its end, kept at checkpoints, with the GF(2) arithmetic of zlib's
-# ``crc32_combine`` (exact), so it costs at most two checkpoint intervals of CRC, never its
-# whole claimed payload.
+# ``crc32_combine`` (exact; :mod:`proto_db.storage.crc`), so it costs at most two checkpoint
+# intervals of CRC, never its whole claimed payload.  A payload of at most ``_CRC_DIRECT``
+# bytes gets a direct CRC instead, so no candidate costs more than ``_CRC_DIRECT`` (16 KiB) of
+# CRC: linear, with that constant for crafted header-valid candidates.
 
-_CRC_POLY = 0xEDB88320                          # CRC-32 polynomial, reflected (zlib)
 _CRC_CHECKPOINT = 4 * 1024                      # bytes between prefix-CRC checkpoints
 _CRC_DIRECT = 4 * _CRC_CHECKPOINT               # payloads up to this size get a direct CRC
 _CANDIDATE = re.compile(
     re.escape(RECORD_MAGIC[:1]) + b"(?=" + re.escape(RECORD_MAGIC[1:]) + b"["
     + b"".join(re.escape(bytes([k])) for k in sorted(_RECORD_KINDS)) + b"])", re.DOTALL)
 _CANDIDATE_SPAN = len(RECORD_MAGIC) + 1         # bytes the candidate pattern inspects
-
-
-def _crc_multmodp(a: int, b: int) -> int:
-    """``a * b`` modulo the CRC-32 polynomial (reflected bit order), as zlib's ``multmodp``."""
-    m = 1 << 31
-    p = 0
-    while True:
-        if a & m:
-            p ^= b
-            if (a & (m - 1)) == 0:
-                break
-        m >>= 1
-        b = (b >> 1) ^ _CRC_POLY if b & 1 else b >> 1
-    return p
-
-
-def _crc_x2n_table() -> list:
-    table = [1 << 30]                            # x^1
-    for _ in range(31):
-        table.append(_crc_multmodp(table[-1], table[-1]))
-    return table
-
-
-_CRC_X2N = _crc_x2n_table()
-
-
-def _crc_constant_tables(constant: int) -> tuple:
-    """Four 256-entry tables giving ``constant * v`` (modulo the polynomial) for a 32-bit ``v``
-    as the XOR of one entry per byte of ``v`` (multiplication is linear over GF(2))."""
-    tables = []
-    for j in range(4):
-        table = [0] * 256
-        for bit in range(8):
-            table[1 << bit] = _crc_multmodp(constant, 1 << (8 * j + bit))
-        for v in range(3, 256):
-            low = v & -v
-            if v != low:
-                table[v] = table[v ^ low] ^ table[low]
-        tables.append(tuple(table))
-    return tuple(tables)
-
-
-_CRC_SHIFT_TABLES = {}                           # k -> tables multiplying by x^(2^k)
-_CRC_SHIFT_LOCK = threading.Lock()
-
-
-def _crc_shift(crc: int, nbytes: int) -> int:
-    """``crc * x^(8 * nbytes)`` modulo the polynomial: the term ``crc32_combine`` applies to the
-    CRC of a prefix followed by ``nbytes`` more bytes (as zlib's ``x2nmodp`` and ``multmodp``,
-    one table-driven multiplication by ``x^(2^k)`` per set bit ``k`` of ``8 * nbytes``)."""
-    p = crc
-    k = 3
-    n = nbytes
-    while n:
-        if n & 1:
-            tables = _CRC_SHIFT_TABLES.get(k)
-            if tables is None:
-                with _CRC_SHIFT_LOCK:
-                    tables = _CRC_SHIFT_TABLES.get(k)
-                    if tables is None:
-                        tables = _CRC_SHIFT_TABLES[k] = _crc_constant_tables(_CRC_X2N[k & 31])
-            t0, t1, t2, t3 = tables
-            p = t0[p & 0xFF] ^ t1[(p >> 8) & 0xFF] ^ t2[(p >> 16) & 0xFF] ^ t3[p >> 24]
-        n >>= 1
-        k += 1
-    return p
-
-
-class _PrefixCrc:
-    """CRC32 of ``data[base:offset]`` for any offset, from checkpoints every
-    ``_CRC_CHECKPOINT`` bytes computed on demand (each lookup costs at most one interval)."""
-
-    def __init__(self, data, base: int):
-        self._data = data
-        self._base = base
-        self._points = [0]                       # CRC of data[base:base + i * _CRC_CHECKPOINT]
-
-    def at(self, offset: int) -> int:
-        """The CRC32 of ``data[base:offset]``."""
-        index = (offset - self._base) // _CRC_CHECKPOINT
-        points = self._points
-        while len(points) <= index:
-            start = self._base + (len(points) - 1) * _CRC_CHECKPOINT
-            points.append(zlib.crc32(self._data[start:start + _CRC_CHECKPOINT], points[-1]))
-        start = self._base + index * _CRC_CHECKPOINT
-        return zlib.crc32(self._data[start:offset], points[index])
 
 
 def _first_valid_record(data, start: int, size: int) -> Optional[int]:
@@ -375,7 +291,7 @@ def _first_valid_record(data, start: int, size: int) -> Optional[int]:
     last = size - RECORD_HEADER_SIZE              # the last offset where a header fits
     if start > last:
         return None
-    prefix = _PrefixCrc(data, start)
+    prefix = PrefixCrc(data, start, _CRC_CHECKPOINT)
     for match in _CANDIDATE.finditer(data, start, last + _CANDIDATE_SPAN):
         pos = match.start()
         header = record_header(data, pos)
@@ -389,9 +305,7 @@ def _first_valid_record(data, start: int, size: int) -> Optional[int]:
         if length <= _CRC_DIRECT:
             actual = zlib.crc32(data[payload:end])
         else:
-            # crc32(payload) = crc(end) ^ shift(crc(payload start), length), crc() being the CRC
-            # from ``start`` (crc32_combine: crc(A + B) = shift(crc(A), len(B)) ^ crc32(B)).
-            actual = prefix.at(end) ^ _crc_shift(prefix.at(payload), length)
+            actual = prefix.payload_crc(payload, end)   # crc32_combine arithmetic (crc.py)
         if actual == crc:
             return pos
     return None
@@ -632,32 +546,27 @@ class TieredStorage(SharedStorage):
             raise ProtoUnexpectedError(f"Cannot open {path}: {e}") from e
 
     def _abandon_open(self, error: BaseException) -> None:
-        """Release what a failed constructor opened (``error`` is raised by the caller).  Every
-        release runs even when an earlier one raised, and the owner lock is released last,
-        whatever was raised (8.3d re-review 12, I2; ruling R60)."""
+        """Release what a failed constructor opened; ``error`` is the open error, which the
+        caller re-raises.  Every release runs even when an earlier one raised, and the owner
+        lock is released last (8.3d re-review 12, I2; ruling R60).  An exception raised by a
+        release step, of any type, never replaces ``error``: it is attached to it as a secondary
+        error (:func:`~proto_db.errors.secondary_errors`) and the remaining steps still run
+        (8.3d re-review 13, N4; ruling R61)."""
+        steps = [lambda fd=fd: os.close(fd) for fd in (self._manifest_fd, self._ranges_fd) if fd >= 0]
+        if self._roots is not None:
+            steps.append(self._roots.close)
+        if self._local is not None:
+            steps.append(self._local.close)
+        steps.append(self._owner.release)           # last: nothing of this instance remains open
         secondary = []
-
-        def attempt(release):
-            def run():
-                try:
-                    release()
-                except (OSError, ProtoDBError) as e:
-                    secondary.append(e)
-            return run
-
-        try:
-            with contextlib.ExitStack() as steps:
-                steps.callback(attempt(self._owner.release))  # last: nothing of this instance remains open
-                if self._local is not None:
-                    steps.callback(attempt(self._local.close))
-                if self._roots is not None:
-                    steps.callback(attempt(self._roots.close))
-                for fd in (self._ranges_fd, self._manifest_fd):
-                    if fd >= 0:
-                        steps.callback(attempt(lambda fd=fd: os.close(fd)))
-        finally:
-            if secondary:
-                attach_secondary_errors(error, secondary)
+        for release in steps:
+            try:
+                release()
+            except BaseException as release_error:
+                # Not swallowed: reported through ``error``, which the caller raises.
+                secondary.append(release_error)
+        if secondary:
+            attach_secondary_errors(error, secondary)
 
     def _load_manifest(self) -> None:
         self._manifest_fd, payloads = self._open_log(MANIFEST, MANIFEST_KIND)
@@ -746,8 +655,9 @@ class TieredStorage(SharedStorage):
                 if any(view[keep:]):
                     raise ProtoCorruptionError(
                         f"Own segment {segment.hex} at {path} does not start with its segment header but holds "
-                        f"other data (no entry offset applies: see D46 for the operator procedure, wipe and "
-                        f"rejoin)")
+                        f"other data (a power loss before the segment's first sync can cause this, and then "
+                        f"nothing in it was acknowledged; no entry offset applies: see D46 for the operator "
+                        f"procedure, wipe and rejoin)")
                 pos, later, ambiguous = 0, None, False
             if later is not None:
                 raise ProtoCorruptionError(

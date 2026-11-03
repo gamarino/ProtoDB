@@ -238,7 +238,9 @@ class RootsLog:
             for close in closing:
                 try:
                     close()
-                except (OSError, ProtoUnexpectedError) as close_error:
+                except BaseException as close_error:
+                    # Never replaces the open error (8.3d re-review 13, N4): reported through
+                    # ``e``, raised below, and the remaining release still runs.
                     secondary.append(close_error)
             if secondary:
                 attach_secondary_errors(e, secondary)

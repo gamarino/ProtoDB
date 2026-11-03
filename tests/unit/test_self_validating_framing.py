@@ -20,6 +20,7 @@ import zlib
 import pytest
 
 from proto_db.errors import ProtoCorruptionError, ProtoNotSupportedError
+from proto_db.storage import crc as crc_module
 from proto_db.storage import logfile
 from proto_db.storage import tiered as tiered_module
 from proto_db.storage.format import (RECORD_HEADER_SIZE, RECORD_MAGIC, encode_record, encode_segment_header,
@@ -83,7 +84,7 @@ def test_crc_shift_matches_zlib_crc32_combine():
     for _ in range(300):
         a = rng.randbytes(rng.randint(0, 200))
         b = rng.randbytes(rng.choice([0, 1, 5, rng.randint(0, 70000)]))
-        assert tiered_module._crc_shift(zlib.crc32(a), len(b)) ^ zlib.crc32(b) == zlib.crc32(a + b)
+        assert crc_module.crc_shift(zlib.crc32(a), len(b)) ^ zlib.crc32(b) == zlib.crc32(a + b)
 
 
 def test_the_candidate_pattern_matches_exactly_the_magic_before_a_kind_byte():
@@ -304,8 +305,13 @@ def _brute_first_frame(data, start, size):
     return None
 
 
-def test_the_frame_search_equals_trying_every_offset():
-    rng = random.Random(5)
+@pytest.mark.parametrize("checkpoint,direct", [(7, 0), (64, 16), (4096, 16384)])
+def test_the_frame_search_equals_trying_every_offset(monkeypatch, checkpoint, direct):
+    """Fuzz: the linear frame search answers exactly as trying :func:`_frame_at` at every
+    offset, with checkpoint settings that exercise the ``crc32_combine`` path (re-review 13, N1)."""
+    monkeypatch.setattr(logfile, "_CRC_CHECKPOINT", checkpoint)
+    monkeypatch.setattr(logfile, "_CRC_DIRECT", direct)
+    rng = random.Random(5 + checkpoint)
     found = 0
     for _ in range(400):
         parts = []
@@ -322,11 +328,36 @@ def test_the_frame_search_equals_trying_every_offset():
             else:
                 parts.append(rng.randbytes(rng.randint(1, 500)))
         data = b"".join(parts)
+        if len(data) > 30 and rng.random() < 0.3:
+            # a header-valid frame whose extent fits, with a matching or a wrong payload CRC
+            p = rng.randrange(len(data) - 20)
+            rest = len(data) - p - logfile.FRAME_OVERHEAD
+            if rest > 0:
+                payload = data[p + logfile.FRAME_OVERHEAD:]
+                crc = zlib.crc32(payload) if rng.random() < 0.5 else rng.getrandbits(32)
+                data = data[:p] + _forged_frame_header(rest, crc) + payload
         start = rng.randint(0, len(data))
         expected = _brute_first_frame(data, start, len(data))
         found += expected is not None
         assert logfile._first_valid_frame(data, start, len(data)) == expected
     assert found > 30
+
+
+def test_forged_header_valid_frames_are_searched_linearly():
+    """Re-review 13, N1: a torn tail of forged header-valid frames, each claiming half the tail
+    (so every extent fits and every payload CRC must be checked), took 119 s at 4 MiB when each
+    payload was CRC-ed in full.  With prefix CRCs it is linear; the classification is unchanged
+    (a torn tail, trimmed to the last valid frame)."""
+    for mib in (1, 4):
+        size = mib * 1024 * 1024
+        forged = _forged_frame_header(size // 2, 0)
+        head = _log([b"x"])
+        data = head + b"\x00" + forged * (size // len(forged))
+        t0 = time.monotonic()
+        result = logfile.scan(data, b"TEST", "x")
+        elapsed = time.monotonic() - t0
+        assert result.payloads == [b"x"] and result.torn and result.valid_end == len(head)
+        assert elapsed < 20, f"{mib} MiB: {elapsed:.1f} s"
 
 
 def _log(payloads, tail=b""):
