@@ -67,7 +67,7 @@ _EXPORTS = {
     # value model
     "MISSING": "values", "canonical": "values", "values_equal": "values", "order_key": "values",
     "hash_key": "values", "FrozenList": "values", "FrozenDict": "values",
-    # errors (D12); the *Exception names are the 0.1 spellings, kept as aliases for one release
+    # errors (D12); the *Exception names are the 0.1 spellings: deprecated aliases, removed in 2.1
     "ProtoDBError": "errors", "ProtoValidationError": "errors", "ProtoUserError": "errors",
     "ProtoCorruptionError": "errors", "ProtoNotSupportedError": "errors", "ProtoNotAuthorizedError": "errors",
     "ProtoUnexpectedError": "errors", "ProtoOutcomeUnknownError": "errors", "ProtoBacklogFullError": "errors",

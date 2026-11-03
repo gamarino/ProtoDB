@@ -113,7 +113,7 @@ def secondary_errors(exc: BaseException) -> tuple:
     return tuple(getattr(exc, SECONDARY_ERRORS_ATTRIBUTE, ()))
 
 
-# Backward-compatible names (kept for one release, D12).
+# Backward-compatible 0.1 names (D12): deprecated in 2.0 and removed in 2.1.
 ProtoBaseException = ProtoDBError
 ProtoValidationException = ProtoValidationError
 ProtoUserException = ProtoUserError

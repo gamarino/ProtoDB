@@ -7,7 +7,9 @@
 * the key ``"n"`` of a ``Dictionary`` root, read-modify-write (same conflict path:
   the root was read, so it is never merged);
 * a ``CountedSet`` root receiving blind adds (never read -> intent merge, D33):
-  no attempt may conflict.
+  no attempt may conflict;
+* one key of a ``RepeatedKeysDictionary`` root receiving blind adds of distinct and
+  shared records: the final bucket is the multiset union of every add.
 
 Each test also checks the version chain (one ``DatabaseRoot`` per commit) and
 reports runtime and conflict rate.
@@ -16,6 +18,8 @@ Catches: lost updates (a commit published over a concurrent one), a read set tha
 misses a change, a merge applied to a read root, a blind merge that drops or
 duplicates an intent, and deadlocks between the root lock and atom stripes.
 """
+from collections import Counter
+
 import pytest
 
 from proto_db.storage.file import FileStorage
@@ -113,6 +117,41 @@ def test_counted_set_blind_adds_merge_without_conflicts(space, request):
     assert hits.total_count == TOTAL + 1 and hits.count == 2
     assert attempts.commits == TOTAL
     # Nothing was read, so the read set is empty: every commit merges, none conflicts.
+    assert attempts.conflicts == 0, attempts
+    _check_versions(db, 1)
+    report(request.node.name, elapsed, attempts)
+
+
+def test_repeated_keys_blind_adds_merge(space, request):
+    """Concurrent blind adds to ONE key of a RepeatedKeysDictionary all survive (0.1 test_102/097/098).
+
+    Every thread commits its own distinct records plus one record shared by all, so the final
+    bucket must be the multiset union of every add: each distinct record once, the shared one
+    TOTAL times, and no other key touched.
+    """
+    db = space.new_database("db")
+    with db.new_transaction() as tr:
+        tr.set_root_object("tags", tr.new_repeated_keys_dictionary().set_at("other", "seed"))
+    attempts = Attempts()
+
+    def worker_for(t):
+        def worker():
+            for i in range(PER_THREAD):
+                def add(tr, i=i):
+                    tr.set_root_object("tags", tr.new_repeated_keys_dictionary()
+                                       .set_at("k", (t, i)).set_at("k", "shared"))
+                attempts.run(db, add, **RUN_KW)
+        return worker
+
+    elapsed = run_threads([worker_for(t) for t in range(THREADS)])
+    tags = _read(db, lambda tr: tr.get_root_object("tags"))
+    expected = Counter({(t, i): 1 for t in range(THREADS) for i in range(PER_THREAD)})
+    expected["shared"] = TOTAL
+    assert Counter(dict(tags.get_at("k").items())) == expected
+    assert dict(tags.get_at("other").items()) == {"seed": 1}
+    assert sorted(tags.keys()) == ["k", "other"]
+    assert attempts.commits == TOTAL
+    # Nothing was read: every commit merges by intent, none conflicts.
     assert attempts.conflicts == 0, attempts
     _check_versions(db, 1)
     report(request.node.name, elapsed, attempts)

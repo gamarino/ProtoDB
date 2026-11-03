@@ -19,7 +19,7 @@ mocks of 0.1 internals.
 | `test_cloud_file_storage_with_gcs.py` | dropped | as above, GCS flavour |
 | `test_cluster_file_storage.py` | dropped | 0.1-only API (`ClusterFileStorage` vote/lock protocol, replaced by D44-D46); covered by `tests/unit/test_cluster_*.py`, `tests/concurrency/test_cluster_*.py` |
 | `test_collections_properties.py` | covered | `tests/property/test_collections_model.py` (stateful models of list/dict/set/Counter), `tests/property/test_avl.py` |
-| `test_concurrency.py` | covered | `tests/concurrency/test_counters.py` (`test_dictionary_key_counter`), `tests/unit/test_repeated_keys_dictionary.py` (rebase), `tests/unit/test_transactions.py::test_concurrent_counters_lose_no_update` |
+| `test_concurrency.py` | covered / ported | dictionary counters: `tests/concurrency/test_counters.py::test_dictionary_key_counter`, `tests/unit/test_transactions.py::test_concurrent_counters_lose_no_update`; concurrent adds to one key of a `RepeatedKeysDictionary` (test_102) ported in Task 8.5 fix round 1 as `tests/concurrency/test_counters.py::test_repeated_keys_blind_adds_merge` (32 threads, real commits, memory and file storage) |
 | `test_counted_set.py` | covered | `tests/unit/test_counted_set.py`, `tests/unit/test_content_equals.py` |
 | `test_db_access.py` | covered | `tests/unit/test_transactions.py` (databases, roots), `tests/unit/test_list.py::test_large_bulk_list_has_no_recursion_problem` |
 | `test_db_access_with_standalone_file_storage.py` | covered | `tests/integration/test_end_to_end.py`, `tests/unit/test_file_storage.py` |
@@ -51,9 +51,9 @@ mocks of 0.1 internals.
 | `test_recursive_plan.py` | dropped | 0.1-only API: the `traverse` (recursive) operator is not part of the 2.0 query layer (spec section 10) |
 | `test_select_many_plan.py` | covered / ported | flattening: `tests/unit/test_linq.py::test_select_many`; the top-N-per-category use case was ported in Task 8.5 as `tests/unit/test_linq.py::test_select_many_top_n_per_category` |
 | `test_sets.py` | covered | `tests/unit/test_set.py` |
-| `test_singlethread_concurrency.py` | covered | `tests/unit/test_transactions.py` (conflicts on read roots, blind merges, `run` retries), `tests/concurrency/test_counters.py`, `tests/unit/test_repeated_keys_dictionary.py` (interleaved repeated keys) |
+| `test_singlethread_concurrency.py` | covered | `tests/unit/test_transactions.py` (conflicts on read roots, blind merges, `run` retries), `tests/concurrency/test_counters.py`; the repeated-keys cases (test_097/098) by `tests/concurrency/test_counters.py::test_repeated_keys_blind_adds_merge` (memory and file storage) and `tests/unit/test_repeated_keys_dictionary.py` (rebase) |
 | `test_standalone_file_storage.py` | dropped | 0.1-only API (`StandaloneFileStorage`, `WALState`); 2.0 contract in `tests/unit/test_file_storage.py`, `tests/crash/` |
-| `test_vectors.py` | covered / dropped | exact search and cosine: `tests/unit/test_vector_index.py`; the `Vector` class is 0.1-only API; `near` without a vector index now raises instead of a linear fallback (spec section 10) |
+| `test_vectors.py` | covered / dropped | exact search and cosine: `tests/unit/test_vector_index.py`; the `Vector` class is 0.1-only API; `near` without a vector index now raises `ProtoNotSupportedError` instead of a linear fallback (D28: `Term.matches` raises for `near[]`, ruling R17; D36: `Filter` rejects `near[]`; D37: no supporting index raises) |
 | `test_vectors_buffers.py` | dropped | 0.1-only API (`Vector.from_buffer`); zero-copy numpy vectors for Arrow are covered by `tests/unit/test_arrow.py::test_vectors_from_numpy_are_zero_copy` |
 | `test_wal_durability.py` | covered | ported earlier to `tests/integration/test_end_to_end.py` (`test_committed_data_survives_a_crash`, `test_data_committed_after_a_read_is_readable`, `test_page_read_at_end_of_segment_sees_later_commits`) |
 | `test_where_plan.py` | covered | `tests/unit/test_plans.py::test_filter_*`, `tests/unit/test_planner.py` (indexed lookups, OR union, fallback to a scan for an unindexed branch) |

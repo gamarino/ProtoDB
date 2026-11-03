@@ -5,8 +5,9 @@ Run from the repository root::
 
     python examples/file_storage.py
 
-The space lives in a temporary directory that is removed at the end.  The first part writes a catalogue of books with an index; the second reopens the
-space, as a new process would, queries it and checks every result.
+The space lives in a temporary directory that is removed at the end.  The first part
+writes a catalogue of books with a range index; the second reopens the space, as a new
+process would, queries it (``explain()`` shows the index at work) and checks every result.
 
 ``FileStorage(path, durability=...)`` takes ``"fsync"`` (the default: a commit is on
 disk when it returns), ``"flush"`` (written to the OS, survives a process crash but not
@@ -53,7 +54,10 @@ def read(path: str) -> None:
         tr = db.new_transaction()
         books = tr.get_root_object("books")
         sixties = from_collection(books).where(F.year.between(1960, 1969)).order_by(F.year)
-        print("plan:", sixties.explain()["plan"])
+        plan = sixties.explain()
+        nodes = [plan["plan"]] + [child["plan"] for child in plan["children"]]
+        print("plan:", " <- ".join(nodes))
+        assert nodes == ["Sort", "IndexRange"], nodes
         titles = [b.title for b in sixties.to_list()]
         print("books from the sixties:", titles)
         tr.abort()

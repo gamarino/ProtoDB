@@ -50,8 +50,8 @@ def main() -> None:
             "30 <= age < 35 and city == Oslo": lambda source: from_collection(source).where(
                 F.age.between(30, 35, inclusive=(True, False)) & (F.city == "Oslo")),
             # Ties keep the order of the access path, so a total order needs a tie-breaker.
-        "age > 70, by age then name, top 3": lambda source: from_collection(source).where(F.age > 70)
-                                                                .order_by(F.age).then_by(F.name).take(3),
+            "age > 70, by age then name, top 3": lambda source: (
+                from_collection(source).where(F.age > 70).order_by(F.age).then_by(F.name).take(3)),
         }
         for label, build in queries.items():
             indexed, scanned = build(people), build(plain)

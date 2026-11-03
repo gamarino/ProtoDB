@@ -28,8 +28,8 @@ One project, two spellings, and they are not interchangeable:
 The package keeps its underscore spelling because renaming it would break every
 importer; everything else says ProtoDB. Earlier documentation called the project
 *ProtoBase*, and some checkouts still live in a directory by that name — it is the
-same project. The old spelling survives in `ProtoBaseException`, kept for one release
-as an alias of `ProtoDBError`, the base of the exception hierarchy.
+same project. The old spelling survives in `ProtoBaseException`, a deprecated alias of
+`ProtoDBError` (the base of the exception hierarchy) that is removed in 2.1.
 
 ## Features
 

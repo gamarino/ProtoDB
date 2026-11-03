@@ -20,8 +20,8 @@ EXPECTED = {
     "indexed_query.py": "with indexes:    IndexLookup",
     "linq_queries.py": "distinct items: ['desk', 'ink', 'lamp', 'paper', 'pen']",
     "transactions_concurrency.py": "conflict detected",
-    "vector_search.py": "5 nearest to doc 42:",
-    "file_storage.py": "books from the sixties: ['Solaris', 'Dune']",
+    "vector_search.py": "[docs_ivf] plan: VectorSearch <- VectorIvfFlat (backend 'ivf_flat')",
+    "file_storage.py": "plan: Sort <- IndexRange",
 }
 
 
