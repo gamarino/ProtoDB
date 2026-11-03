@@ -14,10 +14,9 @@ unanswered, and the owner takes a ``done`` of another incarnation as an unknown 
 ``test_a_faulty_owner_issuing_one_base_twice_cannot_lose_a_commit`` plants the fault the
 incarnation check removes -- an owner that issues a second permission on a base whose first
 permission may have been used -- and is expected to FAIL (``xfail``, strict): with the
-ranking by ``(label, epoch)`` of D46, safety rests on the owner's sequencing (D50 S2).  Making
-it independent of the permission (ruling R66d) costs either a ballot per permission or a
-recovery that refuses to choose between forked heads; that choice is left to the maintainer
-(task-8.3f-B-report.md, "Review fix round 1", item 1).
+ranking by ``(label, epoch)`` of D46, S4 rests on the owner's sequencing code being correct
+(D50 S2), as Raft rests on its leader.  Ruling R79 accepts that boundary and rules out the
+alternatives (sibling resolution in phase 1, a ballot per permission); the test documents it.
 """
 import threading
 import time
@@ -168,10 +167,10 @@ def test_a_lost_permit_is_resent_on_a_retried_request(h):
     net.drop(kinds=ALL)
 
 
-@pytest.mark.xfail(strict=True, reason="R66d (safety independent of the permission) needs a maintainer "
-                                       "ruling: see task-8.3f-B-report.md, Review fix round 1, item 1")
+@pytest.mark.xfail(strict=True, reason="ruling R79: S4 rests on the owner's sequencing code being correct; "
+                                       "a planted double-issuing owner is outside the failure model")
 def test_a_faulty_owner_issuing_one_base_twice_cannot_lose_a_commit(h):
-    """Planted fault: the owner forgets the permission outstanding with b (as if it believed
+    """Ruling R79 boundary.  Planted fault: the owner forgets the permission outstanding with b (as if it believed
     b's outcome were "none") and issues c a permission on the same base R1.  b's root R2 (its
     own acceptance only) and c's committed R3 are siblings; the chain rule keeps R2 from
     being committed, but phase 1 over {b, c} ranks R2 (higher epoch) above R3."""

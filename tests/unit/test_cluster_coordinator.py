@@ -9,7 +9,7 @@ import pytest
 
 from proto_db.cluster.coordinator import ClusterCoordinator
 from proto_db.cluster.transport import InProcessNetwork
-from proto_db.errors import ProtoOutcomeUnknownError, ProtoTimeoutError, ProtoValidationError
+from proto_db.errors import ProtoConflictError, ProtoOutcomeUnknownError, ProtoTimeoutError, ProtoValidationError
 from proto_db.storage.format import FORMAT_VERSION, RootRecord
 from tests.support.cluster import Cluster
 
@@ -273,3 +273,24 @@ def test_the_default_startup_grace_lasts_one_lease_plus_the_drift_margin(baselin
         waited = time.monotonic() - t0
         cl["n0"].release(lease)
     assert waited >= grace
+
+
+def test_a_holder_never_replicates_under_a_term_it_promised_to_refuse(baseline_threads):
+    """A node that promised a higher term (a rejoin's ballot, R78a) sends nothing under a lower
+    one: ``ProtoConflictError`` (retryable) instead of a replication every promising member
+    refuses, whose outcome would be reported unknown.  Found under CPU load: a wiped node
+    rejoined (its ballot ended the owner's term at every witness), then committed under a
+    permission of that term and got ``ProtoOutcomeUnknownError`` (9/20 runs of
+    ``test_a_fresh_peer_joining_during_an_outage_recovers_from_its_peers`` at 275a3b0)."""
+    with Cluster(3, tiers=True, **FAST) as cl:
+        for node in cl.nodes.values():
+            node.observe_root(None, from_storage=True)
+        n0 = cl["n0"]
+        lease = n0.acquire(timeout=5)
+        with n0._lock:
+            n0._grants.promise(lease.term + 100)
+        sent = n0.stats()["replications"]
+        with pytest.raises(ProtoConflictError, match="superseded"):
+            n0.replicate(lease, _rec(1))
+        assert n0.stats()["replications"] == sent and n0.stats()["replication_failures"] == 0
+        n0.release(lease)

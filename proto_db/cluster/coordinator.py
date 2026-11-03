@@ -2876,6 +2876,13 @@ class ClusterCoordinator:
             if not lease.is_valid():
                 raise ProtoConflictError("The cluster write lease expired before the root was replicated; "
                                          "nothing was replicated")
+            if self._grants.granted_top > label:
+                # This node promised a higher term (a rejoin's ballot, R78a, or a grant): the
+                # term is over here, and every member that promised it refuses this root.
+                # Nothing is sent: a retry runs under a live term instead of reporting an
+                # outcome that a full refusal would leave unknown.
+                raise ProtoConflictError(f"Term {label} was superseded on this node by a promise of term "
+                                         f"{self._grants.granted_top}; nothing was replicated")
             rid, waiter = self._new_waiter("replicate", label)
             parts = [make_message("records", self._node, term=label, rid=rid, index=i, records=chunk)
                      for i, chunk in enumerate(chunks[:-1])]
