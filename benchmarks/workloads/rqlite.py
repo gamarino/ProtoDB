@@ -24,12 +24,13 @@ HTTP round trip per request that the embedded ProtoDB does not pay.
 import http.client
 import json
 import os
+import shlex
 import socket
 import subprocess
 import threading
 import time
 
-from benchmarks.harness import BenchResult, benchmark, summarize
+from benchmarks.harness import BenchResult, benchmark, latency_ms
 from benchmarks.support import run_threads
 
 
@@ -59,8 +60,10 @@ class RqliteCluster:
             for i in range(nodes):
                 log = open(os.path.join(workdir, f"rqlited-{i}.log"), "w")
                 self.logs.append(log)
+                wrapper = [w.replace("{node}", f"n{i}")      # e.g. strace for a sync count
+                           for w in shlex.split(os.environ.get("PROTODB_BENCH_RQLITE_WRAPPER", ""))]
                 self.procs.append(subprocess.Popen(
-                    [binary, "-node-id", f"n{i}", "-http-addr", f"127.0.0.1:{self.http[i]}",
+                    wrapper + [binary, "-node-id", f"n{i}", "-http-addr", f"127.0.0.1:{self.http[i]}",
                      "-raft-addr", f"127.0.0.1:{raft[i]}", "-bootstrap-expect", str(nodes), "-join", join,
                      os.path.join(workdir, f"data{i}")], stdout=log, stderr=subprocess.STDOUT))
             self._wait_ready()
@@ -161,9 +164,8 @@ def _drive_rqlite(cl: RqliteCluster, threads: int, seconds: float, batch: int, b
 
     elapsed, _ = run_threads([worker_for(t) for t in range(threads)])
     ids = [base + t * 10**7 + j for t in range(threads) for j in range(counts[t] * batch)]
-    s = summarize(latencies) if latencies else {"median": 0.0, "p95": 0.0}
     return {"requests": sum(counts), "rows": len(ids), "id_sum": sum(ids), "elapsed": elapsed,
-            "latency_ms": (round(s["median"] * 1000, 2), round(s["p95"] * 1000, 2))}
+            "latency_ms": latency_ms(latencies)}
 
 
 @benchmark("rqlite_reference", quick={"threads": 2, "seconds": 0.5, "batch": 10, "repeat": 1},
@@ -199,7 +201,7 @@ def rqlite_reference(ctx, p):
             checksum[key], expected[key] = (count, total or 0), (r["rows"], r["id_sum"])
             rq_rates.append(r["requests"] / r["elapsed"])
             rq_rows.append(r["rows"] / r["elapsed"])
-            result.metrics[f"rqlite {label}: request latency ms p50/p95 (run {rep + 1})"] = r["latency_ms"]
+            result.metrics[f"rqlite {label}: request latency ms (run {rep + 1})"] = r["latency_ms"]
 
             t = run_tcp_cluster(ctx, nodes, threads, p["seconds"], batch=batch)
             key = f"protodb {label}, run {rep + 1}"
@@ -207,7 +209,7 @@ def rqlite_reference(ctx, p):
             checksum[key], expected[key] = t["ok"], True
             pd_rates.append(t["rate"])
             pd_rows.append(t["row_rate"])
-            result.metrics[f"protodb {label}: commit latency ms p50/p95 (run {rep + 1})"] = t["latency_ms"]
+            result.metrics[f"protodb {label}: commit latency ms (run {rep + 1})"] = t["latency_ms"]
             result.metrics[f"protodb {label}: critical section ms per commit (run {rep + 1})"] = t["critical_ms"]
         result.add_rate(f"rqlite {label}: requests (commits)/s", rq_rates, "commits/s")
         result.add_rate(f"protodb {label}: commits/s", pd_rates, "commits/s")

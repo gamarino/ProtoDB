@@ -14,6 +14,14 @@ from benchmarks.harness import BenchResult, benchmark, measure
 from benchmarks.support import SQLITE_SYNC, records, sqlite_connect
 
 
+def read_back_check(read, expected):
+    """A ``measure`` check: ``read(result)`` (a read-back of the sample's state) must equal ``expected``."""
+    def check(result):
+        got = read(result)
+        return True if got == expected else f"read back {got!r} != expected {expected!r}"
+    return check
+
+
 def _sum_ids(coll) -> tuple:
     ids = [rec.id for rec in coll.elements()]
     return len(ids), sum(ids)
@@ -65,7 +73,8 @@ def bulk_insert(ctx, p):
     for label, indexed in (("protodb Dictionary, no index", False),
                            ("protodb Dictionary + EqualityIndex + RangeIndex", True)):
         setup, run = proto(indexed)
-        samples, path = measure(run, repeat, ctx.warmup, setup=setup)
+        samples, path = measure(run, repeat, ctx.warmup, setup=setup,
+                                check=read_back_check(lambda p, indexed=indexed: read_back(p, indexed), expected))
         got = read_back(path, indexed)
         result.check(f"{label} read back", got == expected, f"{got} != {expected}")
         result.add_timing(label, samples, per=len(rows))
@@ -78,7 +87,7 @@ def bulk_insert(ctx, p):
             d[r["id"]] = dict(r)
         return len(d), sum(d)
 
-    samples, got = measure(py_dict, repeat, ctx.warmup)
+    samples, got = measure(py_dict, repeat, ctx.warmup, expect=expected)
     result.check("python dict", got == expected, f"{got} != {expected}")
     result.add_timing("python dict (memory only)", samples, per=len(rows))
 
@@ -102,13 +111,20 @@ def bulk_insert(ctx, p):
 
     for label, indexed in (("sqlite3 table, primary key only", False), ("sqlite3 + 2 indexes", True)):
         setup, run = sql(indexed)
-        samples, path = measure(run, repeat, ctx.warmup, setup=setup)
-        conn = sqlite_connect(path, "none")
-        got = tuple(conn.execute("SELECT COUNT(*), SUM(id) FROM r").fetchone())
-        conn.close()
+        samples, path = measure(run, repeat, ctx.warmup, setup=setup,
+                                check=read_back_check(_sqlite_count_sum, expected))
+        got = _sqlite_count_sum(path)
         result.check(f"{label} read back", got == expected, f"{got} != {expected}")
         result.add_timing(label, samples, per=len(rows))
     return result
+
+
+def _sqlite_count_sum(path: str) -> tuple:
+    conn = sqlite_connect(path, "none")
+    try:
+        return tuple(conn.execute("SELECT COUNT(*), SUM(id) FROM r").fetchone())
+    finally:
+        conn.close()
 
 
 @benchmark("index_update_cost", quick={"n": 300, "updates": 50}, full={"n": 10_000, "updates": 2_000})
@@ -146,7 +162,12 @@ def index_update_cost(ctx, p):
             for k, obj in zip(keys, new_objects):
                 c = c.set_at(k, obj)
             return c
-        samples, final = measure(run, ctx.repeat, ctx.warmup)
+        def moved_ids(c):
+            return sorted(rec.id for rec in c.elements() if rec.city == "moved")
+
+        samples, final = measure(run, ctx.repeat, ctx.warmup,
+                                 check=lambda c: (moved_ids(c) == expected and c.count == len(rows))
+                                 or "updated set or count differs")
         moved = sorted(rec.id for rec in final.elements() if rec.city == "moved")
         result.check(f"{count} index(es): updated keys", moved == expected, "updated set differs")
         result.check(f"{count} index(es): count unchanged", final.count == len(rows), str(final.count))
@@ -174,8 +195,10 @@ def commit_durability(ctx, p):
     result = BenchResult({"commit": "read counter n, n+1, set_at(i, i) on a Dictionary root",
                           "sqlite": "BEGIN; UPDATE n=n+1; INSERT (i, i); COMMIT (WAL)",
                           "commits_per_sample": p["commits"]}, None, None)
-    checksum = {}
+    checksum, expected = {}, {}
     for mode, k in p["commits"].items():
+        want = (k, k, k * (k - 1) // 2)
+        expected[f"protodb {mode}"] = expected[f"sqlite3 {SQLITE_SYNC[mode]}"] = want
         def setup():
             path = ctx.tempdir(f"commit-{mode}")
             space = ObjectSpace(FileStorage(path, durability=mode))
@@ -193,15 +216,11 @@ def commit_durability(ctx, p):
             space.close()
             return path
 
-        samples, path = measure(run, ctx.repeat, ctx.warmup, setup=setup)
-        space = ObjectSpace(FileStorage(path, durability="none"))
-        tr = space.open_database("bench").new_transaction()
-        got = (tr.get_root_object("n"), tr.get_root_object("log").count, sum(tr.get_root_object("log").keys()))
-        tr.abort()
-        space.close()
-        want = (k, k, k * (k - 1) // 2)
+        samples, path = measure(run, ctx.repeat, ctx.warmup, setup=setup,
+                                check=read_back_check(_proto_commit_state, want))
+        got = _proto_commit_state(path)
         result.check(f"protodb {mode} final state", got == want, f"{got} != {want}")
-        checksum[mode] = got
+        checksum[f"protodb {mode}"] = got
         result.add_timing(f"protodb FileStorage durability={mode}", samples, per=k)
         result.add_rate(f"protodb durability={mode} commits/s", [k / s for s in samples], "commits/s")
 
@@ -223,18 +242,41 @@ def commit_durability(ctx, p):
             conn.close()
             return path
 
-        samples, path = measure(sql_run, ctx.repeat, ctx.warmup, setup=sql_setup)
-        conn = sqlite_connect(path, "none")
-        got = (conn.execute("SELECT n FROM c").fetchone()[0],) + tuple(
-            conn.execute("SELECT COUNT(*), SUM(i) FROM log").fetchone())
-        conn.close()
+        samples, path = measure(sql_run, ctx.repeat, ctx.warmup, setup=sql_setup,
+                                check=read_back_check(_sqlite_commit_state, want))
+        got = _sqlite_commit_state(path)
+        checksum[f"sqlite3 {SQLITE_SYNC[mode]}"] = got
         result.check(f"sqlite3 synchronous={SQLITE_SYNC[mode]} final state", got == want, f"{got} != {want}")
         result.add_timing(f"sqlite3 synchronous={SQLITE_SYNC[mode]}", samples, per=k)
         result.add_rate(f"sqlite3 synchronous={SQLITE_SYNC[mode]} commits/s", [k / s for s in samples], "commits/s")
-    result.checksum = result.expected = checksum
-    result.notes.append("flush keeps the root write's fsyncs (D19) while SQLite NORMAL in WAL mode syncs "
-                        "nothing at commit: ProtoDB's flush is the stronger of the two")
+    result.checksum, result.expected = checksum, expected
+    result.notes.append("flush and SQLite NORMAL are in the same class: process-crash safe, not power-loss "
+                        "safe. ProtoDB flush also fsyncs the root (D19), which costs sync work without making "
+                        "the commit's data power-loss safe; no crash-matrix test covers flush under power loss")
     return result
+
+
+def _proto_commit_state(path: str) -> tuple:
+    """``(n, log count, log key sum)`` read back from the space at ``path`` by a new instance."""
+    from proto_db import FileStorage, ObjectSpace
+    space = ObjectSpace(FileStorage(path, durability="none"))
+    try:
+        tr = space.open_database("bench").new_transaction()
+        log = tr.get_root_object("log")
+        got = (tr.get_root_object("n"), log.count, sum(log.keys()))
+        tr.abort()
+        return got
+    finally:
+        space.close()
+
+
+def _sqlite_commit_state(path: str) -> tuple:
+    conn = sqlite_connect(path, "none")
+    try:
+        return (conn.execute("SELECT n FROM c").fetchone()[0],) + tuple(
+            conn.execute("SELECT COUNT(*), SUM(i) FROM log").fetchone())
+    finally:
+        conn.close()
 
 
 @benchmark("versions", quick={"sizes": [100, 1_000], "updates": 50, "copy_updates": 5, "commits": 5},
@@ -266,7 +308,11 @@ def versions(ctx, p):
                 versions_.append(versions_[-1].set_at(k, -1 - j))
             return versions_
 
-        samples, chain_ = measure(chain, ctx.repeat, ctx.warmup)
+        def chain_ok(vs):
+            return (len(vs) == len(keys) + 1 and all(vs[j + 1].get_at(k) == -1 - j for j, k in enumerate(keys))
+                    and all(v0.get_at(k) == k for k in keys)) or "a version lost its update or v0 changed"
+
+        samples, chain_ = measure(chain, ctx.repeat, ctx.warmup, check=chain_ok)
         old_intact = all(v0.get_at(k) == k for k in keys)
         last = {k: -1 - j for j, k in enumerate(keys)}
         new_ok = all(chain_[-1].get_at(k) == v for k, v in last.items())
@@ -290,7 +336,10 @@ def versions(ctx, p):
                 vs.append(nxt)
             return vs
 
-        samples, vs = measure(copies, ctx.repeat, ctx.warmup)
+        samples, vs = measure(copies, ctx.repeat, ctx.warmup,
+                              check=lambda vs: (len(vs) == len(ckeys) + 1 and all(plain[k] == k for k in ckeys)
+                                                and all(vs[j + 1][k] == -1 - j for j, k in enumerate(ckeys)))
+                              or "a dict copy lost its update")
         result.check(f"n={n}: dict copies keep old versions", all(plain[k] == k for k in ckeys), "changed")
         result.add_timing(f"python dict copy + update, n={n}", samples, per=len(ckeys))
 
@@ -304,14 +353,29 @@ def versions(ctx, p):
             tr2.set_root_object("d", d)
         ckeys2 = [rng.randrange(n) for _ in range(p["commits"])]
 
-        def commits():
-            for j, k in enumerate(ckeys2):
-                db.run(lambda t, k=k, j=j: t.set_root_object("d", t.get_root_object("d").set_at(k, -1 - j)))
+        runs = [0]
+        commit_repeat = min(ctx.repeat, 3)
 
-        samples, _ = measure(commits, 1, 0)
+        def commits():
+            runs[0] += 1
+            base = runs[0] * 1_000_000
+            for j, k in enumerate(ckeys2):
+                db.run(lambda t, k=k, j=j: t.set_root_object("d", t.get_root_object("d").set_at(k, -base - j)))
+            return base
+
+        def committed_ok(base):
+            model = {k: -base - j for j, k in enumerate(ckeys2)}
+            t = db.new_transaction()
+            d_now = t.get_root_object("d")
+            ok = all(d_now.get_at(k) == v for k, v in model.items())
+            t.abort()
+            return ok or "a committed update is missing"
+
+        samples, _ = measure(commits, commit_repeat, 0, check=committed_ok)
         hist = db.history()
-        result.check(f"n={n}: history holds every committed version",
-                     len(hist) == len(ckeys2) + 2, f"{len(hist)} != {len(ckeys2) + 2}")
+        want_hist = len(ckeys2) * commit_repeat + 2
+        result.check(f"n={n}: history holds every committed version", len(hist) == want_hist,
+                     f"{len(hist)} != {want_hist}")
         result.add_timing(f"protodb committed update (durability=none), n={n}", samples, per=len(ckeys2))
         space.close()
     result.checksum = checksum
@@ -324,10 +388,12 @@ def canonical_rewalk(ctx, p):
     from proto_db import FrozenList, canonical
     data = list(range(p["n"]))
     result = BenchResult({"elements": p["n"]}, None, (p["n"], sum(data)))
-    samples, frozen = measure(lambda: canonical(data), ctx.repeat, ctx.warmup)
+    samples, frozen = measure(lambda: canonical(data), ctx.repeat, ctx.warmup,
+                              check=lambda f: (type(f) is FrozenList and len(f) == len(data)) or "not a FrozenList")
     result.check("list becomes a FrozenList", type(frozen) is FrozenList and list(frozen) == data, "")
     result.add_timing("canonical(list) -> FrozenList", samples, per=p["n"])
-    samples, again = measure(lambda: canonical(frozen), ctx.repeat, ctx.warmup)
+    samples, again = measure(lambda: canonical(frozen), ctx.repeat, ctx.warmup,
+                             check=lambda a: a is frozen or "a copy was made")
     result.check("frozen input returned as the same object", again is frozen, "a copy was made")
     result.add_timing("canonical(FrozenList) re-walk", samples, per=p["n"])
     result.checksum = (len(again), sum(again))

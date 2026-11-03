@@ -48,7 +48,7 @@ def _vector_workload(ctx, p, backends):
     truth = _brute_force(vectors, queries, k)
     result = BenchResult({"vectors": len(vectors), "dim": p["dim"], "queries": len(queries), "k": k,
                           "metric": "cosine", "backends": {b: prm for b, prm in backends}}, None, None)
-    samples, got = measure(lambda: _brute_force(vectors, queries, k), ctx.repeat, ctx.warmup)
+    samples, got = measure(lambda: _brute_force(vectors, queries, k), ctx.repeat, ctx.warmup, expect=truth)
     result.check("numpy brute force is deterministic", got == truth, "")
     result.add_timing("numpy brute force (reference)", samples, per=len(queries))
     space = ObjectSpace(MemoryStorage())
@@ -60,26 +60,39 @@ def _vector_workload(ctx, p, backends):
         tr.set_root_object("docs", docs)
     tr = db.new_transaction()
     docs = tr.get_root_object("docs")
-    recalls = {}
+    recalls, full_answers = {}, {}
+
+    def recall_of(got):
+        return sum(len(set(g) & set(t)) for g, t in zip(got, truth)) / (k * len(queries))
+
     for backend, params in backends:
         def build(backend=backend, params=params):
             return docs.add_index(VectorIndex("by_vec", "vec", p["dim"], metric="cosine", backend=backend, **params))
-        samples, coll = measure(build, 1, 0)
+        samples, coll = measure(build, min(ctx.repeat, 3), 0,
+                                check=lambda c: (c.get_index("by_vec") is not None and c.count == len(vectors))
+                                or "index missing or wrong count")
         result.add_timing(f"{backend}: build index over {len(vectors)} vectors", samples, per=len(vectors))
 
         def search(coll=coll):
             return [[d.i for d in from_collection(coll).where(F.vec.near(q, k=k)).to_list()] for q in queries]
 
         samples, _ = measure(lambda coll=coll: from_collection(coll).where(F.vec.near(queries[0], k=k)).to_list(),
-                             1, 0)
+                             1, 0, check=lambda r: len(r) == k or f"{len(r)} results")
         result.add_timing(f"{backend}: first query after build (derived structures)", samples)
         plan = from_collection(coll).where(F.vec.near(queries[0], k=k)).explain()
         result.check(f"{backend}: planner uses the vector index",
                      plan["plan"] == "VectorSearch" and plan["index"]["backend"] == backend, str(plan.get("plan")))
-        samples, got = measure(search, ctx.repeat, ctx.warmup)
+        def answers_ok(got, backend=backend):
+            if any(len(g) != k for g in got):
+                return "a query returned fewer than k results"
+            if backend == "exact":
+                return got == truth or "exact differs from brute force"
+            return recall_of(got) >= p["min_recall"] or f"recall {recall_of(got):.4f} below {p['min_recall']}"
+
+        samples, got = measure(search, ctx.repeat, ctx.warmup, check=answers_ok)
         result.add_timing(f"{backend}: kNN query (k={k})", samples, per=len(queries))
-        hits = sum(len(set(g) & set(t)) for g, t in zip(got, truth))
-        recall = hits / (k * len(queries))
+        recall = recall_of(got)
+        full_answers[backend] = sum(1 for g in got if len(g) == k)
         recalls[backend] = round(recall, 4)
         if backend == "exact":
             result.check("exact: identical to brute force", got == truth, f"recall {recall:.4f}")
@@ -88,7 +101,8 @@ def _vector_workload(ctx, p, backends):
                          f"recall {recall:.4f}")
         result.check(f"{backend}: k results per query", all(len(g) == k for g in got), "")
     result.metrics[f"recall@{k} vs brute force"] = recalls
-    result.checksum = result.expected = {b: len(queries) for b, _ in backends}
+    result.checksum = full_answers                                  # queries answered with k results
+    result.expected = {b: len(queries) for b, _ in backends}
     tr.abort()
     space.close()
     return result

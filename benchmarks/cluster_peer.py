@@ -17,7 +17,9 @@ Protocol with the parent, one JSON line each way:
 3. the peer starts its coordinator and prints ``{"ready": true}``;
 4. the parent writes ``{"go": true}`` once every peer is ready;
 5. the peer commits, waits until its commits are persisted (``ObjectSpace.sync``) and prints
-   its counters (per-thread commit counts, every commit latency, critical-section sums);
+   its counters (per-thread commit counts, every commit latency, critical-section sums, and
+   the fsync/fdatasync calls counted by :mod:`benchmarks.fsync_probe` during the commit
+   window and until persisted);
 6. the parent writes ``{"stop": true}`` once every peer has finished, and the peer exits.
 """
 import json
@@ -28,6 +30,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from benchmarks import fsync_probe  # noqa: E402
 from benchmarks.support import DirObjectStore  # noqa: E402
 from proto_db import ClusterCoordinator, ObjectSpace, TcpTransport, TieredStorage  # noqa: E402
 from proto_db.errors import ProtoValidationError  # noqa: E402
@@ -53,6 +56,7 @@ def main() -> None:
     """Run one peer (module docstring)."""
     node_id, local, store_dir, threads, seconds, batch, durability = sys.argv[1:8]
     threads, seconds, batch = int(threads), float(seconds), int(batch)
+    fsync_probe.install()
     transport = TcpTransport("127.0.0.1", 0)
     _say({"port": transport.address[1]})
     peers = [tuple(p) for p in _hear()["peers"]]
@@ -106,6 +110,8 @@ def main() -> None:
                 j += batch
                 counts[t] += 1
 
+        before_syncs = sum(row[-1] for row in fsync_probe.snapshot())   # setup: kept for a strace cross-check
+        fsync_probe.reset()            # count only the commit window (and the shipping after it, below)
         start = time.monotonic()
         workers = [threading.Thread(target=worker, args=(t,)) for t in range(threads)]
         for w in workers:
@@ -113,14 +119,17 @@ def main() -> None:
         for w in workers:
             w.join()
         elapsed = time.monotonic() - start
+        window_syncs = fsync_probe.snapshot()
         space.sync(timeout=120)
+        total_syncs = fsync_probe.snapshot()
         st = coordinator.stats()
         flat = [x for lst in latencies for x in lst]
         _say({"counts": counts, "attempts": sum(attempts), "seconds": elapsed, "batch": batch,
               "latencies": [round(x, 6) for x in flat],
               "failures": st["replication_failures"], "healthy": st["healthy"],
               "critical": st["critical"], "critical_commits": st["critical_commits"],
-              "lease_attempts": st["attempts"], "acquired": st["acquired"]})
+              "lease_attempts": st["attempts"], "acquired": st["acquired"],
+              "syncs_before_window": before_syncs, "syncs_window": window_syncs, "syncs_until_persisted": total_syncs, "pid": os.getpid()})
         _hear()
         space.close()
 

@@ -22,13 +22,25 @@ rqlite) do the same work as ProtoDB and are verified the same way.  A workload w
 external reference is missing returns :meth:`BenchResult.pending` and is reported as
 pending, never as a number.
 
+:func:`measure` verifies **every** repetition, warm-ups included (``expect=`` or
+``check=`` is mandatory): a run that did the wrong work in any sample fails, not only when
+the last one is wrong.  A workload that raises, fails verification or crashes in its
+isolated child is recorded as failed (with the traceback and, where available, its work
+dict); the run continues with the remaining workloads, still writes the JSON and exits 1.
+
 Methodology: every timed variant runs ``warmup`` untimed repetitions, then ``repeat``
-timed ones; samples are reported as median and p95 (nearest rank).  The environment (CPU
-model, cores, Python version and build, ``sys._is_gil_enabled()``, the file system of the
-work directory) is captured with the results, and ``sys._is_gil_enabled()`` is checked
+timed ones; samples are reported as the median and a tail: p95 (nearest rank) with at least
+:data:`P95_MIN_SAMPLES` samples, otherwise the maximum (minimum for rates), labelled as such;
+a single sample is flagged ``SINGLE SAMPLE``.  The environment (CPU model, cores, frequency
+governor and boost, Python version and build, ``sys._is_gil_enabled()``, the file system of
+the work directory) is captured with the results, and ``sys._is_gil_enabled()`` is checked
 again after every workload, so a module that silently re-enables the GIL (hnswlib does)
 cannot contaminate a free-threaded measurement: such workloads are flagged ``isolate``
 and run in a child process with the same interpreter options.
+
+``--compare`` refuses a baseline taken in a different environment (GIL state, quick/full,
+CPU, Python build) unless ``--allow-env-mismatch``, and flags a regression only when the
+median moves past the threshold *and* outside the baseline's own sample range.
 """
 import argparse
 import datetime as _dt
@@ -42,6 +54,7 @@ import subprocess
 import sys
 import sysconfig
 import tempfile
+import threading
 import time
 import traceback
 from dataclasses import dataclass, field
@@ -99,19 +112,47 @@ def percentile(samples: List[float], q: float) -> float:
     return ordered[rank - 1]
 
 
+#: Fewer samples than this make a nearest-rank p95 equal to the maximum (or, for the bad side of
+#: a rate, the minimum): below it the report names the extreme instead of calling it a p95.
+P95_MIN_SAMPLES = 20
+
+
 def summarize(samples: List[float]) -> dict:
-    """Median, p95, min, max, mean and count of ``samples``."""
+    """Median, min, max, mean and count of ``samples``; ``p95`` only with at least
+    :data:`P95_MIN_SAMPLES` samples (``None`` otherwise)."""
     ordered = sorted(samples)
     n = len(ordered)
     median = ordered[n // 2] if n % 2 else (ordered[n // 2 - 1] + ordered[n // 2]) / 2
-    return {"n": n, "median": median, "p95": percentile(ordered, 95), "min": ordered[0],
-            "max": ordered[-1], "mean": sum(ordered) / n}
+    return {"n": n, "median": median, "p95": percentile(ordered, 95) if n >= P95_MIN_SAMPLES else None,
+            "min": ordered[0], "max": ordered[-1], "mean": sum(ordered) / n}
+
+
+def tail(t: dict) -> tuple:
+    """``(label, value)`` of a timing's bad-side tail: p95 (or p5 for rates) with enough samples,
+    else the worst sample (``max`` for times, ``min`` for rates)."""
+    if t["better"] == "higher":
+        return ("p5", percentile(t["samples"], 5)) if t["n"] >= P95_MIN_SAMPLES else ("min", t["min"])
+    return ("p95", t["p95"]) if t["n"] >= P95_MIN_SAMPLES else ("max", t["max"])
+
+
+def latency_ms(latencies) -> dict:
+    """``{"p50": ms, "p95": ms}`` of ``latencies`` (seconds); with fewer than
+    :data:`P95_MIN_SAMPLES` latencies the tail is reported as ``"max"`` instead of ``"p95"``."""
+    if not latencies:
+        return {"p50": 0.0, "max": 0.0}
+    s = summarize(latencies)
+    key = "p95" if s["p95"] is not None else "max"
+    return {"p50": round(s["median"] * 1000, 2), key: round((s["p95"] if s["p95"] is not None else s["max"]) * 1000, 2)}
+
+
+_CURRENT = threading.local()
 
 
 class BenchResult:
     """What a workload did, how it was verified, and how long it took (module docstring)."""
 
     def __init__(self, work: Optional[dict] = None, checksum=None, expected=None):
+        _CURRENT.result = self          # lets the runner keep the work of a workload that fails later
         self.work = dict(work or {})
         self.checksum = checksum
         self.expected = expected
@@ -146,9 +187,10 @@ class BenchResult:
             raise ValueError(f"timing {label!r} has no samples")
         entry = {"unit": unit, "better": better, "per": per, "samples": list(samples)}
         entry.update(summarize(samples))
+        entry["tail_label"], entry["tail"] = tail(entry)
         if unit == "s" and per:
             entry["per_op_us"] = entry["median"] / per * 1e6
-            entry["per_op_us_p95"] = entry["p95"] / per * 1e6
+            entry["per_op_us_tail"] = entry["tail"] / per * 1e6
         self.timings[label] = entry
         return entry
 
@@ -198,7 +240,6 @@ class Context:
     warmup: int
     workdir: str
     rqlite: Optional[str] = None
-    seconds: float = 1.0
     scratch: List[str] = field(default_factory=list)
 
     def tempdir(self, name: str) -> str:
@@ -214,21 +255,45 @@ class Context:
         self.scratch.clear()
 
 
-def measure(fn: Callable[[], object], repeat: int, warmup: int = 1, setup: Optional[Callable] = None):
-    """Run ``fn`` ``warmup`` times untimed then ``repeat`` times timed.
+_UNSET = object()
+
+
+def measure(fn: Callable[[], object], repeat: int, warmup: int = 1, setup: Optional[Callable] = None, *,
+            expect=_UNSET, check: Optional[Callable[[object], object]] = None):
+    """Run ``fn`` ``warmup`` times untimed then ``repeat`` times timed, verifying EVERY run.
+
+    Every result (warm-ups included) must equal ``expect`` and/or pass ``check(result)``
+    (which returns True/None when the result is right, or False / a detail string when it is
+    not; it runs outside the timed region).  The first wrong run raises
+    :class:`VerificationError` naming the run, so a silently failing repetition can never
+    contribute a sample.  At least one of ``expect`` and ``check`` is required.
 
     Returns ``(samples_in_seconds, last_result)``.  ``setup``, when given, is called before
     every run outside the timed region and its result is passed to ``fn``.
     """
+    if expect is _UNSET and check is None:
+        raise TypeError("measure() needs expect= or check=: every repetition is verified")
     samples, result = [], None
     for i in range(warmup + repeat):
         arg = setup() if setup is not None else None
         t0 = time.perf_counter()
         result = fn(arg) if setup is not None else fn()
         elapsed = time.perf_counter() - t0
+        run = f"warm-up {i + 1}" if i < warmup else f"sample {i - warmup + 1}"
+        if expect is not _UNSET and result != expect:
+            raise VerificationError(f"{run}: result {_short(result)} != expected {_short(expect)}")
+        if check is not None:
+            verdict = check(result)
+            if verdict is False or isinstance(verdict, str):
+                raise VerificationError(f"{run}: {verdict if isinstance(verdict, str) else 'check failed'}")
         if i >= warmup:
             samples.append(elapsed)
     return samples, result
+
+
+def _short(value) -> str:
+    text = repr(value)
+    return text if len(text) <= 200 else text[:197] + "..."
 
 
 # -- environment -------------------------------------------------------------------------------
@@ -283,6 +348,25 @@ def _version_of(module: str) -> Optional[str]:
         return None
 
 
+def _read_first(*paths: str) -> Optional[str]:
+    for path in paths:
+        try:
+            with open(path, encoding="utf-8") as f:
+                return f.read().strip()
+        except OSError:
+            continue                # absent on this platform: try the next one
+    return None
+
+
+def cpu_frequency_policy() -> dict:
+    """The CPU frequency governor, scaling driver and boost state (Linux sysfs; ``None`` when absent)."""
+    base = "/sys/devices/system/cpu"
+    return {"governor": _read_first(f"{base}/cpu0/cpufreq/scaling_governor"),
+            "driver": _read_first(f"{base}/cpu0/cpufreq/scaling_driver"),
+            "energy_performance_preference": _read_first(f"{base}/cpu0/cpufreq/energy_performance_preference"),
+            "boost": _read_first(f"{base}/cpufreq/boost", f"{base}/intel_pstate/no_turbo")}
+
+
 def gil_enabled() -> bool:
     """``sys._is_gil_enabled()``, True on interpreters without the function."""
     return sys._is_gil_enabled() if hasattr(sys, "_is_gil_enabled") else True
@@ -300,6 +384,7 @@ def capture_environment(ctx: Context) -> dict:
         "cpu_model": _cpu_model(),
         "cpu_count": os.cpu_count(),
         "cpu_affinity": affinity,
+        "cpu_frequency": cpu_frequency_policy(),
         "platform": platform.platform(),
         "python": sys.version.split()[0],
         "python_implementation": platform.python_implementation(),
@@ -341,41 +426,56 @@ def _fmt_seconds(s: float) -> str:
 
 
 def format_timing(label: str, t: dict) -> str:
-    """One report line for a timing entry."""
+    """One report line for a timing entry (``max``/``min`` instead of p95/p5 below 20 samples)."""
+    name, value = t.get("tail_label"), t.get("tail")
+    if name is None:
+        name, value = tail(t)
     if t["unit"] == "s":
-        line = f"  {label:<44} median {_fmt_seconds(t['median']):>11}  p95 {_fmt_seconds(t['p95']):>11}"
+        line = f"  {label:<44} median {_fmt_seconds(t['median']):>11}  {name} {_fmt_seconds(value):>11}"
         if t.get("per", 0) > 1:
-            line += f"  ({t['per_op_us']:.1f} us/op, p95 {t['per_op_us_p95']:.1f})"
+            line += f"  ({t['per_op_us']:.1f} us/op, {name} {t['per_op_us_tail']:.1f})"
     else:
-        line = f"  {label:<44} median {t['median']:>11.1f} {t['unit']}  p95-low {percentile_low(t):>9.1f}"
-    return line + f"  [n={t['n']}]"
+        line = f"  {label:<44} median {t['median']:>11.1f} {t['unit']}  {name} {value:>9.1f}"
+    line += f"  [n={t['n']}]"
+    if t["n"] == 1:
+        line += " SINGLE SAMPLE"
+    return line
 
 
-def percentile_low(t: dict) -> float:
-    """For a higher-is-better rate: the 5th percentile (the rate's p95 on the bad side)."""
-    return percentile(t["samples"], 5)
+def _failed(params: dict, error: str, work: Optional[dict] = None) -> dict:
+    return {"params": params, "status": "failed", "error": error, "work": work or {}}
 
 
 def run_one(bench: Benchmark, ctx: Context, quick: bool) -> dict:
-    """Run one workload in this process, verify it and return its JSON-ready record."""
+    """Run one workload in this process, verify it and return its JSON-ready record.
+
+    A verification failure or an exception is recorded as ``failed`` (with the error and
+    the work dict of the workload's result, when it had created one); it never stops the run.
+    """
     params = bench.quick if quick else bench.full
     gil_before = gil_enabled()
     started = time.perf_counter()
+    _CURRENT.result = None
+    result, error = None, None
     try:
         result = bench.fn(ctx, dict(params))
         result.verify()
-        error = None
     except VerificationError as e:
-        result, error = None, f"verification failed: {e}"
+        error = f"verification failed: {e}"
+    except Exception:         # a crash fails the run (exit 1); the remaining workloads still run
+        error = traceback.format_exc()
     finally:
         ctx.cleanup()
     elapsed = time.perf_counter() - started
     gil_after = gil_enabled()
-    record = {"params": params, "elapsed_s": elapsed, "gil_before": gil_before, "gil_after": gil_after}
-    if result is None:
-        record.update({"status": "failed", "error": error})
-        return record
-    record.update(result.to_dict())
+    if error is not None:
+        partial = result if result is not None else getattr(_CURRENT, "result", None)
+        record = _failed(params, error, partial.work if partial is not None else None)
+    else:
+        record = result.to_dict()
+        record["params"] = params
+    record.update({"elapsed_s": elapsed, "gil_before": gil_before, "gil_after": gil_after})
+    record.setdefault("notes", [])
     if gil_after != gil_before and bench.isolate:
         record["notes"].append(f"the GIL state changed during the workload ({gil_before} -> {gil_after}); "
                                "it ran in its own interpreter, so no other workload was affected")
@@ -386,25 +486,39 @@ def run_one(bench: Benchmark, ctx: Context, quick: bool) -> dict:
     return record
 
 
-def run_isolated(bench: Benchmark, ctx: Context, quick: bool) -> dict:
-    """Run one workload in a child interpreter and return its record."""
+def run_isolated(bench: Benchmark, ctx: Context, quick: bool, plugins: List[str]) -> dict:
+    """Run one workload in a child interpreter (same ``-X`` options, repetitions and plugins).
+
+    A child that crashes or writes no valid record yields a ``failed`` record carrying the
+    tail of the child's stderr (its traceback); the run continues.
+    """
+    params = bench.quick if quick else bench.full
     out = tempfile.NamedTemporaryFile(prefix=f"{bench.name}-", suffix=".json", dir=ctx.workdir, delete=False)
     out.close()
     cmd = child_command("-m", "benchmarks", "--child", bench.name, "--child-out", out.name,
-                        "--workdir", ctx.workdir, "--threads", ",".join(map(str, ctx.threads)))
+                        "--workdir", ctx.workdir, "--threads", ",".join(map(str, ctx.threads)),
+                        "--repeat", str(ctx.repeat), "--warmup", str(ctx.warmup))
+    for plugin in plugins:
+        cmd += ["--plugin", plugin]
     if quick:
         cmd.append("--quick")
     if ctx.rqlite:
         cmd += ["--rqlite", ctx.rqlite]
     try:
-        proc = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True, timeout=3600)
+        try:
+            proc = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True, timeout=3600)
+        except subprocess.TimeoutExpired as e:
+            return _failed(params, f"isolated child timed out after {e.timeout} s")
         sys.stdout.write(proc.stdout)
-        if proc.returncode not in (0, 1):
-            return {"params": bench.quick if quick else bench.full, "status": "failed",
-                    "error": f"child exited with {proc.returncode}: {proc.stderr[-2000:]}"}
-        with open(out.name, encoding="utf-8") as f:
-            record = json.load(f)
+        try:
+            with open(out.name, encoding="utf-8") as f:
+                record = json.load(f)
+        except (OSError, ValueError):
+            return _failed(params, f"isolated child exited with {proc.returncode} without a valid record; "
+                                   f"stderr tail:\n{proc.stderr[-4000:]}")
         record["isolated"] = True
+        if proc.returncode not in (0, 1):
+            record.update(status="failed", error=f"child exited with {proc.returncode}: {proc.stderr[-4000:]}")
         return record
     finally:
         os.unlink(out.name)
@@ -432,8 +546,29 @@ def print_record(name: str, record: dict) -> None:
         print(f"   note: {note}")
 
 
+#: Environment fields that must match for ``--compare`` to flag regressions.
+COMPARE_ENV_KEYS = ("gil_enabled", "free_threaded_build", "cpu_model", "cpu_count", "python")
+
+
+def environment_mismatch(current: dict, base: dict) -> List[str]:
+    """The comparability problems between two result documents (mode and environment)."""
+    problems = []
+    if current.get("mode") != base.get("mode"):
+        problems.append(f"mode {base.get('mode')} -> {current.get('mode')}")
+    ce, be = current.get("environment", {}), base.get("environment", {})
+    for key in COMPARE_ENV_KEYS:
+        if ce.get(key) != be.get(key):
+            problems.append(f"{key} {be.get(key)!r} -> {ce.get(key)!r}")
+    return problems
+
+
 def compare(current: dict, base: dict, threshold: float) -> List[str]:
-    """Regressions of ``current`` against ``base``: medians worse by more than ``threshold``."""
+    """Regressions of ``current`` against ``base``.
+
+    A variant is flagged when its median is worse than the base median by more than
+    ``threshold`` AND worse than the base's worst sample (noise guard: a change inside the
+    base run's own spread is not reported).
+    """
     flagged = []
     for name, rec in current.get("results", {}).items():
         old = base.get("results", {}).get(name)
@@ -444,7 +579,11 @@ def compare(current: dict, base: dict, threshold: float) -> List[str]:
             if not o or o.get("unit") != t.get("unit") or not o["median"]:
                 continue
             ratio = t["median"] / o["median"]
-            worse = ratio > 1 + threshold if t["better"] == "lower" else ratio < 1 / (1 + threshold)
+            samples = o.get("samples") or [o["median"]]
+            if t["better"] == "lower":
+                worse = ratio > 1 + threshold and t["median"] > max(samples)
+            else:
+                worse = ratio < 1 / (1 + threshold) and t["median"] < min(samples)
             if worse:
                 flagged.append(f"{name} / {label}: median {o['median']:.6g} -> {t['median']:.6g} "
                                f"{t['unit']} (x{ratio:.2f}, {t['better']} is better)")
@@ -459,6 +598,8 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument("--compare", metavar="BASE", help="flag regressions against a previous JSON result")
     p.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD,
                    help=f"relative median change flagged by --compare (default {DEFAULT_THRESHOLD})")
+    p.add_argument("--allow-env-mismatch", action="store_true",
+                   help="let --compare flag regressions although mode or environment differ")
     p.add_argument("--threads", default=",".join(map(str, DEFAULT_THREADS)),
                    help="thread counts for the scaling workloads (default 1,2,4,8,16)")
     p.add_argument("--only", nargs="+", metavar="NAME", help="run only these workloads")
@@ -469,6 +610,8 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
                                      "real disk for the durability workloads, not tmpfs)")
     p.add_argument("--rqlite", default=os.environ.get("PROTODB_BENCH_RQLITED"),
                    help="path of the rqlited binary (or env PROTODB_BENCH_RQLITED); absent: rqlite pending")
+    p.add_argument("--plugin", action="append", default=[], metavar="MODULE",
+                   help="import an extra module registering workloads (repeatable)")
     p.add_argument("--child", help=argparse.SUPPRESS)
     p.add_argument("--child-out", help=argparse.SUPPRESS)
     return p.parse_args(argv)
@@ -476,8 +619,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[List[str]] = None) -> int:
     """Entry point: run the selected workloads, verify, report, write JSON, compare."""
+    import importlib
+
     from benchmarks import workloads  # noqa: F401  (registers every workload)
     args = parse_args(argv)
+    for plugin in args.plugin:
+        importlib.import_module(plugin)
     if args.list:
         for name, b in REGISTRY.items():
             print(f"{name:<28} {'[isolated] ' if b.isolate else ''}{b.description}")
@@ -489,8 +636,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     os.makedirs(workdir, exist_ok=True)
     rqlite = os.path.abspath(args.rqlite) if args.rqlite else None
     ctx = Context(quick=args.quick, threads=threads, repeat=args.repeat or (2 if args.quick else 5),
-                  warmup=args.warmup if args.warmup is not None else 1, workdir=workdir, rqlite=rqlite,
-                  seconds=0.3 if args.quick else 1.5)
+                  warmup=args.warmup if args.warmup is not None else 1, workdir=workdir, rqlite=rqlite)
 
     if args.child:
         bench = REGISTRY[args.child]
@@ -507,7 +653,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     env = capture_environment(ctx)
     print(f"ProtoDB performance suite ({'quick' if args.quick else 'full'})")
     print(f"python {env['python']} free-threaded build={env['free_threaded_build']} "
-          f"gil_enabled={env['gil_enabled']} cpus={env['cpu_count']} ({env['cpu_model']})")
+          f"gil_enabled={env['gil_enabled']} cpus={env['cpu_count']} ({env['cpu_model']}); "
+          f"cpu frequency {env['cpu_frequency']}")
     print(f"workdir {workdir} ({env['workdir_fs']}); threads {threads}; repeat {ctx.repeat} warmup {ctx.warmup}")
     if env["workdir_fs"] in ("tmpfs", "ramfs") and not args.quick:
         print("WARNING: the work directory is in memory: fsync costs nothing there and the durability "
@@ -517,13 +664,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         bench = REGISTRY[name]
         print(f"\n== {name} ==  {bench.description}")
         if bench.isolate:
-            record = run_isolated(bench, ctx, args.quick)
+            record = run_isolated(bench, ctx, args.quick, args.plugin)
+            if record["status"] == "failed" and not record.get("isolated"):
+                print_record(name, record)
         else:
-            try:
-                record = run_one(bench, ctx, args.quick)
-            except Exception:        # a crash fails the run (exit 1); the remaining workloads still run
-                record = {"params": bench.quick if args.quick else bench.full, "status": "failed",
-                          "error": traceback.format_exc()}
+            record = run_one(bench, ctx, args.quick)
             print_record(name, record)
         results[name] = record
     total = time.perf_counter() - started
@@ -532,7 +677,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"\n{len(results)} workload(s) in {total:.1f} s: {len(results) - len(failed) - len(pending)} verified, "
           f"{len(pending)} pending, {len(failed)} failed{(': ' + ', '.join(failed)) if failed else ''}")
     doc = {"schema": SCHEMA, "mode": "quick" if args.quick else "full", "environment": env,
-           "options": {"threads": threads, "repeat": ctx.repeat, "warmup": ctx.warmup, "seconds": ctx.seconds},
+           "options": {"threads": threads, "repeat": ctx.repeat, "warmup": ctx.warmup},
            "total_s": total, "results": results}
     if args.json:
         os.makedirs(os.path.dirname(os.path.abspath(args.json)), exist_ok=True)
@@ -543,9 +688,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.compare:
         with open(args.compare, encoding="utf-8") as f:
             base = json.load(f)
+        problems = environment_mismatch(doc, base)
+        if problems and not args.allow_env_mismatch:
+            print(f"\ncompare with {args.compare}: NOT COMPARABLE ({'; '.join(problems)}); "
+                  "pass --allow-env-mismatch to compare anyway")
+            return status or 4
         flagged = compare(doc, base, args.threshold)
-        print(f"\ncompare with {args.compare} (threshold {args.threshold:.0%}): "
-              f"{len(flagged)} regression(s)")
+        print(f"\ncompare with {args.compare} (threshold {args.threshold:.0%}, outside the base spread): "
+              f"{len(flagged)} regression(s){' [environment differs: ' + '; '.join(problems) + ']' if problems else ''}")
         for line in flagged:
             print(f"  REGRESSION {line}")
         if flagged and not status:

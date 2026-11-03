@@ -23,7 +23,7 @@ import os
 import threading
 import time
 
-from benchmarks.harness import BenchResult, benchmark, summarize
+from benchmarks.harness import BenchResult, benchmark, latency_ms
 from benchmarks.support import MemoryObjectStore
 
 COORDINATOR_KW = dict(lease_duration=2.0, drift_margin=0.2, request_timeout=0.25, startup_grace=0.0,
@@ -133,12 +133,8 @@ def _drive(dbs, threads_per_db: int, seconds: float, mode: str, batch: int = 1):
     return elapsed, committed, sum(attempts), latencies
 
 
-def _latency_ms(latencies) -> tuple:
-    """``(p50, p95)`` of ``latencies`` (seconds) in milliseconds."""
-    if not latencies:
-        return (0.0, 0.0)
-    s = summarize(latencies)
-    return (round(s["median"] * 1000, 2), round(s["p95"] * 1000, 2))
+def _latency_ms(latencies) -> dict:
+    return latency_ms(latencies)
 
 
 def _critical_per_commit(nodes_stats) -> dict:
@@ -162,18 +158,17 @@ def _cluster_run(ctx, n, store, mode, threads, seconds, batch=1, durability="fsy
         persisted = cl.spaces[0].persisted_epoch >= cl.spaces[0].committed_epoch
     finally:
         cl.close()
-    lat = summarize(latencies) if latencies else {"median": 0.0, "p95": 0.0}
     return {"commits": commits, "elapsed": elapsed, "rate": commits / elapsed, "attempts": attempts,
             "ok": ok_ids and ok_n and persisted, "detail": f"ids {ok_ids}, counter {ok_n}, persisted {persisted}",
             "failures": sum(st["replication_failures"] for st in stats),
             "healthy": all(st["healthy"] for st in stats),
             "lease_attempts_per_commit": round(sum(st["attempts"] for st in stats) / max(1, commits), 2),
             "critical_ms": _critical_per_commit(stats),
-            "latency_ms": (round(lat["median"] * 1000, 2), round(lat["p95"] * 1000, 2))}
+            "latency_ms": latency_ms(latencies)}
 
 
-@benchmark("cluster_cas_baseline", quick={"latencies": [0.0, 0.030], "writers": [1, 2], "seconds": 0.3},
-           full={"latencies": [0.0, 0.030], "writers": [1, 4], "seconds": 3.0})
+@benchmark("cluster_cas_baseline", quick={"latencies": [0.0, 0.030], "writers": [1, 2], "seconds": 0.3, "repeat": 1},
+           full={"latencies": [0.0, 0.030], "writers": [1, 4], "seconds": 3.0, "repeat": 3})
 def cluster_cas_baseline(ctx, p):
     """CAS-only baseline (reverted D5): CloudStorage writers arbitrated by the store's conditional root write."""
     from proto_db import CloudStorage, ObjectSpace
@@ -183,44 +178,48 @@ def cluster_cas_baseline(ctx, p):
     checksum, expected = {}, {}
     for latency in p["latencies"]:
         for writers in p["writers"]:
-            store = MemoryObjectStore(latency=latency)
-            spaces = [ObjectSpace(CloudStorage(store, backoff=(0.0, 0.001))) for _ in range(writers)]
-            spaces[0].new_database("db")
-            dbs = [s.open_database("db") for s in spaces]
-            counts = [0] * writers
-            lat = []
-            lock = threading.Lock()
-
-            def worker_for(i):
-                def worker():
-                    stop_at = time.monotonic() + p["seconds"]
-                    mine = []
-                    while time.monotonic() < stop_at:
-                        t0 = time.perf_counter()
-                        dbs[i].run(lambda tr: tr.set_root_object("n", (tr.get_root_object("n") or 0) + 1), **RUN_KW)
-                        mine.append(time.perf_counter() - t0)
-                        counts[i] += 1
-                    with lock:
-                        lat.extend(mine)
-                return worker
-
-            elapsed, _ = run_threads([worker_for(i) for i in range(writers)])
-            reader = ObjectSpace(CloudStorage(store))
-            tr = reader.open_database("db").new_transaction()
-            final = tr.get_root_object("n")
-            tr.abort()
-            reader.close()
-            for s in spaces:
-                s.close()
             key = f"latency {latency * 1000:.0f} ms, {writers} writer(s)"
-            result.check(f"{key}: counter equals commits", final == sum(counts), f"{final} != {sum(counts)}")
-            checksum[key], expected[key] = final, sum(counts)
-            result.add_rate(f"CAS-only commits/s, {key}", [sum(counts) / elapsed], "commits/s")
-            s = summarize(lat)
-            result.metrics[f"{key}: commit latency ms p50/p95"] = (round(s["median"] * 1000, 2),
-                                                                     round(s["p95"] * 1000, 2))
-            result.metrics[f"{key}: failed root CAS per commit"] = round(store.failed_preconditions /
-                                                                          max(1, sum(counts)), 2)
+            rates, lat_all, failed_cas = [], [], []
+            for run in range(p["repeat"]):
+                store = MemoryObjectStore(latency=latency)
+                spaces = [ObjectSpace(CloudStorage(store, backoff=(0.0, 0.001))) for _ in range(writers)]
+                spaces[0].new_database("db")
+                dbs = [s.open_database("db") for s in spaces]
+                counts = [0] * writers
+                lat = []
+                lock = threading.Lock()
+
+                def worker_for(i, dbs=dbs, counts=counts, lat=lat, lock=lock):
+                    def worker():
+                        stop_at = time.monotonic() + p["seconds"]
+                        mine = []
+                        while time.monotonic() < stop_at:
+                            t0 = time.perf_counter()
+                            dbs[i].run(lambda tr: tr.set_root_object("n", (tr.get_root_object("n") or 0) + 1),
+                                       **RUN_KW)
+                            mine.append(time.perf_counter() - t0)
+                            counts[i] += 1
+                        with lock:
+                            lat.extend(mine)
+                    return worker
+
+                elapsed, _ = run_threads([worker_for(i) for i in range(writers)])
+                reader = ObjectSpace(CloudStorage(store))
+                tr = reader.open_database("db").new_transaction()
+                final = tr.get_root_object("n")
+                tr.abort()
+                reader.close()
+                for s in spaces:
+                    s.close()
+                result.check(f"{key}, run {run + 1}: counter equals commits", final == sum(counts),
+                             f"{final} != {sum(counts)}")
+                checksum[f"{key}, run {run + 1}"], expected[f"{key}, run {run + 1}"] = final, sum(counts)
+                rates.append(sum(counts) / elapsed)
+                lat_all.extend(lat)
+                failed_cas.append(store.failed_preconditions / max(1, sum(counts)))
+            result.add_rate(f"CAS-only commits/s, {key}", rates, "commits/s")
+            result.metrics[f"{key}: commit latency ms (all runs)"] = latency_ms(lat_all)
+            result.metrics[f"{key}: failed root CAS per commit, each run"] = [round(x, 2) for x in failed_cas]
     result.checksum, result.expected = checksum, expected
     result.notes.append("each writer is its own ObjectSpace/CloudStorage instance (as separate processes "
                         "would be); a commit's root CAS is on the commit path, so the store latency bounds it")
@@ -247,7 +246,7 @@ def cluster_peers(ctx, p):
             result.add_rate(f"{mode}: commits/s, {peers} peer(s) x {p['threads']} threads",
                             [r["rate"] for r in runs], "commits/s")
             mid = sorted(runs, key=lambda r: r["rate"])[len(runs) // 2]
-            result.metrics[f"{key}: commit latency ms p50/p95"] = mid["latency_ms"]
+            result.metrics[f"{key}: commit latency ms"] = mid["latency_ms"]
             result.metrics[f"{key}: attempts per commit"] = round(mid["attempts"] / max(1, mid["commits"]), 2)
             result.metrics[f"{key}: lease acquisitions tried per commit"] = mid["lease_attempts_per_commit"]
             result.metrics[f"{key}: critical section ms per commit"] = mid["critical_ms"]
@@ -272,7 +271,7 @@ def cluster_store_latency(ctx, p):
         checksum[key], expected[key] = ok, True
         rates[latency] = result.add_rate(f"commits/s, {key}", [r["rate"] for r in runs], "commits/s")["median"]
         mid = sorted(runs, key=lambda r: r["rate"])[len(runs) // 2]
-        result.metrics[f"{key}: commit latency ms p50/p95"] = mid["latency_ms"]
+        result.metrics[f"{key}: commit latency ms"] = mid["latency_ms"]
         result.metrics[f"{key}: critical section ms per commit"] = mid["critical_ms"]
     lo, hi = min(rates), max(rates)
     result.metrics["rate ratio (slow store / fast store)"] = round(rates[hi] / rates[lo], 2)
@@ -297,8 +296,15 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
     store_dir = os.path.join(root, "store")
     ids = [f"n{i}" for i in range(peers)]
     errs = [tempfile.TemporaryFile("w+") for _ in ids]
-    procs = [subprocess.Popen(child_command(PEER_SCRIPT, node_id, os.path.join(root, node_id), store_dir,
-                                            str(threads), str(seconds), str(batch), durability),
+    import shlex
+    wrapper = os.environ.get("PROTODB_BENCH_PEER_WRAPPER", "")     # e.g. strace for a cross-check
+
+    def command(node_id):
+        cmd = child_command(PEER_SCRIPT, node_id, os.path.join(root, node_id), store_dir,
+                            str(threads), str(seconds), str(batch), durability)
+        return [w.replace("{node}", node_id) for w in shlex.split(wrapper)] + cmd
+
+    procs = [subprocess.Popen(command(node_id),
                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err, text=True)
              for node_id, err in zip(ids, errs)]
 
@@ -360,28 +366,70 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
             "latency_ms": _latency_ms([x for r in results for x in r["latencies"]]),
             "latency_ms_by_peer": [_latency_ms(r["latencies"]) for r in results],
             "lease_attempts_per_commit": round(sum(r["lease_attempts"] for r in results) / max(1, commits), 2),
-            "critical_ms": _critical_per_commit(stats), "persisted_ids": len(expected_ids)}
+            "critical_ms": _critical_per_commit(stats), "persisted_ids": len(expected_ids),
+            "commits_by_peer": [sum(r["counts"]) for r in results],
+            "fsync": fsync_breakdown(results, commits), "pids": [r["pid"] for r in results],
+            "syncs_per_process": [r["syncs_before_window"] + sum(row[-1] for row in r["syncs_until_persisted"])
+                                  for r in results]}
 
 
-@benchmark("cluster_tcp", quick={"peers": [2], "threads": 2, "seconds": 0.5, "repeat": 1},
-           full={"peers": [1, 2, 4, 8], "threads": 4, "seconds": 3.0, "repeat": 2})
+def fsync_breakdown(results, commits: int) -> dict:
+    """Syncs per commit from the peers' :mod:`benchmarks.fsync_probe` counts.
+
+    ``per_commit``: cluster-wide syncs per committed transaction, by role, in the commit window
+    (``committer`` = the committing node's own path, ``grant`` = nodes recording the lease
+    promise they grant, ``follower`` = other nodes acknowledging the replicated root,
+    ``persister`` = background shipping) and, separately, the shipping that ran after the
+    window until everything was persisted.  ``sites``: the same counts by call site.
+    """
+    from collections import Counter
+    roles, after, sites = Counter(), Counter(), Counter()
+    for r in results:
+        window = {tuple(row[:4]): row[4] for row in r["syncs_window"]}
+        for row in r["syncs_until_persisted"]:
+            key, total = tuple(row[:4]), row[4]
+            roles[key[0]] += window.get(key, 0)
+            after[key[0]] += total - window.get(key, 0)
+            sites[f"{key[0]}: {key[1]} {key[2]} (entry {key[3]})"] += window.get(key, 0)
+    n = max(1, commits)
+    return {"per_commit": {role: round(c / n, 2) for role, c in sorted(roles.items())},
+            "total_per_commit": round(sum(roles.values()) / n, 2),
+            "after_window_total": dict(after),
+            "sites_per_commit": {site: round(c / n, 2) for site, c in sites.most_common() if c}}
+
+
+@benchmark("cluster_tcp", quick={"peers": [2], "threads": 2, "seconds": 0.5, "repeat": 1,
+                                 "durability_peers": 2, "durabilities": ["flush"]},
+           full={"peers": [1, 2, 3, 4, 8], "threads": 4, "seconds": 3.0, "repeat": 3,
+                 "durability_peers": 3, "durabilities": ["flush", "none"]})
 def cluster_tcp(ctx, p):
-    """TCP subprocess peers (1/2/4/8, one process each): commits/s, latency, critical section."""
+    """TCP subprocess peers (1/2/3/4/8, one process each, fsync), plus 3 peers in flush and none modes."""
     result = BenchResult({"peers": p["peers"], "threads_per_peer": p["threads"], "seconds": p["seconds"],
-                          "durability": "fsync (local tier)", "commit": "blind add of one id"}, None, None)
+                          "durability": "fsync (local tier) for the peer sweep",
+                          "durability_sweep": {"peers": p["durability_peers"], "modes": p["durabilities"]},
+                          "commit": "blind add of one id"}, None, None)
     checksum, expected = {}, {}
-    for peers in p["peers"]:
-        runs = [run_tcp_cluster(ctx, peers, p["threads"], p["seconds"]) for _ in range(p["repeat"])]
-        key = f"{peers} peer(s)"
+    configs = [(peers, "fsync") for peers in p["peers"]] + [(p["durability_peers"], m) for m in p["durabilities"]]
+    for peers, mode in configs:
+        runs = [run_tcp_cluster(ctx, peers, p["threads"], p["seconds"], durability=mode)
+                for _ in range(p["repeat"])]
+        key = f"{peers} peer(s)" if mode == "fsync" else f"{peers} peer(s), durability={mode}"
         ok = all(r["ok"] for r in runs)
         result.check(f"{key}: persisted state holds exactly the acknowledged ids", ok, "")
         checksum[key], expected[key] = ok, True
-        result.add_rate(f"commits/s, {peers} TCP peer(s) x {p['threads']} threads", [r["rate"] for r in runs],
+        label = f"commits/s, {peers} TCP peer(s) x {p['threads']} threads"
+        result.add_rate(label if mode == "fsync" else f"{label}, durability={mode}", [r["rate"] for r in runs],
                         "commits/s")
         mid = sorted(runs, key=lambda r: r["rate"])[len(runs) // 2]
-        result.metrics[f"{key}: commit latency ms p50/p95 (all peers)"] = mid["latency_ms"]
-        result.metrics[f"{key}: commit latency ms p50/p95 per peer"] = mid["latency_ms_by_peer"]
+        result.metrics[f"{key}: commit latency ms (all peers)"] = mid["latency_ms"]
+        result.metrics[f"{key}: commit latency ms per peer"] = mid["latency_ms_by_peer"]
         result.metrics[f"{key}: lease acquisitions tried per commit"] = mid["lease_attempts_per_commit"]
         result.metrics[f"{key}: critical section ms per commit"] = mid["critical_ms"]
+        result.metrics[f"{key}: commits per peer, each run"] = [r["commits_by_peer"] for r in runs]
+        result.metrics[f"{key}: syncs per commit by role (median run)"] = mid["fsync"]["per_commit"]
+        result.metrics[f"{key}: syncs per commit, total (median run)"] = mid["fsync"]["total_per_commit"]
+        result.metrics[f"{key}: syncs after the window until persisted (median run)"] = \
+            mid["fsync"]["after_window_total"]
+        result.metrics[f"{key}: syncs per commit by call site (median run)"] = mid["fsync"]["sites_per_commit"]
     result.checksum, result.expected = checksum, expected
     return result

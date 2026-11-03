@@ -154,7 +154,7 @@ def point_lookup(ctx, p):
                 ("sqlite3 index(code)", sql_index, len(ids), expected),
                 ("sqlite3 scan(code), no index", sql_scan, len(scan_ids), expected_scan)]
     for label, fn, per, want in variants:
-        samples, got = measure(fn, ctx.repeat, ctx.warmup)
+        samples, got = measure(fn, ctx.repeat, ctx.warmup, expect=want)
         result.check(f"{label} id sum", got == want, f"{got} != {want}")
         result.add_timing(label, samples, per=per)
     result.check("indexed plan uses the index", plan == "IndexLookup", plan)
@@ -218,7 +218,7 @@ def range_query(ctx, p):
                 ("sqlite3 index(score)", sql("r", lows), len(lows), expected),
                 ("sqlite3 scan, no index", sql("s", scan_lows), len(scan_lows), expected_scan)]
     for label, fn, per, want in variants:
-        samples, got = measure(fn, ctx.repeat, ctx.warmup)
+        samples, got = measure(fn, ctx.repeat, ctx.warmup, expect=want)
         result.check(f"{label} count and id sum", got == want, f"{got} != {want}")
         result.add_timing(label, samples, per=per)
     result.check("indexed plan uses the range index", plan == "IndexRange", plan)
@@ -287,7 +287,7 @@ def topk(ctx, p):
                 ("python heapq.nsmallest (city==c)", heap_city, exp_city),
                 ("sqlite3 city=c ORDER BY LIMIT", sql_city, exp_city)]
     for label, fn, want in variants:
-        samples, got = measure(fn, ctx.repeat, ctx.warmup)
+        samples, got = measure(fn, ctx.repeat, ctx.warmup, expect=want)
         result.check(f"{label} ordered ids", got == want, "result differs from the model")
         result.add_timing(label, samples, per=len(lows))
     result.notes.append("R28: the ordered index scan feeds a Filter and a Limit; the measured cost shows "

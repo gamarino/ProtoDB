@@ -33,7 +33,9 @@ Options:
 |--------|---------|
 | `--quick` | tiny parameter sets (used by `tests/perf/test_benchmark_harness.py`) |
 | `--json OUT` | write environment, options and every result (all samples) to `OUT` |
-| `--compare BASE` | flag medians worse than `BASE` by more than `--threshold` (default 15 %); exit status 3 when any |
+| `--compare BASE` | flag medians worse than `BASE` by more than `--threshold` (default 15 %) and outside `BASE`'s own sample range; exit status 3 when any. Refused (exit 4, "NOT COMPARABLE") when the environments differ: GIL state, quick/full, CPU model or count, Python |
+| `--allow-env-mismatch` | compare anyway across a different environment |
+| `--plugin MODULE` | import an extra module of workloads (repeatable; passed on to isolated children) |
 | `--threads 1,2,4,8,16` | thread counts of the scaling workloads |
 | `--only NAME ...` | run only these workloads |
 | `--repeat N`, `--warmup N` | timed and untimed repetitions per variant (default 5 and 1; quick 2 and 1) |
@@ -46,12 +48,19 @@ with the results).
 
 ## Methodology
 
-- Each timed variant runs `warmup` untimed repetitions, then `repeat` timed ones; results
-  are reported as median and p95 (nearest rank) of the samples, per batch and per operation.
-  Throughput figures are reported as median and 5th percentile (the bad side of a rate).
+- Each timed variant runs `warmup` untimed repetitions, then `repeat` timed ones, and
+  **every** repetition is verified (`measure()` requires `expect=` or `check=`), warm-ups
+  included: one wrong sample fails the run.
+- Results are reported as the median and a tail per batch and per operation: p95 (nearest
+  rank) with at least 20 samples, otherwise the maximum, labelled `max` (for throughput: the
+  5th percentile, or the minimum below 20 samples). A figure from a single sample is flagged
+  `SINGLE SAMPLE`.
+- A workload that fails or crashes (in-process or in its isolated child) is recorded as
+  failed with its traceback; the run goes on, writes the JSON and exits 1.
 - The environment is captured with the results: CPU model, core count and affinity, Python
-  version and build (`Py_GIL_DISABLED`), `sys._is_gil_enabled()`, `-X` options, library
-  versions, the git revision and the work directory's file system.
+  version and build (`Py_GIL_DISABLED`), `sys._is_gil_enabled()`, `-X` options, the CPU
+  frequency governor, driver, EPP and boost, library versions, the git revision and the work
+  directory's file system.
 - `sys._is_gil_enabled()` is checked after every workload. hnswlib re-enables the GIL when
   imported on a free-threaded interpreter, so `vector_knn_hnsw` is flagged `isolate` and runs
   in a child interpreter with the same `-X` options; any other workload that changes the GIL
@@ -61,7 +70,12 @@ with the results).
   cluster reference (rulings R37, R45).
 - Cluster mode is compared with the CAS-only baseline (storage-arbitrated writers, the
   reverted D5 approach), with itself at 1/2/4/8 peers (in-process and TCP subprocess peers),
-  with itself at 0 and 30 ms object-store latency, and with rqlite (3 nodes on loopback).
+  with itself at 0 and 30 ms object-store latency, with itself at 3 peers in `fsync`,
+  `flush` and `none` durability, and with rqlite (3 nodes on loopback).
+- Every TCP peer counts its `os.fsync`/`os.fdatasync` calls by role and call site
+  (`benchmarks/fsync_probe.py`); `cluster_tcp` reports syncs per commit. To cross-check with
+  strace, wrap the peers:
+  `PROTODB_BENCH_PEER_WRAPPER="strace -f -qq -c -e trace=fsync,fdatasync -o /path/{node}.txt"`.
 - Memory figures (RSS) are deliberately not reported.
 
 ## rqlite
@@ -87,7 +101,7 @@ def my_workload(ctx, p):
     """One-line description shown by --list."""
     expected = ...                                  # computed independently of ProtoDB
     result = BenchResult({"rows": p["n"]}, None, expected)
-    samples, got = measure(lambda: ..., ctx.repeat, ctx.warmup)
+    samples, got = measure(lambda: ..., ctx.repeat, ctx.warmup, expect=expected)  # every run checked
     result.check("same rows as the model", got == expected, f"{got} != {expected}")
     result.add_timing("variant label", samples, per=p["n"])
     result.checksum = got

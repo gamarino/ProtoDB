@@ -92,24 +92,32 @@ def concurrent_commits(ctx, p):
                 run_threads([worker_for(t) for t in range(threads)])
                 return db
 
-            samples, db = measure(run, ctx.repeat, ctx.warmup, setup=setup)
-            tr = db.new_transaction()
-            if variant == "conflicting":
-                got, want = tr.get_root_object("n"), total
-            elif variant == "blind merge":
-                ids = tr.get_root_object("ids")
-                got = (sorted(ids.elements()) == list(range(total)), all(c == 1 for _, c in ids.items()))
-                want = (True, True)
-            elif variant == "blind merge, indexed dict":
-                people = tr.get_root_object("people")
-                elements = list(people.elements())
-                people.get_index("by_score").validate(elements)
-                got = (people.count, sorted(e.id for e in elements if e.id >= 0) == list(range(total)))
-                want = (p["base_entries"] + total, True)
-            else:
-                got = sum(tr.get_root_object(f"n{t}") for t in range(threads))
-                want = total
-            tr.abort()
+            def final_state(db, variant=variant, total=total, threads=threads):
+                """``(got, want)`` for the state a run left (read by a new transaction)."""
+                tr = db.new_transaction()
+                try:
+                    if variant == "conflicting":
+                        return tr.get_root_object("n"), total
+                    if variant == "blind merge":
+                        ids = tr.get_root_object("ids")
+                        return ((sorted(ids.elements()) == list(range(total)),
+                                 all(c == 1 for _, c in ids.items())), (True, True))
+                    if variant == "blind merge, indexed dict":
+                        people = tr.get_root_object("people")
+                        elements = list(people.elements())
+                        people.get_index("by_score").validate(elements)
+                        return ((people.count, sorted(e.id for e in elements if e.id >= 0) == list(range(total))),
+                                (p["base_entries"] + total, True))
+                    return sum(tr.get_root_object(f"n{t}") for t in range(threads)), total
+                finally:
+                    tr.abort()
+
+            def state_ok(db):
+                got, want = final_state(db)
+                return got == want or f"final state {got} != {want}"
+
+            samples, db = measure(run, ctx.repeat, ctx.warmup, setup=setup, check=state_ok)
+            got, want = final_state(db)
             for space in spaces:
                 space.close()
             key = f"{variant}, {threads} thread(s)"
@@ -171,7 +179,8 @@ def concurrent_reads(ctx, p):
             def run(fn=fn):
                 _, res = run_threads([fn] * threads)
                 return res
-            samples, res = measure(run, ctx.repeat, ctx.warmup)
+            samples, res = measure(run, ctx.repeat, ctx.warmup,
+                                   check=lambda res, want=want: all(r == want for r in res) or f"{res} != {want}")
             key = f"{label}, {threads} thread(s)"
             ok = all(r == want for r in res)
             result.check(f"{key}: every thread's sum", ok, f"{res} != {want}")
@@ -204,13 +213,13 @@ def parallel_scan(ctx, p):
     work = partial(_spin, spin=p["spin"])
     expected = [work(x) for x in items]
     result = BenchResult({"items": len(items), "spin": p["spin"], "workers": ctx.threads}, None, sum(expected))
-    samples, seq = measure(lambda: [work(x) for x in items], ctx.repeat, ctx.warmup)
+    samples, seq = measure(lambda: [work(x) for x in items], ctx.repeat, ctx.warmup, expect=expected)
     result.check("sequential results", seq == expected, "")
     seq_median = result.add_timing("sequential loop", samples, per=len(items))["median"]
     speedups = {}
     for workers in ctx.threads:
         with ParallelPool(workers) as pool:
-            samples, got = measure(lambda: pool.scan(items, work), ctx.repeat, ctx.warmup)
+            samples, got = measure(lambda: pool.scan(items, work), ctx.repeat, ctx.warmup, expect=expected)
         result.check(f"{workers} worker(s): results equal the sequential run", got == expected, "")
         speedups[workers] = round(seq_median / result.add_timing(f"ParallelPool.scan, {workers} worker(s)", samples,
                                                                  per=len(items))["median"], 2)

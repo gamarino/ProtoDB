@@ -58,7 +58,7 @@ def cold_open(ctx, p):
         sp.close()
         return ok
 
-    samples, ok = measure(open_first_read, ctx.repeat, ctx.warmup)
+    samples, ok = measure(open_first_read, ctx.repeat, ctx.warmup, expect=True)
     result.check("first read after open", ok, "")
     result.add_timing("open + first read", samples)
 
@@ -93,11 +93,11 @@ def cold_open(ctx, p):
         sp.close()
         return res
 
-    samples, got = measure(timed_walk, ctx.repeat, 0, setup=setup_cold)
+    samples, got = measure(timed_walk, ctx.repeat, 0, setup=setup_cold, expect=expected)
     result.add_timing("cold walk (new storage instance)", samples, per=len(rows))
     sp = ObjectSpace(FileStorage(path, durability="none"))
     walk(sp)
-    samples, got_w = measure(lambda: walk(sp), ctx.repeat, 0)
+    samples, got_w = measure(lambda: walk(sp), ctx.repeat, 0, expect=expected)
     result.add_timing("warm walk (new transaction, warm page cache)", samples, per=len(rows))
 
     def lookups():
@@ -108,7 +108,7 @@ def cold_open(ctx, p):
         return s
 
     before = sp.storage.cache_stats()
-    samples, s = measure(lookups, ctx.repeat, ctx.warmup)
+    samples, s = measure(lookups, ctx.repeat, ctx.warmup, expect=sum(keys))
     after = sp.storage.cache_stats()
     sp.close()
     result.add_timing("random get_at, new transaction per batch", samples, per=len(keys))
@@ -135,18 +135,23 @@ def cold_open(ctx, p):
         cl.spaces[0].sync(timeout=120)
     finally:
         cl.close()
-    def reopen():
-        storage = TieredStorage(os.path.join(root, "n0"), store)
-        storage.close()
 
-    samples, _ = measure(reopen, ctx.repeat, 0)
+    def reopen():
+        return TieredStorage(os.path.join(root, "n0"), store)
+
+    def serves_counter(storage):
+        """Outside the timed region: the reopened tier serves the committed counter."""
+        reader = ObjectSpace(storage)          # closes the storage with it
+        try:
+            tr = reader.open_database("db").new_transaction()
+            value = tr.get_root_object("n")
+            tr.abort()
+        finally:
+            reader.close()
+        return value == p["commits"] or f"counter {value} != {p['commits']}"
+
+    samples, _ = measure(reopen, ctx.repeat, 0, check=serves_counter)
     result.add_timing(f"TieredStorage reopen (log + segment scan), {p['commits']} commits", samples)
-    reader = ObjectSpace(TieredStorage(os.path.join(root, "n0"), store))
-    try:
-        tr = reader.open_database("db").new_transaction()
-        n = tr.get_root_object("n")
-        tr.abort()
-    finally:
-        reader.close()
+    n = p["commits"]
     result.check("reopened local tier serves the committed counter", n == p["commits"], f"{n} != {p['commits']}")
     return result
