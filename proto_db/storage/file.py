@@ -313,6 +313,12 @@ class FileStorage(SharedStorage):
         """The configured durability mode."""
         return self._durability
 
+    def cache_stats(self) -> dict:
+        """Counters of the page cache that serves reads of written segments (see
+        :meth:`~proto_db.storage.cache.BoundedCache.stats`); informational, used by the
+        performance suite to report hit rates."""
+        return self._cache.stats()
+
     # --- state checks --------------------------------------------------------------
 
     def _check_open(self):

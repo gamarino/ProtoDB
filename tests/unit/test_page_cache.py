@@ -108,3 +108,33 @@ def test_concurrent_use_stays_bounded_and_consistent():
     assert not errors
     assert c.size_bytes <= 64 * 100
     assert c.size_bytes == sum(64 for _ in range(len(c)))
+
+
+def test_stats_snapshot_counts_hits_misses_and_size():
+    """Catches counters that drift from the cache's behaviour (the benchmarks report them)."""
+    c = BoundedCache(10)
+    c.put("a", b"aaaa")
+    c.get("a")
+    c.get("zz")
+    assert c.stats() == {"hits": 1, "misses": 1, "entries": 1, "bytes": 4, "capacity": 10}
+
+
+def test_file_storage_cache_stats_count_reads_after_reopen(tmp_path):
+    """Catches a FileStorage.cache_stats() that does not reflect reads served by the page cache."""
+    from proto_db.storage.file import FileStorage
+    storage = FileStorage(str(tmp_path), durability="none")
+    ptr = storage.push_blob(b"x" * 100)
+    for _ in range(100):                  # fill past the first page: only complete pages are cached
+        storage.push_blob(b"y" * 1000)
+    storage.flush()
+    storage.close()
+    storage = FileStorage(str(tmp_path), durability="none")
+    try:
+        assert storage.cache_stats()["hits"] == 0
+        assert storage.get_blob(ptr) == b"x" * 100
+        before = storage.cache_stats()
+        assert before["misses"] >= 1
+        storage.get_blob(ptr)
+        assert storage.cache_stats()["hits"] > before["hits"]
+    finally:
+        storage.close()

@@ -51,6 +51,13 @@ class BoundedCache:
         with self._lock:
             return len(self._items)
 
+    def stats(self) -> dict:
+        """A consistent snapshot of the counters: ``hits``, ``misses``, ``entries``, ``bytes``
+        (total size of the cached values) and ``capacity`` (``max_bytes``)."""
+        with self._lock:
+            return {"hits": self.hits, "misses": self.misses, "entries": len(self._items),
+                    "bytes": self._size, "capacity": self._max}
+
     def get(self, key: Hashable) -> Optional[Any]:
         """Return the value cached under ``key`` (marking it recently used) or ``None``."""
         with self._lock:

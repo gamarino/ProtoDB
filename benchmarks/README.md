@@ -1,0 +1,98 @@
+# ProtoDB performance suite
+
+A self-verifying benchmark suite (spec section 12, Tasks 9.1-9.3, decision D49). Every
+workload prints the work it did and checks its results against an independent computation
+(a brute-force scan, a Python model, the baseline itself, a read-back of the persisted state)
+before it reports a single timing; a mismatch fails the run with exit status 1. Baselines
+(Python dict/list, sqlite3, rqlite) do the same work and are verified the same way.
+
+The report with the current numbers and their interpretation is
+`docs/source/performance.rst`; raw results are under `benchmarks/results/`.
+
+## Running
+
+From the repository root:
+
+```bash
+# full run on the free-threaded build (GIL off), then with the GIL enabled
+.venv314t/bin/python -m benchmarks --json benchmarks/results/$(date +%F)-py314t-gil-off.json
+.venv314t/bin/python -X gil=1 -m benchmarks --json benchmarks/results/$(date +%F)-py314t-gil-on.json
+
+# a quick smoke run (tiny parameters: checks the harness, not speed)
+python -m benchmarks --quick
+
+# selected workloads, other thread counts, comparison with an earlier run
+python -m benchmarks --only point_lookup range_query --threads 1,4,12
+python -m benchmarks --compare benchmarks/results/2026-11-03-py314t-gil-off.json --threshold 0.15
+python -m benchmarks --list
+```
+
+Options:
+
+| Option | Meaning |
+|--------|---------|
+| `--quick` | tiny parameter sets (used by `tests/perf/test_benchmark_harness.py`) |
+| `--json OUT` | write environment, options and every result (all samples) to `OUT` |
+| `--compare BASE` | flag medians worse than `BASE` by more than `--threshold` (default 15 %); exit status 3 when any |
+| `--threads 1,2,4,8,16` | thread counts of the scaling workloads |
+| `--only NAME ...` | run only these workloads |
+| `--repeat N`, `--warmup N` | timed and untimed repetitions per variant (default 5 and 1; quick 2 and 1) |
+| `--workdir DIR` | where databases are created (default `benchmarks/.work`, ignored by git) |
+| `--rqlite PATH` | the `rqlited` binary (or `PROTODB_BENCH_RQLITED`); without it `rqlite_reference` is reported as pending |
+
+The work directory must be on a real disk for the durability workloads: on `tmpfs` an
+`fsync` costs nothing (the runner prints a warning, and the file system type is recorded
+with the results).
+
+## Methodology
+
+- Each timed variant runs `warmup` untimed repetitions, then `repeat` timed ones; results
+  are reported as median and p95 (nearest rank) of the samples, per batch and per operation.
+  Throughput figures are reported as median and 5th percentile (the bad side of a rate).
+- The environment is captured with the results: CPU model, core count and affinity, Python
+  version and build (`Py_GIL_DISABLED`), `sys._is_gil_enabled()`, `-X` options, library
+  versions, the git revision and the work directory's file system.
+- `sys._is_gil_enabled()` is checked after every workload. hnswlib re-enables the GIL when
+  imported on a free-threaded interpreter, so `vector_knn_hnsw` is flagged `isolate` and runs
+  in a child interpreter with the same `-X` options; any other workload that changes the GIL
+  state fails the run.
+- SQLite is a single-process reference only, at equal durability: ProtoDB `fsync` / `flush`
+  / `none` against SQLite (WAL) `synchronous=FULL` / `NORMAL` / `OFF`. It is never used as a
+  cluster reference (rulings R37, R45).
+- Cluster mode is compared with the CAS-only baseline (storage-arbitrated writers, the
+  reverted D5 approach), with itself at 1/2/4/8 peers (in-process and TCP subprocess peers),
+  with itself at 0 and 30 ms object-store latency, and with rqlite (3 nodes on loopback).
+- Memory figures (RSS) are deliberately not reported.
+
+## rqlite
+
+rqlite is not a dependency. To include it, download an official release binary, verify its
+published SHA-256 and point the suite at it (never install it system-wide for this):
+
+```bash
+mkdir -p /tmp/rqlite && cd /tmp/rqlite
+curl -LO https://github.com/rqlite/rqlite/releases/download/v10.6.6/rqlite-v10.6.6-linux-amd64.tar.gz
+sha256sum rqlite-v10.6.6-linux-amd64.tar.gz   # compare with the digest published on the release page
+tar xzf rqlite-v10.6.6-linux-amd64.tar.gz
+PROTODB_BENCH_RQLITED=/tmp/rqlite/rqlite-v10.6.6-linux-amd64/rqlited python -m benchmarks --only rqlite_reference
+```
+
+## Adding a workload
+
+```python
+from benchmarks.harness import BenchResult, benchmark, measure
+
+@benchmark("my_workload", quick={"n": 100}, full={"n": 10_000})
+def my_workload(ctx, p):
+    """One-line description shown by --list."""
+    expected = ...                                  # computed independently of ProtoDB
+    result = BenchResult({"rows": p["n"]}, None, expected)
+    samples, got = measure(lambda: ..., ctx.repeat, ctx.warmup)
+    result.check("same rows as the model", got == expected, f"{got} != {expected}")
+    result.add_timing("variant label", samples, per=p["n"])
+    result.checksum = got
+    return result
+```
+
+Import the module from `benchmarks/workloads/__init__.py`. `tests/perf/test_benchmark_harness.py`
+runs every registered workload in quick mode and fails if one does not verify.

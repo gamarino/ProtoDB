@@ -17,6 +17,7 @@ This site is being rewritten for ProtoDB 2.0 (spec section 13). Until then:
    :caption: Contents:
 
    api
+   performance
 
 Indices and tables
 ==================

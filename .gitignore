@@ -18,3 +18,4 @@ __pycache__/
 # dotfiles, incluido este archivo y, sobre todo, `.github/` — que quedó fuera del
 # repositorio sin que nadie lo notara, con sus workflows presentes en disco y
 # nunca activos.
+benchmarks/.work/
