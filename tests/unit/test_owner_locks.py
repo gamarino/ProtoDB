@@ -467,13 +467,20 @@ def _real_then_raise(real, error):
     return step
 
 
-@pytest.mark.parametrize("error", [RuntimeError("release"), OSError(5, "release"), _InjectedBase("release")],
-                         ids=["RuntimeError", "OSError", "BaseException"])
+_INTERRUPTS = (KeyboardInterrupt, SystemExit, _InjectedBase)
+
+
+@pytest.mark.parametrize("error", [RuntimeError("release"), OSError(5, "release"), KeyboardInterrupt("release"),
+                                   SystemExit("release"), _InjectedBase("release")],
+                         ids=["RuntimeError", "OSError", "KeyboardInterrupt", "SystemExit", "BaseException"])
 @pytest.mark.parametrize("step", ["FileStorage.close", "RootsLog.close", "OwnerLock.release"])
 def test_a_release_error_never_masks_the_open_error(tmp_path, monkeypatch, step, error):
-    """Re-review 13, N4 (ruling R61): an exception of any type raised by a release step of a
-    failed open is attached to the open error as a secondary error; the open error is what the
-    constructor raises, every other step still runs and the lock is released."""
+    """Re-review 13, N4 (ruling R61): an ``Exception`` raised by a release step of a failed
+    open is attached to the open error as a secondary error, and the open error is what the
+    constructor raises.  Re-review 14, R1 (ruling R62): a control-flow exception
+    (``KeyboardInterrupt``, ``SystemExit``, any non-``Exception``) propagates instead, with the
+    open error as its context.  Either way every other step still runs and every lock is
+    released."""
     from proto_db.storage.ownerlock import OwnerLock
     d = str(tmp_path / "node")
     store = FakeObjectStore()
@@ -494,20 +501,31 @@ def test_a_release_error_never_masks_the_open_error(tmp_path, monkeypatch, step,
     monkeypatch.setattr(TieredStorage, "_load_ranges", ranges_boom)
     monkeypatch.setattr(owner, name, _real_then_raise(real, error))
     monkeypatch.setattr(os, "close", tracking_close)
-    with pytest.raises(_Injected, match="open") as info:
-        TieredStorage(d, store, **KW)
-    monkeypatch.undo()
     # OwnerLock.release fails for both locks: roots.log's (inside RootsLog.close) and the tier's
-    assert secondary_errors(info.value) == (error,) * (2 if step == "OwnerLock.release" else 1)
+    failures = 2 if step == "OwnerLock.release" else 1
+    if isinstance(error, _INTERRUPTS):
+        with pytest.raises(type(error)) as info:
+            TieredStorage(d, store, **KW)
+        monkeypatch.undo()
+        assert info.value is error
+        primary = info.value.__context__
+        assert isinstance(primary, _Injected) and str(primary) == "open"
+        assert secondary_errors(primary) == (error,) * (failures - 1)    # a second interrupt is recorded
+    else:
+        with pytest.raises(_Injected, match="open") as info:
+            TieredStorage(d, store, **KW)
+        monkeypatch.undo()
+        assert secondary_errors(info.value) == (error,) * failures
     assert len(released) >= 3        # segments.log, the segment storage's files, roots.log, the lock
     TieredStorage(d, store, **KW).close()       # every lock was released, the acceptor log's included
     RootsLog(os.path.join(d, tiered_module.ROOTS_LOG)).close()
 
 
-@pytest.mark.parametrize("error", [RuntimeError("release"), _InjectedBase("release")],
-                         ids=["RuntimeError", "BaseException"])
+@pytest.mark.parametrize("error", [RuntimeError("release"), KeyboardInterrupt("release"), SystemExit("release")],
+                         ids=["RuntimeError", "KeyboardInterrupt", "SystemExit"])
 def test_a_roots_log_release_error_never_masks_its_open_error(tmp_path, monkeypatch, error):
-    """The same rule for :class:`RootsLog`'s own failed open (re-review 13, N4)."""
+    """The same rules for :class:`RootsLog`'s own failed open (re-review 13, N4; re-review
+    14, R1)."""
     from proto_db.storage.ownerlock import OwnerLock
     path = str(tmp_path / "n.roots")
     RootsLog(path).close()
@@ -517,11 +535,38 @@ def test_a_roots_log_release_error_never_masks_its_open_error(tmp_path, monkeypa
 
     monkeypatch.setattr(rootlog_module, "_decode", decode_boom)
     monkeypatch.setattr(OwnerLock, "release", _real_then_raise(OwnerLock.release, error))
-    with pytest.raises(_Injected, match="open") as info:
-        RootsLog(path)
+    if isinstance(error, _INTERRUPTS):
+        with pytest.raises(type(error)) as info:
+            RootsLog(path)
+        monkeypatch.undo()
+        assert info.value is error and isinstance(info.value.__context__, _Injected)
+    else:
+        with pytest.raises(_Injected, match="open") as info:
+            RootsLog(path)
+        monkeypatch.undo()
+        assert secondary_errors(info.value) == (error,)
+    RootsLog(path).close()                      # the lock was released: a reopen succeeds
+
+
+def test_an_interrupt_during_the_cleanup_of_a_failed_open_propagates_and_releases(tmp_path, monkeypatch):
+    """Re-review 14, R1: a Ctrl-C raised while a failed open releases what it opened reaches
+    the caller as ``KeyboardInterrupt`` (not as the open error, which a caller catching
+    ``ProtoDBError`` would swallow), and the directory can be reopened."""
+    d = str(tmp_path / "node")
+    store = FakeObjectStore()
+    TieredStorage(d, store, **KW).close()
+
+    def ranges_boom(self):
+        raise ProtoCorruptionError("open")
+
+    monkeypatch.setattr(TieredStorage, "_load_ranges", ranges_boom)
+    monkeypatch.setattr(FileStorage, "close", _real_then_raise(FileStorage.close, KeyboardInterrupt()))
+    with pytest.raises(KeyboardInterrupt) as info:
+        TieredStorage(d, store, **KW)
     monkeypatch.undo()
-    assert secondary_errors(info.value) == (error,)
-    RootsLog(path).close()
+    assert isinstance(info.value.__context__, ProtoCorruptionError)
+    TieredStorage(d, store, **KW).close()
+    RootsLog(os.path.join(d, tiered_module.ROOTS_LOG)).close()
 
 
 def test_close_releases_the_lock_whatever_a_step_raises(tmp_path, monkeypatch):

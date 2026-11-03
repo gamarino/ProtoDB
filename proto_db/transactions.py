@@ -115,6 +115,7 @@ from .core.dbobject import DBObject, MutableObject
 from .errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoOutcomeUnknownError,
                      ProtoTimeoutError, ProtoUnexpectedError, ProtoUserError,
                      ProtoValidationError)
+from .storage.base import check_lock_timeout
 from .storage.format import FORMAT_VERSION, RootRecord
 from .cluster.coordinator import REFOUND_TERM_STEP
 from .cluster.rootlog import compare_roots
@@ -615,9 +616,8 @@ class ObjectSpace:
     """
 
     def __init__(self, storage, *, lock_timeout: Optional[float] = None, coordinator=None):
-        if lock_timeout is not None and (isinstance(lock_timeout, bool)
-                                         or not isinstance(lock_timeout, (int, float)) or lock_timeout < 0):
-            raise ProtoValidationError("lock_timeout must be None or a non-negative number of seconds")
+        if lock_timeout is not None:
+            check_lock_timeout(lock_timeout)
         self._storage = storage
         self._lock_timeout = lock_timeout
         self._coordinator = coordinator

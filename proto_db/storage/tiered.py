@@ -169,7 +169,7 @@ from ..errors import (ProtoBacklogFullError, ProtoCorruptionError, ProtoDBError,
                       ProtoValidationError, attach_secondary_errors)
 from ..cluster import protocol as _protocol
 from ..cluster.rootlog import LoggedRoots, RootsLog, compare_roots, root_key
-from .base import SharedStorage
+from .base import SharedStorage, check_lock_timeout
 from .cache import BoundedCache
 from .cloud import (ObjectNotFoundError, OutcomeUnknownError, PreconditionFailedError,
                     TransientObjectStoreError)
@@ -350,7 +350,8 @@ class TieredStorage(SharedStorage):
             thread (at most once per second while the backlog stays above the threshold).
         release_local: delete local segments once the store holds them and a persisted root
             covers them.
-        lock_timeout: default seconds :meth:`root_lock` waits.
+        lock_timeout: default seconds :meth:`root_lock` waits; finite and positive
+            (:func:`~proto_db.storage.base.check_lock_timeout`).
     """
 
     #: The root lock is in-process: cluster mode coordinates writers with the lease.
@@ -392,8 +393,7 @@ class TieredStorage(SharedStorage):
         if type(segment_max_bytes) is not int or segment_max_bytes <= SEGMENT_HEADER_SIZE + RECORD_HEADER_SIZE:
             raise ProtoValidationError(
                 f"segment_max_bytes must be an int above {SEGMENT_HEADER_SIZE + RECORD_HEADER_SIZE}")
-        if not isinstance(lock_timeout, (int, float)) or lock_timeout < 0:      # FileStorage's rule
-            raise ProtoValidationError("lock_timeout must be a non-negative number of seconds")
+        check_lock_timeout(lock_timeout)                                        # FileStorage's rule
         if backlog_limit_bytes is not None and (type(backlog_limit_bytes) is not int or backlog_limit_bytes <= 0):
             raise ProtoValidationError("backlog_limit_bytes must be a positive int or None")
         if backlog_alert_bytes is None and backlog_limit_bytes is not None:
@@ -548,10 +548,13 @@ class TieredStorage(SharedStorage):
     def _abandon_open(self, error: BaseException) -> None:
         """Release what a failed constructor opened; ``error`` is the open error, which the
         caller re-raises.  Every release runs even when an earlier one raised, and the owner
-        lock is released last (8.3d re-review 12, I2; ruling R60).  An exception raised by a
-        release step, of any type, never replaces ``error``: it is attached to it as a secondary
-        error (:func:`~proto_db.errors.secondary_errors`) and the remaining steps still run
-        (8.3d re-review 13, N4; ruling R61)."""
+        lock is released last (8.3d re-review 12, I2; ruling R60).  An ``Exception`` raised by a
+        release step never replaces ``error``: it is attached to it as a secondary error
+        (:func:`~proto_db.errors.secondary_errors`) and the remaining steps still run (8.3d
+        re-review 13, N4; ruling R61).  A control-flow exception (``KeyboardInterrupt``,
+        ``SystemExit``: a ``BaseException`` that is not an ``Exception``) raised by a step is
+        kept, the remaining steps still run, and the first one is then raised with ``error`` as
+        its context, so an interrupt is never lost (8.3d re-review 14, R1; ruling R62)."""
         steps = [lambda fd=fd: os.close(fd) for fd in (self._manifest_fd, self._ranges_fd) if fd >= 0]
         if self._roots is not None:
             steps.append(self._roots.close)
@@ -559,14 +562,23 @@ class TieredStorage(SharedStorage):
             steps.append(self._local.close)
         steps.append(self._owner.release)           # last: nothing of this instance remains open
         secondary = []
+        interrupt = None
         for release in steps:
             try:
                 release()
-            except BaseException as release_error:
-                # Not swallowed: reported through ``error``, which the caller raises.
-                secondary.append(release_error)
+            except Exception as release_error:
+                secondary.append(release_error)          # reported through ``error``
+            except BaseException as stop:                # KeyboardInterrupt, SystemExit: finish, then propagate
+                if interrupt is None:
+                    interrupt = stop
+                else:
+                    secondary.append(stop)
         if secondary:
             attach_secondary_errors(error, secondary)
+        if interrupt is not None and isinstance(error, Exception):
+            raise interrupt                              # __context__ is ``error`` (called inside its handler)
+        if interrupt is not None:
+            attach_secondary_errors(error, [interrupt])  # ``error`` is itself an interrupt: it propagates
 
     def _load_manifest(self) -> None:
         self._manifest_fd, payloads = self._open_log(MANIFEST, MANIFEST_KIND)
@@ -622,9 +634,20 @@ class TieredStorage(SharedStorage):
         nothing truncated (ruling R58); when the header was invalid the message says that the
         valid record may be the content of the torn record (ambiguous).  The search is exact
         and linear, with no cap (:func:`_first_valid_record`), so an ordinary torn tail is
-        always trimmed.  ``FileNotFoundError`` propagates for a missing file."""
+        always trimmed.  A file with more than one hard link raises ``ProtoLockingError``
+        before it is read (8.3d re-review 14; ruling R62).  ``FileNotFoundError`` propagates
+        for a missing file."""
         fd = os.open(path, os.O_RDWR | _O_BINARY | _O_CLOEXEC)
         try:
+            links = os.fstat(fd).st_nlink
+            if links > 1:
+                # Another name for the file (for example a snapshot that hard-links unchanged
+                # files into another directory) may belong to a live instance the directory lock
+                # does not cover; truncating the shared inode would cut its data (8.3d re-review
+                # 14; ruling R62).  Refused before anything is read or repaired, as open_log does.
+                raise ProtoLockingError(
+                    f"Own segment {segment.hex} at {path} has {links} hard links; an own segment must have "
+                    f"exactly one name (remove the other links) because opening repairs the file")
             data = read_fd(fd)
             size = len(data)
             view = memoryview(data)
@@ -1632,7 +1655,7 @@ class TieredStorage(SharedStorage):
     def root_lock(self, timeout: Optional[float] = None):
         """See :meth:`SharedStorage.root_lock`; in-process only (cluster mode uses the lease)."""
         self._check_open()
-        return self._locked(self._lock_timeout if timeout is None else timeout)
+        return self._locked(self._lock_timeout if timeout is None else check_lock_timeout(timeout, "timeout"))
 
     @contextlib.contextmanager
     def _locked(self, timeout: float):

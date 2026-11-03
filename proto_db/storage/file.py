@@ -58,7 +58,7 @@ from ..core.atom import AtomPointer
 from ..errors import (ProtoConflictError, ProtoCorruptionError, ProtoLockingError,
                       ProtoNotSupportedError, ProtoTimeoutError, ProtoUnexpectedError,
                       ProtoValidationError)
-from .base import SharedStorage
+from .base import SharedStorage, check_lock_timeout
 from .cache import BoundedCache
 from .format import (FORMAT_VERSION, RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind,
                      RootRecord, decode_root, decode_segment_header, encode_record,
@@ -214,7 +214,8 @@ class FileStorage(SharedStorage):
         path: space directory; created if missing.
         durability: ``"fsync"``, ``"flush"`` or ``"none"``.
         cache_bytes: capacity of the page cache serving reads of written segments.
-        lock_timeout: default seconds ``root_lock`` (and ``publish_root``) wait.
+        lock_timeout: default seconds ``root_lock`` (and ``publish_root``) wait; finite and
+            positive (:func:`~proto_db.storage.base.check_lock_timeout`).
         segment_max_bytes: a segment rolls over to a new one before exceeding this size
             (a single larger record gets a segment of its own).
         page_size: page size of the read cache.
@@ -234,8 +235,7 @@ class FileStorage(SharedStorage):
             raise ProtoValidationError(f"durability must be one of {DURABILITY_MODES}")
         if type(cache_bytes) is not int or cache_bytes < 0:
             raise ProtoValidationError("cache_bytes must be a non-negative int")
-        if not isinstance(lock_timeout, (int, float)) or lock_timeout < 0:
-            raise ProtoValidationError("lock_timeout must be a non-negative number of seconds")
+        check_lock_timeout(lock_timeout)
         if type(segment_max_bytes) is not int or segment_max_bytes <= SEGMENT_HEADER_SIZE + RECORD_HEADER_SIZE:
             raise ProtoValidationError("segment_max_bytes is too small")
         if type(page_size) is not int or page_size <= 0:
@@ -684,7 +684,7 @@ class FileStorage(SharedStorage):
         (process exclusion; the descriptor is opened per acquisition and closed on release).
         """
         self._check_open()
-        return self._locked(self._lock_timeout if timeout is None else timeout)
+        return self._locked(self._lock_timeout if timeout is None else check_lock_timeout(timeout, "timeout"))
 
     @contextlib.contextmanager
     def _locked(self, timeout: float):

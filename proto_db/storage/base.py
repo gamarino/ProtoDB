@@ -4,13 +4,32 @@ A :class:`SharedStorage` is an append-only store of atoms and blobs plus a singl
 published *root* guarded by compare-and-swap on an epoch.  Implementations are
 thread-safe: every method may be called concurrently from any thread.
 """
+import math
+import threading
 from abc import ABC, abstractmethod
 from typing import ContextManager, Optional
 
 from ..core.atom import AtomPointer
+from ..errors import ProtoValidationError
 from .format import RootRecord
 
-__all__ = ["SharedStorage"]
+__all__ = ["SharedStorage", "check_lock_timeout"]
+
+
+def check_lock_timeout(value, name: str = "lock_timeout"):
+    """Return ``value`` if it is a valid root-lock wait in seconds, else raise
+    ``ProtoValidationError`` (8.3d re-review 14; ruling R62).
+
+    Valid: an ``int`` or ``float`` (not ``bool``) that is finite, positive and at most
+    ``threading.TIMEOUT_MAX``.  NaN, infinities and values above ``TIMEOUT_MAX`` used to be
+    accepted and made every later ``root_lock`` raise a raw ``ValueError`` or
+    ``OverflowError``; there is no "wait forever" spelling."""
+    if (isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
+            or value <= 0 or value > threading.TIMEOUT_MAX):
+        raise ProtoValidationError(
+            f"{name} must be a finite positive number of seconds (at most {threading.TIMEOUT_MAX:g}), "
+            f"not {value!r}")
+    return value
 
 
 class SharedStorage(ABC):

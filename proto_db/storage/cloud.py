@@ -73,7 +73,7 @@ from ..errors import (ProtoConflictError, ProtoCorruptionError, ProtoLockingErro
                       ProtoNotAuthorizedError, ProtoNotSupportedError, ProtoOutcomeUnknownError,
                       ProtoTimeoutError,
                       ProtoUnexpectedError, ProtoValidationError)
-from .base import SharedStorage
+from .base import SharedStorage, check_lock_timeout
 from .cache import BoundedCache
 from .format import (FORMAT_VERSION, RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind,
                      RootRecord, decode_root, decode_segment_header, encode_record,
@@ -194,7 +194,8 @@ class CloudStorage(SharedStorage):
             record gets a segment of its own).
         write_buffer_bytes: sealed-but-not-uploaded bytes beyond which a push uploads them.
         cache_bytes: capacity of the cache of downloaded segment objects (``0`` disables it).
-        lock_timeout: default seconds ``root_lock`` waits.
+        lock_timeout: default seconds ``root_lock`` waits; finite and positive
+            (:func:`~proto_db.storage.base.check_lock_timeout`).
         retries: retries of an operation failing with ``TransientObjectStoreError`` or
             ``OutcomeUnknownError`` (``0``: no retry).
         backoff: ``(min_seconds, max_seconds)`` of the exponential backoff between retries.
@@ -221,8 +222,7 @@ class CloudStorage(SharedStorage):
             raise ProtoValidationError("write_buffer_bytes must be a positive int")
         if type(cache_bytes) is not int or cache_bytes < 0:
             raise ProtoValidationError("cache_bytes must be a non-negative int")
-        if not isinstance(lock_timeout, (int, float)) or isinstance(lock_timeout, bool) or lock_timeout < 0:
-            raise ProtoValidationError("lock_timeout must be a non-negative number of seconds")
+        check_lock_timeout(lock_timeout)
         if type(retries) is not int or retries < 0:
             raise ProtoValidationError("retries must be a non-negative int")
         try:
@@ -631,7 +631,7 @@ class CloudStorage(SharedStorage):
         processes are arbitrated by the compare-and-swap of :meth:`publish_root`.
         """
         self._check_open()
-        return self._locked(self._lock_timeout if timeout is None else timeout)
+        return self._locked(self._lock_timeout if timeout is None else check_lock_timeout(timeout, "timeout"))
 
     @contextlib.contextmanager
     def _locked(self, timeout: float):

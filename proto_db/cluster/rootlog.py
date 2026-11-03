@@ -235,15 +235,25 @@ class RootsLog:
         except BaseException as e:
             closing = ([lambda: os.close(fd)] if fd >= 0 else []) + [self._owner.release]
             secondary = []
+            interrupt = None
             for close in closing:
                 try:
                     close()
-                except BaseException as close_error:
+                except Exception as close_error:
                     # Never replaces the open error (8.3d re-review 13, N4): reported through
                     # ``e``, raised below, and the remaining release still runs.
                     secondary.append(close_error)
+                except BaseException as stop:            # KeyboardInterrupt, SystemExit: finish, then propagate
+                    if interrupt is None:
+                        interrupt = stop
+                    else:
+                        secondary.append(stop)
             if secondary:
                 attach_secondary_errors(e, secondary)
+            if interrupt is not None and isinstance(e, Exception):
+                raise interrupt                          # __context__ is ``e`` (re-review 14, R1)
+            if interrupt is not None:
+                attach_secondary_errors(e, [interrupt])  # ``e`` is itself an interrupt: it propagates
             raise
         self._fd = fd
 

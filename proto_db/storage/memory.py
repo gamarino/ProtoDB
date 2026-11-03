@@ -9,7 +9,7 @@ import msgpack
 from ..core.atom import AtomPointer
 from ..errors import (ProtoConflictError, ProtoCorruptionError, ProtoLockingError,
                       ProtoTimeoutError, ProtoValidationError)
-from .base import SharedStorage
+from .base import SharedStorage, check_lock_timeout
 from .format import FORMAT_VERSION, RecordKind, RootRecord
 
 __all__ = ["MemoryStorage"]
@@ -24,12 +24,12 @@ class MemoryStorage(SharedStorage):
 
     Args:
         lock_timeout: default seconds ``root_lock`` waits before raising
-            ``ProtoTimeoutError``.
+            ``ProtoTimeoutError``; finite and positive
+            (:func:`~proto_db.storage.base.check_lock_timeout`).
     """
 
     def __init__(self, *, lock_timeout: float = 30.0):
-        if lock_timeout is None or lock_timeout < 0:
-            raise ProtoValidationError("lock_timeout must be a non-negative number of seconds")
+        check_lock_timeout(lock_timeout)
         self._lock_timeout = lock_timeout
         self._state_lock = threading.Lock()
         self._root_lock = threading.Lock()
@@ -111,7 +111,7 @@ class MemoryStorage(SharedStorage):
     def root_lock(self, timeout: Optional[float] = None):
         """See :meth:`SharedStorage.root_lock`."""
         self._check_open()
-        return self._locked(self._lock_timeout if timeout is None else timeout)
+        return self._locked(self._lock_timeout if timeout is None else check_lock_timeout(timeout, "timeout"))
 
     @contextlib.contextmanager
     def _locked(self, timeout: float):

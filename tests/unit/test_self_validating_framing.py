@@ -425,3 +425,48 @@ def test_a_hard_linked_log_is_refused_before_it_is_repaired(tmp_path):
     fd, payloads = logfile.open_log(path, b"TEST", durability="fsync")
     os.close(fd)
     assert payloads == [b"entry"]
+
+
+def test_a_hard_linked_own_segment_is_refused_before_it_is_repaired(tmp_path):
+    """Re-review 14 (ruling R62): an own segment with a second name may be another instance's
+    file (a snapshot that hard-links unchanged files); it is refused before it is read, so its
+    torn tail is not truncated, and repaired once the extra link is removed."""
+    from proto_db.errors import ProtoLockingError
+    path, seg, good, data = _segment(tmp_path, b"\x01\x02\x03")          # a torn tail
+    other = str(tmp_path / "snapshot.seg")
+    os.link(path, other)
+    for name in (path, other):
+        with pytest.raises(ProtoLockingError, match="hard links"):
+            TieredStorage._repair_own_segment(name, seg)
+        with open(path, "rb") as f:
+            assert f.read() == data
+    os.remove(other)
+    _assert_trimmed(path, seg, good)
+
+
+def test_a_tiered_open_refuses_a_hard_linked_own_segment(tmp_path):
+    """The same refusal through the constructor: the open fails, nothing is truncated, and the
+    lock is released (a later open succeeds once the link is removed)."""
+    from proto_db.errors import ProtoLockingError
+    from tests.support.fake_object_store import FakeObjectStore
+    d = str(tmp_path / "node")
+    store = FakeObjectStore()
+    kw = dict(durability="fsync", ship_interval=3600.0, backoff=(0.0, 0.0), retries=0)
+    t = TieredStorage(d, store, **kw)
+    t.push_atom({"x": 1})
+    t.flush()
+    t.close()
+    segs = [n for n in os.listdir(d) if n.endswith(".seg")]
+    assert segs
+    seg_path = os.path.join(d, segs[0])
+    with open(seg_path, "ab") as f:
+        f.write(b"\x01\x02")                                              # a torn tail
+    before = open(seg_path, "rb").read()
+    link = str(tmp_path / "elsewhere.seg")
+    os.link(seg_path, link)
+    with pytest.raises(ProtoLockingError, match="hard links"):
+        TieredStorage(d, store, **kw)
+    assert open(seg_path, "rb").read() == before
+    os.remove(link)
+    TieredStorage(d, store, **kw).close()
+    assert os.path.getsize(seg_path) == len(before) - 2
