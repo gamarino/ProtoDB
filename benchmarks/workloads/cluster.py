@@ -97,14 +97,16 @@ def _drive(dbs, threads_per_db: int, seconds: float, mode: str, batch: int = 1):
     ``mode`` ``blind``: each commit adds ``batch`` unique ids to the ``ids`` CountedSet
     (merged, never a conflict); ``increment``: each commit also reads and increments the
     counter ``n`` (conflicting commits retry).  Returns ``(elapsed, committed_ids,
-    attempts, latencies)``.
+    attempts, latencies, commits_by_db)``; ``commits_by_db`` counts the commits of each
+    database, in ``dbs`` order, so a starved peer shows (8.3e review I1, defect D-LIVE-2).
     """
     from benchmarks.support import run_threads
     ids = itertools.count()
     committed, latencies, attempts = [], [], []
+    by_db = [0] * len(dbs)
     lock = threading.Lock()
 
-    def worker_for(db):
+    def worker_for(index, db):
         def worker():
             mine, lat, tries = [], [], [0]
             stop_at = time.monotonic() + seconds
@@ -127,10 +129,11 @@ def _drive(dbs, threads_per_db: int, seconds: float, mode: str, batch: int = 1):
                 committed.extend(mine)
                 latencies.extend(lat)
                 attempts.append(tries[0])
+                by_db[index] += len(lat)
         return worker
 
-    elapsed, _ = run_threads([worker_for(db) for db in dbs for _ in range(threads_per_db)])
-    return elapsed, committed, sum(attempts), latencies
+    elapsed, _ = run_threads([worker_for(i, db) for i, db in enumerate(dbs) for _ in range(threads_per_db)])
+    return elapsed, committed, sum(attempts), latencies, by_db
 
 
 def _latency_ms(latencies) -> dict:
@@ -146,7 +149,7 @@ def _cluster_run(ctx, n, store, mode, threads, seconds, batch=1, durability="fsy
     """One in-process cluster run, verified; returns a dict of figures."""
     cl = InProcCluster(ctx.tempdir(f"cluster{n}"), n, store, durability=durability)
     try:
-        elapsed, committed, attempts, latencies = _drive(cl.dbs, threads, seconds, mode, batch)
+        elapsed, committed, attempts, latencies, by_db = _drive(cl.dbs, threads, seconds, mode, batch)
         stats = [node.stats() for node in cl.nodes]
         cl.settle()
         ids = cl.read("ids")
@@ -154,17 +157,19 @@ def _cluster_run(ctx, n, store, mode, threads, seconds, batch=1, durability="fsy
         ok_ids = sorted(ids.elements()) == sorted(committed) and all(c == 1 for _, c in ids.items())
         commits = len(committed) // batch
         ok_n = mode != "increment" or n_root == commits
+        ok_split = sum(by_db) == commits                 # the per-peer counts add up
         cl.spaces[0].sync(timeout=120)
         persisted = cl.spaces[0].persisted_epoch >= cl.spaces[0].committed_epoch
     finally:
         cl.close()
     return {"commits": commits, "elapsed": elapsed, "rate": commits / elapsed, "attempts": attempts,
-            "ok": ok_ids and ok_n and persisted, "detail": f"ids {ok_ids}, counter {ok_n}, persisted {persisted}",
+            "ok": ok_ids and ok_n and ok_split and persisted,
+            "detail": f"ids {ok_ids}, counter {ok_n}, per-peer split {ok_split}, persisted {persisted}",
             "failures": sum(st["replication_failures"] for st in stats),
             "healthy": all(st["healthy"] for st in stats),
             "lease_attempts_per_commit": round(sum(st["attempts"] for st in stats) / max(1, commits), 2),
             "critical_ms": _critical_per_commit(stats),
-            "latency_ms": latency_ms(latencies)}
+            "latency_ms": latency_ms(latencies), "commits_by_peer": by_db}
 
 
 @benchmark("cluster_cas_baseline", quick={"latencies": [0.0, 0.030], "writers": [1, 2], "seconds": 0.3, "repeat": 1},
@@ -250,6 +255,7 @@ def cluster_peers(ctx, p):
             result.metrics[f"{key}: attempts per commit"] = round(mid["attempts"] / max(1, mid["commits"]), 2)
             result.metrics[f"{key}: lease acquisitions tried per commit"] = mid["lease_attempts_per_commit"]
             result.metrics[f"{key}: critical section ms per commit"] = mid["critical_ms"]
+            result.metrics[f"{key}: commits per peer, each run"] = [r["commits_by_peer"] for r in runs]
     result.checksum, result.expected = checksum, expected
     return result
 

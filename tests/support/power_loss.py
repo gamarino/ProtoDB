@@ -19,6 +19,28 @@ inode's last durable point (empty when it never had one).  Entries created after
 directory's last durable point disappear; renames after it are undone.  A directory never
 made durable keeps nothing.  ``root`` itself is assumed durable (it existed at a
 write-back).
+
+Limits of the model (8.3e review, M2) -- what it cannot generate, and why the tests built on it
+remain meaningful:
+
+* **Unsynced data is all or nothing per file.**  A file keeps exactly its contents at its last
+  durable point: no partial write-back, no page written back out of order, no file extended
+  with zeros (a size update that reached the disk before its data).  Real file systems can do
+  all three.  For the acceptor log this does not matter: entries are CRC-framed, a torn or
+  zero-filled tail is trimmed at open (:mod:`proto_db.storage.logfile`), and only committed
+  entries may lie past the last sync (ruling R67).  For data, such partial states are handled by
+  code these tests do not reach: a torn own segment is trimmed by
+  ``TieredStorage._repair_own_segment`` before it is shipped, copies of other nodes' segments
+  are CRC-walked, and a short or corrupt store object falls back to peers and parts.  Those
+  paths have their own tests (``test_log_torn_tails.py``, ``test_self_validating_framing.py``).
+* **A directory sync records its whole listing**, including entries whose files were never
+  synced; after the power loss they reappear empty.  This is realistic (the entry is durable,
+  the data is not).
+* **Only ``os.fsync`` is wrapped.**  An ``os.fdatasync`` (or ``O_SYNC`` write) would not be
+  recorded, so the model would drop data the real system keeps -- conservative: it can only
+  report a missing sync that is not missing, never hide one.  proto_db calls ``os.fsync`` only.
+* ``root`` is assumed durable, and the model is per process: every fsync recorded is one this
+  process made (subprocess peers are not modelled).
 """
 import os
 import stat

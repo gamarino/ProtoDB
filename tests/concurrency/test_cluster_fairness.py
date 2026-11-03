@@ -11,7 +11,7 @@ Bounds, with margin (the fair schedule is round-robin: each member waits about `
 critical sections between two of its leases):
 
 * ``_MAX_GAP``: no member waits longer than this between two of its leases (or before its
-  first) -- a starved member waits the whole run;
+  first) -- a starved member waits the whole run (the bounds' data is beside them);
 * ``_MIN_RATIO``: the fewest leases of a member over the most of any member;
 * each size runs ``_TRIALS`` times; the median trial must meet both bounds, and every trial
   must give every member at least one lease (a starved member gets none in a trial).
@@ -30,8 +30,16 @@ _HOLD = 0.01            # critical section, seconds (the fsync-mode TCP figure i
 _THREADS = 4
 _SECONDS = 1.5
 _TRIALS = 3
-_MAX_GAP = 0.5          # fair: about (N - 1) x (hold + hand-off), under 0.1 s for N <= 5
-_MIN_RATIO = 0.5        # fair: about 1.0; starved before the fix: 0.0 to 0.1
+#: Data behind the bounds (8.3e review M4).  Fair at rest: median-trial gaps 22-57 ms and
+#: ratios 0.94-1.00; the review's 20 runs (10 per GIL mode) gave ratios 0.64-1.00 and a median
+#: 5-member gap of about 68 ms over 48 trials, but single trials under light concurrent load
+#: reached 491 and 518 ms, within 9 ms of the former 0.5 s bound.  Base ``ba3287d``
+#: (median trial per case): gaps 1500, 1391, 421, 793 ms and ratios 0.03, 0.04, 0.32, 0.13
+#: (2, 3, 3 with 0.5 ms delay, 5 members).  A 1.0 s gap bound keeps every base case failing --
+#: the 2- and 3-member cases on the gap, the delayed and 5-member cases on the ratio -- with a
+#: margin of about 2x over the worst loaded fair trial.
+_MAX_GAP = 1.0          # fair: about (N - 1) x (hold + hand-off), under 0.1 s for N <= 5 at rest
+_MIN_RATIO = 0.5        # fair: about 1.0; starved before the fix: 0.03 to 0.32 (median trials)
 KW = dict(lease_duration=2.0, drift_margin=0.2, request_timeout=0.25, startup_grace=0.0,
           backoff=(0.001, 0.02))
 

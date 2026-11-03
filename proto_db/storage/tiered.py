@@ -21,8 +21,12 @@ governs the data only -- own segments, copies of other nodes' records, ``ranges.
   loss can drop the records of roots a node accepted: one node's power loss leaves the
   commit on the other acknowledgers (records are fetched from them), a power loss of a
   majority can lose acknowledged commits, and a later read of a lost record with no copy
-  left raises ``ProtoCorruptionError``, never wrong data.  A rejoin's records (ruling R50)
-  are not synced either in these modes.
+  left raises ``ProtoCorruptionError``, never wrong data.  Because the accepted root is
+  durable while its records may not be, such a majority loss leaves the cluster stuck --
+  every node, including those that kept power, fails reads and commits that need the lost
+  records, and wiping nodes one at a time or ``force_rejoin`` does not recover; only wiping
+  every node back to the persisted root does (open defect D-AVAIL-1, to be closed by Task
+  8.3f).  A rejoin's records (ruling R50) are not synced either in these modes.
 
 Use ``fsync`` for any cluster whose acknowledged commits must survive power loss.
 

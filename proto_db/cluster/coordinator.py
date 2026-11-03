@@ -17,16 +17,53 @@ Acquiring
     measured on its own clock from the moment it SENT the request.  A lost attempt is
     cancelled with a ``release`` broadcast, and the requester backs off (jittered
     exponential delay, or up to a running lease's remaining time), woken early by any
-    release.  No spinning, no queue among processes; fairness is not guaranteed (D45).
+    release.  No spinning.  Before asking, the head thread defers to the member whose turn
+    a release named (see "Fairness").
+Fairness (Task 8.3e, defect D-LIVE-1; D46 Amendment (Task 8.3e))
+    Without it the releasing process re-asked from its next queued thread a fraction of a
+    millisecond after its release, long before a contender woken by that release could, and
+    kept the lease (measured: the previous holder won 98.5 % of leases with two TCP peers in
+    ``fsync`` mode).  Each member therefore queues the members it has seen wanting the
+    lease -- a request or a cancel received, a ``want`` message, or a release saying
+    ``more`` (the sender still has threads waiting) -- ordered by when it first saw each
+    want.  A holder's release carries ``next``, the oldest member of its queue (served
+    members leave the queues), and ``more``.  A member that receives a held release naming
+    another member defers its own requests -- the releaser included -- until that member
+    has been served (its release or cancel arrives), until ``_TURN_SILENCE`` (50 ms, capped
+    by ``request_timeout``) passes without its request being seen, or until one lease
+    duration after its request was seen; the named member skips the wake spread.  A member
+    no peer queues (it released with ``more`` False, then wanted again) broadcasts ``want``
+    once before deferring, so a later release names it.  Counters:
+    ``stats()["turns_named"]``, ``["turns_taken"]``, ``["deferrals"]``,
+    ``["deferral_timeouts"]``.
+
+    The hints only time this node's own requests: grants, acceptances, ballots, terms,
+    fencing and the acceptor log never read them, so no hint -- lost, late, duplicated,
+    reordered or wrong -- can affect safety (D45: every request schedule is safe), and each
+    deferral is bounded as above.  Fairness itself assumes honest hints, as every member runs
+    this code (crash faults only): a member never queues itself, so an honest release never
+    names its sender.  A member whose hints are wrong (for example naming itself, or always a
+    member that never asks) only degrades the cluster to the pre-8.3e behaviour -- leases go
+    to whoever asks first -- or costs one silence bound per turn.
+
+    What it guarantees, measured: leases are served in turn, evenly, at 2-4 contending
+    members (TCP, ``fsync``: per-member lease counts within a few percent).  At 8 members
+    vote splitting is not solved: per-member commit ratios (min/max) of 0.12-0.85 with the
+    GIL off and 0.55-0.77 with it on were measured, with up to 27 lease attempts per commit,
+    though no member waited more than about 3 s.  Open defect D-LIVE-2 (to be closed by Task
+    8.3f, ruling R68): turns are fair for leases, not for commits of conflicting
+    transactions -- a read-modify-write of a hot key conflicts under the lease, the
+    transaction releases and retries with a fresh snapshot outside the lease, waits a full
+    round, and conflicts again, so on such workloads whole members can starve (measured: 2
+    members x 2 threads, 495 against 0 commits in 3 s).
 Granting
     See :class:`~proto_db.cluster.lease.PeerGrants`.  Requests and releases carry the
     sender's incarnation (a random number drawn at each start), so a restarted node is
     never confused with its previous life.  A grant's term is made durable in the node's
     acceptor log (:mod:`proto_db.cluster.rootlog`) before the grant is sent, and restored
     when the node restarts, so no term is ever granted twice (the acceptor rule of Paxos).
-    This holds across power loss only when the tier uses ``durability="fsync"``: with
-    ``"flush"`` or ``"none"`` the promise is not synced, and a power loss on even one node
-    can make it forget a promise (open defect D-SAFE-2, see "The commit point" below).
+    The acceptor log is ``fsync``-ed before the grant whatever the tier's data durability
+    mode (Task 8.3e, defect D-SAFE-2 fixed), so this holds across power loss in every mode.
     A node grants, and acknowledges replications, only while a cluster tier (the storage
     of a space) is attached and while it is not fenced: a node without a durable place for
     its promises and roots never counts toward a majority.
@@ -85,15 +122,31 @@ The commit point (D46)
     the commit added to every peer (split into several frames when they do not fit in
     one).  A peer accepts it -- stores the records and logs the root on its own durable
     tier (``fsync``), then acknowledges -- unless it is starting, has no tier, is fenced or
-    has granted a higher term (the ballot rule).  The commit point is therefore the local
-    WAL ``fsync`` of a majority.  **Only with** ``durability="fsync"``: TieredStorage in
-    ``"flush"`` or ``"none"`` mode syncs nothing (promises, accepted roots and records stay
-    in the OS cache), so the cluster is then process-crash safe only -- a power loss on a
-    majority can lose acknowledged commits, and a power loss on even one node can make it
-    forget a promise and void the one-holder-per-term argument (reasoned, not reproduced).
-    Tracked as defect D-SAFE-2, to be fixed by Task 8.3e (acceptor metadata always fsynced).
-    Use ``fsync`` for any cluster that must survive power loss.  A cluster over ``MemoryStorage`` keeps its acceptor logs
-    in memory and is not durable.  The commit is acknowledged once a majority (the holder included) has
+    has granted a higher term (the ballot rule).  The accepted root -- like every promise and
+    the rejoined marker -- is ``fsync``-ed before the acknowledgement in every durability
+    mode (Task 8.3e, defect D-SAFE-2 fixed); the mode governs the records only:
+
+    * ``durability="fsync"``: the commit point is the local WAL ``fsync`` of a majority; an
+      acknowledged commit survives power loss of any set of nodes.
+    * ``"flush"`` / ``"none"``: records are not synced.  An acknowledged commit survives any
+      process crash and a power loss of a minority (the other acknowledgers keep its
+      records).  A power loss of a majority can lose its records while its root stays
+      durable: every node -- including nodes that never lost power -- then raises
+      ``ProtoCorruptionError`` on reads and commits that need them (never wrong data), and
+      neither wiping the affected nodes one at a time nor :meth:`force_rejoin` recovers;
+      only wiping every node's local directory, back to the persisted root, does.  Open
+      defect D-AVAIL-1, to be closed by Task 8.3f (ruling R68: a root is never durable
+      without its records).
+
+    In every mode the lease's safety -- no term granted twice, no two roots with one label
+    and epoch -- holds across power loss.  A cluster over ``MemoryStorage`` (Task 8.3e
+    decision) is not durable in any sense: the storage, and so every node, lives in one
+    process, each node's acceptor log is a :class:`~proto_db.cluster.rootlog.MemoryRootsLog`
+    that survives a coordinator restart in that process (like a disk) and nothing else, and
+    the space's data is in memory too.  Its lease safety holds against coordinator crashes
+    and restarts within the process; the process's death ends the space, data and logs
+    together, so there is nothing to recover and no power-loss guarantee to state.  It is for
+    tests and experiments only.  The commit is acknowledged once a majority (the holder included) has
     acknowledged before the lease ends; the release then tells the peers it is committed.
     Every later lease's granting majority intersects that acknowledging majority, and a
     peer that acknowledged before granting reports the root (or a newer one) with its
@@ -152,6 +205,12 @@ Acceptor-log writes (8.3d re-review 7, N1; ruling R55)
     (:mod:`proto_db.cluster.rootlog`), as a second line of defence.  Committed roots learnt
     from the cluster are majority-accepted already; holding one in memory before (or
     without) logging it is safe, and a restart drops it as it drops any unlogged knowledge.
+    For the same reason a logged committed root is not synced on its own (ruling R67): it
+    becomes durable with the next synced acceptor entry, and a power loss may drop it.  Only
+    :meth:`ClusterCoordinator.attach` reads it back, as committed knowledge and a term hint;
+    grants, ballots, acceptances and rejoins read promises and accepted roots only (D46
+    Amendment (Task 8.3e)).  Promises, accepted roots and the rejoined marker are synced
+    before the reply they justify.
 
 Threads: the transport's own threads, plus one worker started by :meth:`start` that
 applies replicated records, serves page requests and prefetches, and the persister

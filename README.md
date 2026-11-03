@@ -54,7 +54,10 @@ same project. The old spelling survives in `ProtoBaseException`, a deprecated al
   even across power loss. Acknowledged commits survive power loss only with `durability="fsync"`
   (the default) on every node's TieredStorage; with `"flush"` or `"none"` the data is not synced and
   survives process crashes and the power loss of a minority of nodes (see `docs/decisions.md`, D46
-  Amendment (Task 8.3e)). Contending writer processes take the lease in turn.
+  Amendment (Task 8.3e)); after a majority power loss in those modes the cluster can stay stuck
+  until every node is wiped (open defect D-AVAIL-1). Two to four contending writer processes take
+  the lease in turn; at eight, and for hot-key read-modify-write transactions, fairness is not
+  yet guaranteed (open defect D-LIVE-2).
 - **Free-threading**: tested on CPython 3.14t (GIL disabled) and with the GIL; `parallel_scan` and
   `parallel_filter` scale on free-threaded builds.
 - **Interop**: export to Apache Arrow and Parquet (`to_arrow`, `to_parquet`).

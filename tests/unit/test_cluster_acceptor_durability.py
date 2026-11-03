@@ -20,6 +20,7 @@ Two schedules, both inside the declared failure model (one node loses power once
   with R's label and epoch.
 """
 import os
+import shutil
 
 import pytest
 
@@ -27,11 +28,11 @@ from proto_db.cluster.coordinator import ClusterCoordinator
 from proto_db.errors import ProtoOutcomeUnknownError
 from proto_db.storage.file import FileStorage
 from proto_db.storage.tiered import ROOTS_LOG, TieredStorage
-from proto_db.cluster.persister import PlainTier
+from proto_db.cluster.persister import NODE_LOG_DIR, PlainTier
 from proto_db.cluster.rootlog import KINDS, LOG_KIND, _decode
 from proto_db.storage.logfile import scan
 from tests.support.fake_object_store import FakeObjectStore
-from tests.support.manual_cluster import D, GRACE, MARGIN, Harness, rec
+from tests.support.manual_cluster import D, GRACE, MARGIN, Harness, ManualNet, rec
 from tests.support.power_loss import PowerLoss
 
 pytestmark = [pytest.mark.timeout(60)]
@@ -160,32 +161,114 @@ def test_a_proposer_that_loses_power_never_wins_its_ballot_twice(tmp_path, monke
         h.close()
 
 
+def _log_path(h, name: str) -> str:
+    if h.kind == "tiered":
+        return os.path.join(h.path(name), ROOTS_LOG)
+    return os.path.join(h.path(name), NODE_LOG_DIR, name + ".roots")
+
+
+def _check_durable_prefix(fs, path: str) -> str:
+    """Compare the durable bytes of the acceptor log at ``path`` with the file; return a
+    description of the first difference, or ``""``.  Only committed entries (knowledge, not
+    acceptor state: durable with the next synced entry, ruling R67) may follow the durable
+    prefix, and the durable prefix must decode to the file's promise, accepted root and
+    rejoined state."""
+    durable = fs.durable_contents(path)
+    with open(path, "rb") as f:
+        current = f.read()
+    if durable is None:
+        return "never synced"
+    if not current.startswith(durable):
+        return "the durable bytes are not a prefix of the file"
+    durable_entries = scan(durable, LOG_KIND, path).payloads
+    tail = scan(current, LOG_KIND, path).payloads[len(durable_entries):]
+    if any(p[0] != KINDS["committed"] for p in tail):
+        return "an acceptor entry (promise, accepted root or marker) is not synced"
+    synced, logged = _decode(durable_entries, path), _decode(scan(current, LOG_KIND, path).payloads, path)
+    if (synced.promised, synced.accepted, synced.empty) != (logged.promised, logged.accepted, logged.empty):
+        return f"durable state {synced} differs from {logged}"
+    return ""
+
+
+@pytest.mark.parametrize("kind", ["tiered", "plain"])
 @pytest.mark.parametrize("durability", MODES)
-def test_acceptor_log_entries_are_synced_before_the_reply_they_justify(tmp_path, monkeypatch, durability):
-    """Every promise and accepted root a node logged is durable when the reply leaves: the
-    durable bytes of ``roots.log`` decode to the same promise and accepted root as the file."""
-    fs, h = _harness(tmp_path, monkeypatch, durability)
+def test_acceptor_log_entries_are_synced_before_the_reply_they_justify(tmp_path, monkeypatch, durability, kind):
+    """At EVERY grant, acknowledgement and answer a node sends, the durable bytes of its
+    acceptor log decode to the same promise, accepted root and rejoined state as the file
+    (8.3e review M1: checked at each reply, not once at the end).  The schedule covers the
+    first start, contended leases with partial granters, a power cycle of ``b``, and a wipe
+    and rejoin of ``c`` (whose answers to the rejoin are checked too)."""
+    fs = PowerLoss(monkeypatch)
+    checked, violations = [0], []
+    harness = {}
+    real_transport = ManualNet.transport
+
+    def transport(net):
+        endpoint = real_transport(net)
+        real_send = type(endpoint).send
+
+        def send(self, node_id, message):
+            h = harness.get("h")
+            if h is not None and message["type"] in ("grant", "ack", "answer"):
+                path = _log_path(h, self.node)
+                if os.path.exists(path):
+                    checked[0] += 1
+                    problem = _check_durable_prefix(fs, path)
+                    if problem:
+                        violations.append((self.node, message["type"], problem))
+            return real_send(self, node_id, message)
+
+        type(endpoint).send = send       # each call builds a fresh class: patching it is local
+        return endpoint
+
+    monkeypatch.setattr(ManualNet, "transport", transport)
+    h = DiskHarness(tmp_path, durability, kind)
+    harness["h"] = h
     try:
         h.bootstrap("a")
-        lease = h.attempt("a", {"b", "c"})
-        assert not isinstance(h.replicate("a", lease, rec(2), to={"b", "c"}), Exception)
-        h.release("a", lease, to={"b", "c"})
-        for name in "abc":
-            path = os.path.join(h.path(name), ROOTS_LOG)
-            durable = fs.durable_contents(path)
-            with open(path, "rb") as f:
-                current = f.read()
-            assert durable is not None, f"{name}: roots.log never synced ({durability})"
-            # Only committed entries (knowledge, not promises: durable with the next synced
-            # entry, rootlog module docstring) may follow the durable prefix.
-            assert current.startswith(durable)
-            tail = scan(current, LOG_KIND, path).payloads[len(scan(durable, LOG_KIND, path).payloads):]
-            assert all(p[0] == KINDS["committed"] for p in tail), f"{name}: unsynced acceptor entries"
-            synced = _decode(scan(durable, LOG_KIND, path).payloads, path)
-            logged = h.nodes[name].tier.load_roots()
-            assert synced.promised == logged.promised, f"{name}: a promise was not synced ({durability})"
-            assert synced.accepted == logged.accepted, f"{name}: an accepted root was not synced ({durability})"
-            assert synced.empty == logged.empty, f"{name}: the rejoined marker was not synced ({durability})"
+        for i in range(6):
+            proposer = "abc"[i % 3]
+            others = set("abc") - {proposer}
+            granter = {sorted(others)[i % 2]}
+            h.clock.t += GRACE
+            lease = h.attempt(proposer, granter)
+            if isinstance(lease, Exception):
+                continue
+            h.replicate(proposer, lease, rec(10 + i), to=granter)
+            h.release(proposer, lease, to=others)
+        h.power_cycle("b", fs)
+        for i in range(3):
+            h.clock.t += 2 * GRACE
+            lease = h.attempt("c", {"b"})
+            if not isinstance(lease, Exception):
+                h.replicate("c", lease, rec(30 + i), to={"b"})
+                h.release("c", lease, to={"a", "b"})
+        old = h.nodes["c"]
+        tier = old.tier
+        old.stop()
+        tier.close()
+        if h.storages["c"] is not tier:
+            h.storages["c"].close()
+        h.retired.append(old)
+        shutil.rmtree(h.path("c"))
+        h.nodes["c"] = h._node("c", GRACE)
+        h.clock.t += GRACE
+        rejoined = h.rejoin("c")
+        # A TieredStorage rejoin also copies the records of the newest root, and these synthetic
+        # roots have none, so it stays blocked; the answers a and b send it are checked anyway.
+        # A shared FileStorage needs no copy: the rejoin completes and c leases again.
+        if kind == "plain":
+            assert rejoined, "c did not rejoin"
+            h.clock.t += GRACE
+            lease = h.attempt("c", {"a"})
+            assert not isinstance(lease, Exception), lease
+            h.replicate("c", lease, rec(50), to={"a"})
+            h.release("c", lease, to={"a", "b"})
+        assert checked[0] >= 20, f"only {checked[0]} replies checked"
+        assert not violations, violations
+        for name in "abc":                                    # and at the end, every log
+            if os.path.exists(_log_path(h, name)):
+                assert _check_durable_prefix(fs, _log_path(h, name)) == "", name
     finally:
         h.close()
 

@@ -59,15 +59,19 @@ rqlite                         v10.6.6 official linux-amd64 release, SHA-256 ver
 Summary
 -------
 
-**Resolved defect: lease starvation under TCP with fsync (D-LIVE-1, fixed by Task 8.3e)**
+**Lease starvation under TCP with fsync (D-LIVE-1): fixed at 2-4 peers by Task 8.3e; open defect D-LIVE-2**
 
 The figures in this paragraph are from the Phase 9 run, before the fix. Task 8.3e measured the
 cause (the releasing process re-asked 0.17 ms after its release, contenders 3.3 ms after it)
 and added lease fairness: releases name the member waiting longest and the others defer to it
-(``docs/decisions.md``, D46 Amendment (Task 8.3e)). Afterwards 2/3/4/8 TCP peers split their
-commits evenly (min/max 0.86-1.00) at about the same throughput; the before/after benchmark
-figures are in the Task 8.3e report and will replace this run's when the results are
-regenerated. Before the fix, the cluster lease had no fairness mechanism, and with fsync-durable
+(``docs/decisions.md``, D46 Amendment (Task 8.3e)). Afterwards 2, 3 and 4 TCP peers split their
+commits evenly (min/max 0.93-1.00 in every run, both GIL modes) at about the same throughput.
+At 8 peers vote splitting is not solved: min/max ratios of 0.12-0.85 (GIL off) and 0.55-0.77
+(GIL on, about 27 lease attempts per commit) were measured. Fair turns are fair for leases,
+not for commits of conflicting transactions: on hot-key read-modify-write workloads whole
+members starve (open defect **D-LIVE-2**, to be closed by Task 8.3f). The before/after
+benchmark figures are in the Task 8.3e report and will replace this run's when the results
+are regenerated. Before the fix, the cluster lease had no fairness mechanism, and with fsync-durable
 local tiers over TCP one peer could starve. With 2 TCP peers x 4 threads for 3 s, the per-peer commit counts of the three
 runs were 113/49, 142/40 and **178/4** with the GIL off, and 85/87, 113/55 and **169/4** with
 it on; the starved peer's p95 commit latency was 2.4 s. In the first run of the suite one peer
@@ -405,10 +409,11 @@ Other findings
 - **Lease contention grows with the peer count**: lease acquisitions tried per commit are
   1.0 (1 peer), 2.1 (2), 5.8 (3), 13 (4) and 54 (8) over TCP, and the in-process counter
   workload reaches 119 at 8 peers (Phase 9 run). See the summary for the starvation defect
-  (D-LIVE-1, fixed by Task 8.3e: with fairness the TCP figures fall to about 1.0-1.3 attempts
-  per commit at 2-4 peers and 1.7-4.4 at 8).
+  (D-LIVE-1, fixed at 2-4 peers by Task 8.3e: with fairness the TCP figures fall to about
+  1.0-1.3 attempts per commit at 2-4 peers; at 8 they spread from 1.7 to about 27 over runs).
 - "Hundreds of commits per second" is reached by the cluster without syncs (183-191/s at 3
-  peers, process-crash safe only), by the single peer in-process with ``fsync`` (122/s) and by the CAS-only path without
+  peers in this pre-8.3e run; ``flush``/``none`` data survives process crashes and a minority
+  power loss, not a majority one), by the single peer in-process with ``fsync`` (122/s) and by the CAS-only path without
   store latency, not by multi-peer ``fsync`` clusters on this machine (20-61/s).
 - Storage-latency independence (3 in-process peers, blind adds): GIL off, 63.6 commits/s with
   a 0 ms store and 68.6/s with a 30 ms store (ratio 1.08). GIL on, 52.0 and 38.6/s (ratio 0.74,

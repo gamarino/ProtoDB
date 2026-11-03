@@ -223,3 +223,94 @@ def test_a_releaser_with_threads_still_waiting_says_more_and_is_queued_at_the_ta
         h.close()
         if second is not None:
             second["thread"].join(10)
+
+
+# -- wrong hints: safety unaffected, liveness bounded (8.3e review M6) -----------------------
+
+def _named_release(h, holder="a", named="b"):
+    """``holder`` wins a lease while ``named`` waits (so the release names it); return the
+    holder's lease and its release message, delivered to nobody yet."""
+    lease = h.attempt(holder, set("abc") - {holder})
+    _refused(h, named, set("abc") - {named})
+    h.net.drop()
+    msg = _released(h, holder, lease)
+    assert msg["next"] == named, msg
+    return lease, msg
+
+
+def _bounded_lease(h, name, granters, after_term):
+    """``name`` asks for the lease: it must get it, with a term above ``after_term`` (the grant
+    rules are untouched by any hint), after at most one silence bound plus slack."""
+    started = time.monotonic()
+    lease = h.attempt(name, set(granters))
+    waited = time.monotonic() - started
+    assert isinstance(lease, Lease), lease
+    assert lease.term > after_term
+    assert waited < 1.0, f"{name} waited {waited:.3f} s"
+    return lease, waited
+
+
+def test_a_duplicated_release_costs_no_more_than_one_bound():
+    h = Harness()
+    try:
+        lease, msg = _named_release(h)
+        _deliver_release(h, msg, {"c"})
+        _deliver_release(h, msg, {"c"})                       # duplicate: same turn, same bound
+        lease_c, waited = _bounded_lease(h, "c", {"a", "b"}, lease.term)
+        assert waited >= 0.04, waited                         # it did defer to b (who is silent)
+        stats = h.nodes["c"].stats()
+        assert stats["deferrals"] == 1 and stats["deferral_timeouts"] == 1, stats
+        h.nodes["c"].release(lease_c)
+    finally:
+        h.close()
+
+
+def test_a_stale_release_delivered_after_the_named_member_was_served_costs_one_bound():
+    h = Harness()
+    try:
+        lease, msg = _named_release(h)
+        _deliver_release(h, msg, {"b", "c"})
+        lease_b = h.attempt("b", {"a"}, informed={"c"})       # b takes its turn; c sees its request
+        assert isinstance(lease_b, Lease), lease_b
+        msg_b = _released(h, "b", lease_b)
+        _deliver_release(h, msg_b, {"c"})                     # b served: c's deferral is over ...
+        _deliver_release(h, msg, {"c"})                       # ... until a's old release arrives again
+        lease_c, waited = _bounded_lease(h, "c", {"a", "b"}, lease_b.term)
+        assert h.nodes["c"].stats()["deferral_timeouts"] == 1  # b does not ask again: one bound
+    finally:
+        h.close()
+
+
+def test_releases_delivered_in_reverse_order_cost_one_bound():
+    h = Harness()
+    try:
+        lease, msg = _named_release(h)
+        _deliver_release(h, msg, {"b"})
+        lease_b = h.attempt("b", {"a"})                       # c sees nothing of b's turn
+        assert isinstance(lease_b, Lease), lease_b
+        msg_b = _released(h, "b", lease_b)
+        _deliver_release(h, msg_b, {"c"})                     # the newer release first,
+        _deliver_release(h, msg, {"c"})                       # then the one naming b
+        lease_c, waited = _bounded_lease(h, "c", {"a", "b"}, lease_b.term)
+        assert waited >= 0.04 and h.nodes["c"].stats()["deferral_timeouts"] == 1
+    finally:
+        h.close()
+
+
+@pytest.mark.parametrize("named", ["a", "zz", "c"])
+def test_a_wrong_next_never_changes_a_grant_and_costs_at_most_one_bound(named):
+    """A release naming its own sender (``a``; an honest member never does), a non-member
+    (``zz``; ignored on receipt), or the receiver itself (``c``: it asks at once)."""
+    h = Harness()
+    try:
+        lease, msg = _named_release(h)
+        forged = dict(msg, next=named)
+        _deliver_release(h, forged, {"c"})
+        lease_c, waited = _bounded_lease(h, "c", {"a", "b"}, lease.term)
+        stats = h.nodes["c"].stats()
+        if named == "a":
+            assert stats["deferral_timeouts"] == 1, stats     # a never asks: one silence bound
+        else:
+            assert stats["deferrals"] == 0, stats             # nobody else's turn: no deferral
+    finally:
+        h.close()
