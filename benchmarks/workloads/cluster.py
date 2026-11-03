@@ -19,6 +19,7 @@ replication failed and that every node stayed healthy; the critical-section brea
 (validation, intent replay, path copy, replication; ruling R41) is reported per commit.
 """
 import itertools
+from typing import Optional
 import os
 import threading
 import time
@@ -290,8 +291,27 @@ def cluster_store_latency(ctx, p):
 PEER_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cluster_peer.py")
 
 
-def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 1, durability: str = "fsync") -> dict:
-    """Run ``peers`` subprocess peers over TCP and verify the persisted result; return figures."""
+def loopback_bytes() -> Optional[int]:
+    """Bytes transmitted on the loopback interface so far (``/proc/net/dev``), or ``None``
+    where it cannot be read: every byte a loopback cluster puts on the wire, clients included."""
+    try:
+        with open("/proc/net/dev") as f:
+            for line in f:
+                name, _, data = line.partition(":")
+                if name.strip() == "lo":
+                    return int(data.split()[8])
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 1, durability: str = "fsync",
+                    payload: int = 0) -> dict:
+    """Run ``peers`` subprocess peers over TCP and verify the persisted result; return figures.
+
+    ``payload`` > 0: each commit also writes one value of that many bytes (``cluster_peer``),
+    and the persisted ``blobs`` Dictionary must hold exactly one such value per acknowledged
+    commit."""
     import json
     import subprocess
     import tempfile
@@ -307,7 +327,7 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
 
     def command(node_id):
         cmd = child_command(PEER_SCRIPT, node_id, os.path.join(root, node_id), store_dir,
-                            str(threads), str(seconds), str(batch), durability)
+                            str(threads), str(seconds), str(batch), durability, str(payload))
         return [w.replace("{node}", node_id) for w in shlex.split(wrapper)] + cmd
 
     procs = [subprocess.Popen(command(node_id),
@@ -334,9 +354,11 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
         for pr, e in zip(procs, errs):
             if recv(pr, e) != {"ready": True}:
                 raise RuntimeError("peer not ready")
+        lo_before = loopback_bytes()
         for pr in procs:
             send(pr, {"go": True})
         results = [recv(pr, e) for pr, e in zip(procs, errs)]
+        lo_after = loopback_bytes()
         for pr in procs:
             send(pr, {"stop": True})
         for pr, e in zip(procs, errs):
@@ -360,6 +382,14 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
         tr = reader.open_database("db").new_transaction()
         got = tr.get_root_object("ids")
         ok = got is not None and sorted(got.elements()) == expected_ids and all(c == 1 for _, c in got.items())
+        if payload:
+            from benchmarks.cluster_peer import payload_value
+            blobs = tr.get_root_object("blobs")
+            firsts = [node * 10**9 + t * 10**7 + j * batch
+                      for node, r in enumerate(results) for t, c in enumerate(r["counts"]) for j in range(c)]
+            ok = ok and blobs is not None and blobs.count == len(firsts) and all(
+                len(v) == payload and v == payload_value(k, payload)
+                for k, v in ((k, blobs.get_at(k)) for k in firsts))
         tr.abort()
     finally:
         reader.close()
@@ -374,7 +404,12 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
             "lease_attempts_per_commit": round(sum(r["lease_attempts"] for r in results) / max(1, commits), 2),
             "critical_ms": _critical_per_commit(stats), "persisted_ids": len(expected_ids),
             "commits_by_peer": [sum(r["counts"]) for r in results],
+            "payload": payload,
+            "wire_by_type": {k: sum(r.get("wire", {}).get(k, 0) for r in results)
+                             for k in sorted({k for r in results for k in r.get("wire", {})})},
+            "loopback_bytes": (lo_after - lo_before) if lo_before is not None and lo_after is not None else None,
             "fsync": fsync_breakdown(results, commits), "pids": [r["pid"] for r in results],
+            "window_syncs_by_node": [sum(row[4] for row in r["syncs_window"]) for r in results],
             "syncs_per_process": [r["syncs_before_window"] + sum(row[-1] for row in r["syncs_until_persisted"])
                                   for r in results]}
 
@@ -404,10 +439,26 @@ def fsync_breakdown(results, commits: int) -> dict:
             "sites_per_commit": {site: round(c / n, 2) for site, c in sites.most_common() if c}}
 
 
+def payload_figures(runs: list) -> dict:
+    """Per-payload figures of :func:`run_tcp_cluster` runs (median run by commit rate):
+    payload MB/s, latency, frame bytes per commit sent by committing nodes (``replicate`` and
+    ``records``) and by the whole cluster, loopback bytes per commit (every byte on the wire,
+    TCP/IP headers included) and fsyncs per node per commit in the commit window."""
+    mid = sorted(runs, key=lambda r: r["rate"])[len(runs) // 2]
+    n = max(1, mid["commits"])
+    wire = mid["wire_by_type"]
+    return {"payload MB/s": round(mid["rate"] * mid["payload"] / 1e6, 3),
+            "latency ms": mid["latency_ms"],
+            "committer frame bytes per commit": round((wire.get("replicate", 0) + wire.get("records", 0)) / n),
+            "cluster frame bytes per commit": round(sum(wire.values()) / n),
+            "loopback bytes per commit": round(mid["loopback_bytes"] / n) if mid["loopback_bytes"] else None,
+            "fsyncs per node per commit": [round(x / n, 2) for x in mid["window_syncs_by_node"]]}
+
+
 @benchmark("cluster_tcp", quick={"peers": [2], "threads": 2, "seconds": 0.5, "repeat": 1,
-                                 "durability_peers": 2, "durabilities": ["flush"]},
+                                 "durability_peers": 2, "durabilities": ["flush"], "payloads": [100]},
            full={"peers": [1, 2, 3, 4, 8], "threads": 4, "seconds": 3.0, "repeat": 3,
-                 "durability_peers": 3, "durabilities": ["flush", "none"]})
+                 "durability_peers": 3, "durabilities": ["flush", "none"], "payloads": [100, 10240, 102400]})
 def cluster_tcp(ctx, p):
     """TCP subprocess peers (1/2/3/4/8, one process each, fsync), plus 3 peers in flush and none modes."""
     result = BenchResult({"peers": p["peers"], "threads_per_peer": p["threads"], "seconds": p["seconds"],
@@ -437,5 +488,16 @@ def cluster_tcp(ctx, p):
         result.metrics[f"{key}: syncs after the window until persisted (median run)"] = \
             mid["fsync"]["after_window_total"]
         result.metrics[f"{key}: syncs per commit by call site (median run)"] = mid["fsync"]["sites_per_commit"]
+    # Payload dimension (Task 8.3f): 3 peers, fsync, one value of ``size`` bytes per commit.
+    peers = p["durability_peers"]
+    for size in p["payloads"]:
+        runs = [run_tcp_cluster(ctx, peers, p["threads"], p["seconds"], payload=size) for _ in range(p["repeat"])]
+        key = f"{peers} peer(s), payload {size} B"
+        ok = all(r["ok"] for r in runs)
+        result.check(f"{key}: persisted state holds exactly the acknowledged ids and values", ok, "")
+        checksum[key], expected[key] = ok, True
+        result.add_rate(f"commits/s, {key}", [r["rate"] for r in runs], "commits/s")
+        for name, value in payload_figures(runs).items():
+            result.metrics[f"{key}: {name}"] = value
     result.checksum, result.expected = checksum, expected
     return result

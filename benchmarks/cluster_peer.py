@@ -1,6 +1,6 @@
 """One TCP cluster peer process for the cluster benchmarks (``cluster_tcp``, ``rqlite_reference``).
 
-Usage: ``python cluster_peer.py NODE_ID LOCAL_DIR STORE_DIR THREADS SECONDS BATCH DURABILITY``
+Usage: ``python cluster_peer.py NODE_ID LOCAL_DIR STORE_DIR THREADS SECONDS BATCH DURABILITY [PAYLOAD]``
 
 The peer runs a :class:`~proto_db.ClusterCoordinator` over a :class:`~proto_db.TcpTransport`
 and a :class:`~proto_db.TieredStorage` (local tier in LOCAL_DIR, ``durability`` as given)
@@ -8,7 +8,13 @@ over a :class:`~benchmarks.support.DirObjectStore` in STORE_DIR shared by every 
 of THREADS threads commits for SECONDS seconds; a commit adds BATCH unique ids to the
 ``ids`` CountedSet root, written blind (merged at commit, D9).  Ids are
 ``node * 10**9 + thread * 10**7 + j``, so the parent can rebuild the exact expected set
-from the per-thread counts.
+from the per-thread counts.  With PAYLOAD > 0 bytes, each commit also writes one value of
+exactly PAYLOAD bytes under its first id in the ``blobs`` Dictionary root (also written blind
+and merged at commit), so the parent can verify one value per acknowledged commit.
+
+Every frame this peer's transport encodes is counted by message type (``wire``: frame bytes,
+the TCP and IP headers excluded): ``replicate`` and ``records`` frames are what a committing
+node sends; the rest is the protocol's control traffic.
 
 Protocol with the parent, one JSON line each way:
 
@@ -52,11 +58,38 @@ def _hear() -> dict:
     return json.loads(line)
 
 
+WIRE = {}
+_WIRE_LOCK = threading.Lock()
+
+
+def _count_frames() -> None:
+    """Count the bytes of every frame the TCP transport encodes, by message type."""
+    from proto_db.cluster import transport as transport_module
+    encode = transport_module.encode_frame
+
+    def counting(message):
+        frame = encode(message)
+        with _WIRE_LOCK:
+            kind = message.get("type", "?")
+            WIRE[kind] = WIRE.get(kind, 0) + len(frame)
+        return frame
+
+    transport_module.encode_frame = counting
+
+
+def payload_value(first_id: int, size: int) -> bytes:
+    """The deterministic value of ``size`` bytes a commit writes under ``first_id``."""
+    unit = b"%d:" % first_id
+    return (unit * (size // len(unit) + 1))[:size]
+
+
 def main() -> None:
     """Run one peer (module docstring)."""
     node_id, local, store_dir, threads, seconds, batch, durability = sys.argv[1:8]
+    payload = int(sys.argv[8]) if len(sys.argv) > 8 else 0
     threads, seconds, batch = int(threads), float(seconds), int(batch)
     fsync_probe.install()
+    _count_frames()
     transport = TcpTransport("127.0.0.1", 0)
     _say({"port": transport.address[1]})
     peers = [tuple(p) for p in _hear()["peers"]]
@@ -104,6 +137,8 @@ def main() -> None:
                     for x in range(first, first + batch):
                         s = s.add(x)
                     tr.set_root_object("ids", s)
+                    if payload:
+                        tr.set_root_object("blobs", tr.new_dictionary().set_at(first, payload_value(first, payload)))
                 t0 = time.perf_counter()
                 db.run(fn, **RUN_KW)
                 latencies[t].append(time.perf_counter() - t0)
@@ -112,6 +147,8 @@ def main() -> None:
 
         before_syncs = sum(row[-1] for row in fsync_probe.snapshot())   # setup: kept for a strace cross-check
         fsync_probe.reset()            # count only the commit window (and the shipping after it, below)
+        with _WIRE_LOCK:
+            WIRE.clear()
         start = time.monotonic()
         workers = [threading.Thread(target=worker, args=(t,)) for t in range(threads)]
         for w in workers:
@@ -120,6 +157,8 @@ def main() -> None:
             w.join()
         elapsed = time.monotonic() - start
         window_syncs = fsync_probe.snapshot()
+        with _WIRE_LOCK:
+            wire = dict(WIRE)
         space.sync(timeout=120)
         total_syncs = fsync_probe.snapshot()
         st = coordinator.stats()
@@ -129,7 +168,8 @@ def main() -> None:
               "failures": st["replication_failures"], "healthy": st["healthy"],
               "critical": st["critical"], "critical_commits": st["critical_commits"],
               "lease_attempts": st["attempts"], "acquired": st["acquired"],
-              "syncs_before_window": before_syncs, "syncs_window": window_syncs, "syncs_until_persisted": total_syncs, "pid": os.getpid()})
+              "syncs_before_window": before_syncs, "syncs_window": window_syncs, "syncs_until_persisted": total_syncs, "pid": os.getpid(),
+              "wire": wire, "payload": payload})
         _hear()
         space.close()
 

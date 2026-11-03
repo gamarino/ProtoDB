@@ -8,7 +8,9 @@ work directory), creates ``t(id INTEGER PRIMARY KEY)``, and drives it from
 leader) for ``seconds``:
 
 * per request: each HTTP request inserts one row (one Raft entry);
-* batched: each request inserts ``batch`` rows in one transaction (``?transaction``).
+* batched: each request inserts ``batch`` rows in one transaction (``?transaction``);
+* payload (Task 8.3f): each request inserts one row carrying a TEXT value of 100 B, 10 KB or
+  100 KB into ``b(id, v)``; the ProtoDB side writes one value of the same size per commit.
 
 The same work runs on a 3-peer ProtoDB TCP cluster (:func:`~benchmarks.workloads.cluster.run_tcp_cluster`):
 one commit adds one id, or ``batch`` ids, to a CountedSet.  Both sides are verified: rqlite
@@ -168,8 +170,86 @@ def _drive_rqlite(cl: RqliteCluster, threads: int, seconds: float, batch: int, b
             "latency_ms": latency_ms(latencies)}
 
 
-@benchmark("rqlite_reference", quick={"threads": 2, "seconds": 0.5, "batch": 10, "repeat": 1},
-           full={"threads": 4, "seconds": 3.0, "batch": 50, "repeat": 2})
+def _drive_rqlite_payload(cl: RqliteCluster, threads: int, seconds: float, size: int) -> dict:
+    """One row per request carrying a TEXT value of ``size`` bytes (table ``b``)."""
+    counts = [0] * threads
+    latencies = []
+    lock = threading.Lock()
+
+    def worker_for(t):
+        def worker():
+            conn = http.client.HTTPConnection("127.0.0.1", cl.http[t % len(cl.http)], timeout=30)
+            lat, j = [], 0
+            stop_at = time.monotonic() + seconds
+            try:
+                while time.monotonic() < stop_at:
+                    key = t * 10**7 + j
+                    unit = f"{key}:"
+                    value = (unit * (size // len(unit) + 1))[:size]
+                    t0 = time.perf_counter()
+                    results = cl.execute(conn, [["INSERT INTO b(id, v) VALUES(?, ?)", key, value]])
+                    lat.append(time.perf_counter() - t0)
+                    if sum(r.get("rows_affected", 0) for r in results) != 1:
+                        raise RuntimeError(f"rqlite inserted no row: {results}")
+                    j += 1
+                    counts[t] += 1
+            finally:
+                conn.close()
+            with lock:
+                latencies.extend(lat)
+        return worker
+
+    elapsed, _ = run_threads([worker_for(t) for t in range(threads)])
+    return {"requests": sum(counts), "elapsed": elapsed, "latency_ms": latency_ms(latencies)}
+
+
+def _payload_comparison(ctx, result, checksum, expected, p) -> None:
+    """The payload dimension (Task 8.3f): the same values, one per commit or request, on rqlite
+    and on a 3-peer ProtoDB TCP cluster in fsync mode (:func:`run_tcp_cluster` with ``payload``).
+    Both are verified (rqlite: row count and total value length read strongly; ProtoDB: every
+    persisted value).  Wire bytes are loopback bytes per commit (clients included)."""
+    from benchmarks.workloads.cluster import loopback_bytes, payload_figures, run_tcp_cluster
+    nodes, threads = 3, p["threads"]
+    for size in p["payloads"]:
+        rq_rates, rq_figs, runs = [], [], []
+        for rep in range(p["repeat"]):
+            cl = RqliteCluster(p["binary"], ctx.tempdir("rqlite"))
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", cl.http[0], timeout=30)
+                cl.execute(conn, ["CREATE TABLE b (id INTEGER PRIMARY KEY, v TEXT)"])
+                conn.close()
+                before = loopback_bytes()
+                r = _drive_rqlite_payload(cl, nodes * threads, p["seconds"], size)
+                after = loopback_bytes()
+                count, total = cl.query_strong("SELECT COUNT(*), SUM(length(v)) FROM b")[0]
+            finally:
+                cl.close()
+            key = f"rqlite payload {size} B, run {rep + 1}"
+            ok = (count, total or 0) == (r["requests"], r["requests"] * size)
+            result.check(f"{key}: rows and value bytes equal the acknowledged inserts", ok,
+                         f"{(count, total)} != {(r['requests'], r['requests'] * size)}")
+            checksum[key], expected[key] = (count, total or 0), (r["requests"], r["requests"] * size)
+            rq_rates.append(r["requests"] / r["elapsed"])
+            rq_figs.append({"rate": r["requests"] / r["elapsed"], "latency ms": r["latency_ms"],
+                            "loopback bytes per commit": round((after - before) / max(1, r["requests"]))
+                            if before is not None and after is not None else None})
+            t = run_tcp_cluster(ctx, nodes, threads, p["seconds"], payload=size)
+            key = f"protodb payload {size} B, run {rep + 1}"
+            result.check(f"{key}: persisted state holds exactly the acknowledged ids and values", t["ok"], "")
+            checksum[key], expected[key] = t["ok"], True
+            runs.append(t)
+        result.add_rate(f"rqlite payload {size} B: requests (commits)/s", rq_rates, "commits/s")
+        result.add_rate(f"protodb payload {size} B: commits/s", [t["rate"] for t in runs], "commits/s")
+        mid = sorted(rq_figs, key=lambda f: f["rate"])[len(rq_figs) // 2]
+        result.metrics[f"rqlite payload {size} B: payload MB/s"] = round(mid["rate"] * size / 1e6, 3)
+        result.metrics[f"rqlite payload {size} B: latency ms"] = mid["latency ms"]
+        result.metrics[f"rqlite payload {size} B: loopback bytes per commit"] = mid["loopback bytes per commit"]
+        for name, value in payload_figures(runs).items():
+            result.metrics[f"protodb payload {size} B: {name}"] = value
+
+
+@benchmark("rqlite_reference", quick={"threads": 2, "seconds": 0.5, "batch": 10, "repeat": 1, "payloads": [100]},
+           full={"threads": 4, "seconds": 3.0, "batch": 50, "repeat": 2, "payloads": [100, 10240, 102400]})
 def rqlite_reference(ctx, p):
     """3-node rqlite on loopback vs a 3-peer ProtoDB TCP cluster: small commits, per request and batched."""
     binary = ctx.rqlite
@@ -215,5 +295,6 @@ def rqlite_reference(ctx, p):
         result.add_rate(f"protodb {label}: commits/s", pd_rates, "commits/s")
         result.add_rate(f"rqlite {label}: rows/s", rq_rows, "rows/s")
         result.add_rate(f"protodb {label}: rows/s", pd_rows, "rows/s")
+    _payload_comparison(ctx, result, checksum, expected, dict(p, binary=binary))
     result.checksum, result.expected = checksum, expected
     return result
