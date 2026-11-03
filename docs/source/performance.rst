@@ -483,9 +483,71 @@ What the numbers show, honestly:
   changed, and a ``Dictionary`` node carries its values inline, so each copied node along the
   path re-ships the value (about log2 of the dictionary's size). Even at 100 B a commit ships
   about 16 KB of tree nodes. A value stored once as its own record and referenced from the
-  tree would bring this to about payload x followers; that is not done.
+  tree would bring this to about payload x followers; Task 8.3f item 2 (D51) does this, see
+  the next section.
 - Under these conditions the bytes, not the syncs, bound ProtoDB at 100 KB: about 4 MB/s of
   payload against rqlite's 30 MB/s.
+
+After Task 8.3f phases B and C
+------------------------------
+
+Measured at commit ``ed70d3a`` against ``f03798b`` (the measurements above), same machine and
+workloads. Changes in between: one self-describing root-log append per acceptance (D50 phase
+B), compact references and values of 256 bytes or more stored out of line (D51, format 3),
+group commit on a standalone storage (D52), a decoded-atom cache shared by the transactions of
+an ``ObjectSpace`` (D53), and ruling R78b's lease margin. **The benchmark peers' lease changed
+from 2 s to 6 s** (``benchmarks/cluster_peer.py``, ``benchmarks/workloads/cluster.py``): with
+R78b's margin a holder believes a third of its lease, and at 2 s the 8-peer and the batched x50
+runs ended replications after that belief and failed verification. The ``f03798b`` figures
+were taken with a 2 s lease and the pre-R78b margin (belief 1.8 s); the ``ed70d3a`` figures
+with a 6 s lease (belief 2 s).
+
+3 TCP peers x 4 threads, ``fsync``, one 100-byte value per commit (the ``cluster_tcp`` peers
+driven for 3 s with the in-process sync probe, 5 runs each, median run):
+
+==============================  ==================  ==================
+Figure                          ``f03798b``         ``ed70d3a``
+==============================  ==================  ==================
+commits/s, GIL off              88.3                104.7
+commits/s, GIL on               76.3                105.4
+syncs per commit (cluster)      6.2                 4.1 (3.2 GIL on)
+committer frame bytes / commit  16.8 KB             11.9 KB
+==============================  ==================  ==================
+
+The rates are bimodal on both commits. In runs in which the owner role rotates fairly, the
+peers commit about equal shares: 75-88 commits/s at ``f03798b`` and 100-105 at ``ed70d3a``
+(GIL off). In runs in which one node keeps the role longer, they commit unequal shares at
+144-231 commits/s. These were 2 of 5 runs on each commit GIL off, and 0 of 5 at ``ed70d3a``
+GIL on. The medians above are fair-rotation runs.
+
+Payload sweep (``cluster_tcp`` 3 runs and ``rqlite_reference`` 2 runs, GIL off; ProtoDB rates
+as the per-run samples, because of the bimodality):
+
+=========  ===========================  ==============  ==============  ==============
+payload    ProtoDB commits/s            rqlite req/s    ProtoDB frame   rqlite loopback
+                                                        bytes / commit  bytes / commit
+=========  ===========================  ==============  ==============  ==============
+100 B      109, 105, 107; 232, 108      610, 626        12.0 KB         1.8 KB
+10 KB      207, 106, 95; 331, 229       625, 611        31.2 KB         18.6 KB
+100 KB     184, 190, 59; 93, 94         392, 359        217 KB          173 KB
+=========  ===========================  ==============  ==============  ==============
+
+Before (``f03798b``, same runs): ProtoDB 86 / 76 / 75 commits/s (``cluster_tcp`` medians) with
+16.8 KB / 196 KB / 1.87 MB per commit; rqlite 581 / 564 / 337 requests/s.
+
+- Bytes per commit at 100 KB fall 8.6x (1.87 MB to 217 KB, about payload x followers plus 12
+  KB): the value is written once as its own record and the tree carries a reference to it.
+  ProtoDB's wire volume at 10 KB and 100 KB is now within 1.7x and 1.3x of rqlite's.
+- rqlite is still faster at every size: 4-6x per request in fair-rotation runs. The remaining
+  gap is per-commit cost (syncs, the owner hand-off between peers), not bytes.
+- Batched x50 (``rqlite_reference``): 16.7 -> 17.5 commits/s (835 -> 874 rows/s) against
+  rqlite's 29,100 rows/s; unchanged, because each batched commit still rebuilds and ships 50
+  path-copied entries.
+
+Standalone ``FileStorage`` with ``fsync``, 4 threads of one process committing a 100-byte
+value each: 88.5 -> 147.3 commits/s (group commit, D52; one 3 s run each). Point reads of a
+100,000-entry ``Dictionary``, each in a fresh transaction (``FileStorage``): 821 -> 4,721
+reads/s (D53).
 
 GIL on versus GIL off
 ---------------------
