@@ -46,6 +46,7 @@ def test_a_shared_file_storage_commit_survives_a_whole_cluster_crash_before_any_
     with Cluster(3, **never) as cl:
         storages = [FileStorage(path, durability="fsync") for _ in cl.ids]    # one per process
         spaces = [ObjectSpace(s, coordinator=cl[n]) for s, n in zip(storages, cl.ids)]
+        cl.wait_rejoined()      # every first start done first (a late member waits, R51)
         spaces[0].new_database("db")
         spaces[1].open_database("db").run(incr, **RUN_KW)
         assert all(s.persisted_epoch == 0 for s in spaces)

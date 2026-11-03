@@ -7,7 +7,12 @@ takes one snapshot and hands the *same* stub objects to 8 reader threads, which
 iterate them and query their (also lazily loaded) index at the same time, while 4
 writer threads commit new versions (appending records and updating ``meta``
 atomically with them).  After the shared snapshot each reader keeps taking fresh
-snapshots of its own until the writers finish.  The writers hold their last
+snapshots of its own until the writers finish, spaced so that each reads a version at
+least ``COMMITS_BETWEEN_SNAPSHOTS`` commits newer than the previous one, then one final
+snapshot.  The reader work is thus bounded by the writers' progress, not by how fast a
+snapshot is: readers re-reading in a tight loop would, with the GIL enabled, take the
+interpreter lock away from the writers once snapshots are served from the shared atom
+cache (D53), and re-reading an unchanged version adds no coverage.  The writers hold their last
 commit until every reader has taken its first own snapshot, so each reader takes
 at least two snapshots while writers are active, independently of timing.
 
@@ -40,6 +45,8 @@ APPEND_PER_COMMIT = 10
 MOD = (1 << 61) - 1
 #: Seconds a writer waits for each reader before its last commit.
 READER_WAIT = 60.0
+#: Spacing of a reader's own snapshots, in commits (about 10 snapshots per reader per run).
+COMMITS_BETWEEN_SNAPSHOTS = WRITERS * COMMITS_PER_WRITER // 10
 RUN_KW = dict(retries=10_000, backoff=(0.002, 0.2))
 
 pytestmark = [pytest.mark.freethreaded, pytest.mark.timeout(120)]
@@ -94,7 +101,10 @@ def test_readers_share_lazy_stubs_while_writers_commit(tmp_path, request):
         assert object.__getattribute__(shared_items, "_loaded") is False, "the shared root must start as a stub"
         attempts = Attempts()
         state_lock = threading.Lock()
+        # Signalled after every commit and when a writer ends; readers wait on it between snapshots.
+        changed = threading.Condition(state_lock)
         writers_left = [WRITERS]
+        commits_done = [0]
         snapshots = [0] * READERS
         first_versions = [None] * READERS
         # Set by each reader once it has checked the shared snapshot and taken one snapshot
@@ -117,9 +127,13 @@ def test_readers_share_lazy_stubs_while_writers_commit(tmp_path, request):
                         for r, ready in enumerate(reader_ready):
                             assert ready.wait(READER_WAIT), f"reader {r} never reached its first snapshot"
                     attempts.run(db, commit, **RUN_KW)
+                    with changed:
+                        commits_done[0] += 1
+                        changed.notify_all()
             finally:
-                with state_lock:
+                with changed:
                     writers_left[0] -= 1
+                    changed.notify_all()
 
         def snapshot(r):
             tr = db.new_transaction()
@@ -139,11 +153,15 @@ def test_readers_share_lazy_stubs_while_writers_commit(tmp_path, request):
                 finally:
                     reader_ready[r].set()               # also on failure: never stall the writers
                 while True:
-                    with state_lock:
+                    with changed:
                         done = writers_left[0] == 0
+                        seen = commits_done[0]
                     snapshot(r)
                     if done:
                         return
+                    with changed:   # the next snapshot reads a newer version (or the final one)
+                        changed.wait_for(lambda: commits_done[0] >= seen + COMMITS_BETWEEN_SNAPSHOTS
+                                         or writers_left[0] == 0, timeout=READER_WAIT)
             return body
 
         elapsed = run_threads([reader(r) for r in range(READERS)] + [writer] * WRITERS)
