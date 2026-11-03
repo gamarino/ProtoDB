@@ -1,21 +1,22 @@
-"""A rejoin decides only on answers gathered after the leases of the node's previous life ended
-(8.3d re-review 5, C1; ruling R53).
+"""A rejoin of an empty acceptor log never completes on a snapshot that misses a root it may
+have acknowledged (8.3d re-review 5, C1; rulings R53, R78a).
 
 A node that lost its acceptor log may have accepted and acknowledged a root R just before the
 loss, under a lease whose holder has not yet counted the acknowledgement.  Answers gathered while
 that lease runs may all miss R: the other acceptors have not received it yet, and the holder
 self-accepts after its broadcast (or its answer is lost).  A rejoin that completed on such a
 snapshot adopted an older root, and once the holder reported R committed a majority without R
-existed: the next holder built on the older root.  Every rejoin other than a cluster's first
-start (``"new"``) therefore decides on a round of answers *sent* at or after
-``start() + restart_grace``, whatever the node's startup grace; by then every lease granted
-before the loss has ended on its holder's view, so each acceptor counted for a reported commit
-had durably accepted the root before it answered.  The reviewer's probes, as tests:
+existed: the next holder built on the older root.  Rulings R53/R54 made such a rejoin wait
+``restart_grace`` (a clock-rate assumption); since ruling R78a every rejoin other than a
+cluster's first start (``"new"``) is a ballot instead: the witnesses durably promise a fresh
+ballot above every term they report and answer after that promise, so either an answer shows R
+or R is never accepted again by the counted witnesses (the ballot rule) and cannot be reported
+committed.  No clock is advanced in these tests.  The reviewer's probes, as tests:
 
 * ``probe_stale_snapshot_net``: N=5, network faults only (a delayed copy, a lost answer);
 * ``probe_stale_snapshot``: N=3, the holder descheduled between its broadcast and its own accept;
 * ``probe_rootless_stale``: the ``"rootless"`` outcome of a first start on the same stale snapshot;
-* plus freshness judged by when a round was sent, not when its answers arrived.
+* plus plain answers held in the network and delivered late: they never complete a rejoin.
 """
 import threading
 import time
@@ -58,18 +59,23 @@ def _replicate_in_background(node, lease, root):
     return t, out
 
 
-def _finish(h, holder, t, out, acks, delayed=()):
+def _finish(h, holder, t, out, acks, delayed=(), expire=None):
     """Deliver the ``delayed`` copies and the held ``acks``, then pump acknowledgements to
-    ``holder`` until its replication returns; return its outcome."""
+    ``holder`` until its replication returns; return its outcome.  With ``expire`` (the
+    holder's lease), the clock passes the lease's end once the acknowledgements are in: a
+    replication short of a majority then returns."""
     for _, to, msg in delayed:
         h.net.handlers[to](msg)
         h.net.handlers[to].__self__.wait_idle(5.0)
     for _, to, msg in acks:
         h.net.handlers[to](msg)
-    deadline = time.monotonic() + 20.0
+    start = time.monotonic()
+    deadline = start + 20.0
     while t.is_alive():
         assert time.monotonic() < deadline, "the replication never returned"
         h.net.deliver(src=None, dst={holder}, kinds=("ack",))
+        if expire is not None and time.monotonic() - start > 0.3:
+            h.clock.t = max(h.clock.t, expire.valid_until + 0.001)
         time.sleep(0.001)
     return out["r"]
 
@@ -84,13 +90,18 @@ def _wipe(h, name):
     return h.nodes[name]
 
 
-def _assert_blocked_on_freshness(node):
-    deadline = time.monotonic() + 10.0
-    while not node.stats().get("rejoin_blocked") and time.monotonic() < deadline:
-        time.sleep(0.01)
-    stats = node.stats()
-    assert stats["rejoining"], "the rejoin completed on answers gathered before the safe grace"
-    assert "gathered" in (stats["rejoin_blocked"] or ""), stats["rejoin_blocked"]
+def _assert_rejoined_by_ballot(h, name, responders=None):
+    """``name`` rejoins at once (no clock advance) through one ballot round."""
+    node = h.nodes[name]
+    assert h.rejoin(name, responders=responders), f"{name} did not rejoin"
+    assert node.stats()["rejoin_ballots"] == 1
+
+
+def _assert_not_committed(outcome, holder, R):
+    """The holder's replication of ``R`` did not report a commit: the counted witnesses
+    promised the rejoin's ballot first and refuse ``R``'s term."""
+    assert isinstance(outcome, ProtoDBError), f"R was reported committed: {outcome}"
+    assert holder.committed_root()[1] != R
 
 
 def test_c1_a_rejoin_with_the_default_grace_ignores_answers_gathered_before_the_safe_grace_network_faults(
@@ -117,18 +128,15 @@ def test_c1_a_rejoin_with_the_default_grace_ignores_answers_gathered_before_the_
     h.net.drop(src="a", dst={"y", "z"}, kinds=("records", "replicate"))
     assert h.nodes["c"].accepted_root()[1] == R
     c = _wipe(h, "c")
-    assert not h.rejoin("c", responders={"x", "y", "z"}, timeout=1.5)     # a's answer is lost
-    _assert_blocked_on_freshness(c)
-    outcome = _finish(h, "a", t, out, acks, delayed_x)
-    assert isinstance(outcome, float), outcome
-    assert a.committed_root()[1] == R                                     # R was reported committed
-    h.clock.t += GRACE + 0.5                                              # a's lease and c's wait end
-    assert h.rejoin("c", responders={"x", "y", "z"})
-    assert c.accepted_root()[1] == R
+    _assert_rejoined_by_ballot(h, "c", responders={"x", "y", "z"})        # a's answer is lost
+    assert c.accepted_root()[1] == r0                                     # nobody it heard has R
+    outcome = _finish(h, "a", t, out, acks, delayed_x, expire=lease_a)    # x refuses R now
+    _assert_not_committed(outcome, a, R)
+    h.clock.t += GRACE + 0.5          # c's startup grace for GRANTING (its rejoin did not wait)
     lease_y = h.attempt("y", {"z", "c"})
     assert not isinstance(lease_y, Exception), lease_y
     base, _ = h.base("y", lease_y, responders={"z", "c"})
-    assert base == R and base != r0
+    assert base == r0
 
 
 def test_c1_a_rejoin_with_the_default_grace_ignores_answers_gathered_before_the_safe_grace_paused_holder(
@@ -161,20 +169,17 @@ def test_c1_a_rejoin_with_the_default_grace_ignores_answers_gathered_before_the_
     assert h.nodes["c"].accepted_root()[1] == R
     c = _wipe(h, "c")
     try:
-        assert not h.rejoin("c", timeout=1.5)
-        _assert_blocked_on_freshness(c)
+        _assert_rejoined_by_ballot(h, "c")          # a promises the ballot while descheduled
+        assert c.accepted_root()[1] == r0
     finally:
         gate.set()
-    outcome = _finish(h, "a", t, out, acks)
-    assert isinstance(outcome, float), outcome
-    assert a.committed_root()[1] == R
-    h.clock.t += GRACE + 0.5
-    assert h.rejoin("c")
-    assert c.accepted_root()[1] == R
+    outcome = _finish(h, "a", t, out, acks, expire=lease_a)     # a's own acceptance: ballot rule
+    _assert_not_committed(outcome, a, R)
+    h.clock.t += GRACE + 0.5          # c's startup grace for GRANTING (its rejoin did not wait)
     lease_b = h.attempt("b", {"c"})
     assert not isinstance(lease_b, Exception), lease_b
     base, _ = h.base("b", lease_b, responders={"c"})
-    assert base == R and base != r0
+    assert base == r0
 
 
 def test_c1_a_rootless_rejoin_does_not_complete_on_a_stale_snapshot(harness):
@@ -186,10 +191,10 @@ def test_c1_a_rootless_rejoin_does_not_complete_on_a_stale_snapshot(harness):
     completed on that snapshot, a then counted old c's and x's acks (R committed), and y's lease
     from {y, z, c} had no root at all.
 
-    With the fix they wait; once R is committed the fresh answers show it (a and x accepted it),
-    so this is no longer a rootless cluster, and three empty logs of five are more than the
-    one lost acceptor log the protocol tolerates without an operator (ruling R48): they stay
-    rejoining and no lease is granted without R.  Safe, and unavailable by design."""
+    With the ballot (ruling R78a) the rootless rejoins complete only after a and x durably
+    promised a ballot above a's term: a's own acceptance and x's delayed copy are then
+    refused, so R is never committed, and the cluster continues from no root.  Safe and
+    available."""
     h = harness("acxyz")
     for n in "yz":
         h.restart(n, wipe=True, responders=set())      # late first-start members: still rejoining
@@ -217,30 +222,26 @@ def test_c1_a_rootless_rejoin_does_not_complete_on_a_stale_snapshot(harness):
     _wipe(h, "c")
     try:
         for n in "cyz":
-            assert not h.rejoin(n, timeout=1.5), f"{n} completed on a stale snapshot"
-            _assert_blocked_on_freshness(h.nodes[n])
+            assert h.rejoin(n, timeout=5.0), f"{n} did not rejoin"
+            assert h.nodes[n].stats()["rejoin_ballots"] == 1
+            assert h.nodes[n].accepted_root() == (False, None, 0)
     finally:
         gate.set()
-    outcome = _finish(h, "a", t, out, acks, delayed_x)
-    assert isinstance(outcome, float), outcome
-    assert a.committed_root()[1] == R
-    h.clock.t += GRACE + 0.5
-    for n in "cyz":
-        if h.rejoin(n, timeout=1.5):
-            assert h.nodes[n].accepted_root()[1] == R, f"{n} rejoined without the committed root"
+    outcome = _finish(h, "a", t, out, acks, delayed_x, expire=lease_a)
+    _assert_not_committed(outcome, a, R)
     lease_y = h.attempt("y", {"z", "c"}, timeout=1.0)
     if not isinstance(lease_y, Exception):
         base, _ = h.base("y", lease_y, responders={"z", "c"})
-        assert base == R
+        assert base != R
     else:
         assert isinstance(lease_y, ProtoTimeoutError), lease_y
 
 
-def test_c1_a_round_sent_before_the_safe_grace_does_not_count_even_if_its_answers_arrive_after(harness):
-    """Freshness is judged by when the round was *sent*, not when its answers arrived: answers
-    produced before ``start() + restart_grace`` and delivered after it are as stale as any.
-    The paused-holder schedule again, with c's first query answered by a and b before R is
-    committed, and those answers held in the network until the safe grace has passed."""
+def test_c1_plain_answers_delivered_late_never_complete_a_rejoin(harness):
+    """Answers of a plain round never complete a rejoin outside a first start, however late
+    they arrive: the paused-holder schedule, with c's first (plain) query answered by a and b
+    before R is committed and those answers held until after the commit.  The ballot round
+    that follows reads a's answer after a's promise: it reports R."""
     from proto_db.cluster.coordinator import ClusterCoordinator
     from tests.support.cluster import MemoryTier
     from tests.support.manual_cluster import D, MARGIN
@@ -288,11 +289,12 @@ def test_c1_a_round_sent_before_the_safe_grace_does_not_count_even_if_its_answer
     outcome = _finish(h, "a", t, out, acks)
     assert isinstance(outcome, float), outcome
     assert a.committed_root()[1] == R
-    h.clock.t += GRACE + 0.5
     for _, to, msg in held:                                           # the stale answers arrive late
         h.net.handlers[to](msg)
     assert h.rejoin("c")
-    assert c.accepted_root()[1] == R, "c completed on answers produced before the safe grace"
+    assert c.stats()["rejoin_ballots"] == 1
+    assert c.accepted_root()[1] == R, "c completed on answers that miss the committed root"
+    h.clock.t += GRACE + 0.5          # c's startup grace for GRANTING (its rejoin did not wait)
     lease_b = h.attempt("b", {"c"})
     assert not isinstance(lease_b, Exception), lease_b
     base, _ = h.base("b", lease_b, responders={"c"})
@@ -367,10 +369,10 @@ def _reattach_empty(h, name):
     return node
 
 
-def test_c2_a_reattach_over_an_empty_disk_ignores_answers_gathered_before_the_attach_grace(harness):
-    """``probe_reattach_stale`` (re-review 6, C2).  The freshness instant must be anchored at the
-    attach of the acceptor log, not at the coordinator's start: an empty log also arrives through
-    ``detach()`` + ``attach()`` on a coordinator that keeps running, long after ``start()``.
+def test_c2_a_reattach_over_an_empty_disk_rejoins_by_ballot(harness):
+    """``probe_reattach_stale`` (re-review 6, C2).  An empty log also arrives through
+    ``detach()`` + ``attach()`` on a coordinator that keeps running, long after ``start()``;
+    its rejoin is a ballot like any other (ruling R78a).
     N=3; the coordinators started long ago.  a holds a lease granted by c and is descheduled
     between its broadcast of R and its own accept; old-disk c accepts and acknowledges (held), b
     never gets R.  c's space closes, its disk is replaced, and the space reopens on the same
@@ -402,23 +404,20 @@ def test_c2_a_reattach_over_an_empty_disk_ignores_answers_gathered_before_the_at
     assert h.nodes["c"].accepted_root()[1] == R
     c = _reattach_empty(h, "c")
     try:
-        assert not h.rejoin("c", timeout=1.5), "the reattached node rejoined on stale answers"
-        _assert_blocked_on_freshness(c)
+        _assert_rejoined_by_ballot(h, "c")
+        assert c.accepted_root()[1] == r0
     finally:
         gate.set()
-    outcome = _finish(h, "a", t, out, acks)
-    assert isinstance(outcome, float), outcome
-    assert a.committed_root()[1] == R
-    h.clock.t += GRACE + 0.5
-    assert h.rejoin("c")
-    assert c.accepted_root()[1] == R
+    outcome = _finish(h, "a", t, out, acks, expire=lease_a)
+    _assert_not_committed(outcome, a, R)
     h.restart("c")                               # a clean restart: c reloads what its log holds
     h.clock.t += GRACE + 0.5
-    assert h.nodes["c"].accepted_root()[1] == R
+    assert h.nodes["c"].accepted_root()[1] == r0
+    h.clock.t += GRACE + 0.5          # c's startup grace for GRANTING (its rejoin did not wait)
     lease_b = h.attempt("b", {"c"})
     assert not isinstance(lease_b, Exception), lease_b
     base, _ = h.base("b", lease_b, responders={"c"})
-    assert base == R and base != r0, "an acknowledged commit was lost"
+    assert base == r0
 
 
 def test_c2_audit_a_reattached_log_replaces_the_acceptor_state_held_in_memory(harness):
@@ -471,6 +470,7 @@ def test_c2_audit_a_reattached_log_replaces_the_acceptor_state_held_in_memory(ha
     logged = c.tier.load_roots()[0]
     assert logged is not None and logged[1] == r0
     assert c.accepted_root()[1] == r0, "c's memory disagrees with its log"
+    h.clock.t += GRACE + 0.5          # c's startup grace for GRANTING (its rejoin did not wait)
     lease_b = h.attempt("b", {"c"})
     assert not isinstance(lease_b, Exception), lease_b
     base, _ = h.base("b", lease_b, responders={"c"})
@@ -495,3 +495,61 @@ def test_c2_audit_a_forced_rejoin_does_not_outlive_the_log_it_was_forced_for(har
     # N - majority + 1 = 3 witnesses.
     assert not h.rejoin("c", responders={"a", "b"}, timeout=5.0), "the abandoned force carried over"
     assert h.rejoin("c", responders={"a", "b", "d"})
+
+
+@pytest.mark.parametrize("rate", [1.0, 1.3, 2.0, 3.0])
+def test_r7_a_rejoin_is_safe_whatever_the_rate_of_the_wiped_nodes_timer(harness, rate):
+    """``probe_drift_boundary`` (8.3f review inventory, #3): the wiped node c runs its timer at
+    ``rate`` times the holder's.  Under the timed rule (rulings R53/R54) c's first counted round
+    came before the end of a's lease for rates above 11/9, a then counted old c's ack, and b's
+    lease built without R: lost at 1.3.  The ballot rejoin (ruling R78a) uses no timer: c
+    rejoins at once, and either R is in its answers or R is never committed."""
+    from proto_db.cluster.coordinator import ClusterCoordinator
+    from tests.support.cluster import MemoryTier
+    from tests.support.manual_cluster import D, MARGIN
+    h = harness()
+    r0 = h.bootstrap("a")
+    h.clock.t += 2 * GRACE
+    lease_a = h.attempt("a", {"c"})
+    assert not isinstance(lease_a, Exception), lease_a
+    a = h.nodes["a"]
+    gate, sent = threading.Event(), threading.Event()
+    orig = a._broadcast
+
+    def paused(msg):
+        orig(msg)
+        if msg["type"] == "replicate":
+            sent.set()
+            gate.wait(20)
+
+    a._broadcast = paused
+    R = rec(2)
+    t, out = _replicate_in_background(a, lease_a, R)
+    assert sent.wait(10)
+    h.net.deliver(src="a", dst={"c"}, kinds=("records", "replicate"))
+    acks = h.net.take("c", {"a"}, ("ack",))
+    h.net.drop(src="a", dst={"b"}, kinds=("records", "replicate"))
+    old = h.nodes["c"]
+    old.stop()
+    h.retired.append(old)
+    h.disks["c"] = MemoryStorage()
+    tw = h.clock.t
+    c = ClusterCoordinator("c", h.peers, transport=h.net.transport(), lease_duration=D, drift_margin=MARGIN,
+                           request_timeout=0.5, startup_grace=GRACE, clock=lambda: tw + rate * (h.clock.t - tw),
+                           seed=1, persist_interval=60.0, persist_lag=60.0)
+    c.start()
+    c.attach(MemoryTier(h.disks["c"], "c"))
+    h.nodes["c"] = c
+    try:
+        assert h.rejoin("c")                    # no clock advance at all
+    finally:
+        gate.set()
+    outcome = _finish(h, "a", t, out, acks, expire=lease_a)
+    h.clock.t += 2 * GRACE
+    lease_b = h.attempt("b", {"c"})
+    assert not isinstance(lease_b, Exception), lease_b
+    base, _ = h.base("b", lease_b, responders={"c"})
+    if isinstance(outcome, float):
+        assert base == R, "R was reported committed and lost"
+    else:
+        assert a.committed_root()[1] != R

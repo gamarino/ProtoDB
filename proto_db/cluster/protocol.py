@@ -58,14 +58,18 @@ fields of its type:
                takes any other as an unknown outcome (8.3f review, C1).
 ``ack``        ``term``, ``rid``, ``ok``, ``root``: the receiver durably accepted (``ok``) or
                refused the replicated root; ``root`` is its accepted root.
-``query``      ``rid``: ask a peer for the roots it knows (recovery, rejoin).
+``query``      ``rid``, ``ballot``: ask a peer for the roots it knows (recovery, rejoin).  With
+               ``ballot > 0`` (a rejoin of an empty acceptor log, ruling R78a, protocol 10) a
+               witness first makes a promise of ``ballot`` durable -- it then refuses every
+               lower term and every root labelled below it -- and answers after it.
 ``answer``     ``rid``, ``root``, ``committed``, ``certain``, ``promised``, ``state``: the peer's
                accepted and committed roots and the highest lease term it has seen in a
                request or release, promised, or found as its accepted root's label (the
                committed root's label is not folded in: it travels in ``committed``);
                ``state`` is ``"ok"`` (a witness), ``"empty"`` (it is rejoining) or
                ``"unknown"`` (no acceptor log loaded: the roots are ``None`` and the answer
-               never counts).
+               never counts).  ``ballot`` echoes the query's when the answer follows a durable
+               promise of it, else ``0``.
 ``fetch``      ``rid``, ``segment``, ``offset``: a peer page request for one record.
 ``fetched``    ``rid``, ``data``: the framed record bytes, or ``None`` when the peer lacks it.
 ``commit_query`` ``rid``, ``root``: where are the records of the commit of ``root``?
@@ -111,7 +115,8 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
 #: (Task 8.3e, D46).
 #: 8: write permissions (D50).
 #: 9: ``permit`` carries the requester's incarnation ``inc`` (8.3f review, C1).
-PROTOCOL_VERSION = 9
+#: 10: ``query`` and ``answer`` carry ``ballot`` (clock-free rejoin, ruling R78a).
+PROTOCOL_VERSION = 10
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
 #: Record bytes a replication puts in one frame at most (a single record may fill one alone).
@@ -151,9 +156,9 @@ MESSAGE_TYPES = {
     "done": {"term": _INT, "seq": _INT, "inc": _INT, "outcome": _STR, "root": _ROOT},
     "ack": {"term": _INT, "rid": _INT, "ok": _BOOL, "root": _ROOT},
     "want": {},
-    "query": {"rid": _INT},
+    "query": {"rid": _INT, "ballot": _INT},
     "answer": {"rid": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL, "promised": _INT,
-               "state": _STR},
+               "state": _STR, "ballot": _INT},
     "fetch": {"rid": _INT, "segment": _UUID, "offset": _INT},
     "fetched": {"rid": _INT, "data": _OPT_BYTES},
     "commit_query": {"rid": _INT, "root": _ROOT},

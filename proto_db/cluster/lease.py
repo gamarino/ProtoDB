@@ -138,6 +138,19 @@ class PeerGrants:
         self._highest = max(self._highest, term)
         self._seen = max(self._seen, term if seen is None else min(seen, term))
 
+    def promise(self, term: int) -> int:
+        """Promise ``term`` without granting a lease (a rejoin's ballot, ruling R78a): every
+        term at or below it is refused from now on, and an active grant of a lower term ends
+        here (its holder's later roots are refused by the ballot rule anyway).  Returns the
+        term of the grant this ended, else ``0``.  The caller makes the promise durable before
+        it answers."""
+        ended = 0
+        if self._active and self._term < term:
+            self._active = False
+            ended = self._term
+        self.restore(term)
+        return ended
+
     @property
     def starting(self) -> bool:
         """True during the startup grace."""

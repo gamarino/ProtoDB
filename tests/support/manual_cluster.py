@@ -179,11 +179,11 @@ class Harness:
         """Restart ``name`` with the shortest safe startup grace (:data:`GRACE`, one lease plus
         the drift margin); ``wipe`` loses its disk, and the
         node then rejoins with the answers of ``responders`` (default: every other node; an
-        empty set leaves it rejoining).  A rejoin other than a cluster's first start decides
-        only on answers gathered :data:`GRACE` after the node's start (ruling R53), so before
-        that rejoin the clock is advanced by :data:`GRACE`: every lease running at the wipe
-        has ended by then.  A test that needs the wiped node during such a lease passes
-        ``responders=()`` and calls :meth:`rejoin` itself once the clock allows it."""
+        empty set leaves it rejoining).  Before that rejoin the clock is advanced by
+        :data:`GRACE`, so every lease running at the wipe has ended and the restarted node
+        grants again; the rejoin itself no longer needs it (a ballot round, ruling R78a).  A
+        test that needs the wiped node during such a lease passes ``responders=()`` and calls
+        :meth:`rejoin` itself."""
         old = self.nodes[name]
         tier = old.tier
         old.stop()

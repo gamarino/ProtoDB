@@ -259,20 +259,21 @@ def test_x2_a_recovery_counts_only_witness_answers(harness):
 
 def test_probe_inflight_a_granter_wiped_during_a_lease(harness):
     """Reviewer probe ``probe_inflight`` (granter): ``b`` loses its disk while ``a`` holds a lease
-    it granted; ``a``'s commit still reaches a majority, and the following leases have distinct
-    terms and build on each other.  b cannot rejoin while a's lease may run (ruling R53): it
-    refuses a's replication, which c and a carry, and rejoins after the safe grace."""
+    it granted.  b rejoins at once by a ballot (ruling R78a): a and c durably promise a ballot
+    above a's term, so a's replication is refused by its own acceptor rule and by c's, and is
+    not committed; the following leases have distinct terms and build on each other."""
     h = harness()
-    h.bootstrap("a")
+    r0 = h.bootstrap("a")
     lease_a = h.attempt("a", {"b"})
-    h.restart("b", wipe=True, responders=())          # rejoining until GRACE after its start
-    assert not h.rejoin("b", timeout=1.0)
+    h.restart("b", wipe=True, responders=())
+    assert h.rejoin("b")                              # no clock advance: a ballot, not a wait
+    assert h.nodes["b"].stats()["rejoin_ballots"] == 1
     r = rec(2)
-    assert not isinstance(h.replicate("a", lease_a, r, to={"b", "c"}), Exception)
+    assert isinstance(h.replicate("a", lease_a, r, to={"b", "c"}, expire=True), Exception)
+    assert all(h.nodes[n].committed_root()[1] != r for n in "abc")
     h.release("a", lease_a, to={"b", "c"})
-    h.clock.t += GRACE
-    assert h.rejoin("b")                              # learns a's term and R from a and c
-    assert h.nodes["b"].accepted_root()[1] == r
+    h.clock.t += GRACE                                # b's startup grace for granting
+    r = r0
     terms, epoch = {lease_a.term}, r.epoch
     for name, granters in (("c", {"b"}), ("b", {"c"}), ("a", {"c"})):
         lease = h.attempt(name, granters)

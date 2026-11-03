@@ -109,21 +109,18 @@ Rejoining and witnesses
     a loaded log answers ``unknown`` and is never counted.  ``empty`` answers count only
     for a cluster's first start: every other member answered, none has accepted any root,
     and none knows of any lease term (ruling R51: a lease granted before the first commit
-    leaves its term at its granters and its holder).  Any other rejoin decides only on a
-    round of answers sent at or after ``attach + restart_grace``
-    (:attr:`ClusterCoordinator.restart_grace`), the instant the empty log was attached plus
-    the safe grace, whatever the node's startup grace (rulings R53, R54): the node may have
+    leaves its term at its granters and its holder).  Any other rejoin is a ballot, not a
+    wait (ruling R78a, replacing the timed rule of rulings R53/R54): the node may have
     accepted and acknowledged a root just before it lost its log, under a lease whose holder
-    has not counted that acknowledgement yet, and answers gathered while that lease runs may
-    all miss the root (the other acceptors have not received it, the holder self-accepts
-    after its broadcast or its answer is lost).  The lost log accepted nothing after it was
-    detached (a node without an attached log neither grants nor accepts), so every lease it
-    served was granted before the empty log was attached -- by a previous process, or by
-    this one before :meth:`ClusterCoordinator.detach` when a space is closed and reopened
-    over a replaced disk on a coordinator that keeps running -- and has ended on its
-    holder's view by ``attach + restart_grace``.  A commit is reported only with
-    acknowledgements counted within the lease, so every acceptor counted for it had durably
-    accepted the root before it answered such a round.  Any other loss of a majority of logs
+    has not counted that acknowledgement yet, and a plain round of answers may miss that
+    root.  So, after a plain round that tells it the highest term anyone reported, it picks
+    a fresh ballot above it and asks again with that ballot: each witness makes a promise of
+    the ballot durable -- refusing from then on every lower term and every root labelled
+    below it, which ends any lease the lost log served -- and answers only after it.  Only
+    the answers that confirm the ballot count, and they intersect every majority that
+    acknowledged a root (:meth:`ClusterCoordinator._complete_rejoin` gives the argument), so
+    no elapsed time and no clock rate enters the decision; the price is one ballot per
+    rejoin of an empty log, which ends the current owner's term.  Any other loss of a majority of logs
     needs the operator's :meth:`ClusterCoordinator.force_rejoin`.  With proposer-qualified ballots, two
     different roots never share a label, and no acknowledged root is lost, while at most
     one acceptor log is lost at a time, with its records, whether the object store is
@@ -332,7 +329,7 @@ def _split_records(records: list, budget: int) -> list:
 class _Waiter:
     """Replies gathered for one replicate, query or fetch (guarded by the coordinator lock)."""
 
-    __slots__ = ("kind", "term", "acks", "nacks", "answers", "promised", "states", "data", "missing")
+    __slots__ = ("kind", "term", "acks", "nacks", "answers", "promised", "states", "ballots", "data", "missing")
 
     def __init__(self, kind: str, term: int = 0):
         self.kind = kind
@@ -342,6 +339,7 @@ class _Waiter:
         self.answers = {}
         self.promised = {}
         self.states = {}
+        self.ballots = {}
         self.data = None
         self.missing = 0
 
@@ -409,11 +407,9 @@ class ClusterCoordinator:
             drift_margin``): a restarted node does not remember when the grants of its
             previous life end.  A shorter grace (``0`` included) is accepted only on a
             cluster's first start (rulings R50, R51): :meth:`attach` refuses it on an acceptor
-            log that is not empty.  It never shortens a rejoin: whatever the grace, a rejoin
-            with an empty log that is not a first start (some member has accepted a root or
-            seen a lease term) decides only on a round of answers sent at or after the
-            instant the log was attached plus :attr:`restart_grace` (rulings R53, R54;
-            ``stats()["rejoin_blocked"]`` says so meanwhile).
+            log that is not empty.  A rejoin of an empty log does not depend on it: outside a
+            first start it decides on the answers of a ballot round (ruling R78a, module
+            docstring "Rejoining").
         fetch_timeout: seconds a peer page request waits for an answer; must be shorter than
             ``lease_duration - drift_margin`` (default a quarter of it), and a request made
             under the lease never waits beyond what remains of the lease.
@@ -531,7 +527,7 @@ class ClusterCoordinator:
         self._stats = {"acquired": 0, "attempts": 0, "lost_attempts": 0, "grants_given": 0,
                        "grants_refused_no_storage": 0, "releases_received": 0, "storage_root_reads": 0,
                        "replications": 0, "replication_failures": 0, "accepted": 0, "refused": 0,
-                       "recoveries": 0, "rejoins": 0, "fetches_requested": 0, "fetches_served": 0,
+                       "recoveries": 0, "rejoins": 0, "rejoin_ballots": 0, "fetches_requested": 0, "fetches_served": 0,
                        "critical_commits": 0, "turns_named": 0, "turns_taken": 0, "deferrals": 0,
                        "deferral_timeouts": 0}
         self._critical = {k: 0.0 for k in _CRITICAL_KEYS}
@@ -622,10 +618,9 @@ class ClusterCoordinator:
         ``persisting``, ``tier_failed`` (a write on the attached tier failed: the node is no
         acceptor until the tier is detached) and ``failure`` (the exception that fenced the
         node, failed its tier or stopped its persister, or ``None``).  ``rejoin_blocked`` says why a rejoin that has its answers
-        cannot complete (the records of the adopted root are unobtainable, or, outside a
-        cluster's first start, its answers were gathered before the instant its empty log was
-        attached plus ``restart_grace``),
-        else ``None``."""
+        cannot complete (the records of the adopted root are unobtainable, or too few
+        witnesses confirmed its ballot durably), else ``None``; ``rejoin_ballots`` counts the
+        ballot rounds that completed a rejoin (ruling R78a)."""
         with self._lock:
             out = dict(self._stats)
             out["critical"] = dict(self._critical)
@@ -788,8 +783,7 @@ class ClusterCoordinator:
         grants a term it granted before; they replace the accepted and committed roots held
         in memory, so a log attached to a coordinator that keeps running (a space closed and
         reopened) starts from what it holds, as after a restart.  An empty log starts a
-        rejoin (module docstring) in a background thread; its freshness instant is this
-        attach plus :attr:`restart_grace`.  Attaching the same tier again is a no-op; another
+        rejoin (module docstring) in a background thread.  Attaching the same tier again is a no-op; another
         one raises ``ProtoValidationError``.  Runs after any :meth:`detach` in progress has
         finished, and no acceptor decision runs while it loads the log (module docstring,
         "Acceptor-log writes").
@@ -871,11 +865,7 @@ class ClusterCoordinator:
             persister = persister_class(self, tier, interval=self._persist_interval, lag=self._persist_lag)
             self._persister = persister
             if rejoin:
-                # The freshness instant of this log's rejoin (rulings R53, R54): anchored here,
-                # not at start(), because an empty log also arrives on a coordinator that keeps
-                # running (a space closed and reopened over a replaced disk).
-                fresh_from = self._clock() + self.restart_grace
-                rejoiner = threading.Thread(target=self._rejoin, args=(tier, fresh_from),
+                rejoiner = threading.Thread(target=self._rejoin, args=(tier,),
                                             name=f"proto-cluster-rejoin-{self._node}", daemon=True)
                 self._rejoiners = [t for t in self._rejoiners if t.is_alive()] + [rejoiner]
         return persister, rejoiner
@@ -977,9 +967,10 @@ class ClusterCoordinator:
         root but some term was seen, the answers are still enough -- they include every member
         that granted or requested a term, and no root had been committed when they were
         gathered -- but as ``"rootless"``, which is not a first start: like every rejoin but
-        ``"new"``, it completes only on answers gathered at or after the attach of the empty
-        log plus ``restart_grace`` (:meth:`_complete_rejoin`); a root in flight when the node
-        lost its log is then visible in them.  Without it, a member that
+        ``"new"`` and ``"forced"``, it completes only on the answers of a ballot round, whose
+        witnesses promised the ballot durably before answering (ruling R78a,
+        :meth:`_complete_rejoin`); a root in flight when the node lost its log is then
+        visible in them or never accepted again.  Without it, a member that
         finishes its first start and requests a lease at once would leave the members still
         rejoining with too few witnesses for good.  Forced,
         any ``majority - 1`` answers of loaded members do.  ``"unknown"`` answers never count."""
@@ -996,35 +987,21 @@ class ClusterCoordinator:
             return list(witnesses), "witnesses"
         return None
 
-    def _rejoin(self, tier, fresh_from: float) -> None:
-        """Learn the highest term promised or seen by a majority, record it, and start voting
-        (see "Rejoining" in the module docstring).  ``fresh_from`` is the instant, on this
-        node's clock, from which a round counts outside a first start: when ``tier`` was
-        attached plus :attr:`restart_grace`.  Retries until it succeeds, the tier is detached
-        or the coordinator stops."""
+    def _rejoin(self, tier) -> None:
+        """Learn the highest term promised or seen by a majority and the highest accepted root,
+        record them, and start voting (see "Rejoining" in the module docstring).  Outside a
+        cluster's first start or a forced rejoin, the answers that count are those of a round
+        that asked the witnesses to promise a fresh ballot durably first (ruling R78a): no
+        elapsed time enters the decision.  Retries until it succeeds, the tier is detached or
+        the coordinator stops."""
         while True:
             with self._cond:
                 if self._state != "running" or self._tier is not tier or not self._rejoining \
                         or self._tier_failure is not None:
                     return
-            wait = self._request_timeout
             try:
-                asked = self._clock()       # every answer below was gathered at or after this
-                waiter = self._ask("query", {}, lambda w: len(w.answers) >= len(self._others),
-                                   self._request_timeout)
-                with self._lock:
-                    answers, promised = dict(waiter.answers), dict(waiter.promised)
-                    decision = self._rejoin_decision(answers, dict(waiter.states), promised)
-                if decision is not None:
-                    counted, how = decision
-                    if self._complete_rejoin(tier, [answers[p] for p in counted], [promised[p] for p in counted],
-                                             how, asked, fresh_from):
-                        return
-                    if how != "new" and asked < fresh_from:
-                        # Too early a round: ask again as soon as a fresh one may be sent (at
-                        # once if that instant has passed meanwhile; with a clock that does
-                        # not follow real time, the wait is only an upper bound).
-                        wait = min(wait, max(0.0, fresh_from - self._clock()))
+                if self._rejoin_round(tier):
+                    return
             except (ProtoDBError, OSError) as e:
                 with self._lock:
                     if self._state != "running":
@@ -1035,34 +1012,78 @@ class ClusterCoordinator:
                 raise
             with self._cond:
                 self._cond.wait_for(lambda: self._state != "running" or self._tier_failure is not None,
-                                    timeout=wait)
+                                    timeout=self._request_timeout)
 
-    def _complete_rejoin(self, tier, answers: list, promised: list, how: str, asked: float,
-                         fresh_from: float) -> bool:
-        """Adopt what the counted ``answers`` teach -- the highest promise and label, and the
-        highest accepted root, which orders at or above every committed root (each was
-        accepted by a majority, which the counted answers intersect) -- make every record of
-        that root durable here or confirm it is in the object store, log the promise and the
-        root durably, then the rejoined marker, and only then act as an acceptor and a
-        witness.  Return False, leaving the node rejoining with the reason in ``stats()``,
-        when the records cannot be obtained now, or when ``how`` is not a cluster's first
-        start and the round of ``answers`` was sent (at ``asked``, on this node's clock)
-        before ``fresh_from`` -- the instant ``tier`` was attached plus :attr:`restart_grace`
-        -- whatever this node's startup grace (rulings R53, R54).
-        An empty acceptor log cannot tell a member that joins its cluster's first start late
-        from a wiped one, and a wiped node may have accepted and acknowledged a root just
-        before the loss, under a lease that is still running: answers gathered meanwhile may
-        all miss that root (the other acceptors have not received it yet; the holder
-        self-accepts after its broadcast, or its answer is lost), and its holder may still
-        count the lost node's acknowledgement and report the commit.  The lost log accepted
-        nothing once it was detached, so every lease it served was granted before ``tier`` was
-        attached -- by a previous process, or by this one before :meth:`detach` -- and has
-        ended on its holder's view by ``fresh_from`` (see :attr:`restart_grace`); anchoring
-        at :meth:`start` missed a log replaced while the coordinator kept running.  A commit
-        is reported only with acknowledgements counted within the lease, so each acceptor
-        counted for it had durably accepted the root before it answered a round sent after
-        that instant; the counted answers intersect those acceptors.  A ``"new"`` cluster cannot be stale this way: the holder
-        of any lease records its own term before a grant exists, so its answer reports it.
+    def _gather(self, ballot: int) -> tuple:
+        """One ``query`` round to every other member; ``(answers, states, promised)`` with the
+        state of a witness that did not confirm ``ballot`` (when non-zero) demoted to
+        ``"unknown"``: its answer did not follow a durable promise of the ballot."""
+        waiter = self._ask("query", {"ballot": ballot}, lambda w: len(w.answers) >= len(self._others),
+                           self._request_timeout)
+        with self._lock:
+            answers, promised, states = dict(waiter.answers), dict(waiter.promised), dict(waiter.states)
+            if ballot:
+                states = {p: (st if st != "ok" or waiter.ballots.get(p) == ballot else "unknown")
+                          for p, st in states.items()}
+        return answers, states, promised
+
+    def _rejoin_round(self, tier) -> bool:
+        """One attempt of :meth:`_rejoin`; True when the rejoin completed."""
+        answers, states, promised = self._gather(0)
+        with self._lock:
+            decision = self._rejoin_decision(answers, states, promised)
+        if decision is None:
+            return False
+        counted, how = decision
+        ballot = 0
+        if how in ("witnesses", "rootless"):
+            # The ballot round (ruling R78a): above every term the plain round taught, so each
+            # witness that confirms it has durably promised to refuse every lower term, ending
+            # any lease this node's lost log may have served.  Answers read after that promise
+            # report every root they accepted before it, and no root of a lower term is
+            # accepted after it.
+            learnt = max(list(promised.values()) + [max(a[2], c[2]) for a, c, _ in answers.values()] + [0])
+            with self._lock:
+                floor = max(learnt, self._grants.highest_term, self._hint)
+            ballot = ballot_after(floor, self._rank)
+            answers, states, promised = self._gather(ballot)
+            with self._lock:
+                decision = self._rejoin_decision(answers, states, promised)
+            if decision is None or decision[1] not in ("witnesses", "rootless"):
+                self._block_rejoin(tier, f"too few members confirmed the rejoin ballot {ballot} durably; "
+                                         f"it asks again")
+                return False
+            counted, how = decision
+            self._stats["rejoin_ballots"] += 1
+        return self._complete_rejoin(tier, [answers[p] for p in counted], [promised[p] for p in counted], how,
+                                     ballot)
+
+    def _complete_rejoin(self, tier, answers: list, promised: list, how: str, ballot: int) -> bool:
+        """Adopt what the counted ``answers`` teach -- the highest promise and label (``ballot``
+        included), and the highest accepted root, which orders at or above every committed
+        root -- make every record of that root durable here or confirm it is in the object
+        store, log the promise and the root durably, then the rejoined marker, and only then
+        act as an acceptor and a witness.  Return False, leaving the node rejoining with the
+        reason in ``stats()``, when the records cannot be obtained now.
+
+        Why the counted answers are enough without any wait (ruling R78a; the 8.3f review's
+        clock-free rejoin).  An empty acceptor log cannot tell a member that joins its
+        cluster's first start late from a wiped one, and a wiped node may have accepted and
+        acknowledged a root R just before the loss, under a lease whose holder may still count
+        that acknowledgement.  Outside a first start or a forced rejoin, the counted answers
+        come from ``N - majority + 1`` witnesses that each made a promise of ``ballot`` durable
+        before answering; ``ballot`` is above every term they reported in the plain round.  Let
+        M be a majority that acknowledged R (old incarnation of this node included); ``M``
+        minus this node has at least ``majority - 1`` members among the ``N - 1`` others, and
+        ``(majority - 1) + (N - majority + 1) = N > N - 1``, so some counted witness x is in
+        M.  Either x accepted R before it promised ``ballot`` -- its answer, read after the
+        promise and atomically with acceptances (ruling R55), reports R or a root above it --
+        or it never accepts R (R's label is below ``ballot``, the ballot rule), and then R has
+        no majority with x in it: a contradiction.  So the adopted root orders at or above
+        every committed root, whatever the timing of leases or clock rates.  A ``"new"``
+        cluster cannot be stale this way: the holder of any lease records its own term before a
+        grant exists, so its answer reports it; a ``"rootless"`` rejoin counts every loaded
+        member, and the witnesses among them confirmed the ballot.
 
         Re-proposing the highest accepted root is what Paxos prescribes, but only together
         with its value: adopted without its records, a root whose records lived on lost disks
@@ -1070,15 +1091,7 @@ class ClusterCoordinator:
         report are adopted as committed knowledge only (they may have been read from the
         persisted root of the store, which is never acceptance), are not logged, and, for a
         forced rejoin, only up to the adopted root (a majority loss may have lost them)."""
-        safe = self.restart_grace
-        if how != "new" and asked < fresh_from:
-            return self._block_rejoin(
-                tier, f"this is not a cluster's first start (some member has accepted a root or seen a "
-                      f"lease term), and answers gathered before lease_duration + drift_margin = {safe:g} s "
-                      f"from the attach of this node's empty acceptor log may miss a root it accepted "
-                      f"before it lost its log; it asks again once that much time has passed (whatever "
-                      f"its startup_grace={self._grace:g})")
-        learnt = max(promised + [max(a[2], c[2]) for a, c, _ in answers] + [0])
+        learnt = max(promised + [max(a[2], c[2]) for a, c, _ in answers] + [ballot, 0])
         best = committed = None
         for (ak, aroot, alabel), (ck, croot, clabel), _ in answers:
             if ak and (best is None or compare_roots(alabel, aroot, best[0], best[1]) > 0):
@@ -1460,13 +1473,15 @@ class ClusterCoordinator:
                 return
             if kind in ("grant", "reject"):
                 self._on_reply(sender, msg)
+            elif kind == "query" and msg["ballot"] and self._witness_state() == "ok":
+                reply = False               # answered below, after a durable promise
             elif kind == "query":
                 state = self._witness_state()
                 if state == "unknown":
                     # No acceptor log loaded: whatever is in memory is not what this node
                     # promised or accepted.  Never counted by the asker.
                     reply = make_message("answer", self._node, rid=msg["rid"], root=None, committed=None,
-                                         certain=False, promised=0, state=state)
+                                         certain=False, promised=0, state=state, ballot=0)
                 else:
                     # ``promised``: the lease activity this node knows of (terms seen in requests
                     # and releases, promises) and the accepted root's label -- not the committed
@@ -1477,11 +1492,45 @@ class ClusterCoordinator:
                     reply = make_message("answer", self._node, rid=msg["rid"], root=self._wire(self._accepted),
                                          committed=self._wire(self._committed), certain=not self._suspect_term,
                                          promised=max(self._grants.terms_seen, self._accepted[2]),
-                                         state=state)
+                                         state=state, ballot=0)
             else:
                 self._on_answer(sender, kind, msg)
-        if reply is not None:
+        if reply is False:
+            self._on_ballot_query(sender, msg)
+        elif reply is not None:
             self._transport.send(sender, reply)
+
+    def _on_ballot_query(self, sender: str, msg: dict) -> None:
+        """A rejoining member asks for a durable promise of its ballot before this witness
+        answers (ruling R78a, "Rejoining" in the module docstring).  The promise is raised in
+        memory and the answer read under ``_log_lock``, so no acceptance falls between them
+        (ruling R55); the answer is sent only once the promise is durable.  Answered as a
+        plain query (``ballot`` 0, not counted by the rejoin) when this node is not a
+        witness by then."""
+        ballot = msg["ballot"]
+        with self._log_lock:
+            with self._cond:
+                if self._state != "running":
+                    return
+                state = self._witness_state()
+                tier = self._tier if state == "ok" else None
+                if tier is not None:
+                    ended = self._grants.promise(ballot)
+                    if ended:
+                        # A grant ended before its time: its holder's outcome is not known here.
+                        self._suspect_term = max(self._suspect_term, ended)
+                    self._hint = max(self._hint, ballot)
+                    self._cond.notify_all()
+                reply = make_message("answer", self._node, rid=msg["rid"],
+                                     root=self._wire(self._accepted) if state != "unknown" else None,
+                                     committed=self._wire(self._committed) if state != "unknown" else None,
+                                     certain=state != "unknown" and not self._suspect_term,
+                                     promised=max(self._grants.terms_seen, self._accepted[2]) if state != "unknown" else 0,
+                                     state=state, ballot=ballot if tier is not None else 0)
+            if tier is not None and not (self._logged_promise[0] is tier and ballot <= self._logged_promise[1]) \
+                    and not self._log_promise(tier, ballot):
+                return              # a promise that could not be made durable is not answered
+        self._transport.send(sender, reply)
 
     def _on_request(self, sender: str, msg: dict, *, renew: bool = False) -> None:
         """Decide a lease request and make a grant's promise durable before it is sent.  The
@@ -1736,6 +1785,7 @@ class ClusterCoordinator:
                                       msg["certain"])
             waiter.promised[sender] = msg["promised"]
             waiter.states[sender] = msg["state"]
+            waiter.ballots[sender] = msg["ballot"]
         elif kind == "fetched":
             if waiter.kind != "fetch":
                 return
@@ -2999,7 +3049,8 @@ class ClusterCoordinator:
         """
         with self._lock:
             suspected = self._suspect_term      # what the answers below can settle
-        waiter = self._ask("query", {}, lambda w: len(w.answers) >= len(self._others), self._request_timeout)
+        waiter = self._ask("query", {"ballot": 0}, lambda w: len(w.answers) >= len(self._others),
+                           self._request_timeout)
         with self._lock:
             answers = {p: a for p, a in waiter.answers.items() if waiter.states.get(p) == "ok"}
             own = self._witness_state() == "ok"

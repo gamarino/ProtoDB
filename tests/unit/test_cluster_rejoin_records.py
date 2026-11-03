@@ -244,10 +244,11 @@ def test_a_restart_on_a_log_needs_a_grace_of_one_lease_plus_the_drift_margin():
         assert node.stats()["rejoining"] is False
 
 
-def test_a_wiped_node_with_a_startup_grace_of_zero_waits_a_lease_before_rejoining(harness):
-    """An empty log cannot tell a wiped node from a late member of a first start: with a
-    grace of 0, a rejoin into a cluster that accepted roots waits the safe grace (one lease
-    plus the drift margin) from its start."""
+@pytest.mark.parametrize("grace", [0.0, MARGIN])
+def test_a_wiped_node_rejoins_by_a_ballot_whatever_its_startup_grace(harness, grace):
+    """An empty log cannot tell a wiped node from a late member of a first start.  Rulings
+    R53/R54 made such a rejoin wait one lease plus the drift margin; since ruling R78a it is
+    a ballot round instead, so it completes at once (no clock advance) whatever the grace."""
     from proto_db.storage.memory import MemoryStorage
     h = harness()
     h.bootstrap("a")                              # a cluster that accepted a root: not a first start
@@ -255,44 +256,21 @@ def test_a_wiped_node_with_a_startup_grace_of_zero_waits_a_lease_before_rejoinin
     old.stop()
     h.retired.append(old)
     h.disks["b"] = MemoryStorage()                # b's disk is lost
-    b = h.nodes["b"] = h._node("b", 0.0)
-    deadline = time.monotonic() + 10.0
-    while not b.stats().get("rejoin_blocked") and time.monotonic() < deadline:
-        assert not h.rejoin("b", timeout=0.2)
-    stats = b.stats()
-    assert stats["rejoining"] and "startup_grace" in (stats["rejoin_blocked"] or "")
-    h.clock.t += D + MARGIN * 0.5                 # past one lease, not past the drift margin
-    assert not h.rejoin("b", timeout=1.5)
-    h.clock.t += MARGIN
+    b = h.nodes["b"] = h._node("b", grace)
     assert h.rejoin("b")
+    assert b.stats()["rejoin_ballots"] == 1
+    assert b._grants.granted_top > h.nodes["a"]._grants.terms_seen - 1
 
 
-def test_a_wiped_node_with_a_short_positive_grace_waits_like_a_grace_of_zero(harness):
-    """M1: a positive grace below one lease plus the margin has exactly the exposure of 0."""
-    from proto_db.storage.memory import MemoryStorage
-    h = harness()
-    h.bootstrap("a")
-    old = h.nodes["b"]
-    old.stop()
-    h.retired.append(old)
-    h.disks["b"] = MemoryStorage()
-    b = h.nodes["b"] = h._node("b", MARGIN)       # positive, but far below D + MARGIN
-    deadline = time.monotonic() + 10.0
-    while not b.stats().get("rejoin_blocked") and time.monotonic() < deadline:
-        assert not h.rejoin("b", timeout=0.2)
-    assert b.stats()["rejoining"] and "startup_grace" in (b.stats()["rejoin_blocked"] or "")
-    h.clock.t += D + MARGIN * 0.5
-    assert not h.rejoin("b", timeout=1.5)
-    h.clock.t += MARGIN
-    assert h.rejoin("b")
-
-
-def test_i1_a_wiped_granter_waits_when_a_term_was_granted_although_no_root_was_accepted(harness):
+def test_i1_a_wiped_granter_ends_the_lease_it_granted_by_its_rejoin_ballot(harness):
     """probe_grace0_new_overlap (re-review 4, I1).  A new cluster has accepted no root yet, but
     a holds a lease that c granted.  c loses its disk and restarts with a grace of 0.  "No
     member accepted a root" does not mean "no member granted a lease": the answers report a
-    promised term, so this is not a first start and c waits one lease plus the margin.
-    Without that, b obtained a second lease from b and c while a's was still valid."""
+    promised term, so this is not a first start.  c's rejoin is a ballot (ruling R78a): a and b
+    durably promise a ballot above a's term before answering, so a's lease can no longer
+    commit anything (its own acceptance and b's refuse its term), and b may take a new lease
+    from c at once.  Two members may then BELIEVE they hold a lease; only one can commit
+    (lease exclusivity is a liveness aid, not a safety premise: 8.3f review inventory, #1)."""
     from proto_db.storage.memory import MemoryStorage
     h = harness()
     lease_a = h.attempt("a", {"c"})
@@ -302,27 +280,24 @@ def test_i1_a_wiped_granter_waits_when_a_term_was_granted_although_no_root_was_a
     h.retired.append(old)
     h.disks["c"] = MemoryStorage()                # c, a granter of a's lease, loses its disk
     c = h.nodes["c"] = h._node("c", 0.0)
-    deadline = time.monotonic() + 10.0            # the clock has not moved; poll, never a fixed sleep
-    while not c.stats().get("rejoin_blocked") and time.monotonic() < deadline:
-        assert not h.rejoin("c", timeout=0.2)
-    assert c.stats()["rejoining"] and "startup_grace" in (c.stats()["rejoin_blocked"] or "")
-    lease_b = h.attempt("b", {"c"}, timeout=1.0)
-    assert isinstance(lease_b, ProtoTimeoutError), lease_b
-    assert lease_a.is_valid()                     # a alone believes it holds the lease
-    h.clock.t += GRACE + 0.01                     # c's wait is over, and so is a's lease
-    assert not lease_a.is_valid()
     assert h.rejoin("c")
+    assert c.stats()["rejoin_ballots"] == 1
     lease_b = h.attempt("b", {"c"})
-    assert not isinstance(lease_b, Exception) and lease_b.is_valid() and not lease_a.is_valid()
+    assert not isinstance(lease_b, Exception) and lease_b.is_valid()
+    assert lease_b.term > lease_a.term
+    R = rec(1)
+    assert isinstance(h.replicate("a", lease_a, R, to={"b", "c"}, expire=True), Exception)
+    assert all(h.nodes[n].accepted_root()[1] != R for n in "abc")
 
 
-def test_a_late_first_start_member_after_a_term_was_requested_waits_then_completes(harness):
+def test_a_late_first_start_member_after_a_term_was_requested_completes_by_ballot(harness):
     """The bootstrap race R51's rule creates if applied literally: a member finished its first
     start and requested a lease at once (its answers now report a term), while the other two
     are still empty.  Not a first start any more, and too few witnesses: without a fallback
     both empty members stayed rejoining for good (seen as a 30 s lease timeout in
     test_sync_waits_for_the_persisted_epoch_and_exposes_both_epochs).  Every member answered
-    and none accepted a root, so after the safe-grace wait the answers are enough."""
+    and none accepted a root (``"rootless"``): the ballot round, confirmed by the witness a,
+    completes each rejoin at once (ruling R78a; it used to wait the safe grace)."""
     h = harness()
     for n in ("b", "c"):                          # b and c are empty: their first start is not done
         h.restart(n, wipe=True, responders=())
@@ -332,11 +307,9 @@ def test_a_late_first_start_member_after_a_term_was_requested_waits_then_complet
         h.nodes[n] = h._node(n, 0.0)
     assert isinstance(h.attempt("a", set(), timeout=0.3), ProtoTimeoutError)   # a saw its own term
     b = h.nodes["b"]
-    assert not h.rejoin("b", {"a", "c"}, timeout=1.0)
-    assert "startup_grace" in (b.stats()["rejoin_blocked"] or "")
-    h.clock.t += GRACE
     assert h.rejoin("b", {"a", "c"})
     assert h.rejoin("c", {"a", "b"})
+    assert b.stats()["rejoin_ballots"] == 1
     assert b._grants.granted_top >= h.nodes["a"]._grants.terms_seen
 
 
