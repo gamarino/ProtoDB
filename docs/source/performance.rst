@@ -35,6 +35,9 @@ How to read these numbers
   EPP ``balance_power``, boost enabled (recorded in the JSON). Differences under ~15 % between
   the two runs, or against the first report, are within this machine's noise.
 - Memory figures are deliberately not reported.
+- **Provenance.** The results JSON was produced from a working tree with uncommitted changes
+  (it records ``git: 8ad6bf3, dirty: true``), so it is not tied to a commit. It will be
+  regenerated at a clean commit after Task 8.3e.
 
 Environment
 ~~~~~~~~~~~
@@ -46,7 +49,8 @@ CPU frequency                  ``amd-pstate-epp``, governor ``powersave``, EPP
 OS / file system               Linux 7.0, work directory on ZFS (not tmpfs)
 Python                         CPython 3.14.6, free-threaded build (``Py_GIL_DISABLED``)
 Modes                          GIL off (default) and ``-X gil=1``
-ProtoDB                        2.0.0.dev0 (git ``8ad6bf3`` plus fix round 1)
+ProtoDB                        2.0.0.dev0 (git ``8ad6bf3`` plus fix round 1; the JSON
+                               records a dirty tree)
 SQLite                         3.53.1 (bundled with the interpreter)
 rqlite                         v10.6.6 official linux-amd64 release, SHA-256 verified
                                against the digest published on the release page
@@ -107,7 +111,8 @@ hand-off or queue needs its own safety review).
 - *Cluster throughput is tens of commits per second with fsync, and that is the durability
   mode.* A 3-peer TCP cluster (4 threads per peer) commits **61/s with fsync-durable local
   tiers, 183/s with ``flush`` and 191/s with ``none``** (GIL off; 48 / 128 / 115 with the GIL
-  on). The concurrency tests report ~230/s because their peers run with ``none``/``flush``
+  on). Only the ``fsync`` figure carries the cluster's power-loss guarantees; ``flush`` and
+  ``none`` sync nothing (open defect D-SAFE-2, see `Cluster mode`_). The concurrency tests report ~230/s because their peers run with ``none``/``flush``
   local tiers; the benchmark's headline uses ``fsync``, the D46 commit point. With fsync a
   commit causes **12.6 syncs across the 3 nodes** (see `Syncs per commit`_), and replication
   (11.3 ms) is 83 % of a 13.6 ms critical section; without syncs the critical section is 4.5 ms.
@@ -294,8 +299,21 @@ The difference between the 232 commits/s quoted by the concurrency tests and the
 is the durability mode: the test peers (``tests/concurrency/cluster_peer.py``) run their tiers
 with ``none``/``flush``, where a commit issues no sync at all; the benchmark's headline runs
 them with ``fsync``. TieredStorage ``flush`` issues no sync on the commit path (counted: 0
-syncs per commit, like ``none``), so it is not power-loss safe on any node; the two modes
-measure the same thing, the engine and the network without the disk.
+syncs per commit, like ``none``); the two modes measure the same thing, the engine and the
+network without the disk.
+
+.. warning::
+
+   **The cluster's guarantees hold only with** ``durability="fsync"``. An acknowledged commit
+   survives power loss, and no lease term is granted twice across power loss, only when every
+   node's TieredStorage runs in ``fsync`` mode. With ``flush`` or ``none`` TieredStorage syncs
+   nothing (0 sync syscalls per process, measured), so the cluster is process-crash safe only:
+   a power loss on a majority can lose acknowledged commits, and a power loss on even one node
+   can make it forget a promise and void the one-holder-per-term argument (reasoned, not
+   reproduced). This is open defect **D-SAFE-2**, to be fixed by Task 8.3e (acceptor metadata
+   always fsynced). Use ``fsync`` for any cluster that must survive power loss; the ``flush``
+   and ``none`` figures above are not durability-equivalent to the ``fsync`` headline or to
+   rqlite.
 
 Critical-section breakdown per commit (ms, GIL off, TCP peers, ``fsync``): validation, intent
 replay, path copy, replication:
@@ -382,13 +400,14 @@ Other findings
   1.0 (1 peer), 2.1 (2), 5.8 (3), 13 (4) and 54 (8) over TCP, and the in-process counter
   workload reaches 119 at 8 peers. See the summary for the starvation defect (D-LIVE-1).
 - "Hundreds of commits per second" is reached by the cluster without syncs (183-191/s at 3
-  peers), by the single peer in-process with ``fsync`` (122/s) and by the CAS-only path without
+  peers, process-crash safe only), by the single peer in-process with ``fsync`` (122/s) and by the CAS-only path without
   store latency, not by multi-peer ``fsync`` clusters on this machine (20-61/s).
 - Storage-latency independence (3 in-process peers, blind adds): GIL off, 63.6 commits/s with
   a 0 ms store and 68.6/s with a 30 ms store (ratio 1.08). GIL on, 52.0 and 38.6/s (ratio 0.74,
   3 runs each): the in-process peers and their persister threads share one interpreter, and
-  with the GIL the 30 ms run's path copy grew from 1.2 to 6.3 ms per commit; this is reported,
-  not diagnosed. The TCP figures, one process per peer, are unaffected by it.
+  with the GIL the 30 ms run's path copy grew from 1.2 to 6.3 ms per commit. The 0.74 ratio is
+  **undiagnosed** (it may be noise, interpreter contention or a real interaction) and is
+  tracked as an open item. The TCP figures, one process per peer, are unaffected by it.
 
 CAS-only baseline (the reverted D5 design: ``CloudStorage`` writers, each its own space,
 arbitrated by the store's conditional root write; 3 runs each, GIL off):

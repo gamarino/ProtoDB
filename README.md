@@ -49,7 +49,10 @@ same project. The old spelling survives in `ProtoBaseException`, a deprecated al
   Python lambdas are allowed and appear as an explicit `PythonFilter` node.
 - **Storage**: `MemoryStorage`; `FileStorage` (append-only segments, CRC-checked records, `fsync` per
   commit by default); `CloudStorage` over S3 or Google Cloud Storage; `TieredStorage` and a cluster
-  coordinator for several writer processes.
+  coordinator for several writer processes. A cluster survives power loss only with
+  `durability="fsync"` (the default) on every node's TieredStorage: with `"flush"` or `"none"` it
+  syncs nothing and is process-crash safe only (open defect D-SAFE-2, see
+  `docs/source/performance.rst`).
 - **Free-threading**: tested on CPython 3.14t (GIL disabled) and with the GIL; `parallel_scan` and
   `parallel_filter` scale on free-threaded builds.
 - **Interop**: export to Apache Arrow and Parquet (`to_arrow`, `to_parquet`).

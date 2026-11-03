@@ -1,8 +1,16 @@
 """Tiered storage of a cluster node: a local WAL tier and an object-store tier (Task 8.3d, D44, D46).
 
 In cluster mode the object store is entirely off the commit path.  Each node keeps a
-local directory, written with ``fsync`` (the commit-durability tier), and a background
+local directory (the commit-durability tier) and a background
 replicator (:mod:`proto_db.cluster.persister`) ships it to the object store.
+
+Durability: only ``durability="fsync"`` (the default) makes the local tier a commit-durability
+tier: records, the ranges log, accepted roots and lease promises are fsynced before a node
+acknowledges.  With ``"flush"`` or ``"none"`` this storage issues no sync at all (measured: 0
+sync syscalls per process), so a cluster is process-crash safe only: a power loss on a
+majority can lose acknowledged commits, and a power loss on even one node can make it forget a
+promise (reasoned).  Tracked as defect D-SAFE-2, to be fixed by Task 8.3e (acceptor metadata
+always fsynced).  Use ``fsync`` for any cluster that must survive power loss.
 
 Layout of the local directory::
 
@@ -336,6 +344,9 @@ class TieredStorage(SharedStorage):
         store: the :class:`~proto_db.storage.cloud.ObjectStore` shared by the cluster.
         prefix: key prefix of the space in the store.
         durability: ``"fsync"`` (default), ``"flush"`` or ``"none"`` for the local tier.
+            Only ``"fsync"`` keeps the cluster's guarantees across power loss; ``"flush"``
+            and ``"none"`` sync nothing (process-crash safe only; see the module docstring,
+            defect D-SAFE-2).
         cache_bytes: capacity of the in-memory record cache.
         segment_cache_bytes: capacity of the cache of downloaded segment objects.
         segment_max_bytes: a local segment rolls over before exceeding this size.

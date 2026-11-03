@@ -71,7 +71,8 @@ with the results).
 - Cluster mode is compared with the CAS-only baseline (storage-arbitrated writers, the
   reverted D5 approach), with itself at 1/2/4/8 peers (in-process and TCP subprocess peers),
   with itself at 0 and 30 ms object-store latency, with itself at 3 peers in `fsync`,
-  `flush` and `none` durability, and with rqlite (3 nodes on loopback).
+  `flush` and `none` durability (process-crash safe only: TieredStorage syncs nothing in those
+  modes, defect D-SAFE-2), and with rqlite (3 nodes on loopback).
 - Every TCP peer counts its `os.fsync`/`os.fdatasync` calls by role and call site
   (`benchmarks/fsync_probe.py`); `cluster_tcp` reports syncs per commit. To cross-check with
   strace, wrap the peers:

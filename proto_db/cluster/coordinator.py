@@ -24,6 +24,9 @@ Granting
     never confused with its previous life.  A grant's term is made durable in the node's
     acceptor log (:mod:`proto_db.cluster.rootlog`) before the grant is sent, and restored
     when the node restarts, so no term is ever granted twice (the acceptor rule of Paxos).
+    This holds across power loss only when the tier uses ``durability="fsync"``: with
+    ``"flush"`` or ``"none"`` the promise is not synced, and a power loss on even one node
+    can make it forget a promise (open defect D-SAFE-2, see "The commit point" below).
     A node grants, and acknowledges replications, only while a cluster tier (the storage
     of a space) is attached and while it is not fenced: a node without a durable place for
     its promises and roots never counts toward a majority.
@@ -83,7 +86,13 @@ The commit point (D46)
     one).  A peer accepts it -- stores the records and logs the root on its own durable
     tier (``fsync``), then acknowledges -- unless it is starting, has no tier, is fenced or
     has granted a higher term (the ballot rule).  The commit point is therefore the local
-    WAL ``fsync`` of a majority.  A cluster over ``MemoryStorage`` keeps its acceptor logs
+    WAL ``fsync`` of a majority.  **Only with** ``durability="fsync"``: TieredStorage in
+    ``"flush"`` or ``"none"`` mode syncs nothing (promises, accepted roots and records stay
+    in the OS cache), so the cluster is then process-crash safe only -- a power loss on a
+    majority can lose acknowledged commits, and a power loss on even one node can make it
+    forget a promise and void the one-holder-per-term argument (reasoned, not reproduced).
+    Tracked as defect D-SAFE-2, to be fixed by Task 8.3e (acceptor metadata always fsynced).
+    Use ``fsync`` for any cluster that must survive power loss.  A cluster over ``MemoryStorage`` keeps its acceptor logs
     in memory and is not durable.  The commit is acknowledged once a majority (the holder included) has
     acknowledged before the lease ends; the release then tells the peers it is committed.
     Every later lease's granting majority intersects that acknowledging majority, and a
