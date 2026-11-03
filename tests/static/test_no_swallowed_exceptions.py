@@ -11,60 +11,9 @@ if __name__ == "__main__":
 
 from tests.static import _scan
 
-# New modules are appended as they are written; Phase 11 replaces this with the whole package.
-CHECKED_ROOTS = [
-    "proto_db/errors.py",
-    "proto_db/values.py",
-    "proto_db/transactions.py",
-    "proto_db/core/__init__.py",
-    "proto_db/core/atom.py",
-    "proto_db/core/codec.py",
-    "proto_db/core/dbobject.py",
-    "proto_db/storage/__init__.py",
-    "proto_db/storage/format.py",
-    "proto_db/storage/base.py",
-    "proto_db/storage/memory.py",
-    "proto_db/storage/cache.py",
-    "proto_db/storage/file.py",
-    "proto_db/storage/cloud.py",
-    "proto_db/storage/tiered.py",
-    "proto_db/storage/logfile.py",
-    "proto_db/storage/crc.py",
-    "proto_db/storage/ownerlock.py",
-    "proto_db/collections/__init__.py",
-    "proto_db/collections/avl.py",
-    "proto_db/collections/base.py",
-    "proto_db/collections/lists.py",
-    "proto_db/collections/dictionaries.py",
-    "proto_db/collections/hash_dictionaries.py",
-    "proto_db/collections/sets.py",
-    "proto_db/query/__init__.py",
-    "proto_db/query/plans.py",
-    "proto_db/query/expressions.py",
-    "proto_db/query/terms.py",
-    "proto_db/query/planner.py",
-    "proto_db/query/linq.py",
-    "proto_db/indexing/__init__.py",
-    "proto_db/indexing/keyspec.py",
-    "proto_db/indexing/base.py",
-    "proto_db/indexing/keyed.py",
-    "proto_db/indexing/equality.py",
-    "proto_db/indexing/range.py",
-    "proto_db/indexing/vector.py",
-    "proto_db/indexing/vector_backends.py",
-    "proto_db/runtime/__init__.py",
-    "proto_db/runtime/parallel.py",
-    "proto_db/runtime/fsm.py",
-    "proto_db/interop/__init__.py",
-    "proto_db/interop/arrow.py",
-    "proto_db/cluster/__init__.py",
-    "proto_db/cluster/protocol.py",
-    "proto_db/cluster/lease.py",
-    "proto_db/cluster/transport.py",
-    "proto_db/cluster/coordinator.py",
-    "proto_db/cluster/persister.py",
-    "proto_db/cluster/rootlog.py",
-]
+# Every module of the package is checked (D48): since the 0.1 modules were removed in Task 8.5,
+# all of proto_db/ is 2.0 code, and a new module is covered without being listed here.
+CHECKED_ROOTS = ["proto_db"]
 
 
 def checked_files():

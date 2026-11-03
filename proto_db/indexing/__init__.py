@@ -1,7 +1,7 @@
 """ProtoDB 2.0 index framework (spec section 8.3).
 
 ``proto_db.indexing`` is the permanent name of this package (ruling R16): the
-spec's ``proto_db.indexes`` collides with the 0.1 module ``proto_db/indexes.py``.
+spec's ``proto_db.indexes`` collided with the 0.1 module ``proto_db/indexes.py`` (removed in Task 8.5).
 Index classes persist under their own stable ``__type_name__``
 (``proto_db.indexing.Index`` for the abstract base, D29).
 

@@ -632,6 +632,22 @@ def test_select_many():
     assert [(p["id"], t) for p, t in pairs] == [(1, "a"), (1, "b"), (4, "c")]
 
 
+def test_select_many_top_n_per_category():
+    # Port of the 0.1 test_select_many_plan.test_top_n_per_category: a per-element subquery,
+    # materialized with to_list() (Unnest flattens lists, tuples and collections).
+    categories = [{"id": 1, "name": "Electronics"}, {"id": 2, "name": "Books"}]
+    products = [{"name": "Laptop", "cat": 1, "price": 1000}, {"name": "Mouse", "cat": 1, "price": 20},
+                {"name": "Monitor", "cat": 1, "price": 300}, {"name": "Cookbook", "cat": 2, "price": 30},
+                {"name": "Sci-Fi Novel", "cat": 2, "price": 25}, {"name": "Pamphlet", "cat": 2, "price": 1}]
+    q = (from_collection(categories).order_by(F.name)
+         .select_many(lambda c: from_collection(products).where(F.cat == c["id"])
+                      .order_by(F.price, descending=True).take(2).to_list(), with_parent=True)
+         .select(lambda pair: (pair[0]["name"], pair[1]["name"])))
+    assert q.to_list() == [("Books", "Cookbook"), ("Books", "Sci-Fi Novel"), ("Electronics", "Laptop"),
+                           ("Electronics", "Monitor")]
+    assert from_collection(categories).select_many(lambda c: []).to_list() == []
+
+
 # -- terminals -----------------------------------------------------------------------------------
 
 def test_count_first_and_first_or_none():

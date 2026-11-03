@@ -28,7 +28,6 @@ classifiers = [
 ]
 dependencies = [
   "msgpack",
-  "psutil",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +42,8 @@ dev = [
   "pytest-cov",
   "hypothesis",
   "sphinx",
+  "build",
+  "twine",
 ]
 
 [project.urls]
@@ -52,9 +53,7 @@ Homepage = "https://github.com/gamarino/ProtoDB"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["proto_db*"]
-exclude = ["proto_db.tests*"]
 
 [tool.pytest.ini_options]
-# "proto_db/tests" is the 0.1 suite; it is removed in Task 8.5.
-testpaths = ["tests", "proto_db/tests"]
+testpaths = ["tests"]
 timeout = 300

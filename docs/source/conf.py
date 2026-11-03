@@ -60,7 +60,7 @@ try:
 except Exception:  # pragma: no cover
     html_theme = 'alabaster'
 
-html_static_path = ['_static']
+html_static_path = []
 
 # -- Extension configuration -------------------------------------------------
 # Make autodoc robust when optional deps are missing
@@ -68,7 +68,8 @@ html_static_path = ['_static']
 autodoc_mock_imports = [
     'pyarrow', 'pyarrow.parquet', 'pyarrow.dataset',
     'numpy', 'sklearn', 'sklearn.neighbors',
-    'boto3', 'botocore', 'botocore.client'
+    'boto3', 'botocore', 'botocore.client',
+    'google', 'google.cloud', 'google.cloud.storage', 'hnswlib',
 ]
 
 autodoc_member_order = 'bysource'

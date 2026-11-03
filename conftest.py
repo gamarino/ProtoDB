@@ -1,6 +1,5 @@
-# Test discovery helper for unittest when run from repository root.
-# Ensure the project root is on sys.path so that 'proto_db' is importable
-# and relative imports inside proto_db.tests resolve with a known package.
+# Ensure the project root is on sys.path so that 'proto_db' and the 'tests' package are importable
+# when pytest is run from the repository root.
 import os
 import sys
 

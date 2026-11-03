@@ -1,18 +1,26 @@
-# ProtoBase requirements
+# ProtoDB requirements
 #
-# Core ProtoBase has no mandatory third‑party dependencies and runs on standard library (Python >= 3.11).
-# The packages below are OPTIONAL and only needed for specific features.
-# Uncomment the lines you need for your environment.
+# The authoritative list is pyproject.toml. ProtoDB needs Python >= 3.11 and msgpack;
+# the packages below the first line are OPTIONAL and only needed for specific features.
+msgpack
 #
-# Optional: Arrow/Parquet bridge (proto_db.arrow_bridge)
-# pyarrow>=14.0.0
-# numpy>=1.24.0
+# Optional: vector indexes (proto_db.indexing.vector) -- extra "vectors"
+# numpy
+# Optional: HNSW vector backend -- extra "hnsw" (re-enables the GIL on free-threaded builds)
+# hnswlib
 #
-# Optional: Cloud/S3 integration (proto_db.cloud_file_storage)
-# boto3>=1.28.0
-# botocore>=1.31.0
+# Optional: Arrow/Parquet bridge (proto_db.interop.arrow) -- extra "parquet"
+# pyarrow
 #
-# Optional: Development tooling (linting, formatting, tests). Not required to use ProtoBase.
-# pytest>=7.0.0
-# mypy>=1.5.0
-# black>=23.0.0
+# Optional: cloud object stores (proto_db.storage.cloud) -- extras "s3" and "gcs"
+# boto3
+# google-cloud-storage
+#
+# Development (tests, docs, packaging) -- extra "dev"
+# pytest
+# pytest-timeout
+# pytest-cov
+# hypothesis
+# sphinx
+# build
+# twine

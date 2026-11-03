@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Removed (2.0.0.dev0)
+- The 0.1 implementation (`common`, `db_access`, the 0.1 storages, collections, queries, LINQ, vectors, `parallel`, `fsm`, `arrow_bridge`, `hybrid_executor`, `exceptions`) and its test suite `proto_db/tests/`; `proto_db` now exports the 2.0 API (docs/decisions.md D47, D48; dropped tests: docs/legacy/dropped-tests.md).
+
 ### Added
 - Optional parallel scanning module (proto_db.parallel) with adaptive chunking and a simple work-stealing scheduler.
 - Metrics hooks for per-worker and global stats (chunk latencies, steals, queue depths).

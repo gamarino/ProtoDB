@@ -15,5 +15,5 @@ def expand(roots):
 
 
 def all_package_files():
-    """Every .py file of the proto_db package, excluding the 0.1 test directory."""
-    return [f for f in expand(["proto_db"]) if "tests" not in f.relative_to(REPO).parts]
+    """Every .py file of the proto_db package."""
+    return list(expand(["proto_db"]))
