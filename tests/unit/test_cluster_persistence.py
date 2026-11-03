@@ -1,11 +1,12 @@
 """Cluster commits over tiered storage: the object store off the commit path (Task 8.3d, D46)."""
+import tempfile
 import threading
 import time
 
 import pytest
 
 from proto_db.errors import ProtoTimeoutError
-from proto_db.storage.cloud import CloudStorage
+from proto_db.storage.tiered import TieredStorage
 from proto_db.transactions import ObjectSpace
 from tests.support.fake_object_store import FakeObjectStore
 from tests.support.tiered_cluster import FAST, RUN_KW, TieredCluster, incr
@@ -14,8 +15,17 @@ pytestmark = [pytest.mark.timeout(120)]
 
 
 def _remote_value(store):
-    """The counter in the space persisted in ``store`` (read without any cluster), or ``None``."""
-    space = ObjectSpace(CloudStorage(store))
+    """The counter in the space persisted in ``store`` (read without any cluster), or ``None``.
+
+    Read through a ``TieredStorage`` on an empty local directory: a lagging persister may
+    have uploaded the records of a node that had not shipped yet as part objects (D46),
+    which only the tiered storage reads (``CloudStorage`` reads sealed segment objects)."""
+    with tempfile.TemporaryDirectory() as local:
+        return _remote_value_in(store, local)
+
+
+def _remote_value_in(store, local):
+    space = ObjectSpace(TieredStorage(local, store, durability="none"))
     try:
         if "db" not in space.list_databases():
             return None

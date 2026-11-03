@@ -15,7 +15,7 @@ from tests.support.cluster import Cluster
 
 pytestmark = pytest.mark.timeout(60)
 
-FAST = dict(lease_duration=0.6, request_timeout=0.1, startup_grace=0.0,
+FAST = dict(lease_duration=0.9, request_timeout=0.1, startup_grace=0.0,
             backoff=(0.001, 0.02))
 
 
@@ -275,10 +275,10 @@ def test_the_default_startup_grace_lasts_one_lease_plus_the_drift_margin(baselin
     assert waited >= grace
 
 
-def test_a_holder_never_replicates_under_a_term_it_promised_to_refuse(baseline_threads):
-    """A node that promised a higher term (a rejoin's ballot, R78a) sends nothing under a lower
-    one: ``ProtoConflictError`` (retryable) instead of a replication every promising member
-    refuses, whose outcome would be reported unknown.  Found under CPU load: a wiped node
+def test_a_holder_never_replicates_under_a_term_below_its_rejoin_ballot(baseline_threads):
+    """A node whose rejoin ballot (R78a) a quorum promised sends nothing under a lower term,
+    which can no longer gain a majority: ``ProtoConflictError`` (retryable) instead of a
+    replication the promising members refuse, whose outcome would be reported unknown.  Found under CPU load: a wiped node
     rejoined (its ballot ended the owner's term at every witness), then committed under a
     permission of that term and got ``ProtoOutcomeUnknownError`` (9/20 runs of
     ``test_a_fresh_peer_joining_during_an_outage_recovers_from_its_peers`` at 275a3b0)."""
@@ -288,9 +288,9 @@ def test_a_holder_never_replicates_under_a_term_it_promised_to_refuse(baseline_t
         n0 = cl["n0"]
         lease = n0.acquire(timeout=5)
         with n0._lock:
-            n0._grants.promise(lease.term + 100)
+            n0._rejoin_ballot = lease.term + 100      # as _publish_rejoin records it
         sent = n0.stats()["replications"]
-        with pytest.raises(ProtoConflictError, match="superseded"):
+        with pytest.raises(ProtoConflictError, match="rejoin ballot"):
             n0.replicate(lease, _rec(1))
         assert n0.stats()["replications"] == sent and n0.stats()["replication_failures"] == 0
         n0.release(lease)

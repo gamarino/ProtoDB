@@ -530,6 +530,9 @@ class ClusterCoordinator:
         self._rejoining = False             # the acceptor log was empty: learning the promised terms
         self._rejoin_forced = False         # the operator accepted a rejoin from a bare majority
         self._rejoin_blocked = None         # why the running rejoin cannot complete, if it cannot
+        # The ballot of this incarnation's last rejoin: N - majority + 1 members promised it, so
+        # no lower term can gain a majority again; this node never replicates under one.
+        self._rejoin_ballot = 0
         self._rejoiners = []                # every rejoin thread started (joined by stop)
         self._loaded = False                # the attached tier's acceptor log is loaded
         self._tier = None
@@ -1136,13 +1139,13 @@ class ClusterCoordinator:
                 self._tier_failed(tier, e, "the rejoin's acceptor-log write")
                 return self._block_rejoin(tier, f"writing its acceptor log failed ({e}); close and reopen the "
                                                 f"space on a healthy disk")
-            self._publish_rejoin(learnt, promised, best, committed)
+            self._publish_rejoin(learnt, promised, best, committed, ballot)
         logger.info("Node %s rejoined with an empty acceptor log: highest term %d, accepted root %s",
                     self._node, learnt, None if best is None else root_key(*best)[:2])
         return True
 
     def _publish_rejoin(self, learnt: int, promised: list, best: Optional[tuple],
-                        committed: Optional[tuple]) -> None:
+                        committed: Optional[tuple], ballot: int = 0) -> None:
         """Adopt in memory what :meth:`_complete_rejoin` logged (``_log_lock`` held)."""
         with self._cond:
             # The floor is every term and label learnt; the activity is the promises only.
@@ -1156,6 +1159,7 @@ class ClusterCoordinator:
             self._rejoining = False
             self._rejoin_forced = False
             self._rejoin_blocked = None
+            self._rejoin_ballot = max(self._rejoin_ballot, ballot)
             self._stats["rejoins"] += 1
             self._cond.notify_all()
 
@@ -2876,13 +2880,13 @@ class ClusterCoordinator:
             if not lease.is_valid():
                 raise ProtoConflictError("The cluster write lease expired before the root was replicated; "
                                          "nothing was replicated")
-            if self._grants.granted_top > label:
-                # This node promised a higher term (a rejoin's ballot, R78a, or a grant): the
-                # term is over here, and every member that promised it refuses this root.
-                # Nothing is sent: a retry runs under a live term instead of reporting an
-                # outcome that a full refusal would leave unknown.
-                raise ProtoConflictError(f"Term {label} was superseded on this node by a promise of term "
-                                         f"{self._grants.granted_top}; nothing was replicated")
+            if label < self._rejoin_ballot:
+                # This node's rejoin ballot (R78a) was promised by N - majority + 1 members: no
+                # term below it can gain a majority again, and every one of them refuses this
+                # root.  Nothing is sent: a retry runs under a live term instead of reporting
+                # an outcome that the refusals would leave unknown.
+                raise ProtoConflictError(f"Term {label} is below this node's rejoin ballot {self._rejoin_ballot}, "
+                                         f"which a quorum promised; nothing was replicated")
             rid, waiter = self._new_waiter("replicate", label)
             parts = [make_message("records", self._node, term=label, rid=rid, index=i, records=chunk)
                      for i, chunk in enumerate(chunks[:-1])]

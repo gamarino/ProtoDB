@@ -26,7 +26,7 @@ from tests.support.tiered_cluster import RUN_KW, TieredCluster, incr
 
 pytestmark = [pytest.mark.timeout(240)]
 
-LEASE = dict(lease_duration=0.6, request_timeout=0.1)
+LEASE = dict(lease_duration=0.9, request_timeout=0.1)
 STORAGE = dict(durability="fsync")
 THREADS = 2
 SECONDS = 1.6

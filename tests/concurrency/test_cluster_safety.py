@@ -40,8 +40,8 @@ from tests.support.cluster import Cluster, DriftClock
 
 pytestmark = [pytest.mark.freethreaded, pytest.mark.timeout(240)]
 
-LEASE = 0.6
-MARGIN = 0.4                # the minimum, ruling R78b: 2 * RHO * LEASE / (1 + RHO) = MARGIN
+LEASE = 0.9
+MARGIN = 0.6                # the minimum, ruling R78b: 2 * RHO * LEASE / (1 + RHO) = MARGIN
 RHO = 0.5
 RUN_SECONDS = 1.2
 THREADS_PER_NODE = 2
