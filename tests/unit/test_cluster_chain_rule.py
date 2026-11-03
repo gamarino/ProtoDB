@@ -5,8 +5,10 @@ duplicate), extends it (built on it), or catches it up along a committed predece
 orders above it; a sibling -- another root built on the same base in the same term -- is
 refused, never reported as a protocol violation; a permission sequence number below the
 highest accepted in the term is refused.  The first root of a newer term is ruled by the
-ballot rule alone.  Safety does not rest on the owner's permissions: these rules are what
-stops two holders of one term from both reaching a majority (D50, S3).
+ballot rule alone.  These rules stop two holders of one term from both reaching a majority
+whatever the permissions (D50, S3); that a committed root is never outranked by an
+uncommitted sibling at the next phase 1 still rests on the owner's sequencing (D50, S2/S4,
+tests/unit/test_cluster_permit_incarnations.py).
 """
 import pytest
 

@@ -257,6 +257,36 @@ def test_duplicated_and_reordered_messages(tmp_path):
         _check(tc, load, tc.ids)
 
 
+@pytest.mark.parametrize("round_", range(3))
+def test_duplicates_delayed_beyond_a_holder_restart(tmp_path, round_):
+    """8.3f review I2: copies of the owner's messages (permits among them) are duplicated and
+    delayed beyond a kill/revive of a permission holder in the middle of its round, so a
+    permit issued to the dead incarnation reaches the next one.  Before protocol 9 the new
+    incarnation answered it ``done("none")`` and the owner reissued the base (C1)."""
+    with _cluster(tmp_path) as tc:
+        net = tc.cluster.net
+        with Load(tc) as load:
+            time.sleep(SECONDS / 3)
+            owner = _owner(tc)
+            holder = next(n for n in tc.ids if n != owner)
+            net.set_faults(duplicate=0.5, delay=(0.0, 0.05))
+            net.set_link_delay(owner, holder, 0.25)     # permits reach the holder late
+
+            def crash():
+                load.down.add(holder)
+                net.partition({holder}, set(tc.ids) - {holder})   # the round reaches nobody
+
+            assert _hook_replicate(tc, holder, crash).wait(30)
+            time.sleep(0.02)
+            tc.kill(holder)
+            net.heal()
+            tc.revive(holder)                    # well within the 0.25 s of delayed permits
+            load.down.discard(holder)
+            time.sleep(SECONDS / 2)
+            net.set_link_delay(owner, holder, 0)
+        _check(tc, load, tc.ids)
+
+
 class _FrozenPowerLoss(PowerLoss):
     """:class:`PowerLoss` that stops recording ``fsync`` calls under a dead node's directory
     (a host without power syncs nothing; closing its space must not make anything durable)."""

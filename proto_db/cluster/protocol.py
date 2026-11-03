@@ -41,16 +41,21 @@ fields of its type:
 ``renew``      ``term``, ``rid``, ``inc``: the owner of ``term`` asks its granters to extend the
                active grant they gave it (D50); answered by ``grant`` or ``reject``.
 ``permit_req`` ``term``, ``rid``, ``inc``: ask the owner of ``term`` for a write permission (D50).
-``permit``     ``term``, ``rid``, ``seq``, ``root``, ``certain``, ``valid``: write permission
-               ``seq`` of ``term``; ``root`` is the newest root the owner knows (committed
-               unless ``certain`` is False, the first permission of an uncertain lease) and
-               ``valid`` the seconds the permission may be used from the request's send.
+``permit``     ``term``, ``rid``, ``seq``, ``inc``, ``root``, ``certain``, ``valid``: write
+               permission ``seq`` of ``term`` for the requester's incarnation ``inc`` (the one
+               its ``permit_req`` carried; any other incarnation drops it unanswered, protocol
+               9); ``root`` is the newest root the owner knows (committed unless ``certain`` is
+               False, the first permission of an uncertain lease) and ``valid`` the seconds
+               the permission may be used from the request's send.
 ``permit_no``  ``term``, ``rid``, ``reason``: the sender does not grant (not the owner of that
                term, lease ended, term abandoned); ``term`` is the highest term it knows.
 ``done``       ``term``, ``seq``, ``inc``, ``outcome``, ``root``: the holder ends permission
                ``seq`` of ``term``: ``outcome`` is ``"committed"`` (``root`` is the last root it
                committed), ``"none"`` (nothing sent) or ``"unknown"``; broadcast, so every member
-               learns the committed root (processed after the sender's replications).
+               learns the committed root (processed after the sender's replications on links
+               that keep the sender's order).  ``inc`` is the sender's incarnation: the owner
+               counts a ``done`` only from the incarnation the permission was issued to, and
+               takes any other as an unknown outcome (8.3f review, C1).
 ``ack``        ``term``, ``rid``, ``ok``, ``root``: the receiver durably accepted (``ok``) or
                refused the replicated root; ``root`` is its accepted root.
 ``query``      ``rid``: ask a peer for the roots it knows (recovery, rejoin).
@@ -104,7 +109,9 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
 #: version 2 record format (self-validating headers, D46 fix round 13).
 #: 7: ``release`` carries the fairness hints ``next`` and ``more``, and the ``want`` message
 #: (Task 8.3e, D46).
-PROTOCOL_VERSION = 8
+#: 8: write permissions (D50).
+#: 9: ``permit`` carries the requester's incarnation ``inc`` (8.3f review, C1).
+PROTOCOL_VERSION = 9
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
 #: Record bytes a replication puts in one frame at most (a single record may fill one alone).
@@ -138,7 +145,8 @@ MESSAGE_TYPES = {
                   "pred_committed": _BOOL},
     "renew": {"term": _INT, "rid": _INT, "inc": _INT},
     "permit_req": {"term": _INT, "rid": _INT, "inc": _INT},
-    "permit": {"term": _INT, "rid": _INT, "seq": _INT, "root": _ROOT, "certain": _BOOL, "valid": _NUM},
+    "permit": {"term": _INT, "rid": _INT, "seq": _INT, "inc": _INT, "root": _ROOT, "certain": _BOOL,
+               "valid": _NUM},
     "permit_no": {"term": _INT, "rid": _INT, "reason": _STR},
     "done": {"term": _INT, "seq": _INT, "inc": _INT, "outcome": _STR, "root": _ROOT},
     "ack": {"term": _INT, "rid": _INT, "ok": _BOOL, "root": _ROOT},

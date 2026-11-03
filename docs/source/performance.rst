@@ -449,15 +449,21 @@ or 3 rqlite nodes on loopback, ``fsync``, 4 client threads per node, one value o
 size per commit (ProtoDB: a blind write into a ``Dictionary`` root; rqlite: one row per HTTP
 request with a TEXT value). Both sides are verified value by value or by count and total
 length. Medians of 3 runs (ProtoDB, ``cluster_tcp``) and 2 runs (``rqlite_reference``), GIL off.
+ProtoDB's bytes are every frame the committing node encodes, once per destination: the total
+for its two followers. rqlite's are its total loopback bytes, the client hop included.
 
 =================  ==============  ==============  =================  =================
 payload            ProtoDB         rqlite          ProtoDB bytes on   rqlite bytes on
                    commits/s       requests/s      loopback / commit  loopback / commit
 =================  ==============  ==============  =================  =================
 100 B              69-72           564             19 KB              2.0 KB
-10 KB              59-99           455             190-212 KB         19 KB
+10 KB              59 / 99 (*)     455             190-212 KB         19 KB
 100 KB             40-41           287             1.63 MB            172 KB
 =================  ==============  ==============  =================  =================
+
+(*) Two runs of the same configuration gave 58.8 (``cluster_tcp``) and 98.7 (the ProtoDB
+line of ``rqlite_reference``) commits/s: a 1.7x spread between runs, i.e. instability of this
+measurement on this machine, not a range of expected values (8.3f review, M5).
 
 ProtoDB p50 commit latency 160 / 113-199 / 293-302 ms; rqlite p50 21 / 22 / 40 ms. Fsyncs per
 node per commit (ProtoDB, counted in-process): 2.2, 1.1-2.3 and 2.5.
@@ -471,7 +477,8 @@ What the numbers show, honestly:
   replication, as rqlite's leader fans entries out. ProtoDB saves only the client-to-leader hop
   and spreads the build and serialization CPU over the nodes.
 - ProtoDB puts about **8x the payload on the wire per follower**: 1.63 MB per 100 KB commit
-  against rqlite's 172 KB (about 1.7x the payload, client hop included). The cause is the data
+  for its two followers together (about 0.82 MB each), against rqlite's 172 KB in total
+  (about 1.7x the payload, client hop included; 8.3f review, M4). The cause is the data
   model, not the commit path: a commit's records are the path-copied tree nodes of the roots it
   changed, and a ``Dictionary`` node carries its values inline, so each copied node along the
   path re-ships the value (about log2 of the dictionary's size). Even at 100 B a commit ships

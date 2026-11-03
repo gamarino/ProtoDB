@@ -372,9 +372,11 @@ class Permission(Lease):
     It behaves as a :class:`Lease` for the commit path (``term``, ``root``, ``root_term``,
     ``root_certain``, :meth:`is_valid`, :meth:`remaining`, :meth:`bind_root`): ``root`` is the
     base the owner piggybacked (the newest root it knows committed), ``valid_until`` runs on
-    this node's clock from the moment the request was SENT.  Safety never rests on it: an
-    acceptor takes a root only if it extends the root it holds of the same term (D50, the
-    chain rule), and the ballot rule refuses the term once a newer owner was granted.
+    this node's clock from the moment the request was SENT.  Its timing never matters for
+    safety: an acceptor takes a root only if it extends the root it holds of the same term
+    (D50, the chain rule), and the ballot rule refuses the term once a newer owner was
+    granted.  Its sequencing does: the owner must never issue one base twice (D50, S2 and
+    S4; see :mod:`proto_db.cluster.coordinator`).
     ``owner`` is the node that issued it; ``outcome`` and ``committed`` are what the holder
     reports when it ends the permission (``"none"``, ``"committed"`` or ``"unknown"``).
     """

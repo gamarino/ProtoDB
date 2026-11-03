@@ -9,11 +9,18 @@ Write permissions (D50)
     committed.  The holder of a permission does its own commit round (:meth:`permit`,
     :meth:`replicate`, :meth:`finish`): it replicates under the owner's term with the
     permission's ``seq`` and the root it built on (``pred``), and ends the permission with
-    ``done``.  Safety does not rest on the permission: an acceptor takes a root of the same
-    term only when it extends (or catches up along a committed predecessor of) its accepted
-    root, refuses siblings and stale sequence numbers, and keeps every D46 rule.  An outcome
-    the owner cannot know makes it abandon its term; the next owner's recovery round decides
-    the root, as after any D46 lease.  The acquiring and lease rules below are the D45/D46
+    ``done``.  An acceptor takes a root of the same term only when it extends (or catches up
+    along a committed predecessor of) its accepted root, refuses siblings and stale sequence
+    numbers, and keeps every D46 rule: two roots built on one base can never BOTH be
+    committed, whatever the permissions (D50, S3).  Safety across terms DOES rest on the
+    owner's sequencing (D50, S2 and S4; a deviation from ruling R66d awaiting the
+    maintainer's ruling): the next phase 1 ranks the roots of one term by epoch, so a base
+    issued twice could let an uncommitted sibling outrank a committed root.  The owner
+    therefore ends a permission only through the incarnation it was issued to: a ``permit``
+    names the requester's incarnation, any other incarnation drops it unanswered, and a
+    ``done`` of another incarnation is an unknown outcome (8.3f review, C1).  An outcome the
+    owner cannot know makes it abandon its term; the next owner's recovery round decides the
+    root, as after any D46 lease.  The acquiring and lease rules below are the D45/D46
     mechanics an owner uses to obtain and renew its term.
 
 A cluster is a static list of peers ``(node_id, host, port)``; its size ``N`` is fixed at
@@ -359,8 +366,10 @@ def _siblings(label_a: int, a: Optional[RootRecord], label_b: int, b: Optional[R
 class _Ownership:
     """What this node does as the owner of its lease's term (D50): a FIFO of permission
     requests ``(node, rid, inc, local wait or None)``, at most one outstanding permission
-    ``(node, seq, deadline on the owner's clock)``, and the base it piggybacks:
-    ``(known, root, label)``, known committed when ``committed``."""
+    ``(node, seq, deadline on the owner's clock, incarnation, rid, permit message or None)``,
+    and the base it piggybacks: ``(known, root, label)``, known committed when
+    ``committed``.  Only the incarnation a permission was issued to can end it with
+    ``"none"`` or ``"committed"`` (8.3f review, C1)."""
 
     def __init__(self, lease: Lease, base: tuple, committed: bool, now: float):
         self.lease = lease
@@ -549,7 +558,8 @@ class ClusterCoordinator:
         self._permits_seen = collections.deque(maxlen=64)
         self._seq_seen = (0, 0)             # (term, seq): highest permission accepted here
         for key in ("permits_issued", "permits_held", "permit_requests_sent", "permits_refused", "renewals",
-                    "renewal_failures", "ownerships", "terms_abandoned", "permit_rounds"):
+                    "renewal_failures", "ownerships", "terms_abandoned", "permit_rounds", "permits_foreign_dropped",
+                    "permit_requests_retried"):
             self._stats[key] = 0
 
     # -- properties --------------------------------------------------------------------------
@@ -1418,9 +1428,12 @@ class ClusterCoordinator:
             return
         kind = msg["type"]
         if kind in ("records", "replicate", "release", "want", "fetch", "commit_query", "done"):
-            # A release follows its replicate (and a replicate its record chunks) through the
-            # same queue, so a root is never known committed here before its records are stored;
-            # a ``want`` follows the sender's release, which it must not precede (fairness).
+            # A release or done follows its replicate (and a replicate its record chunks) through
+            # the same queue, so on a link that keeps the sender's order a root learnt committed
+            # from that sender is stored here first.  Not an invariant (review M1): a permit can
+            # name a committed base before its records arrive from another member; builds wait
+            # for the records or fetch them.  A ``want`` follows the sender's release, which it
+            # must not precede (fairness).
             with self._lock:
                 fenced = self._failure is not None
                 if not fenced:
@@ -2312,6 +2325,9 @@ class ClusterCoordinator:
         # A remote owner answers when this request reaches the head of its queue; one lease
         # duration without an answer means it is gone or busy elsewhere: look again.
         limit = time.monotonic() + (self._duration if target is not None else self._duration * 2)
+        # A lost request or permit is retried after request_timeout (review M6): the owner
+        # answers a retry of an outstanding permission with the same permit, never a second.
+        retry_at = time.monotonic() + self._request_timeout
         with self._cond:
             try:
                 while wait.reply is None:
@@ -2322,7 +2338,17 @@ class ClusterCoordinator:
                     now = time.monotonic()
                     if now >= min(limit, deadline):
                         break
-                    self._cond.wait(timeout=min(limit, deadline) - now)
+                    if target is not None and now >= retry_at:
+                        retry_at = now + self._request_timeout
+                        self._stats["permit_requests_retried"] += 1
+                        self._cond.release()
+                        try:
+                            self._transport.send(target, request)
+                        finally:
+                            self._cond.acquire()
+                        continue
+                    wake = min(limit, deadline) if target is None else min(limit, deadline, retry_at)
+                    self._cond.wait(timeout=wake - now)
                 reply = wait.reply
                 wait.reply = wait.reply or "gone"   # a permit arriving later is handed back
             finally:
@@ -2379,17 +2405,20 @@ class ClusterCoordinator:
             self._local.release()
             return False
         with self._cond:
-            if self._state != "running":
-                return False
-            known = lease.root is not None or lease.root_certain
-            committed = lease.root_certain and self._committed == (True, lease.root, lease.root_term)
-            own = _Ownership(lease, (known, lease.root, lease.root_term), committed, time.monotonic())
-            self._ownership = own
-            self._owner_hint = (lease.term, self._node)
-            self._stats["ownerships"] += 1
-            thread = threading.Thread(target=self._own_loop, args=(own,), name=f"proto-cluster-owner-{self._node}",
-                                      daemon=True)
-            self._owner_threads = [t for t in self._owner_threads if t.is_alive()] + [thread]
+            stopped = self._state != "running"
+            if not stopped:
+                known = lease.root is not None or lease.root_certain
+                committed = lease.root_certain and self._committed == (True, lease.root, lease.root_term)
+                own = _Ownership(lease, (known, lease.root, lease.root_term), committed, time.monotonic())
+                self._ownership = own
+                self._owner_hint = (lease.term, self._node)
+                self._stats["ownerships"] += 1
+                thread = threading.Thread(target=self._own_loop, args=(own,), name=f"proto-cluster-owner-{self._node}",
+                                          daemon=True)
+                self._owner_threads = [t for t in self._owner_threads if t.is_alive()] + [thread]
+        if stopped:
+            self.release(lease)         # review M2: every exit gives the lease and local lock back
+            return False
         thread.start()
         return True
 
@@ -2409,19 +2438,20 @@ class ClusterCoordinator:
         # include a recovery round, which can take the whole request timeout.
         valid = max(0.0, own.lease.remaining())
         now = self._clock()
-        own.outstanding = (node, own.seq, now + valid + self._request_timeout)
         self._stats["permits_issued"] += 1
         known, root, label = own.base
         certain = known and own.committed
         if wait is not None:            # one of this node's own threads
+            own.outstanding = (node, own.seq, now + valid + self._request_timeout, inc, rid, None)
             wait.reply = Permission(term=own.term, seq=own.seq, owner=self._node, acquired_at=now,
                                     valid_until=now + valid, root=root, root_certain=certain,
                                     clock=self._clock, root_term=label, rid=rid)
             self._cond.notify_all()
             return []
-        return [(node, make_message("permit", self._node, term=own.term, rid=rid, seq=own.seq,
-                                    root=encode_root(root, known=known, term=label), certain=certain,
-                                    valid=valid))]
+        permit = make_message("permit", self._node, term=own.term, rid=rid, seq=own.seq, inc=inc,
+                              root=encode_root(root, known=known, term=label), certain=certain, valid=valid)
+        own.outstanding = (node, own.seq, now + valid + self._request_timeout, inc, rid, permit)
+        return [(node, permit)]
 
     def _on_permit_req(self, sender: str, msg: dict) -> None:
         """A member asks this node, as owner of ``term``, for a permission (transport thread)."""
@@ -2431,10 +2461,16 @@ class ClusterCoordinator:
             own = self._ownership
             if own is not None and own.term == msg["term"] and own.serving(self._clock()) \
                     and self._failure is None:
-                if not any(q[0] == sender and q[1] == msg["rid"] for q in own.queue):
-                    own.queue.append((sender, msg["rid"], msg["inc"], None))
+                out = own.outstanding
+                if out is not None and out[0] == sender and out[3] == msg["inc"] and out[4] == msg["rid"]:
+                    # A retried request whose permit is outstanding (it, or the permit, was
+                    # lost; review M6): send the same permit again -- never a second one.
+                    sends = [(sender, out[5])] if out[5] is not None else []
+                else:
+                    if not any(q[0] == sender and q[1] == msg["rid"] for q in own.queue):
+                        own.queue.append((sender, msg["rid"], msg["inc"], None))
+                    sends = self._dispatch(own)
                 own.last_demand = time.monotonic()
-                sends = self._dispatch(own)
             else:
                 reason = "not_owner" if own is None or own.term != msg["term"] else "ending"
                 term = max(self._grants.highest_term, own.term if own is not None else 0)
@@ -2459,9 +2495,21 @@ class ClusterCoordinator:
                         self._owner_hint = (self._owner_hint[0], None)
                     self._cond.notify_all()
                 return
+            if msg["inc"] != self._inc:
+                # Issued to another incarnation of this node (a previous life: a delayed or
+                # duplicated copy).  Dropped unanswered: only the incarnation that received
+                # a permission may say what it did with it (8.3f review, C1); its owner learns
+                # the outcome as unknown (no done of that incarnation) and abandons the term.
+                self._stats["permits_foreign_dropped"] += 1
+                return
             key = (msg["term"], msg["seq"])
             if key in self._permits_seen:
-                return                      # a duplicate: the first copy was used or handed back
+                # A duplicate within this incarnation: the first copy was used or handed back.
+                # Bounded: this incarnation holds one permission at a time and the owner
+                # matches every done against its single outstanding permission, so an entry
+                # evicted after 64 newer permits can only lead to a "none" the owner ignores
+                # (review M3); the incarnation check above is what safety needs.
+                return
             self._permits_seen.append(key)
             if wait is None or wait.reply is not None:
                 # Nobody waits for it any more: hand it back at once, so the owner moves on.
@@ -2495,7 +2543,7 @@ class ClusterCoordinator:
             if permission.owner == self._node:
                 own = self._ownership
                 if own is not None and own.term == permission.term and own.outstanding is not None \
-                        and own.outstanding[:2] == (self._node, permission.seq):
+                        and own.outstanding[:2] == (self._node, permission.seq) and own.outstanding[3] == self._inc:
                     sends = self._permit_outcome(own, outcome, root, label)
             running = self._state == "running"
             msg = make_message("done", self._node, term=permission.term, seq=permission.seq, inc=self._inc,
@@ -2553,7 +2601,11 @@ class ClusterCoordinator:
                 own = self._ownership
                 if own is not None and own.term == msg["term"] and own.outstanding is not None \
                         and own.outstanding[:2] == (sender, msg["seq"]):
-                    sends = self._permit_outcome(own, msg["outcome"], root, label)
+                    # Only the incarnation the permission was issued to knows what was done
+                    # with it; any other incarnation's done (a restarted holder answering a
+                    # duplicated permit, before this fix) is an unknown outcome (C1).
+                    outcome = msg["outcome"] if msg["inc"] == own.outstanding[3] else "unknown"
+                    sends = self._permit_outcome(own, outcome, root, label)
                 self._wakeups += 1
                 self._cond.notify_all()
                 tier = self._tier
@@ -2566,7 +2618,25 @@ class ClusterCoordinator:
 
     def _own_loop(self, own: "_Ownership") -> None:
         """The ownership thread: renews the lease while there is demand, abandons a term whose
-        outstanding permission timed out, releases the lease when idle (D50)."""
+        outstanding permission timed out, releases the lease when idle (D50).  An unexpected
+        failure fences the node; the ownership never outlives this thread (review, quality)."""
+        try:
+            self._own_loop_body(own)
+        except Exception as e:
+            with self._cond:
+                if self._ownership is own:
+                    own.ended = True
+                    self._ownership = None
+                    sends = self._abandon(own, f"its ownership thread failed: {e!r}") + \
+                        self._refuse_queue(own, "ending")
+                else:
+                    sends = []
+            self._send_all(sends)
+            self.fence(e)
+            raise
+
+    def _own_loop_body(self, own: "_Ownership") -> None:
+        """The loop of :meth:`_own_loop`."""
         idle = self._duration / 4
         while True:
             renew = False
@@ -2583,6 +2653,12 @@ class ClusterCoordinator:
                     end = "abandoned"
                 elif not own.lease.is_valid():
                     end = "expired"
+                    if own.outstanding is not None:
+                        # The lease ended with a permission whose outcome this owner does not
+                        # know yet: abandon, so the release is uncertain (review I3).
+                        sends = self._abandon(own, f"lease expired with permission {own.outstanding[1]} "
+                                                   f"of {own.outstanding[0]} outstanding")
+                        own.outstanding = None
                 elif own.outstanding is None and not own.queue and mono - own.last_demand > idle:
                     end = "idle"
                 if end is not None:

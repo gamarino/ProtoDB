@@ -39,7 +39,7 @@ def test_every_message_carries_the_protocol_version_and_sender():
                        pred=[4, uuid.UUID(int=4).bytes, 64, 2], pred_committed=True)),
     ("renew", dict(term=9, rid=2, inc=11)),
     ("permit_req", dict(term=9, rid=2, inc=11)),
-    ("permit", dict(term=9, rid=2, seq=4, root=[4, uuid.UUID(int=1).bytes, 64, 9], certain=True, valid=0.5)),
+    ("permit", dict(term=9, rid=2, seq=4, inc=7, root=[4, uuid.UUID(int=1).bytes, 64, 9], certain=True, valid=0.5)),
     ("permit_no", dict(term=9, rid=2, reason="not_owner")),
     ("done", dict(term=9, seq=4, inc=11, outcome="committed", root=[5, uuid.UUID(int=1).bytes, 64, 9])),
     ("records", dict(term=3, rid=4, index=0, records=[[uuid.UUID(int=2).bytes, 40, b"framed"]])),
