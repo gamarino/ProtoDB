@@ -646,7 +646,7 @@ peers       GIL    p50 ``d6743ae``             p50 ``4391bcf``             p95 `
 
 What the numbers show:
 
-- Latency: the median is higher at the head at 5 and 8 peers (+13 to +54 ms); at 8 peers
+- Latency: the median is higher at the head at 5 and 8 peers (+11 to +54 ms); at 8 peers
   with the GIL off the ranges do not overlap (312-354 against 355-414 ms), so that increase
   is measured, not noise. The tail is lower at 5 and 8 peers (p95 -51 to -154 ms). At 3
   peers with the GIL on the median rises 113 -> 127 ms and the critical section 14.6 -> 16.0
