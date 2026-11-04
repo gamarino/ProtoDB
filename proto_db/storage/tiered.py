@@ -258,6 +258,20 @@ def _is_seconds(value) -> bool:
     return math.isfinite(seconds) and seconds >= 0
 
 
+def _runs(items: list) -> list:
+    """``(offset, data)`` items merged into contiguous runs, in offset order (Task 8.3i): the
+    records of one commit are contiguous in their segment, so a copy is written with one
+    ``pwrite`` per run, not per record.  The same bytes land at the same offsets."""
+    runs = []                       # [start, end, parts]
+    for offset, data in sorted(items, key=lambda item: item[0]):
+        if runs and runs[-1][1] == offset:
+            runs[-1][1] += len(data)
+            runs[-1][2].append(data)
+        else:
+            runs.append([offset, offset + len(data), [data]])
+    return [(start, parts[0] if len(parts) == 1 else b"".join(parts)) for start, _, parts in runs]
+
+
 def _pwrite_all(fd: int, data, offset: int) -> None:
     """Write every byte of ``data`` at ``offset`` of ``fd``: a short write is continued, a write
     that makes no progress raises ``OSError``."""
@@ -1499,7 +1513,7 @@ class TieredStorage(SharedStorage):
                         if os.fstat(fd).st_size < SEGMENT_HEADER_SIZE:
                             _pwrite_all(fd, encode_segment_header(segment), 0)
                             created = created or not known
-                        for offset, data in items:
+                        for offset, data in _runs(items):
                             _pwrite_all(fd, data, offset)
                         if sync:
                             os.fsync(fd)
