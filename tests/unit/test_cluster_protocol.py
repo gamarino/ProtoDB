@@ -42,7 +42,7 @@ def test_every_message_carries_the_protocol_version_and_sender():
     ("renew", dict(term=9, rid=2, inc=11, vs=7)),
     ("permit_req", dict(term=9, rid=2, inc=11)),
     ("permit", dict(term=9, rid=2, seq=4, inc=7, root=[4, uuid.UUID(int=1).bytes, 64, 9], certain=True, valid=0.5)),
-    ("permit_no", dict(term=9, rid=2, reason="not_owner")),
+    ("permit_no", dict(term=9, rid=2, inc=5, reason="not_owner")),
     ("done", dict(term=9, seq=4, inc=11, outcome="committed", root=[5, uuid.UUID(int=1).bytes, 64, 9],
                   copies=["n1", "n2"], ranges=[[uuid.UUID(int=1).bytes, 26, 90]])),
     ("done", dict(term=9, seq=4, inc=11, outcome="none", root=None, copies=[], ranges=None)),

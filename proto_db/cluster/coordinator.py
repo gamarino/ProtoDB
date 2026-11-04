@@ -2951,7 +2951,7 @@ class ClusterCoordinator:
                 reason = "not_owner" if own is None or own.term != msg["term"] else "ending"
                 term = max(self._grants.highest_term, own.term if own is not None else 0)
                 sends = [(sender, make_message("permit_no", self._node, term=term, rid=msg["rid"],
-                                               reason=reason))]
+                                               inc=msg["inc"], reason=reason))]
         self._send_all(sends)
 
     def _on_permit_reply(self, sender: str, msg: dict) -> None:
@@ -2964,6 +2964,11 @@ class ClusterCoordinator:
                 self._note_owner(msg["term"])        # a permit proves its term; a refusal does not
             wait = self._permit_waits.get(msg["rid"])
             if msg["type"] == "permit_no":
+                if msg["inc"] != self._inc:
+                    # A refusal sent to a previous incarnation of this node, whose request ids
+                    # restarted: never this incarnation's answer (re-review N1).
+                    self._stats["stale_replies"] += 1
+                    return
                 if wait is not None and wait.reply is None:
                     wait.reply = "refused"
                     self._stats["permits_refused"] += 1
@@ -3069,9 +3074,10 @@ class ClusterCoordinator:
     def _refuse_queue(self, own: "_Ownership", reason: str) -> list:
         sends = []
         while own.queue:
-            node, rid, _, wait = own.queue.popleft()
+            node, rid, inc, wait = own.queue.popleft()
             if wait is None:
-                sends.append((node, make_message("permit_no", self._node, term=own.term, rid=rid, reason=reason)))
+                sends.append((node, make_message("permit_no", self._node, term=own.term, rid=rid, inc=inc,
+                                                 reason=reason)))
         self._cond.notify_all()         # local waiters see the ownership end
         return sends
 

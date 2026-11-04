@@ -213,3 +213,23 @@ def test_an_owner_whose_lease_expires_with_a_permission_outstanding_releases_as_
     releases = [m for m in h.net.pending if m[0] == "a" and m[2]["type"] == "release" and m[2]["held"]]
     assert releases and all(m[2]["certain"] is False for m in releases)
     h.net.drop(kinds=ALL)
+
+
+def test_a_permit_refusal_to_another_incarnation_is_dropped(h):
+    """Re-review N1: ``permit_no`` echoes the requester's incarnation like every other reply.
+    A refusal sent to a previous incarnation (request ids restart at every start) never
+    refuses the current incarnation's request with the same id."""
+    from proto_db.cluster.coordinator import _PermitWait
+    b = h.nodes["b"]
+    with b._cond:
+        wait = b._permit_waits[1] = _PermitWait(1, time.monotonic())
+    try:
+        stale = make_message("permit_no", "a", term=1, rid=1, inc=b._inc + 1, reason="not_owner")
+        b._on_permit_reply("a", stale)
+        assert wait.reply is None, "a refusal to another incarnation refused this request"
+        assert b.stats()["stale_replies"] == 1
+        b._on_permit_reply("a", dict(stale, inc=b._inc))
+        assert wait.reply == "refused"
+    finally:
+        with b._cond:
+            b._permit_waits.pop(1, None)

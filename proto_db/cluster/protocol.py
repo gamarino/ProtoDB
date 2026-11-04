@@ -57,7 +57,7 @@ at every start (Task 8.3g review, C1):
                9); ``root`` is the newest root the owner knows (committed unless ``certain`` is
                False, the first permission of an uncertain lease) and ``valid`` the seconds
                the permission may be used from the request's send.
-``permit_no``  ``term``, ``rid``, ``reason``: the sender does not grant (not the owner of that
+``permit_no``  ``term``, ``rid``, ``inc``, ``reason``: the sender does not grant (not the owner of that
                term, lease ended, term abandoned); ``term`` is the highest term it knows.
 ``done``       ``term``, ``seq``, ``inc``, ``outcome``, ``root``: the holder ends permission
                ``seq`` of ``term``: ``outcome`` is ``"committed"`` (``root`` is the last root it
@@ -186,7 +186,7 @@ MESSAGE_TYPES = {
     "permit_req": {"term": _INT, "rid": _INT, "inc": _INT},
     "permit": {"term": _INT, "rid": _INT, "seq": _INT, "inc": _INT, "root": _ROOT, "certain": _BOOL,
                "valid": _NUM},
-    "permit_no": {"term": _INT, "rid": _INT, "reason": _STR},
+    "permit_no": {"term": _INT, "rid": _INT, "inc": _INT, "reason": _STR},
     "done": {"term": _INT, "seq": _INT, "inc": _INT, "outcome": _STR, "root": _ROOT, "copies": _STRS,
              "ranges": _RANGES},
     "ack": {"term": _INT, "rid": _INT, "inc": _INT, "ok": _BOOL, "root": _ROOT, "stored": _BOOL},
