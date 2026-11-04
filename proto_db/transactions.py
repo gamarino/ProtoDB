@@ -779,6 +779,11 @@ def _run_round(coordinator, lock_timeout, batch: list, group: _Group) -> bool:
     keep = False
     try:
         with tier.critical_section():
+            # Commits that queued while this runner waited for the permission join its first
+            # round, as the retries of a held permission join its later rounds
+            # (:func:`_await_retries`).  Waiting for a permission takes the other members'
+            # rounds; without this, they would wait for one more permission.
+            live += _drain_queue(group, attached)
             while live:
                 rounds += 1
                 result = _permit_round(coordinator, tier, permission, live, group,
@@ -825,6 +830,13 @@ def _await_retries(group: _Group, conflicted: list, tier, permission) -> list:
             if remaining <= 0:
                 break
             group.cond.wait(timeout=remaining)
+    return _drain_queue(group, tier)
+
+
+def _drain_queue(group: _Group, tier) -> list:
+    """Take every commit queued in ``group``; return those written to ``tier`` (the others are
+    failed: their space was closed)."""
+    with group.cond:
         batch, group.queue = group.queue, []
     live = []
     for entry in batch:
