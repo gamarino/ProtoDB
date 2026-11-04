@@ -306,12 +306,18 @@ def test_a_holder_never_ships_own_records_it_has_not_made_durable_locally(tmp_pa
             tc.db("n0").run(incr, **RUN_KW)
         c0, st0 = tc["n0"], tc.storages["n0"]
         c0.persister.stop()                         # no background flush in the crash window
-        original = c0._broadcast
+        original = c0._transport.send
         state = {}
+        sent = set()
 
-        def dies_after_broadcast(msg):
-            original(msg)
+        def dies_after_broadcast(to, msg):
+            # Bounded replication (D54): the records go to n1 first, the root alone to n2 after
+            # n1 stored them; the holder dies once the root went to both.
+            original(to, msg)
             if msg["type"] != "replicate" or state:
+                return
+            sent.add(to)
+            if sent != {"n1", "n2"}:
                 return
             state["root"] = decode_labeled_root(msg["root"])[1]
             deadline = time.monotonic() + 10.0
@@ -328,7 +334,7 @@ def test_a_holder_never_ships_own_records_it_has_not_made_durable_locally(tmp_pa
             incr(tr)
             tr.set_root_object("z", tr.new_dictionary().set_at("k", 42))
 
-        c0._broadcast = dies_after_broadcast
+        c0._transport.send = dies_after_broadcast
         with pytest.raises(ProtoDBError):
             tc.db("n0").run(write_z, retries=0)
         root = state["root"]

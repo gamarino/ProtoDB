@@ -101,3 +101,25 @@ def test_a_member_with_another_voter_set_is_ignored():
             rogue.acquire(timeout=0.8)
         assert cl["n2"].stats()["config_mismatches"] > 0
         assert cl["n2"].stats()["grants_given"] == 0
+
+
+def test_a_learners_refusal_never_decides_a_replication():
+    """A data replica that is a learner stores the records and refuses the root (it accepts
+    none): its refusal must not count toward the refusals that end a replication.  Counting
+    it ended a commit as unknown with one voter refusing (8 TCP peers, three voters)."""
+    from proto_db.cluster.protocol import make_message
+    node = ClusterCoordinator("n5", PEERS)
+    with node._lock:
+        rid, waiter = node._new_waiter("replicate", 9)
+
+    def answer(sender, ok, stored):
+        with node._cond:            # as the dispatcher delivers it
+            node._on_answer(sender, "ack", make_message("ack", sender, term=9, rid=rid, ok=ok, root=None,
+                                                        stored=stored))
+
+    for sender, ok, stored in (("n6", False, True), ("n7", False, False), ("n1", False, False)):
+        answer(sender, ok, stored)
+    assert waiter.nacks == {"n1"} and waiter.stored == {"n6"} and waiter.unstored == {"n7", "n1"}
+    answer("n0", True, False)
+    answer("n7", True, False)
+    assert waiter.acks == {"n0"}

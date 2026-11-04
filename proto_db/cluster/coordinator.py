@@ -23,8 +23,41 @@ Write permissions (D50)
     root, as after any D46 lease.  The acquiring and lease rules below are the D45/D46
     mechanics an owner uses to obtain and renew its term.
 
+Bounded replication (Task 8.3g, D54; maintainer rulings R70 and R70a)
+    A fixed set of ``V = 2f + 1`` *voters* (default the first three member ids in sorted
+    order; every member of a cluster of fewer than three) orders roots: grants, renewals,
+    ballots, rejoins, recovery rounds and root acceptance count only voters, and a majority
+    means ``f + 1`` of them.  The other members are *learners* (Raft's non-voting members):
+    they never grant, accept a root or count in a quorum, need no rejoin, learn committed
+    roots from ``done`` and releases, and may own a term and commit like any member.  Losing
+    ``f + 1`` voters stops writes (no quorum) while learners keep serving snapshot reads; the
+    voter set is static configuration (no dynamic membership).
+
+    A commit's records are made durable on the committer (its own append) and on ``f`` other
+    members, its *data replicas*: the committer's successors in the sorted order of member
+    ids, a member that did not answer within ``request_timeout`` being replaced by the next
+    one (Dynamo's preference list; timing only).  A voter accepts the root only once ``f + 1``
+    members hold the records durably: the replication names them (``copies``), and the root
+    goes alone to the voters that are not data replicas after the replicas' ``stored``
+    acknowledgements.  A voter that is a data replica stores and accepts in one append when
+    that makes ``f + 1`` copies.  So a committed root -- accepted by ``f + 1`` voters, at most
+    one of which is the committer -- never lacks ``f + 1`` durable copies of its records; the
+    committer's own acceptance shares its disk with its own copy.  Any other member fetches
+    records on demand (:meth:`ClusterCoordinator.fetch_record`), from the members the locator
+    names for the record's segment (learnt from ``replicate`` and ``done``), else from every
+    member, else from the object store, and caches them by pointer.  Replicas keep their
+    copies until the object store holds them (``release_local``); a persister that lags
+    uploads the parts it holds (repair through the object store).
+
+    Limits (D54).  The voter set is static: no member is added or removed at run time.
+    Losing ``f + 1`` voters stops every write until enough of them return.  No
+    re-replication runs: once a data replica's disk is lost, a commit not yet in the object
+    store has one copy fewer until the persister uploads it, and losing every one of its
+    ``f + 1`` copies before that loses it.
+
 A cluster is a static list of peers ``(node_id, host, port)``; its size ``N`` is fixed at
-construction and a majority is ``floor(N/2) + 1`` votes, the requester's own included.
+construction and a majority is ``floor(V/2) + 1`` votes of the ``V`` voters, the
+requester's own included when it is a voter.
 Every process that writes the space runs one coordinator; transactions of a space opened
 with a coordinator commit only while holding the lease (:mod:`proto_db.transactions`).
 
@@ -315,6 +348,8 @@ _STOP = object()
 DISPATCH_SLOW = 0.01
 #: Roots whose records this node stored, remembered for :meth:`ClusterCoordinator.await_records`.
 _STORED_MEMORY = 256
+#: Segments whose data replicas this node remembers (the locator of D54), most recent first.
+_LOCATOR_MEMORY = 4096
 #: Times a rejoin's query round asks a member whose answer has not arrived (see ``_gather``).
 GATHER_ATTEMPTS = 3
 _CRITICAL_KEYS = ("validation", "replay", "path_copy", "replication")
@@ -396,13 +431,16 @@ def _split_records(records: list, budget: int) -> list:
 class _Waiter:
     """Replies gathered for one replicate, query or fetch (guarded by the coordinator lock)."""
 
-    __slots__ = ("kind", "term", "acks", "nacks", "answers", "promised", "states", "ballots", "data", "missing")
+    __slots__ = ("kind", "term", "acks", "nacks", "answers", "promised", "states", "ballots", "data", "missing",
+                 "stored", "unstored")
 
     def __init__(self, kind: str, term: int = 0):
         self.kind = kind
         self.term = term
         self.acks = set()
         self.nacks = set()
+        self.stored = set()         # members that hold the replication's records durably (D54)
+        self.unstored = set()       # members that answered without storing them
         self.answers = {}
         self.promised = {}
         self.states = {}
@@ -636,7 +674,8 @@ class ClusterCoordinator:
                        "recoveries": 0, "rejoins": 0, "rejoin_ballots": 0, "fetches_requested": 0, "fetches_served": 0,
                        "critical_commits": 0, "turns_named": 0, "turns_taken": 0, "deferrals": 0,
                        "deferral_timeouts": 0, "dispatch_seconds_max": 0.0, "dispatch_slow": 0,
-                       "terms_released_idle_local": 0, "config_mismatches": 0}
+                       "terms_released_idle_local": 0, "config_mismatches": 0, "replica_hedges": 0,
+                       "fetches_located": 0, "fetch_fallbacks": 0}
         self._critical = {k: 0.0 for k in _CRITICAL_KEYS}
         # Lease fairness (module docstring, "Fairness"; Task 8.3e, D-LIVE-1): proposer-side
         # timing only, never consulted by a grant, an acceptance or a commit.
@@ -661,6 +700,10 @@ class ClusterCoordinator:
         self._permits_seen = collections.deque(maxlen=64)
         self._seq_seen = (0, 0)             # (term, seq): highest permission accepted here
         self._mismatched = set()            # members seen with another voter set (logged once each)
+        # Bounded replication (D54): where records are, and which members answered lately.
+        self._locator = collections.OrderedDict()       # segment UUID -> [members holding its records]
+        self._placements = collections.OrderedDict()    # root_key -> (copies, ranges) of a commit
+        self._replica_suspects = {}         # member -> monotonic time until which it is tried last
         for key in ("permits_issued", "permits_held", "permit_requests_sent", "permits_refused", "renewals",
                     "renewal_failures", "ownerships", "terms_abandoned", "permit_rounds", "permits_foreign_dropped",
                     "permit_requests_retried"):
@@ -1413,12 +1456,20 @@ class ClusterCoordinator:
         """Wait (briefly, under the lease) until the records of the root ``root`` labelled
         ``label`` are stored here: the replication carrying them may still be in this node's
         queue when the lease is won.  Returns False after ``min(fetch_timeout, a quarter of
-        the remaining lease)``; reads then fall back to peer page requests."""
+        the remaining lease)``; reads then fall back to peer page requests.  Returns False at
+        once when this node is not known to be one of that commit's data replicas (D54)."""
         if root is None or label == 0:
             return True             # the empty space, or a root written outside the cluster
         wanted = root_key(label, root)
         timeout = min(self._fetch_timeout, max(0.0, lease.remaining()) / 4)
         with self._cond:
+            if wanted in self._stored:
+                return True
+            placed = self._placements.get(wanted)
+            if placed is None or self._node not in placed[0]:
+                # Not one of this commit's data replicas, as far as this node knows (D54): the
+                # records come on demand from those that are; waiting would gain nothing.
+                return False
             return self._cond.wait_for(lambda: wanted in self._stored or self._state != "running",
                                        timeout=timeout) and wanted in self._stored
 
@@ -1980,7 +2031,17 @@ class ClusterCoordinator:
         if kind == "ack":
             if waiter.kind != "replicate" or msg["term"] != waiter.term:
                 return
-            (waiter.acks if msg["ok"] else waiter.nacks).add(sender)
+            if sender in self._voters:          # only a voter's answer decides the root (D54)
+                if msg["ok"]:
+                    waiter.acks.add(sender)
+                    waiter.nacks.discard(sender)
+                elif sender not in waiter.acks:
+                    waiter.nacks.add(sender)
+            if msg["stored"]:
+                waiter.stored.add(sender)
+                self._replica_suspects.pop(sender, None)
+            else:
+                waiter.unstored.add(sender)
             known, root, label = decode_labeled_root(msg["root"])
             self._hint = max(self._hint, label)
         elif kind == "answer":
@@ -2016,9 +2077,90 @@ class ClusterCoordinator:
             self._transport.send(peer, msg)
 
     def _send_voters(self, msg: dict) -> None:
-        """Send ``msg`` to every other voter (a request or a renewal: only votes count, D54)."""
+        """Send ``msg`` to every other voter (a request, a renewal or a root: only votes count,
+        D54); a broadcast when every member is a voter."""
+        if len(self._other_voters) == len(self._others):
+            self._broadcast(msg)
+            return
         for peer in self._other_voters:
             self._transport.send(peer, msg)
+
+    # -- bounded replication: placement and locator (D54) -----------------------------------
+
+    def _replica_preference(self) -> list:
+        """The other members in the order this node asks them to hold its records (lock
+        held): its successors in the sorted order of member ids (the deterministic placement
+        of D54), members that did not answer lately last.  Timing only: which members are
+        asked first never decides an acceptance."""
+        i = self._ring.index(self._node)
+        order = self._ring[i + 1:] + self._ring[:i]
+        now = time.monotonic()
+        for member, until in list(self._replica_suspects.items()):
+            if until <= now:
+                del self._replica_suspects[member]
+        return [m for m in order if m not in self._replica_suspects] + \
+            [m for m in order if m in self._replica_suspects]
+
+    def _learn_locator(self, label: int, root: Optional[RootRecord], copies, ranges) -> None:
+        """Remember that ``copies`` hold the records of the commit of ``root`` labelled
+        ``label``, spanning ``ranges`` (lock held; bounded, most recent first)."""
+        copies = list(dict.fromkeys(c for c in copies if c in self._peers))
+        if not copies:
+            return
+        if root is not None:
+            key = root_key(label, root)
+            self._placements[key] = (copies, list(ranges) if ranges is not None else None)
+            self._placements.move_to_end(key)
+            while len(self._placements) > _STORED_MEMORY:
+                self._placements.popitem(last=False)
+        for segment, _, _ in ranges or ():
+            known = self._locator.get(segment, [])
+            self._locator[segment] = copies + [c for c in known if c not in copies]
+            self._locator.move_to_end(segment)
+        while len(self._locator) > _LOCATOR_MEMORY:
+            self._locator.popitem(last=False)
+
+    def _place_records(self, waiter: "_Waiter", lease, parts: list, data_msg: dict, preference: list) -> Optional[list]:
+        """The data phase of a replication (D54): send the records to ``majority - 1`` members
+        of ``preference`` and wait until that many hold them durably; return the copies (this
+        node first), or ``None`` when the lease ended or the coordinator stopped first.
+
+        A member that answers without storing them, or does not answer within
+        ``request_timeout``, is replaced by the next member of the preference list (and tried
+        last for one lease duration).  Timing only: the copies are those whose ``stored``
+        acknowledgement arrived, each sent after the records were durable there."""
+        wanted = self._majority - 1
+        asked = []
+        send = preference[:wanted]
+        hedge_at = time.monotonic() + self._request_timeout
+        while True:
+            for peer in send:
+                for part in parts:
+                    self._transport.send(peer, part)
+                self._transport.send(peer, data_msg)
+            asked.extend(send)
+            send = []
+            with self._cond:
+                while not send:
+                    stored = waiter.stored
+                    if len(stored) >= wanted:
+                        return [self._node] + [p for p in asked if p in stored]
+                    if self._state != "running" or not lease.is_valid():
+                        return None
+                    left = [p for p in preference if p not in asked]
+                    waiting = [p for p in asked if p not in stored and p not in waiter.unstored]
+                    now = time.monotonic()
+                    short = wanted - len(stored) - len(waiting)
+                    if short > 0 and left:
+                        send = left[:short]
+                    elif now >= hedge_at:
+                        for peer in waiting:
+                            self._replica_suspects[peer] = now + self._duration
+                        self._stats["replica_hedges"] += 1
+                        hedge_at = now + self._request_timeout
+                        send = left[:1]
+                    else:
+                        self._cond.wait(timeout=max(0.001, min(hedge_at - now, lease.remaining())))
 
     # -- the worker: replicated records, page requests, prefetch ---------------------------
 
@@ -2077,7 +2219,7 @@ class ClusterCoordinator:
         refused (its holder need not wait for this node), anything else is dropped."""
         if msg["type"] == "replicate":
             self._transport.send(msg["from"], make_message("ack", self._node, term=msg["term"], rid=msg["rid"],
-                                                           ok=False, root=self._wire(self._accepted)))
+                                                           ok=False, root=self._wire(self._accepted), stored=False))
 
     def _drain(self, lane: queue.Queue) -> None:
         """Refuse every message still queued on ``lane`` (fenced; that lane's thread)."""
@@ -2220,22 +2362,34 @@ class ClusterCoordinator:
                     self._observe_committed(ck, croot, clabel, None)
                     self._stats["accepted"] += 1
                     reply_root = self._wire(self._accepted)
-        self._transport.send(sender, make_message("ack", self._node, term=term, rid=rid, ok=ok, root=reply_root))
+        self._transport.send(sender, make_message("ack", self._node, term=term, rid=rid, ok=ok, root=reply_root,
+                                                  stored=ok and any(r[2] is not None for r in records)))
         if ok and records:
             tier.prefetch(records)
 
     def _accept_with_records(self, msg: dict, tier, failed: bool, valid: bool, ok: bool, root, label: int,
                              pred, pred_committed: bool, seq: int, records: list) -> None:
         """The acceptor side of a replication on a tier that accepts with its records (Task
-        8.3f phase B, D50): the decision, ONE ``fsync``-ed kind-5 entry holding the root and
-        every record the replication carried, the publication, then the acknowledgement.  A
-        refused root's records are still stored (per the durability mode, without being
-        vouched for by any entry): this node may be the next holder, whose base can be that
-        root."""
+        8.3f phase B, D50; bounded replication, Task 8.3g, D54).
+
+        A voter accepts the root only when ``majority`` members hold the commit's records
+        durably: the ``copies`` the message names, plus this node when the records ride in it
+        (it is then one of the commit's data replicas, and its acceptance and its copy are one
+        append).  The decision, ONE ``fsync``-ed entry holding the root and the records it
+        carried (none for a root sent alone, which names the commit's ranges instead), the
+        publication, then the acknowledgement.  A data replica that does not accept the root
+        (a learner, or a voter refusing it) still stores the records durably, as one synced
+        entry of their own, before it acknowledges them as ``stored``."""
         sender, term, rid = msg["from"], msg["term"], msg["rid"]
+        copies = set(msg["copies"])
+        ranges = protocol.decode_ranges(msg["ranges"])
+        carried = any(r[2] is not None for r in records)
+        local = bool(getattr(tier, "local_records", False))
+        holders = copies | ({self._node} if carried else set())
+        enough = not local or ranges == [] or len(holders) >= self._majority
         if valid and not failed:
             bk, broot, blabel = decode_labeled_root(msg["base"])
-            if bk and broot is not None and getattr(tier, "local_records", False):
+            if bk and broot is not None and local:
                 # A re-proposed base: its records rode with this replication (ruling R50); its
                 # ranges are remembered (synced) before the root is accepted.
                 try:
@@ -2248,12 +2402,13 @@ class ClusterCoordinator:
             # The decision, the log write and the publication form one step against attach,
             # detach and every other acceptor decision (ruling R55).
             with self._lock:
-                ok = ok and not failed and self._tier is tier and self._may_accept(term, root, label, pred,
-                                                                                    pred_committed, seq)
+                ok = ok and enough and not failed and self._tier is tier and self._may_accept(
+                    term, root, label, pred, pred_committed, seq)
             if ok:
                 try:
                     tier.accept_replication(label, root, records, seq=seq,
-                                            pred=(pred[2], pred[1]) if pred is not None and pred[0] else None)
+                                            pred=(pred[2], pred[1]) if pred is not None and pred[0] else None,
+                                            ranges=None if carried else ranges)
                 except (ProtoDBError, OSError) as e:
                     # Attached throughout (_log_lock): the tier failed (ruling R57), or the space
                     # closed under it.  Nothing is published; never acknowledged.
@@ -2268,24 +2423,34 @@ class ClusterCoordinator:
                     ck, croot, clabel = decode_labeled_root(msg["committed"])
                     self._observe_committed(ck, croot, clabel, None)
                     self._stats["accepted"] += 1
-                    if self._tier is tier:
+                    if self._tier is tier and carried:
                         self._note_stored(label, root)
                 else:
                     self._stats["refused"] += 1
                 reply_root = self._wire(self._accepted)
-        self._transport.send(sender, make_message("ack", self._node, term=term, rid=rid, ok=ok, root=reply_root))
-        if ok or not valid or failed or not records:
-            return
-        # Refused: keep the records anyway (immutable data; see the docstring).
-        try:
-            tier.apply(records, root, label)
-        except (ProtoDBError, OSError) as e:
-            if not self._tier_failed(tier, e, "storing a refused replication's records"):
-                logger.info("Node %s: the tier was detached while storing a replication: %s", self._node, e)
-            return
-        with self._cond:
-            if self._tier is tier:
-                self._note_stored(label, root)
+        stored = ok and carried
+        if not ok and valid and not failed and carried:
+            # A data replica that does not accept the root: the records are made durable here
+            # all the same (one synced entry) before they are acknowledged as stored.
+            try:
+                tier.accept_replication(label, root, records, seq=seq,
+                                        pred=(pred[2], pred[1]) if pred is not None and pred[0] else None,
+                                        ranges=ranges if ranges is not None else protocol.record_ranges(records),
+                                        accepted=False)
+                stored = True
+            except (ProtoDBError, OSError) as e:
+                if not self._tier_failed(tier, e, "storing a replication's records"):
+                    logger.info("Node %s: the tier was detached while storing a replication: %s", self._node, e)
+            if stored:
+                with self._cond:
+                    if self._tier is tier:
+                        self._note_stored(label, root)
+        if valid:
+            with self._lock:
+                self._learn_locator(label, root, (list(msg["copies"]) + ([self._node] if stored else [])),
+                                    ranges)
+        self._transport.send(sender, make_message("ack", self._node, term=term, rid=rid, ok=ok, root=reply_root,
+                                                  stored=stored))
 
     def _serve_fetch(self, msg: dict) -> None:
         tier = self._tier
@@ -2829,8 +2994,11 @@ class ClusterCoordinator:
                         and own.outstanding[:2] == (self._node, permission.seq) and own.outstanding[3] == self._inc:
                     sends = self._permit_outcome(own, outcome, root, label)
             running = self._state == "running"
+            placed = self._placements.get(root_key(label, root)) if outcome == "committed" else None
+            copies, ranges = placed if placed is not None else ([], None)
             msg = make_message("done", self._node, term=permission.term, seq=permission.seq, inc=self._inc,
-                               outcome=outcome, root=encode_root(root, known=outcome == "committed", term=label))
+                               outcome=outcome, root=encode_root(root, known=outcome == "committed", term=label),
+                               copies=copies, ranges=protocol.encode_ranges(ranges))
         if running:
             self._broadcast(msg)
             self._send_all(sends)
@@ -2880,6 +3048,10 @@ class ClusterCoordinator:
             if self._state != "running":
                 return
             self._note_owner(msg["term"])
+            if msg["outcome"] == "committed" and msg["copies"]:
+                # Where the committed root's records are (D54): reads fetch from there first.
+                known, root, label = decode_labeled_root(msg["root"])
+                self._learn_locator(label, root, msg["copies"], protocol.decode_ranges(msg["ranges"]))
             own = self._ownership
             if own is not None and own.term == msg["term"] and own.outstanding is not None \
                     and own.outstanding[:2] == (sender, msg["seq"]):
@@ -3049,10 +3221,13 @@ class ClusterCoordinator:
     def replicate(self, lease: Lease, root: RootRecord, *, base: Optional[tuple] = None, tier=None) -> float:
         """Commit ``root`` (built on ``lease.root``) by majority-acknowledged replication (D46).
 
-        Sends ``(epoch, root pointer)`` labelled with the lease term, with the records the
-        tier has not shipped yet, to every peer; makes them durable locally and accepts the
-        root here; returns once a majority (this node included) has acknowledged, before the
-        lease ends; then records the root as committed.  Returns the seconds spent.
+        Makes the records the tier has not shipped yet durable locally (accepting the root
+        here when this node is a voter), sends them to ``majority - 1`` data replicas and,
+        once they hold them durably, sends ``(epoch, root pointer)`` labelled with the lease
+        term, naming those copies, to the other voters (D54; on a storage shared by every node
+        the root and the record hints go to every voter at once); returns once a majority of
+        the voters has acknowledged, before the lease ends; then records the root as
+        committed.  Returns the seconds spent.
 
         ``base`` is ``(label, record, records, ranges)`` when ``root`` re-proposes a base that
         nobody knew committed (``records`` and ``ranges`` from :meth:`commit_records`): the
@@ -3115,7 +3290,15 @@ class ClusterCoordinator:
             except (ProtoDBError, OSError) as e:
                 self._tier_failed(tier, e, "making the commit's records durable")
                 raise
-        chunks = _split_records(extra + records, protocol.CHUNK_BYTES)
+        all_records = extra + records
+        # Bounded replication (D54): on a tier whose records live on each node's disk, the
+        # records go to the commit's data replicas first and the root alone to the other voters
+        # once ``majority`` members hold the records durably.  Elsewhere (a storage shared by
+        # every node) the records are already where every node reads them.
+        local = bool(getattr(tier, "local_records", False))
+        ranges = protocol.record_ranges(all_records) if local else None
+        bounded = with_records and local and bool(ranges) and self._majority > 1
+        chunks = _split_records(all_records, protocol.CHUNK_BYTES)
         with self._lock:
             if self._tier is tier:
                 self._note_stored(label, root)        # our own records, on the attached tier
@@ -3135,24 +3318,47 @@ class ClusterCoordinator:
                      for i, chunk in enumerate(chunks[:-1])]
             pred = (True, pred_root, pred_label)
             pred_committed = self._committed == pred
-            msg = make_message("replicate", self._node, term=label, rid=rid,
-                               root=encode_root(root, known=True, term=label),
-                               committed=self._wire(self._committed), records=chunks[-1], chunks=len(parts),
-                               base=base_wire, base_ranges=base_ranges, seq=seq,
-                               pred=encode_root(pred_root, known=True, term=pred_label),
-                               pred_committed=pred_committed, vs=self._fingerprint)
+            wire_root = encode_root(root, known=True, term=label)
+            wire_pred = encode_root(pred_root, known=True, term=pred_label)
+            wire_committed = self._wire(self._committed)
+            wire_ranges = protocol.encode_ranges(ranges)
+
+            def replication(carried: list, n_chunks: int, copies: list) -> dict:
+                return make_message("replicate", self._node, term=label, rid=rid, root=wire_root,
+                                    committed=wire_committed, records=carried, chunks=n_chunks, base=base_wire,
+                                    base_ranges=base_ranges, seq=seq, pred=wire_pred,
+                                    pred_committed=pred_committed, vs=self._fingerprint, copies=copies,
+                                    ranges=wire_ranges)
+
+            msg = replication(chunks[-1], len(parts), [self._node])
+            preference = self._replica_preference() if bounded else []
             lease.sent = (label, root)        # the next root of this lease extends this one
             self._stats["replications"] += 1
         failure = None
         acks = nacks = 0
         stopped = False
+        copies = [self._node]
         try:
             if with_records:
                 self._self_accept_with_records(tier, waiter, label, root, seq, pred, pred_committed, pred_label,
-                                               pred_root, extra + records)
-            for part in parts:                         # same ordered link, before the replicate
-                self._broadcast(part)
-            self._broadcast(msg)
+                                               pred_root, all_records)
+            if bounded:
+                # The data phase: ``majority - 1`` other members store the records durably (a
+                # voter among them may accept the root in the same append when that makes
+                # ``majority`` copies).  Then the root alone goes to every other voter, naming
+                # the copies: no voter but this node accepts it before they exist.
+                copies = self._place_records(waiter, lease, parts, msg, preference)
+                if copies is not None:
+                    with self._lock:
+                        targets = [v for v in self._other_voters if v not in waiter.acks]
+                        waiter.nacks.difference_update(targets)     # each answers the root alone again
+                    root_msg = replication([], 0, copies)
+                    for peer in targets:
+                        self._transport.send(peer, root_msg)
+            else:
+                for part in parts:                         # same ordered link, before the replicate
+                    self._send_voters(part)
+                self._send_voters(msg)
             with self._log_lock if not with_records else contextlib.nullcontext():
                 # Our own acceptance follows the acceptor rule (ruling R55): decided only on
                 # the tier this commit's records went to, logged on it while it is attached,
@@ -3165,7 +3371,7 @@ class ClusterCoordinator:
                     # that adopts it later (a rejoin, a holder re-proposing it) copies them
                     # from here.
                     try:
-                        tier.remember_commit(extra + records, root, label)
+                        tier.remember_commit(all_records, root, label)
                         tier.log_root("accepted", label, root)
                     except (ProtoDBError, OSError) as e:
                         # Attached throughout (_log_lock): the tier failed (ruling R57); our own
@@ -3180,16 +3386,18 @@ class ClusterCoordinator:
                 total = len(self._voters)
 
                 def decided():
-                    return (len(waiter.acks) >= self._majority or len(waiter.nacks) > total - self._majority
+                    return (copies is None or len(waiter.acks) >= self._majority
+                            or len(waiter.nacks) > total - self._majority
                             or self._state != "running" or not lease.is_valid())
 
                 while not decided():
                     self._cond.wait(timeout=max(0.001, min(0.05, lease.remaining())))
                 acks, nacks = len(waiter.acks), len(waiter.nacks)
-                ok = acks >= self._majority and lease.is_valid()
+                ok = copies is not None and acks >= self._majority and lease.is_valid()
                 stopped = self._state != "running"
                 if ok:
                     self._observe_committed(True, root, label, self._node)
+                    self._learn_locator(label, root, copies, ranges)
                     if self._suspect_term and self._suspect_term <= label:
                         self._suspect_term = 0
                 else:
@@ -3231,6 +3439,9 @@ class ClusterCoordinator:
             elif stopped:
                 why = (f"the coordinator stopped with {acks} of the {self._majority} acknowledgements "
                        f"needed")
+            elif copies is None:
+                why = (f"fewer than {self._majority - 1} other members stored the commit's records before "
+                       f"the lease ended")
             elif nacks > len(self._voters) - self._majority:
                 why = (f"{nacks} members refused the root, and only {acks} of the {self._majority} "
                        f"acknowledgements needed arrived")
@@ -3259,8 +3470,8 @@ class ClusterCoordinator:
         B): decided by the acceptor rule (ruling R55) and logged as ONE synced kind-5 entry with
         every record of the replication, BEFORE the replication is sent, so the bytes of an own
         segment that a peer may hold are always durable here.  When the holder may not accept
-        its own root, its records are synced anyway (whatever the durability mode) before they
-        leave the node.  Called inside :meth:`replicate`'s outcome handling: a failure here
+        its own root (a learner, D54, or a refusal), its records are made durable anyway, by one
+        synced entry that does not accept the root, before they leave the node.  Called inside :meth:`replicate`'s outcome handling: a failure here
         leaves the outcome unknown (the entry may be durable)."""
         with self._log_lock:
             with self._lock:
@@ -3277,7 +3488,10 @@ class ClusterCoordinator:
                     waiter.acks.add(self._node)
                 return
         try:
-            tier.flush_local(force=True)
+            # A learner, or a voter refusing its own root: the records are made durable by one
+            # synced entry that does not accept the root (D54), as a data replica stores them;
+            # the redo rebuilds the own segment from it, like from an acceptance.
+            tier.accept_replication(label, root, records, seq=seq, pred=(pred_label, pred_root), accepted=False)
         except (ProtoDBError, OSError) as e:
             self._tier_failed(tier, e, "making the commit's records durable")
             raise
@@ -3370,9 +3584,10 @@ class ClusterCoordinator:
     def fetch_record(self, ptr) -> Optional[bytes]:
         """Peer page request: the framed record at ``ptr`` from the first peer that has it, or
         ``None`` (no peer answered with it within ``fetch_timeout``, nor within what remains
-        of a lease this node holds)."""
-        others = len(self._others)
-        if not others:
+        of a lease this node holds).  The members the locator names for the record's segment
+        (the data replicas of the commits that wrote it, D54) are asked first; the others only
+        when none of them has it."""
+        if not self._others:
             return None
         with self._lock:
             if self._state != "running":
@@ -3381,9 +3596,22 @@ class ClusterCoordinator:
             timeout = self._fetch_timeout
             if self._held is not None:
                 timeout = min(timeout, self._held.remaining())
-        waiter = self._ask("fetch", {"segment": ptr.segment.bytes, "offset": ptr.offset},
-                           lambda w: w.data is not None or w.missing >= others, timeout)
-        return waiter.data
+            located = [m for m in self._locator.get(ptr.segment, ()) if m != self._node]
+            if located:
+                self._stats["fetches_located"] += 1
+        rounds = [located, [m for m in self._others if m not in located]] if located else [list(self._others)]
+        for i, targets in enumerate(rounds):
+            if not targets:
+                continue
+            if i:
+                with self._lock:
+                    self._stats["fetch_fallbacks"] += 1
+            waiter = self._ask("fetch", {"segment": ptr.segment.bytes, "offset": ptr.offset},
+                               lambda w, n=len(targets): w.data is not None or w.missing >= n, timeout,
+                               targets=targets)
+            if waiter.data is not None:
+                return waiter.data
+        return None
 
 
 class _LeaseContext:

@@ -1301,14 +1301,7 @@ class TieredStorage(SharedStorage):
 
     @staticmethod
     def _ranges_of(records: list) -> list:
-        spans = {}
-        for raw, offset, data in records:
-            if data is None:
-                continue
-            segment = uuid.UUID(bytes=raw)
-            start, end = spans.get(segment, (offset, offset))
-            spans[segment] = (min(start, offset), max(end, offset + len(data)))
-        return [(segment, start, end) for segment, (start, end) in spans.items()]
+        return _protocol.record_ranges(records)
 
     def _remember(self, records: list, root: Optional[RootRecord], label: int,
                   ranges: Optional[list] = None) -> Optional[bytes]:
@@ -1783,9 +1776,10 @@ class TieredStorage(SharedStorage):
         satisfies an ``end`` but is no sealed object, and a short sealed object is one).
 
         Lists the store once when something is not known to be there.  With
-        ``upload_copies``, a missing segment this node holds a copy of (not an own segment,
+        ``upload_copies``, every missing segment this node holds a copy of (not an own segment,
         which its writer ships in order) is uploaded as a part when the copy's contiguous
-        prefix reaches ``end``; a part never satisfies a ``None`` requirement.  Called by the
+        prefix reaches ``end``, even when other segments stay missing (they may live on other
+        data replicas, D54); a part never satisfies a ``None`` requirement.  Called by the
         persister only.
         """
         needed = {}                 # segment -> (a sealed object required, longest end)
@@ -1809,16 +1803,21 @@ class TieredStorage(SharedStorage):
                       if s not in self._own and (not n[0] or self._covered(s, None))}
         if not missing:
             return True
-        if not upload_copies or len(copies) < len(missing):
+        if not upload_copies or not copies:
             return False
+        uploaded = 0
         with self._ship_lock:       # object-store writes: never once close() has started
             self._refuse_closed("uploading segment parts", local=False)
             for segment, end in copies.items():
                 data = self._copy_prefix(segment, end)
                 if data is None:
-                    return False    # a hole: another node's copy must serve
+                    continue        # a hole, or no copy here: another node's copy must serve
                 self._put_part(segment, data)
-        return True
+                uploaded += 1
+        # Every copy this node holds is uploaded even when another segment is missing: with
+        # bounded replication (D54) the missing segments may live on different replicas, and
+        # each of them repairs its share (none would if each waited for the others).
+        return uploaded == len(missing)
 
     def release_local(self, persisted_key: tuple) -> int:
         """Delete local segments (own and copies) the store holds in full (as long as the local

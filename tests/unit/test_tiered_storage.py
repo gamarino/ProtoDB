@@ -288,6 +288,30 @@ def test_a_lost_writers_records_are_uploaded_from_a_copy_as_a_part(tmp_path):
     survivor.close()
 
 
+def test_each_replica_uploads_the_copies_it_holds_when_others_are_missing(tmp_path):
+    """Repair through the object store with bounded replication (Task 8.3g, D54): two writers
+    are lost before shipping, each with its records on a different replica.  A root needing
+    both segments is persistable only once both are in the store; each replica uploads the
+    copy it holds (reporting the root not yet persistable), so together they repair it.
+    Uploading nothing unless one node held every missing segment left both waiting."""
+    store = FakeObjectStore()
+    w1, w2 = _tiered(tmp_path, store, "w1"), _tiered(tmp_path, store, "w2")
+    p1, p2 = w1.push_atom({"i": 1}), w2.push_atom({"i": 2})
+    r1, r2 = w1.outgoing(), w2.outgoing()
+    a, b = _tiered(tmp_path, store, "a"), _tiered(tmp_path, store, "b")
+    a.apply(r1, _root(p1, 1))
+    b.apply(r2, _root(p2, 2))
+    w1.close()
+    w2.close()
+    needs = [(p1.segment, p1.offset + 1), (p2.segment, p2.offset + 1)]
+    assert not a.ensure_remote(needs[::-1], upload_copies=True)     # w2's segment is still missing
+    assert a.stats()["parts_uploaded"] == 1
+    assert b.ensure_remote(needs, upload_copies=True)               # w1's part is there; uploads w2's
+    assert a.ensure_remote(needs)
+    for st in (a, b):
+        st.close()
+
+
 def test_a_copy_with_a_hole_is_never_uploaded(tmp_path):
     store = FakeObjectStore()
     writer = _tiered(tmp_path, store, "w")

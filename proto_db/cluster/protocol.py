@@ -4,7 +4,7 @@ Every message is a msgpack map with three common fields -- ``v`` (the protocol v
 :data:`PROTOCOL_VERSION`), ``type`` and ``from`` (the sender's node id) -- plus the
 fields of its type:
 
-``request``    ``term``, ``rid``, ``inc``: ask for the write lease for ``term``, a ballot
+``request``    ``term``, ``rid``, ``inc``, ``vs``: ask for the write lease for ``term``, a ballot
                qualified by the requester's rank (``rid`` matches
                the replies to one attempt; ``inc`` is the requester's incarnation, a random
                number drawn at each start, so a restarted node is never mistaken for its
@@ -37,7 +37,14 @@ fields of its type:
                under, ``0`` under a plain lease), ``pred`` (the root it was built on) and
                ``pred_committed`` (the sender knows ``pred`` committed): an acceptor holding a
                root of the same term takes it only if it extends that root or catches it up
-               along a committed ``pred`` (the chain rule).
+               along a committed ``pred`` (the chain rule).  Since protocol 11 (D54) it also
+               carries ``vs`` (the fingerprint of the sender's voter set), ``ranges`` (the byte
+               ranges of the commit's records) and ``copies`` (the members known to hold them
+               durably, the sender included): a voter other than the sender accepts the root
+               only when ``copies`` -- with itself, when the records ride in this message --
+               counts a majority of the voters.  A message carrying records goes to the
+               commit's data replicas, which store them durably whether or not they accept the
+               root; the root alone goes to the other voters.
 ``renew``      ``term``, ``rid``, ``inc``: the owner of ``term`` asks its granters to extend the
                active grant they gave it (D50); answered by ``grant`` or ``reject``.
 ``permit_req`` ``term``, ``rid``, ``inc``: ask the owner of ``term`` for a write permission (D50).
@@ -55,9 +62,13 @@ fields of its type:
                learns the committed root (processed after the sender's replications on links
                that keep the sender's order).  ``inc`` is the sender's incarnation: the owner
                counts a ``done`` only from the incarnation the permission was issued to, and
-               takes any other as an unknown outcome (8.3f review, C1).
-``ack``        ``term``, ``rid``, ``ok``, ``root``: the receiver durably accepted (``ok``) or
-               refused the replicated root; ``root`` is its accepted root.
+               takes any other as an unknown outcome (8.3f review, C1).  ``copies`` and
+               ``ranges`` locate the records of a committed ``root`` (D54; empty and ``None``
+               otherwise): a member fetches a record it lacks from those members first.
+``ack``        ``term``, ``rid``, ``ok``, ``root``, ``stored``: the receiver durably accepted
+               (``ok``) or refused the replicated root; ``root`` is its accepted root;
+               ``stored`` tells that the records the replication carried are durable here
+               (a data replica, D54), sent only after they are.
 ``query``      ``rid``, ``ballot``: ask a peer for the roots it knows (recovery, rejoin).  With
                ``ballot > 0`` (a rejoin of an empty acceptor log, ruling R78a, protocol 10) a
                witness first makes a promise of ``ballot`` durable -- it then refuses every
@@ -106,7 +117,7 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
            "ClusterProtocolError",
            "make_message", "validate_message", "encode_message", "decode_message", "check_frame_size",
            "encode_frame", "FrameDecoder", "encode_root", "decode_root", "decode_labeled_root",
-           "encode_ranges", "decode_ranges"]
+           "encode_ranges", "decode_ranges", "record_ranges"]
 
 #: Version carried by every message; a receiver drops messages of any other version.
 #: 6: the framed record bytes carried by ``replicate``, ``records`` and ``fetched`` use the
@@ -117,7 +128,9 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
 #: 9: ``permit`` carries the requester's incarnation ``inc`` (8.3f review, C1).
 #: 10: ``query`` and ``answer`` carry ``ballot`` (clock-free rejoin, ruling R78a).
 #: 11: bounded replication (Task 8.3g, D54): ``request``, ``renew``, ``query`` and ``replicate``
-#: carry ``vs``, the fingerprint of the sender's voter set.
+#: carry ``vs``, the fingerprint of the sender's voter set; ``replicate`` and ``done`` carry the
+#: commit's ``copies`` (the members holding its records durably) and byte ``ranges``; ``ack``
+#: carries ``stored``.
 PROTOCOL_VERSION = 11
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
@@ -137,6 +150,7 @@ _UUID = "uuid"
 _OPT_BYTES = "optional bytes"
 _OPT_STR = "optional str"
 _RANGES = "ranges"
+_STRS = "list of str"
 
 #: Fields of each message type (besides ``v``, ``type`` and ``from``).
 MESSAGE_TYPES = {
@@ -149,14 +163,15 @@ MESSAGE_TYPES = {
     "records": {"term": _INT, "rid": _INT, "index": _INT, "records": _RECORDS},
     "replicate": {"term": _INT, "rid": _INT, "root": _ROOT, "committed": _ROOT, "records": _RECORDS,
                   "chunks": _INT, "base": _ROOT, "base_ranges": _RANGES, "seq": _INT, "pred": _ROOT,
-                  "pred_committed": _BOOL, "vs": _INT},
+                  "pred_committed": _BOOL, "vs": _INT, "copies": _STRS, "ranges": _RANGES},
     "renew": {"term": _INT, "rid": _INT, "inc": _INT, "vs": _INT},
     "permit_req": {"term": _INT, "rid": _INT, "inc": _INT},
     "permit": {"term": _INT, "rid": _INT, "seq": _INT, "inc": _INT, "root": _ROOT, "certain": _BOOL,
                "valid": _NUM},
     "permit_no": {"term": _INT, "rid": _INT, "reason": _STR},
-    "done": {"term": _INT, "seq": _INT, "inc": _INT, "outcome": _STR, "root": _ROOT},
-    "ack": {"term": _INT, "rid": _INT, "ok": _BOOL, "root": _ROOT},
+    "done": {"term": _INT, "seq": _INT, "inc": _INT, "outcome": _STR, "root": _ROOT, "copies": _STRS,
+             "ranges": _RANGES},
+    "ack": {"term": _INT, "rid": _INT, "ok": _BOOL, "root": _ROOT, "stored": _BOOL},
     "want": {},
     "query": {"rid": _INT, "ballot": _INT, "vs": _INT},
     "answer": {"rid": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL, "promised": _INT,
@@ -187,6 +202,8 @@ def _check_field(kind: str, name: str, value, expected: str) -> None:
         ok = value is None or isinstance(value, bytes)
     elif expected == _OPT_STR:
         ok = value is None or isinstance(value, str)
+    elif expected == _STRS:
+        ok = isinstance(value, list) and all(isinstance(v, str) for v in value)
     elif expected == _RANGES:
         ok = value is None or (isinstance(value, list) and all(
             isinstance(r, (list, tuple)) and len(r) == 3 and isinstance(r[0], bytes) and len(r[0]) == 16
@@ -319,6 +336,19 @@ def decode_root(value) -> tuple:
     """``(known, RootRecord or None)`` of a wire root (its label is dropped)."""
     known, record, _ = decode_labeled_root(value)
     return known, record
+
+
+def record_ranges(records: list) -> list:
+    """The byte ranges ``[(segment UUID, start, end)]`` spanned, per segment, by ``records``
+    (``[segment UUID bytes, offset, framed record or None]``; ``None`` items are skipped)."""
+    spans = {}
+    for raw, offset, data in records:
+        if data is None:
+            continue
+        segment = uuid.UUID(bytes=raw)
+        start, end = spans.get(segment, (offset, offset))
+        spans[segment] = (min(start, offset), max(end, offset + len(data)))
+    return [(segment, start, end) for segment, (start, end) in spans.items()]
 
 
 def encode_ranges(ranges) -> Optional[list]:

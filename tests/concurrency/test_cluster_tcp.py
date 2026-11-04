@@ -57,12 +57,12 @@ def _space_arg(space_dir, node_id):
     return space_dir
 
 
-def _run_cluster(space_dir, mode, threads, amount):
+def _run_cluster(space_dir, mode, threads, amount, peers=PEERS):
     if not isinstance(space_dir, tuple):
         space = ObjectSpace(FileStorage(space_dir, durability="none"))
         space.new_database("db")            # the tiered peers create it themselves (n0)
         space.close()
-    ids = [f"n{i}" for i in range(PEERS)]
+    ids = [f"n{i}" for i in range(peers)]
     errs = [tempfile.TemporaryFile("w+") for _ in ids]    # files: a chatty peer never blocks on stderr
     procs = [subprocess.Popen([sys.executable, PEER_SCRIPT, node_id, _space_arg(space_dir, node_id), mode,
                                str(threads), str(amount)],
@@ -151,6 +151,19 @@ def test_three_tcp_peers_commit_concurrently(tmp_path, backend):
           f"{len(set(ids) - acked)} of those took effect")
     if backend == "tiered":
         assert all(r["critical"]["root_writes_in_critical"] == 0 for r in results)
+
+
+def test_eight_tcp_peers_with_three_voters_all_commit(tmp_path):
+    """Bounded replication over real TCP (Task 8.3g, D54): eight subprocess peers, the
+    default three voters, every member committing; no update lost or duplicated (R86)."""
+    space_dir = _spaces(tmp_path)["tiered"]
+    threads, per_thread, peers = 2, 15, 8
+    results = _run_cluster(space_dir, "increment", threads, per_thread, peers=peers)
+    n, ids = _final(space_dir)
+    acked, unknown = _check_outcomes(results, ids, n)
+    assert len(acked) + len(unknown) == peers * threads * per_thread
+    assert all(r["critical"]["root_writes_in_critical"] == 0 for r in results)
+    print(f"\n[tcp 8 peers, 3 voters] {len(acked)} acknowledged, {len(unknown)} unknown")
 
 
 @pytest.mark.parametrize("backend", ["file", "tiered"])

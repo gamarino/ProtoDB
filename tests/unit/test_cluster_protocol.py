@@ -32,18 +32,23 @@ def test_every_message_carries_the_protocol_version_and_sender():
                      more=False)),
     ("replicate", dict(term=3, rid=4, root=[5, uuid.UUID(int=2).bytes, 80, 3], committed=None,
                        records=[[uuid.UUID(int=2).bytes, 80, b"framed"], [uuid.UUID(int=3).bytes, 26, None]],
-                       chunks=1, base=None, base_ranges=None, seq=0, pred=None, pred_committed=False, vs=7)),
+                       chunks=1, base=None, base_ranges=None, seq=0, pred=None, pred_committed=False, vs=7,
+                       copies=["n1"], ranges=[[uuid.UUID(int=2).bytes, 26, 90]])),
     ("replicate", dict(term=3, rid=4, root=[5, uuid.UUID(int=2).bytes, 80, 3], committed=None, records=[],
                        chunks=0, base=[4, uuid.UUID(int=4).bytes, 64, 2],
                        base_ranges=[[uuid.UUID(int=4).bytes, 26, 90]], seq=3,
-                       pred=[4, uuid.UUID(int=4).bytes, 64, 2], pred_committed=True, vs=7)),
+                       pred=[4, uuid.UUID(int=4).bytes, 64, 2], pred_committed=True, vs=7,
+                       copies=["n1", "n4"], ranges=None)),
     ("renew", dict(term=9, rid=2, inc=11, vs=7)),
     ("permit_req", dict(term=9, rid=2, inc=11)),
     ("permit", dict(term=9, rid=2, seq=4, inc=7, root=[4, uuid.UUID(int=1).bytes, 64, 9], certain=True, valid=0.5)),
     ("permit_no", dict(term=9, rid=2, reason="not_owner")),
-    ("done", dict(term=9, seq=4, inc=11, outcome="committed", root=[5, uuid.UUID(int=1).bytes, 64, 9])),
+    ("done", dict(term=9, seq=4, inc=11, outcome="committed", root=[5, uuid.UUID(int=1).bytes, 64, 9],
+                  copies=["n1", "n2"], ranges=[[uuid.UUID(int=1).bytes, 26, 90]])),
+    ("done", dict(term=9, seq=4, inc=11, outcome="none", root=None, copies=[], ranges=None)),
     ("records", dict(term=3, rid=4, index=0, records=[[uuid.UUID(int=2).bytes, 40, b"framed"]])),
-    ("ack", dict(term=3, rid=4, ok=True, root=None)),
+    ("ack", dict(term=3, rid=4, ok=True, root=None, stored=False)),
+    ("ack", dict(term=3, rid=4, ok=False, root=None, stored=True)),
     ("query", dict(rid=1, ballot=0, vs=7)),
     ("answer", dict(rid=1, root=None, committed=[0, None, None, 0], certain=True, promised=4, state="ok", ballot=0)),
     ("fetch", dict(rid=2, segment=uuid.UUID(int=9).bytes, offset=26)),
@@ -57,6 +62,13 @@ def test_message_roundtrip_through_a_frame(kind, fields):
     decoder = FrameDecoder()
     [out] = decoder.feed(encode_frame(msg))
     assert out == msg
+
+
+def test_copies_must_be_a_list_of_member_ids():
+    root = [4, uuid.UUID(int=4).bytes, 64, 2]
+    for bad in (None, "n1", [1], [b"n1"]):
+        with pytest.raises(ClusterProtocolError):
+            make_message("done", "n1", term=1, seq=1, inc=1, outcome="committed", root=root, copies=bad, ranges=None)
 
 
 def test_ranges_must_be_segment_start_end_triples():

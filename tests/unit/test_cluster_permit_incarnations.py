@@ -137,7 +137,7 @@ def test_an_owner_counts_a_done_only_from_the_incarnation_it_issued_to(h):
     pb, permit = _owner_permit(h, "b")
     assert permit[2]["inc"] == h.nodes["b"]._inc
     forged = make_message("done", "b", term=pb.term, seq=pb.seq, inc=h.nodes["b"]._inc + 1, outcome="none",
-                          root=None)
+                          root=None, copies=[], ranges=None)
     h.net.handlers["a"](forged)
     a.wait_idle(5.0)
     assert a.stats()["terms_abandoned"] == 1
