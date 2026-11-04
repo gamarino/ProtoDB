@@ -196,14 +196,13 @@ def test_y1_a_recommitted_base_carries_its_records(tmp_path):
 
 def test_y1_any_acknowledger_of_a_recommitted_base_can_persist_it(tmp_path):
     """Z (n0's, reached nobody) is re-committed by n1 and acknowledged by n0 and n2.  Then
-    n0's disk is lost and n1 goes down: n2 alone must be able to persist everything once the
-    store returns, so it must know where Z's records are (they rode with the re-commit).
+    n0's disk is lost (ONE disk) and n1 goes down (its disk kept): nothing is lost.
 
     Bounded replication (Task 8.3g, D54): each commit's records live on its committer and one
-    data replica, and losing two of three members before the upload is beyond the ``f = 1``
-    a three-voter cluster tolerates (n1's last commit hedged its records to n0, whose disk is
-    lost).  So n1 stays up, and the cluster -- not n2 alone -- persists everything; n2 still
-    knows where every commit's records are (it accepted each root with its ranges)."""
+    data replica, so n0's first commit lives on n0 and n1 only; with n0's disk lost and n1
+    down, n2 alone cannot persist (an availability limit, not a loss) yet still reads every
+    commit and knows where each commit's records are.  Once n1 is back, everything persists
+    (review M1 restored the original schedule)."""
     with TieredCluster(tmp_path) as tc:
         net = tc.cluster.net
         tc.spaces["n0"].new_database("db")
@@ -227,9 +226,14 @@ def test_y1_any_acknowledger_of_a_recommitted_base_can_persist_it(tmp_path):
         assert tc.eventually("n2", 2) and _eventually_z(tc, "n2", {42: 1})
         assert tc["n2"].wait_idle(5.0)
         tc.wipe("n0")
+        tc.kill("n1")
         known, top, _ = tc["n2"].committed_root()[:3]
         assert known and tc.storages["n2"].commit_ranges(top), "n2 does not know where the records are"
+        assert tc.value("n2") == 2 and _eventually_z(tc, "n2", {42: 1})
         tc.store.set_outage(False)
+        with pytest.raises(ProtoTimeoutError):
+            tc.spaces["n2"].sync(timeout=2)         # n0's first commit lives on n0 and n1 only
+        tc.revive("n1")
         tc.spaces["n2"].sync(timeout=20)
         assert _eventually_z(tc, "n2", {42: 1})
 
