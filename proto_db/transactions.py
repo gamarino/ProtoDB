@@ -602,19 +602,29 @@ def _commit_under_lease(coordinator, lock_timeout, build: Callable) -> bool:
 
 #: Extra rounds a permission runs for the retries of commits that conflicted in it (D50, D-LIVE-2).
 _PERMIT_RETRIES = 3
-#: Seconds a round waits for those retries before it ends the permission.
+#: Seconds a round waits for the retries of commits that will not retry at once (a caller's own
+#: loop) before it ends the permission.
 _RETRY_WAIT = 0.005
+#: Longest a round keeps its permission for the immediate retries of :meth:`Database.run`
+#: (never beyond the permission's validity; D50 Amendment "held retries").
+_RETRY_HOLD = 0.1
+
+#: Per thread: whether the commit being made comes from :meth:`Database.run` with retries left
+#: (it will retry a conflict at once when the conflict says the permission is held for it).
+_RUN = threading.local()
 
 
 class _Entry:
     """One commit in a group (D50 for a cluster node, R71 for a standalone storage): its build
     step and the tier (or storage) it wrote to, then its result (``True``/``False``) or error."""
 
-    __slots__ = ("build", "tier", "done", "result", "error", "error_shared", "group")
+    __slots__ = ("build", "tier", "done", "result", "error", "error_shared", "group", "retrying", "thread")
 
     def __init__(self, build: Callable, tier, group: "_Group"):
         self.build = build
         self.tier = tier
+        self.retrying = getattr(_RUN, "retry_left", False)   # Database.run will retry a conflict
+        self.thread = threading.get_ident()
         self.done = False
         self.result = None
         self.error = None
@@ -637,6 +647,10 @@ class _Group:
         self.cond = threading.Condition()
         self.queue = []
         self.running = False
+        # A permission kept for the immediate retry of the runner's own conflicting commit
+        # (D50 Amendment "held retries"): ``(permission, tier, rounds run, keeper thread,
+        # coordinator)``.
+        self.kept = None
 
 
 _GROUPS = weakref.WeakKeyDictionary()
@@ -659,9 +673,52 @@ def _requeue(group: _Group, entries: list) -> None:
         group.cond.notify_all()
 
 
+def _take_kept(group: _Group, coordinator, tier):
+    """``(permission, rounds run)`` kept by a previous runner of ``group`` for the retry of its
+    own commit, or ``None``.  A kept permission that is no longer usable is ended here."""
+    with group.cond:
+        kept, group.kept = group.kept, None
+    if kept is None:
+        return None
+    permission, kept_tier, rounds = kept[0], kept[1], kept[2]
+    if kept_tier is tier and permission.is_valid() and permission.outcome != "unknown":
+        return permission, rounds
+    _end_permission(coordinator, permission)
+    return None
+
+
+def _end_permission(coordinator, permission) -> None:
+    try:
+        coordinator.finish(permission)
+    except (ProtoDBError, OSError) as e:
+        logger.error("Ending the cluster write permission failed: %s", e)
+
+
+def _drop_kept() -> None:
+    """End the permission this thread's last commit kept for a retry that is not coming
+    (:meth:`Database.run` returned or raised instead of retrying)."""
+    group = getattr(_RUN, "kept_group", None)
+    if group is None:
+        return
+    _RUN.kept_group = None
+    with group.cond:
+        kept = group.kept
+        if kept is None or kept[3] != threading.get_ident():
+            return
+        group.kept = None
+    _end_permission(kept[4], kept[0])
+
+
 def _run_round(coordinator, lock_timeout, batch: list, group: _Group) -> bool:
     """Run one permission's rounds for ``batch`` (D50); return False when the permission's base
-    was stale (its commits were put back in the queue for the next permission)."""
+    was stale (its commits were put back in the queue for the next permission).
+
+    When the runner's own commit conflicts in a round that keeps the permission, the runner
+    does not end it: it leaves it in ``group.kept`` and returns, so its thread can retry at
+    once from the root the permission committed (:meth:`Database.run`), and the next runner
+    -- that retry, or any commit queued meanwhile -- continues under the same permission.
+    The runner cannot wait for its own retry: it is the thread that has to run it (measured,
+    D50 Amendment "held retries")."""
     attached = coordinator.tier
     live = []
     for entry in batch:
@@ -674,43 +731,69 @@ def _run_round(coordinator, lock_timeout, batch: list, group: _Group) -> bool:
     if not live:
         return True
     tier = attached
-    try:
-        permission = coordinator.permit(lock_timeout)
-    except BaseException as e:
-        for entry in live:
-            entry.finish(error=e, shared=True)
-        raise_now = not isinstance(e, ProtoDBError)
-        if raise_now:
-            raise
-        return True
+    me = threading.get_ident()
+    kept = _take_kept(group, coordinator, tier)
+    if kept is not None:
+        permission, rounds = kept
+    else:
+        rounds = 0
+        try:
+            permission = coordinator.permit(lock_timeout)
+        except BaseException as e:
+            for entry in live:
+                entry.finish(error=e, shared=True)
+            raise_now = not isinstance(e, ProtoDBError)
+            if raise_now:
+                raise
+            return True
     fresh = True
+    keep = False
     try:
         with tier.critical_section():
-            rounds = 0
             while live:
                 rounds += 1
-                result = _permit_round(coordinator, tier, permission, live, group)
+                result = _permit_round(coordinator, tier, permission, live, group,
+                                       hold=rounds <= _PERMIT_RETRIES)
                 if result is None:
                     fresh = False
                     break
                 if not result or rounds > _PERMIT_RETRIES or not permission.is_valid() \
                         or permission.outcome == "unknown":
                     break
-                live = _await_retries(group, len(result), attached)
+                if any(e.thread == me and getattr(e.error, "permit_held", False) for e in result):
+                    keep = True         # this thread retries its own commit under the permission
+                    break
+                live = _await_retries(group, result, attached, permission)
     finally:
-        try:
-            coordinator.finish(permission)
-        except (ProtoDBError, OSError) as e:
-            logger.error("Ending the cluster write permission failed: %s", e)
+        if keep:
+            with group.cond:
+                group.kept = (permission, tier, rounds, me, coordinator)
+                group.cond.notify_all()
+            _RUN.kept_group = group
+        else:
+            _end_permission(coordinator, permission)
     return fresh
 
 
-def _await_retries(group: _Group, wanted: int, tier) -> list:
-    """The commits queued within :data:`_RETRY_WAIT` (until ``wanted`` arrived): the retries of
-    the round's conflicting commits, and whatever else arrived meanwhile."""
-    deadline = time.monotonic() + _RETRY_WAIT
+def _await_retries(group: _Group, conflicted: list, tier, permission) -> list:
+    """The retries of the round's conflicting commits, and whatever else queued meanwhile.
+
+    A commit of :meth:`Database.run` retries at once from the root the round committed (its
+    conflict said the permission is held for it): the round waits until every such thread
+    has queued its retry, for at most :data:`_RETRY_HOLD` and never beyond the permission's
+    validity.  Without the hold, a retry slept the backoff of ``run`` (7-10 ms measured with a
+    10 ms backoff ceiling) and arrived after the permission had ended; the next permission carried a newer
+    root again, and a member behind a delayed link committed nothing for many permissions
+    (D50 Amendment "held retries", D-LIVE-2).  Other conflicting commits get
+    :data:`_RETRY_WAIT`."""
+    held = {e.thread for e in conflicted if e.retrying} - {threading.get_ident()}
+    hold = min(_RETRY_HOLD, max(0.0, permission.remaining())) if held else 0.0
+    deadline = time.monotonic() + max(hold, _RETRY_WAIT)
     with group.cond:
-        while len(group.queue) < wanted:
+        while True:
+            queued = {e.thread for e in group.queue}
+            if held <= queued if held else len(group.queue) >= len(conflicted):
+                break
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
@@ -727,10 +810,13 @@ def _await_retries(group: _Group, wanted: int, tier) -> list:
     return live
 
 
-def _permit_round(coordinator, tier, permission, entries: list, group: _Group) -> Optional[list]:
+def _permit_round(coordinator, tier, permission, entries: list, group: _Group, *,
+                  hold: bool = False) -> Optional[list]:
     """Build ``entries`` on the permission's base and replicate the result (one round, D50).
 
-    Returns the commits that conflicted (decided only after the replication), or ``None`` when
+    ``hold``: the permission is kept for another round, so a conflict of a commit that
+    :meth:`Database.run` will retry says so (``ProtoConflictError.permit_held``) and the
+    retry starts at once.  Returns the commits that conflicted (decided only after the replication), or ``None`` when
     the base is stale -- the commits go back to the queue and the permission ends with an
     outcome its owner cannot take for granted (``"unknown"``: it abandons the term, D50).
     """
@@ -785,6 +871,8 @@ def _permit_round(coordinator, tier, permission, entries: list, group: _Group) -
                 coordinator.record_critical(stamp.timings)
                 entry.finish(result=True)
         for entry in conflicted:
+            if hold and entry.retrying and permission.is_valid() and permission.outcome != "unknown":
+                entry.error.permit_held = True
             entry.finish(error=entry.error)
         return conflicted
     except BaseException as e:
@@ -1177,7 +1265,10 @@ class Database:
         the attempt is aborted and retried with a fresh transaction, up to ``retries``
         times, sleeping a bounded exponential backoff with jitter between attempts:
         ``uniform(d/2, d)`` with ``d = min(backoff[1], backoff[0] * 2**attempt)``.  After
-        the last retry the conflict is re-raised.  Any other exception aborts the
+        the last retry the conflict is re-raised.  In cluster mode a conflict decided under a
+        write permission that the commit round keeps for this retry is retried at once,
+        without the backoff (D50 Amendment "held retries"), so the retry starts from the
+        root that permission committed.  Any other exception aborts the
         transaction and propagates unchanged; notably ``ProtoOutcomeUnknownError`` is never
         retried, because the commit may have been applied.  If ``fn`` ends the transaction itself
         (commit or abort), ``run`` returns its result without committing.
@@ -1193,17 +1284,25 @@ class Database:
             raise ProtoValidationError("backoff must satisfy 0 <= min_seconds <= max_seconds")
         for attempt in range(retries + 1):
             tr = self.new_transaction()
+            _RUN.retry_left = attempt < retries
+            held = False
             try:
                 result = fn(tr)
                 if tr.is_active:
                     tr.commit()
                 return result
-            except ProtoConflictError:
+            except ProtoConflictError as e:
                 if attempt == retries:
                     raise
+                held = getattr(e, "permit_held", False)
+                if held:
+                    continue        # the cluster round keeps its permission for this retry (D50)
             finally:
+                _RUN.retry_left = False
                 if tr.is_active:
                     tr.abort()
+                if not held:
+                    _drop_kept()    # a permission kept for a retry that is not coming
             delay = min(high, low * (2 ** attempt))
             time.sleep(delay * (0.5 + random.random() / 2))
         raise ProtoUnexpectedError("unreachable: the retry loop always returns or raises")  # pragma: no cover

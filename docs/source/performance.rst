@@ -59,7 +59,7 @@ rqlite                         v10.6.6 official linux-amd64 release, SHA-256 ver
 Summary
 -------
 
-**Lease starvation under TCP with fsync (D-LIVE-1): fixed at 2-4 peers by Task 8.3e; open defect D-LIVE-2**
+**Lease starvation under TCP with fsync (D-LIVE-1): fixed at 2-4 peers by Task 8.3e; D-LIVE-2 closed in Task 8.3f-B**
 
 The figures in this paragraph are from the Phase 9 run, before the fix. Task 8.3e measured the
 cause (the releasing process re-asked 0.17 ms after its release, contenders 3.3 ms after it)
@@ -69,7 +69,11 @@ commits evenly (min/max 0.93-1.00 in every run, both GIL modes) at about the sam
 At 8 peers vote splitting is not solved: min/max ratios of 0.12-0.85 (GIL off) and 0.55-0.77
 (GIL on, about 27 lease attempts per commit) were measured. Fair turns are fair for leases,
 not for commits of conflicting transactions: on hot-key read-modify-write workloads whole
-members starve (open defect **D-LIVE-2**, to be closed by Task 8.3f). The before/after
+members starve (defect **D-LIVE-2**). Task 8.3f phase A's retry under the permission did not
+close it: a retry still arrived after its permission had ended. With the owner-to-holder link
+delayed by 0.25 s, a holder held 16 of 16 usable permissions without committing. It is closed
+by the held retries of Task 8.3f-B (``docs/decisions.md``, D50 Amendment "held retries";
+``tests/concurrency/test_cluster_permit_hot_key.py``). The before/after
 benchmark figures are in the Task 8.3e report and will replace this run's when the results
 are regenerated. Before the fix, the cluster lease had no fairness mechanism, and with fsync-durable
 local tiers over TCP one peer could starve. With 2 TCP peers x 4 threads for 3 s, the per-peer commit counts of the three
@@ -514,14 +518,36 @@ syncs per commit (cluster)      6.2                 4.1 (3.2 GIL on)
 committer frame bytes / commit  16.8 KB             11.9 KB
 ==============================  ==================  ==================
 
-The rates are bimodal on both commits. In runs in which the owner role rotates fairly, the
-peers commit about equal shares: 75-88 commits/s at ``f03798b`` and 100-105 at ``ed70d3a``
-(GIL off). In runs in which one node keeps the role longer, they commit unequal shares at
-144-231 commits/s. These were 2 of 5 runs on each commit GIL off, and 0 of 5 at ``ed70d3a``
-GIL on. The medians above are fair-rotation runs.
+**Correction (Task 8.3f-B fix rounds): the "bimodal" rates were a benchmark artifact, not a
+second operating mode.** An earlier version of this section explained the 144-231 commits/s
+runs by one node keeping the owner role. Instrumenting the peers showed otherwise:
+- In those runs one peer's first permission request waited 4.6-4.7 s in the fairness
+  deferral (``_await_turn``), while the peer named by the turn became owner and kept
+  renewing.
+- That peer then ran its 3 s window alone, after the others had finished, and the benchmark
+  divided the commits of non-overlapping windows by one window.
+- The true wall-clock rate of such a run was 95 commits/s, against about 105 for the fair
+  runs.
 
-Payload sweep (``cluster_tcp`` 3 runs and ``rqlite_reference`` 2 runs, GIL off; ProtoDB rates
-as the per-run samples, because of the bimodality):
+Commit ``b4259ce`` stops deferring to a turn while an owner is known. Afterwards the longest
+permission wait was 0.23 s and no run was fast in 12 runs. The headline above is unaffected
+(medians of fair runs).
+
+Re-measured on the final tree of Task 8.3f-B: message lanes (D50 Amendment "Message lanes"),
+held retries (D50 Amendment "held retries"), and the owner-hint fix. Same driver, 5 runs
+each:
+- GIL off: median 107.0 commits/s (runs 107.5, 107.0, 238.5, 86.4, 74.0), 3.88 syncs per
+  commit, 12.0 KB committer frame bytes per commit.
+- GIL on: median 101.4 commits/s (runs 58.4, 69.9, 106.8, 101.4, 105.9), 3.14 syncs per
+  commit.
+- The 238.5 run has unequal shares (190/357/188). Whether it is the same window artifact is
+  not established by these figures.
+- The run-to-run spread (58-107 GIL on) is wider than the medians' differences, so no change
+  of the median is claimed.
+
+Payload sweep (``cluster_tcp`` 3 runs and ``rqlite_reference`` 2 runs, GIL off, at ``ed70d3a``;
+ProtoDB rates as the per-run samples). Samples above about 130 commits/s come from the window
+artifact described above and are not throughput:
 
 =========  ===========================  ==============  ==============  ==============
 payload    ProtoDB commits/s            rqlite req/s    ProtoDB frame   rqlite loopback
@@ -538,7 +564,7 @@ Before (``f03798b``, same runs): ProtoDB 86 / 76 / 75 commits/s (``cluster_tcp``
 - Bytes per commit at 100 KB fall 8.6x (1.87 MB to 217 KB, about payload x followers plus 12
   KB): the value is written once as its own record and the tree carries a reference to it.
   ProtoDB's wire volume at 10 KB and 100 KB is now within 1.7x and 1.3x of rqlite's.
-- rqlite is still faster at every size: 4-6x per request in fair-rotation runs. The remaining
+- rqlite is still faster at every size: 4-6x per request in the runs without the artifact. The remaining
   gap is per-commit cost (syncs, the owner hand-off between peers), not bytes.
 - Batched x50 (``rqlite_reference``): 16.7 -> 17.5 commits/s (835 -> 874 rows/s) against
   rqlite's 29,100 rows/s; unchanged, because each batched commit still rebuilds and ships 50

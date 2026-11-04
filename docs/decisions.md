@@ -593,6 +593,12 @@ Source: `docs/superpowers/specs/2026-11-01-protodb-v2-design.md` section 2.
      - **D-AVAIL-1: `flush`/`none` majority power loss leaves the cluster stuck** (item 2; CLOSED by Task 8.3f phase B, see D50): a durable accepted root whose records are lost; the only recovery is wiping every node back to the persisted root. Fix (8.3f): a single self-describing append of data, root and predecessor, so a root is never durable without its records.
   12. **Fix round 1 (8.3e review).** The coordinator module docstring was meant to be rewritten in the 8.3e commit, but those edits were lost: a background mutation run on `coordinator.py` restored the file it had read at its start over them, after the edits were made. It now states the post-8.3e guarantees (acceptor log always synced, data durability per mode, D-AVAIL-1), the "Fairness" section (mechanism, honest-hints assumption, measured limits, D-LIVE-2), and the R67 rule for committed entries. The ordering test checks the durable log at every grant, acknowledgement and answer a node sends, on TieredStorage and shared-`FileStorage` tiers (it checked once at the end of a schedule before). `tests/support/power_loss.py` states the model's limits. Deterministic unit tests pin that stale, duplicated, reordered and self-naming hints leave grants unchanged and cost a bounded wait. Items 2, 7, 8 and 9 and the D45 resolution note were corrected in place.
 
+- Amendment (Task 8.3f-B, ruling R82, principle P5): **timing never carries safety; corrected wording.**
+  - The clock-rate argument of D45 (holders' beliefs never overlap) and the startup grace (`restart_grace`, "the safe startup grace" in fix round 5 item 2 above) are efficiency properties, not safety premises.
+  - Since D46, a replicated root of a term below a promise is refused. Promises are `fsync`-ed before a grant leaves, so a restarted node remembers every promise it ever made. Rejoins of an empty log are ballots (R78a). A restarted node that grants early therefore costs at most the running holder's work: its replications are refused once a majority promised the newer term, and a root a majority accepted before that is adopted by the newer term's recovery.
+  - The grace, and `attach`'s refusal of a shorter grace on a non-empty log, keep that waste away. The words "safe" and "exposure" above refer to lease exclusion only.
+  - Likewise, a commit whose majority is observed only after the holder's lease ended is reported as `ProtoOutcomeUnknownError`. This is a conservative failure: the rejoin rule no longer reads it (R78a). A majority-accepted root is chosen whatever the time it was observed.
+
 ## D47 - Public API: one lazily resolved export table in `proto_db/__init__.py`
 - Context: Task 8.5 makes 2.0 the public API (spec section 3, D15). The 0.1 `__init__` imported every 0.1 module eagerly; importing it started 24 executor threads (0.1 `hybrid_executor`) and exported the 0.1 `MutableObject(Atom)`, which shadowed the 2.0 handle of the same name.
 - Decision: `proto_db/__init__.py` holds one table `_EXPORTS` (public name -> defining submodule) and resolves names on first access through a PEP 562 `__getattr__`, caching each in the module namespace; `__all__` is the table's keys, `__dir__` lists them, and a `TYPE_CHECKING` block gives static analysers the same names. `import proto_db` therefore imports no submodule, no optional third-party package and starts no thread; resolving every public name still imports no optional package (each subpackage already imports boto3, google-cloud-storage, numpy, pyarrow and hnswlib lazily). The surface: transactions (`ObjectSpace`, `Database`, `Transaction`, `HistoryEntry`), atoms and records (`Atom`, `AtomPointer`, `PersistenceContext`, `register_atom_class`, `DBObject`, `MutableObject` -- the 2.0 handle), collections (`List`, `Dictionary`, `RepeatedKeysDictionary`, `HashDictionary`, `Set`, `CountedSet`, `IndexedCollection`, `ConcurrentOptimized`), indexes (`Index`, `KeySpec`, `register_extractor`, `EqualityIndex`, `RangeIndex`, `VectorIndex`), queries (`Expression`, `Term`, `NearQuery`, `And`, `Or`, `Not`, `evaluate`, `QueryPlan`, `plan_query`, `from_collection`, `Queryable`, `F`, `Agg`), storages (`SharedStorage`, `MemoryStorage`, `FileStorage`, `CloudStorage`, `ObjectStore`, `S3ObjectStore`, `GCSObjectStore`, `TieredStorage`), clusters (`ClusterCoordinator`, `Peer`, `TcpTransport`), runtime services (`parallel_scan`, `parallel_filter`, `ParallelConfig`, `ParallelPool`, `FSM`, `Timer`), the Arrow/Parquet bridge (`to_arrow`, `to_parquet`, `scan_parquet`, `from_parquet_to_rows`), the value model (`MISSING`, `canonical`, `values_equal`, `order_key`, `hash_key`, `FrozenList`, `FrozenDict`) and the errors (every `Proto*Error` plus the 0.1 `Proto*Exception` aliases, deprecated in 2.0 and removed in 2.1 per D12). Plan nodes, storage formats, cluster protocol and transport internals stay reachable through their subpackages but are not top-level names.
@@ -652,6 +658,95 @@ Source: `docs/superpowers/specs/2026-11-01-protodb-v2-design.md` section 2.
   - the answers of one round already arrive at different moments.
 
   This is ordinary retransmission (P6). Without it, a rejoin that needs every witness (two members rejoining at once in a 5-member cluster) rarely completed on a lossy link: one safety-test schedule (5 members, 20 % loss) did not form within 10 s in 2 of 50 runs under CPU load. That schedule was replayed by Hypothesis, and the effect of this change on its formation time has not been measured yet.
+
+- Amendment (Task 8.3f-B, ruling R81, principles P5 and P6): **message lanes; the dispatcher never blocks.**
+  - Before: the transport's receiving thread decided grants and ballot answers and wrote their durable promises inline. Its longest message was a promise `fsync`; measured renew p95 7.5 ms and request p95 4.4 ms at 3 TCP peers. Every replication, release, `done`, `want`, fetch and commit query shared one worker queue. The owner's `done` waited behind its own copy of the holder's replication (`done` queue wait p95 1.7 ms against p50 0.06 ms).
+  - Now the dispatcher is an event-driven state machine.
+    - It handles only memory-only messages, and replies at once:
+      - permit requests and replies;
+      - grant, reject and answer replies, and plain queries;
+      - the fairness part of a release, and `want`;
+      - the owner's part of `done`, which sequences the next permission.
+    - Every step that writes or depends on the acceptor log goes to the acceptor lane, one thread in arrival order:
+      - a grant's or a ballot's promise;
+      - an acceptance;
+      - the grant a release ends;
+      - a committed root learnt from a release or a `done`.
+    - Peer reads (`fetch`, `commit_query`) go to the read lane.
+  - States of a message on the acceptor lane: *queued* → *deciding* (memory, under the acceptor-log lock) → *writing* (the durable write) → *published* (memory) → *replied*. A reply never precedes its write.
+  - Interactions:
+    - (a) A grant is sent only after its promise is durable, and an acknowledgement only after its acceptance is. This is unchanged code, run on another thread.
+    - (b) A later request cannot see a pending promise. Steps run one at a time, so the next decision starts after the previous write and publication. A duplicate request for the same term finds the promise logged and needs no new write.
+    - (c) Required order per sender: a release or `done` teaches its committed root on the acceptor lane after the replications the sender sent earlier. The lane is FIFO, as the single worker queue was. The owner's part of `done` does not wait for that order: it reads only the message and its own term state, and the code comment of review M1 already records that a permit may name a committed base before its records arrive.
+  - Unchanged: the safety arguments (R55 atomicity of decision, write and publication; D45/D46 ballots; R78a rejoin ballots). Each acceptor step runs the same code under the same lock, and only the thread that runs it changes. Timing affects only when replies leave.
+  - Group commit across pending acceptor writes (one `fsync` for several queued steps) fits this lane and is not done yet.
+  - Tests: `tests/unit/test_cluster_dispatcher.py`. Every acceptor-log write is slowed to 0.2 s.
+    - No promise is written on a receiving thread; the old code wrote them on `proto-cluster-inproc-n1` and `-n2`.
+    - The dispatcher's longest message stays below 0.05 s.
+    - Under 100 % duplication and three competing requesters, every grant leaves its node only after a promise of at least its term was written there, and no term is granted to two requesters.
+
+- Amendment (Task 8.3f-B, rulings R82 and R83): **held retries; the D-LIVE-2 claim corrected.**
+  - The claim above, "every permission commits at least the first transaction that read the current root", was false as implemented. Phase A did not close D-LIVE-2.
+  - Measured on b4259ce, 3 nodes, 2.4 s lease, owner-to-holder link delayed by 0.25 s, hot-counter load (`tests/concurrency/test_cluster_permit_hot_key.py`):
+    - with one committing thread per node, 16 of 16 usable holder permits committed nothing, and both non-owners acknowledged 1 commit in 4 s against the owner's 27;
+    - with two threads, 2 of 17 usable permits committed nothing;
+    - in the delayed-duplicates owner-failure test, holders held 69 and 185 permits in 30 s and committed nothing.
+  - Mechanism, from traces of every wasted permit:
+    - (a) A holder's transactions start from the committed root it knows. Behind a delayed link, other members commit while its permit is in flight, so every snapshot taken before the permit arrives is older than the permit's base. A read-modify-write of a hot key therefore conflicts in the permit's first round. That is optimistic concurrency, not item 3: no prebuilt state is involved.
+    - (b) The retry that would read the permit's root came too late in two ways:
+      - `Database.run` slept its backoff before retrying (7-10 ms measured) while the round waited 5 ms;
+      - the runner thread, whose own commit had conflicted, can only retry after the round returns, and the round ended the permission on returning.
+    - (c) The next permission's base was newer again, so the cycle repeated.
+  - Fix:
+    - (1) A conflict decided in a round that keeps the permission is marked `ProtoConflictError.permit_held`, and `Database.run` retries it at once, without backoff.
+    - (2) The round waits for the retries of other threads' run() commits until each has re-queued: at most 0.1 s (`_RETRY_HOLD`), never beyond the permission's validity.
+    - (3) When the runner's own commit conflicts, the runner leaves the permission in the group (`_Group.kept`) instead of ending it. Its immediate retry, or any commit queued meanwhile, continues under the same permission, within the same round budget (`_PERMIT_RETRIES`).
+    - (4) A kept permission no longer usable is ended by the next runner. `Database.run` ends it when its thread returns or raises instead of retrying.
+  - After the fix, 0 usable permits without a commit in every case, and delayed holders get their share (15-18 acknowledged commits each in 4 s). The claim now holds for transactions committed through `Database.run`, which is where a transaction can be re-run. A caller's own retry loop gets the 5 ms window as before.
+  - Safety unchanged: a kept permission is the same permission. Its rounds run under the same validity checks, and the owner's sequencing, the chain rule and the acceptance rules do not see which thread runs a round. A kept permission that is never ended runs out like any held permission: the owner's timeout abandons the term, which is conservative.
+
+- Amendment (Task 8.3f-B, ruling R80): **`owner_idle_release`, off by default.**
+  - With the option set, an owner whose own threads asked for no permission for that many seconds ends its term, even while other members ask.
+    - Past the threshold it issues no new permission (*draining*), and it ends the term once the outstanding permission is done. Its queue is refused with `ending`.
+    - Without the drain, a member that asks continuously kept a permission outstanding at almost every check, and with the GIL on the term never ended (measured).
+  - The D/4 rule for a term nobody asks for is unchanged.
+  - **Liveness and efficiency only.** The rule only decides when an owner stops issuing permissions and releases its lease, which it may do at any time. No grant, acceptance, ballot or chain rule reads it.
+  - Measured at 3 TCP peers, `fsync`, 4 threads per loaded node, 60 s per run, two runs per cell (commits/s; under uniform load every column split commits evenly, 33.3 % each):
+
+    | Load | current rule | 30 s | 5 s |
+    |---|---|---|---|
+    | uniform | 138.5, 138.9 | 143.6, 157.4 | 149.4, 155.4 |
+    | idle owner, one busy node | 161.0, 172.2 | 137.5, 154.0 | 161.0, 172.8 |
+    | load moving every 20 s | 166.7, 169.1 | 150.1, 164.5 | 160.1, 175.2 |
+
+    - The idle-owner and moving runs above predate the drain. With the drain, idle owner: 168.1, 140.0 commits/s at 30 s and 173.7, 170.4 at 5 s; the release happened in every run.
+    - Owner changes per minute: 2 under the current rule; 3 at 30 s; 2-5 at 5 s.
+    - p50 latency 21-25 ms (73-82 ms under uniform load) in every column.
+    - No column is better beyond the run-to-run spread, so the option stays off by default.
+    - The case it targets, an owner serving only others, costs a remote permission round per transaction. These runs did not record which node owned each phase, so the size of that cost is not measured here.
+- Amendment (Task 8.3f-B, finding in b4259ce; liveness only): **a refusal from the hinted owner clears the hint.**
+  - Commit `b4259ce` made `_become_owner` defer while an owner is known.
+  - A `permit_no` cleared the owner hint only when its term was at or below the hint's. A former owner refuses with its highest granted term, which a refused ballot of another member can raise above the hint's.
+  - The hint then survived, the member deferred to the former owner, asked it again, and so on until its permission timed out:
+    - 5.00 s, the test's timeout, on `b4259ce`, after an ordinary idle end of the owner's term;
+    - 27 s in a 3-peer TCP run with `owner_idle_release`;
+    - 0.05 s on `3e20aeb`.
+  - Now a `permit_no` that answers this node's live request clears the hinted node whatever its term, and keeps the hint's term, so the next owner's messages update it.
+  - Tests: `tests/concurrency/test_cluster_idle_release.py`.
+- Measurements for ruling R81 (3 TCP peers, `fsync`, 100 B, 5 runs per column, peers instrumented):
+  - Dispatcher time per message, before (`b4259ce`) → after (lanes), GIL off:
+    - request p95 2.7 → 0.09 ms;
+    - renew p95 24 → 0.09 ms (max 44.5 → 1.2 ms);
+    - longest message 44.5 → 4.7 ms.
+  - `done`:
+    - before, the owner's sequencing waited in the worker queue (wait p95 2.2 ms);
+    - after, it runs on the dispatcher (p95 0.22 ms);
+    - its committed-root part waits on the acceptor lane (wait p95 1.5 ms).
+  - A follower's `replicate` handling (append and `fsync`) is p50 3.9-4.3 ms, p95 6-12 ms, in both versions: the largest item of the per-commit budget.
+  - Renewals did not get faster. They now queue on the acceptor lane behind follower `fsync`s: wait p95 38 ms plus handling p95 7 ms, against 24 ms inline before.
+  - Commit rate is unchanged (median of 5): GIL off 111.5 → 112.2, GIL on 106.8 → 108.4 commits/s.
+  - With the GIL on, `sys.setswitchinterval(0.0005)` (default 0.005) gave 105.0 commits/s. `done` wait p95 fell from 6.1 to 2.4 ms. No other change exceeds the spread.
+  - The interval is not changed: it is process-wide and belongs to the embedding application. No option is added, since nothing was gained.
 
 ## D51 - Format 3: compact atom references and large node values out of line (Task 8.3f item 2)
 - Context: Phase B (D50) made every acceptance one synced append carrying the commit's records, so the bytes a commit writes are on the critical path of every node. Measured with probe `amp.py` (in-process `MemoryStorage`, the cluster benchmark's commit shape: one counted-set add and one blind dictionary entry per commit, after 1000 commits): a commit wrote 8 773 bytes of atoms with a 100-byte value, 127 585 with 10 KB and 1 207 609 with 100 KB. Two causes: every reference spelled its segment as a 32-character hex string and its type as a full dotted name (about 80 bytes per reference, two to four references per node), and path copying re-wrote each copied ancestor's value, so a large value was written about once per tree level; the D33 merge also wrote it twice (the transaction saves its written value before the merge, the merge builds a new node).

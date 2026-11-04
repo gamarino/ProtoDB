@@ -72,12 +72,15 @@ Fairness (Task 8.3e, defect D-LIVE-1; D46 Amendment (Task 8.3e))
     members (TCP, ``fsync``: per-member lease counts within a few percent).  At 8 members
     vote splitting is not solved: per-member commit ratios (min/max) of 0.12-0.85 with the
     GIL off and 0.55-0.77 with it on were measured, with up to 27 lease attempts per commit,
-    though no member waited more than about 3 s.  Open defect D-LIVE-2 (to be closed by Task
-    8.3f, ruling R68): turns are fair for leases, not for commits of conflicting
-    transactions -- a read-modify-write of a hot key conflicts under the lease, the
-    transaction releases and retries with a fresh snapshot outside the lease, waits a full
-    round, and conflicts again, so on such workloads whole members can starve (measured: 2
-    members x 2 threads, 495 against 0 commits in 3 s).
+    though no member waited more than about 3 s.  Defect D-LIVE-2: turns were fair for
+    leases, not for commits of conflicting transactions -- a read-modify-write of a hot key
+    conflicted, retried with a fresh snapshot after the lease or permission had ended, and
+    conflicted again, so whole members starved (measured: 2 members x 2 threads, 495 against
+    0 commits in 3 s).  Task 8.3f phase A's retry-under-permission did not close it (a
+    retry still arrived after the permission had ended).  Closed by the held retries of
+    :mod:`proto_db.transactions` (D50 Amendment "held retries"): a commit of
+    ``Database.run`` that conflicted under a permission retries at once, under the same
+    permission, from the root it carries.
 Granting
     See :class:`~proto_db.cluster.lease.PeerGrants`.  Requests and releases carry the
     sender's incarnation (a random number drawn at each start), so a restarted node is
@@ -182,8 +185,42 @@ Peer services
     requests for records not yet in the object store) and ``commit_query``/``commit_info``
     (where the records of a commit are: covered by the persisted root, or their byte ranges).
 
+Message lanes (Task 8.3f-B, ruling R81; D50 Amendment "Message lanes")
+    The dispatcher -- the transport's receiving thread -- never waits on a disk.  It is an
+    event-driven state machine: each message either changes memory and replies at once, or
+    starts an operation on a lane and returns; the lane sends the reply when the operation
+    completes.
+
+    - **Dispatcher (control, memory only).**
+      - ``permit_req``, ``permit``, ``permit_no``, ``grant``, ``reject``, ``answer`` and
+        plain ``query``;
+      - the fairness part of ``release`` and ``want``;
+      - the owner's part of ``done``, which sequences the next permission.
+    - **Acceptor lane (one thread, ``_jobs``, arrival order).** Every step that writes the
+      acceptor log or reads its pending state:
+      - ``request`` and ``renew``: the grant's promise;
+      - a ballot ``query``: the ballot's promise;
+      - ``records`` and ``replicate``: the acceptance;
+      - the grant-ending and committed-root part of ``release``;
+      - the committed-root part of ``done``.
+      Each step decides, writes, publishes, then replies, exactly as the dispatcher and the
+      worker did before, so the safety arguments of the sections below are unchanged:
+      - a grant leaves only after its promise is durable, and an acknowledgement only after
+        its acceptance is;
+      - a request decided while an earlier write is pending cannot exist, because steps run
+        one at a time;
+      - a ``done`` or ``release`` teaches its committed root only after every replication the
+        same sender sent earlier (FIFO per lane; on a link that keeps the sender's order).
+    - **Read lane (one thread, ``_reads``).** ``fetch`` and ``commit_query`` read the local
+      tier.
+
+    The owner part of ``done`` reads only the message and the owner's own term state, never
+    acceptor state, so the owner does not wait for its own copy of the holder's replication
+    (head-of-line blocking).  ``stats()["dispatch_seconds_max"]`` exposes the dispatcher's
+    longest message.
+
 Health
-    An unexpected exception in the worker thread fences the node
+    An unexpected exception in a lane thread fences the node
     (:meth:`ClusterCoordinator.fence`): it is logged, the node stops granting, accepting
     and acquiring, drops (or refuses) the peer messages still queued and arriving,
     :attr:`ClusterCoordinator.healthy` and ``stats()["healthy"]`` turn False, and the
@@ -272,6 +309,9 @@ _WAKE_SPREAD = 0.003
 #: has not been seen by then (lease fairness, Task 8.3e; capped by ``request_timeout``).
 _TURN_SILENCE = 0.05
 _STOP = object()
+#: Seconds on one message above which the dispatcher counts it in ``stats()["dispatch_slow"]``.
+#: The dispatcher never waits on a disk (ruling R81); this only exposes scheduling delays.
+DISPATCH_SLOW = 0.01
 #: Roots whose records this node stored, remembered for :meth:`ClusterCoordinator.await_records`.
 _STORED_MEMORY = 256
 #: Times a rejoin's query round asks a member whose answer has not arrived (see ``_gather``).
@@ -383,6 +423,7 @@ class _Ownership:
         self.committed = committed
         self.queue = collections.deque()
         self.last_demand = now
+        self.last_local = now           # the last permission request of this node's own threads
         self.abandoned = False
         self.ended = False
 
@@ -425,6 +466,12 @@ class ClusterCoordinator:
         persist_interval: seconds between two passes of the persister (D46).
         persist_lag: seconds the persisted epoch may lag the committed one before this node
             persists a root committed by another node (covers a crashed committer).
+        owner_idle_release: seconds after which an owner whose own threads asked for no
+            permission ends its term, even while other members ask (ruling R80); a member
+            with load then takes the ownership through an ordinary grant round.  ``None``
+            (the default) keeps only the rule that ends a term nobody asks for.  Liveness
+            and efficiency only (D50 Amendment "owner_idle_release"): measured, it did not
+            raise throughput, so it is off by default.
         clock: testing seam; the monotonic clock (seconds) used for every lease decision.
         seed: testing seam; seed of the back-off jitter generator.
     """
@@ -434,6 +481,7 @@ class ClusterCoordinator:
                  acquire_timeout: float = 30.0, backoff: tuple = (0.001, 0.05),
                  startup_grace: Optional[float] = None, fetch_timeout: Optional[float] = None,
                  persist_interval: float = 0.05, persist_lag: float = 1.0,
+                 owner_idle_release: Optional[float] = None,
                  clock: Optional[Callable[[], float]] = None, seed: Optional[int] = None):
         members = []
         for entry in peers:
@@ -465,6 +513,8 @@ class ClusterCoordinator:
         self._margin = margin
         self._belief = self._duration - margin
         self._request_timeout = _number("request_timeout", request_timeout)
+        self._idle_release = None if owner_idle_release is None else _number("owner_idle_release",
+                                                                              owner_idle_release)
         if self._request_timeout >= self._duration - self._margin:
             raise ProtoValidationError("request_timeout must be shorter than lease_duration - drift_margin")
         self._acquire_timeout = _number("acquire_timeout", acquire_timeout, positive=False)
@@ -541,13 +591,16 @@ class ClusterCoordinator:
         self._confirmed = True
         self._persister = None
         self._worker = None
-        self._jobs = queue.Queue()
+        self._jobs = queue.Queue()          # the acceptor lane: every durable acceptor step (D50, R81)
+        self._reader = None
+        self._reads = queue.Queue()         # the read lane: records and commits served to peers
         self._stats = {"acquired": 0, "attempts": 0, "lost_attempts": 0, "grants_given": 0,
                        "grants_refused_no_storage": 0, "releases_received": 0, "storage_root_reads": 0,
                        "replications": 0, "replication_failures": 0, "accepted": 0, "refused": 0,
                        "recoveries": 0, "rejoins": 0, "rejoin_ballots": 0, "fetches_requested": 0, "fetches_served": 0,
                        "critical_commits": 0, "turns_named": 0, "turns_taken": 0, "deferrals": 0,
-                       "deferral_timeouts": 0}
+                       "deferral_timeouts": 0, "dispatch_seconds_max": 0.0, "dispatch_slow": 0,
+                       "terms_released_idle_local": 0}
         self._critical = {k: 0.0 for k in _CRITICAL_KEYS}
         # Lease fairness (module docstring, "Fairness"; Task 8.3e, D-LIVE-1): proposer-side
         # timing only, never consulted by a grant, an acceptance or a commit.
@@ -638,7 +691,11 @@ class ClusterCoordinator:
         node, failed its tier or stopped its persister, or ``None``).  ``rejoin_blocked`` says why a rejoin that has its answers
         cannot complete (the records of the adopted root are unobtainable, or too few
         witnesses confirmed its ballot durably), else ``None``; ``rejoin_ballots`` counts the
-        ballot rounds that completed a rejoin (ruling R78a)."""
+        ballot rounds that completed a rejoin (ruling R78a).  ``dispatch_seconds_max``: the
+        longest the dispatcher spent on one message; ``dispatch_slow``: messages it spent
+        more than :data:`DISPATCH_SLOW` on (it never waits on a disk, ruling R81).
+        ``terms_released_idle_local``: terms this node ended as owner because its own threads
+        asked for nothing for ``owner_idle_release`` seconds (ruling R80)."""
         with self._lock:
             out = dict(self._stats)
             out["critical"] = dict(self._critical)
@@ -724,17 +781,21 @@ class ClusterCoordinator:
                 raise ProtoValidationError(f"The coordinator is {self._state}; it cannot be started")
             self._grants = PeerGrants(self._duration, self._clock, startup_grace=self._grace)
             self._state = "running"
-        self._worker = threading.Thread(target=self._work, name=f"proto-cluster-worker-{self._node}",
-                                        daemon=True)
+        self._worker = threading.Thread(target=self._work, args=(self._jobs,),
+                                        name=f"proto-cluster-worker-{self._node}", daemon=True)
+        self._reader = threading.Thread(target=self._work, args=(self._reads,),
+                                        name=f"proto-cluster-reader-{self._node}", daemon=True)
         self._worker.start()
+        self._reader.start()
         addresses = {i: ((p.host, p.port) if p.port else None) for i, p in self._peers.items()}
         try:
             self._transport.start(self._node, addresses, self._on_message)
         except BaseException:
             with self._lock:
                 self._state = "stopped"
-            self._jobs.put(_STOP)
-            self._worker.join()
+            for lane, thread in ((self._jobs, self._worker), (self._reads, self._reader)):
+                lane.put(_STOP)
+                thread.join()
             raise
         return self
 
@@ -767,11 +828,11 @@ class ClusterCoordinator:
                 owner.join()
         if started:
             self._transport.stop()
-        worker = self._worker
-        if worker is not None:
-            self._jobs.put(_STOP)
-            if worker is not threading.current_thread():
-                worker.join()
+        for lane, thread in ((self._jobs, self._worker), (self._reads, self._reader)):
+            if thread is not None:
+                lane.put(_STOP)
+                if thread is not threading.current_thread():
+                    thread.join()
 
     def __enter__(self):
         return self.start()
@@ -1289,9 +1350,9 @@ class ClusterCoordinator:
         return waiter.data
 
     def wait_idle(self, timeout: Optional[float] = None) -> bool:
-        """Wait until every queued peer message (replications, releases, fetches) has been
-        handled; return False after ``timeout`` seconds.  Messages are handled in arrival order
-        by one worker thread; tests use this to make a delivery synchronous."""
+        """Wait until every queued peer message (on the acceptor and read lanes) has been
+        handled; return False after ``timeout`` seconds.  Each lane handles its messages in
+        arrival order on one thread; tests use this to make a delivery synchronous."""
         with self._cond:
             return self._cond.wait_for(lambda: self._queued == 0, timeout=timeout)
 
@@ -1473,31 +1534,65 @@ class ClusterCoordinator:
     # -- message handling --------------------------------------------------------------------
 
     def _on_message(self, msg: dict) -> None:
+        """The dispatcher (the transport's receiving thread): handle ``msg`` without waiting on
+        a disk (ruling R81, D50 "Message lanes").  Its duration is recorded in
+        ``stats()["dispatch_seconds_max"]`` and ``["dispatch_slow"]`` (over 10 ms)."""
+        started = time.perf_counter()
+        try:
+            self._route(msg)
+        finally:
+            spent = time.perf_counter() - started
+            with self._lock:
+                if spent > self._stats["dispatch_seconds_max"]:
+                    self._stats["dispatch_seconds_max"] = spent
+                if spent > DISPATCH_SLOW:
+                    self._stats["dispatch_slow"] += 1
+
+    def _enqueue(self, lane: queue.Queue, msg: dict) -> None:
+        """Queue ``msg`` for a lane's thread, or refuse it at once when this node is fenced."""
+        with self._lock:
+            fenced = self._failure is not None
+            if not fenced:
+                self._queued += 1
+                lane.put(msg)
+        if fenced:
+            self._refuse_queued(msg)
+
+    def _route(self, msg: dict) -> None:
         sender = msg["from"]
         if sender not in self._peers or sender == self._node:
             logger.warning("Node %s ignored a %r message from unknown sender %r", self._node, msg["type"], sender)
             return
         kind = msg["type"]
-        if kind in ("records", "replicate", "release", "want", "fetch", "commit_query", "done"):
-            # A release or done follows its replicate (and a replicate its record chunks) through
-            # the same queue, so on a link that keeps the sender's order a root learnt committed
-            # from that sender is stored here first.  Not an invariant (review M1): a permit can
-            # name a committed base before its records arrive from another member; builds wait
-            # for the records or fetch them.  A ``want`` follows the sender's release, which it
-            # must not precede (fairness).
-            with self._lock:
-                fenced = self._failure is not None
-                if not fenced:
-                    self._queued += 1
-                    self._jobs.put(msg)
-            if fenced:
-                self._refuse_queued(msg)
+        if kind in ("records", "replicate", "request", "renew") or (kind == "query" and msg["ballot"]):
+            # The acceptor lane: each step decides, makes its write durable, publishes, then
+            # replies, in arrival order, exactly as when the dispatcher ran the grants inline
+            # (D50 "Message lanes").  A replicate follows its record chunks.
+            self._enqueue(self._jobs, msg)
             return
-        if kind == "request":
-            self._on_request(sender, msg)
+        if kind in ("fetch", "commit_query"):
+            self._enqueue(self._reads, msg)
             return
-        if kind == "renew":
-            self._on_request(sender, msg, renew=True)
+        if kind == "release":
+            # Fairness at once (timing only); the grant it ends and the committed root it
+            # teaches go through the acceptor lane, behind the sender's earlier replications.
+            with self._cond:
+                if self._state == "running":
+                    self._note_release(sender, msg)
+            self._enqueue(self._jobs, msg)
+            return
+        if kind == "want":
+            # After the sender's release, whose fairness part the dispatcher handled already.
+            with self._cond:
+                if self._state == "running":
+                    self._note_wanting(sender, time.monotonic())
+            return
+        if kind == "done":
+            # The owner sequences its next permission at once: ``done`` never waits behind this
+            # node's own copy of the sender's replication (head-of-line blocking, R81).  The
+            # committed root it teaches is learnt and logged on the acceptor lane.
+            self._on_done_owner(msg)
+            self._enqueue(self._jobs, msg)
             return
         if kind == "permit_req":
             self._on_permit_req(sender, msg)
@@ -1511,8 +1606,6 @@ class ClusterCoordinator:
                 return
             if kind in ("grant", "reject"):
                 self._on_reply(sender, msg)
-            elif kind == "query" and msg["ballot"] and self._witness_state() == "ok":
-                reply = False               # answered below, after a durable promise
             elif kind == "query":
                 state = self._witness_state()
                 if state == "unknown":
@@ -1533,9 +1626,7 @@ class ClusterCoordinator:
                                          state=state, ballot=0)
             else:
                 self._on_answer(sender, kind, msg)
-        if reply is False:
-            self._on_ballot_query(sender, msg)
-        elif reply is not None:
+        if reply is not None:
             self._transport.send(sender, reply)
 
     def _on_ballot_query(self, sender: str, msg: dict) -> None:
@@ -1691,7 +1782,6 @@ class ClusterCoordinator:
         """Handle a release (lock held); return ``(label, root)`` when it taught a newer
         committed root (logged by the caller, outside the lock)."""
         learnt = None
-        self._note_release(sender, msg)
         ended = self._grants.on_release(sender, msg["term"], msg["inc"])
         if ended:
             self._suspect_term = max(self._suspect_term, ended)
@@ -1859,14 +1949,19 @@ class ClusterCoordinator:
 
     # -- the worker: replicated records, page requests, prefetch ---------------------------
 
-    def _work(self) -> None:
+    def _work(self, lane: queue.Queue) -> None:
+        """A lane's thread: the acceptor lane (``_jobs``) or the read lane (``_reads``)."""
         while True:
-            msg = self._jobs.get()
+            msg = lane.get()
             if msg is _STOP:
                 return
             try:
                 kind = msg["type"]
-                if kind == "replicate":
+                if kind in ("request", "renew"):
+                    self._on_request(msg["from"], msg, renew=kind == "renew")
+                elif kind == "query":
+                    self._on_ballot_query(msg["from"], msg)
+                elif kind == "replicate":
                     self._apply_replicate(msg)
                 elif kind == "records":
                     self._buffer_records(msg)
@@ -1886,10 +1981,6 @@ class ClusterCoordinator:
                                 self._tier_failed(tier, e, "logging a committed root")
                 elif kind == "done":
                     self._on_done(msg)
-                elif kind == "want":
-                    with self._cond:
-                        if self._state == "running":
-                            self._note_wanting(msg["from"], time.monotonic())
                 elif kind == "commit_query":
                     self._serve_commit(msg)
                 else:
@@ -1901,7 +1992,7 @@ class ClusterCoordinator:
                 # with a broken worker.  Fence the node, refuse what is still queued (nothing
                 # is enqueued once fenced), then let the thread fail loudly.
                 self.fence(e)
-                self._drain()
+                self._drain(lane)
                 raise
             finally:
                 with self._cond:
@@ -1915,11 +2006,11 @@ class ClusterCoordinator:
             self._transport.send(msg["from"], make_message("ack", self._node, term=msg["term"], rid=msg["rid"],
                                                            ok=False, root=self._wire(self._accepted)))
 
-    def _drain(self) -> None:
-        """Refuse every message still queued for the worker (fenced; worker thread)."""
+    def _drain(self, lane: queue.Queue) -> None:
+        """Refuse every message still queued on ``lane`` (fenced; that lane's thread)."""
         while True:
             try:
-                msg = self._jobs.get_nowait()
+                msg = lane.get_nowait()
             except queue.Empty:
                 return
             if msg is _STOP:
@@ -2406,7 +2497,7 @@ class ClusterCoordinator:
             if own is not None and own.serving(self._clock()):
                 wait = _PermitWait(next(self._rids), self._clock())
                 own.queue.append((self._node, wait.rid, self._inc, wait))
-                own.last_demand = time.monotonic()
+                own.last_demand = own.last_local = time.monotonic()
                 sends = self._dispatch(own)
                 target = None
             else:
@@ -2527,6 +2618,13 @@ class ClusterCoordinator:
         messages to send."""
         if own.outstanding is not None or not own.queue or not own.serving(self._clock()):
             return []
+        if self._idle_release is not None and time.monotonic() - own.last_local > self._idle_release:
+            # Draining (ruling R80): no new permission; the ownership thread ends the term as
+            # soon as the outstanding one is done.  Without the drain, a member that asks
+            # continuously kept a permission outstanding at nearly every check, and the term
+            # never ended (measured with the GIL on).
+            self._cond.notify_all()
+            return []
         if own.lease.remaining() < self._belief / 4:
             # Too little lease left for a replication to finish under it: the ownership
             # thread renews first and dispatches once renewed (or ends the term).
@@ -2591,7 +2689,16 @@ class ClusterCoordinator:
                 if wait is not None and wait.reply is None:
                     wait.reply = "refused"
                     self._stats["permits_refused"] += 1
-                    if self._owner_hint[1] == sender and msg["term"] <= self._owner_hint[0]:
+                    if self._owner_hint[1] == sender:
+                        # The member this node took for the owner answered this very request:
+                        # it does not serve that term (not its owner, ending or abandoned).
+                        # Forget it whatever term the refusal carries -- the sender's highest
+                        # granted term, which a refused ballot of another member can raise
+                        # above the hint's.  With the old ``term <= hint`` condition the hint
+                        # survived, ``_become_owner`` kept deferring to it, and a member asked
+                        # the former owner again until its permission timed out (measured: 27 s
+                        # after an ``owner_idle_release`` end, ruling R80).  The term is kept,
+                        # so the next owner's messages update the hint (timing only, D50).
                         self._owner_hint = (self._owner_hint[0], None)
                     self._cond.notify_all()
                 return
@@ -2685,36 +2792,47 @@ class ClusterCoordinator:
         self._cond.notify_all()         # local waiters see the ownership end
         return sends
 
-    def _on_done(self, msg: dict) -> None:
-        """A permission ended (worker thread, after the sender's replications): learn its
-        committed root, and sequence the next permission when this node owns that term."""
+    def _on_done_owner(self, msg: dict) -> None:
+        """A permission ended (dispatcher): when this node owns that term, sequence the next
+        permission now.  The owner reads only the message and its own term's state, never this
+        node's acceptor state, so it need not wait for its own copy of the replication (R81)."""
         sender = msg["from"]
-        learnt, sends, tier = None, [], None
+        sends = []
+        with self._cond:
+            if self._state != "running":
+                return
+            self._note_owner(msg["term"])
+            own = self._ownership
+            if own is not None and own.term == msg["term"] and own.outstanding is not None \
+                    and own.outstanding[:2] == (sender, msg["seq"]):
+                # Only the incarnation the permission was issued to knows what was done
+                # with it; any other incarnation's done (a restarted holder answering a
+                # duplicated permit, before this fix) is an unknown outcome (C1).
+                known, root, label = decode_labeled_root(msg["root"])
+                outcome = msg["outcome"] if msg["inc"] == own.outstanding[3] else "unknown"
+                sends = self._permit_outcome(own, outcome, root, label)
+            self._wakeups += 1
+            self._cond.notify_all()
+        self._send_all(sends)
+
+    def _on_done(self, msg: dict) -> None:
+        """A permission ended (acceptor lane, after the sender's earlier replications): learn
+        its committed root and log it, atomically with acceptor decisions (ruling R55)."""
+        learnt, tier = None, None
         with self._log_lock:
             with self._cond:
                 if self._state != "running":
                     return
-                self._note_owner(msg["term"])
                 known, root, label = decode_labeled_root(msg["root"])
-                if msg["outcome"] == "committed" and known and self._observe_committed(True, root, label, sender):
+                if msg["outcome"] == "committed" and known and self._observe_committed(True, root, label,
+                                                                                       msg["from"]):
                     learnt = (label, root)
-                own = self._ownership
-                if own is not None and own.term == msg["term"] and own.outstanding is not None \
-                        and own.outstanding[:2] == (sender, msg["seq"]):
-                    # Only the incarnation the permission was issued to knows what was done
-                    # with it; any other incarnation's done (a restarted holder answering a
-                    # duplicated permit, before this fix) is an unknown outcome (C1).
-                    outcome = msg["outcome"] if msg["inc"] == own.outstanding[3] else "unknown"
-                    sends = self._permit_outcome(own, outcome, root, label)
-                self._wakeups += 1
-                self._cond.notify_all()
                 tier = self._tier
             if learnt is not None and tier is not None:
                 try:
                     tier.log_root("committed", learnt[0], learnt[1])
                 except (ProtoDBError, OSError) as e:
                     self._tier_failed(tier, e, "logging a committed root")
-        self._send_all(sends)
 
     def _own_loop(self, own: "_Ownership") -> None:
         """The ownership thread: renews the lease while there is demand, abandons a term whose
@@ -2761,6 +2879,13 @@ class ClusterCoordinator:
                         own.outstanding = None
                 elif own.outstanding is None and not own.queue and mono - own.last_demand > idle:
                     end = "idle"
+                elif own.outstanding is None and self._idle_release is not None \
+                        and mono - own.last_local > self._idle_release:
+                    # _dispatch issues nothing new past the threshold, so the outstanding
+                    # permission drains and this check is reached.
+                    # Serving only other members (ruling R80): one of them takes the term.
+                    end = "idle_local"
+                    self._stats["terms_released_idle_local"] += 1
                 if end is not None:
                     own.ended = True
                     self._ownership = None
@@ -2776,6 +2901,8 @@ class ClusterCoordinator:
                             waits.append(max(0.001, own.outstanding[2] - now))
                         elif not own.queue:
                             waits.append(max(0.001, idle - (mono - own.last_demand)))
+                        if self._idle_release is not None:
+                            waits.append(max(0.001, self._idle_release - (mono - own.last_local)))
                         self._cond.wait(timeout=min(waits))
             self._send_all(sends)
             if end is not None:
