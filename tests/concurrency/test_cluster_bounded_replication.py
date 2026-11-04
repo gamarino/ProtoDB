@@ -274,3 +274,46 @@ def test_every_member_caches_each_commit_without_a_durable_copy(tmp_path):
             assert tc[node].stats()["fetches_requested"] == before[node][0], f"{node} fetched"
             assert tc.storages[node].stats()["replicas_logged"] == before[node][1]
         assert tc["n7"].stats()["records_warmed"] > 0
+
+
+def test_filling_a_hole_from_peers_never_blocks_the_nodes_own_shipping(tmp_path):
+    """Re-review N2: the persister fetches a split segment's holes outside ``_ship_lock`` (the
+    bytes are immutable), so a slow or unanswered fill never holds up ``ship()``."""
+    with TieredCluster(tmp_path, 3, storage_kw=dict(durability="fsync"), **LEASE) as tc:
+        net = tc.cluster.net
+        tc.spaces["n0"].new_database("db")
+        tc.store.set_outage(True)
+        for _ in range(3):
+            tc.db("n0").run(incr, **RUN_KW)             # n0 + n1
+        net.partition({"n0", "n2"}, {"n1"})
+        for _ in range(3):
+            tc.db("n0").run(incr, **RUN_KW)             # hedged: n0 + n2
+        net.heal()
+        time.sleep(LEASE["lease_duration"] * 1.6)
+        for _ in range(3):
+            tc.db("n0").run(incr, **RUN_KW)             # n0 + n1 again
+        assert tc.eventually("n1", 9) and tc.eventually("n2", 9)
+        tc.wipe("n0")
+        st = tc.storages["n2"]
+        fetcher = st._fetcher
+        filling = threading.Event()
+
+        def slow_fetcher(ptr):
+            filling.set()
+            time.sleep(0.6)                             # a slow peer answer
+            return fetcher(ptr)
+
+        st.set_fetcher(slow_fetcher)
+        tc.store.set_outage(False)                      # n2's persister now fills its front hole
+        assert filling.wait(10), "no fill started"
+        waits = []
+        end = time.monotonic() + 1.0
+        while time.monotonic() < end:
+            started = time.monotonic()
+            st.ship(force=True)
+            waits.append(time.monotonic() - started)
+            time.sleep(0.01)
+        assert max(waits) < 0.3, f"ship() waited {max(waits):.3f} s behind a fill"
+        st.set_fetcher(fetcher)
+        for node in ("n1", "n2"):
+            tc.spaces[node].sync(timeout=20)

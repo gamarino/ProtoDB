@@ -1852,14 +1852,24 @@ class TieredStorage(SharedStorage):
             return True
         if not upload_copies or not copies:
             return False
+        # The prefixes are built before ``_ship_lock`` is taken: filling a hole fetches records
+        # from peers, and the bytes at a pointer never change, so they need no lock -- holding
+        # it would block this node's own shipping and ``close()`` behind the network
+        # (re-review N2).  Under the lock each one is uploaded only if still needed.
+        prepared = {}
+        for segment, end in copies.items():
+            data = self._copy_prefix(segment, end)
+            if data is not None:
+                prepared[segment] = (end, data)
+            # else: a hole no peer filled, or no copy here: another node's copy must serve
         uploaded = 0
         with self._ship_lock:       # object-store writes: never once close() has started
             self._refuse_closed("uploading segment parts", local=False)
-            for segment, end in copies.items():
-                data = self._copy_prefix(segment, end)
-                if data is None:
-                    continue        # a hole, or no copy here: another node's copy must serve
-                self._put_part(segment, data)
+            for segment, (end, data) in prepared.items():
+                with self._lock:
+                    done = self._covered(segment, end)
+                if not done:
+                    self._put_part(segment, data)
                 uploaded += 1
         # Every copy this node holds is uploaded even when another segment is missing: with
         # bounded replication (D54) the missing segments may live on different replicas, and
