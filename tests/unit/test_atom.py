@@ -116,6 +116,24 @@ def test_persistence_context_protocol():
     assert not isinstance(object(), PersistenceContext)
 
 
+def test_a_user_context_may_have_an_attribute_named_saved():
+    """Review 8.3i M1: the save hook of the decoded-atom cache is private (``_atom_saved``); a
+    user PersistenceContext with its own ``saved`` attribute (here a counter) saves normally."""
+    class CountingContext(DirectContext):
+        def __init__(self, storage):
+            super().__init__(storage)
+            self.saved = 0
+
+        def save(self, atom):
+            self.saved += 1
+            return super().save(atom)
+
+    c = CountingContext(DictStorage())
+    root = Node(Leaf(1), Leaf(2), context=c)
+    ptr = root._save()
+    assert ptr == root.atom_pointer and c.saved == 2           # the two children, through c.save
+
+
 def test_construction_rejects_a_context_that_is_not_one_every_time():
     """The context check is remembered per class (Task 8.3i: it cost most of a node's
     construction), but an object that is not a context is still refused, and so is an instance of

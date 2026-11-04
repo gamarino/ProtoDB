@@ -307,7 +307,7 @@ class _AtomCache:
     stub is thread-safe, :meth:`Atom._load`).
 
     It also receives every atom saved through it or through a transaction that shares it
-    (:meth:`saved`, Task 8.3i), decoded already: the next build on a root this space committed
+    (:meth:`_atom_saved`, Task 8.3i), decoded already: the next build on a root this space committed
     finds that root's new atoms without reading or decoding them.
     """
 
@@ -329,7 +329,7 @@ class _AtomCache:
             self._cache.put(ptr, stub)
         return stub
 
-    def saved(self, atom: Atom, ptr: AtomPointer, state: dict) -> None:
+    def _atom_saved(self, atom: Atom, ptr: AtomPointer, state: dict) -> None:
         """``atom`` was just pushed at ``ptr`` with ``state`` (the :meth:`Atom._save` hook,
         Task 8.3i): cache what a load of ``ptr`` would produce, decoded already
         (:meth:`Atom._decoded_twin`), so the next build on the root that references it neither
@@ -1429,12 +1429,12 @@ class Transaction:
             return atoms.load(ptr, type_name)
         return Atom._stub(self, ptr, type_name)
 
-    def saved(self, atom: Atom, ptr: AtomPointer, state: dict) -> None:
+    def _atom_saved(self, atom: Atom, ptr: AtomPointer, state: dict) -> None:
         """The :meth:`Atom._save` hook: the space's atom cache receives what this transaction
         pushes (Task 8.3i), when it shares decoded atoms with this transaction."""
         atoms = self._atoms
         if atoms is not None:
-            atoms.saved(atom, ptr, state)
+            atoms._atom_saved(atom, ptr, state)
 
     # -- state ------------------------------------------------------------------------------
 

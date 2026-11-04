@@ -50,7 +50,8 @@ Saving
     Concurrent calls push exactly one payload and return one pointer (racing
     callers may encode the state more than once; only one result is pushed).
     After its push, the call that pushed tells the context through the optional hook
-    ``context.saved(atom, ptr, state)`` (no stripe held): a context that caches decoded atoms
+    ``context._atom_saved(atom, ptr, state)`` (private, so it never meets a user context's own
+    attribute; no stripe held): a context that caches decoded atoms
     keeps the atom a load of ``ptr`` would produce (:meth:`Atom._decoded_twin`, Task 8.3i),
     never the live object, whose runtime state (an op log, for example) a loaded atom has not.
 
@@ -98,6 +99,10 @@ class PersistenceContext(Protocol):
     Implemented by transactions (Task 5.1) and by simple direct contexts.
     ``storage`` must offer ``push_atom(payload: dict) -> AtomPointer`` and
     ``get_atom(ptr: AtomPointer) -> dict``.
+
+    Not part of the protocol: a context may define the private hook
+    ``_atom_saved(atom, ptr, state)``, which :meth:`Atom._save` calls after each push (the
+    decoded-atom cache uses it, Task 8.3i).  A context without it is unaffected.
     """
 
     storage: Any
@@ -435,7 +440,7 @@ class Atom:
             payload = {"t": type_tag(cls.__type_name__), "oid": self._oid_locked().bytes, "s": encoded}
             ptr = context.storage.push_atom(payload)
             object.__setattr__(self, "atom_pointer", ptr)
-        saved = getattr(context, "saved", None)
+        saved = getattr(context, "_atom_saved", None)
         if saved is not None:
             saved(self, ptr, state)         # no stripe held (lock order rule)
         return ptr
