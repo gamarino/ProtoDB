@@ -46,7 +46,9 @@ Environment
 CPU                            AMD Ryzen 5 5500U, 6 cores / 12 threads (12 logical CPUs)
 CPU frequency                  ``amd-pstate-epp``, governor ``powersave``, EPP
                                ``balance_power``, boost on
-OS / file system               Linux 7.0, work directory on ZFS (not tmpfs)
+OS / file system               Linux 7.0, work directory on ZFS (not tmpfs) for the full
+                               runs in ``benchmarks/results``; later sections state
+                               their own (see "File systems of the Task 8.3f figures")
 Python                         CPython 3.14.6, free-threaded build (``Py_GIL_DISABLED``)
 Modes                          GIL off (default) and ``-X gil=1``
 ProtoDB                        2.0.0.dev0 (git ``8ad6bf3`` plus fix round 1; the JSON
@@ -498,6 +500,17 @@ What the numbers show, honestly:
 After Task 8.3f phases B and C
 ------------------------------
 
+**File systems of the Task 8.3f figures (audit, Task 8.3g, ruling R88).** The work directory
+of the sync-probe driver (the headline table below, the 107.0 / 101.4 and 118.4 / 108.7
+re-measurements), of the payload sweep and of the ``levels.py`` probe (D52) was not recorded,
+and the driver logs are lost: these figures may come from a tmpfs directory, where a sync
+costs next to nothing, and are kept only as the record of that session. The surviving run
+directories of the ``cluster_tcp`` workload (``benchmarks/.work``) are on ZFS, which suggests
+but does not prove ZFS. Their replacements, measured on ZFS, are in "Bounded replication (Task
+8.3g)" below: ``d6743ae`` there is the final tree of Task 8.3f, and D52 is re-measured on ZFS.
+The D51 byte counts and the D53 read rates do not depend on syncs; their file system was not
+recorded either.
+
 Measured at commit ``ed70d3a`` against ``f03798b``, same machine and workloads. The baseline
 is ``f03798b``, measured in the same session with the same driver as each comparison below:
 the headline table uses the sync-probe driver (``cluster_tcp`` peers driven for 3 s, 5 runs,
@@ -528,6 +541,7 @@ committer frame bytes / commit  16.8 KB             11.9 KB
 **Correction (Task 8.3f-B fix rounds): the "bimodal" rates were a benchmark artifact, not a
 second operating mode.** An earlier version of this section explained the 144-231 commits/s
 runs by one node keeping the owner role. Instrumenting the peers showed otherwise:
+
 - In those runs one peer's first permission request waited 4.6-4.7 s in the fairness
   deferral (``_await_turn``), while the peer named by the turn became owner and kept
   renewing.
@@ -543,6 +557,7 @@ permission wait was 0.23 s and no run was fast in 12 runs. The headline above is
 Re-measured on the final tree of Task 8.3f-B: message lanes (D50 Amendment "Message lanes"),
 held retries (D50 Amendment "held retries"), and the owner-hint fix. Same driver, 5 runs
 each:
+
 - GIL off: median 107.0 commits/s (runs 107.5, 107.0, 238.5, 86.4, 74.0), 3.88 syncs per
   commit, 12.0 KB committer frame bytes per commit.
 - GIL on: median 101.4 commits/s (runs 58.4, 69.9, 106.8, 101.4, 105.9), 3.14 syncs per
@@ -585,10 +600,59 @@ Before (``f03798b``, same runs): ProtoDB 86 / 76 / 75 commits/s (``cluster_tcp``
 
 Standalone ``FileStorage`` with ``fsync``, 8 threads of one process committing a 100-byte
 value each, three 3 s runs: 89 / 94 / 55 -> 167 / 108 / 157 commits/s, median 89 -> 157 (group
-commit, D52, probe ``levels.py``). The spread between runs is large; an earlier single run with
-4 threads gave 88.5 -> 147.3. Point reads of a
+commit, D52, probe ``levels.py``; work directory not recorded). The spread between runs is large; an earlier single run with
+4 threads gave 88.5 -> 147.3. Re-measured on ZFS in Task 8.3g (below): 73.4 -> 107.1 GIL off. Point reads of a
 100,000-entry ``Dictionary``, each in a fresh transaction (``FileStorage``): 821 -> 4,721
 reads/s (D53).
+
+Bounded replication (Task 8.3g)
+-------------------------------
+
+Measured on ZFS (``benchmarks/.work``, ``stat -f`` reports ``zfs``; rulings R88 and R89) at
+``4391bcf`` (bounded replication, D54, with the review fixes and cache warming) against
+``d6743ae`` (the final tree of Task 8.3f), both exported with ``git archive`` plus the
+benchmark counters of ``c7be0f1``. ``cluster_tcp`` peers x 4 threads, ``fsync``, one 100-byte
+value per commit, 3 s per run; 5 runs of each configuration, the two trees and both GIL modes
+interleaved in one session. Medians, with the range of the 5 runs in brackets. Syncs and synced
+bytes are counted in-process over every peer (the sync probe); wire bytes are the frames the
+committing node encodes, per commit; the critical section is the sum of its phases (median of
+the per-run medians, in ms).
+
+==========  =====  =====================  =====================  ==============  ==============  ===========  ===========
+peers       GIL    commits/s              commits/s              syncs / commit  synced KB /     wire KB /    critical
+                   ``d6743ae``            ``4391bcf``            (before/after)  commit (b/a)    commit       ms (b/a)
+==========  =====  =====================  =====================  ==============  ==============  ===========  ===========
+3           off    106.9 (103.0-113.4)    116.9 (100.8-118.1)    3.34 / 2.95     31.6 / 21.9     11.9 / 12.2  13.9 / 13.4
+3           on     108.1 (101.2-114.3)    105.1 (96.6-113.2)     3.65 / 2.90     28.0 / 22.5     11.9 / 12.0  14.6 / 16.0
+5           off    93.5 (84.6-100.1)      90.9 (88.5-97.0)       6.32 / 4.20     44.5 / 21.2     23.4 / 23.5  15.9 / 17.1
+5           on     92.1 (88.0-197.7)      91.5 (87.7-92.9)       6.29 / 3.61     40.5 / 21.7     23.4 / 23.5  18.4 / 18.7
+8           off    83.0 (81.0-84.1)       83.0 (77.8-86.9)       11.44 / 5.10    79.8 / 21.3     40.7 / 40.5  18.9 / 18.6
+8           on     72.5 (45.8-84.7)       85.3 (79.0-86.4)       11.98 / 4.56    72.9 / 21.5     40.5 / 40.9  23.7 / 20.0
+==========  =====  =====================  =====================  ==============  ==============  ===========  ===========
+
+What the numbers show:
+
+- Syncs and durable bytes per commit no longer grow with the cluster: synced bytes stay at
+  about 21-22 KB per commit from 3 to 8 peers (``f + 1`` copies), against 28-80 KB before;
+  syncs per commit fall from 11.4-12.0 to 4.6-5.1 at 8 peers.
+- Network bytes per commit still grow with ``N``, by design (ruling R89): every member
+  receives each commit's records, the data replicas in ``replicate`` and the others in
+  ``warm`` (cache only, no sync). At 8 peers 6.1 KB go in ``replicate`` and about 34 KB in
+  ``warm``; the total equals the previous ``replicate`` volume.
+- Throughput does not change beyond the run-to-run spread on this single machine, where every
+  peer shares one disk and one CPU: the medians differ by less than the ranges, except at 8
+  peers with the GIL on, where the baseline's range (45.8-84.7) contains the slow runs. No
+  gain is claimed. The critical section is dominated by replication (10-21 ms of 13-24 ms)
+  in both trees.
+- Without cache warming, a committer that is not a data replica of its base read the base's
+  records from a peer under its permission: 174 critical-section cache misses in 30 commits
+  of the steady-state test, against 0 with warming.
+
+Standalone ``FileStorage`` group commit (D52), re-measured on ZFS: 8 threads of one process,
+100-byte values, ``fsync``, 3 s runs, 5 runs each interleaved, ``f03798b`` (before D52)
+against ``4391bcf``: GIL off 73.4 (64.9-78.7) -> 107.1 (95.9-111.6) commits/s, GIL on 46.0
+(40.6-49.1) -> 83.8 (69.5-85.6). The later tree carries other changes as well (D53's atom
+cache among them), so the gain is not D52's alone.
 
 GIL on versus GIL off
 ---------------------
