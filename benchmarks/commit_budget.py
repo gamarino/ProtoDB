@@ -17,7 +17,8 @@ Events (``extra`` in brackets):
 * ``permit``: ``ClusterCoordinator.permit`` (the wait for a write permission);
 * ``round``: one ``_permit_round`` [entries];
 * ``replicate``, ``self_accept`` (the committer's own synced append), ``place`` (the data
-  phase: records to the data replicas until their ``stored`` acks), ``finish`` (``done``);
+  phase: records to the data replicas until their ``stored`` acks; since Task 8.3j it
+  contains ``self_accept``, which overlaps it), ``finish`` (``done``);
 * ``built``: one ``record_critical`` per commit that a round replicated (instant);
 * ``apply_replicate``: a peer's handling of a replication on its acceptor lane;
 * ``permit_req_in``, ``permit_reply_in``, ``done_in``: message arrivals (instant);
@@ -235,7 +236,10 @@ def analyze(dirpath):
                 ph["round: base + build (rebase, merge)"] = rp[0] - rs_
                 ph["replicate: own synced append"] = (sa[0][1] - sa[0][0]) if sa else 0.0
                 ph["replicate: data replica (send, its sync, ack)"] = (pl[0][1] - pl[0][0]) if pl else 0.0
-                ph["replicate: rest (warm send, majority, log)"] = (rp[1] - rp[0]) - ph["replicate: own synced append"] - ph["replicate: data replica (send, its sync, ack)"]
+                # Since Task 8.3j the own append runs inside the data phase (overlapped): count
+                # the union of the two intervals once.
+                own_inside = bool(sa and pl and pl[0][0] <= sa[0][0] and sa[0][1] <= pl[0][1])
+                ph["replicate: rest (warm send, majority, log)"] = (rp[1] - rp[0]) - ph["replicate: data replica (send, its sync, ack)"] - (0.0 if own_inside else ph["replicate: own synced append"])
                 ph["round: after replicate"] = re_ - rp[1]
             ph["return to thread"] = max(0.0, e - re_)
             ph["total in group"] = e - s

@@ -186,7 +186,9 @@ The commit point (D46)
     mode (Task 8.3e, defect D-SAFE-2 fixed).  On a :class:`~proto_db.storage.tiered.TieredStorage`
     the acceptance is ONE kind-5 entry of the acceptor log that holds the root together with
     every record its replication carried (Task 8.3f phase B, D50): the holder writes its own
-    before it sends the replication, each follower before it acknowledges; data files are
+    while its records travel to its data replicas (Task 8.3j, ruling R90; before it sends the
+    replication when there are none) and sends the root alone to the other voters only after
+    it, each follower writes its own before it acknowledges; data files are
     written without a sync and rebuilt from these entries when the storage opens.  So in
     every durability mode a root is durable exactly when its records are: an acknowledged
     commit survives power loss of any set of nodes, and D-AVAIL-1 (a durable root whose
@@ -2135,10 +2137,17 @@ class ClusterCoordinator:
         while len(self._locator) > _LOCATOR_MEMORY:
             self._locator.popitem(last=False)
 
-    def _place_records(self, waiter: "_Waiter", lease, parts: list, data_msg: dict, preference: list) -> Optional[list]:
+    def _place_records(self, waiter: "_Waiter", lease, parts: list, data_msg: dict, preference: list,
+                       meanwhile: Optional[Callable[[], None]]) -> Optional[list]:
         """The data phase of a replication (D54): send the records to ``majority - 1`` members
         of ``preference`` and wait until that many hold them durably; return the copies (this
         node first), or ``None`` when the lease ended or the coordinator stopped first.
+
+        ``meanwhile()`` runs once the records have left for the first members asked and before
+        waiting for any acknowledgement: the holder's own synced append (Task 8.3j, ruling R90),
+        whose sync overlaps the replicas'.  This method returns only after it, so the copies
+        returned include this node's durable one; an exception it raises propagates (the
+        records have left: the caller reports the outcome unknown).
 
         A member that answers without storing them, or does not answer within
         ``request_timeout``, is replaced by the next member of the preference list (and tried
@@ -2155,6 +2164,9 @@ class ClusterCoordinator:
                 self._transport.send(peer, data_msg)
             asked.extend(send)
             send = []
+            if meanwhile is not None:
+                meanwhile()
+                meanwhile = None
             with self._cond:
                 while not send:
                     stored = waiter.stored
@@ -3317,15 +3329,16 @@ class ClusterCoordinator:
             except (ProtoDBError, OSError) as e:
                 self._tier_failed(tier, e, "storing the records of a re-proposed base")
                 raise
-        # Our own records are durable here before any of them leaves this node.  In a shared
-        # storage, no peer may acknowledge their root before they are durable there.  When they
-        # ride with the replication, a holder that died between sending them and making them
-        # durable would keep a strict prefix of its own segment while its peers hold the rest;
-        # restarted, it would seal and upload that prefix as the whole segment, the store would
-        # then "hold" records it lacks, and a root built on them would become unreadable.  So
-        # the bytes of an own segment that any peer holds are always on this node's disk.
-        # Phase B (Task 8.3f): a tier that accepts with its records makes them durable together
-        # with this node's own acceptance, in one synced append, before anything is sent (below).
+        # In a shared storage our own records are durable there before any of them leaves this
+        # node: no peer may acknowledge their root before they are durable where every node
+        # reads them.  Phase B (Task 8.3f): a tier that accepts with its records makes them
+        # durable together with this node's own acceptance, in one synced append.  With bounded
+        # replication that append runs while the records travel to the data replicas (Task
+        # 8.3j, ruling R90), so a replica may hold bytes of an own segment that this node has
+        # not made durable yet; if it dies meanwhile, it restarts with a strict prefix of that
+        # segment and seals it shorter.  The store judges a segment by length (ruling R54) and
+        # the replica's copy fills the rest with a part (D50 amendment of Task 8.3j), so no
+        # root built on those records becomes unreadable.
         with_records = callable(getattr(tier, "accept_replication", None))
         if not with_records:
             try:
@@ -3383,23 +3396,31 @@ class ClusterCoordinator:
         stopped = False
         copies = [self._node]
         try:
-            if with_records:
+            if with_records and not bounded:
                 self._self_accept_with_records(tier, waiter, label, root, seq, pred, pred_committed, pred_label,
                                                pred_root, all_records)
             if bounded:
                 # The data phase: ``majority - 1`` other members store the records durably (a
                 # voter among them may accept the root in the same append when that makes
-                # ``majority`` copies).  Then the root alone goes to every other voter, naming
-                # the copies: no voter but this node accepts it before they exist.
+                # ``majority`` copies, this node counted).  This node's own synced append runs
+                # while they do (ruling R90: the two syncs overlap), and the data phase ends
+                # only after it.  Then the root alone goes to every other voter, naming the
+                # copies: no voter accepts the root without carrying a copy itself before the
+                # ``majority`` copies exist (D54 amendment of Task 8.3j).
                 # Ruling R89: every other member caches the records (memory only, best effort,
                 # never awaited), so the next committer finds its base cached.
                 replicas = set(preference[:self._majority - 1])
-                for peer in self._others:
-                    if peer not in replicas:
-                        for chunk in chunks:
-                            self._transport.send(peer, make_message("warm", self._node, term=label,
-                                                                    records=chunk))
-                copies = self._place_records(waiter, lease, parts, msg, preference)
+
+                def own_append():
+                    self._self_accept_with_records(tier, waiter, label, root, seq, pred, pred_committed,
+                                                   pred_label, pred_root, all_records)
+                    for peer in self._others:
+                        if peer not in replicas:
+                            for chunk in chunks:
+                                self._transport.send(peer, make_message("warm", self._node, term=label,
+                                                                        records=chunk))
+
+                copies = self._place_records(waiter, lease, parts, msg, preference, own_append)
                 if copies is not None:
                     with self._lock:
                         targets = [v for v in self._other_voters if v not in waiter.acks]
@@ -3520,11 +3541,13 @@ class ClusterCoordinator:
                                   pred_committed: bool, pred_label: int, pred_root, records: list) -> None:
         """The holder's own acceptance on a tier that accepts with its records (Task 8.3f phase
         B): decided by the acceptor rule (ruling R55) and logged as ONE synced kind-5 entry with
-        every record of the replication, BEFORE the replication is sent, so the bytes of an own
-        segment that a peer may hold are always durable here.  When the holder may not accept
-        its own root (a learner, D54, or a refusal), its records are made durable anyway, by one
-        synced entry that does not accept the root, before they leave the node.  Called inside :meth:`replicate`'s outcome handling: a failure here
-        leaves the outcome unknown (the entry may be durable)."""
+        every record of the replication.  When the holder may not accept its own root (a
+        learner, D54, or a refusal), its records are made durable anyway, by one synced entry
+        that does not accept the root.  With bounded replication it runs while the records
+        travel to the data replicas (Task 8.3j, ruling R90), and the root goes alone to the
+        other voters only after it returned; otherwise it runs before the replication is sent.
+        Called inside :meth:`replicate`'s outcome handling: a failure here leaves the outcome
+        unknown (the entry may be durable, and the records may be on the replicas)."""
         with self._log_lock:
             with self._lock:
                 self_ok = self._tier is tier and self._may_accept(label, root, label, pred, pred_committed, seq)
