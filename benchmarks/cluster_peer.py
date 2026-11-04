@@ -1,6 +1,6 @@
 """One TCP cluster peer process for the cluster benchmarks (``cluster_tcp``, ``rqlite_reference``).
 
-Usage: ``python cluster_peer.py NODE_ID LOCAL_DIR STORE_DIR THREADS SECONDS BATCH DURABILITY [PAYLOAD]``
+Usage: ``python cluster_peer.py NODE_ID LOCAL_DIR STORE_DIR THREADS SECONDS BATCH DURABILITY [PAYLOAD [CPU]]``
 
 The peer runs a :class:`~proto_db.ClusterCoordinator` over a :class:`~proto_db.TcpTransport`
 and a :class:`~proto_db.TieredStorage` (local tier in LOCAL_DIR, ``durability`` as given)
@@ -10,7 +10,13 @@ of THREADS threads commits for SECONDS seconds; a commit adds BATCH unique ids t
 ``node * 10**9 + thread * 10**7 + j``, so the parent can rebuild the exact expected set
 from the per-thread counts.  With PAYLOAD > 0 bytes, each commit also writes one value of
 exactly PAYLOAD bytes under its first id in the ``blobs`` Dictionary root (also written blind
-and merged at commit), so the parent can verify one value per acknowledged commit.
+and merged at commit), so the parent can verify one value per acknowledged commit.  With CPU >
+0, each transaction body first runs :func:`cpu_work` for CPU iterations (a CPU-heavy body; its
+result is checked).  THREADS may be 0: the peer then only serves as a voter and replica.
+
+With the environment variable ``PROTODB_BENCH_BUDGET_DIR`` set, the peer records the events
+of :mod:`benchmarks.commit_budget` and writes those of its commit window to
+``<dir>/<NODE_ID>.json`` (Task 8.3h).
 
 Every frame this peer's transport encodes is counted by message type (``wire``: frame bytes,
 the TCP and IP headers excluded): ``replicate`` and ``records`` frames are what a committing
@@ -83,12 +89,26 @@ def payload_value(first_id: int, size: int) -> bytes:
     return (unit * (size // len(unit) + 1))[:size]
 
 
+def cpu_work(iterations: int) -> int:
+    """A deterministic pure-Python CPU load: an LCG run ``iterations`` times."""
+    x = 1
+    for _ in range(iterations):
+        x = (x * 1103515245 + 12345) & 0x7FFFFFFF
+    return x
+
+
 def main() -> None:
     """Run one peer (module docstring)."""
     node_id, local, store_dir, threads, seconds, batch, durability = sys.argv[1:8]
     payload = int(sys.argv[8]) if len(sys.argv) > 8 else 0
+    cpu = int(sys.argv[9]) if len(sys.argv) > 9 else 0
+    expected_cpu = cpu_work(cpu) if cpu else None
     threads, seconds, batch = int(threads), float(seconds), int(batch)
     fsync_probe.install()
+    budget_dir = os.environ.get("PROTODB_BENCH_BUDGET_DIR")
+    if budget_dir:
+        from benchmarks import commit_budget
+        commit_budget.install()
     _count_frames()
     transport = TcpTransport("127.0.0.1", 0)
     _say({"port": transport.address[1]})
@@ -121,7 +141,7 @@ def main() -> None:
         counts = [0] * threads
         attempts = [0] * threads
         latencies = [[] for _ in range(threads)]
-        barrier = threading.Barrier(threads)
+        barrier = threading.Barrier(max(1, threads))
 
         def worker(t):
             base = node * 10**9 + t * 10**7
@@ -133,6 +153,8 @@ def main() -> None:
 
                 def fn(tr, first=first):
                     attempts[t] += 1
+                    if cpu and cpu_work(cpu) != expected_cpu:
+                        raise RuntimeError("the CPU-heavy body computed a wrong result")
                     s = tr.new_counted_set()
                     for x in range(first, first + batch):
                         s = s.add(x)
@@ -156,6 +178,11 @@ def main() -> None:
         for w in workers:
             w.join()
         elapsed = time.monotonic() - start
+        if budget_dir:
+            from benchmarks import commit_budget
+            with open(os.path.join(budget_dir, f"{node_id}.json"), "w") as f:
+                json.dump({"node": node_id, "start": start, "end": start + elapsed, "threads": threads,
+                           "events": commit_budget.window(start, start + elapsed)}, f)
         window_syncs = fsync_probe.snapshot()
         window_bytes = fsync_probe.synced_bytes()
         with _WIRE_LOCK:

@@ -306,12 +306,14 @@ def loopback_bytes() -> Optional[int]:
 
 
 def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 1, durability: str = "fsync",
-                    payload: int = 0) -> dict:
+                    payload: int = 0, *, threads_by_node: Optional[list] = None, cpu: int = 0) -> dict:
     """Run ``peers`` subprocess peers over TCP and verify the persisted result; return figures.
 
     ``payload`` > 0: each commit also writes one value of that many bytes (``cluster_peer``),
     and the persisted ``blobs`` Dictionary must hold exactly one such value per acknowledged
-    commit."""
+    commit.  ``threads_by_node``: committing threads of each peer, in id order, instead of
+    ``threads`` everywhere (0 makes a peer a voter and replica only).  ``cpu``: iterations of
+    the CPU-heavy body each transaction runs (``cluster_peer.cpu_work``)."""
     import json
     import subprocess
     import tempfile
@@ -325,9 +327,12 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
     import shlex
     wrapper = os.environ.get("PROTODB_BENCH_PEER_WRAPPER", "")     # e.g. strace for a cross-check
 
+    counts_of = threads_by_node or [threads] * peers
+
     def command(node_id):
         cmd = child_command(PEER_SCRIPT, node_id, os.path.join(root, node_id), store_dir,
-                            str(threads), str(seconds), str(batch), durability, str(payload))
+                            str(counts_of[int(node_id[1:])]), str(seconds), str(batch), durability, str(payload),
+                            str(cpu))
         return [w.replace("{node}", node_id) for w in shlex.split(wrapper)] + cmd
 
     procs = [subprocess.Popen(command(node_id),
@@ -394,11 +399,13 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
     finally:
         reader.close()
     commits = sum(sum(r["counts"]) for r in results)
-    elapsed = max(r["seconds"] for r in results)
+    elapsed = max(r["seconds"] for r in results if r["counts"]) if commits else max(r["seconds"] for r in results)
     stats = [{"critical": r["critical"], "critical_commits": r["critical_commits"]} for r in results]
     return {"commits": commits, "rows": commits * batch, "rate": commits / elapsed,
             "row_rate": commits * batch / elapsed,
             "ok": ok and all(r["failures"] == 0 and r["healthy"] for r in results),
+            "ids_ok": ok, "replication_failures_by_peer": [r["failures"] for r in results],
+            "healthy_by_peer": [r["healthy"] for r in results],
             "latency_ms": _latency_ms([x for r in results for x in r["latencies"]]),
             "latency_ms_by_peer": [_latency_ms(r["latencies"]) for r in results],
             "lease_attempts_per_commit": round(sum(r["lease_attempts"] for r in results) / max(1, commits), 2),
