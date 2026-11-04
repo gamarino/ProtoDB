@@ -18,6 +18,7 @@ The probe is informational; the benchmark cross-checks its totals with ``strace 
 negligible next to a sync on a disk.
 """
 import os
+import stat
 import sys
 import threading
 from collections import Counter
@@ -25,6 +26,8 @@ from collections import Counter
 _LOCK = threading.Lock()
 _COUNTS = Counter()
 _ORIGINAL = {}
+_SYNCED = {}            # (st_dev, st_ino) -> file size at its last sync
+_BYTES = Counter()      # role -> bytes made durable by syncs (growth of the synced file since its last sync)
 
 
 def _role(name: str) -> str:
@@ -61,9 +64,20 @@ def _wrap(name: str):
 
     def counted(fd):
         inner, outer = _sites()
-        key = (_role(threading.current_thread().name), name, inner, outer)
+        role = _role(threading.current_thread().name)
+        key = (role, name, inner, outer)
+        try:
+            st = os.fstat(fd)
+        except OSError:
+            st = None
         with _LOCK:
             _COUNTS[key] += 1
+            if st is not None and stat.S_ISREG(st.st_mode):
+                # Append-only files: the bytes this sync makes durable are the growth since the
+                # file's previous sync (a new file counts whole).
+                ident = (st.st_dev, st.st_ino)
+                _BYTES[role] += max(0, st.st_size - _SYNCED.get(ident, 0))
+                _SYNCED[ident] = st.st_size
         return original(fd)
     counted.__wrapped__ = original
     return counted
@@ -87,9 +101,17 @@ def uninstall() -> None:
 
 
 def reset() -> None:
-    """Forget the counts."""
+    """Forget the counts (and the synced bytes; files keep their last synced size)."""
     with _LOCK:
         _COUNTS.clear()
+        _BYTES.clear()
+
+
+def synced_bytes() -> dict:
+    """Bytes made durable by syncs since the last :func:`reset`, per role: for each synced
+    regular file, its growth since its previous sync (exact for append-only files)."""
+    with _LOCK:
+        return dict(_BYTES)
 
 
 def snapshot() -> list:

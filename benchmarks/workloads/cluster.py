@@ -409,6 +409,8 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
                              for k in sorted({k for r in results for k in r.get("wire", {})})},
             "loopback_bytes": (lo_after - lo_before) if lo_before is not None and lo_after is not None else None,
             "fsync": fsync_breakdown(results, commits), "pids": [r["pid"] for r in results],
+            "synced_bytes_per_commit": round(sum(sum(r.get("synced_bytes_window", {}).values())
+                                                 for r in results) / max(1, commits)),
             "window_syncs_by_node": [sum(row[4] for row in r["syncs_window"]) for r in results],
             "syncs_per_process": [r["syncs_before_window"] + sum(row[-1] for row in r["syncs_until_persisted"])
                                   for r in results]}

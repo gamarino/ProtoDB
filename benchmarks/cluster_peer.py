@@ -157,6 +157,7 @@ def main() -> None:
             w.join()
         elapsed = time.monotonic() - start
         window_syncs = fsync_probe.snapshot()
+        window_bytes = fsync_probe.synced_bytes()
         with _WIRE_LOCK:
             wire = dict(WIRE)
         space.sync(timeout=120)
@@ -169,7 +170,7 @@ def main() -> None:
               "critical": st["critical"], "critical_commits": st["critical_commits"],
               "lease_attempts": st["attempts"], "acquired": st["acquired"],
               "syncs_before_window": before_syncs, "syncs_window": window_syncs, "syncs_until_persisted": total_syncs, "pid": os.getpid(),
-              "wire": wire, "payload": payload})
+              "wire": wire, "payload": payload, "synced_bytes_window": window_bytes})
         _hear()
         space.close()
 
