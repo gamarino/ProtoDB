@@ -163,10 +163,11 @@ def test_the_next_build_finds_the_atoms_the_previous_commit_wrote(tmp_path):
     space.close()
 
 
-def test_a_cached_saved_atom_is_a_fresh_stub_of_the_stored_payload(tmp_path):
-    """What the cache receives on save is never the live object: it is a stub whose state
-    is decoded from the payload written, with the runtime state of a loaded atom (an empty,
-    incomplete op log), and it equals what a cache-less read of the storage decodes."""
+def test_a_cached_saved_atom_is_what_a_load_produces(tmp_path):
+    """What the cache receives on save is never the live object: it is a new object, decoded
+    already, with the runtime state of a loaded atom (an empty, incomplete op log), its children
+    the cache's own atoms, and the same state, type for type, as a cache-less read of the
+    storage decodes."""
     space = _space(tmp_path)
     db = space.open_database("db")
     tr = db.new_transaction()
@@ -175,15 +176,19 @@ def test_a_cached_saved_atom_is_a_fresh_stub_of_the_stored_payload(tmp_path):
     tr.commit()
     ptr = live.atom_pointer
     cached = space._atoms._cache.get(ptr)
-    assert cached is not None and cached is not live
-    assert cached.__dict__.get("_loaded") is False, "the cached atom must be a stub, decoded on first use"
+    assert cached is not None and cached is not live and type(cached) is type(live)
+    assert cached.__dict__.get("_loaded") is True, "the cached atom is decoded already"
     assert cached.context is space._atoms
     assert cached._op_log == () and cached.log_is_complete is False
     assert live._op_log != ()                          # the live version keeps its own log
+    assert cached.root is not live.root and cached.root is space._atoms._cache.get(live.root.atom_pointer)
     reference = ObjectSpace(space.storage, atom_cache_entries=0)
     with reference.open_database("db").new_transaction() as rtr:
         stored = rtr.load(ptr, type(live).__type_name__)
         assert _state_of(cached) == _state_of(stored)
+        assert {k: type(v) for k, v in cached._state().items()} == {k: type(v) for k, v in stored._state().items()}
+        node, ref_node = cached.root, stored.root
+        assert node.value == ref_node.value and type(node.value) is type(ref_node.value)
         assert cached.oid == stored.oid == live.oid
     space.close()
 
@@ -234,13 +239,16 @@ def test_a_committed_nested_collection_reused_blind_merges_as_if_loaded(entries)
 def test_large_value_boxes_are_not_cached_on_save():
     """A ValueBox holds one large value out of line (D51); a build keeps it by reference and
     never decodes it, so caching it on save would only retain its bytes (the cache is bounded by
-    entries, not bytes).  The nodes that reference it are cached."""
+    entries, not bytes).  The nodes that reference it are cached, with the box as the unloaded
+    stub a decode of the node would make."""
     from proto_db.collections.avl import ValueBox
     space = _space()
     db = space.open_database("db")
     db.run(lambda tr: tr.set_root_object("blobs", tr.new_dictionary().set_at(1, b"v" * 100_000)))
-    cached = list(space._atoms._cache._items.values())
-    assert cached and not any(isinstance(entry[0], ValueBox) for entry in cached)
+    cached = [entry[0] for entry in space._atoms._cache._items.values()]
+    boxes = [atom for atom in cached if isinstance(atom, ValueBox)]
+    assert cached and all(box.__dict__.get("_loaded") is False and "value" not in box.__dict__
+                          for box in boxes), "a box is cached at most as an unloaded stub, as a decode makes it"
     with db.new_transaction() as tr:
         assert tr.get_root_object("blobs").get_at(1) == b"v" * 100_000
     space.close()

@@ -290,3 +290,37 @@ def test_subclasses_of_builtin_types_encode_as_their_base_type():
         assert type(encoded["b"]) is bytes and encoded["b"] == b"r"
         assert encoded["t"] is True and encoded["m"] == {"@missing": 0}
         assert set(encoded["a"]) == {"@ref"} and encoded["big"] == {"@int": format(2**70, "x")}
+
+
+def _strict(a, b, path="v"):
+    """assert_exact, plus: containers of the very same type (FrozenList/FrozenDict, not plain)."""
+    assert type(a) is type(b), f"{path}: {type(a).__name__} != {type(b).__name__}"
+    if isinstance(a, (list, tuple)):
+        for i, (x, y) in enumerate(zip(a, b)):
+            _strict(x, y, f"{path}[{i}]")
+    elif isinstance(a, dict):
+        assert list(map(type, a)) == list(map(type, b))
+        for (ka, va), (kb, vb) in zip(a.items(), b.items()):
+            _strict(ka, kb, f"{path} key")
+            _strict(va, vb, f"{path}[{ka!r}]")
+    assert_exact(a, b, path)
+
+
+@pytest.mark.parametrize("value", CASES + [bytearray(b"ab"), [CodecLeaf("a"), (CodecLeaf("b"), {"k": CodecLeaf("c")})]],
+                         ids=lambda v: f"{type(v).__name__}:{v!r}"[:60])
+def test_redecode_equals_decoding_the_wire_form(value):
+    """redecode_value (Task 8.3i: a saved atom is cached decoded from its live state) gives what
+    decoding the msgpack wire form gives, type for type, frozen containers included."""
+    refs = _Refs()
+    wire = msgpack.unpackb(msgpack.packb(codec.encode_value(value, refs.save_child), use_bin_type=True),
+                           raw=False)
+    expected = codec.decode_value(wire, refs.load_ref)
+    pointers = {id(atom): ptr for ptr, atom in refs.by_ptr.items()}
+    for atom in refs.saved:                          # the codec's save_child does not set pointers
+        object.__setattr__(atom, "atom_pointer", pointers[id(atom)])
+    _strict(codec.redecode_value(value, refs.load_ref), expected)
+
+
+def test_redecode_refuses_an_unsaved_atom():
+    with pytest.raises(ProtoValidationError):
+        codec.redecode_value([CodecLeaf("x")], lambda ptr, name: None)

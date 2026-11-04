@@ -57,10 +57,6 @@ class SharedStorage(ABC):
     def push_atom(self, payload: dict) -> AtomPointer:
         """Serialize ``payload`` (produced by core/atom) and buffer it; return its pointer.
 
-        ``payload`` is only read: the caller may keep it and decode it later as the content at
-        the returned pointer (the decoded-atom cache does, Task 8.3i), so a storage must neither
-        modify it nor return it, or anything it holds, from :meth:`get_atom`.
-
         Synchronous: when it returns the atom is readable via :meth:`get_atom`, though not
         necessarily durable until :meth:`flush`.
         """

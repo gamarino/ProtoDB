@@ -50,7 +50,7 @@ from ..values import MISSING, FrozenDict, FrozenList
 from .atom import Atom, AtomPointer, type_name_of, type_tag
 from .dbobject import MutableObject
 
-__all__ = ["encode_state", "decode_state", "encode_value", "decode_value"]
+__all__ = ["encode_state", "decode_state", "encode_value", "decode_value", "redecode_value"]
 
 _INT_MIN = -2**63
 _INT_MAX = 2**64 - 1
@@ -100,6 +100,38 @@ def encode_value(value, save_child: Callable[[Atom], AtomPointer]):
         _ATOM_CLASSES.add(t)
         return _encode_ref(value, save_child)
     return _encode_other(value, save_child)
+
+
+def redecode_value(value, load_ref: Callable[[AtomPointer, str], Atom]):
+    """``decode_value(encode_value(value, ...), load_ref)`` for a value whose nested atoms are all
+    saved, without building the wire form (Task 8.3i: an atom just saved is cached decoded).
+
+    Same result, type for type: the exact built-in scalars come back as themselves (decoding
+    their wire form gives an equal object of the same type), tuples as tuples, lists as
+    ``FrozenList`` and dicts as ``FrozenDict`` of redecoded items, an atom as
+    ``load_ref(its pointer, its type name)``; any other value goes through the codec itself."""
+    t = type(value)
+    if t is int or t is str or t is bytes or t is float or value is None or t is bool:
+        return value
+    if t is tuple:
+        return tuple([redecode_value(v, load_ref) for v in value])
+    if t in _ATOM_CLASSES:
+        return load_ref(_saved_pointer(value), type(value).__type_name__)
+    if t is list or t is FrozenList:
+        return FrozenList([redecode_value(v, load_ref) for v in value])
+    if t is dict or t is FrozenDict:
+        out = {}
+        for k, v in value.items():
+            out[redecode_value(k, load_ref)] = redecode_value(v, load_ref)
+        return FrozenDict(out)
+    return decode_value(encode_value(value, _saved_pointer), load_ref)
+
+
+def _saved_pointer(atom: Atom) -> AtomPointer:
+    ptr = atom.atom_pointer
+    if ptr is None:
+        raise ProtoValidationError(f"{atom!r} is not saved: it has no pointer to refer to")
+    return ptr
 
 
 def _encode_ref(value, save_child):

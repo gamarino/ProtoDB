@@ -50,9 +50,9 @@ Saving
     Concurrent calls push exactly one payload and return one pointer (racing
     callers may encode the state more than once; only one result is pushed).
     After its push, the call that pushed tells the context through the optional hook
-    ``context.saved(atom, ptr, payload)`` (no stripe held): a context that caches decoded
-    atoms keeps a stub holding that payload (:meth:`Atom._preloaded_stub`, Task 8.3i), never
-    the live object, whose runtime state (an op log, for example) a loaded atom does not have.
+    ``context.saved(atom, ptr, state)`` (no stripe held): a context that caches decoded atoms
+    keeps the atom a load of ``ptr`` would produce (:meth:`Atom._decoded_twin`, Task 8.3i),
+    never the live object, whose runtime state (an op log, for example) a loaded atom has not.
 
 Type tags (format version 3, D51)
     A built-in type is written as its small integer alias, its index in
@@ -434,24 +434,30 @@ class Atom:
             object.__setattr__(self, "atom_pointer", ptr)
         saved = getattr(context, "saved", None)
         if saved is not None:
-            saved(self, ptr, payload)       # no stripe held (lock order rule)
+            saved(self, ptr, state)         # no stripe held (lock order rule)
         return ptr
 
-    @classmethod
-    def _preloaded_stub(cls, context: PersistenceContext, ptr: AtomPointer, payload: dict) -> "Atom":
-        """Return a stub of ``cls`` at ``ptr`` that already holds ``payload``, the payload just
-        pushed there (protected; used by contexts that cache what they save, Task 8.3i).
+    def _decoded_twin(self, context: PersistenceContext, ptr: AtomPointer, state: dict) -> "Atom":
+        """Return the atom a load of ``ptr`` through ``context`` would produce, built from the
+        ``state`` this atom was just saved with (protected; used by contexts that cache what
+        they save, Task 8.3i).
 
-        Its first access decodes ``payload`` exactly as a load would decode the bytes read back
-        from storage (:meth:`_load`), without the fetch, the CRC check and the msgpack step.
-        ``payload`` must not be modified afterwards (storages only serialize it)."""
-        stub = object.__new__(cls)
+        A new object of this atom's class, loaded, with this atom's ``oid``: every persisted
+        attribute is :func:`~proto_db.core.codec.redecode_value` of the saved value -- what
+        decoding its wire form gives, nested atoms obtained from ``context.load`` by pointer --
+        and no runtime state (no op log, for example).  This atom itself is left untouched."""
+        from . import codec
+        load = context.load
+        decoded = {name: codec.redecode_value(value, load) for name, value in state.items()}
+        twin = object.__new__(type(self))
         osa = object.__setattr__
-        osa(stub, "_loaded", False)
-        osa(stub, "atom_pointer", ptr)
-        osa(stub, "context", context)
-        osa(stub, "_payload", payload)
-        return stub
+        osa(twin, "_loaded", False)
+        osa(twin, "atom_pointer", ptr)
+        osa(twin, "context", context)
+        twin._restore(decoded)
+        osa(twin, "oid", self.oid)
+        osa(twin, "_loaded", True)
+        return twin
 
     # -- identity -------------------------------------------------------------------
 
