@@ -116,6 +116,18 @@ def test_persistence_context_protocol():
     assert not isinstance(object(), PersistenceContext)
 
 
+def test_a_duck_typed_context_is_checked_on_every_instance():
+    """Review 8.3i M2: the context check is remembered only for a type whose ``save`` and
+    ``load`` are class attributes.  A type that carries them per instance (a SimpleNamespace)
+    is checked on every instance: after a complete one passed, an incomplete one is refused."""
+    from types import SimpleNamespace
+    good = SimpleNamespace(storage=DictStorage(), save=lambda a: None, load=lambda p, t: None)
+    assert Leaf(1, context=good).context is good
+    for broken in (SimpleNamespace(storage=DictStorage()), SimpleNamespace(storage=1, save=len)):
+        with pytest.raises(ProtoValidationError):
+            Leaf(1, context=broken)
+
+
 def test_a_user_context_may_have_an_attribute_named_saved():
     """Review 8.3i M1: the save hook of the decoded-atom cache is private (``_atom_saved``); a
     user PersistenceContext with its own ``saved`` attribute (here a counter) saves normally."""

@@ -223,10 +223,12 @@ def register_atom_class(cls: type) -> type:
     return cls
 
 
-#: Classes whose instances passed the :class:`PersistenceContext` check (Task 8.3i).  The protocol
-#: check (``isinstance`` on a runtime-checkable protocol) cost about 5 us of the 7 us a tree node
-#: takes to build; its methods are class attributes, so it is made once per class, and only
-#: ``storage``, usually an instance attribute, is checked on every instance.
+#: Context types whose instances passed the :class:`PersistenceContext` check and whose ``save``
+#: and ``load`` are callable class attributes (Task 8.3i).  The protocol check (``isinstance`` on
+#: a runtime-checkable protocol) cost about 5 us of the 7 us a tree node takes to build.  For
+#: such a type only ``storage``, usually an instance attribute, can differ between instances, so
+#: only it is checked again; any other type (methods carried per instance, a SimpleNamespace)
+#: gets the full check every time (review 8.3i M2).
 _CONTEXT_CLASSES: set = set()
 
 
@@ -238,7 +240,8 @@ def _check_context(context) -> None:
         return
     if not isinstance(context, PersistenceContext):
         raise ProtoValidationError(f"context must be a PersistenceContext, not {cls.__name__}")
-    _CONTEXT_CLASSES.add(cls)
+    if callable(getattr(cls, "save", None)) and callable(getattr(cls, "load", None)):
+        _CONTEXT_CLASSES.add(cls)
 
 
 class Atom:
