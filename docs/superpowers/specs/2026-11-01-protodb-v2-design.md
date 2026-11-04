@@ -2,6 +2,8 @@
 
 Date: 2026-11-01. Status: approved for unattended implementation (maintainer granted full design freedom).
 Branch: `fix/dict-merge-and-wal-durability` (F0 already committed as 087ec14).
+Binding principles: `docs/design-principles.md` (P1-P7) take precedence over this spec's details;
+a conflict is conceptual debt, resolved before implementation.
 
 ## 1. Intent
 

@@ -1,6 +1,8 @@
 # ProtoDB 2.0 decision log
 
 ADR-style entries. Each records context, decision, alternatives and consequences.
+Every entry is bound by `docs/design-principles.md` (P1-P7) and cites the principles it relies on;
+a decision that contradicts one is conceptual debt and is resolved before implementation.
 Source: `docs/superpowers/specs/2026-11-01-protodb-v2-design.md` section 2.
 
 ## D1 - Full repair of the internals
