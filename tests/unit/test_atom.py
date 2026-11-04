@@ -116,6 +116,22 @@ def test_persistence_context_protocol():
     assert not isinstance(object(), PersistenceContext)
 
 
+def test_construction_rejects_a_context_that_is_not_one_every_time():
+    """The context check is remembered per class (Task 8.3i: it cost most of a node's
+    construction), but an object that is not a context is still refused, and so is an instance of
+    an accepted class that lacks ``storage``."""
+    for _ in range(3):
+        assert Leaf(1, context=ctx()).context is not None
+        for bad in ("x", object(), 42):
+            with pytest.raises(ProtoValidationError):
+                Leaf(1, context=bad)
+    broken = ctx()
+    del broken.storage
+    with pytest.raises(ProtoValidationError):
+        Leaf(1, context=broken)
+    assert Leaf(1, context=None).context is None
+
+
 # --- save ------------------------------------------------------------------------
 
 def test_save_children_first_and_once():
