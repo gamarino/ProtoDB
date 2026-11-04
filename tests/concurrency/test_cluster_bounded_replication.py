@@ -151,6 +151,7 @@ def test_a_dead_successor_does_not_stop_its_predecessors_commits(tmp_path):
 
 def test_reads_fall_back_to_another_replica_then_to_the_object_store(tmp_path):
     with _cluster(tmp_path, 5) as tc:
+        tc.store.set_outage(True)           # nothing persisted yet: n1 must ask a peer
         for _ in range(4):
             tc.db("n3").run(incr, **RUN_KW)
         tc.wipe("n4")                       # a data replica lost after its acknowledgement
@@ -158,6 +159,7 @@ def test_reads_fall_back_to_another_replica_then_to_the_object_store(tmp_path):
         tc.revive("n1")                     # its record cache (R89) is empty after a restart
         assert tc.eventually("n1", 4)       # n1 holds no copy: it fetches from n3
         assert tc["n1"].stats()["fetches_requested"] > 0
+        tc.store.set_outage(False)
         tc.spaces["n3"].sync(timeout=10)    # persisted: the object store holds every record
         tc.kill("n3")                       # the other copy is gone too
         tc.wipe("n2")
