@@ -57,8 +57,11 @@ Self-describing acceptances (Task 8.3f phase B, D50)
     for every reader of the log (:class:`LoggedRoots`).  Compaction never drops the records of
     an entry that a checkpoint has not covered: the automatic compaction of :meth:`_write`
     runs only while no such entry exists, and :meth:`RootsLog.compact_records` summarizes only
-    the entries before the offset its caller checkpointed (:meth:`RootsLog.size`), keeping
-    every later entry verbatim.  Kinds 1 to 4 are unchanged; a reader older than kind 5
+    the entries before the mark its caller checkpointed (:meth:`RootsLog.mark`), keeping
+    every later entry verbatim.  The mark carries the log's compaction generation: a mark
+    taken before any compaction rewrote the file names no position in the new file, and
+    :meth:`RootsLog.compact_records` then summarizes nothing (Task 8.3f-B review I1; every
+    entry before such a mark was already summarized by that compaction).  Kinds 1 to 4 are unchanged; a reader older than kind 5
     refuses such a log with ``ProtoCorruptionError`` (an entry of an unexpected size), never
     misreads it, so the log's header version is unchanged.
 
@@ -324,6 +327,7 @@ class RootsLog:
         self._failed = None           # the I/O error that poisoned this handle, if any
         self._promised = 0            # highest promise known durable here
         self._pending = 0             # bytes of kind-5 entries no checkpoint has covered yet
+        self._generation = 0          # bumped by every compaction: offsets restart (review I1)
         self._redo = []               # the kind-5 entries found at open (taken by take_redo)
         try:
             os.makedirs(os.path.dirname(self._path), exist_ok=True)
@@ -416,17 +420,21 @@ class RootsLog:
             self._pending += len(entry)
             return self._pending
 
-    def size(self) -> int:
-        """The current size of the log file: an entry boundary, since appends hold the lock.  A
-        checkpoint taken after this call covers every entry before it
-        (:meth:`compact_records`)."""
+    def _size_locked(self) -> int:
+        self._check_writable()
+        try:
+            return os.fstat(self._fd).st_size
+        except OSError as e:
+            self._failed = e
+            raise ProtoUnexpectedError(f"Reading the size of the root log {self._path} failed: {e}") from e
+
+    def mark(self) -> tuple:
+        """A checkpoint mark: ``(compaction generation, size of the log file)``, an entry
+        boundary since appends hold the lock.  A checkpoint taken after this call covers every
+        entry before it (:meth:`compact_records`)."""
         with self._lock:
-            self._check_writable()
-            try:
-                return os.fstat(self._fd).st_size
-            except OSError as e:
-                self._failed = e
-                raise ProtoUnexpectedError(f"Reading the size of the root log {self._path} failed: {e}") from e
+            size = self._size_locked()
+            return self._generation, size
 
     def pending_records(self) -> int:
         """Bytes of kind-5 entries that no checkpoint has covered yet."""
@@ -440,14 +448,19 @@ class RootsLog:
             entries, self._redo = self._redo, []
             return entries
 
-    def compact_records(self, upto: int) -> None:
-        """Rewrite the log once every data write of the entries before offset ``upto`` (a
-        value of :meth:`size`) has been synced by the caller's checkpoint: the entries before
-        ``upto`` are summarized (newest of each kind, a kind-5 entry as an accepted root
-        without its records) and every later entry is kept verbatim, so no record a checkpoint
-        has not covered is ever dropped."""
+    def compact_records(self, mark: tuple) -> None:
+        """Rewrite the log once every data write of the entries before ``mark`` (a value of
+        :meth:`mark`) has been synced by the caller's checkpoint: the entries before the mark
+        are summarized (newest of each kind, a kind-5 entry as an accepted root without its
+        records) and every later entry is kept verbatim, so no record a checkpoint has not
+        covered is ever dropped.  When a compaction rewrote the file since the mark was taken,
+        nothing is done: that compaction already summarized every entry before the mark, and
+        the mark's offset names no position in the new file (review I1)."""
+        generation, upto = mark
         with self._lock:
             self._check_writable()
+            if generation != self._generation:
+                return
             try:
                 self._compact(keep_from=upto)
             except OSError as e:
@@ -531,6 +544,7 @@ class RootsLog:
         self._owner.track(new)             # the log is a new file (M3)
         fsync_dir(os.path.dirname(self._path))
         self._pending = sum(FRAME_OVERHEAD + len(p) for p in kept if len(p) and p[0] == RECORDS_KIND)
+        self._generation += 1
 
     def load(self) -> LoggedRoots:
         """The roots and the promise logged (see :class:`LoggedRoots`)."""

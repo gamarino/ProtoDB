@@ -475,7 +475,7 @@ def _standalone_round(storage, lock_timeout, batch: list) -> None:
 
     Each commit is built on the root the previous one produced (its validation reads that
     root, so conflicts within the group are detected as between sequential commits).  A
-    commit whose build raises a ProtoDB error gets that error alone; the others go on.  The
+    commit whose build raises gets that error alone, in its own thread; the others go on.  The
     flush and the publish decide every built commit together: on failure each gets the same
     error (``ProtoOutcomeUnknownError`` only when the publish outcome is unknown, as alone).
     Nothing of the round is visible before the publish.
@@ -497,7 +497,10 @@ def _standalone_round(storage, lock_timeout, batch: list) -> None:
         for entry in batch:
             try:
                 built_ptr = entry.build(current, None)
-            except ProtoDBError as e:
+            except Exception as e:      # noqa: BLE001 -- delivered to that commit's thread
+                # One commit's error, even an unexpected one (a bug, a type error in user data),
+                # is that commit's alone: it is raised in its own thread and the others go on
+                # (review M2).  Nothing of it is published.
                 entry.finish(error=e)
                 continue
             if built_ptr is None:
@@ -649,7 +652,7 @@ class _Group:
         self.running = False
         # A permission kept for the immediate retry of the runner's own conflicting commit
         # (D50 Amendment "held retries"): ``(permission, tier, rounds run, keeper thread,
-        # coordinator)``.
+        # coordinator, deadline, expiry timer)``; kept for at most _RETRY_HOLD (review I2).
         self.kept = None
 
 
@@ -680,11 +683,36 @@ def _take_kept(group: _Group, coordinator, tier):
         kept, group.kept = group.kept, None
     if kept is None:
         return None
-    permission, kept_tier, rounds = kept[0], kept[1], kept[2]
-    if kept_tier is tier and permission.is_valid() and permission.outcome != "unknown":
+    kept[6].cancel()
+    permission, kept_tier, rounds, deadline = kept[0], kept[1], kept[2], kept[5]
+    if kept_tier is tier and time.monotonic() < deadline and permission.is_valid() \
+            and permission.outcome != "unknown":
         return permission, rounds
-    _end_permission(coordinator, permission)
+    _end_permission(kept[4], permission)
     return None
+
+
+def _keep(group: _Group, permission, tier, rounds: int, coordinator) -> None:
+    """Keep ``permission`` in ``group`` for the immediate retry of this thread's commit, for at
+    most :data:`_RETRY_HOLD` (review I2).  A timer ends it if no commit took it by then, so a
+    retry whose ``fn`` works longer never stalls the other members of the cluster behind the
+    owner's single outstanding permission.  Liveness only: ending a permission is always
+    allowed, and the timer never decides an acceptance or an acknowledgement."""
+    def expire():
+        with group.cond:
+            if group.kept is not kept:
+                return              # taken (or dropped) meanwhile
+            group.kept = None
+        _end_permission(coordinator, permission)
+
+    timer = threading.Timer(_RETRY_HOLD, expire)
+    timer.daemon = True
+    kept = (permission, tier, rounds, threading.get_ident(), coordinator,
+            time.monotonic() + _RETRY_HOLD, timer)
+    with group.cond:
+        group.kept = kept
+        group.cond.notify_all()
+    timer.start()
 
 
 def _end_permission(coordinator, permission) -> None:
@@ -706,6 +734,7 @@ def _drop_kept() -> None:
         if kept is None or kept[3] != threading.get_ident():
             return
         group.kept = None
+    kept[6].cancel()
     _end_permission(kept[4], kept[0])
 
 
@@ -766,9 +795,7 @@ def _run_round(coordinator, lock_timeout, batch: list, group: _Group) -> bool:
                 live = _await_retries(group, result, attached, permission)
     finally:
         if keep:
-            with group.cond:
-                group.kept = (permission, tier, rounds, me, coordinator)
-                group.cond.notify_all()
+            _keep(group, permission, tier, rounds, coordinator)
             _RUN.kept_group = group
         else:
             _end_permission(coordinator, permission)
@@ -1282,30 +1309,38 @@ class Database:
         if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (low, high)) \
                 or low < 0 or high < low:
             raise ProtoValidationError("backoff must satisfy 0 <= min_seconds <= max_seconds")
-        for attempt in range(retries + 1):
-            tr = self.new_transaction()
-            _RUN.retry_left = attempt < retries
-            held = False
-            try:
-                result = fn(tr)
-                if tr.is_active:
-                    tr.commit()
-                return result
-            except ProtoConflictError as e:
-                if attempt == retries:
-                    raise
-                held = getattr(e, "permit_held", False)
-                if held:
-                    continue        # the cluster round keeps its permission for this retry (D50)
-            finally:
-                _RUN.retry_left = False
-                if tr.is_active:
-                    tr.abort()
-                if not held:
-                    _drop_kept()    # a permission kept for a retry that is not coming
-            delay = min(high, low * (2 ** attempt))
-            time.sleep(delay * (0.5 + random.random() / 2))
-        raise ProtoUnexpectedError("unreachable: the retry loop always returns or raises")  # pragma: no cover
+        # A run nested in an outer run's ``fn`` keeps its own retry state and restores the
+        # outer one when it ends (review M1).
+        outer_retry = getattr(_RUN, "retry_left", False)
+        outer_kept = getattr(_RUN, "kept_group", None)
+        _RUN.kept_group = None
+        try:
+            for attempt in range(retries + 1):
+                tr = self.new_transaction()
+                _RUN.retry_left = attempt < retries
+                held = False
+                try:
+                    result = fn(tr)
+                    if tr.is_active:
+                        tr.commit()
+                    return result
+                except ProtoConflictError as e:
+                    if attempt == retries:
+                        raise
+                    held = getattr(e, "permit_held", False)
+                    if held:
+                        continue    # the cluster round keeps its permission for this retry (D50)
+                finally:
+                    _RUN.retry_left = outer_retry
+                    if tr.is_active:
+                        tr.abort()
+                    if not held:
+                        _drop_kept()    # a permission kept for a retry that is not coming
+                delay = min(high, low * (2 ** attempt))
+                time.sleep(delay * (0.5 + random.random() / 2))
+            raise ProtoUnexpectedError("unreachable: the retry loop always returns or raises")  # pragma: no cover
+        finally:
+            _RUN.kept_group = outer_kept
 
 
 # -- Transaction ------------------------------------------------------------------------------

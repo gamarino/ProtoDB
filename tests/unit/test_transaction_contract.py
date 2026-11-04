@@ -114,3 +114,19 @@ def test_run_retries_in_a_fresh_transaction_after_a_conflict(db):
     db.run(increment, retries=3)
     assert seen == [0, 10] and transactions[0] is not transactions[1]
     assert _value(db, "n") == 11
+
+
+def test_a_nested_run_restores_the_outer_runs_retry_state(db):
+    """Review M1 (Task 8.3f-B fix round 1): a ``Database.run`` inside ``fn`` reset the outer
+    commit's "retries left" state, so the outer commit lost the held retries of D50."""
+    import proto_db.transactions as tx
+    seen = []
+
+    def outer(tr):
+        db.run(lambda inner: inner.set_root_object("inner", 1))
+        seen.append(getattr(tx._RUN, "retry_left", None))
+        tr.set_root_object("outer", 1)
+
+    db.run(outer)
+    assert seen == [True]
+    assert getattr(tx._RUN, "retry_left", False) is False

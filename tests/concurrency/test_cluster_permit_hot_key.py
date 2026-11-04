@@ -138,3 +138,51 @@ def test_each_usable_permit_of_a_delayed_holder_commits(tmp_path, round_, thread
               f"{gaps[len(gaps) // 2] * 1000 if gaps else None} max {gaps[-1] * 1000 if gaps else None}")
         assert usable, "the holder held no usable permit"
         assert wasted == [], f"{len(wasted)} of {len(usable)} usable permits committed nothing"
+
+
+def test_a_permission_kept_for_a_slow_retry_is_released_for_the_other_members(tmp_path):
+    """Review I2 (Task 8.3f-B fix round 1): a permission kept for the runner's own retry was
+    bounded only by its validity, so a retry whose ``fn`` worked for a second stalled every
+    other member for that second (a8a87a7: 0.5 s of work, 502 ms for another member's single
+    commit; 1.5 s, a term abandoned).  The keep is now bounded by ``_RETRY_HOLD``."""
+    slow = 1.0
+    with TieredCluster(tmp_path, 3, storage_kw=dict(durability="fsync"), lease_duration=2.4,
+                       request_timeout=0.1) as tc:
+        a, b, c = tc.ids
+        tc.spaces[a].new_database("db")
+        for n in tc.ids:
+            tc.db(n).run(incr, **RUN_KW)
+        time.sleep(0.3)
+        abandoned = sum(tc[n].stats().get("terms_abandoned", 0) for n in tc.ids)
+        started, latency = [], []
+
+        def fn(tr):
+            group = tx._GROUPS.get(tc[b])
+            kept = group is not None and group.kept is not None
+            v = tr.get_root_object("n") or 0
+            if kept and not started:
+                started.append(1)
+
+                def other():
+                    t0 = time.monotonic()
+                    tc.db(c).run(incr, **RUN_KW)
+                    latency.append(time.monotonic() - t0)
+                threading.Thread(target=other, daemon=True).start()
+                time.sleep(slow)
+            elif not started:
+                # Another member commits first: this commit conflicts and its permission is kept.
+                t = threading.Thread(target=lambda: tc.db(a).run(incr, **RUN_KW))
+                t.start()
+                t.join()
+            tr.set_root_object("n", v + 1)
+
+        for _ in range(10):
+            tc.db(b).run(fn, **RUN_KW)
+            if started:
+                break
+        assert started, "the schedule never kept a permission"
+        deadline = time.monotonic() + 10
+        while not latency and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert latency and latency[0] < slow / 2, latency
+        assert sum(tc[n].stats().get("terms_abandoned", 0) for n in tc.ids) == abandoned

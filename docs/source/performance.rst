@@ -59,7 +59,7 @@ rqlite                         v10.6.6 official linux-amd64 release, SHA-256 ver
 Summary
 -------
 
-**Lease starvation under TCP with fsync (D-LIVE-1): fixed at 2-4 peers by Task 8.3e; D-LIVE-2 closed in Task 8.3f-B**
+**Lease starvation under TCP with fsync (D-LIVE-1): fixed at 2-4 peers by Task 8.3e; D-LIVE-2 closed in Task 8.3f-B for** ``Database.run`` **(a caller's own retry loop keeps the 5 ms window)**
 
 The figures in this paragraph are from the Phase 9 run, before the fix. Task 8.3e measured the
 cause (the releasing process re-asked 0.17 ms after its release, contenders 3.3 ms after it)
@@ -72,7 +72,10 @@ not for commits of conflicting transactions: on hot-key read-modify-write worklo
 members starve (defect **D-LIVE-2**). Task 8.3f phase A's retry under the permission did not
 close it: a retry still arrived after its permission had ended. With the owner-to-holder link
 delayed by 0.25 s, a holder held 16 of 16 usable permissions without committing. It is closed
-by the held retries of Task 8.3f-B (``docs/decisions.md``, D50 Amendment "held retries";
+for transactions committed through ``Database.run`` by the held retries of Task 8.3f-B. A
+caller's own retry loop is not covered: its retry still arrives after the round's 5 ms wait, so
+the phase-A behaviour (permissions held without committing behind a delayed link) still applies
+to it (``docs/decisions.md``, D50 Amendment "held retries";
 ``tests/concurrency/test_cluster_permit_hot_key.py``). The before/after
 benchmark figures are in the Task 8.3e report and will replace this run's when the results
 are regenerated. Before the fix, the cluster lease had no fairness mechanism, and with fsync-durable
@@ -495,8 +498,12 @@ What the numbers show, honestly:
 After Task 8.3f phases B and C
 ------------------------------
 
-Measured at commit ``ed70d3a`` against ``f03798b`` (the measurements above), same machine and
-workloads. Changes in between: one self-describing root-log append per acceptance (D50 phase
+Measured at commit ``ed70d3a`` against ``f03798b``, same machine and workloads. The baseline
+is ``f03798b``, measured in the same session with the same driver as each comparison below:
+the headline table uses the sync-probe driver (``cluster_tcp`` peers driven for 3 s, 5 runs,
+88.3 commits/s GIL off at 100 B), and the payload sweep uses ``cluster_tcp`` in full mode (3
+runs, median 86 commits/s at 100 B). The 69-72 commits/s of the payload table above are from
+an earlier commit (``976e52c``) and are not a baseline here. Changes between the two commits: one self-describing root-log append per acceptance (D50 phase
 B), compact references and values of 256 bytes or more stored out of line (D51, format 3),
 group commit on a standalone storage (D52), a decoded-atom cache shared by the transactions of
 an ``ObjectSpace`` (D53), and ruling R78b's lease margin. **The benchmark peers' lease changed
@@ -570,8 +577,10 @@ Before (``f03798b``, same runs): ProtoDB 86 / 76 / 75 commits/s (``cluster_tcp``
   rqlite's 29,100 rows/s; unchanged, because each batched commit still rebuilds and ships 50
   path-copied entries.
 
-Standalone ``FileStorage`` with ``fsync``, 4 threads of one process committing a 100-byte
-value each: 88.5 -> 147.3 commits/s (group commit, D52; one 3 s run each). Point reads of a
+Standalone ``FileStorage`` with ``fsync``, 8 threads of one process committing a 100-byte
+value each, three 3 s runs: 89 / 94 / 55 -> 167 / 108 / 157 commits/s, median 89 -> 157 (group
+commit, D52, probe ``levels.py``). The spread between runs is large; an earlier single run with
+4 threads gave 88.5 -> 147.3. Point reads of a
 100,000-entry ``Dictionary``, each in a fresh transaction (``FileStorage``): 821 -> 4,721
 reads/s (D53).
 

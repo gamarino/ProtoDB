@@ -129,3 +129,31 @@ def test_a_failed_publish_fails_every_commit_of_the_group(tmp_path):
         assert all(tr.get_root_object(f"k{i}") is None for i in range(THREADS))
     db.run(lambda tr: tr.set_root_object("after", 1))           # the storage still commits
     space.close()
+
+
+def test_an_unexpected_error_of_one_commit_fails_only_that_commit(tmp_path):
+    """Review M2 (Task 8.3f-B fix round 1): a non-ProtoDB exception raised by one commit's
+    build failed every undecided commit of the round with a copy of it.  Now only that
+    commit gets it; the others are published together."""
+    import proto_db.transactions as tx
+    storage = FileStorage(str(tmp_path / "raw"), durability="none")
+    group = tx._Group()
+    pointers = []
+
+    def good(current, stamp):
+        ptr = storage.push_blob(b"commit")
+        pointers.append(ptr)
+        return ptr
+
+    def bad(current, stamp):
+        raise TypeError("a bug in one commit")
+
+    entries = [tx._Entry(b, storage, group) for b in (good, bad, good)]
+    tx._standalone_round(storage, None, entries)
+    try:
+        assert [e.result for e in entries] == [True, None, True]
+        assert isinstance(entries[1].error, TypeError) and entries[0].error is None and entries[2].error is None
+        root = storage.read_root()
+        assert root.epoch == 1 and (root.segment, root.offset) == (pointers[-1].segment, pointers[-1].offset)
+    finally:
+        storage.close()

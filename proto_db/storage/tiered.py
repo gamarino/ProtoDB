@@ -451,6 +451,11 @@ class TieredStorage(SharedStorage):
         self._lock_timeout = lock_timeout
 
         self._lock = threading.Lock()
+        # Held by every push from the offset assignment to the record's place in _unshipped
+        # (Task 8.3f-B review C1): _unshipped lists each own segment's records in offset order
+        # with no gap, so a kind-5 entry never holds a record without every earlier unshipped
+        # one, and the redo never writes past a hole.  Taken before _manifest_lock and _lock.
+        self._push_lock = threading.Lock()
         self._ship_lock = threading.Lock()
         self._manifest_lock = threading.Lock()
         self._root_lock = threading.Lock()
@@ -889,6 +894,12 @@ class TieredStorage(SharedStorage):
         if len(payload) > limit:
             raise ProtoValidationError(
                 f"A record of {len(payload)} bytes exceeds the {limit} bytes a cluster node can replicate")
+        with self._push_lock:
+            return self._push_locked(kind, payload)
+
+    def _push_locked(self, kind: RecordKind, payload: bytes) -> AtomPointer:
+        """The body of :meth:`_push`, under the push lock: the offset assignment and the
+        append to ``_unshipped`` are one step."""
         ptr = self._local.append_record(kind, payload)
         framed = encode_record(kind, payload)
         self._cache.put((ptr.segment, ptr.offset), framed)
@@ -1218,7 +1229,7 @@ class TieredStorage(SharedStorage):
         theirs.  A failure poisons the local tier."""
         self._check_open()
         with self._accept_lock:
-            mark = self._roots.size()
+            mark = self._roots.mark()
         self._checkpoint_data()
         self._roots.compact_records(mark)
         with self._lock:

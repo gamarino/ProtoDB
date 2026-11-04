@@ -2763,6 +2763,8 @@ class ClusterCoordinator:
         """The outstanding permission of ``own`` ended with ``outcome`` (lock held); return the
         messages to send.  An outcome the owner cannot know abandons the term (D50)."""
         own.outstanding = None
+        if self._idle_release is not None:
+            self._cond.notify_all()     # a draining ownership thread ends the term now (R80)
         if outcome == "committed":
             own.base = (True, root, label)
             own.committed = True
@@ -2901,7 +2903,9 @@ class ClusterCoordinator:
                             waits.append(max(0.001, own.outstanding[2] - now))
                         elif not own.queue:
                             waits.append(max(0.001, idle - (mono - own.last_demand)))
-                        if self._idle_release is not None:
+                        if self._idle_release is not None and own.outstanding is None:
+                            # While a permission is outstanding the drain waits for its done,
+                            # which wakes this thread (_permit_outcome): no 1 ms polling.
                             waits.append(max(0.001, self._idle_release - (mono - own.last_local)))
                         self._cond.wait(timeout=min(waits))
             self._send_all(sends)

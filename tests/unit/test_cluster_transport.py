@@ -39,7 +39,8 @@ def baseline_threads():
     deadline = time.monotonic() + 5
     while threading.active_count() > before and time.monotonic() < deadline:
         time.sleep(0.01)
-    assert threading.active_count() == before
+    # A leak leaves more threads; fewer means a thread of an earlier test ended meanwhile.
+    assert threading.active_count() <= before
 
 
 # -- in-process --------------------------------------------------------------------------------
