@@ -630,8 +630,27 @@ peers       GIL    commits/s              commits/s              syncs / commit 
 8           on     72.5 (45.8-84.7)       85.3 (79.0-86.4)       11.98 / 4.56    72.9 / 21.5     40.5 / 40.9  23.7 / 20.0
 ==========  =====  =====================  =====================  ==============  ==============  ===========  ===========
 
+Commit latency of the same runs (milliseconds, from the start of ``Database.run`` to its
+return; median of the per-run values with their range):
+
+==========  =====  ==========================  ==========================  ==========================  ==========================
+peers       GIL    p50 ``d6743ae``             p50 ``4391bcf``             p95 ``d6743ae``             p95 ``4391bcf``
+==========  =====  ==========================  ==========================  ==========================  ==========================
+3           off    105 (98-110)                99 (98-115)                 161 (151-179)               138 (129-162)
+3           on     113 (112-115)               127 (115-133)               173 (160-185)               169 (152-187)
+5           off    199 (191-222)               213 (199-221)               353 (292-363)               274 (243-302)
+5           on     217 (49-225)                230 (227-238)               373 (185-405)               322 (296-333)
+8           off    322 (312-354)               376 (355-414)               562 (519-616)               442 (426-489)
+8           on     388 (352-599)               399 (389-438)               660 (624-1199)              506 (489-555)
+==========  =====  ==========================  ==========================  ==========================  ==========================
+
 What the numbers show:
 
+- Latency: the median is higher at the head at 5 and 8 peers (+13 to +54 ms); at 8 peers
+  with the GIL off the ranges do not overlap (312-354 against 355-414 ms), so that increase
+  is measured, not noise. The tail is lower at 5 and 8 peers (p95 -51 to -154 ms). At 3
+  peers with the GIL on the median rises 113 -> 127 ms and the critical section 14.6 -> 16.0
+  ms. The cause of the higher median is not established by these runs.
 - Syncs and durable bytes per commit no longer grow with the cluster: synced bytes stay at
   about 21-22 KB per commit from 3 to 8 peers (``f + 1`` copies), against 28-80 KB before;
   syncs per commit fall from 11.4-12.0 to 4.6-5.1 at 8 peers.
