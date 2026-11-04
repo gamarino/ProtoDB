@@ -274,6 +274,8 @@ _TURN_SILENCE = 0.05
 _STOP = object()
 #: Roots whose records this node stored, remembered for :meth:`ClusterCoordinator.await_records`.
 _STORED_MEMORY = 256
+#: Times a rejoin's query round asks a member whose answer has not arrived (see ``_gather``).
+GATHER_ATTEMPTS = 3
 _CRITICAL_KEYS = ("validation", "replay", "path_copy", "replication")
 
 
@@ -1033,14 +1035,33 @@ class ClusterCoordinator:
     def _gather(self, ballot: int) -> tuple:
         """One ``query`` round to every other member; ``(answers, states, promised)`` with the
         state of a witness that did not confirm ``ballot`` (when non-zero) demoted to
-        ``"unknown"``: its answer did not follow a durable promise of the ballot."""
-        waiter = self._ask("query", {"ballot": ballot}, lambda w: len(w.answers) >= len(self._others),
-                           self._request_timeout)
-        with self._lock:
-            answers, promised, states = dict(waiter.answers), dict(waiter.promised), dict(waiter.states)
-            if ballot:
-                states = {p: (st if st != "ok" or waiter.ballots.get(p) == ballot else "unknown")
-                          for p, st in states.items()}
+        ``"unknown"``: its answer did not follow a durable promise of the ballot.
+
+        A member whose answer has not arrived within ``request_timeout`` is asked again, with
+        the same ballot, up to :data:`GATHER_ATTEMPTS` times in all: on a lossy network one
+        lost query or answer would otherwise fail the whole round, and a rejoin that needs
+        every witness (two members rejoining at once in a 5-member cluster) would rarely
+        complete (measured: 20 % loss, 10 s without a rejoin).  Merging is sound: each answer
+        is counted on its own merits -- a ballot answer is sent only after the witness made
+        its promise of ``ballot`` durable, and asking again for the same ballot needs no new
+        promise -- and the answers of one round already arrive at different moments."""
+        answers, promised, states, ballots = {}, {}, {}, {}
+        for _ in range(GATHER_ATTEMPTS):
+            missing = [p for p in self._others if p not in answers]
+            if not missing:
+                break
+            waiter = self._ask("query", {"ballot": ballot}, lambda w: len(w.answers) >= len(missing),
+                               self._request_timeout, targets=missing)
+            with self._lock:
+                answers.update(waiter.answers)
+                promised.update(waiter.promised)
+                states.update(waiter.states)
+                ballots.update(waiter.ballots)
+                if self._state != "running":
+                    break
+        if ballot:
+            states = {p: (st if st != "ok" or ballots.get(p) == ballot else "unknown")
+                      for p, st in states.items()}
         return answers, states, promised
 
     def _rejoin_round(self, tier) -> bool:
@@ -1750,30 +1771,39 @@ class ClusterCoordinator:
         del self._waiting[member]
         return member
 
-    def _await_turn(self, deadline: float) -> None:
+    def _await_turn(self, deadline: float, *, yield_to_owner: bool = False) -> bool:
         """Wait while a release named another member's turn (module docstring, "Fairness"):
         until that member's request has been seen and its attempt or lease ended, at most
         ``lease_duration`` after its request, or :data:`_TURN_SILENCE` when its request is not
         seen.  A node the others do not queue (it neither asked, nor released wanting more,
         nor said ``want`` since it was last served or named) first broadcasts ``want``, so that
-        a later release names it.  Timing only: it never decides a grant."""
+        a later release names it.  Timing only: it never decides a grant.
+
+        ``yield_to_owner`` (a permission request, D50): stop waiting, returning False, as soon
+        as another member is known to own a term -- the caller asks that owner for a
+        permission instead of waiting to acquire the lease.  Without it, a named member that
+        became owner and renews under load kept this node waiting for ``lease_duration``
+        without a single commit (Task 8.3f-B, measured: 4.6-4.7 s with a 6 s lease).  Returns
+        True when the caller may attempt the lease."""
         waited = False
         while True:
             with self._cond:
                 while True:
                     self._check_running()
+                    if yield_to_owner and self._owner_hint[1] not in (None, self._node):
+                        return False
                     turn = self._turn
                     if turn is None:
-                        return
+                        return True
                     member, named, seen = turn
                     now = time.monotonic()
                     end = seen + self._duration if seen is not None else named + self._turn_silence
                     if now >= end:
                         self._turn = None
                         self._stats["deferral_timeouts"] += 1
-                        return
+                        return True
                     if now >= deadline:
-                        return              # the attempt that follows reports the timeout
+                        return True         # the attempt that follows reports the timeout
                     if not waited:
                         waited = True
                         self._stats["deferrals"] += 1
@@ -2309,6 +2339,7 @@ class ClusterCoordinator:
         """A message of the lease term ``term`` was seen (lock held): remember the newest owner."""
         if term > self._owner_hint[0]:
             self._owner_hint = (term, self._by_rank.get(ballot_rank(term)))
+            self._cond.notify_all()         # a deferred permit request may ask this owner now
 
     def _note_seq(self, label: int, seq: int) -> None:
         """A root of term ``label`` under permission ``seq`` was accepted here (lock held)."""
@@ -2453,7 +2484,9 @@ class ClusterCoordinator:
                 if self._ownership is not None:
                     self._local.release()
                     return True
-            self._await_turn(deadline)
+            if not self._await_turn(deadline, yield_to_owner=True):
+                self._local.release()       # an owner is known: permit() asks it
+                return False
             attempt, request, seen, promise = self._open_attempt()
             self._broadcast(request)
             if promise is not None and not self._promise(promise, attempt.term):

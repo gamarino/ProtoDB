@@ -116,7 +116,7 @@ def _check(tc: TieredCluster, load: Load, live) -> None:
 
 
 def _cluster(tmp_path, **kw):
-    tc = TieredCluster(tmp_path, 3, storage_kw=STORAGE, **LEASE, **kw)
+    tc = TieredCluster(tmp_path, 3, storage_kw=STORAGE, **dict(LEASE, **kw))
     tc.spaces[tc.ids[0]].new_database("db")
     return tc
 
@@ -262,8 +262,14 @@ def test_duplicates_delayed_beyond_a_holder_restart(tmp_path, round_):
     """8.3f review I2: copies of the owner's messages (permits among them) are duplicated and
     delayed beyond a kill/revive of a permission holder in the middle of its round, so a
     permit issued to the dead incarnation reaches the next one.  Before protocol 9 the new
-    incarnation answered it ``done("none")`` and the owner reissued the base (C1)."""
-    with _cluster(tmp_path) as tc:
+    incarnation answered it ``done("none")`` and the owner reissued the base (C1).
+
+    The lease is longer than this file's default: a permit is valid for what remains of the
+    owner's lease, and the holder believes a third of it (ruling R78b).  With 0.9 s (a 0.3 s
+    belief), permits delayed 0.25 s on the owner-to-holder link arrived all but expired and the
+    holder sometimes never replicated within 30 s (1 run in 6, before and after the Task
+    8.3f-B coordinator changes; liveness only)."""
+    with _cluster(tmp_path, lease_duration=2.4) as tc:
         net = tc.cluster.net
         with Load(tc) as load:
             time.sleep(SECONDS / 3)
