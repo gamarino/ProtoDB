@@ -114,7 +114,7 @@ def test_a_learners_refusal_never_decides_a_replication():
 
     def answer(sender, ok, stored):
         with node._cond:            # as the dispatcher delivers it
-            node._on_answer(sender, "ack", make_message("ack", sender, term=9, rid=rid, ok=ok, root=None,
+            node._on_answer(sender, "ack", make_message("ack", sender, term=9, rid=rid, inc=node._inc, ok=ok, root=None,
                                                         stored=stored))
 
     for sender, ok, stored in (("n6", False, True), ("n7", False, False), ("n1", False, False)):

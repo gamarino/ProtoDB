@@ -432,13 +432,14 @@ class _Waiter:
     """Replies gathered for one replicate, query or fetch (guarded by the coordinator lock)."""
 
     __slots__ = ("kind", "term", "acks", "nacks", "answers", "promised", "states", "ballots", "data", "missing",
-                 "stored", "unstored")
+                 "stored", "unstored", "key")
 
     def __init__(self, kind: str, term: int = 0):
         self.kind = kind
         self.term = term
         self.acks = set()
         self.nacks = set()
+        self.key = None             # a fetch: the (segment bytes, offset) asked (review C2)
         self.stored = set()         # members that hold the replication's records durably (D54)
         self.unstored = set()       # members that answered without storing them
         self.answers = {}
@@ -674,7 +675,7 @@ class ClusterCoordinator:
                        "recoveries": 0, "rejoins": 0, "rejoin_ballots": 0, "fetches_requested": 0, "fetches_served": 0,
                        "critical_commits": 0, "turns_named": 0, "turns_taken": 0, "deferrals": 0,
                        "deferral_timeouts": 0, "dispatch_seconds_max": 0.0, "dispatch_slow": 0,
-                       "terms_released_idle_local": 0, "config_mismatches": 0, "replica_hedges": 0,
+                       "terms_released_idle_local": 0, "config_mismatches": 0, "stale_replies": 0, "replica_hedges": 0,
                        "fetches_located": 0, "fetch_fallbacks": 0}
         self._critical = {k: 0.0 for k in _CRITICAL_KEYS}
         # Lease fairness (module docstring, "Fairness"; Task 8.3e, D-LIVE-1): proposer-side
@@ -1726,7 +1727,7 @@ class ClusterCoordinator:
                 if state == "unknown":
                     # No acceptor log loaded: whatever is in memory is not what this node
                     # promised or accepted.  Never counted by the asker.
-                    reply = make_message("answer", self._node, rid=msg["rid"], root=None, committed=None,
+                    reply = make_message("answer", self._node, rid=msg["rid"], inc=msg["inc"], root=None, committed=None,
                                          certain=False, promised=0, state=state, ballot=0)
                 else:
                     # ``promised``: the lease activity this node knows of (terms seen in requests
@@ -1735,7 +1736,8 @@ class ClusterCoordinator:
                     # root of the store, nor a floor restored from such labels.  A rejoin tells a
                     # cluster's first start by ``promised == 0`` (ruling R51), and a new cluster
                     # over an existing object store has seen no lease term yet.
-                    reply = make_message("answer", self._node, rid=msg["rid"], root=self._wire(self._accepted),
+                    reply = make_message("answer", self._node, rid=msg["rid"], inc=msg["inc"],
+                                         root=self._wire(self._accepted),
                                          committed=self._wire(self._committed), certain=not self._suspect_term,
                                          promised=max(self._grants.terms_seen, self._accepted[2]),
                                          state=state, ballot=0)
@@ -1765,7 +1767,7 @@ class ClusterCoordinator:
                         self._suspect_term = max(self._suspect_term, ended)
                     self._hint = max(self._hint, ballot)
                     self._cond.notify_all()
-                reply = make_message("answer", self._node, rid=msg["rid"],
+                reply = make_message("answer", self._node, rid=msg["rid"], inc=msg["inc"],
                                      root=self._wire(self._accepted) if state != "unknown" else None,
                                      committed=self._wire(self._committed) if state != "unknown" else None,
                                      certain=state != "unknown" and not self._suspect_term,
@@ -1855,14 +1857,14 @@ class ClusterCoordinator:
         if refusal is not None:
             if refusal == "no_storage":
                 self._stats["grants_refused_no_storage"] += 1
-            return make_message("reject", self._node, term=term, rid=rid, root=self._wire(self._accepted),
+            return make_message("reject", self._node, term=term, rid=rid, inc=inc, root=self._wire(self._accepted),
                                 certain=not self._suspect_term, reason=refusal,
                                 highest=self._grants.highest_term, remaining=0.0)
         if ballot_rank(term) != self._ranks[requester]:
             # Not this requester's ballot: granting it could give one term to two proposers.
             logger.warning("Node %s refused term %d from %s: not a ballot of its rank", self._node, term,
                            requester)
-            return make_message("reject", self._node, term=term, rid=rid, root=self._wire(self._accepted),
+            return make_message("reject", self._node, term=term, rid=rid, inc=inc, root=self._wire(self._accepted),
                                 certain=not self._suspect_term, reason="bad_ballot",
                                 highest=self._grants.highest_term, remaining=0.0)
         decision = self._grants.on_request(requester, term, inc, renew=renew)
@@ -1872,14 +1874,17 @@ class ClusterCoordinator:
         certain = not self._suspect_term
         if decision.granted:
             self._stats["grants_given"] += 1
-            return make_message("grant", self._node, term=term, rid=rid, root=root,
+            return make_message("grant", self._node, term=term, rid=rid, inc=inc, root=root,
                                 committed=self._wire(self._committed), certain=certain)
-        return make_message("reject", self._node, term=term, rid=rid, root=root, certain=certain,
+        return make_message("reject", self._node, term=term, rid=rid, inc=inc, root=root, certain=certain,
                             reason=decision.reason, highest=decision.highest,
                             remaining=max(0.0, decision.remaining))
 
     def _on_reply(self, sender: str, msg: dict) -> None:
         self._hint = max(self._hint, msg["term"], msg.get("highest", 0))
+        if msg["inc"] != self._inc:
+            self._stats["stale_replies"] += 1
+            return                  # a reply to a previous incarnation of this node (review C1)
         known, root, label = decode_labeled_root(msg["root"])
         self._hint = max(self._hint, label)
         if sender not in self._voters:
@@ -2025,6 +2030,11 @@ class ClusterCoordinator:
             self._broadcast(make_message("want", self._node))
 
     def _on_answer(self, sender: str, kind: str, msg: dict) -> None:
+        if msg["inc"] != self._inc:
+            # A reply to a previous incarnation of this node, whose request ids restarted at 1:
+            # never an acknowledgement, a copy, an answer or a record of this one (review C1).
+            self._stats["stale_replies"] += 1
+            return
         waiter = self._waiters.get(msg["rid"])
         if waiter is None:
             return
@@ -2053,8 +2063,8 @@ class ClusterCoordinator:
             waiter.states[sender] = msg["state"]
             waiter.ballots[sender] = msg["ballot"]
         elif kind == "fetched":
-            if waiter.kind != "fetch":
-                return
+            if waiter.kind != "fetch" or waiter.key != (msg["segment"], msg["offset"]):
+                return              # the bytes of another record are never this one's (review C2)
             if msg["data"] is not None and waiter.data is None:
                 waiter.data = msg["data"]
             else:
@@ -2219,6 +2229,7 @@ class ClusterCoordinator:
         refused (its holder need not wait for this node), anything else is dropped."""
         if msg["type"] == "replicate":
             self._transport.send(msg["from"], make_message("ack", self._node, term=msg["term"], rid=msg["rid"],
+                                                           inc=msg["inc"],
                                                            ok=False, root=self._wire(self._accepted), stored=False))
 
     def _drain(self, lane: queue.Queue) -> None:
@@ -2244,8 +2255,9 @@ class ClusterCoordinator:
                 return
             sender = msg["from"]
             pending = self._chunks.get(sender)
-            if pending is None or pending[0] != msg["rid"]:
-                pending = self._chunks[sender] = (msg["rid"], {})   # an older replication is void
+            if pending is None or pending[0] != (msg["rid"], msg["inc"]):
+                # An older replication, or one of another incarnation of the sender, is void.
+                pending = self._chunks[sender] = ((msg["rid"], msg["inc"]), {})
             pending[1][msg["index"]] = msg["records"]
 
     def _may_accept(self, term: int, root: Optional[RootRecord], label: int, pred: Optional[tuple] = None,
@@ -2292,7 +2304,7 @@ class ClusterCoordinator:
             pending = self._chunks.pop(sender, None)
         complete = True
         if msg["chunks"]:
-            parts = pending[1] if pending is not None and pending[0] == rid else {}
+            parts = pending[1] if pending is not None and pending[0] == (rid, msg["inc"]) else {}
             complete = all(i in parts for i in range(msg["chunks"]))
             if complete:
                 records = [r for i in range(msg["chunks"]) for r in parts[i]] + records
@@ -2362,8 +2374,12 @@ class ClusterCoordinator:
                     self._observe_committed(ck, croot, clabel, None)
                     self._stats["accepted"] += 1
                     reply_root = self._wire(self._accepted)
-        self._transport.send(sender, make_message("ack", self._node, term=term, rid=rid, ok=ok, root=reply_root,
-                                                  stored=ok and any(r[2] is not None for r in records)))
+        self._transport.send(sender, make_message("ack", self._node, term=term, rid=rid, inc=msg["inc"], ok=ok,
+                                                  root=reply_root,
+                                                  # Never a durable copy here: ``apply`` honours the
+                                                  # durability mode, so no ``stored`` is claimed (review
+                                                  # M3); bounded replication needs ``accept_replication``.
+                                                  stored=False))
         if ok and records:
             tier.prefetch(records)
 
@@ -2449,7 +2465,8 @@ class ClusterCoordinator:
             with self._lock:
                 self._learn_locator(label, root, (list(msg["copies"]) + ([self._node] if stored else [])),
                                     ranges)
-        self._transport.send(sender, make_message("ack", self._node, term=term, rid=rid, ok=ok, root=reply_root,
+        self._transport.send(sender, make_message("ack", self._node, term=term, rid=rid, inc=msg["inc"], ok=ok,
+                                                  root=reply_root,
                                                   stored=stored))
 
     def _serve_fetch(self, msg: dict) -> None:
@@ -2460,7 +2477,8 @@ class ClusterCoordinator:
         with self._lock:
             if data is not None:
                 self._stats["fetches_served"] += 1
-        self._transport.send(msg["from"], make_message("fetched", self._node, rid=msg["rid"], data=data))
+        self._transport.send(msg["from"], make_message("fetched", self._node, rid=msg["rid"], inc=msg["inc"],
+                                                       segment=msg["segment"], offset=msg["offset"], data=data))
 
     def _serve_commit(self, msg: dict) -> None:
         """Answer a ``commit_query``: whether the persisted root covers that commit, else the
@@ -2472,7 +2490,8 @@ class ClusterCoordinator:
         ranges = None
         if not persisted and root is not None and tier is not None and getattr(tier, "local_records", False):
             ranges = tier.commit_ranges(root)
-        self._transport.send(msg["from"], make_message("commit_info", self._node, rid=msg["rid"], persisted=persisted,
+        self._transport.send(msg["from"], make_message("commit_info", self._node, rid=msg["rid"], inc=msg["inc"],
+                                                       persisted=persisted,
                                                        ranges=protocol.encode_ranges(ranges)))
 
     # -- acquiring and releasing -------------------------------------------------------------
@@ -3297,7 +3316,8 @@ class ClusterCoordinator:
         # every node) the records are already where every node reads them.
         local = bool(getattr(tier, "local_records", False))
         ranges = protocol.record_ranges(all_records) if local else None
-        bounded = with_records and local and bool(ranges) and self._majority > 1
+        bounded = (with_records and local and bool(ranges) and self._majority > 1
+                   and callable(getattr(tier, "accept_replication", None)))
         chunks = _split_records(all_records, protocol.CHUNK_BYTES)
         with self._lock:
             if self._tier is tier:
@@ -3314,7 +3334,7 @@ class ClusterCoordinator:
                 raise ProtoConflictError(f"Term {label} is below this node's rejoin ballot {self._rejoin_ballot}, "
                                          f"which a quorum promised; nothing was replicated")
             rid, waiter = self._new_waiter("replicate", label)
-            parts = [make_message("records", self._node, term=label, rid=rid, index=i, records=chunk)
+            parts = [make_message("records", self._node, term=label, rid=rid, inc=self._inc, index=i, records=chunk)
                      for i, chunk in enumerate(chunks[:-1])]
             pred = (True, pred_root, pred_label)
             pred_committed = self._committed == pred
@@ -3324,7 +3344,7 @@ class ClusterCoordinator:
             wire_ranges = protocol.encode_ranges(ranges)
 
             def replication(carried: list, n_chunks: int, copies: list) -> dict:
-                return make_message("replicate", self._node, term=label, rid=rid, root=wire_root,
+                return make_message("replicate", self._node, term=label, rid=rid, inc=self._inc, root=wire_root,
                                     committed=wire_committed, records=carried, chunks=n_chunks, base=base_wire,
                                     base_ranges=base_ranges, seq=seq, pred=wire_pred,
                                     pred_committed=pred_committed, vs=self._fingerprint, copies=copies,
@@ -3502,7 +3522,9 @@ class ClusterCoordinator:
         with self._lock:
             self._check_running()
             rid, waiter = self._new_waiter(kind)
-        msg = make_message(kind, self._node, rid=rid, **msg_fields)
+            if kind == "fetch":
+                waiter.key = (msg_fields["segment"], msg_fields["offset"])
+        msg = make_message(kind, self._node, rid=rid, inc=self._inc, **msg_fields)
         try:
             for peer in (self._others if targets is None else targets):
                 self._transport.send(peer, msg)

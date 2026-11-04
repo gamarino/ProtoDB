@@ -2,7 +2,10 @@
 
 Every message is a msgpack map with three common fields -- ``v`` (the protocol version,
 :data:`PROTOCOL_VERSION`), ``type`` and ``from`` (the sender's node id) -- plus the
-fields of its type:
+fields of its type.  Since protocol 12 every request answered by a reply carries the
+requester's incarnation ``inc`` and every reply echoes it (not repeated below for each type):
+a reply reaching another incarnation of the requester is dropped, since request ids restart
+at every start (Task 8.3g review, C1):
 
 ``request``    ``term``, ``rid``, ``inc``, ``vs``: ask for the write lease for ``term``, a ballot
                qualified by the requester's rank (``rid`` matches
@@ -81,8 +84,10 @@ fields of its type:
                ``"unknown"`` (no acceptor log loaded: the roots are ``None`` and the answer
                never counts).  ``ballot`` echoes the query's when the answer follows a durable
                promise of it, else ``0``.
-``fetch``      ``rid``, ``segment``, ``offset``: a peer page request for one record.
-``fetched``    ``rid``, ``data``: the framed record bytes, or ``None`` when the peer lacks it.
+``fetch``      ``rid``, ``inc``, ``segment``, ``offset``: a peer page request for one record.
+``fetched``    ``rid``, ``inc``, ``segment``, ``offset``, ``data``: the framed record bytes at
+               ``segment``/``offset`` (echoed), or ``None`` when the peer lacks it.  The asker
+               takes it only for the incarnation and the pointer it asked (protocol 12).
 ``commit_query`` ``rid``, ``root``: where are the records of the commit of ``root``?
 ``commit_info``  ``rid``, ``persisted``, ``ranges``: ``persisted`` is True when the peer knows a
                persisted root ordering at or above ``root`` (that commit and every earlier one
@@ -131,7 +136,13 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
 #: carry ``vs``, the fingerprint of the sender's voter set; ``replicate`` and ``done`` carry the
 #: commit's ``copies`` (the members holding its records durably) and byte ``ranges``; ``ack``
 #: carries ``stored``.
-PROTOCOL_VERSION = 11
+#: 12: every request a reply answers carries the requester's incarnation ``inc``
+#: (``replicate``, ``records``, ``query``, ``fetch``, ``commit_query``; ``request`` and ``renew``
+#: already did) and every reply echoes it (``grant``, ``reject``, ``ack``, ``answer``,
+#: ``fetched``, ``commit_info``); ``fetched`` also echoes the ``segment`` and ``offset`` it
+#: answers.  A reply to another incarnation, or about another record, is dropped: request ids
+#: restart with every incarnation (Task 8.3g review, C1 and C2).
+PROTOCOL_VERSION = 12
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
 #: Record bytes a replication puts in one frame at most (a single record may fill one alone).
@@ -155,13 +166,13 @@ _STRS = "list of str"
 #: Fields of each message type (besides ``v``, ``type`` and ``from``).
 MESSAGE_TYPES = {
     "request": {"term": _INT, "rid": _INT, "inc": _INT, "vs": _INT},
-    "grant": {"term": _INT, "rid": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL},
-    "reject": {"term": _INT, "rid": _INT, "root": _ROOT, "certain": _BOOL, "reason": _STR,
+    "grant": {"term": _INT, "rid": _INT, "inc": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL},
+    "reject": {"term": _INT, "rid": _INT, "inc": _INT, "root": _ROOT, "certain": _BOOL, "reason": _STR,
                "highest": _INT, "remaining": _NUM},
     "release": {"term": _INT, "inc": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL,
                 "held": _BOOL, "next": _OPT_STR, "more": _BOOL},
-    "records": {"term": _INT, "rid": _INT, "index": _INT, "records": _RECORDS},
-    "replicate": {"term": _INT, "rid": _INT, "root": _ROOT, "committed": _ROOT, "records": _RECORDS,
+    "records": {"term": _INT, "rid": _INT, "inc": _INT, "index": _INT, "records": _RECORDS},
+    "replicate": {"term": _INT, "rid": _INT, "inc": _INT, "root": _ROOT, "committed": _ROOT, "records": _RECORDS,
                   "chunks": _INT, "base": _ROOT, "base_ranges": _RANGES, "seq": _INT, "pred": _ROOT,
                   "pred_committed": _BOOL, "vs": _INT, "copies": _STRS, "ranges": _RANGES},
     "renew": {"term": _INT, "rid": _INT, "inc": _INT, "vs": _INT},
@@ -171,15 +182,15 @@ MESSAGE_TYPES = {
     "permit_no": {"term": _INT, "rid": _INT, "reason": _STR},
     "done": {"term": _INT, "seq": _INT, "inc": _INT, "outcome": _STR, "root": _ROOT, "copies": _STRS,
              "ranges": _RANGES},
-    "ack": {"term": _INT, "rid": _INT, "ok": _BOOL, "root": _ROOT, "stored": _BOOL},
+    "ack": {"term": _INT, "rid": _INT, "inc": _INT, "ok": _BOOL, "root": _ROOT, "stored": _BOOL},
     "want": {},
-    "query": {"rid": _INT, "ballot": _INT, "vs": _INT},
-    "answer": {"rid": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL, "promised": _INT,
+    "query": {"rid": _INT, "inc": _INT, "ballot": _INT, "vs": _INT},
+    "answer": {"rid": _INT, "inc": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL, "promised": _INT,
                "state": _STR, "ballot": _INT},
-    "fetch": {"rid": _INT, "segment": _UUID, "offset": _INT},
-    "fetched": {"rid": _INT, "data": _OPT_BYTES},
-    "commit_query": {"rid": _INT, "root": _ROOT},
-    "commit_info": {"rid": _INT, "persisted": _BOOL, "ranges": _RANGES},
+    "fetch": {"rid": _INT, "inc": _INT, "segment": _UUID, "offset": _INT},
+    "fetched": {"rid": _INT, "inc": _INT, "segment": _UUID, "offset": _INT, "data": _OPT_BYTES},
+    "commit_query": {"rid": _INT, "inc": _INT, "root": _ROOT},
+    "commit_info": {"rid": _INT, "inc": _INT, "persisted": _BOOL, "ranges": _RANGES},
 }
 
 

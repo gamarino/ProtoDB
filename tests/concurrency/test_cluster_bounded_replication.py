@@ -116,7 +116,7 @@ def test_a_voter_refuses_a_root_whose_records_lack_their_copies(tmp_path):
 
             def replicate(rid, copies):
                 return make_message(
-                    "replicate", "n0", term=permission.term, rid=rid,
+                    "replicate", "n0", term=permission.term, rid=rid, inc=tc["n0"]._inc,
                     root=encode_root(new, known=True, term=permission.term), committed=None, records=[], chunks=0,
                     base=None, base_ranges=None, seq=permission.seq,
                     pred=encode_root(base, known=True, term=permission.root_term), pred_committed=True,
