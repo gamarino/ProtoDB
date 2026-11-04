@@ -31,6 +31,27 @@ importer; everything else says ProtoDB. Earlier documentation called the project
 same project. The old spelling survives in `ProtoBaseException`, a deprecated alias of
 `ProtoDBError` (the base of the exception hierarchy) that is removed in 2.1.
 
+## Design principles
+
+ProtoDB is built from a small set of principles. Every design decision cites them, and
+a change that contradicts one is treated as conceptual debt, resolved before it is built.
+If you read only one thing before the code, read
+[docs/design-principles.md](docs/design-principles.md).
+
+1. **Everything is immutable.** A pointer names one content forever. History is never lost,
+   caches keyed by pointer never go stale, and snapshots are stable.
+2. **A transaction is an explicit object.** It is not bound to a thread, and its commit
+   concerns only its own reads and writes.
+3. **Each node owns its work.** Commits are built where they happen, local contention is
+   resolved first, and replication is bounded.
+4. **Contention is resolved among the processes, never by the storage.** The storage only
+   fences, and the object store is written after the commit.
+5. **Safety never depends on time.** Timers drive liveness only, and delays can cause only
+   conservative failures.
+6. **Known techniques, honestly measured.** Established mechanisms are adopted and cited, and
+   every performance claim carries its measurement.
+7. **Correct before fast.**
+
 ## Features
 
 - **Transactions**: snapshot isolation, read sets checked at commit (a conflict raises
