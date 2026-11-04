@@ -100,6 +100,9 @@ class ValueBox(Atom):
     held value (loading the box when it is a stub)."""
 
     __type_name__ = "proto_db.avl.ValueBox"
+    #: A build keeps a box by reference and never reads it: caching it on save would only
+    #: retain its large value (Task 8.3i).
+    _cache_on_save = False
 
     def __init__(self, value, *, context: PersistenceContext | None = None):
         super().__init__(context=context)

@@ -132,3 +132,115 @@ def test_concurrent_readers_and_writers_read_the_same_values(entries):
         d = tr.get_root_object("d")
         assert all(d.get_at((s, k)) == rounds for s in range(slices) for k in range(width))
     space.close()
+
+
+# -- the cache receives the atoms a commit writes (Task 8.3i) ---------------------------------
+
+def _state_of(atom):
+    """The persisted state of a (loaded) atom, children by pointer."""
+    from proto_db.core.atom import Atom
+    atom._load()
+    out = {}
+    for name, value in atom._state().items():
+        out[name] = ("@atom", value.atom_pointer) if isinstance(value, Atom) else value
+    return out
+
+
+def test_the_next_build_finds_the_atoms_the_previous_commit_wrote(tmp_path):
+    """A commit's build reads nothing from storage when its base is the root the previous
+    commit of this space wrote: every atom it touches went into the cache when it was saved."""
+    space = _space(tmp_path)
+    db = space.open_database("db")
+    db.run(lambda tr: tr.set_root_object("ids", tr.new_counted_set().add(0)))
+    for i in range(1, 30):
+        db.run(lambda tr, i=i: tr.set_root_object("ids", tr.new_counted_set().add(i)))   # blind: merged
+    reads = _count_reads(space.storage)
+    for i in range(30, 60):
+        db.run(lambda tr, i=i: tr.set_root_object("ids", tr.new_counted_set().add(i)))
+    assert reads == [], f"{len(reads)} atoms fetched although the previous commits had just written them"
+    with db.new_transaction() as tr:
+        assert sorted(tr.get_root_object("ids").elements()) == list(range(60))
+    space.close()
+
+
+def test_a_cached_saved_atom_is_a_fresh_stub_of_the_stored_payload(tmp_path):
+    """What the cache receives on save is never the live object: it is a stub whose state
+    is decoded from the payload written, with the runtime state of a loaded atom (an empty,
+    incomplete op log), and it equals what a cache-less read of the storage decodes."""
+    space = _space(tmp_path)
+    db = space.open_database("db")
+    tr = db.new_transaction()
+    live = tr.new_counted_set().add(1).add(2)
+    tr.set_root_object("ids", live)
+    tr.commit()
+    ptr = live.atom_pointer
+    cached = space._atoms._cache.get(ptr)
+    assert cached is not None and cached is not live
+    assert cached.__dict__.get("_loaded") is False, "the cached atom must be a stub, decoded on first use"
+    assert cached.context is space._atoms
+    assert cached._op_log == () and cached.log_is_complete is False
+    assert live._op_log != ()                          # the live version keeps its own log
+    reference = ObjectSpace(space.storage, atom_cache_entries=0)
+    with reference.open_database("db").new_transaction() as rtr:
+        stored = rtr.load(ptr, type(live).__type_name__)
+        assert _state_of(cached) == _state_of(stored)
+        assert cached.oid == stored.oid == live.oid
+    space.close()
+
+
+def test_cached_saved_atoms_are_never_mutated_afterwards(tmp_path):
+    """Immutability (P1): once in the cache, a saved atom's persisted state and runtime state
+    never change, whatever later transactions derive from it, commit or abort, and whatever the
+    commit does to the live object after publishing (D33 resets its log flag)."""
+    space = _space(tmp_path)
+    db = space.open_database("db")
+    db.run(lambda tr: tr.set_root_object("d", tr.new_dictionary().set_at("k", 1)))
+    with db.new_transaction() as tr:
+        root_ptr = tr.get_root_object("d").atom_pointer
+    cached = space._atoms._cache.get(root_ptr)
+    before_state = _state_of(cached)
+    before_dict = {k: v for k, v in cached.__dict__.items() if k != "_okey"}
+    for i in range(20):
+        db.run(lambda tr, i=i: tr.set_root_object("d", tr.get_root_object("d").set_at(i, i)))
+        db.run(lambda tr, i=i: tr.set_root_object("d", tr.new_dictionary().set_at(("b", i), i)))
+        tr = db.new_transaction()
+        tr.get_root_object("d").set_at("k", 99)
+        tr.abort()
+    assert _state_of(cached) == before_state
+    assert {k: v for k, v in cached.__dict__.items() if k != "_okey"} == before_dict
+    space.close()
+
+
+@pytest.mark.parametrize("entries", [0, 50_000])
+def test_a_committed_nested_collection_reused_blind_merges_as_if_loaded(entries):
+    """D33 with the cache filled on save: a collection committed nested in another object and
+    then reused for a blind write must behave as a loaded version (incomplete log: no replay of
+    the earlier commit's ops).  The outcome must not depend on whether the cache is enabled."""
+    space = _space(atom_cache_entries=entries)
+    db = space.open_database("db")
+    db.run(lambda tr: tr.set_root_object("ids", tr.new_counted_set().add(0)))
+    db.run(lambda tr: tr.set_root_object("holder", tr.new_object(s=tr.new_counted_set().add(1))))
+
+    def reuse(tr):
+        nested = tr.get_root_object("holder").s
+        tr.set_root_object("ids", nested.add(2))           # blind write of a derived version
+    db.run(reuse)
+    with db.new_transaction() as tr:
+        ids = tr.get_root_object("ids")
+        assert sorted(ids.items()) == [(1, 1), (2, 1)]
+    space.close()
+
+
+def test_large_value_boxes_are_not_cached_on_save():
+    """A ValueBox holds one large value out of line (D51); a build keeps it by reference and
+    never decodes it, so caching it on save would only retain its bytes (the cache is bounded by
+    entries, not bytes).  The nodes that reference it are cached."""
+    from proto_db.collections.avl import ValueBox
+    space = _space()
+    db = space.open_database("db")
+    db.run(lambda tr: tr.set_root_object("blobs", tr.new_dictionary().set_at(1, b"v" * 100_000)))
+    cached = list(space._atoms._cache._items.values())
+    assert cached and not any(isinstance(entry[0], ValueBox) for entry in cached)
+    with db.new_transaction() as tr:
+        assert tr.get_root_object("blobs").get_at(1) == b"v" * 100_000
+    space.close()

@@ -49,6 +49,10 @@ Saving
     ``context.storage`` unless another thread published a pointer first.
     Concurrent calls push exactly one payload and return one pointer (racing
     callers may encode the state more than once; only one result is pushed).
+    After its push, the call that pushed tells the context through the optional hook
+    ``context.saved(atom, ptr, payload)`` (no stripe held): a context that caches decoded
+    atoms keeps a stub holding that payload (:meth:`Atom._preloaded_stub`, Task 8.3i), never
+    the live object, whose runtime state (an op log, for example) a loaded atom does not have.
 
 Type tags (format version 3, D51)
     A built-in type is written as its small integer alias, its index in
@@ -229,6 +233,9 @@ class Atom:
     """
 
     __type_name__ = "proto_db.core.atom.Atom"
+    #: Whether a context that caches decoded atoms keeps this type's atoms when they are saved
+    #: (Task 8.3i); a type a build only references, never reads, opts out.
+    _cache_on_save = True
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -412,7 +419,26 @@ class Atom:
             payload = {"t": type_tag(cls.__type_name__), "oid": self._oid_locked().bytes, "s": encoded}
             ptr = context.storage.push_atom(payload)
             object.__setattr__(self, "atom_pointer", ptr)
-            return ptr
+        saved = getattr(context, "saved", None)
+        if saved is not None:
+            saved(self, ptr, payload)       # no stripe held (lock order rule)
+        return ptr
+
+    @classmethod
+    def _preloaded_stub(cls, context: PersistenceContext, ptr: AtomPointer, payload: dict) -> "Atom":
+        """Return a stub of ``cls`` at ``ptr`` that already holds ``payload``, the payload just
+        pushed there (protected; used by contexts that cache what they save, Task 8.3i).
+
+        Its first access decodes ``payload`` exactly as a load would decode the bytes read back
+        from storage (:meth:`_load`), without the fetch, the CRC check and the msgpack step.
+        ``payload`` must not be modified afterwards (storages only serialize it)."""
+        stub = object.__new__(cls)
+        osa = object.__setattr__
+        osa(stub, "_loaded", False)
+        osa(stub, "atom_pointer", ptr)
+        osa(stub, "context", context)
+        osa(stub, "_payload", payload)
+        return stub
 
     # -- identity -------------------------------------------------------------------
 

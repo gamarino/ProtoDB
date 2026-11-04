@@ -301,6 +301,10 @@ class _AtomCache:
     the children of a shared atom are shared too.  Bounded LRU by entry count; an evicted
     atom stays valid for whoever holds it.  Thread-safe (:class:`BoundedCache`; loading a
     stub is thread-safe, :meth:`Atom._load`).
+
+    It also receives every atom saved through it or through a transaction that shares it
+    (:meth:`saved`, Task 8.3i), as a stub holding the payload just written: the next build on
+    a root this space committed finds that root's new atoms without reading them back.
     """
 
     def __init__(self, storage, entries: int):
@@ -320,6 +324,16 @@ class _AtomCache:
         if atom is None:
             self._cache.put(ptr, stub)
         return stub
+
+    def saved(self, atom: Atom, ptr: AtomPointer, payload: dict) -> None:
+        """``atom`` was just pushed at ``ptr`` as ``payload`` (the :meth:`Atom._save` hook,
+        Task 8.3i): cache a stub holding that payload, so the next build on the root that
+        references it decodes it without reading it back.  The stub is decoded exactly as a
+        read of ``ptr`` would be; the live ``atom`` is never cached (its runtime state, an op
+        log for example, is not what a load produces)."""
+        cls = type(atom)
+        if cls._cache_on_save:
+            self._cache.put(ptr, cls._preloaded_stub(self, ptr, payload))
 
     def stats(self) -> dict:
         """``hits``, ``misses``, ``entries`` and ``capacity`` (in atoms)."""
@@ -1401,6 +1415,13 @@ class Transaction:
         if atoms is not None:
             return atoms.load(ptr, type_name)
         return Atom._stub(self, ptr, type_name)
+
+    def saved(self, atom: Atom, ptr: AtomPointer, payload: dict) -> None:
+        """The :meth:`Atom._save` hook: the space's atom cache receives what this transaction
+        pushes (Task 8.3i), when it shares decoded atoms with this transaction."""
+        atoms = self._atoms
+        if atoms is not None:
+            atoms.saved(atom, ptr, payload)
 
     # -- state ------------------------------------------------------------------------------
 
