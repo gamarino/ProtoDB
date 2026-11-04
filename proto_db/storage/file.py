@@ -501,7 +501,7 @@ class FileStorage(SharedStorage):
 
     def spill(self) -> None:
         """Write the buffered records out (no sync): the deferred half of
-        :meth:`reserve_record`."""
+        :meth:`reserve_framed`."""
         self._write_out(sync=False)
 
     @property
