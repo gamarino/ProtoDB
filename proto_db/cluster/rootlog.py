@@ -113,7 +113,8 @@ from ..storage.logfile import (FRAME_OVERHEAD, HEADER_SIZE, encode_frame, fsync_
                                prepare_replacement, read_log, write_all)
 
 __all__ = ["root_key", "compare_roots", "LoggedRoots", "RedoEntry", "RootsLog", "MemoryRootsLog",
-           "memory_log_for", "write_all", "prepare_replacement", "encode_records_entry", "decode_records_entry"]
+           "memory_log_for", "write_all", "prepare_replacement", "encode_records_entry", "decode_records_entry",
+           "encode_replica_entry", "RECORDS_KIND", "REPLICA_KIND", "DATA_KINDS"]
 
 _ENTRY = struct.Struct("<BQQ16sQ")          # kind, label (or term), epoch, segment, offset
 #: Head of a kind-5 entry: kind, label, epoch, segment, offset, seq, pred label, pred epoch,
@@ -122,6 +123,18 @@ _RECORDS_HEAD = struct.Struct("<BQQ16sQQQQ16sQI")
 _RECORD_ITEM = struct.Struct("<16sQI")      # segment, offset, framed length (then the framed bytes)
 #: Kind code of an acceptance carrying its records (Task 8.3f phase B).
 RECORDS_KIND = 5
+#: Head of a kind-6 entry: kind, flags, label, epoch, segment, offset, seq, pred label, pred
+#: epoch, pred segment, pred offset, range count, record count (Task 8.3g, D54).
+_REPLICA_HEAD = struct.Struct("<BBQQ16sQQQQ16sQII")
+_RANGE_ITEM = struct.Struct("<16sQQ")       # segment, start, end
+#: Kind code of an entry naming its commit's byte ranges explicitly (Task 8.3g, D54): an
+#: acceptance whose records live on the commit's data replicas (``ACCEPTED`` flag set; it may
+#: carry none of them), or the records a data replica holds without accepting the root.
+REPLICA_KIND = 6
+#: Flag of a kind-6 entry: the entry is an accepted root.
+ACCEPTED = 1
+#: Kinds of entries carrying records (redone at open, kept until a checkpoint covers them).
+DATA_KINDS = (RECORDS_KIND, REPLICA_KIND)
 #: Size of one framed entry on disk (:mod:`proto_db.storage.logfile` framing).
 ENTRY_SIZE = _ENTRY.size + FRAME_OVERHEAD
 #: Kind of the acceptor log in its file header.
@@ -216,15 +229,20 @@ def _encode(code: int, label: int, record: Optional[RootRecord]) -> bytes:
 
 
 class RedoEntry(NamedTuple):
-    """A kind-5 entry: the accepted root (``label``, ``root``), its permission ``seq``, the
+    """A kind-5 or kind-6 entry: the root (``label``, ``root``), its permission ``seq``, the
     root it was built on (``pred``: ``(label, RootRecord or None)`` or ``None``) and its
-    ``records`` as ``[segment bytes, offset, framed record]``."""
+    ``records`` as ``[segment bytes, offset, framed record]``.  ``accepted`` is False for the
+    records a data replica holds without accepting the root (kind 6, D54); ``ranges`` lists the
+    commit's byte ranges ``[(segment UUID, start, end)]`` when the entry names them (kind 6),
+    else ``None`` (kind 5: the ranges of its records)."""
 
     label: int
     root: Optional[RootRecord]
     seq: int
     pred: Optional[tuple]
     records: list
+    accepted: bool = True
+    ranges: Optional[list] = None
 
 
 def _record_or_none(epoch: int, segment: bytes, offset: int) -> Optional[RootRecord]:
@@ -250,17 +268,57 @@ def encode_records_entry(label: int, root: Optional[RootRecord], seq: int, pred:
     return b"".join(parts)
 
 
+def encode_replica_entry(label: int, root: Optional[RootRecord], seq: int, pred: Optional[tuple],
+                         records: list, ranges: list, *, accepted: bool) -> bytes:
+    """The payload of a kind-6 entry (Task 8.3g, D54): like kind 5, plus the commit's byte
+    ``ranges`` (``[(segment UUID, start, end)]``) and whether the root is ``accepted``."""
+    items = [(raw, offset, data) for raw, offset, data in records if data is not None]
+    pred_label, pred_root = pred if pred is not None else (0, None)
+    parts = [_REPLICA_HEAD.pack(
+        REPLICA_KIND, ACCEPTED if accepted else 0, label, root.epoch if root is not None else 0,
+        root.segment.bytes if root is not None else bytes(16), root.offset if root is not None else 0,
+        seq, pred_label, pred_root.epoch if pred_root is not None else 0,
+        pred_root.segment.bytes if pred_root is not None else bytes(16),
+        pred_root.offset if pred_root is not None else 0, len(ranges), len(items))]
+    for segment, start, end in ranges:
+        parts.append(_RANGE_ITEM.pack(segment.bytes, start, end))
+    for raw, offset, data in items:
+        parts.append(_RECORD_ITEM.pack(bytes(raw), offset, len(data)))
+        parts.append(bytes(data))
+    return b"".join(parts)
+
+
 def decode_records_entry(payload, path: str = "") -> RedoEntry:
-    """Decode the payload of a kind-5 entry; ``ProtoCorruptionError`` when it is malformed
-    (the frame's CRC matched, so only a writer bug or another format can cause it)."""
+    """Decode the payload of a kind-5 or kind-6 entry; ``ProtoCorruptionError`` when it is
+    malformed (the frame's CRC matched, so only a writer bug or another format can cause it)."""
     view = memoryview(payload)
-    if len(view) < _RECORDS_HEAD.size:
-        raise ProtoCorruptionError(f"The root log {path} holds a short records entry")
-    (code, label, epoch, segment, offset, seq, pred_label, pred_epoch, pred_segment, pred_offset,
-     count) = _RECORDS_HEAD.unpack_from(view, 0)
-    if code != RECORDS_KIND:
-        raise ProtoCorruptionError(f"The root log {path} holds an entry of kind {code}, not {RECORDS_KIND}")
-    pos = _RECORDS_HEAD.size
+    ranges, accepted = None, True
+    if len(view) and view[0] == REPLICA_KIND:
+        if len(view) < _REPLICA_HEAD.size:
+            raise ProtoCorruptionError(f"The root log {path} holds a short replica entry")
+        (code, flags, label, epoch, segment, offset, seq, pred_label, pred_epoch, pred_segment, pred_offset,
+         nranges, count) = _REPLICA_HEAD.unpack_from(view, 0)
+        if flags & ~ACCEPTED:
+            raise ProtoCorruptionError(f"The root log {path} holds a replica entry with unknown flags {flags}")
+        accepted = bool(flags & ACCEPTED)
+        pos = _REPLICA_HEAD.size
+        ranges = []
+        for _ in range(nranges):
+            if pos + _RANGE_ITEM.size > len(view):
+                raise ProtoCorruptionError(f"The root log {path} holds a replica entry cut inside a range")
+            rseg, start, end = _RANGE_ITEM.unpack_from(view, pos)
+            if start > end:
+                raise ProtoCorruptionError(f"The root log {path} holds a replica entry with an inverted range")
+            ranges.append((uuid.UUID(bytes=rseg), start, end))
+            pos += _RANGE_ITEM.size
+    else:
+        if len(view) < _RECORDS_HEAD.size:
+            raise ProtoCorruptionError(f"The root log {path} holds a short records entry")
+        (code, label, epoch, segment, offset, seq, pred_label, pred_epoch, pred_segment, pred_offset,
+         count) = _RECORDS_HEAD.unpack_from(view, 0)
+        if code != RECORDS_KIND:
+            raise ProtoCorruptionError(f"The root log {path} holds an entry of kind {code}, not {RECORDS_KIND}")
+        pos = _RECORDS_HEAD.size
     records = []
     for _ in range(count):
         if pos + _RECORD_ITEM.size > len(view):
@@ -275,16 +333,17 @@ def decode_records_entry(payload, path: str = "") -> RedoEntry:
         raise ProtoCorruptionError(f"The root log {path} holds a records entry with trailing bytes")
     pred_root = _record_or_none(pred_epoch, pred_segment, pred_offset)
     pred = None if pred_label == 0 and pred_root is None else (pred_label, pred_root)
-    return RedoEntry(label, _record_or_none(epoch, segment, offset), seq, pred, records)
+    return RedoEntry(label, _record_or_none(epoch, segment, offset), seq, pred, records, accepted, ranges)
 
 
 def _decode(payloads: list, path: str) -> LoggedRoots:
     """The roots and the promise held by the entries ``payloads`` of the log at ``path``."""
     best = _Best()
     for payload in payloads:
-        if len(payload) and payload[0] == RECORDS_KIND:
+        if len(payload) and payload[0] in DATA_KINDS:
             entry = decode_records_entry(payload, path)
-            best.add(1, entry.label, entry.root)          # an accepted root, with its records
+            if entry.accepted:
+                best.add(1, entry.label, entry.root)      # an accepted root, with its records
             continue
         if len(payload) != _ENTRY.size:
             raise ProtoCorruptionError(f"The root log {path} holds an entry of {len(payload)} bytes")
@@ -352,8 +411,8 @@ class RootsLog:
             # Every kind-5 entry is uncheckpointed at open: its records are redone by the
             # storage (take_redo), which then checkpoints and compacts.
             self._redo = [decode_records_entry(p, self._path) for p in payloads
-                          if len(p) and p[0] == RECORDS_KIND]
-            self._pending = sum(FRAME_OVERHEAD + len(p) for p in payloads if len(p) and p[0] == RECORDS_KIND)
+                          if len(p) and p[0] in DATA_KINDS]
+            self._pending = sum(FRAME_OVERHEAD + len(p) for p in payloads if len(p) and p[0] in DATA_KINDS)
         except BaseException as e:
             closing = ([lambda: os.close(fd)] if fd >= 0 else []) + [self._owner.release]
             secondary = []
@@ -405,15 +464,21 @@ class RootsLog:
             self._write(entry, sync=code != KINDS["committed"])
 
     def append_records(self, label: int, record: Optional[RootRecord], records: list, *, seq: int = 0,
-                       pred: Optional[tuple] = None) -> int:
+                       pred: Optional[tuple] = None, ranges: Optional[list] = None, accepted: bool = True) -> int:
         """Append the acceptance of ``record`` labelled ``label`` together with ``records``
         (``[segment bytes, offset, framed record]``) as ONE kind-5 entry, ``fsync``-ed before
         this returns (module docstring, Task 8.3f phase B); return the bytes of kind-5 entries
         no checkpoint has covered yet, this one included.  ``seq`` and ``pred`` (``(label,
         RootRecord or None)``) describe the permission and the root it was built on (kept for
-        the record; acceptance never reads them back).  Raises ``ProtoValidationError`` when the
-        log is closed, ``ProtoUnexpectedError`` when it is poisoned."""
-        entry = encode_frame(encode_records_entry(label, record, seq, pred, records))
+        the record; acceptance never reads them back).  With explicit ``ranges`` (the commit's
+        byte ranges) or ``accepted=False`` (records a data replica holds without accepting the
+        root), the entry is of kind 6 (Task 8.3g, D54).  Raises ``ProtoValidationError`` when
+        the log is closed, ``ProtoUnexpectedError`` when it is poisoned."""
+        if ranges is None and accepted:
+            payload = encode_records_entry(label, record, seq, pred, records)
+        else:
+            payload = encode_replica_entry(label, record, seq, pred, records, list(ranges or ()), accepted=accepted)
+        entry = encode_frame(payload)
         with self._lock:
             self._check_writable()
             self._write(entry, sync=True)
@@ -543,7 +608,7 @@ class RootsLog:
         os.close(old)
         self._owner.track(new)             # the log is a new file (M3)
         fsync_dir(os.path.dirname(self._path))
-        self._pending = sum(FRAME_OVERHEAD + len(p) for p in kept if len(p) and p[0] == RECORDS_KIND)
+        self._pending = sum(FRAME_OVERHEAD + len(p) for p in kept if len(p) and p[0] in DATA_KINDS)
         self._generation += 1
 
     def load(self) -> LoggedRoots:

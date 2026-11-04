@@ -481,7 +481,7 @@ class TieredStorage(SharedStorage):
                        "critical_misses": 0, "remote_segment_gets": 0, "segments_uploaded": 0,
                        "root_writes": 0, "root_writes_in_critical": 0, "segments_released": 0,
                        "copies_released": 0, "records_applied": 0, "parts_uploaded": 0,
-                       "acceptances_logged": 0, "checkpoints": 0, "redo_entries": 0, "redo_records": 0}
+                       "acceptances_logged": 0, "replicas_logged": 0, "checkpoints": 0, "redo_entries": 0, "redo_records": 0}
         self._ranges_lock = threading.Lock()
         self._copies_lock = threading.Lock()
         # Phase B (Task 8.3f): an acceptance (its kind-5 entry and the unsynced data writes it
@@ -727,7 +727,7 @@ class TieredStorage(SharedStorage):
                     written = True
                 key = (entry.root.segment, entry.root.offset)
                 if key not in self._ranges:
-                    ranges = self._ranges_of(entry.records)
+                    ranges = self._ranges_of(entry.records) if entry.ranges is None else list(entry.ranges)
                     self._ranges[key] = (order, ranges)
                     write_all(self._ranges_fd, self._encode_ranges(key, order, ranges))
                     written = True
@@ -1205,7 +1205,8 @@ class TieredStorage(SharedStorage):
                     raise ProtoUnexpectedError(f"Syncing {MANIFEST} failed: {e}") from e
 
     def accept_replication(self, label: int, root: RootRecord, records: list, *, seq: int = 0,
-                           pred: Optional[tuple] = None) -> None:
+                           pred: Optional[tuple] = None, ranges: Optional[list] = None,
+                           accepted: bool = True) -> None:
         """Accept the replicated root ``root`` labelled ``label`` with the ``records`` its
         replication carried (``[segment bytes, offset, framed record]``) by ONE append to
         ``roots.log`` (kind 5: the root, ``seq``, ``pred`` and the records), ``fsync``-ed in
@@ -1216,6 +1217,14 @@ class TieredStorage(SharedStorage):
         before the entry loses its records.  So the root is durable exactly when its records
         are (D-AVAIL-1).  When an own segment was registered since the manifest's last sync,
         the manifest is synced first: a redo must know its own segments.
+
+        Bounded replication (Task 8.3g, D54): ``ranges`` names the commit's byte ranges
+        (``[(segment UUID, start, end)]``) when the entry does not carry every record of the
+        commit -- a voter accepting a root whose records live on the commit's data replicas
+        logs no record at all -- and ``accepted=False`` makes the entry the records this node
+        holds as a data replica without accepting the root.  Both write a kind-6 entry, synced
+        the same way; the ranges are remembered from it (:meth:`commit_ranges`), so a peer
+        adopting the root later learns where its records are.
 
         Raises ``ProtoValidationError`` once closed and ``ProtoUnexpectedError`` once the local
         tier failed; a failure after the append poisons the tier (the entry may be durable: the
@@ -1231,10 +1240,10 @@ class TieredStorage(SharedStorage):
         order = root_key(label, root)
         with self._accept_lock:
             self._refuse_closed(f"writing {ROOTS_LOG}")
-            self._roots.append_records(label, root, records, seq=seq, pred=pred)
+            self._roots.append_records(label, root, records, seq=seq, pred=pred, ranges=ranges, accepted=accepted)
             with self._lock:
-                entry = self._remember(records, root, label)
-                self._stats["acceptances_logged"] += 1
+                entry = self._remember(records, root, label, ranges)
+                self._stats["acceptances_logged" if accepted else "replicas_logged"] += 1
             self._log_ranges(entry, sync=False)
             self._write_copies(records, order, sync=False)
 
@@ -1301,12 +1310,15 @@ class TieredStorage(SharedStorage):
             spans[segment] = (min(start, offset), max(end, offset + len(data)))
         return [(segment, start, end) for segment, (start, end) in spans.items()]
 
-    def _remember(self, records: list, root: Optional[RootRecord], label: int) -> Optional[bytes]:
+    def _remember(self, records: list, root: Optional[RootRecord], label: int,
+                  ranges: Optional[list] = None) -> Optional[bytes]:
         """Remember the ranges of the records shipped with the commit of ``root`` labelled
-        ``label`` (lock held); return the ``ranges.log`` entry to write."""
+        ``label`` -- ``ranges`` when given, else those of ``records`` -- (lock held); return the
+        ``ranges.log`` entry to write."""
         if root is None:
             return None
-        key, order, ranges = (root.segment, root.offset), root_key(label, root), self._ranges_of(records)
+        key, order = (root.segment, root.offset), root_key(label, root)
+        ranges = self._ranges_of(records) if ranges is None else list(ranges)
         self._ranges[key] = (order, ranges)
         return self._encode_ranges(key, order, ranges)
 
