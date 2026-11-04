@@ -996,6 +996,29 @@ class TieredStorage(SharedStorage):
         """Install the peer page request function (``fetcher(ptr) -> framed bytes or None``)."""
         self._fetcher = fetcher
 
+    def in_critical(self) -> bool:
+        """True when the calling thread is inside a commit's critical section (it holds a write
+        permission, :meth:`critical_section`)."""
+        return bool(getattr(self._tls, "critical", False))
+
+    def cache_records(self, records: list) -> int:
+        """Put records another member committed (``[segment UUID bytes, offset, framed or
+        None]``) into the record cache only -- no append, no sync, no durable copy (ruling
+        R89) -- after checking each frame; return how many were cached.  The cache stays
+        bounded and keyed by pointer; an evicted record is fetched on demand."""
+        cached = 0
+        for raw, offset, framed in records:
+            if framed is None:
+                continue
+            try:
+                read_record(framed, 0)
+            except ProtoCorruptionError as e:
+                logger.warning("A peer sent a corrupt record at %s:%s: %s", uuid.UUID(bytes=raw), offset, e)
+                continue
+            self._cache.put((uuid.UUID(bytes=raw), offset), framed)
+            cached += 1
+        return cached
+
     def _local_record(self, ptr: AtomPointer) -> Optional[tuple]:
         try:
             return self._local.get_record(ptr)

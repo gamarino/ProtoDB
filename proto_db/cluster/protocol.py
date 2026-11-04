@@ -88,6 +88,10 @@ at every start (Task 8.3g review, C1):
 ``fetched``    ``rid``, ``inc``, ``segment``, ``offset``, ``data``: the framed record bytes at
                ``segment``/``offset`` (echoed), or ``None`` when the peer lacks it.  The asker
                takes it only for the incarnation and the pointer it asked (protocol 12).
+``warm``       ``term``, ``records``: records of a commit sent to a member that is not one of
+               its data replicas, which keeps them in its record cache only: no append, no
+               sync, no acknowledgement (ruling R89, protocol 12).  Best effort: a member that
+               misses one fetches the records on demand.
 ``commit_query`` ``rid``, ``root``: where are the records of the commit of ``root``?
 ``commit_info``  ``rid``, ``persisted``, ``ranges``: ``persisted`` is True when the peer knows a
                persisted root ordering at or above ``root`` (that commit and every earlier one
@@ -142,6 +146,8 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
 #: ``fetched``, ``commit_info``); ``fetched`` also echoes the ``segment`` and ``offset`` it
 #: answers.  A reply to another incarnation, or about another record, is dropped: request ids
 #: restart with every incarnation (Task 8.3g review, C1 and C2).
+#: Also 12: ``warm`` carries a commit's records to the members that are not its data
+#: replicas, for their record caches only (ruling R89).
 PROTOCOL_VERSION = 12
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
@@ -172,6 +178,7 @@ MESSAGE_TYPES = {
     "release": {"term": _INT, "inc": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL,
                 "held": _BOOL, "next": _OPT_STR, "more": _BOOL},
     "records": {"term": _INT, "rid": _INT, "inc": _INT, "index": _INT, "records": _RECORDS},
+    "warm": {"term": _INT, "records": _RECORDS},
     "replicate": {"term": _INT, "rid": _INT, "inc": _INT, "root": _ROOT, "committed": _ROOT, "records": _RECORDS,
                   "chunks": _INT, "base": _ROOT, "base_ranges": _RANGES, "seq": _INT, "pred": _ROOT,
                   "pred_committed": _BOOL, "vs": _INT, "copies": _STRS, "ranges": _RANGES},

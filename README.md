@@ -77,7 +77,8 @@ If you read only one thing before the code, read
   loss of any set of nodes in every durability mode; the mode governs only writes outside the
   commit path. Replication is bounded (D54, Task 8.3g): three voters (configurable) order roots,
   the other members are learners, and a commit's records are synced on the committer plus `f`
-  data replicas (one, with three voters), not on every member; others fetch records on demand.
+  data replicas (one, with three voters), not on every member; the other members keep them only in
+  memory (a bounded cache, best effort) and fetch on demand what they miss.
   Losing `f + 1` voters stops writes while learners keep serving reads; losing every copy of a
   commit's records (`f + 1` disks) before the persister uploads them loses that data, as no
   re-replication runs. Two to four contending writer processes take

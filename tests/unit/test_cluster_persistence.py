@@ -224,7 +224,9 @@ def test_steady_state_commits_write_nothing_in_the_object_store_under_the_lease(
     data replica of its base reads the base's records on demand -- from a peer, or from the
     store once the replicas released them -- so critical-section cache misses and store
     reads are expected; they are counted and reported, never forbidden (R70a: remote data is
-    a normal case)."""
+    a normal case).  Ruling R89: every commit's records reach every member's cache with the
+    commit (best effort, no durable copy), so in steady state a committer finds its base's
+    records cached and fetches next to nothing from a peer under a permission."""
     calls = []
 
     class Recording(FakeObjectStore):
@@ -242,6 +244,7 @@ def test_steady_state_commits_write_nothing_in_the_object_store_under_the_lease(
             tc.spaces[n].sync(timeout=10)
         base = {n: tc.storages[n].stats() for n in tc.ids}
         before = {n: tc[n].stats()["critical_commits"] for n in tc.ids}
+        base_coord = {n: tc[n].stats() for n in tc.ids}
         calls.clear()
         errors = []
 
@@ -267,8 +270,15 @@ def test_steady_state_commits_write_nothing_in_the_object_store_under_the_lease(
             stats = tc.storages[n].stats()
             misses += stats["critical_misses"] - base[n]["critical_misses"]
             assert stats["root_writes_in_critical"] == 0
+        fetched = {k: sum(tc[n].stats()[k] - base_coord[n][k] for n in tc.ids)
+                   for k in ("record_fetches", "record_fetches_permitted", "records_warmed")}
         print(f"\n30 commits: {misses} critical-section cache misses, {len(committer_calls)} store reads "
-              f"by committing threads")
+              f"by committing threads, {fetched}")
+        # Review M2: recorded bounds -- near zero in steady state under R89 (30 commits).
+        assert misses <= 3, misses
+        assert len(committer_calls) <= 3, committer_calls
+        assert fetched["record_fetches_permitted"] <= 3, fetched
+        assert fetched["records_warmed"] > 0, fetched
         assert sum(tc[n].stats()["critical_commits"] - before[n] for n in tc.ids) == 30
 
 

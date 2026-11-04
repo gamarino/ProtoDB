@@ -23,7 +23,7 @@ Write permissions (D50)
     root, as after any D46 lease.  The acquiring and lease rules below are the D45/D46
     mechanics an owner uses to obtain and renew its term.
 
-Bounded replication (Task 8.3g, D54; maintainer rulings R70 and R70a)
+Bounded replication (Task 8.3g, D54; maintainer rulings R70, R70a and R89)
     A fixed set of ``V = 2f + 1`` *voters* (default the first three member ids in sorted
     order; every member of a cluster of fewer than three) orders roots: grants, renewals,
     ballots, rejoins, recovery rounds and root acceptance count only voters, and a majority
@@ -42,12 +42,16 @@ Bounded replication (Task 8.3g, D54; maintainer rulings R70 and R70a)
     acknowledgements.  A voter that is a data replica stores and accepts in one append when
     that makes ``f + 1`` copies.  So a committed root -- accepted by ``f + 1`` voters, at most
     one of which is the committer -- never lacks ``f + 1`` durable copies of its records; the
-    committer's own acceptance shares its disk with its own copy.  Any other member fetches
-    records on demand (:meth:`ClusterCoordinator.fetch_record`), from the members the locator
+    committer's own acceptance shares its disk with its own copy (each ``stored``
+    acknowledgement is bound to the committer's incarnation, protocol 12).  Every other member
+    receives the records in ``warm`` messages and keeps them only in its bounded record cache
+    (R89: no append, no sync, never awaited; network bytes grow with ``N``, syncs and durable
+    bytes do not).  A member that lacks a record fetches it on demand (:meth:`ClusterCoordinator.fetch_record`), from the members the locator
     names for the record's segment (learnt from ``replicate`` and ``done``), else from every
     member, else from the object store, and caches them by pointer.  Replicas keep their
     copies until the object store holds them (``release_local``); a persister that lags
-    uploads the parts it holds (repair through the object store).
+    uploads the parts it holds, filling holes in a segment split across replicas from peers
+    (repair through the object store).
 
     Limits (D54).  The voter set is static: no member is added or removed at run time.
     Losing ``f + 1`` voters stops every write until enough of them return.  No
@@ -676,7 +680,8 @@ class ClusterCoordinator:
                        "critical_commits": 0, "turns_named": 0, "turns_taken": 0, "deferrals": 0,
                        "deferral_timeouts": 0, "dispatch_seconds_max": 0.0, "dispatch_slow": 0,
                        "terms_released_idle_local": 0, "config_mismatches": 0, "stale_replies": 0, "replica_hedges": 0,
-                       "fetches_located": 0, "fetch_fallbacks": 0}
+                       "fetches_located": 0, "fetch_fallbacks": 0, "record_fetches": 0,
+                       "record_fetches_permitted": 0, "records_warmed": 0}
         self._critical = {k: 0.0 for k in _CRITICAL_KEYS}
         # Lease fairness (module docstring, "Fairness"; Task 8.3e, D-LIVE-1): proposer-side
         # timing only, never consulted by a grant, an acceptance or a commit.
@@ -1686,7 +1691,7 @@ class ClusterCoordinator:
             # (D50 "Message lanes").  A replicate follows its record chunks.
             self._enqueue(self._jobs, msg)
             return
-        if kind in ("fetch", "commit_query"):
+        if kind in ("fetch", "commit_query", "warm"):
             self._enqueue(self._reads, msg)
             return
         if kind == "release":
@@ -2208,6 +2213,8 @@ class ClusterCoordinator:
                     self._on_done(msg)
                 elif kind == "commit_query":
                     self._serve_commit(msg)
+                elif kind == "warm":
+                    self._warm(msg)
                 else:
                     self._serve_fetch(msg)
             except (ProtoDBError, OSError) as e:
@@ -2479,6 +2486,17 @@ class ClusterCoordinator:
                 self._stats["fetches_served"] += 1
         self._transport.send(msg["from"], make_message("fetched", self._node, rid=msg["rid"], inc=msg["inc"],
                                                        segment=msg["segment"], offset=msg["offset"], data=data))
+
+    def _warm(self, msg: dict) -> None:
+        """Cache the records of another member's commit (ruling R89): memory only, never
+        acknowledged; a tier without a record cache ignores them."""
+        tier = self._tier
+        cache = getattr(tier, "cache_records", None) if tier is not None else None
+        if cache is None:
+            return
+        cached = cache(msg["records"])
+        with self._lock:
+            self._stats["records_warmed"] += cached
 
     def _serve_commit(self, msg: dict) -> None:
         """Answer a ``commit_query``: whether the persisted root covers that commit, else the
@@ -3367,6 +3385,14 @@ class ClusterCoordinator:
                 # voter among them may accept the root in the same append when that makes
                 # ``majority`` copies).  Then the root alone goes to every other voter, naming
                 # the copies: no voter but this node accepts it before they exist.
+                # Ruling R89: every other member caches the records (memory only, best effort,
+                # never awaited), so the next committer finds its base cached.
+                replicas = set(preference[:self._majority - 1])
+                for peer in self._others:
+                    if peer not in replicas:
+                        for chunk in chunks:
+                            self._transport.send(peer, make_message("warm", self._node, term=label,
+                                                                    records=chunk))
                 copies = self._place_records(waiter, lease, parts, msg, preference)
                 if copies is not None:
                     with self._lock:
@@ -3611,10 +3637,15 @@ class ClusterCoordinator:
         when none of them has it."""
         if not self._others:
             return None
+        tier = self._tier
+        permitted = bool(tier is not None and getattr(tier, "in_critical", lambda: False)())
         with self._lock:
             if self._state != "running":
                 return None
             self._stats["fetches_requested"] += 1
+            self._stats["record_fetches"] += 1
+            if permitted:
+                self._stats["record_fetches_permitted"] += 1
             timeout = self._fetch_timeout
             if self._held is not None:
                 timeout = min(timeout, self._held.remaining())

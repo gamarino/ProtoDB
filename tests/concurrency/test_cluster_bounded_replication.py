@@ -40,7 +40,9 @@ def _root(tc, node):
 
 
 def _holders(tc, ptr) -> set:
-    return {n for n, st in tc.storages.items() if st.local_record(ptr) is not None}
+    """The members holding the record at ``ptr`` in their local files (durable copies; the
+    record cache, which R89 warms on every member, is not a copy)."""
+    return {n for n, st in tc.storages.items() if st._local_record(ptr) is not None}
 
 
 def test_a_commit_stores_its_records_on_f_plus_one_members_and_its_root_on_the_voters(tmp_path):
@@ -152,6 +154,8 @@ def test_reads_fall_back_to_another_replica_then_to_the_object_store(tmp_path):
         for _ in range(4):
             tc.db("n3").run(incr, **RUN_KW)
         tc.wipe("n4")                       # a data replica lost after its acknowledgement
+        tc.kill("n1")
+        tc.revive("n1")                     # its record cache (R89) is empty after a restart
         assert tc.eventually("n1", 4)       # n1 holds no copy: it fetches from n3
         assert tc["n1"].stats()["fetches_requested"] > 0
         tc.spaces["n3"].sync(timeout=10)    # persisted: the object store holds every record
@@ -242,3 +246,29 @@ def test_a_segment_split_by_a_hedge_is_persisted_after_its_committers_disk_is_lo
         assert sum(tc.storages[n].stats()["holes_filled"] for n in ("n1", "n2")) > 0
         tc.revive("n0")
         assert tc.eventually("n0", 9, timeout=10)
+
+
+def test_every_member_caches_each_commit_without_a_durable_copy(tmp_path):
+    """Ruling R89: a commit's records reach every member with the commit; a member that is not
+    one of its data replicas keeps them only in its record cache (no append, no sync, no
+    acknowledgement awaited), so it reads the commit without fetching."""
+    with _cluster(tmp_path, 8) as tc:
+        tc.db("n5").run(incr, **RUN_KW)
+        for node in tc.ids:
+            tc[node].wait_idle(5)
+        before = {n: (tc[n].stats()["fetches_requested"], tc.storages[n].stats()["replicas_logged"])
+                  for n in tc.ids}
+        for _ in range(3):
+            tc.db("n5").run(incr, **RUN_KW)
+        for node in tc.ids:
+            tc[node].wait_idle(5)
+        root, _ = _root(tc, "n5")
+        ptr = AtomPointer(root.segment, root.offset)
+        assert _holders(tc, ptr) == {"n5", "n6"}                    # durable copies: f + 1
+        for node in tc.ids:
+            assert tc.storages[node].local_record(ptr) is not None, f"{node} did not cache the commit"
+        for node in ("n1", "n3", "n7"):
+            assert tc.eventually(node, 4)
+            assert tc[node].stats()["fetches_requested"] == before[node][0], f"{node} fetched"
+            assert tc.storages[node].stats()["replicas_logged"] == before[node][1]
+        assert tc["n7"].stats()["records_warmed"] > 0
