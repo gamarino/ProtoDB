@@ -34,13 +34,16 @@ def _req(sender, term):
 
 @pytest.fixture
 def baseline_threads():
-    before = threading.active_count()
+    """Fails a test that leaves a thread running: the threads alive after it (given 5 s to
+    end) that were not alive before it.  Compared by identity, so a thread of an earlier test
+    ending meanwhile can neither fail the check nor hide a leak (re-review 1, N3)."""
+    before = set(threading.enumerate())
     yield before
     deadline = time.monotonic() + 5
-    while threading.active_count() > before and time.monotonic() < deadline:
+    while set(threading.enumerate()) - before and time.monotonic() < deadline:
         time.sleep(0.01)
-    # A leak leaves more threads; fewer means a thread of an earlier test ended meanwhile.
-    assert threading.active_count() <= before
+    leaked = set(threading.enumerate()) - before
+    assert not leaked, f"threads left running: {sorted(t.name for t in leaked)}"
 
 
 # -- in-process --------------------------------------------------------------------------------

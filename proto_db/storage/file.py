@@ -350,7 +350,14 @@ class FileStorage(SharedStorage):
         return seg
 
     def _append(self, kind: RecordKind, payload: bytes) -> AtomPointer:
-        record = encode_record(kind, payload)
+        ptr, spill = self._reserve(encode_record(kind, payload))
+        if spill:
+            self._write_out(sync=False)
+        return ptr
+
+    def _reserve(self, record: bytes) -> tuple:
+        """Buffer one framed record and assign its offset; return ``(pointer, spill)``, where
+        ``spill`` says the buffer reached its size and should be written out."""
         with self._state_lock:
             self._check_writable()
             seg = self._current
@@ -364,9 +371,7 @@ class FileStorage(SharedStorage):
             seg.end += len(record)
             self._pending_bytes += len(record)
             spill = self._pending_bytes >= self._write_buffer_bytes
-        if spill:
-            self._write_out(sync=False)
-        return AtomPointer(seg.uuid, offset)
+        return AtomPointer(seg.uuid, offset), spill
 
     def _write_all(self, fd: int, data, offset: int) -> None:
         view = memoryview(data)
@@ -482,6 +487,22 @@ class FileStorage(SharedStorage):
             raise ProtoValidationError("Record payload must be bytes")
         self._check_writable()
         return self._append(RecordKind(kind), bytes(payload))
+
+    def reserve_framed(self, record: bytes) -> tuple:
+        """Append a record already framed by :func:`~proto_db.storage.format.encode_record`
+        without writing out a full buffer: return ``(pointer, spill)``; when ``spill`` is true
+        the caller calls :meth:`spill`, outside any lock of its own.  Used by
+        :class:`~proto_db.storage.tiered.TieredStorage`, which orders its bookkeeping with the
+        offset assignment and keeps encoding and buffer I/O out of that step."""
+        if not isinstance(record, bytes):
+            raise ProtoValidationError("A framed record must be bytes")
+        self._check_writable()
+        return self._reserve(record)
+
+    def spill(self) -> None:
+        """Write the buffered records out (no sync): the deferred half of
+        :meth:`reserve_record`."""
+        self._write_out(sync=False)
 
     @property
     def current_segment(self) -> Optional[uuid.UUID]:

@@ -455,6 +455,8 @@ class TieredStorage(SharedStorage):
         # (Task 8.3f-B review C1): _unshipped lists each own segment's records in offset order
         # with no gap, so a kind-5 entry never holds a record without every earlier unshipped
         # one, and the redo never writes past a hole.  Taken before _manifest_lock and _lock.
+        # A full write buffer is written out after it is released (re-review 1, N2): the
+        # spill writes bytes whose offsets are already assigned and changes no order.
         self._push_lock = threading.Lock()
         self._ship_lock = threading.Lock()
         self._manifest_lock = threading.Lock()
@@ -486,6 +488,12 @@ class TieredStorage(SharedStorage):
         # covers) is atomic against the start of a checkpoint, so a checkpoint's mark never
         # separates an entry from its data writes.
         self._accept_lock = threading.Lock()
+        # One checkpoint at a time, from its mark to its compaction (re-review 1, N1): a
+        # checkpoint compacts only entries whose data writes it, or an earlier finished
+        # checkpoint, synced.  Two concurrent ones (release_local on the persister thread and
+        # the 8 MiB checkpoint of an acceptance) let the second compact an entry whose copy the
+        # first had taken into its dirty set but not yet synced.  Taken before _accept_lock.
+        self._checkpoint_lock = threading.Lock()
         self._dirty_copies = set()     # copies written without a sync since the last checkpoint
         self._dirty_dir = False        # files created without a directory sync since then
         self._manifest_fd = self._ranges_fd = -1
@@ -894,43 +902,52 @@ class TieredStorage(SharedStorage):
         if len(payload) > limit:
             raise ProtoValidationError(
                 f"A record of {len(payload)} bytes exceeds the {limit} bytes a cluster node can replicate")
-        with self._push_lock:
-            return self._push_locked(kind, payload)
-
-    def _push_locked(self, kind: RecordKind, payload: bytes) -> AtomPointer:
-        """The body of :meth:`_push`, under the push lock: the offset assignment and the
-        append to ``_unshipped`` are one step."""
-        ptr = self._local.append_record(kind, payload)
         framed = encode_record(kind, payload)
+        with self._push_lock:
+            ptr, spill = self._push_locked(framed)
         self._cache.put((ptr.segment, ptr.offset), framed)
-        with self._lock:
-            known = ptr.segment in self._own
-        if not known:
-            # A new own segment: registered and appended to the manifest in creation order under
-            # the manifest lock, never under the bookkeeping lock that every read takes.
-            with self._manifest_lock:
-                self._refuse_closed(f"writing {MANIFEST}")
-                with self._lock:
-                    write = ptr.segment not in self._own
-                    if write:
-                        self._own[ptr.segment] = _Own(ptr.segment)
-                if write:
-                    try:
-                        write_all(self._manifest_fd, encode_frame(ptr.segment.bytes))
-                    except OSError as e:
-                        # The segment is registered but not in the manifest: nothing may be
-                        # flushed or shipped as if it were (the tier is poisoned).
-                        self._fail(e)
-                        raise ProtoUnexpectedError(f"Writing {MANIFEST} failed: {e}") from e
-                    with self._lock:
-                        self._manifest_dirty = True
-        with self._lock:
-            own = self._own[ptr.segment]
-            own.end = max(own.end, ptr.offset + len(framed))
-            if own.first is None:
-                own.first = time.monotonic()
-            self._unshipped.append([ptr.segment.bytes, ptr.offset, framed])
+        if spill:
+            self._local.spill()
         return ptr
+
+    def _push_locked(self, framed: bytes) -> tuple:
+        """The body of :meth:`_push`, under the push lock: the offset assignment and the
+        append to ``_unshipped`` are one step, and nothing else is done under it (re-review
+        1, N2).  Returns ``(pointer, spill)``."""
+        ptr, spill = self._local.reserve_framed(framed)
+        with self._lock:
+            own = self._own.get(ptr.segment)
+            if own is not None:
+                self._note_push(own, ptr, framed)
+                return ptr, spill
+        # A new own segment: registered and appended to the manifest in creation order under
+        # the manifest lock, never under the bookkeeping lock that every read takes.
+        with self._manifest_lock:
+            self._refuse_closed(f"writing {MANIFEST}")
+            with self._lock:
+                write = ptr.segment not in self._own
+                if write:
+                    self._own[ptr.segment] = _Own(ptr.segment)
+            if write:
+                try:
+                    write_all(self._manifest_fd, encode_frame(ptr.segment.bytes))
+                except OSError as e:
+                    # The segment is registered but not in the manifest: nothing may be
+                    # flushed or shipped as if it were (the tier is poisoned).
+                    self._fail(e)
+                    raise ProtoUnexpectedError(f"Writing {MANIFEST} failed: {e}") from e
+                with self._lock:
+                    self._manifest_dirty = True
+        with self._lock:
+            self._note_push(self._own[ptr.segment], ptr, framed)
+        return ptr, spill
+
+    def _note_push(self, own: "_Own", ptr: AtomPointer, framed: bytes) -> None:
+        """Record a pushed own record (``_lock`` and the push lock held)."""
+        own.end = max(own.end, ptr.offset + len(framed))
+        if own.first is None:
+            own.first = time.monotonic()
+        self._unshipped.append([ptr.segment.bytes, ptr.offset, framed])
 
     def push_atom(self, payload: dict) -> AtomPointer:
         """See :meth:`SharedStorage.push_atom`."""
@@ -1228,10 +1245,11 @@ class TieredStorage(SharedStorage):
         no longer need their records (Task 8.3f phase B).  Entries appended meanwhile keep
         theirs.  A failure poisons the local tier."""
         self._check_open()
-        with self._accept_lock:
-            mark = self._roots.mark()
-        self._checkpoint_data()
-        self._roots.compact_records(mark)
+        with self._checkpoint_lock:
+            with self._accept_lock:
+                mark = self._roots.mark()
+            self._checkpoint_data()
+            self._roots.compact_records(mark)
         with self._lock:
             self._stats["checkpoints"] += 1
 

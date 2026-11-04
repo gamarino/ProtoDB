@@ -551,6 +551,12 @@ each:
   not established by these figures.
 - The run-to-run spread (58-107 GIL on) is wider than the medians' differences, so no change
   of the median is claimed.
+- Re-measured after the review fix rounds (narrowed push lock, serialized checkpoints), same
+  driver, 5 runs each, interleaved with ``0bea02a`` in one session: GIL off 118.4 commits/s
+  median (runs 111.2-118.7; ``0bea02a`` 113.3, runs 102.1-119.2), 3.37 syncs per commit, 12.1
+  KB committer frame bytes per commit; GIL on 108.7 (runs 100.2-120.5; ``0bea02a`` 107.8, runs
+  97.2-112.0), 3.15 syncs per commit. The two trees do not differ beyond the spread, and the
+  difference from the figures above is between sessions, so no gain is claimed.
 
 Payload sweep (``cluster_tcp`` 3 runs and ``rqlite_reference`` 2 runs, GIL off, at ``ed70d3a``;
 ProtoDB rates as the per-run samples). Samples above about 130 commits/s come from the window
