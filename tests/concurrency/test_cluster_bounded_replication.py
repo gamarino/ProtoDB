@@ -212,3 +212,33 @@ def test_two_lost_committers_with_different_replicas_are_both_persisted(tmp_path
         tc.spaces["n0"].sync(timeout=20)
         assert tc.storages["n4"].stats()["parts_uploaded"] >= 1
         assert tc.storages["n6"].stats()["parts_uploaded"] >= 1
+
+
+def test_a_segment_split_by_a_hedge_is_persisted_after_its_committers_disk_is_lost(tmp_path):
+    """Task 8.3g review I1: a hedge sends some of n0's commits to n2 instead of n1, so n0's
+    segment is split between two replicas with holes (n1 lacks the middle, n2 the start).  After
+    one disk loss (n0) neither copy is a prefix; the persister fills the holes from the peers,
+    record by record, and uploads the segment's true prefix.  Before, persistence stalled at
+    epoch 0 for good and the hedged commits stayed at ``f`` copies."""
+    with TieredCluster(tmp_path, 3, storage_kw=dict(durability="fsync"), **LEASE) as tc:
+        net = tc.cluster.net
+        tc.spaces["n0"].new_database("db")
+        tc.store.set_outage(True)
+        for _ in range(3):
+            tc.db("n0").run(incr, **RUN_KW)             # n0's records -> n0 + n1
+        net.partition({"n0", "n2"}, {"n1"})
+        for _ in range(3):
+            tc.db("n0").run(incr, **RUN_KW)             # hedged: n0 + n2
+        net.heal()
+        time.sleep(LEASE["lease_duration"] * 1.6)       # the suspect period ends
+        for _ in range(3):
+            tc.db("n0").run(incr, **RUN_KW)             # n0 + n1 again
+        assert tc.eventually("n1", 9) and tc.eventually("n2", 9)
+        assert tc["n0"].stats()["replica_hedges"] >= 1
+        tc.wipe("n0")                                   # ONE disk lost
+        tc.store.set_outage(False)
+        for node in ("n1", "n2"):
+            tc.spaces[node].sync(timeout=20)
+        assert sum(tc.storages[n].stats()["holes_filled"] for n in ("n1", "n2")) > 0
+        tc.revive("n0")
+        assert tc.eventually("n0", 9, timeout=10)

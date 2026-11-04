@@ -478,7 +478,7 @@ class TieredStorage(SharedStorage):
         self._closed = False
         self._failed = None            # the I/O error that poisoned the local tier, if any
         self._stats = {"reads_cache": 0, "reads_local": 0, "reads_peer": 0, "reads_remote": 0,
-                       "critical_misses": 0, "remote_segment_gets": 0, "segments_uploaded": 0,
+                       "critical_misses": 0, "holes_filled": 0, "remote_segment_gets": 0, "segments_uploaded": 0,
                        "root_writes": 0, "root_writes_in_critical": 0, "segments_released": 0,
                        "copies_released": 0, "records_applied": 0, "parts_uploaded": 0,
                        "acceptances_logged": 0, "replicas_logged": 0, "checkpoints": 0, "redo_entries": 0, "redo_records": 0}
@@ -1721,8 +1721,10 @@ class TieredStorage(SharedStorage):
         return (length is not None and length >= end) or self._parts.get(segment, 0) >= end
 
     def _copy_prefix(self, segment: uuid.UUID, end: int) -> Optional[bytes]:
-        """The first bytes of the local copy of ``segment``, up to the end of the last valid
-        record of its contiguous prefix, if that reaches ``end``; else ``None``."""
+        """The first bytes of ``segment`` from its local copy, up to the end of the last valid
+        record of its contiguous prefix, if that reaches ``end``; else ``None``.  Holes before
+        ``end`` are filled from peers (:meth:`_fill_record`); the bytes are uploaded as a part
+        only, never written into the local copy."""
         path = os.path.join(self._path, segment.hex + SEGMENT_SUFFIX)
         try:
             with open(path, "rb") as f:
@@ -1737,19 +1739,41 @@ class TieredStorage(SharedStorage):
         except ProtoCorruptionError:
             return None
         offset = SEGMENT_HEADER_SIZE
+        out = bytearray(data[:offset])
+        filled = 0
         while offset < end:
             try:
                 kind, payload = read_record(data, offset)
+                framed = encode_record(kind, payload)
             except ProtoCorruptionError:
-                return None         # a hole or a torn record before ``end``
-            offset += len(encode_record(kind, payload))
-        while True:                 # extend to the end of the contiguous prefix
+                # A hole before ``end``: the records of this segment are spread over several
+                # replicas (a hedged commit, or a re-proposed base riding to another member's
+                # replica, D54).  Fill it from a peer, record by record (each answer is bound to
+                # this pointer, protocol 12), so that the part uploaded is the segment's true
+                # prefix (Task 8.3g review, I1).
+                framed = self._fill_record(segment, offset)
+                if framed is None:
+                    return None     # no peer holds it either: another node's copy must serve
+                filled += 1
+            out += framed
+            offset += len(framed)
+        while True:                 # extend to the end of the local contiguous prefix
             try:
                 kind, payload = read_record(data, offset)
             except ProtoCorruptionError:
                 break
-            offset += len(encode_record(kind, payload))
-        return data[:offset]
+            framed = encode_record(kind, payload)
+            out += framed
+            offset += len(framed)
+        if filled:
+            with self._lock:
+                self._stats["holes_filled"] += filled
+        return bytes(out)
+
+    def _fill_record(self, segment: uuid.UUID, offset: int) -> Optional[bytes]:
+        """The framed record at ``offset`` of ``segment`` from a peer, checked, or ``None``."""
+        found = self._from_peer(AtomPointer(segment, offset))
+        return None if found is None else encode_record(found[0], found[1])
 
     def _put_part(self, segment: uuid.UUID, data: bytes) -> None:
         key = self._part_key(segment, len(data))
