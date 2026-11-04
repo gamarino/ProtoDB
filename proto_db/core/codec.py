@@ -74,8 +74,43 @@ def encode_state(state: dict, save_child: Callable[[Atom], AtomPointer]) -> dict
     return out
 
 
+#: Classes the isinstance chain of :func:`_encode_other` would encode as an atom reference: an
+#: Atom subclass that is no subclass of a type tested before ``Atom`` (Task 8.3i).  An atom is the
+#: most frequent non-scalar value of a tree node and was tested last.
+_ATOM_CLASSES: set = set()
+_BEFORE_ATOM = (str, int, float, bytes, bytearray, list, tuple, dict, Decimal, datetime, date, time,
+                timedelta, uuid.UUID, MutableObject)
+
+
 def encode_value(value, save_child: Callable[[Atom], AtomPointer]):
-    """Encode one canonical value (see the module docstring for the wire form)."""
+    """Encode one canonical value (see the module docstring for the wire form).
+
+    Values of the exact built-in types, and atoms, take fast paths that give the same result as
+    the full isinstance chain (:func:`_encode_other`), which every other value goes through."""
+    t = type(value)
+    if t is int:
+        return value if _INT_MIN <= value <= _INT_MAX else {"@int": format(value, "x")}
+    if t is str or t is bytes or t is float or value is None or t is bool:
+        return value
+    if t is tuple:
+        return {"@tup": [encode_value(v, save_child) for v in value]}
+    if t in _ATOM_CLASSES:
+        return _encode_ref(value, save_child)
+    if isinstance(value, Atom) and not issubclass(t, _BEFORE_ATOM) and value is not MISSING:
+        _ATOM_CLASSES.add(t)
+        return _encode_ref(value, save_child)
+    return _encode_other(value, save_child)
+
+
+def _encode_ref(value, save_child):
+    ptr = save_child(value)
+    if not isinstance(ptr, AtomPointer):
+        raise ProtoValidationError(f"save_child returned {type(ptr).__name__}, expected AtomPointer")
+    return {"@ref": [ptr.segment.bytes, ptr.offset, type_tag(type(value).__type_name__)]}
+
+
+def _encode_other(value, save_child: Callable[[Atom], AtomPointer]):
+    """The full isinstance chain of :func:`encode_value`."""
     if value is None or value is True or value is False:
         return value
     if isinstance(value, str):
@@ -113,10 +148,7 @@ def encode_value(value, save_child: Callable[[Atom], AtomPointer]):
     if isinstance(value, MutableObject):
         return {"@mut": value.name}
     if isinstance(value, Atom):
-        ptr = save_child(value)
-        if not isinstance(ptr, AtomPointer):
-            raise ProtoValidationError(f"save_child returned {type(ptr).__name__}, expected AtomPointer")
-        return {"@ref": [ptr.segment.bytes, ptr.offset, type_tag(type(value).__type_name__)]}
+        return _encode_ref(value, save_child)
     raise ProtoValidationError(f"Unsupported value type: {type(value).__name__}")
 
 

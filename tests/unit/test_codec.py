@@ -263,3 +263,30 @@ def test_builtin_type_aliases_are_append_only():
     assert BUILTIN_TYPE_ALIASES[:len(pinned)] == pinned
     assert len(set(BUILTIN_TYPE_ALIASES)) == len(BUILTIN_TYPE_ALIASES)
     assert set(BUILTIN_ATOM_MODULES) <= set(BUILTIN_TYPE_ALIASES)
+
+
+def test_subclasses_of_builtin_types_encode_as_their_base_type():
+    """The encoder's exact-type fast paths and its per-class memo (Task 8.3i) must give every
+    value the same wire form as the full isinstance chain: a subclass of a built-in type is
+    written as its base type, an atom as a reference, whatever order the classes are met in."""
+    import enum
+
+    class Color(enum.IntEnum):
+        RED = 3
+
+    class Name(str):
+        pass
+
+    class Raw(bytes):
+        pass
+
+    refs = _Refs()
+    leaf = CodecLeaf("x")
+    for _ in range(2):            # the second pass goes through the memo
+        encoded = codec.encode_state({"i": Color.RED, "s": Name("n"), "b": Raw(b"r"), "t": True,
+                                      "a": leaf, "m": MISSING, "big": 2**70}, refs.save_child)
+        assert type(encoded["i"]) is int and encoded["i"] == 3
+        assert type(encoded["s"]) is str and encoded["s"] == "n"
+        assert type(encoded["b"]) is bytes and encoded["b"] == b"r"
+        assert encoded["t"] is True and encoded["m"] == {"@missing": 0}
+        assert set(encoded["a"]) == {"@ref"} and encoded["big"] == {"@int": format(2**70, "x")}
