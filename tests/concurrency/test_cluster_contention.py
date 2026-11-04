@@ -6,10 +6,14 @@ directory), run four threads each.  Every ``Database.run`` attempt increments
 a plain ``int`` root (read set: concurrent commits conflict and are retried) and adds a
 unique id to a ``CountedSet`` root written blind (intent merge).  Checks:
 
-* the final count is exact and every committed id is present exactly once (no lost and
-  no duplicated update);
+* no lost and no duplicated update (ruling R86): every acknowledged id is present exactly
+  once, every other id present is one whose commit ended with ``ProtoOutcomeUnknownError``
+  (a conservative outcome, P5: it may or may not take effect), no id is present twice, and
+  the count equals the ids present, so ``acked <= n <= acked + unknown``.  A worker that gets
+  an unknown outcome records it and goes on with its next id (never a blind retry of the
+  same one).  Progress: every peer acknowledged at least one commit;
 * no committing thread wrote a storage root (only persister threads did, D46), no root
-  write was unconditional, no replication failed (no commit with an unknown outcome) and
+  write was unconditional, every replication failure surfaced as an unknown outcome, and
   every node stayed healthy: contention never reached the storage.
 
 A node learns that another node's commit is committed from that commit's release, handled
@@ -29,6 +33,7 @@ import time
 
 import pytest
 
+from proto_db.errors import ProtoOutcomeUnknownError
 from proto_db.storage.cloud import CloudStorage
 from proto_db.storage.file import FileStorage
 from proto_db.storage.tiered import TieredStorage
@@ -97,13 +102,17 @@ def _read(space):
 def test_contending_peers_never_reach_the_storage(tmp_path, backend):
     store, storages = BACKENDS[backend](tmp_path, PEERS)
     ids = itertools.count()
+    acked, unknown = {}, {}               # uid -> peer index, per outcome
+    outcomes = threading.Lock()
     with Cluster(PEERS, **CLUSTER_KW) as cl:
         spaces = [ObjectSpace(s, coordinator=cl[n]) for s, n in zip(storages, cl.ids)]
         cl.wait_rejoined()      # every first start done first (a late member waits, R51)
         spaces[0].new_database("db")
         dbs = [s.open_database("db") for s in spaces]
 
-        def worker_for(db):
+        def worker_for(peer):
+            db = dbs[peer]
+
             def worker():
                 for _ in range(PER_THREAD):
                     uid = next(ids)
@@ -111,24 +120,39 @@ def test_contending_peers_never_reach_the_storage(tmp_path, backend):
                     def fn(tr):
                         tr.set_root_object("n", (tr.get_root_object("n") or 0) + 1)
                         tr.set_root_object("ids", tr.new_counted_set().add(uid))
-                    db.run(fn, **RUN_KW)
+                    try:
+                        db.run(fn, **RUN_KW)
+                        outcome = acked
+                    except ProtoOutcomeUnknownError:
+                        outcome = unknown     # conservative (R86): recorded, never retried blindly
+                    with outcomes:
+                        outcome[uid] = peer
             return worker
 
-        elapsed = run_threads([worker_for(dbs[i % PEERS]) for i in range(PEERS * THREADS)])
+        elapsed = run_threads([worker_for(i % PEERS) for i in range(PEERS * THREADS)])
         stats = [cl[n].stats() for n in cl.ids]
         _settle(cl)
         n, counted = _read(spaces[1])
         total = PEERS * THREADS * PER_THREAD
-        assert n == total
-        assert sorted(counted.elements()) == list(range(total))
-        assert all(counted.count_of(i) == 1 for i in range(total))
+        assert len(acked) + len(unknown) == total
+        present = list(counted.elements())
+        assert all(counted.count_of(i) == 1 for i in present)                 # never doubled
+        assert set(acked) <= set(present), sorted(set(acked) - set(present))[:5]      # never lost
+        extra = set(present) - set(acked)
+        assert extra <= set(unknown), sorted(extra - set(unknown))[:5]          # each extra traced
+        assert n == len(present)                     # the count and the ids moved together
+        assert len(acked) <= n <= len(acked) + len(unknown)
+        assert set(acked.values()) == set(range(PEERS)), "a peer acknowledged no commit"     # progress
         spaces[1].sync(timeout=30)
         _storage_untouched_by_commits(storages, spaces)
         for space in spaces:
             space.close()
-    assert sum(st["replication_failures"] for st in stats) == 0
+    # A failed replication is reported to its commits as an unknown outcome (one round may
+    # carry several commits), never silently.
+    assert sum(st["replication_failures"] for st in stats) <= len(unknown)
     assert all(st["healthy"] for st in stats)
-    print(f"\n[{backend}] {total} increments by {PEERS}x{THREADS} threads in {elapsed:.2f}s; "
+    print(f"\n[{backend}] {total} increments by {PEERS}x{THREADS} threads in {elapsed:.2f}s "
+          f"({len(acked)} acknowledged, {len(unknown)} unknown, {len(extra)} of those took effect); "
           f"lease attempts {sum(st['attempts'] for st in stats)}, "
           f"acquired {sum(st['acquired'] for st in stats)}, "
           f"storage root reads {sum(st['storage_root_reads'] for st in stats)}")

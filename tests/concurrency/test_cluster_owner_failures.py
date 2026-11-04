@@ -100,8 +100,18 @@ def _check(tc: TieredCluster, load: Load, live) -> None:
     tc.cluster.net.set_faults(drop=0.0, duplicate=0.0, delay=(0.0, 0.0))
     tc.cluster.net.heal()
     for node in live:
-        tc.db(node).run(incr, **RUN_KW)
-        load.acked += 1
+        # An unknown outcome is conservative (ruling R86): counted, and the member commits a
+        # new increment until one is acknowledged (the bound below accounts for each one).
+        for _ in range(5):
+            try:
+                tc.db(node).run(incr, **RUN_KW)
+            except ProtoOutcomeUnknownError:
+                load.unknown += 1
+                continue
+            load.acked += 1
+            break
+        else:
+            pytest.fail(f"{node} never got a commit acknowledged after the faults healed")
     deadline = time.monotonic() + 10.0
     while True:                 # a member learns the others' last commits from their "done"
         values = {node: tc.value(node) for node in live}

@@ -17,8 +17,12 @@ line each way:
 3. the peer starts its coordinator, prints ``{"ready": true}``;
 4. the parent writes ``{"go": true}`` once every peer is ready;
 5. the peer commits, waits until its commits are persisted (``ObjectSpace.sync``) and prints
-   ``{"commits": .., "seconds": .., "failures": .., "commit_publishes": .., "critical": ..}``
-   (``failures``: replications without a majority; ``commit_publishes``: root writes made
+   ``{"commits": .., "acked": [..], "unknown": [..], "errors": [..], "seconds": .., "failures": ..,
+   "commit_publishes": .., "critical": ..}`` (``commits``: acknowledged commits; ``acked`` and
+   ``unknown``: the ids whose commit was acknowledged or ended with
+   ``ProtoOutcomeUnknownError`` -- conservative, recorded, the worker goes on with its next id
+   (ruling R86); ``errors``: any other exception that stopped a worker;
+   ``failures``: replications without a majority; ``commit_publishes``: root writes made
    by other threads than the persister, D46;
    ``critical``: the tiered storage's critical-section counters, or ``None``);
 6. the parent writes ``{"stop": true}`` once every peer has finished (a peer keeps
@@ -34,7 +38,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from proto_db.cluster.coordinator import ClusterCoordinator  # noqa: E402
 from proto_db.cluster.transport import TcpTransport  # noqa: E402
-from proto_db.errors import ProtoValidationError  # noqa: E402
+from proto_db.errors import ProtoOutcomeUnknownError, ProtoValidationError  # noqa: E402
 from proto_db.storage.file import FileStorage  # noqa: E402
 from proto_db.storage.tiered import TieredStorage  # noqa: E402
 from proto_db.transactions import ObjectSpace  # noqa: E402
@@ -82,11 +86,37 @@ def main():
                 pass                              # another peer created it first
         db = space.open_database("db")
         counts = []
+        errors = []                               # each worker's exception, reported to the parent
+        acked, unknown = [], []                   # ids, per outcome (ruling R86)
         lock = threading.Lock()
         prefix = int(node_id[1:]) * 1_000_000
 
+        done_by = {}                              # commits completed, per worker
+
         def worker(index):
-            done = 0
+            try:
+                _work(index)
+            except Exception as e:                # reported to the parent, which fails the test
+                with lock:
+                    errors.append(f"thread {index} after {done_by.get(index, 0)} commits: "
+                                  f"{type(e).__name__}: {e}")
+            finally:
+                with lock:
+                    counts.append(done_by.get(index, 0))
+
+        def commit(fn, uid):
+            """One ``Database.run``; an unknown outcome is recorded and the worker goes on."""
+            try:
+                db.run(fn, retries=10_000, backoff=(0.0005, 0.01))
+                outcome = acked
+            except ProtoOutcomeUnknownError:
+                outcome = unknown
+            with lock:
+                outcome.append(uid)
+            return outcome is acked
+
+        def _work(index):
+            done = attempts = 0
             base = prefix + index * 100_000
             if mode == "increment":
                 for i in range(int(amount)):
@@ -95,17 +125,17 @@ def main():
                     def fn(tr, uid=uid):
                         tr.set_root_object("n", (tr.get_root_object("n") or 0) + 1)
                         tr.set_root_object("ids", tr.new_counted_set().add(uid))
-                    db.run(fn, retries=10_000, backoff=(0.0005, 0.01))
-                    done += 1
+                    if commit(fn, uid):
+                        done += 1
+                        done_by[index] = done
             else:
                 stop_at = time.monotonic() + float(amount)
                 while time.monotonic() < stop_at:
-                    uid = base + done
-                    db.run(lambda tr, uid=uid: tr.set_root_object("ids", tr.new_counted_set().add(uid)),
-                           retries=10_000, backoff=(0.0005, 0.01))
-                    done += 1
-            with lock:
-                counts.append(done)
+                    uid = base + attempts
+                    attempts += 1
+                    if commit(lambda tr, uid=uid: tr.set_root_object("ids", tr.new_counted_set().add(uid)), uid):
+                        done += 1
+                        done_by[index] = done
 
         start = time.monotonic()
         workers = [threading.Thread(target=worker, args=(i,)) for i in range(threads)]
@@ -120,7 +150,7 @@ def main():
         if callable(stats):
             st = stats()
             critical = {k: st[k] for k in ("critical_misses", "root_writes_in_critical")}
-        _say({"commits": sum(counts), "seconds": seconds, "failures": coordinator.stats()["replication_failures"],
+        _say({"commits": sum(counts), "acked": acked, "unknown": unknown, "errors": errors, "seconds": seconds, "failures": coordinator.stats()["replication_failures"],
               "commit_publishes": sum(1 for name in storage.publishers if not name.startswith("proto-persister-")),
               "critical": critical, "breakdown": coordinator.stats()["critical"],
               "critical_commits": coordinator.stats()["critical_commits"]})

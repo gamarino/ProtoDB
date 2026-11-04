@@ -3,9 +3,10 @@
 Each peer (``cluster_peer.py``) binds its transport to port 0 and reports the port; the
 parent sends every peer the full peer list, then starts them together.  The peers share
 one FileStorage, or each has a local tier (TieredStorage) over one shared directory
-object store.  The smoke tests check the final persisted count of concurrent increments
-is exact, every committed id appears once and no committing thread wrote a root (only
-the persisters did, D46).  The throughput tests print commits per second through the TCP
+object store.  The smoke tests check that no update is lost or duplicated (ruling R86:
+every acknowledged id is persisted once, every other persisted id ended with
+``ProtoOutcomeUnknownError``, and ``acked <= n <= acked + unknown``), that every peer made
+progress, and that no committing thread wrote a root (only the persisters did, D46).  The throughput tests print commits per second through the TCP
 transport (informational, for the Phase 9 record).
 """
 import itertools
@@ -78,11 +79,14 @@ def _run_cluster(space_dir, mode, threads, amount):
         for p in procs:
             _send(p, {"go": True})
         results = [_recv(p, e) for p, e in pairs]
+        # A worker thread that raised is named with its exception, never only as missing commits.
+        errors = [f"{node_id}: {err}" for node_id, r in zip(ids, results) for err in r.get("errors", ())]
         for p in procs:
             _send(p, {"stop": True})
         for p, e in pairs:
             if p.wait(30) != 0:
                 raise AssertionError(_errors(e))
+        assert not errors, f"peer worker threads failed: {errors}"
     finally:
         for p, e in pairs:
             if p.poll() is None:
@@ -109,6 +113,26 @@ def _final(space_dir):
         space.close()
 
 
+def _check_outcomes(results, ids, n=None):
+    """Ruling R86: no lost and no duplicated update.  Every acknowledged id is present once,
+    every other id present ended with ``ProtoOutcomeUnknownError`` (conservative, P5), no id
+    is present twice, ``n`` (when counted) equals the ids present, so
+    ``acked <= n <= acked + unknown``; progress: every peer acknowledged a commit."""
+    acked = {uid for r in results for uid in r["acked"]}
+    unknown = {uid for r in results for uid in r["unknown"]}
+    assert sum(r["commits"] for r in results) == len(acked)
+    assert all(c == 1 for c in ids.values())                                  # never doubled
+    assert acked <= set(ids), sorted(acked - set(ids))[:5]                    # never lost
+    extra = set(ids) - acked
+    assert extra <= unknown, sorted(extra - unknown)[:5]                      # each extra traced
+    if n is not None:
+        assert n == len(ids)
+        assert len(acked) <= n <= len(acked) + len(unknown)
+    assert all(r["commits"] > 0 for r in results), [r["commits"] for r in results]    # progress
+    assert sum(r["failures"] for r in results) <= len(unknown)
+    return acked, unknown
+
+
 def _spaces(tmp_path):
     return {"file": str(tmp_path / "space"), "tiered": (str(tmp_path / "local"), str(tmp_path / "store"))}
 
@@ -119,12 +143,12 @@ def test_three_tcp_peers_commit_concurrently(tmp_path, backend):
     threads, per_thread = 2, 25
     results = _run_cluster(space_dir, "increment", threads, per_thread)
     total = PEERS * threads * per_thread
-    assert sum(r["commits"] for r in results) == total
     n, ids = _final(space_dir)
-    assert n == total
-    assert len(ids) == total and all(c == 1 for c in ids.values())
+    acked, unknown = _check_outcomes(results, ids, n)
+    assert len(acked) + len(unknown) == total
     assert sum(r["commit_publishes"] for r in results) == 0
-    assert sum(r["failures"] for r in results) == 0
+    print(f"\n[tcp {backend}] {len(acked)} acknowledged, {len(unknown)} unknown, "
+          f"{len(set(ids) - acked)} of those took effect")
     if backend == "tiered":
         assert all(r["critical"]["root_writes_in_critical"] == 0 for r in results)
 
@@ -136,7 +160,7 @@ def test_tcp_throughput_three_peers(tmp_path, capsys, backend):
     commits = sum(r["commits"] for r in results)
     seconds = max(r["seconds"] for r in results)
     _, ids = _final(space_dir)
-    assert len(ids) == commits and all(c == 1 for c in ids.values())
+    _check_outcomes(results, ids)
     assert sum(r["commit_publishes"] for r in results) == 0
     n = sum(r["critical_commits"] for r in results) or 1
     breakdown = {k: sum(r["breakdown"][k] for r in results) / n * 1000
