@@ -218,14 +218,20 @@ def test_losing_a_majority_with_the_survivor_outside_the_quorum_rolls_back_to_th
         assert _remote_value(tc.store) == 5
 
 
-def test_steady_state_commits_read_and_write_nothing_in_the_object_store_under_the_lease(tmp_path):
+def test_steady_state_commits_write_nothing_in_the_object_store_under_the_lease(tmp_path):
+    """D46: committing threads never write the object store, and no root is written in the
+    critical section.  Since bounded replication (Task 8.3g, D54) a committer that is not a
+    data replica of its base reads the base's records on demand -- from a peer, or from the
+    store once the replicas released them -- so critical-section cache misses and store
+    reads are expected; they are counted and reported, never forbidden (R70a: remote data is
+    a normal case)."""
     calls = []
 
     class Recording(FakeObjectStore):
-        """Records the thread of every store call."""
+        """Records the thread and the operation of every store call."""
 
         def _enter(self, operation, key):
-            calls.append(threading.current_thread().name)
+            calls.append((threading.current_thread().name, operation))
             super()._enter(operation, key)
 
     store = Recording()
@@ -254,11 +260,15 @@ def test_steady_state_commits_read_and_write_nothing_in_the_object_store_under_t
             t.join(60)
         assert not errors
         assert tc.eventually("n0", 36)
-        assert not [name for name in calls if name.startswith("committer-")], calls[:5]
+        committer_calls = [op for name, op in calls if name.startswith("committer-")]
+        assert set(committer_calls) <= {"get"}, committer_calls[:5]       # reads only, never writes
+        misses = 0
         for n in tc.ids:
             stats = tc.storages[n].stats()
-            assert stats["critical_misses"] == base[n]["critical_misses"], n
+            misses += stats["critical_misses"] - base[n]["critical_misses"]
             assert stats["root_writes_in_critical"] == 0
+        print(f"\n30 commits: {misses} critical-section cache misses, {len(committer_calls)} store reads "
+              f"by committing threads")
         assert sum(tc[n].stats()["critical_commits"] - before[n] for n in tc.ids) == 30
 
 
