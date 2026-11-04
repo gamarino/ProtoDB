@@ -13,7 +13,9 @@ Two implementations:
     one sender thread PER PEER drains that peer's outgoing queue over one outbound
     connection, connecting on demand with a timeout and reconnecting after a failure (a
     message that cannot be sent is dropped), so an unreachable or stalled peer never
-    delays messages to the others.  There is no UDP.
+    delays messages to the others.  Each peer's queue has two lanes: control messages
+    (bounded by count, always sent first) and best-effort ``warm`` frames (bounded by bytes,
+    sent only when no control message waits, dropped first).  There is no UDP.
 :class:`InProcessNetwork` / :class:`InProcessTransport`
     Peers inside one process, for tests and simulations.  Every message goes through the
     wire encoding.  The network injects faults: drop and duplicate probabilities, random
@@ -24,6 +26,7 @@ Handlers are called on the transport's receiving thread, one message at a time p
 endpoint; they must not block on the network (the coordinator only takes its lock,
 updates state and enqueues replies).
 """
+import collections
 import heapq
 import logging
 import queue
@@ -287,6 +290,56 @@ class InProcessTransport:
 
 # -- TCP ---------------------------------------------------------------------------------------
 
+#: Message types sent best effort: dropped first, never ahead of control traffic.
+BEST_EFFORT_TYPES = frozenset({"warm"})
+
+
+class _PeerQueue:
+    """Outgoing frames for one peer in two lanes (re-review N3).  Control frames (every type
+    but :data:`BEST_EFFORT_TYPES`) are bounded by count and always sent first; best-effort
+    frames (``warm``, cache-only records, ruling R89) are bounded by bytes and sent only when
+    no control frame waits, so a slow peer's backlog of them never delays or crowds out a
+    grant, a permit or a root."""
+
+    def __init__(self, max_frames: int, max_best_effort_bytes: int):
+        self._cond = threading.Condition()
+        self._control = collections.deque()
+        self._best = collections.deque()
+        self._best_bytes = 0
+        self._max_frames = max_frames
+        self._max_best = max_best_effort_bytes
+
+    def put(self, frame, best_effort: bool = False) -> bool:
+        """Queue ``frame``; False (dropped) when its lane is full."""
+        with self._cond:
+            if best_effort:
+                if self._best_bytes + len(frame) > self._max_best:
+                    return False
+                self._best.append(frame)
+                self._best_bytes += len(frame)
+            else:
+                if len(self._control) >= self._max_frames:
+                    return False
+                self._control.append(frame)
+            self._cond.notify()
+            return True
+
+    def stop(self) -> None:
+        with self._cond:
+            self._control.appendleft(_STOP)
+            self._cond.notify()
+
+    def get(self):
+        """The next frame to send, control first; blocks while both lanes are empty."""
+        with self._cond:
+            while not self._control and not self._best:
+                self._cond.wait()
+            if self._control:
+                return self._control.popleft()
+            frame = self._best.popleft()
+            self._best_bytes -= len(frame)
+            return frame
+
 class TcpTransport:
     """:class:`Transport` over TCP with length-prefixed msgpack frames (see the module docstring).
 
@@ -299,11 +352,15 @@ class TcpTransport:
         send_timeout: seconds a blocked send may take before the connection is dropped.
         reconnect_backoff: seconds after a failed connect during which messages to that
             peer are dropped without trying again.
-        max_queue: outgoing messages buffered; beyond it, sends are dropped.
+        max_queue: outgoing control messages buffered per peer; beyond it, sends are dropped.
+        max_best_effort_bytes: bytes of best-effort frames (``warm``) buffered per peer, in a
+            lane of their own sent only when no control message waits; beyond it, they are
+            dropped first (re-review N3).
     """
 
     def __init__(self, host: str = "127.0.0.1", port: int = 0, *, connect_timeout: float = 1.0,
-                 send_timeout: float = 1.0, reconnect_backoff: float = 0.1, max_queue: int = 10_000):
+                 send_timeout: float = 1.0, reconnect_backoff: float = 0.1, max_queue: int = 10_000,
+                 max_best_effort_bytes: int = 32 * 1024 * 1024):
         for name, value in (("connect_timeout", connect_timeout), ("send_timeout", send_timeout)):
             if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
                 raise ProtoValidationError(f"{name} must be a positive number of seconds")
@@ -311,11 +368,14 @@ class TcpTransport:
             raise ProtoValidationError("reconnect_backoff must be a non-negative number of seconds")
         if type(max_queue) is not int or max_queue <= 0:
             raise ProtoValidationError("max_queue must be a positive int")
+        if type(max_best_effort_bytes) is not int or max_best_effort_bytes < 0:
+            raise ProtoValidationError("max_best_effort_bytes must be a non-negative int")
+        self._max_best = max_best_effort_bytes
         self._connect_timeout = connect_timeout
         self._send_timeout = send_timeout
         self._backoff = reconnect_backoff
         self._max_queue = max_queue
-        self._queues = {}         # peer id -> SimpleQueue drained by that peer's sender thread
+        self._queues = {}         # peer id -> _PeerQueue drained by that peer's sender thread
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -366,7 +426,7 @@ class TcpTransport:
             for peer, address in self._peers.items():
                 if peer == node_id or address is None:
                     continue
-                q = self._queues[peer] = queue.SimpleQueue()
+                q = self._queues[peer] = _PeerQueue(self._max_queue, self._max_best)
                 self._threads.append(threading.Thread(target=self._send_loop, args=(peer, address, q),
                                                       name=f"proto-cluster-tcp-out-{node_id}-{peer}", daemon=True))
             for t in self._threads:
@@ -378,10 +438,8 @@ class TcpTransport:
         if not self._running:
             return
         q = self._queues.get(node_id)
-        if q is None or q.qsize() >= self._max_queue:
+        if q is None or not q.put(frame, message["type"] in BEST_EFFORT_TYPES):
             self._drop()
-            return
-        q.put(frame)
 
     # -- sending ---------------------------------------------------------------------------
 
@@ -498,7 +556,7 @@ class TcpTransport:
             threads = self._threads
         self._wake_w.send(b"x")
         for q in self._queues.values():
-            q.put(_STOP)
+            q.stop()
         for t in threads:
             if t is not threading.current_thread():
                 t.join()

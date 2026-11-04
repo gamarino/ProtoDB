@@ -201,3 +201,41 @@ def test_tcp_send_after_stop_is_a_silent_drop(baseline_threads):
     a.stop()
     a.send("b", _req("a", 1))
     b.stop()
+
+
+def test_tcp_best_effort_warm_frames_never_crowd_out_control_messages(baseline_threads):
+    """Re-review N3: ``warm`` frames (cache-only records, ruling R89) toward a slow peer are
+    dropped first and never fill the queue that carries control messages; control messages
+    queued behind them are still delivered, ahead of the remaining warm frames."""
+    import threading
+    import uuid as _uuid
+    from proto_db.cluster.protocol import make_message
+    a = TcpTransport(max_queue=20, send_timeout=10.0)
+    b = TcpTransport()
+    peers = {"a": a.address, "b": b.address}
+    release = threading.Event()
+    got = []
+
+    def slow(msg):                      # b stops reading its socket until released
+        release.wait(10)
+        got.append(msg["type"])
+
+    a.start("a", peers, Inbox())
+    b.start("b", peers, slow)
+    try:
+        record = [[_uuid.UUID(int=1).bytes, 26, b"x" * (256 * 1024)]]
+        for _ in range(200):            # about 50 MB: far beyond the socket buffers
+            a.send("b", make_message("warm", "a", term=1, records=record))
+        time.sleep(0.5)
+        for t in range(1, 6):
+            a.send("b", _req("a", t))   # control traffic behind the stalled warm frames
+        release.set()
+        deadline = time.monotonic() + 10
+        while got.count("request") < 5 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert got.count("request") == 5, f"control messages lost: {got.count('request')} of 5 delivered"
+        assert a.dropped > 0            # warm frames beyond the bound were dropped
+    finally:
+        release.set()
+        a.stop()
+        b.stop()
