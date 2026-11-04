@@ -116,7 +116,9 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
 #: 8: write permissions (D50).
 #: 9: ``permit`` carries the requester's incarnation ``inc`` (8.3f review, C1).
 #: 10: ``query`` and ``answer`` carry ``ballot`` (clock-free rejoin, ruling R78a).
-PROTOCOL_VERSION = 10
+#: 11: bounded replication (Task 8.3g, D54): ``request``, ``renew``, ``query`` and ``replicate``
+#: carry ``vs``, the fingerprint of the sender's voter set.
+PROTOCOL_VERSION = 11
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
 #: Record bytes a replication puts in one frame at most (a single record may fill one alone).
@@ -138,7 +140,7 @@ _RANGES = "ranges"
 
 #: Fields of each message type (besides ``v``, ``type`` and ``from``).
 MESSAGE_TYPES = {
-    "request": {"term": _INT, "rid": _INT, "inc": _INT},
+    "request": {"term": _INT, "rid": _INT, "inc": _INT, "vs": _INT},
     "grant": {"term": _INT, "rid": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL},
     "reject": {"term": _INT, "rid": _INT, "root": _ROOT, "certain": _BOOL, "reason": _STR,
                "highest": _INT, "remaining": _NUM},
@@ -147,8 +149,8 @@ MESSAGE_TYPES = {
     "records": {"term": _INT, "rid": _INT, "index": _INT, "records": _RECORDS},
     "replicate": {"term": _INT, "rid": _INT, "root": _ROOT, "committed": _ROOT, "records": _RECORDS,
                   "chunks": _INT, "base": _ROOT, "base_ranges": _RANGES, "seq": _INT, "pred": _ROOT,
-                  "pred_committed": _BOOL},
-    "renew": {"term": _INT, "rid": _INT, "inc": _INT},
+                  "pred_committed": _BOOL, "vs": _INT},
+    "renew": {"term": _INT, "rid": _INT, "inc": _INT, "vs": _INT},
     "permit_req": {"term": _INT, "rid": _INT, "inc": _INT},
     "permit": {"term": _INT, "rid": _INT, "seq": _INT, "inc": _INT, "root": _ROOT, "certain": _BOOL,
                "valid": _NUM},
@@ -156,7 +158,7 @@ MESSAGE_TYPES = {
     "done": {"term": _INT, "seq": _INT, "inc": _INT, "outcome": _STR, "root": _ROOT},
     "ack": {"term": _INT, "rid": _INT, "ok": _BOOL, "root": _ROOT},
     "want": {},
-    "query": {"rid": _INT, "ballot": _INT},
+    "query": {"rid": _INT, "ballot": _INT, "vs": _INT},
     "answer": {"rid": _INT, "root": _ROOT, "committed": _ROOT, "certain": _BOOL, "promised": _INT,
                "state": _STR, "ballot": _INT},
     "fetch": {"rid": _INT, "segment": _UUID, "offset": _INT},

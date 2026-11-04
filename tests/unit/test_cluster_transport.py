@@ -29,7 +29,7 @@ class Inbox:
 
 
 def _req(sender, term):
-    return make_message("request", sender, term=term, rid=term, inc=0)
+    return make_message("request", sender, term=term, rid=term, inc=0, vs=0)
 
 
 @pytest.fixture

@@ -283,6 +283,7 @@ import random
 import threading
 import time
 import uuid
+import zlib
 from typing import Callable, NamedTuple, Optional
 
 from ..core.atom import AtomPointer
@@ -317,6 +318,8 @@ _STORED_MEMORY = 256
 #: Times a rejoin's query round asks a member whose answer has not arrived (see ``_gather``).
 GATHER_ATTEMPTS = 3
 _CRITICAL_KEYS = ("validation", "replay", "path_copy", "replication")
+#: Messages carrying the fingerprint of the sender's voter set (D54).
+_FINGERPRINTED = ("request", "renew", "query", "replicate")
 
 
 #: Smallest drift margin, as a fraction of ``lease_duration`` (ruling R78b): the holder believes
@@ -354,6 +357,25 @@ def _number(name: str, value, *, positive: bool = True) -> float:
     if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0 or (positive and value == 0):
         raise ProtoValidationError(f"{name} must be a {'positive' if positive else 'non-negative'} number")
     return float(value)
+
+
+def _voter_set(ring: list, voters) -> tuple:
+    """The sorted voter ids (D54): ``voters`` validated against the sorted member ids ``ring``,
+    or the default (the first three, every member of a smaller cluster)."""
+    if voters is None:
+        return tuple(ring[:3])
+    if isinstance(voters, (str, bytes)):
+        raise ProtoValidationError("voters must be a collection of member ids")
+    chosen = list(voters)
+    if len(set(chosen)) != len(chosen) or any(v not in ring for v in chosen):
+        raise ProtoValidationError(f"voters must be distinct member ids, got {chosen!r}")
+    if len(ring) < 3:
+        if len(chosen) != len(ring):
+            raise ProtoValidationError("A cluster of fewer than three members has every member as a voter")
+    elif len(chosen) < 3 or len(chosen) % 2 == 0:
+        raise ProtoValidationError(f"The voter set must have an odd number of at least three members, "
+                                   f"got {len(chosen)}")
+    return tuple(sorted(chosen))
 
 
 def _split_records(records: list, budget: int) -> list:
@@ -472,6 +494,14 @@ class ClusterCoordinator:
             (the default) keeps only the rule that ends a term nobody asks for.  Liveness
             and efficiency only (D50 Amendment "owner_idle_release"): measured, it did not
             raise throughput, so it is off by default.
+        voters: the ids of the members that order roots (Task 8.3g, D54): grants, renewals,
+            ballots, recovery rounds and root acceptance count only their votes, a majority
+            of them.  Default: the first three member ids in sorted order, or every member
+            when the cluster has fewer than three.  An odd number of at least three members
+            (3 or 5 recommended); every member of a smaller cluster.  Static configuration:
+            every member must be given the same set (requests, renewals, ballots and
+            replications carry a fingerprint of it, and a member configured differently
+            drops them).  The other members are learners.
         clock: testing seam; the monotonic clock (seconds) used for every lease decision.
         seed: testing seam; seed of the back-off jitter generator.
     """
@@ -481,7 +511,7 @@ class ClusterCoordinator:
                  acquire_timeout: float = 30.0, backoff: tuple = (0.001, 0.05),
                  startup_grace: Optional[float] = None, fetch_timeout: Optional[float] = None,
                  persist_interval: float = 0.05, persist_lag: float = 1.0,
-                 owner_idle_release: Optional[float] = None,
+                 owner_idle_release: Optional[float] = None, voters=None,
                  clock: Optional[Callable[[], float]] = None, seed: Optional[int] = None):
         members = []
         for entry in peers:
@@ -544,7 +574,13 @@ class ClusterCoordinator:
         self._others = [i for i in ids if i != node_id]
         self._ranks = {peer: rank for rank, peer in enumerate(sorted(ids))}
         self._rank = self._ranks[node_id]
-        self._majority = majority(len(members))
+        # Voters and learners (Task 8.3g, D54).
+        self._ring = sorted(ids)            # data-replica placement: successors in this order
+        self._voters = _voter_set(self._ring, voters)
+        self._is_voter = node_id in self._voters
+        self._other_voters = [i for i in self._voters if i != node_id]
+        self._fingerprint = zlib.crc32(",".join(self._voters).encode("utf-8"))
+        self._majority = majority(len(self._voters))
         if transport is None:
             from .transport import TcpTransport
             me = self._peers[node_id]
@@ -600,7 +636,7 @@ class ClusterCoordinator:
                        "recoveries": 0, "rejoins": 0, "rejoin_ballots": 0, "fetches_requested": 0, "fetches_served": 0,
                        "critical_commits": 0, "turns_named": 0, "turns_taken": 0, "deferrals": 0,
                        "deferral_timeouts": 0, "dispatch_seconds_max": 0.0, "dispatch_slow": 0,
-                       "terms_released_idle_local": 0}
+                       "terms_released_idle_local": 0, "config_mismatches": 0}
         self._critical = {k: 0.0 for k in _CRITICAL_KEYS}
         # Lease fairness (module docstring, "Fairness"; Task 8.3e, D-LIVE-1): proposer-side
         # timing only, never consulted by a grant, an acceptance or a commit.
@@ -624,6 +660,7 @@ class ClusterCoordinator:
         # the owner, a permission this node is still using.
         self._permits_seen = collections.deque(maxlen=64)
         self._seq_seen = (0, 0)             # (term, seq): highest permission accepted here
+        self._mismatched = set()            # members seen with another voter set (logged once each)
         for key in ("permits_issued", "permits_held", "permit_requests_sent", "permits_refused", "renewals",
                     "renewal_failures", "ownerships", "terms_abandoned", "permit_rounds", "permits_foreign_dropped",
                     "permit_requests_retried"):
@@ -654,8 +691,20 @@ class ClusterCoordinator:
         return len(self._peers)
 
     @property
+    def voters(self) -> tuple:
+        """The ids of the voters, sorted (Task 8.3g, D54)."""
+        return self._voters
+
+    @property
+    def is_voter(self) -> bool:
+        """True when this node is a voter, False for a learner."""
+        return self._is_voter
+
+    @property
     def majority(self) -> int:
-        """Votes needed for the lease and acknowledgements needed for a commit: ``floor(N/2) + 1``."""
+        """Votes needed for the lease and acknowledgements needed for a commit: a majority of
+        the voters, ``floor(V/2) + 1``; also the number of nodes that hold every commit's
+        records durably before any other voter accepts its root (D54)."""
         return self._majority
 
     @property
@@ -903,10 +952,12 @@ class ClusterCoordinator:
                 f"start; this node's acceptor log shows it has served the cluster before, so it may "
                 f"have granted a lease that is still running.  Start it with a startup_grace of at "
                 f"least lease_duration + drift_margin = {self.restart_grace:g} s (the default)")
-        rejoin = empty and bool(self._others)
-        if empty and not self._others:
+        # A learner neither grants nor accepts roots: there is nothing it must learn before it
+        # serves (D54).  A voter without another voter has nobody to learn from.
+        rejoin = empty and self._is_voter and bool(self._other_voters)
+        if empty and not rejoin:
             try:
-                tier.log_rejoined()     # a one-member cluster has nobody to learn from
+                tier.log_rejoined()     # a one-voter cluster or a learner: nothing to learn
             except BaseException:
                 with self._lock:
                     self._tier = None
@@ -958,7 +1009,7 @@ class ClusterCoordinator:
         has its log loaded, witnesses or not."""
         if self._rejoin_forced:
             return self._majority - 1
-        return min(len(self._others), self.cluster_size - self._majority + 1)
+        return min(len(self._other_voters), len(self._voters) - self._majority + 1)
 
     def _witness_state(self) -> str:
         """What this node's answers are worth (lock held): ``"unknown"`` without a loaded
@@ -966,6 +1017,8 @@ class ClusterCoordinator:
         for a witness (its log holds what it promised and accepted)."""
         if self._state != "running" or self._tier is None or not self._loaded or self._tier_failure is not None:
             return "unknown"
+        if not self._is_voter:
+            return "learner"            # never counted (D54)
         return "empty" if self._rejoining else "ok"
 
     @staticmethod
@@ -1057,7 +1110,7 @@ class ClusterCoordinator:
         witnesses = {p: a for p, a in loaded.items() if states[p] == "ok"}
         if self._rejoin_forced:
             return (list(loaded), "forced") if len(loaded) >= self._majority - 1 else None
-        if len(loaded) == len(self._others) and all(self._rootless(a) for a in loaded.values()):
+        if len(loaded) == len(self._other_voters) and all(self._rootless(a) for a in loaded.values()):
             if not any(promised.get(p) for p in loaded):
                 return list(loaded), "new"      # a new cluster: no root accepted, no term seen
             if len(witnesses) < self._rejoin_answers():
@@ -1108,11 +1161,11 @@ class ClusterCoordinator:
         promise -- and the answers of one round already arrive at different moments."""
         answers, promised, states, ballots = {}, {}, {}, {}
         for _ in range(GATHER_ATTEMPTS):
-            missing = [p for p in self._others if p not in answers]
+            missing = [p for p in self._other_voters if p not in answers]
             if not missing:
                 break
-            waiter = self._ask("query", {"ballot": ballot}, lambda w: len(w.answers) >= len(missing),
-                               self._request_timeout, targets=missing)
+            waiter = self._ask("query", {"ballot": ballot, "vs": self._fingerprint},
+                               lambda w: len(w.answers) >= len(missing), self._request_timeout, targets=missing)
             with self._lock:
                 answers.update(waiter.answers)
                 promised.update(waiter.promised)
@@ -1564,6 +1617,17 @@ class ClusterCoordinator:
             logger.warning("Node %s ignored a %r message from unknown sender %r", self._node, msg["type"], sender)
             return
         kind = msg["type"]
+        if kind in _FINGERPRINTED and msg["vs"] != self._fingerprint:
+            # Configured with another voter set (D54): two sets could form two disjoint
+            # majorities, so nothing it asks for is granted, answered or accepted here.
+            with self._lock:
+                self._stats["config_mismatches"] += 1
+                first = sender not in self._mismatched
+                self._mismatched.add(sender)
+            if first:
+                logger.error("Node %s drops %r messages from %s: it is configured with another voter set "
+                             "(every member must be given the same voters)", self._node, kind, sender)
+            return
         if kind in ("records", "replicate", "request", "renew") or (kind == "query" and msg["ballot"]):
             # The acceptor lane: each step decides, makes its write durable, publishes, then
             # replies, in arrival order, exactly as when the dispatcher ran the grants inline
@@ -1723,6 +1787,8 @@ class ClusterCoordinator:
         """Why this node may not vote or accept right now (lock held), or ``None``."""
         if self._failure is not None:
             return "fenced"
+        if not self._is_voter:
+            return "learner"
         if self._tier is None or not self._loaded:
             return "no_storage"
         if self._tier_failure is not None:
@@ -1765,6 +1831,8 @@ class ClusterCoordinator:
         self._hint = max(self._hint, msg["term"], msg.get("highest", 0))
         known, root, label = decode_labeled_root(msg["root"])
         self._hint = max(self._hint, label)
+        if sender not in self._voters:
+            return                  # a learner's reply is never a vote (D54)
         attempt = self._attempt
         if attempt is None or attempt.rid != msg["rid"] or attempt.term != msg["term"]:
             return
@@ -1945,6 +2013,11 @@ class ClusterCoordinator:
 
     def _broadcast(self, msg: dict) -> None:
         for peer in self._others:
+            self._transport.send(peer, msg)
+
+    def _send_voters(self, msg: dict) -> None:
+        """Send ``msg`` to every other voter (a request or a renewal: only votes count, D54)."""
+        for peer in self._other_voters:
             self._transport.send(peer, msg)
 
     # -- the worker: replicated records, page requests, prefetch ---------------------------
@@ -2284,7 +2357,7 @@ class ClusterCoordinator:
             self._await_rejoin(deadline, timeout)
             self._await_turn(deadline)
             attempt, request, seen, promise = self._open_attempt()
-            self._broadcast(request)
+            self._send_voters(request)
             if promise is not None and not self._promise(promise, attempt.term):
                 with self._lock:
                     # Our own vote cannot be made durable: it does not count.
@@ -2329,7 +2402,7 @@ class ClusterCoordinator:
             term = ballot_after(max(self._grants.highest_term, self._hint, self._accepted[2], self._committed[2]),
                                 self._rank)
             attempt = LeaseAttempt(term=term, rid=next(self._rids), sent_at=self._clock(),
-                                   cluster_size=self.cluster_size, lease_duration=self._duration,
+                                   cluster_size=len(self._voters), lease_duration=self._duration,
                                    drift_margin=self._margin)
             self._attempt = attempt
             self._stats["attempts"] += 1
@@ -2338,7 +2411,9 @@ class ClusterCoordinator:
                 self._stats["turns_taken"] += 1
             self._registered = True             # every member that receives the request queues us
             refusal = self._refusal()
-            if refusal is not None:
+            if refusal == "learner":
+                pass                            # no vote of its own (D54)
+            elif refusal is not None:
                 attempt.on_reject(self._node, refusal, self._grants.highest_term, 0.0)
             else:
                 decision = self._grants.on_request(self._node, term, self._inc)
@@ -2350,7 +2425,8 @@ class ClusterCoordinator:
                     promise = self._tier
                 else:
                     attempt.on_reject(self._node, decision.reason, decision.highest, decision.remaining)
-            request = make_message("request", self._node, term=term, rid=attempt.rid, inc=self._inc)
+            request = make_message("request", self._node, term=term, rid=attempt.rid, inc=self._inc,
+                                   vs=self._fingerprint)
             seen = self._wakeups
         return attempt, request, seen, promise
 
@@ -2370,7 +2446,7 @@ class ClusterCoordinator:
             self._hint = max(self._hint, attempt.highest_seen)
             now = self._clock()
             if attempt.state == "won" and now < attempt.valid_until:
-                known, root, certain, label = attempt.best_root(own=self._accepted)
+                known, root, certain, label = attempt.best_root(own=self._accepted if self._is_voter else None)
                 if label < attempt.term:
                     certain = certain and not self._suspect_term
                     lease = Lease(term=attempt.term, acquired_at=now, valid_until=attempt.valid_until,
@@ -2579,7 +2655,7 @@ class ClusterCoordinator:
                 self._local.release()       # an owner is known: permit() asks it
                 return False
             attempt, request, seen, promise = self._open_attempt()
-            self._broadcast(request)
+            self._send_voters(request)
             if promise is not None and not self._promise(promise, attempt.term):
                 with self._lock:
                     attempt.granted_by.pop(self._node, None)
@@ -2924,11 +3000,13 @@ class ClusterCoordinator:
             if self._state != "running" or self._ownership is not own:
                 return
             attempt = LeaseAttempt(term=own.term, rid=next(self._rids), sent_at=self._clock(),
-                                   cluster_size=self.cluster_size, lease_duration=self._duration,
+                                   cluster_size=len(self._voters), lease_duration=self._duration,
                                    drift_margin=self._margin)
             self._attempt = attempt
             refusal = self._refusal()
-            if refusal is None:
+            if refusal == "learner":
+                pass                            # no vote of its own (D54)
+            elif refusal is None:
                 decision = self._grants.on_request(self._node, own.term, self._inc, renew=True)
                 if decision.granted:
                     known, root, label = self._accepted
@@ -2937,8 +3015,9 @@ class ClusterCoordinator:
                     attempt.on_reject(self._node, decision.reason, decision.highest, decision.remaining)
             else:
                 attempt.on_reject(self._node, refusal, self._grants.highest_term, 0.0)
-            msg = make_message("renew", self._node, term=own.term, rid=attempt.rid, inc=self._inc)
-        self._broadcast(msg)
+            msg = make_message("renew", self._node, term=own.term, rid=attempt.rid, inc=self._inc,
+                               vs=self._fingerprint)
+        self._send_voters(msg)
         with self._cond:
             started = time.monotonic()
             self._cond.wait_for(lambda: attempt.state != "pending" or self._state != "running"
@@ -3061,7 +3140,7 @@ class ClusterCoordinator:
                                committed=self._wire(self._committed), records=chunks[-1], chunks=len(parts),
                                base=base_wire, base_ranges=base_ranges, seq=seq,
                                pred=encode_root(pred_root, known=True, term=pred_label),
-                               pred_committed=pred_committed)
+                               pred_committed=pred_committed, vs=self._fingerprint)
             lease.sent = (label, root)        # the next root of this lease extends this one
             self._stats["replications"] += 1
         failure = None
@@ -3098,7 +3177,7 @@ class ClusterCoordinator:
                         self._note_seq(label, seq)
                         waiter.acks.add(self._node)
             with self._cond:
-                total = self.cluster_size
+                total = len(self._voters)
 
                 def decided():
                     return (len(waiter.acks) >= self._majority or len(waiter.nacks) > total - self._majority
@@ -3152,7 +3231,7 @@ class ClusterCoordinator:
             elif stopped:
                 why = (f"the coordinator stopped with {acks} of the {self._majority} acknowledgements "
                        f"needed")
-            elif nacks > self.cluster_size - self._majority:
+            elif nacks > len(self._voters) - self._majority:
                 why = (f"{nacks} members refused the root, and only {acks} of the {self._majority} "
                        f"acknowledgements needed arrived")
             else:
@@ -3239,8 +3318,9 @@ class ClusterCoordinator:
         """
         with self._lock:
             suspected = self._suspect_term      # what the answers below can settle
-        waiter = self._ask("query", {"ballot": 0}, lambda w: len(w.answers) >= len(self._others),
-                           self._request_timeout)
+        waiter = self._ask("query", {"ballot": 0, "vs": self._fingerprint},
+                           lambda w: len(w.answers) >= len(self._other_voters), self._request_timeout,
+                           targets=self._other_voters)
         with self._lock:
             answers = {p: a for p, a in waiter.answers.items() if waiter.states.get(p) == "ok"}
             own = self._witness_state() == "ok"

@@ -170,7 +170,8 @@ class Harness:
     def _node(self, name, grace):
         node = ClusterCoordinator(name, self.peers, transport=self.net.transport(), lease_duration=D,
                                   drift_margin=MARGIN, request_timeout=0.5, startup_grace=grace,
-                                  clock=self.clock, seed=1, persist_interval=60.0, persist_lag=60.0)
+                                  clock=self.clock, seed=1, persist_interval=60.0, persist_lag=60.0,
+                                  voters=self.names)     # every member votes (these cases predate D54)
         node.start()
         node.attach(self.tier_class(self.disks[name], name))
         return node

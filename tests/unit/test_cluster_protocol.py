@@ -16,13 +16,13 @@ def _record(epoch=3):
 
 
 def test_every_message_carries_the_protocol_version_and_sender():
-    msg = make_message("request", "n1", term=4, rid=7, inc=3)
+    msg = make_message("request", "n1", term=4, rid=7, inc=3, vs=0)
     assert msg["v"] == PROTOCOL_VERSION
     assert msg["type"] == "request" and msg["from"] == "n1"
 
 
 @pytest.mark.parametrize("kind,fields", [
-    ("request", dict(term=1, rid=2, inc=11)),
+    ("request", dict(term=1, rid=2, inc=11, vs=7)),
     ("grant", dict(term=1, rid=2, root=None, committed=[0, None, None, 1], certain=False)),
     ("reject", dict(term=1, rid=2, root=[0, None, None], certain=True, reason="busy",
                     highest=5, remaining=0.25)),
@@ -32,19 +32,19 @@ def test_every_message_carries_the_protocol_version_and_sender():
                      more=False)),
     ("replicate", dict(term=3, rid=4, root=[5, uuid.UUID(int=2).bytes, 80, 3], committed=None,
                        records=[[uuid.UUID(int=2).bytes, 80, b"framed"], [uuid.UUID(int=3).bytes, 26, None]],
-                       chunks=1, base=None, base_ranges=None, seq=0, pred=None, pred_committed=False)),
+                       chunks=1, base=None, base_ranges=None, seq=0, pred=None, pred_committed=False, vs=7)),
     ("replicate", dict(term=3, rid=4, root=[5, uuid.UUID(int=2).bytes, 80, 3], committed=None, records=[],
                        chunks=0, base=[4, uuid.UUID(int=4).bytes, 64, 2],
                        base_ranges=[[uuid.UUID(int=4).bytes, 26, 90]], seq=3,
-                       pred=[4, uuid.UUID(int=4).bytes, 64, 2], pred_committed=True)),
-    ("renew", dict(term=9, rid=2, inc=11)),
+                       pred=[4, uuid.UUID(int=4).bytes, 64, 2], pred_committed=True, vs=7)),
+    ("renew", dict(term=9, rid=2, inc=11, vs=7)),
     ("permit_req", dict(term=9, rid=2, inc=11)),
     ("permit", dict(term=9, rid=2, seq=4, inc=7, root=[4, uuid.UUID(int=1).bytes, 64, 9], certain=True, valid=0.5)),
     ("permit_no", dict(term=9, rid=2, reason="not_owner")),
     ("done", dict(term=9, seq=4, inc=11, outcome="committed", root=[5, uuid.UUID(int=1).bytes, 64, 9])),
     ("records", dict(term=3, rid=4, index=0, records=[[uuid.UUID(int=2).bytes, 40, b"framed"]])),
     ("ack", dict(term=3, rid=4, ok=True, root=None)),
-    ("query", dict(rid=1, ballot=0)),
+    ("query", dict(rid=1, ballot=0, vs=7)),
     ("answer", dict(rid=1, root=None, committed=[0, None, None, 0], certain=True, promised=4, state="ok", ballot=0)),
     ("fetch", dict(rid=2, segment=uuid.UUID(int=9).bytes, offset=26)),
     ("fetched", dict(rid=2, data=None)),
@@ -86,7 +86,7 @@ def test_make_message_rejects_unknown_types_and_missing_fields():
 
 
 def test_decode_rejects_another_protocol_version():
-    msg = make_message("request", "n1", term=1, rid=1, inc=0)
+    msg = make_message("request", "n1", term=1, rid=1, inc=0, vs=0)
     msg["v"] = PROTOCOL_VERSION + 1
     with pytest.raises(ClusterProtocolError, match="version"):
         decode_message(msgpack.packb(msg, use_bin_type=True))
@@ -100,7 +100,7 @@ def test_decode_rejects_garbage_and_non_maps():
 
 
 def test_frames_split_across_chunks_and_coalesced_in_one_chunk():
-    msgs = [make_message("request", "n1", term=t, rid=t, inc=0) for t in range(1, 6)]
+    msgs = [make_message("request", "n1", term=t, rid=t, inc=0, vs=0) for t in range(1, 6)]
     data = b"".join(encode_frame(m) for m in msgs)
     decoder = FrameDecoder()
     out = []

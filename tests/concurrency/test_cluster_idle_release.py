@@ -32,7 +32,7 @@ def test_the_busy_member_keeps_committing_after_an_idle_owner_releases(tmp_path,
         # n0 refuses a higher ballot (busy), as after any lost attempt of another member: its
         # later refusals of permit requests then carry a term above the one n1 knows n0 by.
         higher = ballot_after(n0._ownership.term, n0._ranks["n2"])
-        n0._on_request("n2", make_message("request", "n2", term=higher, rid=10_000, inc=n2._inc))
+        n0._on_request("n2", make_message("request", "n2", term=higher, rid=10_000, inc=n2._inc, vs=0))
         stop = threading.Event()
         stamps = []
         lock = threading.Lock()
@@ -72,7 +72,7 @@ def test_a_member_whose_owner_ended_its_term_idle_takes_the_term(tmp_path, round
         n0, n1, n2 = tc["n0"], tc["n1"], tc["n2"]
         assert n0.owner == "n0" and n1._owner_hint[1] == "n0"
         higher = ballot_after(n0._ownership.term, n0._ranks["n2"])
-        n0._on_request("n2", make_message("request", "n2", term=higher, rid=10_000, inc=n2._inc))
+        n0._on_request("n2", make_message("request", "n2", term=higher, rid=10_000, inc=n2._inc, vs=0))
         deadline = time.monotonic() + 5
         while n0._ownership is not None and time.monotonic() < deadline:
             time.sleep(0.02)                            # nobody asks: n0 ends its term

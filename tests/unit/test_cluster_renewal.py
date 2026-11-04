@@ -26,7 +26,7 @@ def test_a_refused_higher_request_does_not_end_the_owners_term(tmp_path):
         assert own is not None, "n0 owns the term of its first commit"
         higher = ballot_after(own.term, n0._ranks["n1"])
         # n1 asks n0 for a higher ballot while n0's grant to itself is active: refused, busy.
-        n0._on_request("n1", make_message("request", "n1", term=higher, rid=10_000, inc=n1._inc))
+        n0._on_request("n1", make_message("request", "n1", term=higher, rid=10_000, inc=n1._inc, vs=0))
         deadline = time.monotonic() + n0._duration * 2.5      # several renewals are due
         commits = 1
         while time.monotonic() < deadline:
