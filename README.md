@@ -75,7 +75,12 @@ If you read only one thing before the code, read
   even across power loss. On a TieredStorage a node accepts a root with ONE synced acceptor-log
   entry that also holds the root's records (D50, Task 8.3f), so acknowledged commits survive power
   loss of any set of nodes in every durability mode; the mode governs only writes outside the
-  commit path. Two to four contending writer processes take
+  commit path. Replication is bounded (D54, Task 8.3g): three voters (configurable) order roots,
+  the other members are learners, and a commit's records are synced on the committer plus `f`
+  data replicas (one, with three voters), not on every member; others fetch records on demand.
+  Losing `f + 1` voters stops writes while learners keep serving reads; losing every copy of a
+  commit's records (`f + 1` disks) before the persister uploads them loses that data, as no
+  re-replication runs. Two to four contending writer processes take
   the lease in turn; at eight, and for hot-key read-modify-write transactions, fairness is not
   yet guaranteed (open defect D-LIVE-2).
 - **Free-threading**: tested on CPython 3.14t (GIL disabled) and with the GIL; `parallel_scan` and
