@@ -142,6 +142,10 @@ class _Node(Atom):
     """Common behaviour of AVL nodes: immutability and child-derived height/count."""
 
     __type_name__ = "proto_db.avl._Node"
+    #: Builds traverse tree nodes: a node saved with a large inline value (a tuple holding a
+    #: large bytes, say) is cached decoded, so its path copies share that value instead of each
+    #: later load decoding another copy of it (review 8.3i I1).
+    _cache_large_on_save = True
 
     def _init_shape(self, left, right) -> None:
         osa = object.__setattr__

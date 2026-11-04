@@ -66,7 +66,7 @@ import importlib
 import threading
 import uuid
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Optional, Protocol, runtime_checkable
 
 from ..errors import ProtoCorruptionError, ProtoUserError, ProtoValidationError
 
@@ -249,6 +249,9 @@ class Atom:
     #: Whether a context that caches decoded atoms keeps this type's atoms when they are saved
     #: (Task 8.3i); a type a build only references, never reads, opts out.
     _cache_on_save = True
+    #: Whether such a context keeps this type's atoms decoded on save even when they hold large
+    #: values inline (review 8.3i I1); otherwise those are left to the read path.
+    _cache_large_on_save = False
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -437,7 +440,8 @@ class Atom:
             saved(self, ptr, state)         # no stripe held (lock order rule)
         return ptr
 
-    def _decoded_twin(self, context: PersistenceContext, ptr: AtomPointer, state: dict) -> "Atom":
+    def _decoded_twin(self, context: PersistenceContext, ptr: AtomPointer, state: dict,
+                      inline: Optional[list] = None) -> "Atom":
         """Return the atom a load of ``ptr`` through ``context`` would produce, built from the
         ``state`` this atom was just saved with (protected; used by contexts that cache what
         they save, Task 8.3i).
@@ -445,10 +449,11 @@ class Atom:
         A new object of this atom's class, loaded, with this atom's ``oid``: every persisted
         attribute is :func:`~proto_db.core.codec.redecode_value` of the saved value -- what
         decoding its wire form gives, nested atoms obtained from ``context.load`` by pointer --
-        and no runtime state (no op log, for example).  This atom itself is left untouched."""
+        and no runtime state (no op log, for example).  This atom itself is left untouched.
+        ``inline``, a one-item list, accumulates the bytes of its ``str``/``bytes`` values."""
         from . import codec
         load = context.load
-        decoded = {name: codec.redecode_value(value, load) for name, value in state.items()}
+        decoded = {name: codec.redecode_value(value, load, inline) for name, value in state.items()}
         twin = object.__new__(type(self))
         osa = object.__setattr__
         osa(twin, "_loaded", False)

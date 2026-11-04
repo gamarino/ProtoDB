@@ -43,6 +43,7 @@ import uuid
 from collections.abc import Callable
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
+from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..errors import ProtoCorruptionError, ProtoValidationError
@@ -102,28 +103,36 @@ def encode_value(value, save_child: Callable[[Atom], AtomPointer]):
     return _encode_other(value, save_child)
 
 
-def redecode_value(value, load_ref: Callable[[AtomPointer, str], Atom]):
+def redecode_value(value, load_ref: Callable[[AtomPointer, str], Atom], inline: Optional[list] = None):
     """``decode_value(encode_value(value, ...), load_ref)`` for a value whose nested atoms are all
     saved, without building the wire form (Task 8.3i: an atom just saved is cached decoded).
 
     Same result, type for type: the exact built-in scalars come back as themselves (decoding
     their wire form gives an equal object of the same type), tuples as tuples, lists as
     ``FrozenList`` and dicts as ``FrozenDict`` of redecoded items, an atom as
-    ``load_ref(its pointer, its type name)``; any other value goes through the codec itself."""
+    ``load_ref(its pointer, its type name)``; any other value goes through the codec itself.
+    ``inline``, a one-item list, accumulates the length of every ``str`` and ``bytes`` value met
+    (nested atoms excluded): what the decoded value holds inline (review 8.3i I1)."""
     t = type(value)
-    if t is int or t is str or t is bytes or t is float or value is None or t is bool:
+    if t is str or t is bytes:
+        if inline is not None:
+            inline[0] += len(value)
+        return value
+    if t is int or t is float or value is None or t is bool:
         return value
     if t is tuple:
-        return tuple([redecode_value(v, load_ref) for v in value])
+        return tuple([redecode_value(v, load_ref, inline) for v in value])
     if t in _ATOM_CLASSES:
         return load_ref(_saved_pointer(value), type(value).__type_name__)
     if t is list or t is FrozenList:
-        return FrozenList([redecode_value(v, load_ref) for v in value])
+        return FrozenList([redecode_value(v, load_ref, inline) for v in value])
     if t is dict or t is FrozenDict:
         out = {}
         for k, v in value.items():
-            out[redecode_value(k, load_ref)] = redecode_value(v, load_ref)
+            out[redecode_value(k, load_ref, inline)] = redecode_value(v, load_ref, inline)
         return FrozenDict(out)
+    if inline is not None and isinstance(value, (str, bytes, bytearray)):
+        inline[0] += len(value)
     return decode_value(encode_value(value, _saved_pointer), load_ref)
 
 

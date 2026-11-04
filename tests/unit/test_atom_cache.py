@@ -252,3 +252,52 @@ def test_large_value_boxes_are_not_cached_on_save():
     with db.new_transaction() as tr:
         assert tr.get_root_object("blobs").get_at(1) == b"v" * 100_000
     space.close()
+
+
+def _cached_inline_bytes(space):
+    """Bytes of the str/bytes attribute values held by the cache's loaded atoms."""
+    total = 0
+    for atom, _ in list(space._atoms._cache._items.values()):
+        if atom.__dict__.get("_loaded"):
+            total += sum(len(v) for k, v in atom.__dict__.items()
+                         if not k.startswith("_") and isinstance(v, (bytes, str)))
+    return total
+
+
+def test_write_only_ingest_of_large_objects_keeps_the_cache_byte_bounded():
+    """Review 8.3i I1: an atom saved with large inline values (a 1 MB DBObject attribute) is not
+    cached decoded on save -- a decoded atom stays reachable from the cached atoms that refer to
+    it, whatever the cache evicts -- so a write-only ingest of large objects keeps none of their
+    bytes in the cache's atoms.  They are read back on demand."""
+    import gc
+    space = _space()
+    db = space.open_database("db")
+    db.run(lambda tr: tr.set_root_object("d", tr.new_dictionary()))
+    blob = b"b" * 1_000_000
+    for i in range(30):
+        db.run(lambda tr, i=i: tr.set_root_object(
+            "d", tr.get_root_object("d").set_at(i, tr.new_object(blob=blob + bytes([i])))))
+    assert _cached_inline_bytes(space) <= 30 * 4096
+    gc.collect()
+    held = sum(len(o.blob) for o in gc.get_objects()
+               if type(o).__name__ == "DBObject" and o.__dict__.get("_loaded") and "blob" in o.__dict__)
+    assert held <= 2_000_000, f"{held} bytes of written objects still loaded"   # the last live one
+    with db.new_transaction() as tr:
+        assert tr.get_root_object("d").get_at(7).blob[-1] == 7      # still readable, of course
+    space.close()
+
+
+def test_tree_nodes_with_large_inline_values_are_cached_sharing_them():
+    """Tree nodes keep the sharing for large inline values (review 8.3i I1): a node whose value is
+    a large tuple is cached decoded on save and references the same bytes object as the live
+    value, so its path copies never decode a second copy."""
+    space = _space()
+    db = space.open_database("db")
+    blob = b"t" * 200_000
+    tr = db.new_transaction()
+    d = tr.new_dictionary().set_at(1, (blob,))
+    tr.set_root_object("d", d)
+    tr.commit()
+    node = space._atoms._cache.get(d.root.atom_pointer)
+    assert node is not None and node.value[0] is blob
+    space.close()

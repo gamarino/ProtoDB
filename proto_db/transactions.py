@@ -291,6 +291,10 @@ def _one(_value) -> int:
 #: Default number of atoms an :class:`ObjectSpace` keeps decoded for every transaction (R75).
 ATOM_CACHE_ENTRIES = 50_000
 
+#: Inline ``str``/``bytes`` an atom may hold and still be cached decoded on save (review 8.3i I1),
+#: unless its class sets ``_cache_large_on_save`` (tree nodes, which builds traverse).
+SAVED_INLINE_MAX = 4096
+
 
 class _AtomCache:
     """Decoded atoms shared by every transaction of one space, by pointer (ruling R75, D53).
@@ -331,8 +335,18 @@ class _AtomCache:
         (:meth:`Atom._decoded_twin`), so the next build on the root that references it neither
         reads nor decodes it.  The live ``atom`` is never cached (its runtime state, an op log
         for example, is not what a load produces)."""
-        if type(atom)._cache_on_save:
-            self._cache.put(ptr, atom._decoded_twin(self, ptr, state))
+        cls = type(atom)
+        if not cls._cache_on_save:
+            return
+        inline = [0]
+        twin = atom._decoded_twin(self, ptr, state, inline)
+        if inline[0] > SAVED_INLINE_MAX and not cls._cache_large_on_save:
+            # Review 8.3i I1: a decoded atom stays reachable from the cached atoms that refer to
+            # it whatever the cache evicts, so an atom holding large values inline is left to the
+            # read path: a parent cached later refers to it as an unloaded stub, and its bytes
+            # are read only if something reads it (a write-only ingest retains none of them).
+            return
+        self._cache.put(ptr, twin)
 
     def stats(self) -> dict:
         """``hits``, ``misses``, ``entries`` and ``capacity`` (in atoms)."""
