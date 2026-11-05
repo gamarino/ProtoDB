@@ -133,6 +133,21 @@ class QueryPlan(ABC):
     def estimate(self) -> Estimate:
         """Return the planner's estimate for this plan."""
 
+    # -- rank access (D56); optional, the default is "not offered" ----------------------------
+
+    def window(self, start: int, stop: int | None = None) -> Iterator | None:
+        """Rows ``start .. stop-1`` of ``execute()`` (``stop=None``: to the end) without producing
+        the rows before ``start``, or ``None`` when this plan cannot seek (the default).
+
+        A plan that returns an iterator guarantees it equals ``islice(execute(), start, stop)``;
+        index and positional plans seek in O(log n) (D56)."""
+        return None
+
+    def exact_rows(self) -> int | None:
+        """The exact number of rows ``execute()`` yields, when known without producing them;
+        ``None`` (the default) otherwise."""
+        return None
+
     def _explain(self, name: str, params: dict | None = None, children: tuple = ()) -> dict:
         """The common explain shape: ``{"plan", **params, "estimate", "children"}``."""
         top = getattr(_explain_memo, "cache", None) is None
@@ -160,6 +175,14 @@ def _est(plan: QueryPlan) -> Estimate:
     if hit is None:
         hit = cache[id(plan)] = (plan, plan.estimate())  # the plan is kept so its id stays unique
     return hit[1]
+
+
+def _check_window(start, stop) -> tuple:
+    if type(start) is not int or start < 0:
+        raise ProtoValidationError(f"A window start must be an int >= 0, not {start!r}")
+    if stop is not None and (type(stop) is not int or stop < 0):
+        raise ProtoValidationError(f"A window stop must be an int >= 0 or None, not {stop!r}")
+    return start, stop
 
 
 def _check_plan(plan, owner: str) -> QueryPlan:
@@ -253,11 +276,14 @@ class IndexPlan(QueryPlan):
     every call (each occurrence once) and capture only immutable state, so the
     plan can be executed several times and from several threads.
     ``estimate`` overrides ``index.estimate(term)`` and is required when
-    ``term`` is None; ``details`` adds entries to ``explain()``.
+    ``term`` is None; ``details`` adds entries to ``explain()``.  ``rank``, a pair
+    ``(window(start, stop), rows())``, offers rank access (D56): ``window`` must yield
+    exactly ``islice(execute(), start, stop)`` and ``rows`` the exact row count.
     """
 
     def __init__(self, index, term, producer: Callable[[], Iterator], *, kind: str = "IndexLookup",
-                 estimate: Estimate | None = None, details: dict | None = None):
+                 estimate: Estimate | None = None, details: dict | None = None,
+                 rank: tuple | None = None):
         if not callable(producer):
             raise ProtoValidationError(f"IndexPlan needs a callable producer, not {type(producer).__name__}")
         if not isinstance(kind, str) or not kind:
@@ -276,11 +302,26 @@ class IndexPlan(QueryPlan):
         self._producer = producer
         self._estimate = estimate
         self._details = details
+        if rank is not None and (not isinstance(rank, tuple) or len(rank) != 2
+                                 or not all(callable(f) for f in rank)):
+            raise ProtoValidationError("IndexPlan rank must be a (window(start, stop), rows()) pair of callables")
+        self._rank = rank
         self._freeze()
 
     def execute(self) -> Iterator:
         """Return a new iterator over the plan's elements."""
         return iter(self._producer())
+
+    def window(self, start: int, stop: int | None = None) -> Iterator | None:
+        """Rows ``start .. stop-1`` by rank (D56) when the index offers rank access, else ``None``."""
+        if self._rank is None:
+            return None
+        start, stop = _check_window(start, stop)
+        return self._rank[0](start, stop)
+
+    def exact_rows(self) -> int | None:
+        """The exact row count when the index offers rank access, else ``None``."""
+        return None if self._rank is None else self._rank[1]()
 
     def explain(self) -> dict:
         """``{"plan": kind, "index": index.explain(), "term": term.describe() or None, **details,

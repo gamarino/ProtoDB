@@ -26,6 +26,14 @@ it with count 2.
 Every operation is a pure function over immutable trees (path copying), so an
 index version may be shared between threads, and plans capture only immutable
 state.
+
+Rank access (D56): both levels are :class:`~proto_db.collections.avl.CountedKeyNode`
+trees, whose ``weight`` counts occurrences (a group's value is ``(members, total)``, a
+member's ``(element, count)``).  Every plan's result is a concatenation of *segments*
+(a key range of ``groups``, or one group's members) of known weight, so a plan offers
+``window(start, stop)`` in O(log G + log M + rows) and ``exact_rows()`` in O(log G) per
+segment.  An index written before weights existed (plain ``KeyNode`` trees) answers every
+plan as before but offers no window; rebuilding it adds the weights.
 """
 from __future__ import annotations
 
@@ -33,8 +41,10 @@ import math
 from collections import Counter
 from collections.abc import Iterable, Iterator
 from decimal import Decimal
+from itertools import islice
 
 from ..collections import avl
+from ..collections.avl import CountedKeyNode
 from ..core.atom import PersistenceContext
 from ..errors import ProtoCorruptionError, ProtoValidationError
 from ..query.plans import Estimate, IndexPlan
@@ -115,7 +125,8 @@ def _group_add(group: tuple, element) -> tuple:
     members, total = group
     key = _member_key(element)
     entry = avl.key_get(members, key)
-    members = avl.key_put(members, key, (element, 1) if entry is None else (entry[0], entry[1] + 1))[0]
+    members = avl.key_put(members, key, (element, 1) if entry is None else (entry[0], entry[1] + 1),
+                          node_class=CountedKeyNode)[0]
     return members, total + 1
 
 
@@ -157,6 +168,68 @@ def _groups_iter(groups: Iterable[tuple]) -> Iterator:
         yield from _group_iter(group)
 
 
+# -- rank access (D56) ----------------------------------------------------------------------
+#
+# A segment is ``(tree, start, rows, descending, of_groups)``: ``rows`` occurrences from
+# occurrence ``start`` of ``tree`` -- a groups tree (``of_groups``) or one group's members
+# tree.  Members are always produced in ascending member order, as ``_group_iter`` does;
+# ``descending`` reverses only the order of key groups (D30).
+
+def _members_from(members, rank: int) -> Iterator:
+    for _, (element, n), skip in avl.key_iter_from_weight(members, rank):
+        for _ in range(n - skip):
+            yield element
+
+
+def _groups_from(groups, rank: int, descending: bool) -> Iterator:
+    for _, (members, _total), skip in avl.key_iter_from_weight(groups, rank, descending):
+        yield from _members_from(members, skip)
+
+
+def _segment_rows(segment: tuple, offset: int, limit: int) -> Iterator:
+    tree, start, _rows, descending, of_groups = segment
+    rows = (_groups_from(tree, start + offset, descending) if of_groups
+            else _members_from(tree, start + offset))
+    return islice(rows, limit)
+
+
+def _group_segment(group: tuple) -> tuple:
+    return (group[0], 0, group[1], False, False)
+
+
+def _window(segments: list, start: int, stop: int | None) -> Iterator:
+    """Rows ``start .. stop-1`` of the concatenation of ``segments`` (``stop=None``: to the end)."""
+    for segment in segments:
+        rows = segment[2]
+        if stop is not None and stop <= 0:
+            return
+        if start >= rows:
+            start -= rows
+            if stop is not None:
+                stop -= rows
+            continue
+        end = rows if stop is None else min(rows, stop)
+        if end > start:
+            yield from _segment_rows(segment, start, end - start)
+        if stop is not None:
+            stop -= rows
+        start = 0
+
+
+def _rank_access(segments) -> tuple:
+    """The ``(window, rows)`` pair an :class:`IndexPlan` takes, over lazily computed segments."""
+    def window(start: int, stop: int | None) -> Iterator:
+        return _window(segments(), start, stop)
+
+    def rows() -> int:
+        return sum(segment[2] for segment in segments())
+    return window, rows
+
+
+def _weighted(tree) -> bool:
+    return tree is None or isinstance(tree, CountedKeyNode)
+
+
 class _GroupBuilder:
     """Accumulates one group during a bulk build, by exact member key."""
 
@@ -177,8 +250,9 @@ class _GroupBuilder:
             slot[2] += 1
 
     def group(self) -> tuple:
-        members = avl.key_from_sorted_okeys((ok, k, (e, n)) for ok, (k, e, n)
-                                            in sorted(self.members.items(), key=_first))
+        members = avl.key_from_sorted_okeys(((ok, k, (e, n)) for ok, (k, e, n)
+                                             in sorted(self.members.items(), key=_first)),
+                                            node_class=CountedKeyNode)
         return members, self.total
 
 
@@ -216,7 +290,7 @@ class KeyGroupIndex(Index):
         if not is_orderable(key):
             return self._with(side=_group_add(self.side, element), total_count=self.total_count + 1)
         group = avl.key_get(self.groups, key, EMPTY_GROUP)
-        groups = avl.key_put(self.groups, key, _group_add(group, element))[0]
+        groups = avl.key_put(self.groups, key, _group_add(group, element), node_class=CountedKeyNode)[0]
         return self._with(groups=groups, total_count=self.total_count + 1)
 
     def with_removed(self, element) -> "KeyGroupIndex":
@@ -259,7 +333,8 @@ class KeyGroupIndex(Index):
             else:
                 builder = side
             builder.add(element)
-        groups = avl.key_from_sorted_okeys((ok, b.key, b.group()) for ok, b in sorted(builders.items(), key=_first))
+        groups = avl.key_from_sorted_okeys(((ok, b.key, b.group()) for ok, b in sorted(builders.items(), key=_first)),
+                                           node_class=CountedKeyNode)
         return self.empty()._with(groups=groups, side=side.group(), total_count=total)
 
     # -- plans ------------------------------------------------------------------------------
@@ -327,10 +402,51 @@ class KeyGroupIndex(Index):
         raise ProtoValidationError(f"{type(self).__name__} has no plan for {op!r}")  # pragma: no cover
 
     def plan(self, term: Term) -> IndexPlan:
-        """An :class:`IndexPlan` yielding every stored occurrence matching ``term`` (D28 semantics)."""
+        """An :class:`IndexPlan` yielding every stored occurrence matching ``term`` (D28 semantics).
+
+        On a weighted index the plan also offers rank access (``window``, ``exact_rows``, D56)."""
         self._check_supported(term)
         kind, producer = self._plan_parts(term)
-        return IndexPlan(self, term, producer, kind=kind)
+        rank = _rank_access(lambda: self._term_segments(term)) if self._has_weights() else None
+        return IndexPlan(self, term, producer, kind=kind, rank=rank)
+
+    # -- rank access (D56) ----------------------------------------------------------------
+
+    def _has_weights(self) -> bool:
+        """True when both the key tree and the side group are weighted (written by this code)."""
+        return _weighted(self.groups) and _weighted(self.side[0])
+
+    def _range_segment(self, lok, hik, lo_inc: bool, hi_inc: bool) -> tuple:
+        """The groups whose keys lie in the range, as one segment (an order key None = open side)."""
+        groups = self.groups
+        low = 0 if lok is None else avl.key_weight_below(groups, lok, inclusive=not lo_inc)
+        high = avl.key_weight(groups) if hik is None else avl.key_weight_below(groups, hik, inclusive=hi_inc)
+        return (groups, low, max(high - low, 0), False, True)
+
+    def _term_segments(self, term: Term) -> list:
+        """The segments of :meth:`plan`'s result, in the order its producer yields them."""
+        op = term.op
+        if op == EQ:
+            return [_group_segment(self._lookup(term.value))]
+        if op == IN:
+            return [_group_segment(self._lookup(v)) for v in self._distinct(term.value)]
+        if op == IS_NONE:
+            return [_group_segment(self._lookup(MISSING)), _group_segment(self._lookup(None))]
+        side = _group_segment(self.side)
+        if op == NOT_NONE:
+            return [self._range_segment(_NONE_OKEY, None, False, True), side]
+        if op == NE:
+            excluded = order_key(term.value)
+            return [self._range_segment(_MISSING_OKEY, excluded, False, False),
+                    self._range_segment(excluded, None, False, True), side]
+        lok, hik, lo_inc, hi_inc = self._range(term)
+        return [self._range_segment(lok, hik, lo_inc, hi_inc)]
+
+    def _ordered_segments(self, descending: bool) -> list:
+        groups = self.groups
+        whole = (groups, 0, avl.key_weight(groups), descending, True)
+        side = _group_segment(self.side)
+        return [side, whole] if descending else [whole, side]
 
     # -- estimates (cost model: D30) --------------------------------------------------------
 
@@ -378,9 +494,10 @@ class KeyGroupIndex(Index):
                 yield from _group_iter(side)
 
         n = self.total_count
+        rank = _rank_access(lambda: self._ordered_segments(descending)) if self._has_weights() else None
         return IndexPlan(self, None, produce, kind="IndexOrderedScan",
                          estimate=Estimate(rows=n, cost=n + _count(groups) + 1),
-                         details={"descending": bool(descending)})
+                         details={"descending": bool(descending)}, rank=rank)
 
     # -- explain and validate -------------------------------------------------------------------
 

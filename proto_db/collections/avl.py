@@ -7,6 +7,9 @@ Two node kinds share one balancing core:
 * :class:`KeyNode` -- keyed trees (``Dictionary``, ``HashDictionary``, ``Set``,
   indexes): nodes are ordered by :func:`proto_db.values.order_key` of their key.
   Keys are equal when their order keys are equal (``1`` and ``1.0`` are one key).
+* :class:`CountedKeyNode` -- a keyed node whose value is a ``(payload, count)`` pair and
+  which persists ``weight``, the sum of the counts in its subtree (D56).  The key-group
+  indexes use it, so occurrence r of an index is found in O(log n) (rank access).
 
 The empty tree is ``None``.  Nodes are :class:`~proto_db.core.atom.Atom` objects:
 they are persisted like any atom and children read back from storage are lazy
@@ -26,6 +29,8 @@ Complexity (n elements, k elements produced)::
     key_iter_range, key_iter_okey_range             O(log n + k), explicit stack
     key_iter_reversed                               O(n), explicit stack
     key_count_below                                 O(log n)
+    key_weight, key_weight_below                    O(1), O(log n)  (CountedKeyNode trees)
+    key_iter_from_weight                            O(log n + k), explicit stack
     pos_from_iterable, key_from_sorted              O(n)
     key_from_sorted_okeys                           O(n)
     check_invariants                                O(n), explicit stack
@@ -53,11 +58,12 @@ from ..errors import ProtoCorruptionError, ProtoUserError, ProtoValidationError
 from ..values import order_key
 
 __all__ = [
-    "PosNode", "KeyNode", "ValueBox", "VALUE_BOX_MIN", "boxed", "unboxed",
+    "PosNode", "KeyNode", "CountedKeyNode", "ValueBox", "VALUE_BOX_MIN", "boxed", "unboxed",
     "pos_get", "pos_insert", "pos_set", "pos_remove", "pos_slice", "pos_concat",
     "pos_iter", "pos_count", "pos_from_iterable",
     "key_get", "key_put", "key_remove", "key_iter", "key_iter_range", "key_iter_okey_range",
     "key_iter_reversed", "key_count_below", "key_from_sorted", "key_from_sorted_okeys",
+    "key_weight", "key_weight_below", "key_iter_from_weight",
     "check_invariants", "UNBOUNDED",
 ]
 
@@ -216,11 +222,42 @@ class KeyNode(_Node):
         return okey
 
     def _with_children(self, left, right) -> "KeyNode":
-        return KeyNode(self.key, self.value, left, right, context=self.context, _okey=self._order_key())
+        return type(self)(self.key, self.value, left, right, context=self.context, _okey=self._order_key())
 
     def _with_value(self, value) -> "KeyNode":
-        return KeyNode(self.key, value, self.left, self.right, context=self.context,
-                       _okey=self._order_key())
+        return type(self)(self.key, value, self.left, self.right, context=self.context,
+                          _okey=self._order_key())
+
+
+def _value_count(value) -> int:
+    """The ``count`` of a ``(payload, count)`` node value; ``ProtoValidationError`` otherwise."""
+    value = unboxed(value)
+    if not isinstance(value, (tuple, list)) or len(value) != 2:
+        raise ProtoValidationError(f"A CountedKeyNode value must be a (payload, count) pair, not {value!r}")
+    count = value[1]
+    if type(count) is not int or count < 0:
+        raise ProtoValidationError(f"A CountedKeyNode count must be an int >= 0, not {count!r}")
+    return count
+
+
+class CountedKeyNode(KeyNode):
+    """A :class:`KeyNode` whose value is a ``(payload, count)`` pair; it also persists ``weight``.
+
+    ``weight`` is the sum of the counts of the subtree (this node's ``count`` of the
+    value plus both children's weights), computed by the constructor from children it
+    already reads for ``height`` and ``count``.  The key-group indexes store their key
+    groups ``(members, total)`` and their members ``(element, count)`` in such trees,
+    so a weight is a number of occurrences and occurrence r is found in O(log n) (D56).
+    A tree is homogeneous: every node of a weighted tree is a ``CountedKeyNode``.
+    """
+
+    __type_name__ = "proto_db.avl.CountedKeyNode"
+
+    def __init__(self, key, value, left: "CountedKeyNode | None" = None,
+                 right: "CountedKeyNode | None" = None, *, context: PersistenceContext | None = None, _okey=None):
+        own = _value_count(value)
+        super().__init__(key, value, left, right, context=context, _okey=_okey)
+        object.__setattr__(self, "weight", own + _weight(left) + _weight(right))
 
 
 # -- balancing core -----------------------------------------------------------------------
@@ -231,6 +268,10 @@ def _height(node) -> int:
 
 def _count(node) -> int:
     return 0 if node is None else node.count
+
+
+def _weight(node) -> int:
+    return 0 if node is None else node.weight
 
 
 def _balance(pivot: _Node, left, right) -> _Node:
@@ -469,20 +510,24 @@ def key_get(root: KeyNode | None, key, default=None):
     return default
 
 
-def key_put(root: KeyNode | None, key, value):
+def key_put(root: KeyNode | None, key, value, *, node_class: type = KeyNode):
     """Return ``(new_root, replaced, old_value)`` with ``key`` mapped to ``value``.
 
     For an existing key the stored key object is kept (as ``dict`` does) and
     ``old_value`` is its previous value; otherwise ``replaced`` is False and
-    ``old_value`` is None.
+    ``old_value`` is None.  A new node has the class of the tree (``type(root)``);
+    ``node_class`` (``KeyNode`` or :class:`CountedKeyNode`) is used only when the tree is empty.
     """
     _check_kind(root, KeyNode)
     k = order_key(key)
     out = [False, None]
+    make = node_class if root is None else type(root)
+    if not issubclass(make, KeyNode):
+        raise ProtoValidationError(f"node_class must be a KeyNode class, not {make!r}")
 
     def put(node):
         if node is None:
-            return KeyNode(key, value, _okey=k)
+            return make(key, value, _okey=k)
         nk = node._order_key()
         if k < nk:
             return _balance(node, put(node.left), node.right)
@@ -613,7 +658,7 @@ def key_count_below(root: KeyNode | None, okey, inclusive: bool = False) -> int:
     return below
 
 
-def key_from_sorted(pairs: Iterable[tuple]) -> KeyNode | None:
+def key_from_sorted(pairs: Iterable[tuple], *, node_class: type = KeyNode) -> KeyNode | None:
     """Return a balanced keyed tree of ``(key, value)`` pairs in O(n).
 
     The keys must be strictly increasing by ``order_key``; otherwise (unsorted or
@@ -627,10 +672,10 @@ def key_from_sorted(pairs: Iterable[tuple]) -> KeyNode | None:
             raise ProtoValidationError(f"key_from_sorted needs strictly increasing keys; {key!r} is out of order")
         items.append((k, key, value))
         prev = k
-    return _build_balanced(items, lambda t, l, r: KeyNode(t[1], t[2], l, r, _okey=t[0]))
+    return _build_balanced(items, lambda t, l, r: node_class(t[1], t[2], l, r, _okey=t[0]))
 
 
-def key_from_sorted_okeys(triples: Iterable[tuple]) -> KeyNode | None:
+def key_from_sorted_okeys(triples: Iterable[tuple], *, node_class: type = KeyNode) -> KeyNode | None:
     """Like :func:`key_from_sorted` for ``(order_key(key), key, value)`` triples whose order keys the
     caller already computed (bulk builders sort by them); the order is still checked, the order keys
     are trusted to be ``order_key(key)``.  O(n)."""
@@ -643,7 +688,81 @@ def key_from_sorted_okeys(triples: Iterable[tuple]) -> KeyNode | None:
                                        f"is out of order")
         items.append(item)
         prev = k
-    return _build_balanced(items, lambda t, l, r: KeyNode(t[1], t[2], l, r, _okey=t[0]))
+    return _build_balanced(items, lambda t, l, r: node_class(t[1], t[2], l, r, _okey=t[0]))
+
+
+# -- occurrence weights (CountedKeyNode trees, D56) ------------------------------------------
+
+def _check_counted(root) -> None:
+    if root is not None and not isinstance(root, CountedKeyNode):
+        raise ProtoValidationError(f"Expected a CountedKeyNode tree, got {type(root).__name__}")
+
+
+def key_weight(root: CountedKeyNode | None) -> int:
+    """Total occurrences of a weighted tree (the root's ``weight``), O(1)."""
+    _check_counted(root)
+    return _weight(root)
+
+
+def key_weight_below(root: CountedKeyNode | None, okey, inclusive: bool = False) -> int:
+    """Occurrences under keys whose order key is ``< okey`` (``<= okey`` when ``inclusive``), O(log n)."""
+    _check_counted(root)
+    below = 0
+    node = root
+    while node is not None:
+        nk = node._order_key()
+        if nk < okey or (inclusive and nk == okey):
+            below += node.weight - _weight(node.right)
+            node = node.right
+        else:
+            node = node.left
+    return below
+
+
+def key_iter_from_weight(root: CountedKeyNode | None, rank: int, descending: bool = False) -> Iterator[tuple]:
+    """Yield ``(key, value, skip)`` from occurrence ``rank`` on, in key order (descending: reversed).
+
+    Each node stands for ``count`` consecutive occurrences (its value's second item);
+    ``skip`` is how many of them precede ``rank`` -- non-zero only for the first node
+    yielded.  Positions count in the iteration direction; a node's own occurrences keep
+    their order in both directions.  ``0 <= rank <= key_weight(root)``
+    (``ProtoValidationError`` otherwise); ``rank == key_weight(root)`` yields nothing.
+    The seek is one root-to-leaf walk: O(log n + k) for k nodes yielded.
+    """
+    _check_counted(root)
+    if type(rank) is not int or not 0 <= rank <= _weight(root):
+        raise ProtoValidationError(f"Rank {rank!r} out of range 0..{_weight(root)}")
+    return _iter_from_weight(root, rank, descending)
+
+
+def _iter_from_weight(root, rank, descending) -> Iterator[tuple]:
+    # The stack holds the nodes still to visit (ancestors where the walk went "first").
+    first, second = ("right", "left") if descending else ("left", "right")
+    stack = []
+    node = root
+    skip = 0
+    while node is not None:
+        near = getattr(node, first)
+        wn = _weight(near)
+        if rank < wn:
+            stack.append(node)
+            node = near
+            continue
+        own = node.weight - wn - _weight(getattr(node, second))
+        if rank < wn + own:
+            skip = rank - wn
+            stack.append(node)
+            break
+        rank -= wn + own
+        node = getattr(node, second)
+    while stack:
+        node = stack.pop()
+        yield node.key, unboxed(node.value), skip
+        skip = 0
+        node = getattr(node, second)
+        while node is not None:
+            stack.append(node)
+            node = getattr(node, first)
 
 
 # -- invariants ---------------------------------------------------------------------------
@@ -651,8 +770,8 @@ def key_from_sorted_okeys(triples: Iterable[tuple]) -> KeyNode | None:
 def check_invariants(root: _Node | None) -> None:
     """Verify a tree; raise ``ProtoCorruptionError`` describing the first violation.
 
-    Checks, for every node: one node kind throughout, ``height`` and ``count``
-    consistent with the children, AVL balance (child heights differ by at most
+    Checks, for every node: one node kind throughout, ``height`` and ``count`` (and, in a
+    :class:`CountedKeyNode` tree, ``weight``) consistent with the children, AVL balance (child heights differ by at most
     one) and, for keyed trees, strictly increasing ``order_key`` in order.
     Post-order traversal with an explicit stack and a stack of child results:
     loads every node of a stored tree.  A path longer than the root's stored
@@ -662,14 +781,16 @@ def check_invariants(root: _Node | None) -> None:
     if root is None:
         return
     kind = type(root)
-    if kind not in (PosNode, KeyNode):
+    if kind not in (PosNode, KeyNode, CountedKeyNode):
         raise ProtoCorruptionError(f"Not an AVL node: {kind.__name__}")
     max_depth = root.height
     if type(max_depth) is not int or not 1 <= max_depth <= _MAX_HEIGHT:
         raise ProtoCorruptionError(f"Implausible root height {max_depth!r} at {root!r}")
-    keyed = kind is KeyNode
-    empty = (0, 0, None, None)
-    # Each result: (height, count, min order key, max order key); keys are None for PosNode.
+    keyed = kind is not PosNode
+    weighted = kind is CountedKeyNode
+    empty = (0, 0, None, None, 0)
+    # Each result: (height, count, min order key, max order key, weight); keys are None for
+    # PosNode, weights 0 except in CountedKeyNode trees.
     results: list[tuple] = []
     stack = [(root, False, 1)]
     while stack:
@@ -689,8 +810,8 @@ def check_invariants(root: _Node | None) -> None:
         # Children were pushed right then left, so their results arrive left then right.
         right_res = results.pop() if node.right is not None else empty
         left_res = results.pop() if node.left is not None else empty
-        lh, lc, lmin, lmax = left_res
-        rh, rc, rmin, rmax = right_res
+        lh, lc, lmin, lmax, lw = left_res
+        rh, rc, rmin, rmax, rw = right_res
         height, count = node.height, node.count
         if height != 1 + max(lh, rh):
             raise ProtoCorruptionError(
@@ -706,4 +827,14 @@ def check_invariants(root: _Node | None) -> None:
                 raise ProtoCorruptionError(f"Key order violated at {node!r} (key {node.key!r})")
             nmin = k if lmin is None else lmin
             nmax = k if rmax is None else rmax
-        results.append((height, count, nmin, nmax))
+        weight = 0
+        if weighted:
+            weight = node.weight
+            try:
+                own = _value_count(node.value)
+            except ProtoValidationError as exc:
+                raise ProtoCorruptionError(f"Bad weighted value at {node!r}: {exc}") from None
+            if weight != own + lw + rw:
+                raise ProtoCorruptionError(f"Wrong weight {weight!r} at {node!r}: own count {own}, "
+                                           f"children weights {lw} and {rw}")
+        results.append((height, count, nmin, nmax, weight))

@@ -152,6 +152,7 @@ BUILTIN_ATOM_MODULES: dict[str, str] = {
     "proto_db.avl._Node": "proto_db.collections.avl",
     "proto_db.avl.PosNode": "proto_db.collections.avl",
     "proto_db.avl.KeyNode": "proto_db.collections.avl",
+    "proto_db.avl.CountedKeyNode": "proto_db.collections.avl",
     "proto_db.avl.ValueBox": "proto_db.collections.avl",
     "proto_db.collections.IndexSet": "proto_db.collections.base",
     "proto_db.collections.IndexedCollection": "proto_db.collections.base",
@@ -196,6 +197,7 @@ BUILTIN_TYPE_ALIASES: tuple[str, ...] = (
     "proto_db.transactions.DatabaseRoot",
     "proto_db.core.dbobject.DBObject",
     "proto_db.avl._Node",
+    "proto_db.avl.CountedKeyNode",
 )
 _ALIAS_OF = {name: i for i, name in enumerate(BUILTIN_TYPE_ALIASES)}
 
