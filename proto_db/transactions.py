@@ -919,10 +919,27 @@ def _permit_round(coordinator, tier, permission, entries: list, group: _Group, *
             permission.outcome, permission.committed = "committed", (permission.term, current)
             permission.bind_root(current, permission.term)
             sent = False
+        gate = None         # D55, review 8.3k I1: the gate's verdict on a proposal base, once
         for entry in entries:
             stamp = _ClusterStamp(permission.term, (current.epoch if current is not None else 0) + 1)
             try:
-                ptr = entry.build(current, stamp)
+                try:
+                    ptr = entry.build(current, stamp)
+                except (ProtoCorruptionError, ProtoUnexpectedError):
+                    # A base read failed.  On a proposal base (``after``) that is not corruption:
+                    # its records may be nowhere yet, or never -- the predecessor died or stalled
+                    # before any copy left it.  Wait for the gate: once it opens the base is
+                    # committed with ``f + 1`` copies and the read is retried once (a failure
+                    # then is a real one); if it closes, nothing was sent, so the commit gets a
+                    # truthful, retryable conflict (Lemma N).
+                    if getattr(permission, "after", None) is None or permission.sent is not None:
+                        raise
+                    if gate is None:
+                        gate = coordinator.await_proposal_base(permission)
+                    if not gate:
+                        raise ProtoConflictError("The proposal this permission was issued on never committed "
+                                                 "(its holder failed or stalled); nothing was sent")
+                    ptr = entry.build(current, stamp)
             except ProtoConflictError as e:
                 entry.error = e
                 conflicted.append(entry)

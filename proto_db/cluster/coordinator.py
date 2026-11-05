@@ -751,6 +751,10 @@ class ClusterCoordinator:
         # deliver a message twice) is ignored; answering it with done("none") would end, at
         # the owner, a permission this node is still using.
         self._permits_seen = collections.deque(maxlen=64)
+        # (term, seq, holder) of permissions that ended without committing (a ``done`` saying
+        # ``unknown`` or ``none``): a successor's gate on such a predecessor closes at once
+        # (review 8.3k, M4; liveness only -- a closed gate is always truthful).
+        self._failed_permits = collections.deque(maxlen=64)
         self._seq_seen = (0, 0)             # (term, seq): highest permission accepted here
         self._mismatched = set()            # members seen with another voter set (logged once each)
         # Bounded replication (D54): where records are, and which members answered lately.
@@ -3313,6 +3317,8 @@ class ClusterCoordinator:
             if self._state != "running":
                 return
             self._note_owner(msg["term"])
+            if msg["outcome"] != "committed":
+                self._failed_permits.append((msg["term"], msg["seq"], sender))
             if msg["outcome"] == "committed" and msg["copies"]:
                 # Where the committed root's records are (D54): reads fetch from there first.
                 known, root, label = decode_labeled_root(msg["root"])
@@ -3942,14 +3948,19 @@ class ClusterCoordinator:
         committed root of this term above ``base`` is known: impossible under correct
         sequencing).  A closed gate never reopens.  Any committed knowledge opens it: a
         ``done``, a permit, a release, a recovery answer.  If none arrived within
-        ``request_timeout``, one plain ``query`` goes to the proposal's holder and every voter
-        (ruling R94); an ``answer`` whose committed root is ``base`` is learnt (accepted
-        knowledge, as from a ``done``) and logged.  Liveness and outcome quality only: voters
-        accept the next root only by extension of what they hold (V2')."""
+        ``request_timeout``, a plain ``query`` goes to the proposal's holder and every voter
+        (ruling R94), and again every ``request_timeout`` (a lost answer is asked again); an
+        ``answer`` whose committed root is ``base`` is learnt (accepted knowledge, as from a
+        ``done``) and logged.  The gate also closes as soon as the predecessor's ``done``
+        says it did not commit (``unknown`` or ``none``; review 8.3k, M4).  Liveness and
+        outcome quality only: voters accept the next root only by extension of what they hold
+        (V2'), and a closed gate means nothing acceptable was sent."""
         label = base[2]
-        holder = lease.after[1] if getattr(lease, "after", None) else None
+        after = getattr(lease, "after", None)
+        holder = after[1] if after else None
+        failed = (lease.term, after[0], after[1]) if after else None
         fallback_at = time.monotonic() + self._request_timeout
-        rid = waiter = None
+        rid = waiter = query = None
         waited = False
         try:
             while True:
@@ -3961,7 +3972,8 @@ class ClusterCoordinator:
                         committed = self._committed
                         if self._state != "running" or not lease.is_valid() or self._owner_hint[0] > label \
                                 or (committed[0] and committed[2] >= label
-                                    and compare_roots(committed[2], committed[1], label, base[1]) > 0):
+                                    and compare_roots(committed[2], committed[1], label, base[1]) > 0) \
+                                or (failed is not None and failed in self._failed_permits):
                             self._stats["gate_closures"] += 1
                             return False
                         if waiter is not None and any(a[1] == base for a in waiter.answers.values()):
@@ -3971,15 +3983,18 @@ class ClusterCoordinator:
                             waited = True
                             self._stats["gate_waits"] += 1
                         now = time.monotonic()
-                        if waiter is None and now >= fallback_at:
-                            rid, waiter = self._new_waiter("query")
-                            self._stats["gate_fallbacks"] += 1
-                            targets = list(dict.fromkeys(m for m in [holder] + list(self._other_voters)
-                                                         if m is not None and m != self._node))
-                            send = make_message("query", self._node, rid=rid, inc=self._inc, ballot=0,
-                                                vs=self._fingerprint)
+                        if now >= fallback_at:
+                            if waiter is None:
+                                rid, waiter = self._new_waiter("query")
+                                self._stats["gate_fallbacks"] += 1
+                                targets = list(dict.fromkeys(m for m in [holder] + list(self._other_voters)
+                                                             if m is not None and m != self._node))
+                                query = make_message("query", self._node, rid=rid, inc=self._inc, ballot=0,
+                                                     vs=self._fingerprint)
+                            send = query        # the same rid: every answer lands in one waiter
+                            fallback_at = now + self._request_timeout
                             break
-                        wake = (fallback_at - now) if waiter is None else 0.05
+                        wake = (fallback_at - now) if waiter is None else min(0.05, fallback_at - now)
                         self._cond.wait(timeout=max(0.001, min(wake, lease.remaining())))
                 if send is not None:
                     for peer in targets:

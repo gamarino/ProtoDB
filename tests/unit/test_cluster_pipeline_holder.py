@@ -163,7 +163,7 @@ def test_h5_an_answer_with_another_committed_root_does_not_open_the_gate(node):
     assert node.stats()["gate_closures"] == 1
 
 
-@pytest.mark.parametrize("cause", ["expiry", "stop", "newer_term", "higher_committed"])
+@pytest.mark.parametrize("cause", ["expiry", "stop", "newer_term", "higher_committed", "predecessor_failed"])
 def test_h5_the_gate_closes_and_stays_closed(node, cause):
     base = (True, K, T)
     lease = _permit(node, after=(1, "a"), valid=0.2 if cause == "expiry" else 5.0)
@@ -177,6 +177,9 @@ def test_h5_the_gate_closes_and_stays_closed(node, cause):
         elif cause == "higher_committed":
             node._committed = (True, rec(21), T)
         node._cond.notify_all()
+    if cause == "predecessor_failed":
+        # The predecessor's done says it did not commit (review 8.3k, M4): closed at once.
+        node._on_done_owner(_done(1, "a", "unknown"))
     t.join(2)
     assert out == {"open": False}
     # Closed means closed: committed knowledge of the base arriving later changes nothing,
@@ -185,6 +188,37 @@ def test_h5_the_gate_closes_and_stays_closed(node, cause):
         node._state = "running"
         node._committed = base
     assert node.stats()["gate_closures"] == 1
+
+
+def _done(seq, sender, outcome):
+    return make_message("done", sender, term=T, seq=seq, inc=1, outcome=outcome,
+                        root=encode_root(None, known=False, term=T), copies=[], ranges=None)
+
+
+@pytest.mark.parametrize("outcome", ["unknown", "none"])
+def test_m4_the_gate_closes_early_only_on_its_predecessors_failed_done(node, outcome):
+    base = (True, K, T)
+    lease = _permit(node, after=(1, "a"), valid=5.0)
+    t, out = _gate(node, lease, base)
+    t0 = time.monotonic()
+    node._on_done_owner(_done(2, "a", outcome))     # another permission of the same holder
+    node._on_done_owner(_done(1, "c", outcome))     # the same seq, another holder
+    time.sleep(0.1)
+    assert t.is_alive()
+    node._on_done_owner(_done(1, "a", outcome))
+    t.join(2)
+    assert out == {"open": False} and time.monotonic() - t0 < 1.0
+    assert node.stats()["gate_closures"] == 1
+
+
+def test_m4_the_fallback_query_is_asked_again_every_request_timeout(node):
+    lease = _permit(node, after=(1, "a"), valid=0.4)
+    t, out = _gate(node, lease, (True, K, T))
+    t.join(2)
+    queries = [m for to, m in node.sent if m["type"] == "query" and to == "a"]
+    assert len(queries) >= 3                 # request_timeout 0.05 s in a 0.4 s validity
+    assert len({m["rid"] for m in queries}) == 1      # one waiter collects every answer
+    assert node.stats()["gate_fallbacks"] == 1
 
 
 # -- H7 and H1 need a tier and a running cluster: tests/concurrency/test_cluster_pipelined_permits.py
