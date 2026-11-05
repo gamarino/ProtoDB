@@ -1039,6 +1039,23 @@ class Queryable:
         """Execute and return the results as a list."""
         return list(self.plan().execute())
 
+    def cached(self, cache) -> "QueryResult":
+        """The result through ``cache`` (a space's :class:`~proto_db.query.cache.QueryCache`,
+        ``ObjectSpace.query_cache``): equal to :meth:`to_list` in content, immutable, served from the
+        cache when an equal query on the same versions was answered before (D56).  An uncacheable
+        query is executed and its result says why (``result.reason``)."""
+        from .cache import QueryCache
+        if not isinstance(cache, QueryCache):
+            raise ProtoValidationError(f"cached() needs a QueryCache, not {type(cache).__name__}")
+        return cache.result(self)
+
+    def pager(self, page_size: int, *, cache=None) -> "Pager":
+        """A :class:`~proto_db.query.pager.Pager` over this query's versions (D56): by rank when the
+        plan can seek, else from one materialized result (through ``cache`` when given).  In-process
+        only: use ``Transaction.pager`` for a pager with a portable token."""
+        from .pager import Pager
+        return Pager(self, page_size, cache=cache)
+
     def count(self, predicate=None) -> int:
         """The number of results (of those satisfying ``predicate`` when given), by a ``Count`` plan."""
         query = self if predicate is None else self.where(predicate)

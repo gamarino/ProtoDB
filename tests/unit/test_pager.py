@@ -205,3 +205,25 @@ def test_a_token_resumes_in_another_process(tmp_path):
     out = subprocess.run([sys.executable, "-c", script, token.hex()], capture_output=True, text=True,
                          timeout=120, check=True).stdout.split("\n")[0]
     assert out == f"{[[e['v'] for e in page] for page in expected]!r} 349 True"
+
+
+def test_queryable_conveniences_cached_and_pager():
+    from proto_db.query.cache import QueryCache, QueryResult
+    from proto_db.query.pager import Pager
+    space = ObjectSpace(MemoryStorage())
+    db = space.new_database("db")
+    db.run(lambda tx: tx.set_root_object("t", tx.new_list().add_index(RangeIndex("k", "k"))
+                                         .extend([{"k": i % 9, "i": i} for i in range(60)])))
+    with db.new_transaction() as tx:
+        q = from_collection(tx.get_root_object("t")).where(F.k >= 3).order_by(F.k)
+        result = q.cached(space.query_cache)
+        assert isinstance(result, QueryResult) and result.key is not None
+        assert q.cached(space.query_cache) is result                     # a hit: the same value
+        assert [r["i"] for r in result] == [r["i"] for r in q.to_list()]
+        pager = q.pager(7)
+        assert isinstance(pager, Pager) and pager.by_rank
+        assert [r["i"] for k in range(pager.pages) for r in pager.page(k)] == [r["i"] for r in result]
+        assert not from_collection(tx.get_root_object("t")).where(F.i < 5).pager(2, cache=space.query_cache).by_rank
+        import pytest
+        with pytest.raises(Exception):
+            q.cached(None)
