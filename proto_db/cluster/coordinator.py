@@ -1,12 +1,11 @@
 """ClusterCoordinator: the majority-granted write lease and the cluster commit point
-(Tasks 8.3c, 8.3d and 8.3f, decisions D44, D45, D46, D50).
+(Tasks 8.3c, 8.3d, 8.3f and 8.3k, decisions D44, D45, D46, D50, D55).
 
 Write permissions (D50)
     Commits no longer acquire the lease each.  The member holding the lease is the *owner*
     of its term: it renews the lease (same term, no acceptor-log write) while there is
     demand and grants short, sequenced write permissions -- ``permit(term, seq, root,
-    valid)`` -- in FIFO order, at most one outstanding, piggybacking the newest root it knows
-    committed.  The holder of a permission does its own commit round (:meth:`permit`,
+    valid)`` -- in FIFO order, piggybacking the newest root it knows committed.  The holder of a permission does its own commit round (:meth:`permit`,
     :meth:`replicate`, :meth:`finish`): it replicates under the owner's term with the
     permission's ``seq`` and the root it built on (``pred``), and ends the permission with
     ``done``.  An acceptor takes a root of the same term only when it extends its accepted
@@ -23,6 +22,21 @@ Write permissions (D50)
     owner cannot know makes it abandon its term; the next owner's recovery round decides the
     root, as after any D46 lease.  The acquiring and lease rules below are the D45/D46
     mechanics an owner uses to obtain and renew its term.
+
+Pipelined permissions (Task 8.3k, D55; rulings R91, R93, R94)
+    A holder whose round had no conflict proposes its root to the owner (``propose``) and runs
+    no further round; the owner may then issue the next permission on that proposal (the
+    permit names it in ``after`` and is never ``certain``), at most ``DEPTH`` (1) ahead.  The
+    next holder builds on the proposal and runs its data stage at once -- as ``store``
+    messages, which no code path accepts (V1), while its *gate* is closed -- but logs no own
+    acceptance and sends no root until this node knows the proposal committed and holds it as
+    its accepted root (the gate, H5; a plain ``query`` to the proposer and the voters after
+    ``request_timeout`` is the fallback).  The gate is liveness and outcome quality only:
+    safety rests on the voters, which accept a root of its predecessor's term only by
+    extension of what they hold (V2').  A round that sent nothing acceptable ends with a
+    retryable ``ProtoConflictError``; any other failure is an unknown outcome (H7).  The
+    owner retires an entry and every older one on a committed ``done`` and abandons its term
+    on any outcome it cannot sequence (O1-O8).
 
 Bounded replication (Task 8.3g, D54; maintainer rulings R70, R70a and R89)
     A fixed set of ``V = 2f + 1`` *voters* (default the first three member ids in sorted
@@ -361,7 +375,7 @@ _LOCATOR_MEMORY = 4096
 GATHER_ATTEMPTS = 3
 _CRITICAL_KEYS = ("validation", "replay", "path_copy", "replication")
 #: Messages carrying the fingerprint of the sender's voter set (D54).
-_FINGERPRINTED = ("request", "renew", "query", "replicate")
+_FINGERPRINTED = ("request", "renew", "query", "replicate", "store")
 
 
 #: Smallest drift margin, as a fraction of ``lease_duration`` (ruling R78b): the holder believes
@@ -1727,7 +1741,11 @@ class ClusterCoordinator:
                 logger.error("Node %s drops %r messages from %s: it is configured with another voter set "
                              "(every member must be given the same voters)", self._node, kind, sender)
             return
-        if kind in ("records", "replicate", "request", "renew") or (kind == "query" and msg["ballot"]):
+        if kind in ("records", "replicate", "store") and msg["records"]:
+            # D55 rule H3: the next holder may build on this commit's root before the lane has
+            # made these records durable, so they are cached at once (memory only, as ``warm``).
+            self._cache_on_receipt(msg["records"])
+        if kind in ("records", "replicate", "store", "request", "renew") or (kind == "query" and msg["ballot"]):
             # The acceptor lane: each step decides, makes its write durable, publishes, then
             # replies, in arrival order, exactly as when the dispatcher ran the grants inline
             # (D50 "Message lanes").  A replicate follows its record chunks.
@@ -2251,6 +2269,8 @@ class ClusterCoordinator:
                     self._on_ballot_query(msg["from"], msg)
                 elif kind == "replicate":
                     self._apply_replicate(msg)
+                elif kind == "store":
+                    self._apply_store(msg)
                 elif kind == "records":
                     self._buffer_records(msg)
                 elif kind == "release":
@@ -2292,7 +2312,7 @@ class ClusterCoordinator:
     def _refuse_queued(self, msg: dict) -> None:
         """A fenced node's answer to a peer message it will not handle: a replication is
         refused (its holder need not wait for this node), anything else is dropped."""
-        if msg["type"] == "replicate":
+        if msg["type"] in ("replicate", "store"):
             self._transport.send(msg["from"], make_message("ack", self._node, term=msg["term"], rid=msg["rid"],
                                                            inc=msg["inc"],
                                                            ok=False, root=self._wire(self._accepted), stored=False))
@@ -2542,6 +2562,64 @@ class ClusterCoordinator:
         self._transport.send(sender, make_message("ack", self._node, term=term, rid=rid, inc=msg["inc"], ok=ok,
                                                   root=reply_root,
                                                   stored=stored))
+
+    def _apply_store(self, msg: dict) -> None:
+        """The data stage of a gated pipelined round (acceptor lane; D55 rule V1): make the
+        records durable with ONE synced entry that does not accept the root, learn where they
+        are, then answer ``stored``.  Never an acceptance, by construction: this path does not
+        call :meth:`_may_accept`, :meth:`_note_seq`, :meth:`_observe_accepted` nor
+        :meth:`_observe_committed`, and never answers ``ok`` True; replay counts only accepted
+        entries, so the entry never appears in an answer, a ballot or after a restart."""
+        sender, term, rid = msg["from"], msg["term"], msg["rid"]
+        known, root, label = decode_labeled_root(msg["root"])
+        records = msg["records"]
+        with self._lock:
+            tier = self._tier
+            failed = self._tier_failure is not None
+            running = self._state == "running"
+            pending = self._chunks.pop(sender, None)
+        complete = True
+        if msg["chunks"]:
+            parts = pending[1] if pending is not None and pending[0] == (rid, msg["inc"]) else {}
+            complete = all(i in parts for i in range(msg["chunks"]))
+            if complete:
+                records = [r for i in range(msg["chunks"]) for r in parts[i]] + records
+        valid = (known and label == term and root is not None and complete and running
+                 and any(r[2] is not None for r in records))
+        stored = False
+        ranges = protocol.decode_ranges(msg["ranges"])
+        if valid and not failed and tier is not None and callable(getattr(tier, "accept_replication", None)):
+            try:
+                self._store_entry(tier, msg, label, root, records,
+                                  ranges if ranges is not None else protocol.record_ranges(records))
+                stored = True
+            except (ProtoDBError, OSError) as e:
+                if not self._tier_failed(tier, e, "storing a pipelined round's records"):
+                    logger.info("Node %s: the tier was detached while storing records: %s", self._node, e)
+        with self._lock:
+            if stored:
+                self._stats["stores_applied"] += 1
+                if self._tier is tier:
+                    self._note_stored(label, root)
+            if valid:
+                self._learn_locator(label, root, list(msg["copies"]) + ([self._node] if stored else []), ranges)
+            reply_root = self._wire(self._accepted)
+        self._transport.send(sender, make_message("ack", self._node, term=term, rid=rid, inc=msg["inc"], ok=False,
+                                                  root=reply_root, stored=stored))
+
+    def _store_entry(self, tier, msg: dict, label: int, root: RootRecord, records: list, ranges: list) -> None:
+        """The one synced entry of a ``store``: the records, never an acceptance (V1).
+        Planted test P2 breaks this seam."""
+        tier.accept_replication(label, root, records, ranges=ranges, accepted=False)
+
+    def _cache_on_receipt(self, records: list) -> None:
+        """Cache records of another member's commit as they arrive (dispatcher, memory only)."""
+        tier = self._tier
+        cache = getattr(tier, "cache_records", None) if tier is not None else None
+        if cache is not None:
+            cached = cache(records)
+            with self._lock:
+                self._stats["records_cached_on_receipt"] += cached
 
     def _serve_fetch(self, msg: dict) -> None:
         tier = self._tier
@@ -3404,7 +3482,8 @@ class ClusterCoordinator:
         self._waiters[rid] = waiter
         return rid, waiter
 
-    def replicate(self, lease: Lease, root: RootRecord, *, base: Optional[tuple] = None, tier=None) -> float:
+    def replicate(self, lease: Lease, root: RootRecord, *, base: Optional[tuple] = None, tier=None,
+                  propose: bool = False) -> float:
         """Commit ``root`` (built on ``lease.root``) by majority-acknowledged replication (D46).
 
         Makes the records the tier has not shipped yet durable locally (accepting the root
@@ -3427,11 +3506,26 @@ class ClusterCoordinator:
         raised.  This node's own acceptance is in any case decided only on the tier attached
         when the replication started, and only while it stays attached (ruling R55).
 
-        Raises ``ProtoConflictError`` when the lease ended before anything was sent (nothing
-        was replicated: safe to retry), and ``ProtoOutcomeUnknownError`` when no majority
-        acknowledged in time, or when anything fails once the root was sent (the space
-        closing, an I/O error of the local log): peers may have acknowledged it, and a later
-        holder may still adopt it, so the commit may or may not take effect.
+        Pipelined permissions (Task 8.3k, D55).  ``propose``: the caller's round had no
+        conflict; when this is the permission's first root, built on the base its permit gave
+        (a certain base or a proposal), the root is proposed to the owner (rule H4: after the
+        data-stage and ``warm`` sends, before the own append), which may then issue the next
+        permission on it.  Under a permit whose base is a proposal (``after``), nothing a voter
+        may accept leaves this node, and no own acceptance is logged, until this node knows the
+        base committed (the gate, H5; a liveness and outcome rule only: voters verify by
+        extension, V2').  When the gate is already open at the send, the replication runs as
+        above (the data replica that is a voter stores and accepts in one append).  When it is
+        closed, the data stage is ``store`` messages and a store-only own append (never
+        acceptable, V1); after the gate opens, the holder logs its own acceptance of the root
+        alone and sends the root alone to every other voter.  If the gate never opens (the
+        permission ends, the node stops, a newer term), nothing acceptable was sent.
+
+        Raises ``ProtoConflictError`` exactly when nothing a voter may accept left this node and
+        no own acceptance was logged (rule H7: nothing was replicated, safe to retry), and
+        ``ProtoOutcomeUnknownError`` on every other failure: no majority acknowledged in time,
+        or anything failed once an acceptable message was sent or an own acceptance logged (the
+        space closing, an I/O error of the local log): peers may have acknowledged it, and a
+        later holder may still adopt it, so the commit may or may not take effect.
         """
         started = time.perf_counter()
         attached = self._tier
@@ -3505,6 +3599,18 @@ class ClusterCoordinator:
             parts = [make_message("records", self._node, term=label, rid=rid, inc=self._inc, index=i, records=chunk)
                      for i, chunk in enumerate(chunks[:-1])]
             pred = (True, pred_root, pred_label)
+            previous_sent = lease.sent
+            # The gate (D55, H5): a permit whose base is a proposal, for the first root sent
+            # under it (built on that base).  Open when this node knows the base committed.
+            after = getattr(lease, "after", None)
+            gated = after is not None and lease.sent is None
+            gate_open = not gated or self._gate_opens(pred)
+            if gated and gate_open:
+                self._stats["gate_open_at_send"] += 1
+            propose = (propose and isinstance(lease, Permission) and lease.sent is None and base is None
+                       and lease.issued_base)
+            # A data stage that no voter can accept (V1): only while the gate is closed.
+            use_store = bounded and not gate_open
             wire_root = encode_root(root, known=True, term=label)
             wire_pred = encode_root(pred_root, known=True, term=pred_label)
             wire_committed = self._wire(self._committed)
@@ -3517,15 +3623,37 @@ class ClusterCoordinator:
                                     vs=self._fingerprint, copies=copies,
                                     ranges=wire_ranges)
 
-            msg = replication(chunks[-1], len(parts), [self._node])
+            if use_store:
+                msg = make_message("store", self._node, term=label, rid=rid, inc=self._inc, root=wire_root,
+                                   records=chunks[-1], chunks=len(parts), ranges=wire_ranges, copies=[self._node],
+                                   vs=self._fingerprint)
+                self._stats["stores_sent"] += 1
+            else:
+                msg = replication(chunks[-1], len(parts), [self._node])
             preference = self._replica_preference() if bounded else []
             lease.sent = (label, root)        # the next root of this lease extends this one
             self._stats["replications"] += 1
+        proposal = make_message("propose", self._node, term=label, seq=seq, inc=self._inc, root=wire_root,
+                                pred=wire_pred) if propose else None
+        acceptable = [False]                  # rule H7: something a voter may accept left, or was logged
+
+        def sending_acceptable():
+            acceptable[0] = True
+            if isinstance(lease, Permission):
+                lease.sent_acceptable = True
+
         failure = None
         acks = nacks = 0
         stopped = False
         copies = [self._node]
         try:
+            if not bounded:
+                if proposal is not None:
+                    self._propose(lease, proposal)
+                if not gate_open and not self._await_gate(lease, pred, tier):
+                    raise ProtoConflictError("The base of this pipelined permission was not learnt committed "
+                                             "while the permission lasted; nothing was replicated")
+                sending_acceptable()
             if with_records and not bounded:
                 self._self_accept_with_records(tier, waiter, label, root, seq, pred, pred_label,
                                                pred_root, all_records)
@@ -3541,16 +3669,37 @@ class ClusterCoordinator:
                 # never awaited), so the next committer finds its base cached.
                 replicas = set(preference[:self._majority - 1])
 
-                def own_append():
-                    self._self_accept_with_records(tier, waiter, label, root, seq, pred,
-                                                   pred_label, pred_root, all_records)
+                def warm():
                     for peer in self._others:
                         if peer not in replicas:
                             for chunk in chunks:
                                 self._transport.send(peer, make_message("warm", self._node, term=label,
                                                                         records=chunk))
 
+                def own_append():
+                    if proposal is not None:
+                        # H4: the next holder builds on this root, so its records go first.
+                        warm()
+                        self._propose(lease, proposal)
+                    if use_store:
+                        self._store_own(tier, label, root, seq, pred_label, pred_root, all_records)
+                    else:
+                        self._self_accept_with_records(tier, waiter, label, root, seq, pred,
+                                                       pred_label, pred_root, all_records)
+                    if proposal is None:
+                        warm()
+
+                if self._data_stage_acceptable(use_store):
+                    sending_acceptable()        # a data replica that is a voter may accept it
                 copies = self._place_records(waiter, lease, parts, msg, preference, own_append)
+                if copies is not None and use_store:
+                    # The root stage of a gated round (H5): only once this node knows the base
+                    # committed; then its own acceptance of the root alone, then the voters.
+                    if not self._await_gate(lease, pred, tier):
+                        raise ProtoConflictError("The base of this pipelined permission was not learnt committed "
+                                                 "while the permission lasted; nothing was replicated")
+                    sending_acceptable()
+                    self._self_accept_root(tier, waiter, label, root, seq, pred, pred_label, pred_root, ranges)
                 if copies is not None:
                     with self._lock:
                         targets = [v for v in self._other_voters if v not in waiter.acks]
@@ -3624,10 +3773,25 @@ class ClusterCoordinator:
         finally:
             with self._lock:
                 self._waiters.pop(rid, None)
+                if not acceptable[0]:
+                    lease.sent = previous_sent      # nothing of this root left: the next one does not extend it
         if failure is not None:
+            if not acceptable[0]:
+                # Rule H7: no own acceptance was logged and nothing a voter may accept left this
+                # node (a store, records and warm messages are never accepted, V1), so the root
+                # can never be committed (D55, Lemma N): a retryable conflict.
+                if isinstance(failure, ProtoConflictError):
+                    raise failure
+                raise ProtoConflictError(f"Node {self._node}: the commit of root epoch {root.epoch} failed before "
+                                         f"anything acceptable was sent ({failure}); nothing was replicated") \
+                    from failure
             raise ProtoOutcomeUnknownError(
                 f"Node {self._node}: the commit of root epoch {root.epoch} failed after the root was sent "
                 f"({failure}); peers may have acknowledged it, so it may or may not take effect") from failure
+        if not ok and not acceptable[0]:
+            raise ProtoConflictError(f"Node {self._node}: fewer than {self._majority - 1} other members stored the "
+                                     f"records of root epoch {root.epoch} before the permission ended; nothing a "
+                                     f"voter may accept was sent")
         if not ok:
             if acks >= self._majority and stopped:
                 why = (f"the coordinator stopped before this node recorded the outcome ({acks} "
@@ -3700,6 +3864,140 @@ class ClusterCoordinator:
         except (ProtoDBError, OSError) as e:
             self._tier_failed(tier, e, "making the commit's records durable")
             raise
+
+    @staticmethod
+    def _data_stage_acceptable(use_store: bool) -> bool:
+        """Rule H7 for the data stage: a ``replicate`` carrying records may be accepted by a data
+        replica that is a voter (and the holder logs its own acceptance with them); a
+        ``store`` never is (V1).  Planted test P4 breaks this seam."""
+        return not use_store
+
+    def _store_own(self, tier, label: int, root: RootRecord, seq: int, pred_label: int, pred_root,
+                   records: list) -> None:
+        """The holder's own append in a gated round (D55, H4): its records made durable by one
+        synced entry that does not accept the root (never an acceptance, V1); the redo rebuilds
+        the own segment from it, as from a data replica's entry."""
+        try:
+            tier.accept_replication(label, root, records, seq=seq, pred=(pred_label, pred_root), accepted=False)
+        except (ProtoDBError, OSError) as e:
+            self._tier_failed(tier, e, "making the commit's records durable")
+            raise
+
+    def _self_accept_root(self, tier, waiter: _Waiter, label: int, root: RootRecord, seq: int, pred: tuple,
+                          pred_label: int, pred_root, ranges: list) -> None:
+        """The holder's own acceptance of its root alone, once the gate opened (D55, H5): by the
+        acceptor rule (ruling R55; V2' -- the base is accepted here since this node learnt it
+        committed), as ONE synced entry naming the commit's ranges (its records are in the
+        store-only entry :meth:`_store_own` wrote).  Refused like any acceptance when the rule
+        says no: the vote is then missing (liveness only)."""
+        with self._log_lock:
+            with self._lock:
+                ok = self._tier is tier and self._may_accept(label, root, label, pred, seq)
+            if not ok:
+                return
+            try:
+                tier.accept_replication(label, root, [], seq=seq, pred=(pred_label, pred_root), ranges=ranges)
+            except (ProtoDBError, OSError) as e:
+                self._tier_failed(tier, e, "logging the holder's own acceptance")
+                raise
+            with self._lock:
+                self._observe_accepted(True, root, label)
+                self._note_seq(label, seq)
+                waiter.acks.add(self._node)
+
+    def _propose(self, lease: Permission, proposal: dict) -> None:
+        """Send ``proposal`` to the owner of ``lease`` (D55, H4), or apply it here when this node
+        owns the term."""
+        lease.proposed = True
+        with self._lock:
+            self._stats["proposals"] += 1
+        if lease.owner == self._node:
+            self._on_propose(self._node, proposal)
+        else:
+            self._transport.send(lease.owner, proposal)
+
+    def _gate_opens(self, base: tuple) -> bool:
+        """The gate's condition (D55, H5; lock held): this node knows ``base`` committed AND
+        holds it as its accepted root.  A committed root read back from the persisted root
+        (the persister, ``accept=False``, D46) is not accepted knowledge, so the holder's own
+        acceptance of a root built on it would be refused (V2'); the gate then keeps waiting
+        for cluster knowledge -- a ``done``, or the fallback query's answer, both learnt as
+        accepted.  Task 8.3k ruling (measured: the holder's round expired without its own
+        acceptance, tests/concurrency/test_cluster_permit_hot_key.py with the GIL on).
+        Liveness only, like the gate itself."""
+        return self._committed == base and self._accepted == base
+
+    def await_proposal_base(self, permission: Permission) -> bool:
+        """Wait until this node knows the base of ``permission`` -- a proposal (``after``) --
+        committed, as the gate does (D55, H5); True then, False once the gate closes.  For a
+        pipelined round that sends nothing: its conflicted commits retry from that base."""
+        if getattr(permission, "after", None) is None:
+            return True
+        return self._await_gate(permission, (True, permission.root, permission.root_term), self._tier)
+
+    def _await_gate(self, lease: Lease, base: tuple, tier) -> bool:
+        """Wait, on the committing thread, until this node knows ``base`` -- the proposal its
+        permit was issued on -- committed (the gate, D55 rule H5): True then; False when the
+        gate closes first (the permission ended, the node stopped, a newer term was seen, or a
+        committed root of this term above ``base`` is known: impossible under correct
+        sequencing).  A closed gate never reopens.  Any committed knowledge opens it: a
+        ``done``, a permit, a release, a recovery answer.  If none arrived within
+        ``request_timeout``, one plain ``query`` goes to the proposal's holder and every voter
+        (ruling R94); an ``answer`` whose committed root is ``base`` is learnt (accepted
+        knowledge, as from a ``done``) and logged.  Liveness and outcome quality only: voters
+        accept the next root only by extension of what they hold (V2')."""
+        label = base[2]
+        holder = lease.after[1] if getattr(lease, "after", None) else None
+        fallback_at = time.monotonic() + self._request_timeout
+        rid = waiter = None
+        waited = False
+        try:
+            while True:
+                send = learn = None
+                with self._cond:
+                    while True:
+                        if self._gate_opens(base):
+                            return True
+                        committed = self._committed
+                        if self._state != "running" or not lease.is_valid() or self._owner_hint[0] > label \
+                                or (committed[0] and committed[2] >= label
+                                    and compare_roots(committed[2], committed[1], label, base[1]) > 0):
+                            self._stats["gate_closures"] += 1
+                            return False
+                        if waiter is not None and any(a[1] == base for a in waiter.answers.values()):
+                            learn = base
+                            break
+                        if not waited:
+                            waited = True
+                            self._stats["gate_waits"] += 1
+                        now = time.monotonic()
+                        if waiter is None and now >= fallback_at:
+                            rid, waiter = self._new_waiter("query")
+                            self._stats["gate_fallbacks"] += 1
+                            targets = list(dict.fromkeys(m for m in [holder] + list(self._other_voters)
+                                                         if m is not None and m != self._node))
+                            send = make_message("query", self._node, rid=rid, inc=self._inc, ballot=0,
+                                                vs=self._fingerprint)
+                            break
+                        wake = (fallback_at - now) if waiter is None else 0.05
+                        self._cond.wait(timeout=max(0.001, min(wake, lease.remaining())))
+                if send is not None:
+                    for peer in targets:
+                        self._transport.send(peer, send)
+                if learn is not None:
+                    with self._log_lock:
+                        with self._cond:
+                            learnt = self._observe_committed(True, base[1], label, holder)
+                            attached = self._tier
+                        if learnt and attached is not None:
+                            try:
+                                attached.log_root("committed", label, base[1])
+                            except (ProtoDBError, OSError) as e:
+                                self._tier_failed(attached, e, "logging a committed root")
+        finally:
+            if rid is not None:
+                with self._lock:
+                    self._waiters.pop(rid, None)
 
     # -- recovery and peer services ----------------------------------------------------------
 

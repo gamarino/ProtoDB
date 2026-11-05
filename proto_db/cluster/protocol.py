@@ -49,6 +49,13 @@ at every start (Task 8.3g review, C1):
                counts a majority of the voters.  A message carrying records goes to the
                commit's data replicas, which store them durably whether or not they accept the
                root; the root alone goes to the other voters.
+``store``      ``term``, ``rid``, ``inc``, ``root``, ``records``, ``chunks``, ``ranges``, ``copies``,
+               ``vs``: the data stage of a pipelined round whose gate was closed when it was sent
+               (D55, protocol 13).  The receiver makes the records durable with one synced entry
+               that does NOT accept ``root`` (``root`` only keys the entry and its ranges) and
+               answers ``ack`` with ``ok`` False and ``stored`` True.  No code path accepts a
+               ``store``: it never moves the receiver's accepted root, committed root or
+               permission sequence (rule V1).  Preceded by ``records`` chunks like ``replicate``.
 ``propose``    ``term``, ``seq``, ``inc``, ``root``, ``pred``: the holder of permission ``seq`` of
                ``term`` built ``root`` on ``pred`` (the base its permit gave) in a round where no
                commit conflicted, and will send no other root under it; the owner may issue the
@@ -156,9 +163,9 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
 #: restart with every incarnation (Task 8.3g review, C1 and C2).
 #: Also 12: ``warm`` carries a commit's records to the members that are not its data
 #: replicas, for their record caches only (ruling R89).
-#: 13: pipelined permissions (Task 8.3k, D55): the ``propose`` message, ``permit.after``;
-#: ``replicate`` loses ``pred_committed`` (voters accept a same-term root only by extension of
-#: what they hold, rule V2').
+#: 13: pipelined permissions (Task 8.3k, D55): the ``store`` and ``propose`` messages,
+#: ``permit.after``; ``replicate`` loses ``pred_committed`` (voters accept a same-term root only
+#: by extension of what they hold, rule V2').
 PROTOCOL_VERSION = 13
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
@@ -194,6 +201,8 @@ MESSAGE_TYPES = {
     "replicate": {"term": _INT, "rid": _INT, "inc": _INT, "root": _ROOT, "committed": _ROOT, "records": _RECORDS,
                   "chunks": _INT, "base": _ROOT, "base_ranges": _RANGES, "seq": _INT, "pred": _ROOT,
                   "vs": _INT, "copies": _STRS, "ranges": _RANGES},
+    "store": {"term": _INT, "rid": _INT, "inc": _INT, "root": _ROOT, "records": _RECORDS, "chunks": _INT,
+              "ranges": _RANGES, "copies": _STRS, "vs": _INT},
     "propose": {"term": _INT, "seq": _INT, "inc": _INT, "root": _ROOT, "pred": _ROOT},
     "renew": {"term": _INT, "rid": _INT, "inc": _INT, "vs": _INT},
     "permit_req": {"term": _INT, "rid": _INT, "inc": _INT},

@@ -818,6 +818,11 @@ def _run_round(coordinator, lock_timeout, batch: list, group: _Group) -> bool:
                 if result is None:
                     fresh = False
                     break
+                if getattr(permission, "proposed", False):
+                    # D55 rule H1: a permission that proposed its root runs no further round
+                    # (its successor may already build on that root); commits queued since
+                    # wait for this node's next permission.
+                    break
                 if not result or rounds > _PERMIT_RETRIES or not permission.is_valid() \
                         or permission.outcome == "unknown":
                     break
@@ -892,7 +897,10 @@ def _permit_round(coordinator, tier, permission, entries: list, group: _Group, *
     try:
         base = _lease_base(coordinator, tier, permission)
         if base is None:
-            if permission.outcome != "committed":
+            # A proposal base superseded by a committed root of this term (D55, H2) reports
+            # "none": nothing was sent.  Any other stale base: an outcome the owner cannot take
+            # for granted.
+            if permission.outcome != "committed" and getattr(permission, "after", None) is None:
                 permission.outcome = "unknown"
             _requeue(group, entries)
             return None
@@ -900,11 +908,12 @@ def _permit_round(coordinator, tier, permission, entries: list, group: _Group, *
         if replicated:
             coordinator.await_records(current, label, permission)   # its records: never read under the lease
         permission.bind_root(current, label)
-        if current is not None and coordinator.known_root() != (True, current):
+        if current is not None and _base_needs_commit(coordinator, permission, current):
             # The base was accepted by some peer but is not known committed (its holder's
             # replication failed or its release was lost).  Commit it first with an unchanged
             # root on top, so that transactions starting from the committed root see it.  The
-            # base travels with its records.
+            # base travels with its records.  Never for a proposal base (D55, H2): it is not
+            # committed yet by construction, and only the gate may let a root follow it.
             sent = True
             current = _commit_base(coordinator, tier, permission, label, current)
             permission.outcome, permission.committed = "committed", (permission.term, current)
@@ -926,12 +935,24 @@ def _permit_round(coordinator, tier, permission, entries: list, group: _Group, *
                 continue
             current = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, stamp.epoch)
             built.append((entry, stamp))
+        if not built and getattr(permission, "after", None) is not None and permission.sent is None:
+            # A pipelined round that sends nothing (every commit conflicted, or none had
+            # anything to publish): wait for the gate first (D55, Task 8.3k ruling).  The
+            # conflicted commits' retries then start from the proposal base, committed by
+            # then (a transaction reads committed roots only), as the held retries of D-LIVE-2
+            # need; and the "none" this permission reports most likely reaches the owner after
+            # its predecessor's done, the single-entry case of rule O5.  Liveness only.
+            coordinator.await_proposal_base(permission)
         if built:
             sent = True
-            replication = coordinator.replicate(permission, current, tier=tier)
+            # D55 rule H1: only a round in which no commit conflicted proposes its root.
+            replication = coordinator.replicate(permission, current, tier=tier, propose=not conflicted)
             sent = False
             permission.outcome, permission.committed = "committed", (permission.term, current)
             permission.bind_root(current, permission.term)
+            if getattr(permission, "proposed", False):
+                # D55 rule H6: its successor's gate waits for this done.
+                coordinator.finish(permission)
             for entry, stamp in built:
                 stamp.timings["replication"] = replication
                 coordinator.record_critical(stamp.timings)
@@ -943,9 +964,11 @@ def _permit_round(coordinator, tier, permission, entries: list, group: _Group, *
         return conflicted
     except BaseException as e:
         # Nothing sent (a conflict or validation error raised before the replication left this
-        # node): the commits may be retried.  Otherwise the outcome is unknown, for every
+        # node; ``replicate`` raises a conflict exactly when nothing a voter may accept left it,
+        # D55 rule H7): the commits may be retried.  Otherwise the outcome is unknown, for every
         # commit of the round, and the owner abandons the term.
         nothing_sent = not sent or isinstance(e, (ProtoConflictError, ProtoValidationError, ProtoUserError))
+
         if not nothing_sent:
             permission.outcome = "unknown"
         for entry in conflicted:
@@ -957,6 +980,14 @@ def _permit_round(coordinator, tier, permission, entries: list, group: _Group, *
         if not isinstance(e, ProtoDBError):
             raise
         return []
+
+
+def _base_needs_commit(coordinator, permission, current) -> bool:
+    """True when the round must first commit its base by re-proposing it (:func:`_commit_base`):
+    the base is not known committed here.  Never for a proposal base (D55, H2): it is not
+    committed yet by construction, and only the gate may let a root follow it.  Planted test P5
+    breaks this seam."""
+    return getattr(permission, "after", None) is None and coordinator.known_root() != (True, current)
 
 
 #: Leases :func:`_commit_under_lease` acquires before giving up on finding a high enough term.
@@ -987,7 +1018,8 @@ def _lease_base(coordinator, tier, lease) -> Optional[tuple]:
     superseded and the caller acquires again.
     """
     replicated = True
-    if lease.root_certain:
+    if lease.root_certain or getattr(lease, "after", None) is not None:
+        # A proposal base (D55, H2) is the permit's root as given: no recovery round.
         current, label = lease.root, lease.root_term
     else:
         known, current, label = coordinator.recover_root()
