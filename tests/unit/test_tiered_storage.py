@@ -443,3 +443,51 @@ def test_a_truncated_read_with_no_full_copy_anywhere_raises_corruption(tmp_path)
     with pytest.raises(ProtoCorruptionError, match="no full copy"):
         reader.get_atom(ptrs[2])
     reader.close()
+
+
+class _CountingDict(dict):
+    """A dict counting the scans over its values or items (review 8.3l I1)."""
+
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.scans = 0
+
+    def values(self):
+        self.scans += 1
+        return super().values()
+
+    def items(self):
+        self.scans += 1
+        return super().items()
+
+    def __iter__(self):
+        self.scans += 1
+        return super().__iter__()
+
+
+def test_local_release_never_scans_the_segments_it_already_released(tmp_path):
+    # Review 8.3l I1: every own segment ever written stays in the bookkeeping (it is reloaded
+    # from segments.log at open, and _carry_prior needs it), but the release pass must not
+    # scan the released ones: its cost would grow with history, under the storage lock.
+    store = FakeObjectStore()
+    st = _tiered(tmp_path, store)
+    for epoch in range(1, 41):
+        ptr = st.push_atom({"n": epoch})
+        st.shipped(st.outgoing(), _root(ptr, epoch), 1)
+        st.ship(force=True)
+        st.push_atom({"n": -epoch})                    # rolls nothing: the next ship seals it
+        st.release_local(root_key(1, _root(ptr, epoch)))
+    st.close()
+    st = _tiered(tmp_path, store)                      # reloaded from the manifest, all released
+    assert len(st._own) >= 40
+    ptr = st.push_atom({"n": 99})
+    st.shipped(st.outgoing(), _root(ptr, 99), 1)
+    st.ship(force=True)
+    st.push_atom({"n": 100})
+    st._own = _CountingDict(st._own)
+    assert st.release_local(root_key(1, _root(ptr, 99))) == 1
+    assert st._own.scans == 0, "release_local scanned every own segment ever written"
+    st.close()
+    st = _tiered(tmp_path, store)
+    assert st.get_atom(ptr) == {"n": 99}               # released, read from the store
+    st.close()

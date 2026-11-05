@@ -19,6 +19,7 @@ import weakref
 import pytest
 
 from proto_db.core.atom import Atom
+from proto_db.errors import ProtoValidationError
 from proto_db.storage.file import FileStorage
 from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import DatabaseRoot, ObjectSpace, SpaceRoot
@@ -213,3 +214,14 @@ def test_a_link_set_without_a_context_holds_the_atom():
     assert second.before is first
     context.save(second)                            # adopts the context
     assert second.before == first and second.before.n == 1
+
+
+def test_assigning_a_link_after_construction_is_refused_at_save():
+    # Review 8.3l M1: a plain assignment would shadow the link in memory and be lost on save.
+    context = DirectContext(DictStorage())
+    first = _Version(1, None, context=context)
+    context.save(first)
+    second = _Version(2, None, context=context)
+    second.before = first
+    with pytest.raises(ProtoValidationError, match="history link"):
+        context.save(second)

@@ -485,7 +485,15 @@ class Atom:
         self._load()
         state = {k: v for k, v in vars(self).copy().items()
                  if not k.startswith("_") and k not in RESERVED_NAMES}
-        if type(self)._history_links:
+        links = type(self)._history_links
+        if links:
+            for name in links:
+                if name in state:
+                    # Review 8.3l M1: an assignment after construction (a class that is not
+                    # immutable) would shadow the link in memory and be lost on save.
+                    raise ProtoValidationError(
+                        f"{name!r} of {type(self).__type_name__} is a history link: set it in the "
+                        f"constructor (_set_link), not by assignment")
             state.update(self._link_values())
         return state
 

@@ -3,7 +3,9 @@
 History links are held as pointers and loaded on demand (``DatabaseRoot.previous``,
 ``SpaceRoot.cluster_previous``), so the loaded form of an old version can be evicted and
 loaded again at any time, by any thread.  Writers commit a counter while readers, with a
-small (or no) decoded-atom cache so that evictions happen all the time:
+small decoded-atom cache, so that evictions happen all the time (asserted: the cache missed
+far more pointers than it holds), or with no shared cache at all (the reload-only case: every
+link read loads a fresh stub):
 
 * keep one transaction opened before the writers started and read it again and again: its
   content never changes;
@@ -130,7 +132,7 @@ def _workload(dbs_w, dbs_r, base: int, extra_check=None):
     return elapsed, attempts, checked[0], unknown[0]
 
 
-@pytest.mark.parametrize("cache", [0, 16])
+@pytest.mark.parametrize("cache", [0, 16], ids=["reload-only, no shared cache", "evicting shared cache of 16"])
 def test_readers_walk_history_while_writers_commit(tmp_path, cache):
     space = ObjectSpace(FileStorage(str(tmp_path / "s"), durability="none"), atom_cache_entries=cache)
     try:
@@ -142,7 +144,14 @@ def test_readers_walk_history_while_writers_commit(tmp_path, cache):
         with db.new_transaction() as tr:
             assert tr.get_root_object("n") == WRITERS * COMMITS_PER_WRITER
             assert _walk(tr._db_root, base, "final") == WALK
-        report(f"history readers, cache {cache}", elapsed, attempts, f"{checked} versions checked")
+        stats = space.atom_cache_stats()
+        if cache:
+            # Each miss caches a new pointer, so missing far more pointers than the cache holds
+            # means the loaded forms the readers followed were evicted again and again.
+            assert stats["entries"] <= cache and stats["misses"] > 50 * cache, stats
+        else:
+            assert stats is None
+        report(f"history readers, cache {cache}", elapsed, attempts, f"{checked} versions checked", stats)
     finally:
         space.close()
 
@@ -174,6 +183,8 @@ def test_cluster_readers_walk_both_links_while_two_nodes_commit(tmp_path):
         final = cluster.value("n0")
         assert committed <= final <= committed + unknown
         assert cluster.eventually("n2", final, timeout=10.0)
+        stats = cluster.spaces["n2"].atom_cache_stats()
+        assert stats["entries"] <= 16 and stats["misses"] > 50 * 16, stats   # evicted again and again
         report("cluster history readers", elapsed, attempts, f"{checked} versions checked",
                f"{unknown} outcomes unknown")
     finally:

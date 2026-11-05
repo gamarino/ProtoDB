@@ -241,21 +241,39 @@ _O_BINARY = getattr(os, "O_BINARY", 0)
 
 
 class _Own:
-    """Bookkeeping of one own segment."""
+    """Bookkeeping of one own segment.
 
-    __slots__ = ("uuid", "end", "first", "uploaded", "max_key", "released", "prior")
+    ``live`` is the storage's map of own segments not released (UUID -> ``_Own``), kept in
+    step by the ``released`` setter: the release pass scans it instead of every own segment
+    ever written (review 8.3l I1; ``_own`` keeps them all, ``_carry_prior`` needs them)."""
 
-    def __init__(self, segment: uuid.UUID, prior: bool = False):
+    __slots__ = ("uuid", "end", "first", "uploaded", "max_key", "_released", "_live", "prior")
+
+    def __init__(self, segment: uuid.UUID, live: dict, prior: bool = False):
         self.uuid = segment
         self.end = SEGMENT_HEADER_SIZE
         self.first = None          # time.monotonic() of the first write not yet uploaded
         self.uploaded = False
         self.max_key = None        # root_key of the newest commit that shipped records of this segment
+        self._live = live
         self.released = False
         # Created by an earlier instance (listed in the manifest at open): the live FileStorage
         # never writes it, so its records that come back to this node (Task 8.3j review C1) are
         # written into its file here, like a copy's.
         self.prior = prior
+
+    @property
+    def released(self) -> bool:
+        """True once the local file was deleted (the store holds the segment)."""
+        return self._released
+
+    @released.setter
+    def released(self, value: bool) -> None:
+        self._released = value
+        if value:
+            self._live.pop(self.uuid, None)
+        else:
+            self._live[self.uuid] = self
 
 
 def _is_seconds(value) -> bool:
@@ -509,6 +527,7 @@ class TieredStorage(SharedStorage):
         self._tls = threading.local()
         self._fetcher = None
         self._own = {}                 # UUID -> _Own, in creation order (dicts keep it)
+        self._live_own = {}            # UUID -> _Own of the own segments not released (I1)
         self._copies = {}              # UUID -> root_key of the newest commit that wrote into the copy
         self._remote = set()           # segments whose sealed object is in the store
         self._sealed = {}              # UUID -> known length of its sealed object (the shortest seen)
@@ -695,7 +714,7 @@ class TieredStorage(SharedStorage):
             if len(payload) != 16:
                 raise ProtoCorruptionError(f"{MANIFEST} in {self._path} holds an entry of {len(payload)} bytes")
             seg = uuid.UUID(bytes=payload)
-            own = _Own(seg, prior=True)
+            own = _Own(seg, self._live_own, prior=True)
             if os.path.exists(os.path.join(self._path, seg.hex + SEGMENT_SUFFIX)):
                 present.add(seg)
             else:
@@ -980,7 +999,7 @@ class TieredStorage(SharedStorage):
             with self._lock:
                 write = ptr.segment not in self._own
                 if write:
-                    self._own[ptr.segment] = _Own(ptr.segment)
+                    self._own[ptr.segment] = _Own(ptr.segment, self._live_own)
             if write:
                 try:
                     write_all(self._manifest_fd, encode_frame(ptr.segment.bytes))
@@ -2144,7 +2163,7 @@ class TieredStorage(SharedStorage):
         current = self._local.current_segment
         with self._lock:
             releasable = any(o.uploaded and not o.released and o.uuid != current and o.max_key is not None
-                             and o.max_key <= persisted_key for o in self._own.values()) or any(
+                             and o.max_key <= persisted_key for o in list(self._live_own.values())) or any(
                 s in self._remote and k is not None and k <= persisted_key for s, k in self._copies.items())
         if releasable:
             self.checkpoint()
@@ -2172,7 +2191,7 @@ class TieredStorage(SharedStorage):
                 unshipped = {raw for raw, _, _ in self._unshipped}
                 # An own segment with records not yet shipped is kept: they ride with a later
                 # replication, so a kind-5 entry after the checkpoint above may name it.
-                own = [o for o in self._own.values() if o.uploaded and not o.released and o.uuid != current
+                own = [o for o in list(self._live_own.values()) if o.uploaded and not o.released and o.uuid != current
                        and o.max_key is not None and o.max_key <= persisted_key and self._covered(o.uuid, o.end)
                        and o.uuid.bytes not in unshipped]
                 copies = [s for s in candidates if self._copies.get(s) is not None
