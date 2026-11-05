@@ -234,8 +234,18 @@ _SCALARS = (bool, int, float, Decimal, str, bytes, datetime, date, time, timedel
 _REF_SIZE = 72
 
 
-def _freeze(value, size: list):
-    """The stored form of one result value; ``size[0]`` accumulates its estimated bytes."""
+class _Thaw:
+    """A stored value holding atom references somewhere inside: rebuilt on access."""
+
+    __slots__ = ("value",)
+
+    def __init__(self, value):
+        self.value = value
+
+
+def _freeze(value, size: list, refs: list):
+    """The stored form of one result value; ``size[0]`` accumulates its estimated bytes and
+    ``refs[0]`` counts the atoms replaced by references."""
     if value is None or value is MISSING:
         return value
     if isinstance(value, Atom):
@@ -243,20 +253,31 @@ def _freeze(value, size: list):
         if ptr is None:
             raise _Uncacheable(f"the result holds an unsaved atom {type(value).__name__}")
         size[0] += _REF_SIZE
+        refs[0] += 1
         return _AtomRef(ptr, type(value).__type_name__)
     if isinstance(value, dict):
         size[0] += sys.getsizeof(value)
-        return FrozenDict((_freeze(k, size), _freeze(v, size)) for k, v in value.items())
+        return FrozenDict((_freeze(k, size, refs), _freeze(v, size, refs)) for k, v in value.items())
     if isinstance(value, list):
         size[0] += sys.getsizeof(value)
-        return FrozenList(_freeze(v, size) for v in value)
+        return FrozenList(_freeze(v, size, refs) for v in value)
     if isinstance(value, tuple):
         size[0] += sys.getsizeof(value)
-        return tuple(_freeze(v, size) for v in value)
+        return tuple(_freeze(v, size, refs) for v in value)
     if isinstance(value, _SCALARS):
         size[0] += sys.getsizeof(value)
         return value
     raise _Uncacheable(f"the result holds a value of type {type(value).__name__}, which is not a stored value")
+
+
+def _entry(value, size: list):
+    """One result row in stored form: an atom reference, a :class:`_Thaw` wrapper when atoms are
+    nested inside, else the frozen value itself (returned as is on every access)."""
+    refs = [0]
+    frozen = _freeze(value, size, refs)
+    if type(frozen) is _AtomRef or not refs[0]:
+        return frozen
+    return _Thaw(frozen)
 
 
 def _thaw(value, load):
@@ -303,7 +324,14 @@ class QueryResult(Sequence):
             yield self._value(v)
 
     def _value(self, v):
-        return v if self._load is None else _thaw(v, self._load)
+        if self._load is None:
+            return v
+        t = type(v)
+        if t is _AtomRef:
+            return self._load(v.ptr, v.type_name)
+        if t is _Thaw:
+            return _thaw(v.value, self._load)
+        return v
 
     def __repr__(self):
         return f"<QueryResult rows={len(self._entries)} {'cached' if self.key else 'uncacheable'}>"
@@ -352,7 +380,7 @@ class QueryCache:
         rows = tuple(plan.execute())
         size = [64]
         try:
-            entries = tuple(_freeze(v, size) for v in rows)
+            entries = tuple(_entry(v, size) for v in rows)
         except _Uncacheable as e:
             with self._lock:
                 self._uncacheable += 1

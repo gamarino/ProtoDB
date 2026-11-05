@@ -199,3 +199,23 @@ def test_a_disabled_cache_still_answers():
         q = from_collection(tx.get_root_object("items")).where(F.k == 4)
         assert list(space.query_cache.result(q)) == list(q)
     assert space.query_cache_stats()["entries"] == 0
+
+
+def test_atoms_nested_in_result_values_are_references_too():
+    space, db = _space(atom_cache_entries=0)
+
+    def build(tx):
+        tx.set_root_object("objs", tx.new_list().extend([tx.new_object(n=i, g=i % 3) for i in range(12)]))
+    db.run(build)
+    with db.new_transaction() as tx:
+        q = from_collection(tx.get_root_object("objs")).group_by(F.g)
+        result = space.query_cache.result(q)
+        assert result.key is not None
+        stored = result._entries[0]
+        assert type(stored).__name__ == "_Thaw"
+        groups = list(result)
+        assert [g["key"] for g in groups] == [0, 1, 2]
+        assert [[o.n for o in g["items"]] for g in groups] == [[0, 3, 6, 9], [1, 4, 7, 10], [2, 5, 8, 11]]
+        assert groups == list(q)
+        plain = space.query_cache.result(from_collection(tx.get_root_object("objs")).select(["n"]))
+        assert plain[0] is plain[0]           # an atom-free row is returned as stored, not rebuilt
