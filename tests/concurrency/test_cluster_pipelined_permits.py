@@ -945,6 +945,7 @@ def _arm(tc, load, how):
     return victim, fired, disarm
 
 
+@pytest.mark.timeout(600)
 @pytest.mark.parametrize("n", [3, 5])
 @pytest.mark.parametrize("seed", range(RUNS))
 def test_no_acknowledged_commit_is_lost_with_the_pipeline_under_faults(tmp_path, monkeypatch, n, seed):
@@ -977,7 +978,9 @@ def test_no_acknowledged_commit_is_lost_with_the_pipeline_under_faults(tmp_path,
                 if how in AIMED_FAULTS:
                     aimed.append(how)
                     hit, fired, disarm = _arm(tc, load, how)
-                    fired.wait(20 * SECONDS)      # the hot counter conflicts often: few rounds propose
+                    # The hot counter conflicts often, and under 20 ms jitter at 5 members few
+                    # rounds propose: a window fault may need tens of seconds to find one.
+                    fired.wait(60.0 if how in WINDOW_FAULTS else 20 * SECONDS)
                     if how != "late_acks":
                         disarm()
                     if not fired.is_set():
