@@ -182,6 +182,7 @@ def test_h5_the_gate_closes_and_stays_closed(node, cause):
         node._on_done_owner(_done(1, "a", "unknown"))
     t.join(2)
     assert out == {"open": False}
+    assert lease.gate_closed                # the permission ends after this round (N2)
     # Closed means closed: committed knowledge of the base arriving later changes nothing,
     # the gate has returned and the round has ended with it (H7 decides its outcome).
     with node._cond:

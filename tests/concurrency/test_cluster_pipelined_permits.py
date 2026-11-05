@@ -562,7 +562,8 @@ def test_a_lost_done_to_the_successor_is_answered_by_the_fallback_query(tmp_path
 
 @pytest.mark.parametrize("outage", [True, False])
 def test_a_successor_whose_base_records_are_nowhere_gets_a_retryable_conflict(tmp_path, outage):
-    """Review 8.3k, I1.  The owner is n2.  A (n0) proposes root k, and none of A's record
+    """Review 8.3k, I1.  The owner is n2 (it owns the term, and A's proposal reaches it before
+    B asks: B's permit is issued on root k).  A (n0) proposes root k, and none of A's record
     copies has left A; the permit for B (n1) on root k is in flight when A dies.  B's build
     finds root k's records in no tier.  Before D55 a base always had ``f + 1`` copies, so
     that read failure meant corruption; on a proposal base it is the normal consequence of
@@ -611,7 +612,15 @@ def test_a_successor_whose_base_records_are_nowhere_gets_a_retryable_conflict(tm
         ta = threading.Thread(target=run, args=("n0", "a"))
         tb = threading.Thread(target=run, args=("n1", "b"))
         ta.start()
-        _await(lambda: a.stats()["proposals"] >= 1, what="A's proposal")
+
+        def proposed_to_owner():
+            # A's proposal reached the owner: B's permit can then only be issued on it (O2).
+            # (A's ``proposals`` counter is no witness: ``_confirmed`` made A propose already,
+            # so B could otherwise be served first -- review 8.3k re-review, N1.)
+            with o._cond:
+                own = o._ownership
+                return own is not None and any(e.node == "n0" and e.proposal is not None for e in own.pipeline)
+        _await(proposed_to_owner, what="A's proposal at the owner")
         tb.start()
         _await(permit_out.is_set, what="B's permit on root k")
         tc.cluster.crash("n0")
@@ -621,6 +630,13 @@ def test_a_successor_whose_base_records_are_nowhere_gets_a_retryable_conflict(tm
         assert results.get("b") == "conflict", results
         if outage:          # with the store up, A's persister may have uploaded root k's segment:
             assert b.stats()["gate_closures"] >= 1, b.stats()     # B then builds, and its gate closes
+        # The conflict is truthful: in the next term, b was never applied.
+        tc.store.set_outage(False)
+        _no_owner(tc, timeout=10)
+        tc.db("n2").run(_setter("c"), **RUN_KW)
+        for node in ("n1", "n2"):
+            _await(lambda: _read_keys(tc, node, ("c",))["c"] == 1, what=f"the next term at {node}")
+            assert _read_keys(tc, node, ("b",))["b"] is None, node
 
 
 def test_acks_after_the_predecessors_validity_give_an_unknown_that_took_effect(tmp_path):
@@ -728,6 +744,79 @@ def test_a_failing_predecessor_turns_its_successor_into_a_retried_conflict(tmp_p
         assert b.stats()["gate_closures"] >= 1
         values = _read_keys(tc, "n1", ("a", "b"))
         assert values["b"] == 1 and values["a"] in (None, 1), values
+
+
+def test_a_gate_closed_early_ends_its_permission(tmp_path, monkeypatch):
+    """Re-review 8.3k, N2.  The owner is n2.  A (n0) proposes root k; none of its record copies
+    leaves it and it serves no fetch; B (n1) is issued k+1 on root k, its build finds root k's
+    records nowhere (the store is out) and it waits at its gate (I1).  A's own sync then fails: its ``done`` says
+    unknown and closes B's gate at once (M4), while B's permission is still valid.  That
+    permission must end there: before the fix its held retry rebuilt on the dead proposal
+    (another I1 conflict) for up to ``_PERMIT_RETRIES`` rounds.  B's commit is retried under
+    a later permission and acknowledged; b is applied once."""
+    with _cluster(tmp_path) as tc:
+        _confirmed(tc)
+        _no_owner(tc)
+        tc.store.set_outage(True)
+        a, b, o = tc["n0"], tc["n1"], tc["n2"]
+        tc.db("n2").run(_setter("o"), **RUN_KW)          # n2 owns the term
+        assert o._ownership is not None
+        closed, late_rounds = set(), []
+        wait = b._await_gate
+
+        def recording_gate(lease, base, tier):
+            opened = wait(lease, base, tier)
+            if not opened:
+                closed.add(id(lease))
+            return opened
+        b._await_gate = recording_gate
+        permit_round = transactions._permit_round
+
+        def recording_round(coordinator, tier, permission, *args, **kw):
+            if coordinator is b and id(permission) in closed:
+                late_rounds.append(permission.seq)
+            return permit_round(coordinator, tier, permission, *args, **kw)
+        monkeypatch.setattr(transactions, "_permit_round", recording_round)
+        send_a = a.transport.send
+        # No copy of A's records leaves A, and A serves no fetch: root k's records are nowhere
+        # B can read them, while A stays alive to send its done.
+        a.transport.send = lambda to, msg: None if msg["type"] in ("warm", "records", "store", "fetched") or (
+            msg["type"] == "replicate" and msg["records"]) else send_a(to, msg)
+        hold = threading.Event()
+
+        def failing_own(*args, **kw):
+            hold.wait(10)
+            raise OSError("A's own sync failed")
+        a._self_accept_with_records = failing_own
+        results = {}
+
+        def run(node, key):
+            try:
+                tc.db(node).run(_setter(key), **RUN_KW)
+                results[key] = "acked"
+            except ProtoOutcomeUnknownError:
+                results[key] = "unknown"
+        ta = threading.Thread(target=run, args=("n0", "a"))
+        tb = threading.Thread(target=run, args=("n1", "b"))
+        ta.start()
+
+        def proposed_to_owner():
+            with o._cond:
+                own = o._ownership
+                return own is not None and any(e.node == "n0" and e.proposal is not None for e in own.pipeline)
+        _await(proposed_to_owner, what="A's proposal at the owner")
+        tb.start()
+        _await(lambda: b.stats()["gate_waits"] >= 1, what="B waiting at its gate", tc=tc)
+        hold.set()                      # A's done(unknown) closes B's gate early
+        ta.join(30)
+        del a._self_accept_with_records
+        a.transport.send = send_a
+        tc.store.set_outage(False)
+        tb.join(60)
+        assert results == {"a": "unknown", "b": "acked"}, results
+        assert closed, "B's gate never closed"
+        assert late_rounds == [], f"rounds ran on permissions whose gate had closed: {late_rounds}"
+        assert _read_keys(tc, "n1", ("b",))["b"] == 1
 
 
 def test_a_successor_that_finishes_first_waits_at_the_gate(tmp_path):
@@ -875,7 +964,7 @@ def _arm(tc, load, how):
     fired = threading.Event()
     lock = threading.Lock()
     armed = [True]
-    victim = []
+    victim = []         # the member hit, then (term, seq) of the proposing permission hit
     undo = []
     late = []           # late_acks: the proposing permission whose acks are delayed
 
@@ -912,6 +1001,7 @@ def _arm(tc, load, how):
             def after_propose(lease, proposal, _propose=c._propose, _m=member, _crash=crash):
                 _propose(lease, proposal)
                 if take(_m):
+                    victim.append((lease.term, lease.seq))
                     _crash()
             c._propose = after_propose
             undo.append(lambda _c=c: _c.__dict__.pop("_propose", None))
@@ -919,8 +1009,10 @@ def _arm(tc, load, how):
             # A proposing holder dies right after its root stage left (it may be committed).
             def after_root(to, msg, _send=c.transport.send, _c=c, _m=member, _crash=crash):
                 _send(to, msg)
-                if msg["type"] == "replicate" and not msg["records"] and getattr(_c._permit, "proposed", False) \
+                p = _c._permit
+                if msg["type"] == "replicate" and not msg["records"] and getattr(p, "proposed", False) \
                         and take(_m):
+                    victim.append((p.term, p.seq))
                     _crash()
             c.transport.send = after_root
             undo.append(lambda _c=c: _c.transport.__dict__.pop("send", None))
@@ -933,7 +1025,7 @@ def _arm(tc, load, how):
                     with lock:
                         if not victim and armed[0] and p is not None and getattr(p, "proposed", False):
                             armed[0] = False
-                            victim.append(to)
+                            victim.extend([to, (p.term, p.seq)])
                             late.append(p)
                             fired.set()
                     if late and late[0] is p and victim and victim[0] == to:
@@ -945,10 +1037,22 @@ def _arm(tc, load, how):
     return victim, fired, disarm
 
 
+@pytest.fixture(scope="module")
+def window_tally():
+    """Across the fault schedules of one run: at the acceptance size (50 per member count),
+    at least one landed window fault must have hit a proposal that a successor was issued on
+    (re-review 8.3k, N3).  Smaller runs only report the count."""
+    tally = {"schedules": 0, "overlapped": 0}
+    yield tally
+    print(f"\nwindow faults with a successor in flight: {tally['overlapped']} in {tally['schedules']} schedules")
+    if tally["schedules"] >= 100:
+        assert tally["overlapped"] >= 1, tally
+
+
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize("n", [3, 5])
 @pytest.mark.parametrize("seed", range(RUNS))
-def test_no_acknowledged_commit_is_lost_with_the_pipeline_under_faults(tmp_path, monkeypatch, n, seed):
+def test_no_acknowledged_commit_is_lost_with_the_pipeline_under_faults(tmp_path, monkeypatch, n, seed, window_tally):
     """Every member commits (two threads each) while links duplicate (up to 100 %), reorder
     (delay jitter) and the schedule kills members, partitions, and aims faults at the
     pipeline: a holder killed at its gate, a predecessor killed right after its proposal or
@@ -957,15 +1061,18 @@ def test_no_acknowledged_commit_is_lost_with_the_pipeline_under_faults(tmp_path,
     unknown``."""
     rng = random.Random(seed * 104729 + n)
     issued_on_proposals = [0]       # across incarnations: a revived member's counters restart
+    successors = set()              # (term, seq, holder) of every proposal a permit was issued on
     dispatch = ClusterCoordinator._dispatch
 
     def counting(self, own):
         before = self._stats["pipelined_permits"]
+        fresh = [e for e in own.pipeline if e.proposal is not None and not e.consumed]
         sends = dispatch(self, own)
         issued_on_proposals[0] += self._stats["pipelined_permits"] - before
+        successors.update((own.term, e.seq, e.node) for e in fresh if e.consumed)
         return sends
     monkeypatch.setattr(ClusterCoordinator, "_dispatch", counting)
-    aimed, landed = [], []
+    aimed, landed, hits = [], [], []
     with _cluster(tmp_path, n) as tc:
         net = tc.cluster.net
         net.set_faults(duplicate=rng.choice([0.0, 0.3, 1.0]), delay=(0.0, rng.choice([0.0, 0.004, 0.02])))
@@ -988,6 +1095,8 @@ def test_no_acknowledged_commit_is_lost_with_the_pipeline_under_faults(tmp_path,
                         continue
                     landed.append(how)
                     victim = hit[0]
+                    if len(hit) > 1:
+                        hits.append((how, hit[1][0], hit[1][1], victim))
                     if how == "late_acks":
                         time.sleep(LEASE["lease_duration"] * 1.5)      # the delayed acks arrive
                         disarm()
@@ -1008,8 +1117,13 @@ def test_no_acknowledged_commit_is_lost_with_the_pipeline_under_faults(tmp_path,
                     load.down.discard(victim)
             time.sleep(SECONDS / 3)
         pipelined = issued_on_proposals[0]
+        # N3: a landed window fault whose victim's proposal had a successor issued on it -- a
+        # pipelined round in flight across the fault, not only a proposer hit.
+        overlapped = [how for how, term, seq, member in hits if (term, seq, member) in successors]
+        window_tally["schedules"] += 1
+        window_tally["overlapped"] += len(overlapped)
         print(f"\n{n} members, seed {seed}: {load.acked} acked, {load.unknown} unknown, {pipelined} pipelined "
-              f"permits, aimed {aimed}, landed {landed}")
+              f"permits, aimed {aimed}, landed {landed}, with a successor {overlapped}")
         _check(tc, load, tc.ids)
         assert pipelined > 0
         required = [how for how in aimed if how in WINDOW_FAULTS]

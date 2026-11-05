@@ -413,6 +413,9 @@ class Permission(Lease):
         self.issued_base = self.root_certain or after is not None
         self.proposed = False
         self.sent_acceptable = False
+        # Its gate closed (its base will never be known committed under it): no further round
+        # runs under it, no held retry rebuilds on that base (re-review 8.3k, N2).
+        self.gate_closed = False
         self.seq = seq
         self.owner = owner
         self.rid = rid

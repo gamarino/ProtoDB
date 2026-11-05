@@ -3975,6 +3975,8 @@ class ClusterCoordinator:
                                     and compare_roots(committed[2], committed[1], label, base[1]) > 0) \
                                 or (failed is not None and failed in self._failed_permits):
                             self._stats["gate_closures"] += 1
+                            if isinstance(lease, Permission):
+                                lease.gate_closed = True    # ends it after this round (N2)
                             return False
                         if waiter is not None and any(a[1] == base for a in waiter.answers.values()):
                             learn = base

@@ -713,7 +713,7 @@ def _take_kept(group: _Group, coordinator, tier):
     kept[6].cancel()
     permission, kept_tier, rounds, deadline = kept[0], kept[1], kept[2], kept[5]
     if kept_tier is tier and time.monotonic() < deadline and permission.is_valid() \
-            and permission.outcome != "unknown":
+            and permission.outcome != "unknown" and not getattr(permission, "gate_closed", False):
         return permission, rounds
     _end_permission(kept[4], permission)
     return None
@@ -824,7 +824,9 @@ def _run_round(coordinator, lock_timeout, batch: list, group: _Group) -> bool:
                     # wait for this node's next permission.
                     break
                 if not result or rounds > _PERMIT_RETRIES or not permission.is_valid() \
-                        or permission.outcome == "unknown":
+                        or permission.outcome == "unknown" or getattr(permission, "gate_closed", False):
+                    # A closed gate (D55) ends the permission too: its base is a proposal that
+                    # will not be known committed under it, and a retry would rebuild on it.
                     break
                 if any(e.thread == me and getattr(e.error, "permit_held", False) for e in result):
                     keep = True         # this thread retries its own commit under the permission
@@ -975,7 +977,8 @@ def _permit_round(coordinator, tier, permission, entries: list, group: _Group, *
                 coordinator.record_critical(stamp.timings)
                 entry.finish(result=True)
         for entry in conflicted:
-            if hold and entry.retrying and permission.is_valid() and permission.outcome != "unknown":
+            if hold and entry.retrying and permission.is_valid() and permission.outcome != "unknown" \
+                    and not getattr(permission, "gate_closed", False):
                 entry.error.permit_held = True
             entry.finish(error=entry.error)
         return conflicted
