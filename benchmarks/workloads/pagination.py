@@ -14,7 +14,10 @@ sum of a query against a Python model.
 by ``k``, with and without a range predicate (``k >= N/2``).
   * protodb pager.page (by rank): ``tx.pager(...).page(o // 50)``, O(log n + 50) (D56);
   * protodb islice (no rank): the ordered index scan read row by row up to the offset, the
-    cost a plan without rank access pays;
+    cost a plan without rank access pays (an index without weights, or a plan that cannot seek),
+    and less than materializing the whole result, which such a pager does once per snapshot;
+  * protodb pager over the same index without weights (in memory, first and last offset only):
+    the pager materializes the whole result before its first page (one request per sample);
   * sqlite3 OFFSET: ``ORDER BY k LIMIT 50 OFFSET o`` (index on ``k``);
   * sqlite3 keyset, next page: ``WHERE k > last ORDER BY k LIMIT 50`` with the previous
     page's last key known (no random jump);
@@ -150,6 +153,15 @@ def deep_page(ctx, p):
         result.check("pager over k >= N/2 ordered by k is served by rank", ranged.by_rank, ranged.explain())
         result.work["plan_ordered"] = _shape(probe.explain()["plan"])
         result.work["plan_ranged"] = _shape(ranged.explain()["plan"])
+    # The same index without weights (plain KeyNode trees, as built before D56), in memory: a pager
+    # over it cannot seek and materializes the whole result before its first page.
+    from proto_db.collections import avl
+    from proto_db.query.pager import Pager
+    with d.db.new_transaction() as tx:
+        index = tx.get_root_object("t").get_index("k")
+        unweighted = index._with(groups=avl.key_from_sorted(
+            (k, (avl.key_from_sorted(avl.key_iter(g[0])), g[1])) for k, g in avl.key_iter(index.groups)))
+    result.check("the unweighted copy offers no rank access", unweighted.ordered_plan().window(0, 0) is None)
     expected, measured = [], []
     for offset in p["offsets"]:
         assert offset % PAGE == 0
@@ -173,9 +185,12 @@ def deep_page(ctx, p):
                     out.append(_ids(tx.pager("t", where=_ge(half), order_by="k", page_size=PAGE).page(page_no)))
             return out
 
-        def proto_islice(offset=offset):
+        # Reading up to the offset costs O(offset) per request: fewer requests at deep offsets.
+        scan_requests = max(1, min(requests, 200_000 // max(offset, 1)))
+
+        def proto_islice(offset=offset, scan_requests=scan_requests):
             out = []
-            for _ in range(requests):
+            for _ in range(scan_requests):
                 with d.db.new_transaction() as tx:
                     plan = plan_query(tx.get_root_object("t"), order_by="k")
                     out.append(_ids(islice(plan.execute(), offset, offset + PAGE)))
@@ -199,9 +214,15 @@ def deep_page(ctx, p):
                                                    (last, PAGE))] for _ in range(requests)]
 
         variants = [(f"protodb pager.page by rank @{offset}", pager_page, expect),
-                    (f"protodb islice ordered scan (no rank) @{offset}", proto_islice, expect),
+                    (f"protodb islice ordered scan (no rank) @{offset}", proto_islice, [want] * scan_requests),
                     (f"sqlite3 OFFSET @{offset}", sql_offset, expect),
                     (f"sqlite3 keyset next page @{offset}", sql_keyset_next, expect)]
+        if offset in (p["offsets"][0], p["offsets"][-1]):
+            def unweighted_page(page_no=page_no):
+                pager = Pager(unweighted.ordered_plan(), PAGE)
+                return [_ids(pager.page(page_no))]
+            variants.append((f"protodb pager, index without weights (materializes) @{offset}",
+                             unweighted_page, [want]))
         if offset < n - half:
             variants += [(f"protodb pager k>=N/2 by rank @{offset}", pager_ranged, expect_ranged),
                          (f"sqlite3 k>=N/2 OFFSET @{offset}", sql_offset_ranged, expect_ranged)]
