@@ -327,7 +327,7 @@ from typing import Callable, NamedTuple, Optional
 
 from ..core.atom import AtomPointer
 from ..errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoOutcomeUnknownError, ProtoTimeoutError,
-                      ProtoUnexpectedError, ProtoUserError, ProtoValidationError)
+                      ProtoUnexpectedError, ProtoUserError, ProtoValidationError, ProtoWriteRefusedError)
 from ..storage.format import RootRecord
 from . import protocol
 from .lease import Lease, LeaseAttempt, PeerGrants, Permission, majority
@@ -852,7 +852,14 @@ class ClusterCoordinator:
         record it as failed (module docstring, "Health"; the first failure is kept) and return
         True; return False when it was detached meanwhile (a closed space refuses writes: the
         tier is gone, not failed).  The caller never acknowledges nor grants what the write
-        was for."""
+        was for.  A :class:`ProtoWriteRefusedError` refuses that one write and leaves the tier
+        healthy: it is logged and not recorded as a failure (Task 8.3j re-review N1)."""
+        if isinstance(error, ProtoWriteRefusedError):
+            with self._cond:
+                attached = self._tier is tier
+            logger.warning("Node %s: %s was refused by its tier (%s); the tier stays in service",
+                           self._node, what, error)
+            return attached
         with self._cond:
             attached = self._tier is tier
             first = attached and self._tier_failure is None
@@ -1389,7 +1396,7 @@ class ClusterCoordinator:
                         # Closed once detached: it refuses writes (ruling R56).
                         return "the tier was detached"
                     return (f"storing the records of root epoch {current[1].epoch} (label {current[0]}) failed "
-                            f"({e}); the tier failed")
+                            f"({e})" + ("" if isinstance(e, ProtoWriteRefusedError) else "; the tier failed"))
             current = tier.parent_root(current[1])
         return None
 

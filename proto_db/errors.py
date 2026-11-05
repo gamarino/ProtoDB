@@ -15,6 +15,7 @@ NOT_AUTHORIZED_ERROR = 50_000
 UNEXPECTED_ERROR = 60_000
 OUTCOME_UNKNOWN_ERROR = 60_100
 BACKLOG_FULL_ERROR = 60_200
+WRITE_REFUSED_ERROR = 60_300
 LOCKING_ERROR = 70_000
 CONFLICT_ERROR = 70_100
 TIMEOUT_ERROR = 70_200
@@ -78,6 +79,16 @@ class ProtoBacklogFullError(ProtoUnexpectedError):
     succeed again once the object store is reachable and the replicator has caught up.
     """
     default_code = BACKLOG_FULL_ERROR
+
+
+class ProtoWriteRefusedError(ProtoUnexpectedError):
+    """A storage tier refused one write without failing: nothing of it was written or logged.
+
+    The tier stays healthy and a later attempt may succeed (for instance once the object store
+    is reachable again).  A cluster node refuses the acceptance or the acknowledgement that
+    write was for, and goes on serving; it does not stop acting as an acceptor.
+    """
+    default_code = WRITE_REFUSED_ERROR
 
 
 class ProtoLockingError(ProtoDBError):

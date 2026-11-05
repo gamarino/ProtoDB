@@ -196,7 +196,7 @@ import msgpack
 from ..core.atom import AtomPointer
 from ..errors import (ProtoBacklogFullError, ProtoCorruptionError, ProtoDBError, ProtoLockingError,
                       ProtoNotSupportedError, ProtoTimeoutError, ProtoUnexpectedError,
-                      ProtoValidationError, attach_secondary_errors)
+                      ProtoValidationError, ProtoWriteRefusedError, attach_secondary_errors)
 from ..cluster import protocol as _protocol
 from ..cluster.rootlog import LoggedRoots, RootsLog, compare_roots, root_key
 from .base import SharedStorage, check_lock_timeout
@@ -543,6 +543,12 @@ class TieredStorage(SharedStorage):
         self._local = FileStorage(self._path, durability=durability, cache_bytes=min(cache_bytes, 16 * MIB),
                                   lock_timeout=lock_timeout, segment_max_bytes=segment_max_bytes)
         present = self._load_manifest()
+        # The manifest read here may hold entries an earlier instance never synced (it syncs
+        # segments.log before an acceptance, not at every push).  Since Task 8.3j records of
+        # such a segment can come back to this instance (:meth:`_carry_prior`); the first sync
+        # covers the manifest, so the segment stays an own segment across a later power loss
+        # (re-review N1).
+        self._manifest_dirty = bool(self._own)
         self._roots = RootsLog(os.path.join(self._path, ROOTS_LOG))     # always synced (Task 8.3e)
         self._load_ranges()
         # Phase B (Task 8.3f): rebuild the data files from the acceptances logged since the
@@ -676,7 +682,11 @@ class TieredStorage(SharedStorage):
             if os.path.exists(os.path.join(self._path, seg.hex + SEGMENT_SUFFIX)):
                 present.add(seg)
             else:
-                own.uploaded = own.released = True     # released only after the store held it
+                # Released after its upload, or never written out (a fresh segment is listed at
+                # its first push, gets a file at its first write-out): no record of it is local
+                # either way.  Records of it that come back are placed by _carry_prior, which
+                # never takes the store for holding it (Task 8.3j re-review N1).
+                own.uploaded = own.released = True
             self._own[seg] = own
         for name in os.listdir(self._path):
             if name.endswith(SEGMENT_SUFFIX):
@@ -711,7 +721,8 @@ class TieredStorage(SharedStorage):
         remembered and logged.  An own segment listed in the manifest whose file is missing is
         recreated: a released own segment never appears in an entry kept after the checkpoint
         that preceded its release (:meth:`release_local`), so a missing file here was never
-        written out.  Nothing is synced here; the caller checkpoints.  Return True when
+        written out (records of a released segment that come back later are written after its
+        store prefix is synced, :meth:`_carry_prior`).  Nothing is synced here; the caller checkpoints.  Return True when
         anything was written."""
         if not entries:
             return False
@@ -1289,12 +1300,14 @@ class TieredStorage(SharedStorage):
         if own_dirty:
             self._sync_manifest()
         order = root_key(label, root)
+        # A store download the carry may need is made before the acceptance lock (re-review N2).
+        prefixes = self._carry_prefixes(self._prior_groups(records))
         with self._accept_lock:
             self._refuse_closed(f"writing {ROOTS_LOG}")
             # Records of an own segment of an earlier instance go into its file before the entry
             # that holds them is logged (Task 8.3j review C1): a checkpoint after this entry's
             # append then syncs them before it compacts the entry.
-            self._carry_prior(records, order, sync=False)
+            self._carry_prior(records, order, sync=False, prefixes=prefixes)
             self._roots.append_records(label, root, records, seq=seq, pred=pred, ranges=ranges, accepted=accepted)
             with self._lock:
                 entry = self._remember(records, root, label, ranges)
@@ -1501,7 +1514,39 @@ class TieredStorage(SharedStorage):
         self._carry_prior(records, order, sync=self._durability == "fsync")
         self._write_copies(records, order)
 
-    def _carry_prior(self, records: list, order: tuple, *, sync: bool) -> None:
+    def _prior_groups(self, records: list) -> dict:
+        """The ``records`` that belong to own segments of an earlier instance, by segment."""
+        groups = {}
+        with self._lock:
+            for raw, offset, data in records:
+                if data is None:
+                    continue
+                segment = uuid.UUID(bytes=raw)
+                own = self._own.get(segment)
+                if own is not None and own.prior:
+                    groups.setdefault(segment, []).append((offset, data))
+        return groups
+
+    def _carry_prefixes(self, groups: dict) -> dict:
+        """Download, with no lock held, the store's bytes of every segment in ``groups`` that
+        :meth:`_carry_prior` must rebuild before it extends it: a segment whose file is gone
+        and whose carried records start past the header (Task 8.3j re-review N2).  A segment
+        that cannot be read refuses the write (``ProtoWriteRefusedError``)."""
+        prefixes = {}
+        for segment, items in groups.items():
+            with self._lock:
+                released = self._own[segment].released
+            if not released or min(offset for offset, _ in items) <= SEGMENT_HEADER_SIZE:
+                continue
+            try:
+                prefixes[segment] = self._segment_object(segment)
+            except ProtoDBError as e:
+                raise ProtoWriteRefusedError(
+                    f"Records of own segment {segment.hex} came back but its local file is gone and the "
+                    f"object store cannot give its first bytes ({e}); nothing was written") from e
+        return prefixes
+
+    def _carry_prior(self, records: list, order: tuple, *, sync: bool, prefixes: Optional[dict] = None) -> None:
         """Write the ``records`` that belong to own segments of an earlier instance into those
         segments' files, at their offsets, as :meth:`_write_copies` writes a copy (Task 8.3j
         review C1); ``order`` is the root_key of the commit that carries them.
@@ -1520,50 +1565,78 @@ class TieredStorage(SharedStorage):
         run it died with -- starts where they end.  So no hole appears, the file stays a valid
         own segment for :meth:`_repair_own_segment` and :meth:`ship`, and the extension
         reaches the store as a part when the segment was already uploaded shorter
-        (:meth:`ensure_remote`).  A record that would leave a hole raises
-        ``ProtoCorruptionError`` before anything is written.  A segment already released
-        locally is first restored from the store (synced: no entry could rebuild it), so a
-        store failure there refuses the write.
+        (:meth:`ensure_remote`).
+
+        A segment without a local file (``released`` at open) is not known to be in the store:
+        it may have been released after its upload, or never written out at all -- a fresh
+        segment is listed in the manifest at its first push and gets a file at its first
+        write-out, and a holder can die between the two inside its window (Task 8.3j
+        re-review N1).  When the carried run starts at the header, it holds every byte the
+        segment ever had beyond the bytes the store may hold too (the bytes at a pointer never
+        change, P1), so the file is created from the header with no store access.  Otherwise
+        the segment was written out, hence released after its upload, and its first bytes
+        come from the store (:meth:`_carry_prefixes`, downloaded before any lock is taken).
+        Either way the segment is shipped again (``uploaded`` is cleared): :meth:`_put_segment`
+        keeps an object already there that shares the file's prefix.
+
+        Refusals leave the tier healthy and write nothing (``ProtoWriteRefusedError``): a
+        record that would leave a hole (the argument above says it cannot happen), or a store
+        that cannot give the first bytes.  A disk error fails the tier, as for a copy.
 
         ``sync`` syncs the files now; otherwise they are synced by the next checkpoint (an
         acceptance: its entry holds the records until then)."""
-        groups = {}
-        with self._lock:
-            for raw, offset, data in records:
-                if data is None:
-                    continue
-                segment = uuid.UUID(bytes=raw)
-                own = self._own.get(segment)
-                if own is not None and own.prior:
-                    groups.setdefault(segment, []).append((offset, data))
+        groups = self._prior_groups(records)
         if not groups:
             return
+        if prefixes is None:
+            prefixes = self._carry_prefixes(groups)
         with self._copies_lock:
             self._refuse_closed("storing records of an own segment of an earlier instance")
+            plans = []
             for segment, items in groups.items():
                 own = self._own[segment]
                 with self._lock:
-                    restore = own.released
-                prefix = self._segment_object(segment) if restore else None
+                    released = own.released
+                runs = _runs(items)
                 path = os.path.join(self._path, segment.hex + SEGMENT_SUFFIX)
+                base = None                 # bytes to write first: the header or the store's prefix
+                if released and not os.path.exists(path):
+                    if runs[0][0] <= SEGMENT_HEADER_SIZE:
+                        base = encode_segment_header(segment)
+                    elif segment in prefixes:
+                        base = prefixes[segment]
+                    else:
+                        raise ProtoWriteRefusedError(
+                            f"Own segment {segment.hex} was released while records of it came back; "
+                            f"nothing was written")
+                    size = len(base)
+                else:
+                    try:
+                        size = max(os.path.getsize(path), SEGMENT_HEADER_SIZE)
+                    except FileNotFoundError:
+                        base, size = encode_segment_header(segment), SEGMENT_HEADER_SIZE
+                end = size
+                for offset, data in runs:
+                    if offset > end:
+                        raise ProtoWriteRefusedError(
+                            f"Records of own segment {segment.hex} carried back at offset {offset} would "
+                            f"leave a hole after its end {end}; nothing was written")
+                    end = max(end, offset + len(data))
+                plans.append((segment, own, items, runs, path, base, released, end))
+            created = restored = False
+            for segment, own, items, runs, path, base, released, end in plans:
+                # A prefix from the store is synced, with the directory, before the entry: the
+                # redo rebuilds a missing file from its header and the entry's records only.
+                restore = base is not None and len(base) > SEGMENT_HEADER_SIZE
                 try:
                     fd = os.open(path, os.O_RDWR | os.O_CREAT | _O_BINARY | _O_CLOEXEC, 0o644)
                     try:
-                        size = os.fstat(fd).st_size
-                        if prefix is not None and size < len(prefix):
-                            _pwrite_all(fd, prefix, 0)
-                            size = len(prefix)
-                        elif size < SEGMENT_HEADER_SIZE:
+                        if base is not None:
+                            _pwrite_all(fd, base, 0)
+                            created = True
+                            restored = restored or restore
+                        elif os.fstat(fd).st_size < SEGMENT_HEADER_SIZE:
                             _pwrite_all(fd, encode_segment_header(segment), 0)
-                            size = SEGMENT_HEADER_SIZE
-                        end = size
-                        runs = _runs(items)
-                        for offset, data in runs:
-                            if offset > end:
-                                raise ProtoCorruptionError(
-                                    f"Records of own segment {segment.hex} carried back at offset {offset} would "
-                                    f"leave a hole after its end {end}; nothing was written")
-                            end = max(end, offset + len(data))
                         for offset, data in runs:
                             _pwrite_all(fd, data, offset)
                         if sync or restore:
@@ -1573,19 +1646,26 @@ class TieredStorage(SharedStorage):
                                 self._dirty_copies.add(segment)
                     finally:
                         os.close(fd)
-                    if restore:
-                        self._fsync_dir()
                 except OSError as e:
                     self._fail(e)
                     raise ProtoUnexpectedError(f"Storing records of own segment {segment.hex} failed: {e}") from e
                 with self._lock:
                     own.end = max(own.end, end)
-                    own.released = False
+                    if released:
+                        own.released = False
+                        own.uploaded = False        # shipped again; _put_segment keeps a longer object
+                        if own.first is None:
+                            own.first = time.monotonic()
                     if own.max_key is None or order > own.max_key:
                         own.max_key = order
                     self._stats["records_carried"] += len(items)
                 for offset, data in items:
                     self._cache.put((segment, offset), data)
+            if created and (sync or restored):
+                self._fsync_dir()
+            elif created:
+                with self._lock:
+                    self._dirty_dir = True
 
     def _write_copies(self, records: list, order: Optional[tuple], *, sync: Optional[bool] = None) -> None:
         """Write other nodes' ``records`` into the local copies of their segments at their
@@ -1774,9 +1854,10 @@ class TieredStorage(SharedStorage):
                     break           # still receiving appends; later segments wait for it
                 path = os.path.join(self._path, own.uuid.hex + SEGMENT_SUFFIX)
                 try:
-                    # Under the copies lock: records carried back into an own segment of an
-                    # earlier instance (:meth:`_carry_prior`) are never read half written.
-                    with self._copies_lock, open(path, "rb") as f:
+                    # A segment of an earlier instance is read under the copies lock: records
+                    # carried back into it (:meth:`_carry_prior`) are never read half written.
+                    # The live FileStorage's segments are not (re-review N3).
+                    with self._copies_lock if own.prior else contextlib.nullcontext(), open(path, "rb") as f:
                         data = f.read()
                 except FileNotFoundError as e:
                     # Released only once uploaded, so a missing segment not uploaded is lost data:
@@ -1792,15 +1873,22 @@ class TieredStorage(SharedStorage):
                     own.uploaded = True
                     own.first = None
                     self._stats["segments_uploaded"] += 1
-                self._segments.put(own.uuid, data)
+                if length == len(data):
+                    self._segments.put(own.uuid, data)
                 uploaded = True
             return uploaded
 
     def _put_segment(self, segment: uuid.UUID, data: bytes) -> int:
         """Upload ``data`` as the sealed object of ``segment``; return the length the store
-        holds.  An object already there that is a prefix of ``data`` is kept (an earlier
-        instance uploaded the segment shorter, then records of it were carried back into the
-        local file, Task 8.3j review C1): the rest reaches the store as a part."""
+        holds.  An object already there is kept when one of the two is a prefix of the other:
+
+        * shorter: an earlier instance uploaded the segment, then records of it were carried
+          back into the local file (Task 8.3j review C1); the rest reaches the store as a part;
+        * longer: an earlier instance uploaded it, then the local file lost its tail in a power
+          loss under ``flush`` or ``none`` durability (Task 8.3j re-review N4); the store's
+          object holds the true bytes, and the local file is a prefix of it.
+
+        Any other difference raises: the bytes at a pointer never change (P1)."""
         key = self.segment_key(segment)
 
         def attempt():
@@ -1810,7 +1898,7 @@ class TieredStorage(SharedStorage):
             except PreconditionFailedError as e:
                 conflict = e
             existing, _ = self._store.get(key)
-            if existing != data and not (len(existing) < len(data) and data.startswith(existing)):
+            if not (data.startswith(existing) or existing.startswith(data)):
                 raise ProtoUnexpectedError(f"Segment object {key} already exists with different content") from conflict
             return len(existing)
 

@@ -215,6 +215,36 @@ def test_a_slow_own_sync_does_not_make_a_healthy_replica_a_suspect(tmp_path):
         assert "n1" not in tc["n0"]._replica_suspects
 
 
+def test_a_write_refused_by_a_healthy_tier_refuses_only_that_acceptance(tmp_path):
+    """Task 8.3j re-review N1: a tier that refuses one write (``ProtoWriteRefusedError``: the
+    records of an own segment of an earlier instance cannot be placed now) refuses that
+    acceptance; the node keeps acting as an acceptor.  On aaa5a1d any tier error fail-stopped
+    the node until the space was reopened."""
+    from proto_db import errors
+    refused = getattr(errors, "ProtoWriteRefusedError", errors.ProtoUnexpectedError)
+    with _cluster(tmp_path) as tc:
+        tc.db("n0").run(incr, **RUN_KW)
+        st1 = tc.storages["n1"]
+        append = st1.accept_replication
+        calls = []
+
+        def refuse_once(*a, **kw):
+            if not calls:
+                calls.append(1)
+                raise refused("refused for the test")
+            return append(*a, **kw)
+
+        st1.accept_replication = refuse_once
+        tc.db("n0").run(incr, **RUN_KW)             # hedged to n2
+        st1.accept_replication = append
+        assert calls, "n1 was never asked"
+        assert tc["n1"]._tier_failure is None
+        for _ in range(3):
+            tc.db("n0").run(incr, **RUN_KW)
+        assert _converge(tc, tc.ids, {5}) == 5
+        assert tc["n1"]._tier_failure is None
+
+
 def test_a_failed_own_sync_is_never_acknowledged_even_when_the_replica_accepted(tmp_path):
     """The holder's own append fails after its replica stored and accepted the root: the
     commit's outcome is unknown, the root is never sent alone, and the cluster goes on
@@ -261,14 +291,20 @@ POINTS = ["records sent", "replica stored", "own entry unsynced, power lost", "o
           "stored acknowledged"]
 
 
-def _die_in_window(tc, fs, point, *, persist_after: bool) -> None:
+def _die_in_window(tc, fs, point, *, persist_after: bool, rolled: bool = False) -> None:
     """n0 commits a ``z`` dictionary and dies at ``point`` of its overlapped window (its data
     replica is its successor n1); then n0 is revived, its persister stopped unless
-    ``persist_after``."""
+    ``persist_after``.  ``rolled``: n0's open segment is rolled first, as its persister does
+    at every ``ship_interval``, so the window's records are the first ones of a fresh own
+    segment: listed in n0's manifest at the first push, but with no file until the first
+    write-out (Task 8.3j re-review N1)."""
     n0_dir = os.path.realpath(os.path.join(tc.path, "n0"))
     c0, st0 = tc["n0"], tc.storages["n0"]
     if c0.persister is not None:
         c0.persister.stop()                         # no background flush inside the window
+    if rolled:
+        st0.flush()
+        st0._local.roll_segment()
     own_append = st0.accept_replication
     st1 = tc.storages["n1"]
     replica_append = st1.accept_replication
@@ -318,6 +354,7 @@ def _die_in_window(tc, fs, point, *, persist_after: bool) -> None:
     def n0_send(to, msg):
         if _is_data(msg) and "root" not in state:
             state["root"] = decode_labeled_root(msg["root"])[1]
+            state["fresh"] = os.path.exists(os.path.join(n0_dir, st0._local.current_segment.hex + ".seg"))
         if point == "stored acknowledged" and _is_root_alone(msg):
             die()
         send0(to, msg)
@@ -328,6 +365,8 @@ def _die_in_window(tc, fs, point, *, persist_after: bool) -> None:
     with pytest.raises(ProtoDBError):
         tc.db("n0").run(write_z, retries=0)
     assert n0_dead.is_set() and "root" in state, "the schedule did not run"
+    if rolled:
+        assert not state["fresh"], "the window's segment had a file before the window"
     tc.kill("n0")
     replica_may_store.set()
     st1.accept_replication = replica_append
@@ -407,10 +446,16 @@ def _read(tc, node):
         tr.abort()
 
 
+def _no_tier_failed(tc) -> None:
+    for node in tc.ids:
+        assert tc[node]._tier_failure is None, (node, tc[node]._tier_failure)
+
+
 @pytest.mark.skipif(not os.path.isdir("/proc/self/fd"), reason="needs /proc/self/fd")
+@pytest.mark.parametrize("segment", ["open", "rolled"])
 @pytest.mark.parametrize("voters", [3, 5])
 @pytest.mark.parametrize("point", POINTS)
-def test_after_a_death_in_the_window_f_disk_losses_lose_nothing(tmp_path, monkeypatch, point, voters):
+def test_after_a_death_in_the_window_f_disk_losses_lose_nothing(tmp_path, monkeypatch, point, voters, segment):
     """Task 8.3j review C1 and I1.  The object store is down and no persister runs, so the
     local copies are all there is.  n0 dies at ``point``, restarts and commits again (its
     phase 1 may re-propose the root of the window, re-carrying records of its own pre-crash
@@ -420,7 +465,13 @@ def test_after_a_death_in_the_window_f_disk_losses_lose_nothing(tmp_path, monkey
     On 8c8c193, at "replica stored" with three voters, every member then failed with
     ``ProtoCorruptionError`` (no full copy of a record): n0 had counted as a copy of the
     re-carried records but never wrote them to a data file, and its checkpoint compacted the
-    only entry holding them."""
+    only entry holding them.
+
+    ``segment="rolled"`` (Task 8.3j re-review N1): the window's records are the first ones of
+    a fresh own segment, which had no file when n0 died.  On aaa5a1d n0 then took the segment
+    for released, tried to restore it from the store, and its tier failed on every re-carry
+    (``ProtoCorruptionError``: in no tier; or the store unreachable): a plain crash-restart
+    fail-stopped it."""
     fs = _FrozenPowerLoss(monkeypatch)
     kw = {"voters": [f"n{i}" for i in range(voters)]} if voters != 3 else {}
     with _cluster(tmp_path, voters, storage_kw=dict(release_local=False), **kw) as tc:
@@ -430,13 +481,20 @@ def test_after_a_death_in_the_window_f_disk_losses_lose_nothing(tmp_path, monkey
             tc.db("n0").run(incr, **RUN_KW)
         for node in tc.ids:
             tc[node].persister.stop()
-        _die_in_window(tc, fs, point, persist_after=False)
+        _die_in_window(tc, fs, point, persist_after=False, rolled=segment == "rolled")
         unknown = _commit_until_acknowledged(tc, "n0")   # n0's term: phase 1 may re-propose the root
+        _no_tier_failed(tc)
         value = _converge(tc, tc.ids, set(range(4, 6 + unknown)))
         adopted = _read(tc, "n0")[1] is not None
         if adopted and voters == 3 and point in POINTS[:3]:
             # The C1 shape: n0 re-proposed the root and its own pre-crash records came back.
-            assert tc.storages["n0"].stats()["records_carried"] > 0
+            # After the power loss on a fresh segment its unsynced manifest entry is gone too:
+            # n0 then holds the records as a copy (re-review N1).
+            stats = tc.storages["n0"].stats()
+            if segment == "rolled" and point == "own entry unsynced, power lost":
+                assert stats["records_carried"] + stats["records_applied"] > 0
+            else:
+                assert stats["records_carried"] > 0
         for node in tc.ids:
             tc.storages[node].checkpoint()
         for node in tc.ids:
@@ -453,14 +511,18 @@ def test_after_a_death_in_the_window_f_disk_losses_lose_nothing(tmp_path, monkey
             tc.revive(node)
         unknown = _commit_until_acknowledged(tc, "n0")
         _converge(tc, tc.ids, set(range(value + 1, value + 2 + unknown)))
+        _no_tier_failed(tc)
 
 
-def test_a_data_replica_holds_the_recarried_records_of_its_own_segment(tmp_path, monkeypatch):
+@pytest.mark.parametrize("segment", ["open", "rolled"])
+def test_a_data_replica_holds_the_recarried_records_of_its_own_segment(tmp_path, monkeypatch, segment):
     """Task 8.3j review C1, data-replica variant: n0 dies after its replica n1 stored (and
     accepted) the root of the window; n2 owns the next term, re-proposes that root, and n0 --
     n2's successor, so its data replica -- stores records of n0's own pre-crash segment and
     acknowledges ``stored``.  After a checkpoint and a restart n0 must still hold them on disk
-    (on 8c8c193 it held none: they were skipped as own records and compacted away)."""
+    (on 8c8c193 it held none: they were skipped as own records and compacted away).
+    ``segment="rolled"``: a fresh own segment (re-review N1); on aaa5a1d n0's tier failed
+    when the records came back."""
     fs = _FrozenPowerLoss(monkeypatch)
     with _cluster(tmp_path, storage_kw=dict(release_local=False)) as tc:
         tc.store.set_outage(True)
@@ -479,7 +541,7 @@ def test_a_data_replica_holds_the_recarried_records_of_its_own_segment(tmp_path,
             send0(to, msg)
 
         tc["n0"].transport.send = n0_send
-        _die_in_window(tc, fs, "replica stored", persist_after=False)
+        _die_in_window(tc, fs, "replica stored", persist_after=False, rolled=segment == "rolled")
         from proto_db.cluster.protocol import decode_ranges
         ranges = decode_ranges(root_of["ranges"])
         stored = tc.storages["n0"]
@@ -488,6 +550,7 @@ def test_a_data_replica_holds_the_recarried_records_of_its_own_segment(tmp_path,
         assert all(stored._local_record(p) is None for p in ptrs), "n0 kept window records"
         tc.db("n2").run(incr, **RUN_KW)             # n2's term re-proposes the root, n0 its replica
         assert _converge(tc, tc.ids, {4, 5}) == 5, "the root of the window was not re-proposed"
+        _no_tier_failed(tc)
         tc.storages["n0"].checkpoint()
         _restart(tc, "n0")
         stored = tc.storages["n0"]

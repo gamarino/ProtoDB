@@ -12,6 +12,7 @@ DEFAULTS = [
     (e.ProtoNotAuthorizedError, 50_000),
     (e.ProtoUnexpectedError, 60_000),
     (e.ProtoOutcomeUnknownError, 60_100),
+    (e.ProtoWriteRefusedError, 60_300),
     (e.ProtoLockingError, 70_000),
     (e.ProtoConflictError, 70_100),
     (e.ProtoTimeoutError, 70_200),
