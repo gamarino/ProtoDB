@@ -122,6 +122,7 @@ from .errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, Pro
 from .storage.base import check_lock_timeout
 from .storage.cache import BoundedCache
 from .query.cache import QUERY_CACHE_BYTES, QueryCache
+from .query.pager import decode_ref, encode_ref, pager_arguments, portable_pager
 from .storage.format import FORMAT_VERSION, RootRecord
 from .cluster.coordinator import REFOUND_TERM_STEP
 from .cluster.lease import Permission
@@ -262,8 +263,91 @@ class HistoryEntry:
         """Value of the mutable cell ``name`` in this version (``None`` if absent)."""
         return self._root.mutables.get_at(_check_name(name, "mutable"))
 
+    @property
+    def root(self) -> "DatabaseRoot":
+        """The ``DatabaseRoot`` of this version (protected use: :meth:`Database.snapshot_at`)."""
+        return self._root
+
     def __repr__(self):
         return f"HistoryEntry(version={self.version}, committed_at={self.committed_at.isoformat()})"
+
+
+class Snapshot:
+    """A read-only view of one committed version of a database (Task 8.4b, D56).
+
+    Made by :meth:`Database.snapshot_at` from a reference: :attr:`Transaction.snapshot_ref`,
+    :attr:`Snapshot.ref`, a :class:`HistoryEntry` or a pager token.  Every version stays
+    readable forever (P1, R77a), so a snapshot needs no pinning; a version whose local copy
+    was released is read from the object store.  It is not a transaction: it records no
+    reads, cannot commit, and every write method raises ``ProtoUserError``.  The values it
+    returns are the version's immutable values, shareable with any transaction (P2).
+    Thread-safe.
+    """
+
+    __slots__ = ("_database", "_root")
+
+    def __init__(self, database: "Database", root: "DatabaseRoot"):
+        """Bind the view (use :meth:`Database.snapshot_at`)."""
+        self._database = database
+        self._root = root
+
+    @property
+    def database(self) -> "Database":
+        """The database this version belongs to."""
+        return self._database
+
+    @property
+    def version(self) -> int:
+        """The version number (0 at creation, +1 per commit)."""
+        return self._root.version
+
+    @property
+    def committed_at(self) -> datetime.datetime:
+        """When this version was committed (aware UTC)."""
+        return self._root.committed_at
+
+    @property
+    def ref(self) -> bytes:
+        """A reference to this version, valid in any process of the space (bytes)."""
+        return encode_ref("snapshot", self._database.name, self._root.atom_pointer)
+
+    @property
+    def root_names(self) -> tuple:
+        """Sorted names of the roots present in this version."""
+        return tuple(sorted(self._root.objects.keys()))
+
+    def get_root_object(self, name: str):
+        """Value of root ``name`` in this version (``None`` if absent)."""
+        return self._root.objects.get_at(_check_name(name))
+
+    @property
+    def mutable_names(self) -> tuple:
+        """Sorted names of the mutable cells present in this version."""
+        return tuple(sorted(self._root.mutables.keys()))
+
+    def get_mutable(self, name: str):
+        """Value of the mutable cell ``name`` in this version (``None`` if absent)."""
+        return self._root.mutables.get_at(_check_name(name, "mutable"))
+
+    def pager(self, root_name: str, *, where=None, order_by=None, page_size: int):
+        """A portable :class:`~proto_db.query.pager.Pager` over the collection at ``root_name`` in
+        this version, filtered by ``where`` and ordered by ``order_by`` (``plan_query`` forms;
+        paths only); its token resumes it in any process (:meth:`Database.resume_pager`)."""
+        collection = self.get_root_object(_check_name(root_name))
+        if collection is None:
+            raise ProtoValidationError(f"Root {root_name!r} does not exist in version {self.version}")
+        return portable_pager(collection, database=self._database.name, root_ptr=self._root.atom_pointer,
+                              root_name=root_name, where=where, order_by=order_by, page_size=page_size,
+                              cache=self._database.space.query_cache)
+
+    def _read_only(self, *args, **kwargs):
+        raise ProtoUserError(f"A snapshot of {self._database.name!r} (version {self.version}) is read-only; "
+                             f"write in a transaction (Database.new_transaction)")
+
+    set_root_object = remove_root_object = new_mutable = set_mutable = remove_mutable = commit = _read_only
+
+    def __repr__(self):
+        return f"Snapshot({self._database.name!r}, version={self.version})"
 
 
 # -- persistence helpers ----------------------------------------------------------------------
@@ -1406,6 +1490,38 @@ class Database:
         """Wait until the commits this node knows are persisted (see :meth:`ObjectSpace.sync`)."""
         self._space.sync(timeout)
 
+    def snapshot_at(self, ref) -> Snapshot:
+        """A read-only :class:`Snapshot` of the version ``ref`` names (Task 8.4b, D56).
+
+        ``ref`` is a reference (bytes) from :attr:`Transaction.snapshot_ref` or
+        :attr:`Snapshot.ref`, a pager token (:meth:`Pager.token`), a :class:`Snapshot` or a
+        :class:`HistoryEntry`.  Any process of the space may open it; the version is read
+        through the space's atom cache, or from the object store when no local copy is
+        left.  ``ProtoValidationError`` for a malformed reference or one naming another
+        database; ``ProtoCorruptionError`` when the pointer does not hold a database version.
+        """
+        self._space._check_open()
+        if isinstance(ref, Snapshot):
+            root = ref._root
+            if ref.database.name != self._name:
+                raise ProtoValidationError(f"The snapshot belongs to {ref.database.name!r}, not {self._name!r}")
+        elif isinstance(ref, HistoryEntry):
+            root = ref.root
+        else:
+            fields = decode_ref(ref, self._space._space_load)
+            if fields["db"] != self._name:
+                raise ProtoValidationError(f"The reference names the database {fields['db']!r}, not {self._name!r}")
+            root = self._space._space_load(fields["root"], DatabaseRoot.__type_name__)
+            root._load()            # a pointer that does not hold a DatabaseRoot fails here
+        return Snapshot(self, root)
+
+    def resume_pager(self, token: bytes):
+        """The pager a token describes (:meth:`Pager.token`), on the same snapshot: in any process,
+        any later transaction, the same pages (Task 8.4b, D56).  ``ProtoValidationError`` for a
+        token of another query semantics version (its tie order could differ)."""
+        arguments = pager_arguments(decode_ref(token, self._space._space_load))
+        return self.snapshot_at(token).pager(arguments.pop("root_name"), **arguments)
+
     def run(self, fn: Callable[["Transaction"], Any], retries: int = 10,
             backoff: tuple = (0.001, 0.2)) -> Any:
         """Run ``fn(tr)`` in a fresh transaction, commit it and return ``fn``'s result.
@@ -1549,6 +1665,25 @@ class Transaction:
             if name not in self._reads:
                 self._reads[name] = _token(value)
             return None if value is _ABSENT else value
+
+    @property
+    def snapshot_ref(self) -> bytes:
+        """A reference to the version this transaction reads (:meth:`Database.snapshot_at`)."""
+        return encode_ref("snapshot", self._database.name, self._db_root.atom_pointer)
+
+    def pager(self, root_name: str, *, where=None, order_by=None, page_size: int):
+        """A portable pager over root ``root_name`` of this transaction's snapshot (see
+        :meth:`Snapshot.pager`).  Refused (``ProtoUserError``) when this transaction has written
+        that root: uncommitted data does not exist for anyone else (P2).  The read is recorded."""
+        _check_name(root_name)
+        with self._lock:
+            self._check_active()
+            if root_name in self._writes:
+                raise ProtoUserError(f"Root {root_name!r} was written in this transaction; a pager pages a "
+                                     f"committed snapshot (commit first, or page from another transaction)")
+        self.get_root_object(root_name)
+        return Snapshot(self._database, self._db_root).pager(root_name, where=where, order_by=order_by,
+                                                            page_size=page_size)
 
     def set_root_object(self, name: str, value, *, replace: bool = False) -> None:
         """Set root ``name`` to ``value`` (any canonical value or atom) at commit.

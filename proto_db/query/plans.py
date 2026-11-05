@@ -185,6 +185,13 @@ def _check_window(start, stop) -> tuple:
     return start, stop
 
 
+def _spec_of(extract):
+    """The KeySpec whose bound ``extract`` this is, or None (a Python callable key)."""
+    from ..indexing.keyspec import KeySpec
+    spec = getattr(extract, "__self__", None)
+    return spec if isinstance(spec, KeySpec) else None
+
+
 def _check_plan(plan, owner: str) -> QueryPlan:
     if not isinstance(plan, QueryPlan):
         raise ProtoValidationError(f"{owner} needs a QueryPlan source, not {type(plan).__name__}")
@@ -288,11 +295,13 @@ class IndexPlan(QueryPlan):
     ``term`` is None; ``details`` adds entries to ``explain()``.  ``rank``, a pair
     ``(window(start, stop), rows())``, offers rank access (D56): ``window`` must yield
     exactly ``islice(execute(), start, stop)`` and ``rows`` the exact row count.
+    ``sorted_rank(key_spec, descending)`` returns such a pair over the rows in the order a
+    stable :class:`Sort` by ``key_spec`` gives them, or ``None``.
     """
 
     def __init__(self, index, term, producer: Callable[[], Iterator], *, kind: str = "IndexLookup",
                  estimate: Estimate | None = None, details: dict | None = None,
-                 rank: tuple | None = None):
+                 rank: tuple | None = None, sorted_rank: Callable | None = None):
         if not callable(producer):
             raise ProtoValidationError(f"IndexPlan needs a callable producer, not {type(producer).__name__}")
         if not isinstance(kind, str) or not kind:
@@ -314,7 +323,10 @@ class IndexPlan(QueryPlan):
         if rank is not None and (not isinstance(rank, tuple) or len(rank) != 2
                                  or not all(callable(f) for f in rank)):
             raise ProtoValidationError("IndexPlan rank must be a (window(start, stop), rows()) pair of callables")
+        if sorted_rank is not None and not callable(sorted_rank):
+            raise ProtoValidationError("IndexPlan sorted_rank must be callable")
         self._rank = rank
+        self._sorted_rank = sorted_rank
         self._freeze()
 
     def execute(self) -> Iterator:
@@ -331,6 +343,11 @@ class IndexPlan(QueryPlan):
     def exact_rows(self) -> int | None:
         """The exact row count when the index offers rank access, else ``None``."""
         return None if self._rank is None else self._rank[1]()
+
+    def sorted_rank(self, key_spec, descending: bool) -> tuple | None:
+        """Rank access ``(window, rows)`` to this plan's rows in the order a stable :class:`Sort` by
+        ``key_spec`` would give them, when the index can serve it; else ``None`` (D56)."""
+        return None if self._sorted_rank is None else self._sorted_rank(key_spec, descending)
 
     def explain(self) -> dict:
         """``{"plan": kind, "index": index.explain(), "term": term.describe() or None, **details,
@@ -451,6 +468,29 @@ class Filter(QueryPlan):
         """rows = source rows * selectivity(expr); cost = source cost + source rows."""
         src = _est(self.source)
         return Estimate(rows=src.rows * _selectivity(self.expr), cost=src.cost + src.rows)
+
+    def _rank(self) -> tuple | None:
+        """Rank access when this is one term over an ordered index scan of an index that answers
+        it: the rows are then the index's plan for the term, in the scan's key order (D56)."""
+        source, term = self.source, self.expr
+        if not isinstance(source, IndexPlan) or source.kind != "IndexOrderedScan" or not isinstance(term, Term):
+            return None
+        index = source.index
+        if not index.supports(term):
+            return None
+        descending = bool(source._details.get("descending", False))
+        return index.plan(term).sorted_rank(index.key_spec, descending)
+
+    def window(self, start: int, stop: int | None = None) -> Iterator | None:
+        """Rows by rank for a single indexed term over an ordered scan of that index, else ``None``."""
+        start, stop = _check_window(start, stop)
+        rank = self._rank()
+        return None if rank is None else rank[0](start, stop)
+
+    def exact_rows(self) -> int | None:
+        """The exact row count when :meth:`window` is offered, else ``None``."""
+        rank = self._rank()
+        return None if rank is None else rank[1]()
 
 
 class PythonFilter(QueryPlan):
@@ -679,6 +719,24 @@ class Sort(QueryPlan):
 
         return produce()
 
+    def _rank(self) -> tuple | None:
+        """Rank access when sorting by one key that the source's index orders (D56)."""
+        if len(self._keys) != 1 or not isinstance(self.source, IndexPlan):
+            return None
+        extract, _, descending = self._keys[0]
+        spec = _spec_of(extract)
+        return None if spec is None else self.source.sorted_rank(spec, descending)
+
+    def window(self, start: int, stop: int | None = None) -> Iterator | None:
+        """Rows by rank when the source is an index plan ordered by this sort's only key, else ``None``."""
+        start, stop = _check_window(start, stop)
+        rank = self._rank()
+        return None if rank is None else rank[0](start, stop)
+
+    def exact_rows(self) -> int | None:
+        """A sort keeps every row: the source's exact row count."""
+        return self.source.exact_rows()
+
     def explain(self) -> dict:
         """``{"plan": "Sort", "keys": [{"key", "descending"}]}``."""
         return self._explain("Sort", {"keys": [{"key": k, "descending": d} for k, d in self.keys]},
@@ -732,8 +790,13 @@ class Limit(QueryPlan):
         return rows if self.n is None else min(rows, self.n)
 
     def explain(self) -> dict:
-        """``{"plan": "Limit", "limit" (None when unbounded), "offset"}``."""
-        return self._explain("Limit", {"limit": self.n, "offset": self.offset}, (self.source,))
+        """``{"plan": "Limit", "limit" (None when unbounded), "offset"}``, plus ``"by_rank": True`` when
+        the window is read by rank from the source (D56): the source subtree is then not
+        executed row by row, it is sought."""
+        params = {"limit": self.n, "offset": self.offset}
+        if self.source.window(0, 0) is not None:
+            params["by_rank"] = True
+        return self._explain("Limit", params, (self.source,))
 
     def estimate(self) -> Estimate:
         """rows = min(n, max(source rows - offset, 0)); cost = source cost (an upper bound)."""
@@ -760,8 +823,10 @@ class Count(QueryPlan):
         return produce()
 
     def explain(self) -> dict:
-        """``{"plan": "Count"}``."""
-        return self._explain("Count", {}, (self.source,))
+        """``{"plan": "Count"}``, plus ``"by_rank": True`` when the count is read from the source's
+        exact row count (D56) instead of executing it."""
+        params = {"by_rank": True} if self.source.exact_rows() is not None else {}
+        return self._explain("Count", params, (self.source,))
 
     def estimate(self) -> Estimate:
         """rows = 1; cost = source cost."""

@@ -216,6 +216,17 @@ def _window(segments: list, start: int, stop: int | None) -> Iterator:
         start = 0
 
 
+def _reverse_segments(segments: list) -> list:
+    """The segments' groups in reverse order; each group keeps its members' order."""
+    out = []
+    for tree, start, rows, descending, of_groups in reversed(segments):
+        if of_groups:
+            start = avl.key_weight(tree) - start - rows
+            descending = not descending
+        out.append((tree, start, rows, descending, of_groups))
+    return out
+
+
 def _rank_access(segments) -> tuple:
     """The ``(window, rows)`` pair an :class:`IndexPlan` takes, over lazily computed segments."""
     def window(start: int, stop: int | None) -> Iterator:
@@ -410,8 +421,11 @@ class KeyGroupIndex(Index):
         On a weighted index the plan also offers rank access (``window``, ``exact_rows``, D56)."""
         self._check_supported(term)
         kind, producer = self._plan_parts(term)
-        rank = _rank_access(lambda: self._term_segments(term)) if self._has_weights() else None
-        return IndexPlan(self, term, producer, kind=kind, rank=rank)
+        rank = sorted_rank = None
+        if self._has_weights():
+            rank = _rank_access(lambda: self._term_segments(term))
+            sorted_rank = self._sorted_rank(lambda desc: self._sorted_segments(term, desc))
+        return IndexPlan(self, term, producer, kind=kind, rank=rank, sorted_rank=sorted_rank)
 
     # -- rank access (D56) ----------------------------------------------------------------
 
@@ -444,6 +458,27 @@ class KeyGroupIndex(Index):
                     self._range_segment(excluded, None, False, True), side]
         lok, hik, lo_inc, hi_inc = self._range(term)
         return [self._range_segment(lok, hik, lo_inc, hi_inc)]
+
+    def _sorted_rank(self, segments_for):
+        """The ``sorted_rank(key_spec, descending)`` hook of an IndexPlan: rank access to the plan's
+        rows as a stable sort by this index's key would order them (None for another key)."""
+        def sorted_rank(key_spec, descending: bool):
+            if key_spec != self.key_spec:
+                return None
+            return _rank_access(lambda: segments_for(descending))
+        return sorted_rank
+
+    def _sorted_segments(self, term: Term, descending: bool) -> list:
+        """The rows of :meth:`plan` in the order a stable sort by this index's key gives (D36):
+        key groups ascending (unorderable keys last), each group's members in member order,
+        which is the plan's own order for every operator but ``in`` (operand order); descending
+        reverses the groups (unorderable first) and keeps each group's members in order."""
+        if term.op == IN:
+            values = sorted(self._distinct(term.value), key=order_key)
+            segments = [_group_segment(self._lookup(v)) for v in values]
+        else:
+            segments = self._term_segments(term)
+        return _reverse_segments(segments) if descending else segments
 
     def _ordered_segments(self, descending: bool) -> list:
         groups = self.groups
@@ -497,10 +532,13 @@ class KeyGroupIndex(Index):
                 yield from _group_iter(side)
 
         n = self.total_count
-        rank = _rank_access(lambda: self._ordered_segments(descending)) if self._has_weights() else None
+        rank = sorted_rank = None
+        if self._has_weights():
+            rank = _rank_access(lambda: self._ordered_segments(descending))
+            sorted_rank = self._sorted_rank(self._ordered_segments)
         return IndexPlan(self, None, produce, kind="IndexOrderedScan",
                          estimate=Estimate(rows=n, cost=n + _count(groups) + 1),
-                         details={"descending": bool(descending)}, rank=rank)
+                         details={"descending": bool(descending)}, rank=rank, sorted_rank=sorted_rank)
 
     # -- explain and validate -------------------------------------------------------------------
 

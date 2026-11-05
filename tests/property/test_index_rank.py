@@ -111,3 +111,26 @@ def test_an_unweighted_index_offers_no_window_and_still_answers():
     # Writes keep the old tree's class: the index stays unweighted until it is rebuilt.
     assert type(old.with_added({"k": 9}).groups) is KeyNode
     assert_exact_weights(old.empty().build(old.iter_ordered()))
+
+
+@settings(max_examples=120, deadline=None)
+@given(elements=ELEMENTS, data=st.data())
+def test_sorted_and_filtered_index_plans_window_by_rank(elements, data):
+    """The planner's shapes for "predicate + order by the indexed key": Sort over an index plan,
+    and a Filter of one term over an ordered scan.  Both must window by rank and equal execution."""
+    from proto_db.query.plans import Filter, Sort
+    index = RangeIndex("i", "k").build(elements)
+    for term in _terms(data.draw):
+        for desc in (False, True):
+            if index.supports(term):
+                sorted_plan = Sort(index.plan(term), [("k", desc)])
+                assert sorted_plan.window(0, 0) is not None
+                _check_plan(sorted_plan, data)
+            filtered = Filter(index.ordered_plan(desc), term)
+            if index.supports(term):
+                assert filtered.window(0, 0) is not None
+            _check_plan(filtered, data) if filtered.window(0, 0) is not None else None
+    # A sort by another key, or by two keys, is not served by the index.
+    assert Sort(index.plan(Term("k", ">", 0)), [("tag", False)]).window(0, 1) is None
+    assert Sort(index.plan(Term("k", ">", 0)), ["k", "tag"]).window(0, 1) is None
+    assert Filter(index.ordered_plan(), Term("tag", "==", 1)).window(0, 1) is None

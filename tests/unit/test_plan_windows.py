@@ -13,6 +13,7 @@ from proto_db.collections.sets import Set
 from proto_db.indexing import RangeIndex
 from proto_db.query.linq import F, from_collection
 from proto_db.query.plans import CollectionScanPlan, Count, Filter, IndexPlan, Limit
+from proto_db.query.expressions import And
 from proto_db.query.terms import Term
 
 
@@ -71,9 +72,13 @@ def test_count_uses_exact_rows():
     assert list(Count(Filter(index.ordered_plan(), Term("k", "==", 3))).execute()) == [100]
 
 
-def test_filters_offer_no_window():
-    index = RangeIndex("k", "k").build([{"k": i} for i in range(10)])
-    assert Filter(index.ordered_plan(), Term("k", ">", 3)).window(0, 1) is None
+def test_filters_seek_only_for_one_indexed_term_over_an_ordered_scan():
+    index = RangeIndex("k", "k").build([{"k": i, "j": i % 3} for i in range(10)])
+    _check(Filter(index.ordered_plan(), Term("k", ">", 3)))
+    _check(Filter(index.ordered_plan(True), Term("k", "<=", 6)))
+    assert Filter(index.ordered_plan(), Term("j", "==", 1)).window(0, 1) is None
+    assert Filter(index.ordered_plan(), And(Term("k", ">", 3), Term("k", "<", 8))).window(0, 1) is None
+    assert Filter(index.plan(Term("k", ">", 1)), Term("k", ">", 3)).window(0, 1) is None
 
 
 def test_linq_skip_take_over_an_ordered_index():

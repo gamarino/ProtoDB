@@ -45,6 +45,10 @@ def test_an_old_root_stays_readable_after_every_node_released_its_segments(tmp_p
         assert cluster.eventually("n2", 0)
         old = cluster.db("n2").new_transaction()        # the long report: holds the old root
         old_version = old._db_root.version
+        old_ref = old.snapshot_ref                      # Task 8.4b: an "as of" reference ...
+        old_pager = old.pager("d", page_size=10)        # ... and a portable pager on that version
+        pager_token = old_pager.token()
+        assert old_pager.by_rank
         old_segments = {old._db_root.atom_pointer.segment.hex, old._snapshot_space.atom_pointer.segment.hex}
 
         # Heavy writes on two nodes: every entry rewritten several times, many segments sealed.
@@ -83,6 +87,16 @@ def test_an_old_root_stays_readable_after_every_node_released_its_segments(tmp_p
         assert old._db_root.version == old_version
         old.abort()
         assert cluster.storages["n2"].stats()["reads_remote"] > remote_before, "the old records were not read from the store"
+
+        # Task 8.4b: the reference and the pager token reopen the released version from the store.
+        remote_before = cluster.storages["n2"].stats()["reads_remote"]
+        snap = cluster.db("n2").snapshot_at(old_ref)
+        assert snap.version == old_version and snap.get_root_object("n") == 0
+        assert [snap.get_root_object("d").get_at(k) for k in range(0, KEYS, 7)] == \
+            [_value(k, 0) for k in range(0, KEYS, 7)]
+        resumed = cluster.db("n2").resume_pager(pager_token)
+        assert resumed.rows == KEYS and resumed.page(3) == tuple(_value(k, 0) for k in range(30, 40))
+        assert cluster.storages["n2"].stats()["reads_remote"] > remote_before, "the snapshot was not read from the store"
 
         # "As of": walk previous from the newest root down to the old version.
         with cluster.db("n2").new_transaction() as tr:

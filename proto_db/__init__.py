@@ -35,7 +35,7 @@ __version__ = "2.0.0.dev0"
 _EXPORTS = {
     # transactions
     "ObjectSpace": "transactions", "Database": "transactions", "Transaction": "transactions",
-    "HistoryEntry": "transactions",
+    "HistoryEntry": "transactions", "Snapshot": "transactions",
     # atoms and records
     "Atom": "core.atom", "AtomPointer": "core.atom", "PersistenceContext": "core.atom",
     "register_atom_class": "core.atom", "DBObject": "core.dbobject", "MutableObject": "core.dbobject",
@@ -46,12 +46,14 @@ _EXPORTS = {
     "Set": "collections.sets", "CountedSet": "collections.sets",
     # indexes
     "Index": "indexing.base", "KeySpec": "indexing.keyspec", "register_extractor": "indexing.keyspec",
+    "unregister_extractor": "indexing.keyspec",
     "EqualityIndex": "indexing.equality", "RangeIndex": "indexing.range", "VectorIndex": "indexing.vector",
     # queries
     "Expression": "query.expressions", "Term": "query.terms", "NearQuery": "query.terms",
     "And": "query.expressions", "Or": "query.expressions", "Not": "query.expressions",
     "evaluate": "query.expressions", "QueryPlan": "query.plans", "plan_query": "query.planner",
     "from_collection": "query.linq", "Queryable": "query.linq", "F": "query.linq", "Agg": "query.linq",
+    "QueryCache": "query.cache", "QueryResult": "query.cache", "Pager": "query.pager",
     # storages
     "SharedStorage": "storage.base", "MemoryStorage": "storage.memory", "FileStorage": "storage.file",
     "CloudStorage": "storage.cloud", "ObjectStore": "storage.cloud", "S3ObjectStore": "storage.cloud",
@@ -114,12 +116,14 @@ if TYPE_CHECKING:  # pragma: no cover - static analysers only; never executed
                          ProtoValidationError, ProtoValidationException)
     from .indexing.base import Index
     from .indexing.equality import EqualityIndex
-    from .indexing.keyspec import KeySpec, register_extractor
+    from .indexing.keyspec import KeySpec, register_extractor, unregister_extractor
     from .indexing.range import RangeIndex
     from .indexing.vector import VectorIndex
     from .interop.arrow import from_parquet_to_rows, scan_parquet, to_arrow, to_parquet
+    from .query.cache import QueryCache, QueryResult
     from .query.expressions import And, Expression, Not, Or, evaluate
     from .query.linq import Agg, F, Queryable, from_collection
+    from .query.pager import Pager
     from .query.planner import plan_query
     from .query.plans import QueryPlan
     from .query.terms import NearQuery, Term
@@ -130,5 +134,5 @@ if TYPE_CHECKING:  # pragma: no cover - static analysers only; never executed
     from .storage.file import FileStorage
     from .storage.memory import MemoryStorage
     from .storage.tiered import TieredStorage
-    from .transactions import Database, HistoryEntry, ObjectSpace, Transaction
+    from .transactions import Database, HistoryEntry, ObjectSpace, Snapshot, Transaction
     from .values import MISSING, FrozenDict, FrozenList, canonical, hash_key, order_key, values_equal

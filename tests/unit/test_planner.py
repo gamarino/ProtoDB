@@ -563,7 +563,17 @@ def test_explain_is_exactly_the_executed_node_tree(monkeypatch):
         nodes = tree(plan)
         executed.clear()
         list(plan.execute())
-        assert {id(n) for n in executed} == {id(n) for n in nodes}
+        # A node that explain() marks "by_rank" seeks its source subtree instead of executing it
+        # (D56): its subtree is read, by rank, and is not expected among the executed nodes.
+        expected = []
+
+        def collect(node):
+            expected.append(node)
+            if not node.explain().get("by_rank"):
+                for kid in _children(node):
+                    collect(kid)
+        collect(plan)
+        assert {id(n) for n in executed} == {id(n) for n in expected}
         info = plan.explain()
 
         def walk(node, info):
