@@ -59,7 +59,7 @@ History links (Task 8.3l, ruling R92)
     A class lists in ``_history_links`` the persisted attributes that link an older version
     of the data (``DatabaseRoot.previous``, ``SpaceRoot.cluster_previous``).  Such an
     attribute is stored like any atom reference (an ``@ref``; the format is unchanged), but in
-    memory the atom holds only the linked atom's pointer and type: every read of the attribute
+    memory the atom holds only the linked atom's pointer and class: every read of the attribute
     asks the atom's ``context`` to ``load`` it, which returns the shared atom of a bounded
     cache or a fresh stub.  A loaded atom therefore never keeps its predecessor loaded, and
     walking history loads one version at a time: history is kept on disk, never in memory
@@ -255,12 +255,12 @@ def _check_context(context) -> None:
 
 
 def _link_ref(value):
-    """How a history link holds ``value``: ``(pointer, type name)`` for a saved atom, else the
+    """How a history link holds ``value``: ``(pointer, class)`` for a saved atom, else the
     value itself (``None``, or an atom without a pointer yet)."""
     if isinstance(value, Atom):
         ptr = value.atom_pointer
         if ptr is not None:
-            return ptr, type(value).__type_name__
+            return ptr, type(value)
     return value
 
 
@@ -368,8 +368,8 @@ class Atom:
 
     def _set_link(self, name: str, value) -> None:
         """Install the history link ``name`` (one of ``_history_links``) to ``value`` (protected:
-        used by constructors and :meth:`_restore`): a saved atom is held as ``(pointer, type
-        name)``, anything else (``None``, an atom not saved yet) as itself."""
+        used by constructors and :meth:`_restore`): a saved atom is held as ``(pointer, class)``,
+        anything else (``None``, an atom not saved yet) as itself."""
         links = self.__dict__.get("_links")
         if links is None:
             links = {}
@@ -382,7 +382,7 @@ class Atom:
         this atom's context, never kept by this atom."""
         ref = links[name]
         if type(ref) is tuple:
-            return self.context.load(ref[0], ref[1])
+            return self.context.load(ref[0], ref[1].__type_name__)
         if isinstance(ref, Atom) and ref.atom_pointer is not None and self.context is not None:
             links[name] = _link_ref(ref)        # saved since: from now on held by pointer only
         return ref
@@ -393,9 +393,16 @@ class Atom:
         if not links:
             return {}
         context = self.context
+        osa = object.__setattr__
         out = {}
         for name, ref in links.items():
-            out[name] = Atom._stub(context, ref[0], ref[1]) if type(ref) is tuple else ref
+            if type(ref) is tuple:
+                stub = object.__new__(ref[1])       # what Atom._stub builds; the class is known
+                osa(stub, "_loaded", False)
+                osa(stub, "atom_pointer", ref[0])
+                osa(stub, "context", context)
+                ref = stub
+            out[name] = ref
         return out
 
     def _assign_oid(self) -> uuid.UUID:

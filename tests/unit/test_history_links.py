@@ -199,7 +199,7 @@ def test_a_link_to_an_unsaved_atom_holds_it_until_it_is_saved():
     ptr = context.save(second)                      # saves first as a child
     assert first.atom_pointer is not None
     assert second.before == first                   # now loaded through the context, by pointer
-    assert second.__dict__["_links"]["before"] == (first.atom_pointer, _Version.__type_name__)
+    assert second.__dict__["_links"]["before"] == (first.atom_pointer, _Version)
     loaded = context.load(ptr, _Version.__type_name__)
     assert loaded.n == 2 and loaded.before.n == 1 and loaded.before.before is None
     assert "before" not in vars(loaded)
