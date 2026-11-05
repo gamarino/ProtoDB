@@ -726,12 +726,21 @@ def test_the_cluster_progresses_at_20_percent_loss(tmp_path):
 
 @pytest.mark.parametrize("n", [3, 5])
 @pytest.mark.parametrize("seed", range(RUNS))
-def test_no_acknowledged_commit_is_lost_with_the_pipeline_under_faults(tmp_path, n, seed):
+def test_no_acknowledged_commit_is_lost_with_the_pipeline_under_faults(tmp_path, monkeypatch, n, seed):
     """Every member commits (two threads each) while links duplicate (up to 100 %), reorder
     (delay jitter) and the schedule kills members, kills holders in their gate wait, and
     partitions.  The pipeline must have run (pipelined permits issued), and ruling R86 bounds
     hold: ``acked <= n <= acked + unknown``."""
     rng = random.Random(seed * 104729 + n)
+    issued_on_proposals = [0]       # across incarnations: a revived member's counters restart
+    dispatch = ClusterCoordinator._dispatch
+
+    def counting(self, own):
+        before = self._stats["pipelined_permits"]
+        sends = dispatch(self, own)
+        issued_on_proposals[0] += self._stats["pipelined_permits"] - before
+        return sends
+    monkeypatch.setattr(ClusterCoordinator, "_dispatch", counting)
     with _cluster(tmp_path, n) as tc:
         net = tc.cluster.net
         net.set_faults(duplicate=rng.choice([0.0, 0.3, 1.0]), delay=(0.0, rng.choice([0.0, 0.004, 0.02])))
@@ -770,8 +779,7 @@ def test_no_acknowledged_commit_is_lost_with_the_pipeline_under_faults(tmp_path,
                     tc.revive(victim)
                     load.down.discard(victim)
             time.sleep(SECONDS / 3)
-        pipelined = sum(tc[m].stats()["pipelined_permits"] for m in tc.ids)
-        print(f"\n{n} members, seed {seed}: {load.acked} acked, {load.unknown} unknown, {pipelined} pipelined permits "
-              f"(live members)")
+        pipelined = issued_on_proposals[0]
+        print(f"\n{n} members, seed {seed}: {load.acked} acked, {load.unknown} unknown, {pipelined} pipelined permits")
         _check(tc, load, tc.ids)
         assert pipelined > 0 or load.acked < 20
