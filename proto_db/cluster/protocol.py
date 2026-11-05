@@ -37,10 +37,11 @@ at every start (Task 8.3g review, C1):
                ``base`` is that base and ``base_ranges`` the byte ranges of its commit, whose
                records ride with this replication (ruling R50); otherwise both are ``None``.
                Since protocol 8 (D50) it also carries ``seq`` (the write permission it runs
-               under, ``0`` under a plain lease), ``pred`` (the root it was built on) and
-               ``pred_committed`` (the sender knows ``pred`` committed): an acceptor holding a
-               root of the same term takes it only if it extends that root or catches it up
-               along a committed ``pred`` (the chain rule).  Since protocol 11 (D54) it also
+               under, ``0`` under a plain lease) and ``pred`` (the root it was built on): a root
+               whose ``pred`` carries the root's own label is taken only when that ``pred`` is
+               the acceptor's accepted root, which includes a root it learnt committed (the
+               chain rule, Raft's log matching on roots; D55 rule V2', protocol 13 dropped the
+               ``pred_committed`` catch-up).  Since protocol 11 (D54) it also
                carries ``vs`` (the fingerprint of the sender's voter set), ``ranges`` (the byte
                ranges of the commit's records) and ``copies`` (the members known to hold them
                durably, the sender included): a voter other than the sender accepts the root
@@ -148,7 +149,9 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
 #: restart with every incarnation (Task 8.3g review, C1 and C2).
 #: Also 12: ``warm`` carries a commit's records to the members that are not its data
 #: replicas, for their record caches only (ruling R89).
-PROTOCOL_VERSION = 12
+#: 13: pipelined permissions (Task 8.3k, D55): ``replicate`` loses ``pred_committed`` (voters
+#: accept a same-term root only by extension of what they hold, rule V2').
+PROTOCOL_VERSION = 13
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
 #: Record bytes a replication puts in one frame at most (a single record may fill one alone).
@@ -181,7 +184,7 @@ MESSAGE_TYPES = {
     "warm": {"term": _INT, "records": _RECORDS},
     "replicate": {"term": _INT, "rid": _INT, "inc": _INT, "root": _ROOT, "committed": _ROOT, "records": _RECORDS,
                   "chunks": _INT, "base": _ROOT, "base_ranges": _RANGES, "seq": _INT, "pred": _ROOT,
-                  "pred_committed": _BOOL, "vs": _INT, "copies": _STRS, "ranges": _RANGES},
+                  "vs": _INT, "copies": _STRS, "ranges": _RANGES},
     "renew": {"term": _INT, "rid": _INT, "inc": _INT, "vs": _INT},
     "permit_req": {"term": _INT, "rid": _INT, "inc": _INT},
     "permit": {"term": _INT, "rid": _INT, "seq": _INT, "inc": _INT, "root": _ROOT, "certain": _BOOL,

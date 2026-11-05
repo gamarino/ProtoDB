@@ -9,9 +9,10 @@ Write permissions (D50)
     committed.  The holder of a permission does its own commit round (:meth:`permit`,
     :meth:`replicate`, :meth:`finish`): it replicates under the owner's term with the
     permission's ``seq`` and the root it built on (``pred``), and ends the permission with
-    ``done``.  An acceptor takes a root of the same term only when it extends (or catches up
-    along a committed predecessor of) its accepted root, refuses siblings and stale sequence
-    numbers, and keeps every D46 rule: two roots built on one base can never BOTH be
+    ``done``.  An acceptor takes a root of the same term only when it extends its accepted
+    root, which includes a root it learnt committed (D55 rule V2', Raft's log matching on
+    roots; protocol 13 removed the ``pred_committed`` catch-up), refuses siblings and stale
+    sequence numbers, and keeps every D46 rule: two roots built on one base can never BOTH be
     committed, whatever the permissions (D50, S3).  Safety across terms DOES rest on the
     owner's sequencing (D50, S2 and S4; a deviation from ruling R66d awaiting the
     maintainer's ruling): the next phase 1 ranks the roots of one term by epoch, so a base
@@ -2290,21 +2291,29 @@ class ClusterCoordinator:
             pending[1][msg["index"]] = msg["records"]
 
     def _may_accept(self, term: int, root: Optional[RootRecord], label: int, pred: Optional[tuple] = None,
-                    pred_committed: bool = False, seq: int = 0) -> bool:
+                    seq: int = 0) -> bool:
         """The acceptance rules of a replicated root (lock held): running, healthy, a tier
         attached (its acceptor log loaded), no higher term granted here (ballot rule), not older
-        than the accepted root, and the chain rule of D50 (Task 8.3f).  The startup grace does
+        than the accepted root, and the chain rule (D50; D55 rule V2').  The startup grace does
         not apply (D50): it keeps a restarted node from granting while a lease it may have
         granted before the restart could still run, a timing promise; an acceptance reads only
-        the promise and the accepted root, both restored from the log at attach.  When the accepted root carries
-        the same label, the new root must be that root (a duplicate), extend it (``pred``,
-        the ``(known, root, label)`` it was built on, is the accepted root) or catch it up
-        along a committed ``pred`` that orders above it; a permission ``seq`` below the
-        highest accepted in this term is refused (a stale permission's late message)."""
+        the promise and the accepted root, both restored from the log at attach.
+
+        The chain rule is Raft's log matching applied to roots (D55, V2'): a root whose ``pred``
+        (the ``(known, root, label)`` it was built on) carries the root's own label is accepted
+        only when it is the accepted root again (a duplicate) or its ``pred`` IS the accepted
+        root -- which includes a root this node learnt committed (:meth:`_observe_committed`
+        makes it the accepted root).  Nothing a message claims about ``pred`` counts.  Only the
+        first root of a term -- its ``pred`` labelled below it, a base that came out of phase
+        1 -- may follow an accepted root of an older term, or arrive at a node that accepted
+        nothing yet, under the ballot rule alone.  A permission ``seq`` below the highest
+        accepted in this term is refused (a stale permission's late message), and a sibling
+        (another root of the same term and epoch) is refused, never a protocol violation."""
         if self._state != "running" or self._refusal() is not None or self._grants.granted_top > term:
             return False
+        first_of_term = pred is not None and pred[0] and pred[2] < label
         if not self._accepted[0]:
-            return True
+            return first_of_term
         _, accepted, accepted_label = self._accepted
         if _siblings(label, root, accepted_label, accepted):
             # Two roots of one term on one base: two holders of one term (the owner's
@@ -2314,18 +2323,19 @@ class ClusterCoordinator:
         if order <= 0:
             return order == 0
         if accepted_label != label:
-            return True             # the first root of a newer term: its base came out of phase 1
+            # A root of a newer term: only its first root, built on a base out of phase 1.  A
+            # later root of that term extends a root this node does not hold (V2').
+            return first_of_term
         if self._seq_seen[0] == label and seq < self._seq_seen[1]:
             return False
         if pred is None or not pred[0] or _siblings(pred[2], pred[1], accepted_label, accepted):
             return False
-        link = compare_roots(pred[2], pred[1], accepted_label, accepted)
-        return link == 0 or (link > 0 and pred_committed)
+        return compare_roots(pred[2], pred[1], accepted_label, accepted) == 0
 
     def _apply_replicate(self, msg: dict) -> None:
         sender, term, rid = msg["from"], msg["term"], msg["rid"]
         known, root, label = decode_labeled_root(msg["root"])
-        pred, seq, pred_committed = decode_labeled_root(msg["pred"]), msg["seq"], msg["pred_committed"]
+        pred, seq = decode_labeled_root(msg["pred"]), msg["seq"]
         records = msg["records"]
         with self._lock:
             tier = self._tier
@@ -2342,9 +2352,9 @@ class ClusterCoordinator:
             # Acknowledging needs a durable place for the records and the root: a node without
             # a tier never counts toward the majority.
             self._note_owner(term)
-            ok = valid and tier is not None and self._may_accept(term, root, label, pred, pred_committed, seq)
+            ok = valid and tier is not None and self._may_accept(term, root, label, pred, seq)
         if tier is not None and callable(getattr(tier, "accept_replication", None)):
-            self._accept_with_records(msg, tier, failed, valid, ok, root, label, pred, pred_committed, seq, records)
+            self._accept_with_records(msg, tier, failed, valid, ok, root, label, pred, seq, records)
             return
         if valid and tier is not None and not failed:
             # Records are stored even when the root is refused (a newer term was granted here
@@ -2380,7 +2390,7 @@ class ClusterCoordinator:
             # the records went to, logged on it while it is still attached, published in
             # memory only once logged; the acknowledgement follows.
             with self._lock:
-                ok = ok and self._tier is tier and self._may_accept(term, root, label, pred, pred_committed, seq)
+                ok = ok and self._tier is tier and self._may_accept(term, root, label, pred, seq)
                 if not ok:
                     self._stats["refused"] += 1
                     reply_root = self._wire(self._accepted)
@@ -2413,7 +2423,7 @@ class ClusterCoordinator:
             tier.prefetch(records)
 
     def _accept_with_records(self, msg: dict, tier, failed: bool, valid: bool, ok: bool, root, label: int,
-                             pred, pred_committed: bool, seq: int, records: list) -> None:
+                             pred, seq: int, records: list) -> None:
         """The acceptor side of a replication on a tier that accepts with its records (Task
         8.3f phase B, D50; bounded replication, Task 8.3g, D54).
 
@@ -2448,7 +2458,7 @@ class ClusterCoordinator:
             # detach and every other acceptor decision (ruling R55).
             with self._lock:
                 ok = ok and enough and not failed and self._tier is tier and self._may_accept(
-                    term, root, label, pred, pred_committed, seq)
+                    term, root, label, pred, seq)
             if ok:
                 try:
                     tier.accept_replication(label, root, records, seq=seq,
@@ -3384,7 +3394,6 @@ class ClusterCoordinator:
             parts = [make_message("records", self._node, term=label, rid=rid, inc=self._inc, index=i, records=chunk)
                      for i, chunk in enumerate(chunks[:-1])]
             pred = (True, pred_root, pred_label)
-            pred_committed = self._committed == pred
             wire_root = encode_root(root, known=True, term=label)
             wire_pred = encode_root(pred_root, known=True, term=pred_label)
             wire_committed = self._wire(self._committed)
@@ -3394,7 +3403,7 @@ class ClusterCoordinator:
                 return make_message("replicate", self._node, term=label, rid=rid, inc=self._inc, root=wire_root,
                                     committed=wire_committed, records=carried, chunks=n_chunks, base=base_wire,
                                     base_ranges=base_ranges, seq=seq, pred=wire_pred,
-                                    pred_committed=pred_committed, vs=self._fingerprint, copies=copies,
+                                    vs=self._fingerprint, copies=copies,
                                     ranges=wire_ranges)
 
             msg = replication(chunks[-1], len(parts), [self._node])
@@ -3407,7 +3416,7 @@ class ClusterCoordinator:
         copies = [self._node]
         try:
             if with_records and not bounded:
-                self._self_accept_with_records(tier, waiter, label, root, seq, pred, pred_committed, pred_label,
+                self._self_accept_with_records(tier, waiter, label, root, seq, pred, pred_label,
                                                pred_root, all_records)
             if bounded:
                 # The data phase: ``majority - 1`` other members store the records durably (a
@@ -3422,7 +3431,7 @@ class ClusterCoordinator:
                 replicas = set(preference[:self._majority - 1])
 
                 def own_append():
-                    self._self_accept_with_records(tier, waiter, label, root, seq, pred, pred_committed,
+                    self._self_accept_with_records(tier, waiter, label, root, seq, pred,
                                                    pred_label, pred_root, all_records)
                     for peer in self._others:
                         if peer not in replicas:
@@ -3448,7 +3457,7 @@ class ClusterCoordinator:
                 # then published and counted.
                 with self._lock:
                     self_ok = not with_records and self._tier is tier and self._may_accept(
-                        label, root, label, pred, pred_committed, seq)
+                        label, root, label, pred, seq)
                 if self_ok:
                     # Where the records of this root are, before its outcome is known: a node
                     # that adopts it later (a rejoin, a holder re-proposing it) copies them
@@ -3548,7 +3557,7 @@ class ClusterCoordinator:
         return time.perf_counter() - started
 
     def _self_accept_with_records(self, tier, waiter: _Waiter, label: int, root: RootRecord, seq: int, pred: tuple,
-                                  pred_committed: bool, pred_label: int, pred_root, records: list) -> None:
+                                  pred_label: int, pred_root, records: list) -> None:
         """The holder's own acceptance on a tier that accepts with its records (Task 8.3f phase
         B): decided by the acceptor rule (ruling R55) and logged as ONE synced kind-5 entry with
         every record of the replication.  When the holder may not accept its own root (a
@@ -3560,7 +3569,7 @@ class ClusterCoordinator:
         unknown (the entry may be durable, and the records may be on the replicas)."""
         with self._log_lock:
             with self._lock:
-                self_ok = self._tier is tier and self._may_accept(label, root, label, pred, pred_committed, seq)
+                self_ok = self._tier is tier and self._may_accept(label, root, label, pred, seq)
             if self_ok:
                 try:
                     tier.accept_replication(label, root, records, seq=seq, pred=(pred_label, pred_root))

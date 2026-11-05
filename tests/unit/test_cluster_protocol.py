@@ -32,12 +32,12 @@ def test_every_message_carries_the_protocol_version_and_sender():
                      more=False)),
     ("replicate", dict(term=3, rid=4, inc=5, root=[5, uuid.UUID(int=2).bytes, 80, 3], committed=None,
                        records=[[uuid.UUID(int=2).bytes, 80, b"framed"], [uuid.UUID(int=3).bytes, 26, None]],
-                       chunks=1, base=None, base_ranges=None, seq=0, pred=None, pred_committed=False, vs=7,
+                       chunks=1, base=None, base_ranges=None, seq=0, pred=None, vs=7,
                        copies=["n1"], ranges=[[uuid.UUID(int=2).bytes, 26, 90]])),
     ("replicate", dict(term=3, rid=4, inc=5, root=[5, uuid.UUID(int=2).bytes, 80, 3], committed=None, records=[],
                        chunks=0, base=[4, uuid.UUID(int=4).bytes, 64, 2],
                        base_ranges=[[uuid.UUID(int=4).bytes, 26, 90]], seq=3,
-                       pred=[4, uuid.UUID(int=4).bytes, 64, 2], pred_committed=True, vs=7,
+                       pred=[4, uuid.UUID(int=4).bytes, 64, 2], vs=7,
                        copies=["n1", "n4"], ranges=None)),
     ("renew", dict(term=9, rid=2, inc=11, vs=7)),
     ("permit_req", dict(term=9, rid=2, inc=11)),
@@ -80,6 +80,13 @@ def test_ranges_must_be_segment_start_end_triples():
     with pytest.raises(ClusterProtocolError):
         make_message("replicate", "n1", term=1, rid=1, root=root, committed=None, records=[], chunks=0,
                      base=root, base_ranges=[[b"short", 1, 2]])
+
+
+def test_replicate_no_longer_carries_pred_committed():
+    """Protocol 13 (D55, V2'): the flag-driven catch-up is gone from the wire."""
+    from proto_db.cluster.protocol import MESSAGE_TYPES
+    assert "pred_committed" not in MESSAGE_TYPES["replicate"]
+    assert PROTOCOL_VERSION == 13
 
 
 def test_release_fairness_hints_are_typed():
