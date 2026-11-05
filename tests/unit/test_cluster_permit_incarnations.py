@@ -179,7 +179,7 @@ def test_a_faulty_owner_issuing_one_base_twice_cannot_lose_a_commit(h):
     r2 = rec(r1.epoch + 3)
     _replicate_alone_then_crash(h, "b", pb, r2)
     with a._cond:                                  # the fault: the owner drops the outstanding permission
-        a._ownership.outstanding = None
+        a._ownership.pipeline.clear()
     pc, _ = _owner_permit(h, "c")
     assert pc.root == r1
     r3 = rec(r1.epoch + 1)
@@ -202,7 +202,7 @@ def test_an_owner_whose_lease_expires_with_a_permission_outstanding_releases_as_
     pb, _ = _owner_permit(h, "b")
     lease = a._ownership.lease
     h.clock.t += lease.remaining() + 0.001        # the lease ends; the permission's deadline has not
-    assert a._ownership.outstanding is not None
+    assert a._ownership.pipeline
     with a._cond:
         a._cond.notify_all()
     deadline = time.monotonic() + 5

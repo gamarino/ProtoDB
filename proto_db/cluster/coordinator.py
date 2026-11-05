@@ -474,19 +474,42 @@ def _siblings(label_a: int, a: Optional[RootRecord], label_b: int, b: Optional[R
         and (a.segment, a.offset) != (b.segment, b.offset)
 
 
+#: Pipelined permissions (Task 8.3k, D55): at most ``DEPTH + 1`` permissions of a term are
+#: outstanding, and at most ``DEPTH`` of them past their proposal and not done.  Every owner
+#: rule (O1-O8) is written for a general depth; 1 is the measured choice (D55, section 4.1).
+DEPTH = 1
+
+
+class _Issued:
+    """One permission an owner issued and has not retired (D55): to ``node``'s incarnation
+    ``inc`` for its request ``rid``, number ``seq``, ``deadline`` on the owner's clock, the
+    ``permit`` message sent (``None`` for this node's own threads), the ``base`` it carries
+    ``(known, root, label)``, and the ``proposal`` ``(root, label)`` its holder made, if any.
+    ``consumed`` is True once the next permission was issued on that proposal (rule O2)."""
+
+    __slots__ = ("node", "seq", "inc", "rid", "deadline", "permit", "base", "proposal", "consumed")
+
+    def __init__(self, node: str, seq: int, inc: int, rid: int, deadline: float, permit, base: tuple):
+        self.node, self.seq, self.inc, self.rid = node, seq, inc, rid
+        self.deadline, self.permit, self.base = deadline, permit, base
+        self.proposal = None
+        self.consumed = False
+
+
 class _Ownership:
-    """What this node does as the owner of its lease's term (D50): a FIFO of permission
-    requests ``(node, rid, inc, local wait or None)``, at most one outstanding permission
-    ``(node, seq, deadline on the owner's clock, incarnation, rid, permit message or None)``,
-    and the base it piggybacks: ``(known, root, label)``, known committed when
-    ``committed``.  Only the incarnation a permission was issued to can end it with
-    ``"none"`` or ``"committed"`` (8.3f review, C1)."""
+    """What this node does as the owner of its lease's term (D50, D55): a FIFO of permission
+    requests ``(node, rid, inc, local wait or None)``; the ``pipeline`` of issued permissions
+    not yet retired (:class:`_Issued`, oldest first, at most ``DEPTH + 1``); and ``base``, the
+    newest root it knows committed in its term ``(known, root, label)`` (known committed when
+    ``committed``), which a permit carries when no proposal is waiting to be issued on.  Only
+    the incarnation a permission was issued to can end it with ``"none"`` or ``"committed"``
+    (8.3f review, C1)."""
 
     def __init__(self, lease: Lease, base: tuple, committed: bool, now: float):
         self.lease = lease
         self.term = lease.term
         self.seq = 0
-        self.outstanding = None
+        self.pipeline = []
         self.base = base
         self.committed = committed
         self.queue = collections.deque()
@@ -498,6 +521,13 @@ class _Ownership:
     def serving(self, now: float) -> bool:
         """True while permissions may be issued: neither abandoned nor ended, lease valid."""
         return not self.abandoned and not self.ended and self.lease.is_valid()
+
+    def entry(self, node: str, seq: int) -> Optional[_Issued]:
+        """The issued permission ``seq`` of ``node``, if it is in the pipeline."""
+        for issued in self.pipeline:
+            if issued.node == node and issued.seq == seq:
+                return issued
+        return None
 
 
 class ClusterCoordinator:
@@ -715,7 +745,9 @@ class ClusterCoordinator:
         self._replica_suspects = {}         # member -> monotonic time until which it is tried last
         for key in ("permits_issued", "permits_held", "permit_requests_sent", "permits_refused", "renewals",
                     "renewal_failures", "ownerships", "terms_abandoned", "permit_rounds", "permits_foreign_dropped",
-                    "permit_requests_retried"):
+                    "permit_requests_retried", "pipelined_permits", "proposals", "proposals_received",
+                    "foreign_proposals", "gate_open_at_send", "gate_waits", "gate_fallbacks", "gate_closures",
+                    "stores_sent", "stores_applied", "records_cached_on_receipt"):
             self._stats[key] = 0
 
     # -- properties --------------------------------------------------------------------------
@@ -1727,6 +1759,9 @@ class ClusterCoordinator:
             return
         if kind == "permit_req":
             self._on_permit_req(sender, msg)
+            return
+        if kind == "propose":
+            self._on_propose(sender, msg)
             return
         if kind in ("permit", "permit_no"):
             self._on_permit_reply(sender, msg)
@@ -2924,13 +2959,22 @@ class ClusterCoordinator:
         return True
 
     def _dispatch(self, own: "_Ownership") -> list:
-        """Issue the next permission of ``own`` if none is outstanding (lock held); return the
-        messages to send."""
-        if own.outstanding is not None or not own.queue or not own.serving(self._clock()):
+        """Issue the next permission of ``own`` when rule O1 allows it (lock held); return the
+        messages to send.
+
+        O1 (D55): the queue is not empty, the term is serving, the R80 drain and the D/4 rule
+        allow it, the pipeline holds at most ``DEPTH`` entries, and its newest entry, if any,
+        has proposed and has not been issued on (O2).  The base is that proposal -- the permit
+        then names it in ``after`` and is never ``certain`` (H2) -- or, with an empty pipeline,
+        the newest root the owner knows committed (D50's permit)."""
+        if not own.queue or not own.serving(self._clock()) or len(own.pipeline) > DEPTH:
+            return []
+        newest = own.pipeline[-1] if own.pipeline else None
+        if newest is not None and (newest.proposal is None or newest.consumed):
             return []
         if self._idle_release is not None and time.monotonic() - own.last_local > self._idle_release:
             # Draining (ruling R80): no new permission; the ownership thread ends the term as
-            # soon as the outstanding one is done.  Without the drain, a member that asks
+            # soon as the outstanding ones are done.  Without the drain, a member that asks
             # continuously kept a permission outstanding at nearly every check, and the term
             # never ended (measured with the GIL on).
             self._cond.notify_all()
@@ -2947,19 +2991,27 @@ class ClusterCoordinator:
         valid = max(0.0, own.lease.remaining())
         now = self._clock()
         self._stats["permits_issued"] += 1
-        known, root, label = own.base
-        certain = known and own.committed
+        if newest is not None:
+            # Rule O2: a proposal is issued on once.
+            newest.consumed = True
+            root, label = newest.proposal
+            known, certain, after = True, False, [newest.seq, newest.node]
+            self._stats["pipelined_permits"] += 1
+        else:
+            known, root, label = own.base
+            certain, after = known and own.committed, None
+        issued = _Issued(node, own.seq, inc, rid, now + valid + self._request_timeout, None, (known, root, label))
+        own.pipeline.append(issued)
         if wait is not None:            # one of this node's own threads
-            own.outstanding = (node, own.seq, now + valid + self._request_timeout, inc, rid, None)
             wait.reply = Permission(term=own.term, seq=own.seq, owner=self._node, acquired_at=now,
                                     valid_until=now + valid, root=root, root_certain=certain,
-                                    clock=self._clock, root_term=label, rid=rid)
+                                    clock=self._clock, root_term=label, rid=rid, after=after)
             self._cond.notify_all()
             return []
-        permit = make_message("permit", self._node, term=own.term, rid=rid, seq=own.seq, inc=inc,
-                              root=encode_root(root, known=known, term=label), certain=certain, valid=valid)
-        own.outstanding = (node, own.seq, now + valid + self._request_timeout, inc, rid, permit)
-        return [(node, permit)]
+        issued.permit = make_message("permit", self._node, term=own.term, rid=rid, seq=own.seq, inc=inc,
+                                     root=encode_root(root, known=known, term=label), certain=certain,
+                                     valid=valid, after=after)
+        return [(node, issued.permit)]
 
     def _on_permit_req(self, sender: str, msg: dict) -> None:
         """A member asks this node, as owner of ``term``, for a permission (transport thread)."""
@@ -2969,11 +3021,13 @@ class ClusterCoordinator:
             own = self._ownership
             if own is not None and own.term == msg["term"] and own.serving(self._clock()) \
                     and self._failure is None:
-                out = own.outstanding
-                if out is not None and out[0] == sender and out[3] == msg["inc"] and out[4] == msg["rid"]:
+                out = next((e for e in own.pipeline if e.node == sender and e.inc == msg["inc"]
+                            and e.rid == msg["rid"]), None)
+                if out is not None:
                     # A retried request whose permit is outstanding (it, or the permit, was
-                    # lost; review M6): send the same permit again -- never a second one.
-                    sends = [(sender, out[5])] if out[5] is not None else []
+                    # lost; review M6; rule O7 per entry): send the same permit again -- never
+                    # a second one.
+                    sends = [(sender, out.permit)] if out.permit is not None else []
                 else:
                     if not any(q[0] == sender and q[1] == msg["rid"] for q in own.queue):
                         own.queue.append((sender, msg["rid"], msg["inc"], None))
@@ -3042,10 +3096,13 @@ class ClusterCoordinator:
                 now = self._clock()
                 # Measured from the request's send (the D45 argument): the owner issued the
                 # permission later, so it never outlasts the owner's lease here.
+                after = msg["after"]
                 wait.reply = Permission(term=msg["term"], seq=msg["seq"], owner=sender, acquired_at=now,
                                         valid_until=wait.sent_at + msg["valid"], root=root if known else None,
-                                        root_certain=msg["certain"] and known, clock=self._clock,
-                                        root_term=label, rid=msg["rid"])
+                                        # H2: a proposal base is never certain, whatever the message says.
+                                        root_certain=msg["certain"] and known and after is None, clock=self._clock,
+                                        root_term=label, rid=msg["rid"],
+                                        after=tuple(after) if after is not None else None)
                 self._cond.notify_all()
         self._send_all(sends)
 
@@ -3064,9 +3121,10 @@ class ClusterCoordinator:
             label, root = permission.committed if permission.committed is not None else (0, None)
             if permission.owner == self._node:
                 own = self._ownership
-                if own is not None and own.term == permission.term and own.outstanding is not None \
-                        and own.outstanding[:2] == (self._node, permission.seq) and own.outstanding[3] == self._inc:
-                    sends = self._permit_outcome(own, outcome, root, label)
+                issued = own.entry(self._node, permission.seq) if own is not None and own.term == permission.term \
+                    else None
+                if issued is not None and issued.inc == self._inc:
+                    sends = self._permit_outcome(own, issued, outcome, root, label)
             running = self._state == "running"
             placed = self._placements.get(root_key(label, root)) if outcome == "committed" else None
             copies, ranges = placed if placed is not None else ([], None)
@@ -3077,18 +3135,71 @@ class ClusterCoordinator:
             self._broadcast(msg)
             self._send_all(sends)
 
-    def _permit_outcome(self, own: "_Ownership", outcome: str, root: Optional[RootRecord], label: int) -> list:
-        """The outstanding permission of ``own`` ended with ``outcome`` (lock held); return the
-        messages to send.  An outcome the owner cannot know abandons the term (D50)."""
-        own.outstanding = None
+    def _permit_outcome(self, own: "_Ownership", issued: _Issued, outcome: str, root: Optional[RootRecord],
+                        label: int) -> list:
+        """The issued permission ``issued`` of ``own`` ended with ``outcome`` (lock held; the
+        sender is the incarnation it was issued to); return the messages to send.
+
+        O3 (``committed``): a permission that proposed must report its proposal, else the term
+        is abandoned; it and every older entry are retired (a successor's commit implies its
+        predecessor's: Lemma C, at the voters), and ``root`` becomes the committed base.  O5
+        (``none``): the only entry, which did not propose, is removed and the next permit
+        reuses the committed base (D50); any other ``none`` abandons the term.  O6: any other
+        outcome abandons the term (D50)."""
         if self._idle_release is not None:
             self._cond.notify_all()     # a draining ownership thread ends the term now (R80)
         if outcome == "committed":
-            own.base = (True, root, label)
+            if issued.proposal is not None and issued.proposal != (root, label):
+                return self._abandon(own, f"permission {issued.seq} of {issued.node} committed another root "
+                                          f"than it proposed")
+            index = own.pipeline.index(issued)
+            del own.pipeline[:index + 1]
+            known, base, base_label = own.base
+            if not known or compare_roots(label, root, base_label, base) > 0:
+                own.base = (True, root, label)
             own.committed = True
-        elif outcome != "none":
+        elif outcome == "none":
+            if own.pipeline != [issued] or issued.proposal is not None:
+                return self._abandon(own, f"permission {issued.seq} of {issued.node} ended without a root "
+                                          f"with {'a proposal' if issued.proposal is not None else 'another'} "
+                                          f"permission outstanding")
+            own.pipeline.clear()
+        else:
             return self._abandon(own, outcome)
         return self._dispatch(own)
+
+    def _on_propose(self, sender: str, msg: dict) -> None:
+        """A holder proposes the root it built under permission ``seq`` (dispatcher; rule O4,
+        D55).  Ignored unless it comes from an issued ``(node, seq, inc)``; a duplicate is
+        ignored; a changed proposal, a proposal from an entry that is not the newest and had
+        none, or a proposal not built on the issued base abandons the term; otherwise the
+        next permission may be issued on it (O1)."""
+        known, root, label = decode_labeled_root(msg["root"])
+        pred = decode_labeled_root(msg["pred"])
+        sends = []
+        with self._cond:
+            if self._state != "running":
+                return
+            own = self._ownership
+            issued = own.entry(sender, msg["seq"]) if own is not None and own.term == msg["term"] else None
+            if issued is None or issued.inc != msg["inc"] or not known or label != own.term:
+                self._stats["foreign_proposals"] += 1
+                return
+            if issued.proposal == (root, label):
+                return                                              # O4.2: a duplicate
+            if issued.proposal is not None:
+                sends = self._abandon(own, f"permission {issued.seq} of {sender} proposed two roots")
+            elif issued is not own.pipeline[-1]:
+                sends = self._abandon(own, f"permission {issued.seq} of {sender} proposed after its successor "
+                                           f"was issued")
+            elif pred != issued.base:
+                sends = self._abandon(own, f"permission {issued.seq} of {sender} proposed a root not built on "
+                                           f"its base")
+            else:
+                issued.proposal = (root, label)
+                self._stats["proposals_received"] += 1
+                sends = self._dispatch(own)
+        self._send_all(sends)
 
     def _abandon(self, own: "_Ownership", why: str) -> list:
         """Stop issuing permissions of ``own``'s term (lock held): an outcome it cannot know.
@@ -3096,6 +3207,7 @@ class ClusterCoordinator:
         if own.abandoned:
             return []
         own.abandoned = True
+        own.pipeline.clear()
         self._stats["terms_abandoned"] += 1
         self._suspect_term = max(self._suspect_term, own.term)
         logger.info("Node %s abandons lease term %d: %s", self._node, own.term, why)
@@ -3128,14 +3240,14 @@ class ClusterCoordinator:
                 known, root, label = decode_labeled_root(msg["root"])
                 self._learn_locator(label, root, msg["copies"], protocol.decode_ranges(msg["ranges"]))
             own = self._ownership
-            if own is not None and own.term == msg["term"] and own.outstanding is not None \
-                    and own.outstanding[:2] == (sender, msg["seq"]):
+            issued = own.entry(sender, msg["seq"]) if own is not None and own.term == msg["term"] else None
+            if issued is not None:
                 # Only the incarnation the permission was issued to knows what was done
                 # with it; any other incarnation's done (a restarted holder answering a
                 # duplicated permit, before this fix) is an unknown outcome (C1).
                 known, root, label = decode_labeled_root(msg["root"])
-                outcome = msg["outcome"] if msg["inc"] == own.outstanding[3] else "unknown"
-                sends = self._permit_outcome(own, outcome, root, label)
+                outcome = msg["outcome"] if msg["inc"] == issued.inc else "unknown"
+                sends = self._permit_outcome(own, issued, outcome, root, label)
             self._wakeups += 1
             self._cond.notify_all()
         self._send_all(sends)
@@ -3188,23 +3300,22 @@ class ClusterCoordinator:
                 if self._state != "running" or self._ownership is not own:
                     return
                 now, mono = self._clock(), time.monotonic()
-                if own.outstanding is not None and now > own.outstanding[2]:
-                    sends = self._abandon(own, f"permission {own.outstanding[1]} of {own.outstanding[0]} timed out")
-                    own.outstanding = None
+                late = next((e for e in own.pipeline if now > e.deadline), None)
+                if late is not None:
+                    sends = self._abandon(own, f"permission {late.seq} of {late.node} timed out")
                 end = None
                 if own.abandoned:
                     end = "abandoned"
                 elif not own.lease.is_valid():
                     end = "expired"
-                    if own.outstanding is not None:
+                    if own.pipeline:
                         # The lease ended with a permission whose outcome this owner does not
                         # know yet: abandon, so the release is uncertain (review I3).
-                        sends = self._abandon(own, f"lease expired with permission {own.outstanding[1]} "
-                                                   f"of {own.outstanding[0]} outstanding")
-                        own.outstanding = None
-                elif own.outstanding is None and not own.queue and mono - own.last_demand > idle:
+                        sends = self._abandon(own, f"lease expired with permission {own.pipeline[0].seq} "
+                                                   f"of {own.pipeline[0].node} outstanding")
+                elif not own.pipeline and not own.queue and mono - own.last_demand > idle:
                     end = "idle"
-                elif own.outstanding is None and self._idle_release is not None \
+                elif not own.pipeline and self._idle_release is not None \
                         and mono - own.last_local > self._idle_release:
                     # _dispatch issues nothing new past the threshold, so the outstanding
                     # permission drains and this check is reached.
@@ -3216,17 +3327,17 @@ class ClusterCoordinator:
                     self._ownership = None
                     sends += self._refuse_queue(own, "ending")
                 else:
-                    demand = own.outstanding is not None or own.queue or mono - own.last_demand <= self._duration / 2
+                    demand = own.pipeline or own.queue or mono - own.last_demand <= self._duration / 2
                     # Renewed when half of the holder's belief is left (ruling R78b: with the
                     # default margin, every lease_duration / 6 -- a message, no fsync).
                     renew = demand and own.lease.remaining() < self._belief / 2
                     if not renew:
                         waits = [max(0.001, own.lease.remaining() - self._belief / 2) if demand else idle]
-                        if own.outstanding is not None:
-                            waits.append(max(0.001, own.outstanding[2] - now))
+                        if own.pipeline:
+                            waits.append(max(0.001, min(e.deadline for e in own.pipeline) - now))
                         elif not own.queue:
                             waits.append(max(0.001, idle - (mono - own.last_demand)))
-                        if self._idle_release is not None and own.outstanding is None:
+                        if self._idle_release is not None and not own.pipeline:
                             # While a permission is outstanding the drain waits for its done,
                             # which wakes this thread (_permit_outcome): no 1 ms polling.
                             waits.append(max(0.001, self._idle_release - (mono - own.last_local)))

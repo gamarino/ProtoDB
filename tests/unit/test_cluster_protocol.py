@@ -41,7 +41,12 @@ def test_every_message_carries_the_protocol_version_and_sender():
                        copies=["n1", "n4"], ranges=None)),
     ("renew", dict(term=9, rid=2, inc=11, vs=7)),
     ("permit_req", dict(term=9, rid=2, inc=11)),
-    ("permit", dict(term=9, rid=2, seq=4, inc=7, root=[4, uuid.UUID(int=1).bytes, 64, 9], certain=True, valid=0.5)),
+    ("permit", dict(term=9, rid=2, seq=4, inc=7, root=[4, uuid.UUID(int=1).bytes, 64, 9], certain=True, valid=0.5,
+                    after=None)),
+    ("permit", dict(term=9, rid=2, seq=5, inc=7, root=[5, uuid.UUID(int=1).bytes, 64, 9], certain=False, valid=0.5,
+                    after=[4, "n2"])),
+    ("propose", dict(term=9, seq=4, inc=11, root=[5, uuid.UUID(int=1).bytes, 64, 9],
+                     pred=[4, uuid.UUID(int=1).bytes, 26, 9])),
     ("permit_no", dict(term=9, rid=2, inc=5, reason="not_owner")),
     ("done", dict(term=9, seq=4, inc=11, outcome="committed", root=[5, uuid.UUID(int=1).bytes, 64, 9],
                   copies=["n1", "n2"], ranges=[[uuid.UUID(int=1).bytes, 26, 90]])),
@@ -80,6 +85,15 @@ def test_ranges_must_be_segment_start_end_triples():
     with pytest.raises(ClusterProtocolError):
         make_message("replicate", "n1", term=1, rid=1, root=root, committed=None, records=[], chunks=0,
                      base=root, base_ranges=[[b"short", 1, 2]])
+
+
+def test_permit_after_names_a_positive_seq_and_a_member():
+    base = dict(term=9, rid=2, seq=5, inc=7, root=None, certain=False, valid=0.5)
+    for bad in ([0, "n2"], [4], [4, 2], "n2", [4, "n2", 1]):
+        with pytest.raises(ClusterProtocolError):
+            make_message("permit", "n1", **base, after=bad)
+    with pytest.raises(ClusterProtocolError):
+        make_message("permit", "n1", **base)        # protocol 13: the field is required
 
 
 def test_replicate_no_longer_carries_pred_committed():

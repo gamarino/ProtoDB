@@ -49,15 +49,22 @@ at every start (Task 8.3g review, C1):
                counts a majority of the voters.  A message carrying records goes to the
                commit's data replicas, which store them durably whether or not they accept the
                root; the root alone goes to the other voters.
+``propose``    ``term``, ``seq``, ``inc``, ``root``, ``pred``: the holder of permission ``seq`` of
+               ``term`` built ``root`` on ``pred`` (the base its permit gave) in a round where no
+               commit conflicted, and will send no other root under it; the owner may issue the
+               next permission on ``root`` (D55).  No reply.
 ``renew``      ``term``, ``rid``, ``inc``: the owner of ``term`` asks its granters to extend the
                active grant they gave it (D50); answered by ``grant`` or ``reject``.
 ``permit_req`` ``term``, ``rid``, ``inc``: ask the owner of ``term`` for a write permission (D50).
-``permit``     ``term``, ``rid``, ``seq``, ``inc``, ``root``, ``certain``, ``valid``: write
+``permit``     ``term``, ``rid``, ``seq``, ``inc``, ``root``, ``certain``, ``valid``, ``after``: write
                permission ``seq`` of ``term`` for the requester's incarnation ``inc`` (the one
                its ``permit_req`` carried; any other incarnation drops it unanswered, protocol
                9); ``root`` is the newest root the owner knows (committed unless ``certain`` is
                False, the first permission of an uncertain lease) and ``valid`` the seconds
-               the permission may be used from the request's send.
+               the permission may be used from the request's send.  ``after`` (protocol 13,
+               D55) is ``None``, or ``[seq_j, holder_j]`` when ``root`` is the *proposal* of
+               permission ``seq_j`` made by ``holder_j``: not known committed (``certain`` is
+               then always False); ``holder_j`` is only a target of the gate's fallback query.
 ``permit_no``  ``term``, ``rid``, ``inc``, ``reason``: the sender does not grant (not the owner of that
                term, lease ended, term abandoned); ``term`` is the highest term it knows.
 ``done``       ``term``, ``seq``, ``inc``, ``outcome``, ``root``: the holder ends permission
@@ -149,8 +156,9 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
 #: restart with every incarnation (Task 8.3g review, C1 and C2).
 #: Also 12: ``warm`` carries a commit's records to the members that are not its data
 #: replicas, for their record caches only (ruling R89).
-#: 13: pipelined permissions (Task 8.3k, D55): ``replicate`` loses ``pred_committed`` (voters
-#: accept a same-term root only by extension of what they hold, rule V2').
+#: 13: pipelined permissions (Task 8.3k, D55): the ``propose`` message, ``permit.after``;
+#: ``replicate`` loses ``pred_committed`` (voters accept a same-term root only by extension of
+#: what they hold, rule V2').
 PROTOCOL_VERSION = 13
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
@@ -171,6 +179,7 @@ _OPT_BYTES = "optional bytes"
 _OPT_STR = "optional str"
 _RANGES = "ranges"
 _STRS = "list of str"
+_AFTER = "optional [seq, holder]"
 
 #: Fields of each message type (besides ``v``, ``type`` and ``from``).
 MESSAGE_TYPES = {
@@ -185,10 +194,11 @@ MESSAGE_TYPES = {
     "replicate": {"term": _INT, "rid": _INT, "inc": _INT, "root": _ROOT, "committed": _ROOT, "records": _RECORDS,
                   "chunks": _INT, "base": _ROOT, "base_ranges": _RANGES, "seq": _INT, "pred": _ROOT,
                   "vs": _INT, "copies": _STRS, "ranges": _RANGES},
+    "propose": {"term": _INT, "seq": _INT, "inc": _INT, "root": _ROOT, "pred": _ROOT},
     "renew": {"term": _INT, "rid": _INT, "inc": _INT, "vs": _INT},
     "permit_req": {"term": _INT, "rid": _INT, "inc": _INT},
     "permit": {"term": _INT, "rid": _INT, "seq": _INT, "inc": _INT, "root": _ROOT, "certain": _BOOL,
-               "valid": _NUM},
+               "valid": _NUM, "after": _AFTER},
     "permit_no": {"term": _INT, "rid": _INT, "inc": _INT, "reason": _STR},
     "done": {"term": _INT, "seq": _INT, "inc": _INT, "outcome": _STR, "root": _ROOT, "copies": _STRS,
              "ranges": _RANGES},
@@ -223,6 +233,9 @@ def _check_field(kind: str, name: str, value, expected: str) -> None:
         ok = value is None or isinstance(value, bytes)
     elif expected == _OPT_STR:
         ok = value is None or isinstance(value, str)
+    elif expected == _AFTER:
+        ok = value is None or (isinstance(value, (list, tuple)) and len(value) == 2 and type(value[0]) is int
+                               and value[0] > 0 and isinstance(value[1], str))
     elif expected == _STRS:
         ok = isinstance(value, list) and all(isinstance(v, str) for v in value)
     elif expected == _RANGES:

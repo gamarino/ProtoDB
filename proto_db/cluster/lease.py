@@ -392,13 +392,27 @@ class Permission(Lease):
     S4; see :mod:`proto_db.cluster.coordinator`).
     ``owner`` is the node that issued it; ``outcome`` and ``committed`` are what the holder
     reports when it ends the permission (``"none"``, ``"committed"`` or ``"unknown"``).
+
+    Pipelined permissions (Task 8.3k, D55): ``after`` is ``None``, or ``(seq_j, holder_j)`` when
+    ``root`` is the proposal of permission ``seq_j`` made by ``holder_j`` -- not known committed,
+    so ``root_certain`` is False and the base is never re-proposed nor recorded committed (H2).
+    ``proposed`` is True once this permission proposed its root to the owner (it then sends no
+    other root, H1).  ``sent_acceptable`` is True from the instant an own acceptance is logged
+    or a message a voter may accept is handed to the transport (H7): until then every failure
+    is a retryable conflict, and the permission ends ``"none"``.
     """
 
     def __init__(self, *, term: int, seq: int, owner: str, acquired_at: float, valid_until: float,
                  root: Optional[RootRecord], root_certain: bool, clock: Callable[[], float], root_term: int = 0,
-                 rid: int = 0):
+                 rid: int = 0, after: Optional[tuple] = None):
         super().__init__(term=term, acquired_at=acquired_at, valid_until=valid_until, root=root,
-                         root_certain=root_certain, clock=clock, root_term=root_term)
+                         root_certain=root_certain and after is None, clock=clock, root_term=root_term)
+        self.after = after
+        # The base as issued is the owner's committed root or its proposal: a recovery round
+        # (an uncertain permit, which bind_root later marks certain) may rebind another base.
+        self.issued_base = self.root_certain or after is not None
+        self.proposed = False
+        self.sent_acceptable = False
         self.seq = seq
         self.owner = owner
         self.rid = rid
