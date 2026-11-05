@@ -387,6 +387,11 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
         tr = reader.open_database("db").new_transaction()
         got = tr.get_root_object("ids")
         ok = got is not None and sorted(got.elements()) == expected_ids and all(c == 1 for _, c in got.items())
+        # Which way a failed check went (Task 8.3k): an acknowledged id missing is a loss; an
+        # extra id is a commit whose caller got an unknown outcome (its thread stopped) and
+        # that took effect -- the exact check fails either way.
+        have = set(got.elements()) if got is not None else set()
+        ids_missing, ids_extra = len(set(expected_ids) - have), len(have - set(expected_ids))
         if payload:
             from benchmarks.cluster_peer import payload_value
             blobs = tr.get_root_object("blobs")
@@ -404,13 +409,16 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
     return {"commits": commits, "rows": commits * batch, "rate": commits / elapsed,
             "row_rate": commits * batch / elapsed,
             "ok": ok and all(r["failures"] == 0 and r["healthy"] for r in results),
-            "ids_ok": ok, "replication_failures_by_peer": [r["failures"] for r in results],
+            "ids_ok": ok, "ids_missing": ids_missing, "ids_extra": ids_extra,
+            "replication_failures_by_peer": [r["failures"] for r in results],
             "healthy_by_peer": [r["healthy"] for r in results],
             "latency_ms": _latency_ms([x for r in results for x in r["latencies"]]),
             "latency_ms_by_peer": [_latency_ms(r["latencies"]) for r in results],
             "lease_attempts_per_commit": round(sum(r["lease_attempts"] for r in results) / max(1, commits), 2),
             "critical_ms": _critical_per_commit(stats), "persisted_ids": len(expected_ids),
             "commits_by_peer": [sum(r["counts"]) for r in results],
+            "pipeline": {k: sum(r.get("pipeline", {}).get(k, 0) for r in results)
+                         for k in {k for r in results for k in r.get("pipeline", {})}},
             "payload": payload,
             "wire_by_type": {k: sum(r.get("wire", {}).get(k, 0) for r in results)
                              for k in sorted({k for r in results for k in r.get("wire", {})})},

@@ -197,7 +197,12 @@ def main() -> None:
               "critical": st["critical"], "critical_commits": st["critical_commits"],
               "lease_attempts": st["attempts"], "acquired": st["acquired"],
               "syncs_before_window": before_syncs, "syncs_window": window_syncs, "syncs_until_persisted": total_syncs, "pid": os.getpid(),
-              "wire": wire, "payload": payload, "synced_bytes_window": window_bytes})
+              "wire": wire, "payload": payload, "synced_bytes_window": window_bytes,
+              # Task 8.3k (D55): pipelined permissions (absent before protocol 13: zeros).
+              "pipeline": {k: st.get(k, 0) for k in ("permits_issued", "pipelined_permits", "proposals",
+                                                     "gate_open_at_send", "gate_waits", "gate_fallbacks",
+                                                     "gate_closures", "stores_sent", "replications",
+                                                     "terms_abandoned")}})
         _hear()
         space.close()
 

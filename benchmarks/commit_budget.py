@@ -21,6 +21,7 @@ Events (``extra`` in brackets):
   contains ``self_accept``, which overlaps it), ``finish`` (``done``);
 * ``built``: one ``record_critical`` per commit that a round replicated (instant);
 * ``apply_replicate``: a peer's handling of a replication on its acceptor lane;
+* ``gate``: a pipelined round's wait at its gate (Task 8.3k, D55) [opened];
 * ``permit_req_in``, ``permit_reply_in``, ``done_in``: message arrivals (instant);
 * ``sync``: every ``os.fsync``/``os.fdatasync`` [file name].
 
@@ -90,6 +91,8 @@ def install() -> None:
     patch(C, "_place_records", lambda f: _timed("place", f))
     patch(C, "finish", lambda f: _timed("finish", f))
     patch(C, "_apply_replicate", lambda f: _timed("apply_replicate", f))
+    if hasattr(C, "_await_gate"):           # Task 8.3k (D55): the pipelined round's gate wait
+        patch(C, "_await_gate", lambda f: _timed("gate", f, lambda a, r: bool(r)))
     patch(C, "record_critical", lambda f: _instant("built", f))
     patch(C, "_on_permit_req", lambda f: _instant("permit_req_in", f))
     patch(C, "_on_permit_reply", lambda f: _instant("permit_reply_in", f))
@@ -239,7 +242,9 @@ def analyze(dirpath):
                 # Since Task 8.3j the own append runs inside the data phase (overlapped): count
                 # the union of the two intervals once.
                 own_inside = bool(sa and pl and pl[0][0] <= sa[0][0] and sa[0][1] <= pl[0][1])
-                ph["replicate: rest (warm send, majority, log)"] = (rp[1] - rp[0]) - ph["replicate: data replica (send, its sync, ack)"] - (0.0 if own_inside else ph["replicate: own synced append"])
+                gt = [q for q in ev["gate"] if q[2] == rnd[2] and rp[0] <= q[0] <= rp[1]]
+                ph["replicate: gate wait"] = sum(q[1] - q[0] for q in gt)
+                ph["replicate: rest (warm send, majority, log)"] = (rp[1] - rp[0]) - ph["replicate: data replica (send, its sync, ack)"] - (0.0 if own_inside else ph["replicate: own synced append"]) - ph["replicate: gate wait"]
                 ph["round: after replicate"] = re_ - rp[1]
             ph["return to thread"] = max(0.0, e - re_)
             ph["total in group"] = e - s
