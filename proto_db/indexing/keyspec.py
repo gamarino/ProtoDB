@@ -31,7 +31,8 @@ from ..core.dbobject import DBObject
 from ..errors import ProtoCorruptionError, ProtoValidationError
 from ..values import MISSING, canonical
 
-__all__ = ["KeySpec", "register_extractor", "PATH", "ELEMENT", "EXTRACTOR"]
+__all__ = ["KeySpec", "register_extractor", "unregister_extractor", "extractor_generation",
+           "PATH", "ELEMENT", "EXTRACTOR"]
 
 PATH = "path"
 ELEMENT = "element"
@@ -39,6 +40,10 @@ EXTRACTOR = "extractor"
 _KINDS = (PATH, ELEMENT, EXTRACTOR)
 
 _extractors: dict[str, Callable] = {}
+#: Registration generation of every registered name (D56): a process-wide counter value taken at
+#: registration, so a name registered again after :func:`unregister_extractor` gets a new one.
+_generations: dict[str, int] = {}
+_next_generation = 1
 _extractors_lock = threading.Lock()
 
 
@@ -61,11 +66,43 @@ def register_extractor(name: str, fn: Callable) -> None:
     _check_extractor_name(name)
     if not callable(fn):
         raise ProtoValidationError(f"Extractor {name!r} must be callable, not {type(fn).__name__}")
+    global _next_generation
     with _extractors_lock:
         current = _extractors.get(name)
         if current is not None and current is not fn:
             raise ProtoValidationError(f"Extractor {name!r} is already registered with another function")
-        _extractors[name] = fn
+        if current is None:
+            _extractors[name] = fn
+            _generations[name] = _next_generation
+            _next_generation += 1
+
+
+def unregister_extractor(name: str) -> None:
+    """Remove the registration of ``name`` (``ProtoValidationError`` if it is not registered).
+
+    Until ``name`` is registered again, indexes and terms naming it raise on use.  A new
+    registration gets a new generation (:func:`extractor_generation`), so query results
+    cached under the old function are never served for the new one (D56).  Stored indexes
+    built with the old function are not rebuilt: rebinding a name to a function with another
+    meaning makes them disagree with their elements, as the registry docstring warns.
+    """
+    _check_extractor_name(name)
+    with _extractors_lock:
+        if _extractors.pop(name, None) is None:
+            raise ProtoValidationError(f"No key extractor is registered under {name!r}")
+        del _generations[name]
+
+
+def extractor_generation(name: str) -> int:
+    """The registration generation of ``name`` in this process (``ProtoValidationError`` if unregistered).
+
+    Generations are unique within a process: registering a name again after
+    :func:`unregister_extractor` gives a different value, whatever the function."""
+    with _extractors_lock:
+        generation = _generations.get(name)
+    if generation is None:
+        _registered(name)  # raises the usual "not registered" error
+    return generation
 
 
 def _registered(name: str) -> Callable:

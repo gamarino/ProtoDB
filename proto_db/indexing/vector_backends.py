@@ -313,6 +313,9 @@ class _Backend:
     """Common interface of the backends (see the module docstring)."""
 
     name = ""
+    #: Whether a search is a deterministic function of the index's stored content (D56): the
+    #: exact and ivf_flat backends are; hnsw builds its graph in each process with hnswlib.
+    deterministic = True
     kind = ""
     DEFAULTS: dict = {}
 
@@ -710,6 +713,7 @@ class HnswBackend(_Backend):
     """Approximate search on an hnswlib graph derived from the store (module docstring)."""
 
     name = "hnsw"
+    deterministic = False
     kind = "VectorHnsw"
     DEFAULTS = {"M": 16, "ef_construction": 200, "ef_search": 64, "seed": 0}
 

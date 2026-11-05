@@ -273,6 +273,9 @@ class KeyGroupIndex(Index):
     (:meth:`supports`) and whether it offers ordered iteration.
     """
 
+    #: Plans read only the stored trees: deterministic, so results are cacheable by pointer (D56).
+    _plan_cacheable = True
+
     def __init__(self, name: str, key_spec: KeySpec | str, *, context: PersistenceContext | None = None):
         """Create an EMPTY index on ``key_spec`` (a ``str`` means ``KeySpec.path(key_spec)``)."""
         if isinstance(key_spec, str):

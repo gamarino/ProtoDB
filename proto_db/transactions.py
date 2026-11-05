@@ -121,6 +121,7 @@ from .errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, Pro
                      ProtoValidationError)
 from .storage.base import check_lock_timeout
 from .storage.cache import BoundedCache
+from .query.cache import QUERY_CACHE_BYTES, QueryCache
 from .storage.format import FORMAT_VERSION, RootRecord
 from .cluster.coordinator import REFOUND_TERM_STEP
 from .cluster.lease import Permission
@@ -1168,16 +1169,21 @@ class ObjectSpace:
             transactions and threads, by storage pointer (ruling R75): a pointer's content
             never changes, so the cache needs no invalidation and is never stale.  ``0``
             disables it (each transaction decodes what it reads).
+        query_cache_bytes: capacity, in estimated bytes, of the space's query result cache
+            (:attr:`query_cache`, D56), shared by its transactions and threads and keyed by
+            the pointers of what each query reads, so it is never stale.  ``0`` stores
+            nothing (results are still computed).
     """
 
     def __init__(self, storage, *, lock_timeout: Optional[float] = None, coordinator=None,
-                 atom_cache_entries: int = ATOM_CACHE_ENTRIES):
+                 atom_cache_entries: int = ATOM_CACHE_ENTRIES, query_cache_bytes: int = QUERY_CACHE_BYTES):
         if lock_timeout is not None:
             check_lock_timeout(lock_timeout)
         if type(atom_cache_entries) is not int or atom_cache_entries < 0:
             raise ProtoValidationError("atom_cache_entries must be a non-negative int")
         self._storage = storage
         self._atoms = _AtomCache(storage, atom_cache_entries) if atom_cache_entries else None
+        self._query_cache = QueryCache(query_cache_bytes, self._space_load)
         self._lock_timeout = lock_timeout
         self._coordinator = coordinator
         self._tier = None
@@ -1196,6 +1202,23 @@ class ObjectSpace:
     def storage(self):
         """The underlying storage."""
         return self._storage
+
+    def _space_load(self, ptr: AtomPointer, type_name: str) -> Atom:
+        """Load an atom outside any transaction: through the shared atom cache, else as a stub."""
+        atoms = self._atoms
+        if atoms is not None:
+            return atoms.load(ptr, type_name)
+        return Atom._stub(_SpaceContext(self._storage), ptr, type_name)
+
+    @property
+    def query_cache(self) -> QueryCache:
+        """The space's query result cache (D56): ``query_cache.result(query)`` returns the
+        immutable :class:`~proto_db.query.cache.QueryResult` of a plan, Queryable or collection."""
+        return self._query_cache
+
+    def query_cache_stats(self) -> dict:
+        """Counters of the query result cache (see :meth:`QueryCache.stats`)."""
+        return self._query_cache.stats()
 
     def atom_cache_stats(self) -> Optional[dict]:
         """Counters of the shared decoded-atom cache (``hits``, ``misses``, ``entries``,

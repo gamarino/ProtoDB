@@ -69,6 +69,13 @@ class BoundedCache:
             self.hits += 1
             return entry[0]
 
+    def peek(self, key: Hashable) -> Optional[Any]:
+        """Return the value cached under ``key`` or ``None``, without counting a hit or a miss
+        and without changing the eviction order."""
+        with self._lock:
+            entry = self._items.get(key)
+            return None if entry is None else entry[0]
+
     def put(self, key: Hashable, value: Any) -> None:
         """Cache ``value`` under ``key``, evicting least recently used entries as needed."""
         size = self._sizeof(value)

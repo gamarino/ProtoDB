@@ -13,9 +13,9 @@ because :mod:`proto_db.query.terms` depends on :mod:`.keyspec` while
 :mod:`.base` depends on the terms: importing this package must not import
 :mod:`.base` eagerly, or importing the terms first would form a cycle.
 """
-from .keyspec import ELEMENT, EXTRACTOR, PATH, KeySpec, register_extractor
+from .keyspec import ELEMENT, EXTRACTOR, PATH, KeySpec, extractor_generation, register_extractor, unregister_extractor
 
-__all__ = ["KeySpec", "register_extractor", "PATH", "ELEMENT", "EXTRACTOR", "Index", "element_identity",
+__all__ = ["KeySpec", "register_extractor", "unregister_extractor", "extractor_generation", "PATH", "ELEMENT", "EXTRACTOR", "Index", "element_identity",
            "EqualityIndex", "RangeIndex", "VectorIndex", "near_oracle"]
 
 #: Lazily resolved names and their submodules.

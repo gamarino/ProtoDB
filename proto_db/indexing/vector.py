@@ -127,6 +127,7 @@ class VectorIndex(Index):
 
     __type_name__ = "proto_db.indexing.VectorIndex"
     _definition = Index._definition + ("dim", "metric", "backend", "params")
+    _plan_cacheable = True
 
     def __init__(self, name: str, key_spec: KeySpec | str, dim: int, metric: str = "cosine",
                  backend: str = "exact", *, context: PersistenceContext | None = None, **params):
@@ -153,6 +154,10 @@ class VectorIndex(Index):
 
     def _impl(self):
         return backend_for(self.backend)
+
+    def _plans_deterministic(self) -> bool:
+        """Cacheable by pointer (D56) unless the backend's search is not deterministic (hnsw)."""
+        return self._impl().deterministic
 
     def _vector(self, element):
         return canonical_vector(self.key_spec.extract(element), self.dim)
