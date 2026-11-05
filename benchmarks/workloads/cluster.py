@@ -21,6 +21,7 @@ replication failed and that every node stayed healthy; the critical-section brea
 import itertools
 from typing import Optional
 import os
+import shutil
 import threading
 import time
 
@@ -370,6 +371,10 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
             if pr.wait(60) != 0:
                 e.seek(0)
                 raise RuntimeError(f"cluster peer failed: {e.read()[-3000:]}")
+        stderr = []
+        for e in errs:
+            e.seek(0)
+            stderr.append(e.read())
     finally:
         for pr, e in zip(procs, errs):
             if pr.poll() is None:
@@ -390,8 +395,10 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
         # Which way a failed check went (Task 8.3k): an acknowledged id missing is a loss; an
         # extra id is a commit whose caller got an unknown outcome (its thread stopped) and
         # that took effect -- the exact check fails either way.
+        # A duplicated id (count >= 2, a commit applied twice) is a third way, reported apart.
         have = set(got.elements()) if got is not None else set()
         ids_missing, ids_extra = len(set(expected_ids) - have), len(have - set(expected_ids))
+        ids_duplicated = sum(1 for _, c in got.items() if c > 1) if got is not None else 0
         if payload:
             from benchmarks.cluster_peer import payload_value
             blobs = tr.get_root_object("blobs")
@@ -403,13 +410,27 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
         tr.abort()
     finally:
         reader.close()
+    thread_errors = [r.get("thread_errors", []) for r in results]
+    healthy = ok and all(r["failures"] == 0 and r["healthy"] for r in results) and not any(thread_errors)
+    kept = None
+    if not ok or any(thread_errors):
+        # Keep the evidence of a failed check (review 8.3k, M1): the run directory (every
+        # peer's local tier and the store) and each peer's stderr, outside the scratch that
+        # the harness removes after the workload.
+        kept = os.path.join(ctx.workdir, "failed-runs", os.path.basename(root))
+        os.makedirs(os.path.dirname(kept), exist_ok=True)
+        shutil.move(root, kept)
+        for node_id, text in zip(ids, stderr):
+            with open(os.path.join(kept, f"{node_id}.stderr"), "w") as f:
+                f.write(text)
     commits = sum(sum(r["counts"]) for r in results)
     elapsed = max(r["seconds"] for r in results if r["counts"]) if commits else max(r["seconds"] for r in results)
     stats = [{"critical": r["critical"], "critical_commits": r["critical_commits"]} for r in results]
     return {"commits": commits, "rows": commits * batch, "rate": commits / elapsed,
             "row_rate": commits * batch / elapsed,
-            "ok": ok and all(r["failures"] == 0 and r["healthy"] for r in results),
-            "ids_ok": ok, "ids_missing": ids_missing, "ids_extra": ids_extra,
+            "ok": healthy,
+            "ids_ok": ok, "ids_missing": ids_missing, "ids_extra": ids_extra, "ids_duplicated": ids_duplicated,
+            "thread_errors_by_peer": thread_errors, "kept_run_dir": kept,
             "replication_failures_by_peer": [r["failures"] for r in results],
             "healthy_by_peer": [r["healthy"] for r in results],
             "latency_ms": _latency_ms([x for r in results for x in r["latencies"]]),

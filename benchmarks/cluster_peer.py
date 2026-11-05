@@ -142,8 +142,16 @@ def main() -> None:
         attempts = [0] * threads
         latencies = [[] for _ in range(threads)]
         barrier = threading.Barrier(max(1, threads))
+        thread_errors = []      # the exception type that ended each worker thread that died early
 
         def worker(t):
+            try:
+                commit_loop(t)
+            except BaseException as e:      # reported, not swallowed: the run then fails its check
+                thread_errors.append(f"{type(e).__module__}.{type(e).__qualname__}: {str(e)[:300]}")
+                raise
+
+        def commit_loop(t):
             base = node * 10**9 + t * 10**7
             barrier.wait()
             stop_at = time.monotonic() + seconds
@@ -198,6 +206,7 @@ def main() -> None:
               "lease_attempts": st["attempts"], "acquired": st["acquired"],
               "syncs_before_window": before_syncs, "syncs_window": window_syncs, "syncs_until_persisted": total_syncs, "pid": os.getpid(),
               "wire": wire, "payload": payload, "synced_bytes_window": window_bytes,
+              "thread_errors": thread_errors,
               # Task 8.3k (D55): pipelined permissions (absent before protocol 13: zeros).
               "pipeline": {k: st.get(k, 0) for k in ("permits_issued", "pipelined_permits", "proposals",
                                                      "gate_open_at_send", "gate_waits", "gate_fallbacks",
