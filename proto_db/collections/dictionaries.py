@@ -32,6 +32,7 @@ threads; lazily loaded nodes are published atomically by the atom layer.
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
+from itertools import islice
 
 from ..core.atom import PersistenceContext
 from ..errors import ProtoValidationError
@@ -97,6 +98,15 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
         """Values in key order."""
         for _, value in avl.key_iter(self.root):
             yield value
+
+    def _scan_window(self, start: int, stop: int | None):
+        """Values ``start .. stop-1`` in key order, by the node counts: O(log n + k) (D56)."""
+        if type(self).elements is not Dictionary.elements:
+            return None  # a subclass that redefines its elements cannot be windowed by position
+        stop = self.count if stop is None else min(stop, self.count)
+        if start >= stop:
+            return iter(())
+        return islice((value for _, value in avl.key_iter_from(self.root, start)), stop - start)
 
     def get_at(self, key, default=None):
         """Return the value stored under ``key`` or ``default`` when absent."""

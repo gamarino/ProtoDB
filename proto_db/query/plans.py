@@ -234,6 +234,15 @@ class CollectionScanPlan(QueryPlan):
         n = self.collection.count
         return Estimate(rows=n, cost=n)
 
+    def window(self, start: int, stop: int | None = None) -> Iterator | None:
+        """Rows ``start .. stop-1`` when the collection can seek (List, Dictionary), else ``None``."""
+        start, stop = _check_window(start, stop)
+        return self.collection._scan_window(start, stop)
+
+    def exact_rows(self) -> int | None:
+        """``count`` when the collection can seek (its count is then its number of elements)."""
+        return self.collection.count if self.collection._scan_window(0, 0) is not None else None
+
 
 class ValuesScan(QueryPlan):
     """Scan of a materialised tuple of plain values (D38): no collection, so no index.
@@ -701,9 +710,26 @@ class Limit(QueryPlan):
         self._freeze()
 
     def execute(self) -> Iterator:
-        """Stream the window."""
+        """Stream the window: by rank when the source can seek (D56), else by skipping rows."""
         stop = None if self.n is None else self.offset + self.n
-        return islice(self.source.execute(), self.offset, stop)
+        seek = self.source.window(self.offset, stop)
+        return seek if seek is not None else islice(self.source.execute(), self.offset, stop)
+
+    def window(self, start: int, stop: int | None = None) -> Iterator | None:
+        """Rows ``start .. stop-1`` of this window, by the source's rank access (``None`` without it)."""
+        start, stop = _check_window(start, stop)
+        end = self.n if stop is None else (stop if self.n is None else min(stop, self.n))
+        if end is not None and end <= start:
+            return iter(()) if self.source.window(0, 0) is not None else None
+        return self.source.window(self.offset + start, None if end is None else self.offset + end)
+
+    def exact_rows(self) -> int | None:
+        """``min(n, max(source rows - offset, 0))`` when the source's row count is exact."""
+        rows = self.source.exact_rows()
+        if rows is None:
+            return None
+        rows = max(rows - self.offset, 0)
+        return rows if self.n is None else min(rows, self.n)
 
     def explain(self) -> dict:
         """``{"plan": "Limit", "limit" (None when unbounded), "offset"}``."""
@@ -728,7 +754,8 @@ class Count(QueryPlan):
         source = self.source
 
         def produce():
-            yield sum(1 for _ in source.execute())
+            rows = source.exact_rows()
+            yield sum(1 for _ in source.execute()) if rows is None else rows
 
         return produce()
 

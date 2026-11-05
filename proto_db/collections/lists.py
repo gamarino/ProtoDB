@@ -20,6 +20,7 @@ between threads; lazily loaded nodes are published atomically by the atom layer.
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
+from itertools import islice
 
 from ..core.atom import PersistenceContext
 from ..errors import ProtoValidationError
@@ -55,6 +56,15 @@ class List(IndexedCollection):
     def elements(self) -> Iterator:
         """Items in order."""
         return avl.pos_iter(self.root)
+
+    def _scan_window(self, start: int, stop: int | None):
+        """Items ``start .. stop-1`` by position, O(log n + k) (D56)."""
+        if type(self).elements is not List.elements:
+            return None  # a subclass that redefines its elements cannot be windowed by position
+        stop = self.count if stop is None else min(stop, self.count)
+        if start >= stop:
+            return iter(())
+        return islice(avl.pos_iter_from(self.root, start), stop - start)
 
     def _position(self, index, upper: int) -> int:
         """Translate a Python-style position to ``0..upper``; ``ProtoValidationError`` if outside."""

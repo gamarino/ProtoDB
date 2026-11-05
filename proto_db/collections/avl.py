@@ -31,6 +31,7 @@ Complexity (n elements, k elements produced)::
     key_count_below                                 O(log n)
     key_weight, key_weight_below                    O(1), O(log n)  (CountedKeyNode trees)
     key_iter_from_weight                            O(log n + k), explicit stack
+    pos_iter_from, key_iter_from                    O(log n + k), explicit stack
     pos_from_iterable, key_from_sorted              O(n)
     key_from_sorted_okeys                           O(n)
     check_invariants                                O(n), explicit stack
@@ -63,7 +64,7 @@ __all__ = [
     "pos_iter", "pos_count", "pos_from_iterable",
     "key_get", "key_put", "key_remove", "key_iter", "key_iter_range", "key_iter_okey_range",
     "key_iter_reversed", "key_count_below", "key_from_sorted", "key_from_sorted_okeys",
-    "key_weight", "key_weight_below", "key_iter_from_weight",
+    "key_weight", "key_weight_below", "key_iter_from_weight", "pos_iter_from", "key_iter_from",
     "check_invariants", "UNBOUNDED",
 ]
 
@@ -736,19 +737,26 @@ def key_iter_from_weight(root: CountedKeyNode | None, rank: int, descending: boo
 
 
 def _iter_from_weight(root, rank, descending) -> Iterator[tuple]:
-    # The stack holds the nodes still to visit (ancestors where the walk went "first").
+    for node, skip in _nodes_from(root, rank, descending, _weight):
+        yield node.key, unboxed(node.value), skip
+
+
+def _nodes_from(root, rank, descending, size) -> Iterator[tuple]:
+    """``(node, skip)`` from position ``rank`` on, ``size(subtree)`` giving positions per subtree
+    (``_count``: one per node; ``_weight``: the counts).  Explicit stack: the nodes still to
+    visit, i.e. the ancestors where the seek went to the near side."""
     first, second = ("right", "left") if descending else ("left", "right")
     stack = []
     node = root
     skip = 0
     while node is not None:
         near = getattr(node, first)
-        wn = _weight(near)
+        wn = size(near)
         if rank < wn:
             stack.append(node)
             node = near
             continue
-        own = node.weight - wn - _weight(getattr(node, second))
+        own = size(node) - wn - size(getattr(node, second))
         if rank < wn + own:
             skip = rank - wn
             stack.append(node)
@@ -757,12 +765,30 @@ def _iter_from_weight(root, rank, descending) -> Iterator[tuple]:
         node = getattr(node, second)
     while stack:
         node = stack.pop()
-        yield node.key, unboxed(node.value), skip
+        yield node, skip
         skip = 0
         node = getattr(node, second)
         while node is not None:
             stack.append(node)
             node = getattr(node, first)
+
+
+def pos_iter_from(root: PosNode | None, start: int) -> Iterator:
+    """Yield the elements of a positional tree from position ``start`` on (``0 <= start <= count``),
+    in O(log n + k): one seek, then an in-order walk."""
+    _check_kind(root, PosNode)
+    _check_index(start, _count(root), "Start")
+    for node, _ in _nodes_from(root, start, False, _count):
+        yield unboxed(node.value)
+
+
+def key_iter_from(root: KeyNode | None, start: int) -> Iterator[tuple]:
+    """Yield ``(key, value)`` pairs in key order from the ``start``-th key on
+    (``0 <= start <= count``), in O(log n + k)."""
+    _check_kind(root, KeyNode)
+    _check_index(start, _count(root), "Start")
+    for node, _ in _nodes_from(root, start, False, _count):
+        yield node.key, unboxed(node.value)
 
 
 # -- invariants ---------------------------------------------------------------------------

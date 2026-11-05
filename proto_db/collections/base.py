@@ -287,6 +287,12 @@ class IndexedCollection(_Immutable, Atom):
         """Names of the associated indexes, sorted."""
         return self.indexes.names()
 
+    def _scan_window(self, start: int, stop: int | None):
+        """Elements ``start .. stop-1`` of :meth:`elements` without producing the earlier ones, or
+        ``None`` when the structure cannot seek (the default).  A collection that returns an
+        iterator must also make ``count`` the number of elements yielded (D56)."""
+        return None
+
     def as_query_plan(self) -> CollectionScanPlan:
         """A full-scan plan over this collection; the planner reads ``collection.indexes`` from it."""
         return CollectionScanPlan(self)
