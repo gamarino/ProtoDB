@@ -33,6 +33,7 @@ import time
 import pytest
 
 from proto_db.cluster.protocol import decode_labeled_root
+from proto_db.core.atom import AtomPointer
 from proto_db.errors import ProtoDBError, ProtoOutcomeUnknownError
 from proto_db.storage.tiered import TieredStorage
 from proto_db.transactions import ObjectSpace
@@ -46,8 +47,8 @@ SECONDS = 1.6
 RUNS = int(os.environ.get("PROTODB_OVERLAP_RUNS", "10"))
 
 
-def _cluster(tmp_path, n=3, **kw):
-    tc = TieredCluster(tmp_path, n, storage_kw=dict(durability="fsync"), **dict(LEASE, **kw))
+def _cluster(tmp_path, n=3, *, storage_kw=None, **kw):
+    tc = TieredCluster(tmp_path, n, storage_kw=dict(durability="fsync", **(storage_kw or {})), **dict(LEASE, **kw))
     tc.spaces[tc.ids[0]].new_database("db")
     return tc
 
@@ -189,6 +190,31 @@ def test_the_root_alone_and_the_acknowledgement_wait_for_the_holders_own_sync(tm
         assert _converge(tc, tc.ids, {2}) == 2
 
 
+def test_a_slow_own_sync_does_not_make_a_healthy_replica_a_suspect(tmp_path):
+    """Task 8.3j review M1: the hedge deadline counts from the end of the holder's own append.
+    The own sync takes 0.3 s and the replica stores in 0.35 s, within ``request_timeout``
+    (0.25 s) of the own append's end.  On 8c8c193 the deadline ran from the send, so the
+    replica was hedged and marked suspect for a lease duration."""
+    with _cluster(tmp_path, lease_duration=6.0, request_timeout=0.25) as tc:
+        tc.db("n0").run(incr, **RUN_KW)
+        own, replica = tc.storages["n0"], tc.storages["n1"]
+        own_append, replica_append = own.accept_replication, replica.accept_replication
+
+        def holder(*a, **kw):
+            time.sleep(0.3)
+            return own_append(*a, **kw)
+
+        def data_replica(*a, **kw):
+            time.sleep(0.35)
+            return replica_append(*a, **kw)
+
+        own.accept_replication, replica.accept_replication = holder, data_replica
+        tc.db("n0").run(incr, **RUN_KW)
+        own.accept_replication, replica.accept_replication = own_append, replica_append
+        assert tc["n0"].stats()["replica_hedges"] == 0
+        assert "n1" not in tc["n0"]._replica_suspects
+
+
 def test_a_failed_own_sync_is_never_acknowledged_even_when_the_replica_accepted(tmp_path):
     """The holder's own append fails after its replica stored and accepted the root: the
     commit's outcome is unknown, the root is never sent alone, and the cluster goes on
@@ -231,8 +257,95 @@ def test_a_failed_own_sync_is_never_acknowledged_even_when_the_replica_accepted(
 
 # -- the holder dies inside the overlapped window ------------------------------------------------
 
-POINTS = ["records sent", "replica accepted", "own entry unsynced, power lost", "own sync done",
+POINTS = ["records sent", "replica stored", "own entry unsynced, power lost", "own sync done",
           "stored acknowledged"]
+
+
+def _die_in_window(tc, fs, point, *, persist_after: bool) -> None:
+    """n0 commits a ``z`` dictionary and dies at ``point`` of its overlapped window (its data
+    replica is its successor n1); then n0 is revived, its persister stopped unless
+    ``persist_after``."""
+    n0_dir = os.path.realpath(os.path.join(tc.path, "n0"))
+    c0, st0 = tc["n0"], tc.storages["n0"]
+    if c0.persister is not None:
+        c0.persister.stop()                         # no background flush inside the window
+    own_append = st0.accept_replication
+    st1 = tc.storages["n1"]
+    replica_append = st1.accept_replication
+    send0 = c0.transport.send
+    state = {}
+    n0_dead = threading.Event()
+    replica_may_store = threading.Event()
+
+    def die():
+        local = st0._local
+        with local._state_lock:                     # the process dies: its unflushed buffer is gone
+            local._pending, local._pending_bytes = [], 0
+        tc.cluster.crash("n0")
+        n0_dead.set()
+        raise OSError("killed")
+
+    def replica_stored():
+        # Durable at n1: its synced entry precedes the copy write (with three voters, n1
+        # also accepted the root in that entry).
+        ptr = AtomPointer(state["root"].segment, state["root"].offset)
+        deadline = time.monotonic() + 5.0
+        while st1._local_record(ptr) is None:
+            assert time.monotonic() < deadline, "the replica did not store during the holder's append"
+            time.sleep(0.001)
+
+    def holder(*a, **kw):
+        if point == "records sent":
+            die()
+        if point == "replica stored":
+            replica_stored()
+            die()
+        if point == "own entry unsynced, power lost":
+            replica_stored()
+            fs.frozen.add(n0_dir)                   # the power goes: nothing more becomes durable
+            own_append(*a, **kw)
+            die()
+        own_append(*a, **kw)
+        if point == "own sync done":
+            die()
+        return None
+
+    def data_replica(*a, **kw):
+        if point == "own sync done":
+            assert replica_may_store.wait(5.0)
+        return replica_append(*a, **kw)
+
+    def n0_send(to, msg):
+        if _is_data(msg) and "root" not in state:
+            state["root"] = decode_labeled_root(msg["root"])[1]
+        if point == "stored acknowledged" and _is_root_alone(msg):
+            die()
+        send0(to, msg)
+
+    st0.accept_replication = holder
+    st1.accept_replication = data_replica
+    c0.transport.send = n0_send
+    with pytest.raises(ProtoDBError):
+        tc.db("n0").run(write_z, retries=0)
+    assert n0_dead.is_set() and "root" in state, "the schedule did not run"
+    tc.kill("n0")
+    replica_may_store.set()
+    st1.accept_replication = replica_append
+    if point == "own entry unsynced, power lost":
+        fs.power_loss(n0_dir)
+    tc.revive("n0")
+    if not persist_after:
+        tc["n0"].persister.stop()
+
+
+def _z_matches(tc, nodes, adopted) -> None:
+    for node in nodes:
+        tr = tc.db(node).new_transaction()
+        try:
+            z = tr.get_root_object("z")
+            assert (dict(z.items()) if z is not None else None) == ({"k": 42} if adopted else None), node
+        finally:
+            tr.abort()
 
 
 @pytest.mark.skipif(not os.path.isdir("/proc/self/fd"), reason="needs /proc/self/fd")
@@ -240,98 +353,146 @@ POINTS = ["records sent", "replica accepted", "own entry unsynced, power lost", 
 def test_a_holder_dying_inside_the_overlapped_window_loses_nothing(tmp_path, monkeypatch, point):
     """n0 commits a ``z`` dictionary and dies at ``point``.  Whatever became of that root,
     every acknowledged commit survives, every member converges, n0 commits again, and once
-    persisted the object store alone serves the whole history.  "replica accepted" and the
+    persisted the object store alone serves the whole history.  "replica stored" and the
     power-loss point are the shapes the overlap creates: n1 durably holds and accepts records
     of n0's own segment that n0 never made durable; restarted, n0 seals that segment shorter
     (8.3d fix round 6, ``test_a_holder_never_ships_own_records_it_has_not_made_durable_locally``)."""
     fs = _FrozenPowerLoss(monkeypatch)
-    n0_dir = os.path.realpath(os.path.join(str(tmp_path), "n0"))
     with _cluster(tmp_path) as tc:
         fs.writeback(str(tmp_path))
         for _ in range(3):
             tc.db("n0").run(incr, **RUN_KW)
-        c0, st0 = tc["n0"], tc.storages["n0"]
-        c0.persister.stop()                         # no background flush inside the window
-        own_append = st0.accept_replication
-        replica_append = tc.storages["n1"].accept_replication
-        send0 = c0.transport.send
-        state = {}
-        n0_dead = threading.Event()
-        replica_may_store = threading.Event()
-
-        def die():
-            local = st0._local
-            with local._state_lock:                 # the process dies: its unflushed buffer is gone
-                local._pending, local._pending_bytes = [], 0
-            tc.cluster.crash("n0")
-            n0_dead.set()
-            raise OSError("killed")
-
-        def replica_accepted():
-            deadline = time.monotonic() + 5.0
-            while tc["n1"].accepted_root()[1] != state["root"]:
-                assert time.monotonic() < deadline, "the replica did not accept during the holder's append"
-                time.sleep(0.001)
-
-        def holder(*a, **kw):
-            if point == "records sent":
-                die()
-            if point == "replica accepted":
-                replica_accepted()
-                die()
-            if point == "own entry unsynced, power lost":
-                replica_accepted()
-                fs.frozen.add(n0_dir)               # the power goes: nothing more becomes durable
-                own_append(*a, **kw)
-                die()
-            own_append(*a, **kw)
-            if point == "own sync done":
-                die()
-            return None
-
-        def data_replica(*a, **kw):
-            if point == "own sync done":
-                assert replica_may_store.wait(5.0)
-            return replica_append(*a, **kw)
-
-        def n0_send(to, msg):
-            if _is_data(msg) and "root" not in state:
-                state["root"] = decode_labeled_root(msg["root"])[1]
-            if point == "stored acknowledged" and _is_root_alone(msg):
-                die()
-            send0(to, msg)
-
-        st0.accept_replication = holder
-        tc.storages["n1"].accept_replication = data_replica
-        c0.transport.send = n0_send
-        with pytest.raises(ProtoDBError):
-            tc.db("n0").run(write_z, retries=0)
-        assert n0_dead.is_set() and "root" in state, "the schedule did not run"
-        tc.kill("n0")
-        replica_may_store.set()
-        tc.storages["n1"].accept_replication = replica_append
-        if point == "own entry unsynced, power lost":
-            fs.power_loss(n0_dir)
-        tc.revive("n0")
+        _die_in_window(tc, fs, point, persist_after=True)
         tc.db("n1").run(incr, **RUN_KW)             # a new term: n1's phase 1 may adopt the root
         value = _converge(tc, tc.ids, {4, 5})
         adopted = value == 5
         tc.db("n0").run(incr, **RUN_KW)
         value += 1
         assert _converge(tc, tc.ids, {value}) == value
-        for node in tc.ids:
-            tr = tc.db(node).new_transaction()
-            try:
-                z = tr.get_root_object("z")
-                assert (dict(z.items()) if z is not None else None) == ({"k": 42} if adopted else None), node
-            finally:
-                tr.abort()
+        _z_matches(tc, tc.ids, adopted)
         _await_persisted(tc)
         _read_from_store(tc, tmp_path, value, adopted)
         if point in POINTS[:3]:
             # n0 never made the round durable: its restarted segment is short, and a replica's
             # copy repaired the store with a part (ruling R54 length rule, D50 amendment 8.3j).
             assert sum(tc.storages[n].stats()["parts_uploaded"] for n in tc.ids) >= 1
+
+
+def _restart(tc, node) -> None:
+    """A process restart (memory caches gone, disk kept), with the persister stopped."""
+    tc.kill(node)
+    tc.revive(node)
+    tc[node].persister.stop()
+
+
+def _commit_until_acknowledged(tc, node, attempts: int = 10) -> int:
+    """Commit an increment on ``node`` until one is acknowledged; return the number of unknown
+    outcomes met on the way (each may or may not have taken effect, ruling R86)."""
+    unknown = 0
+    for _ in range(attempts):
+        try:
+            tc.db(node).run(incr, **RUN_KW)
+            return unknown
+        except ProtoOutcomeUnknownError:
+            unknown += 1
+    pytest.fail(f"{node} got no commit acknowledged in {attempts} attempts")
+
+
+def _read(tc, node):
+    tr = tc.db(node).new_transaction()
+    try:
+        z = tr.get_root_object("z")
+        return tr.get_root_object("n"), (dict(z.items()) if z is not None else None)
+    finally:
+        tr.abort()
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc/self/fd"), reason="needs /proc/self/fd")
+@pytest.mark.parametrize("voters", [3, 5])
+@pytest.mark.parametrize("point", POINTS)
+def test_after_a_death_in_the_window_f_disk_losses_lose_nothing(tmp_path, monkeypatch, point, voters):
+    """Task 8.3j review C1 and I1.  The object store is down and no persister runs, so the
+    local copies are all there is.  n0 dies at ``point``, restarts and commits again (its
+    phase 1 may re-propose the root of the window, re-carrying records of its own pre-crash
+    segment); every node checkpoints and restarts (caches gone); then the ``f`` data replicas
+    of n0 lose their disks.  The survivors still read every acknowledged commit.
+
+    On 8c8c193, at "replica stored" with three voters, every member then failed with
+    ``ProtoCorruptionError`` (no full copy of a record): n0 had counted as a copy of the
+    re-carried records but never wrote them to a data file, and its checkpoint compacted the
+    only entry holding them."""
+    fs = _FrozenPowerLoss(monkeypatch)
+    kw = {"voters": [f"n{i}" for i in range(voters)]} if voters != 3 else {}
+    with _cluster(tmp_path, voters, storage_kw=dict(release_local=False), **kw) as tc:
+        tc.store.set_outage(True)                   # local copies are all there is from here on
+        fs.writeback(str(tmp_path))
+        for _ in range(3):
+            tc.db("n0").run(incr, **RUN_KW)
+        for node in tc.ids:
+            tc[node].persister.stop()
+        _die_in_window(tc, fs, point, persist_after=False)
+        unknown = _commit_until_acknowledged(tc, "n0")   # n0's term: phase 1 may re-propose the root
+        value = _converge(tc, tc.ids, set(range(4, 6 + unknown)))
+        adopted = _read(tc, "n0")[1] is not None
+        if adopted and voters == 3 and point in POINTS[:3]:
+            # The C1 shape: n0 re-proposed the root and its own pre-crash records came back.
+            assert tc.storages["n0"].stats()["records_carried"] > 0
+        for node in tc.ids:
+            tc.storages[node].checkpoint()
+        for node in tc.ids:
+            _restart(tc, node)
+        f = (voters - 1) // 2
+        lost = [f"n{i}" for i in range(1, f + 1)]   # n0's data replicas, its successors
+        for node in lost:
+            tc.wipe(node)
+        survivors = [n for n in tc.ids if n not in lost]
+        expected = (value, {"k": 42} if adopted else None)
+        for node in survivors:
+            assert _read(tc, node) == expected, node
+        for node in lost:
+            tc.revive(node)
+        unknown = _commit_until_acknowledged(tc, "n0")
+        _converge(tc, tc.ids, set(range(value + 1, value + 2 + unknown)))
+
+
+def test_a_data_replica_holds_the_recarried_records_of_its_own_segment(tmp_path, monkeypatch):
+    """Task 8.3j review C1, data-replica variant: n0 dies after its replica n1 stored (and
+    accepted) the root of the window; n2 owns the next term, re-proposes that root, and n0 --
+    n2's successor, so its data replica -- stores records of n0's own pre-crash segment and
+    acknowledges ``stored``.  After a checkpoint and a restart n0 must still hold them on disk
+    (on 8c8c193 it held none: they were skipped as own records and compacted away)."""
+    fs = _FrozenPowerLoss(monkeypatch)
+    with _cluster(tmp_path, storage_kw=dict(release_local=False)) as tc:
+        tc.store.set_outage(True)
+        fs.writeback(str(tmp_path))
+        for _ in range(3):
+            tc.db("n0").run(incr, **RUN_KW)
+        for node in tc.ids:
+            tc[node].persister.stop()
+        root_of = {}
+        send0 = tc["n0"].transport.send
+
+        def n0_send(to, msg):
+            if _is_data(msg) and "root" not in root_of:
+                root_of["root"] = decode_labeled_root(msg["root"])[1]
+                root_of["ranges"] = msg["ranges"]
+            send0(to, msg)
+
+        tc["n0"].transport.send = n0_send
+        _die_in_window(tc, fs, "replica stored", persist_after=False)
+        from proto_db.cluster.protocol import decode_ranges
+        ranges = decode_ranges(root_of["ranges"])
+        stored = tc.storages["n0"]
+        ptrs = [AtomPointer(seg, start) for seg, start, _ in ranges if seg in stored._own]
+        assert ptrs, "the window wrote no record of n0's own segment"
+        assert all(stored._local_record(p) is None for p in ptrs), "n0 kept window records"
+        tc.db("n2").run(incr, **RUN_KW)             # n2's term re-proposes the root, n0 its replica
+        assert _converge(tc, tc.ids, {4, 5}) == 5, "the root of the window was not re-proposed"
+        tc.storages["n0"].checkpoint()
+        _restart(tc, "n0")
+        stored = tc.storages["n0"]
+        missing = [p for p in ptrs if stored._local_record(p) is None]
+        assert not missing, f"n0 acknowledged stored but holds none of {len(missing)} records on disk"
 
 
 # -- the data replica dies while the holder's own sync runs ---------------------------------------
@@ -495,46 +656,64 @@ def test_a_stale_stored_of_a_previous_incarnation_arriving_during_the_own_append
 @pytest.mark.parametrize("n", [3, 5])
 @pytest.mark.parametrize("seed", range(RUNS))
 def test_no_acknowledged_commit_is_lost_with_kills_inside_the_overlapped_window(tmp_path, n, seed):
-    """Every member commits (two threads each); the links duplicate and delay messages; one or
-    two members are killed at random instants, some of them inside their own overlapped
-    window (between sending their records and the end of their own append), others
-    partitioned and healed.  Ruling R86 bounds: ``acked <= n <= acked + unknown``."""
+    """Every member commits (two threads each); the links duplicate and delay messages.  The
+    first fault of every schedule kills a member inside its own overlapped window (after its
+    records left, before or right after its own append) and the schedule fails if no member
+    reached its window in time (Task 8.3j review I1: every schedule counts); a second fault,
+    drawn at random, kills, partitions or kills in the window again.  Ruling R86 bounds:
+    ``acked <= n <= acked + unknown``."""
     rng = random.Random(seed * 7919 + n)
     with _cluster(tmp_path, n) as tc:
         net = tc.cluster.net
         net.set_faults(duplicate=rng.choice([0.0, 0.1, 0.3]), delay=(0.0, rng.choice([0.0, 0.004, 0.02])))
+        in_window = 0
         with Load(tc) as load:
-            for _ in range(rng.randint(1, 2)):
+
+            def kill_in_window(victim) -> bool:
+                storage = tc.storages.get(victim)
+                if storage is None:
+                    return False
+                append = storage.accept_replication
+                fired = threading.Event()
+                after = rng.random() < 0.5
+
+                def hooked(*a, **kw):
+                    if threading.current_thread().name.startswith("proto-cluster") or fired.is_set():
+                        return append(*a, **kw)         # an acceptor's append, not the holder's
+                    fired.set()
+                    load.down.add(victim)
+                    if after:
+                        append(*a, **kw)
+                    tc.cluster.crash(victim)
+                    raise OSError("killed inside the overlapped window")
+
+                storage.accept_replication = hooked
+                if not fired.wait(SECONDS):
+                    storage.accept_replication = append
+                    return False
+                tc.kill(victim)
+                time.sleep(rng.uniform(0.05, LEASE["lease_duration"] * 1.5))
+                tc.revive(victim)
+                load.down.discard(victim)
+                return True
+
+            events = ["window"] + [rng.choice(["window", "kill", "partition"]) for _ in range(rng.randint(0, 1))]
+            for i, how in enumerate(events):
                 time.sleep(rng.uniform(0.1, SECONDS / 3))
-                victim = rng.choice(tc.ids)
-                how = rng.choice(["window", "kill", "partition"])
                 if how == "window":
-                    storage = tc.storages.get(victim)
-                    if storage is None:
-                        continue
-                    append = storage.accept_replication
-                    fired = threading.Event()
-                    after = rng.random() < 0.5
-
-                    def hooked(*a, _append=append, _fired=fired, _after=after, _victim=victim, **kw):
-                        if threading.current_thread().name.startswith("proto-cluster") or _fired.is_set():
-                            return _append(*a, **kw)        # an acceptor's append, not the holder's
-                        _fired.set()
-                        load.down.add(_victim)
-                        if _after:
-                            _append(*a, **kw)
-                        tc.cluster.crash(_victim)
-                        raise OSError("killed inside the overlapped window")
-
-                    storage.accept_replication = hooked
-                    if not fired.wait(SECONDS):
-                        storage.accept_replication = append
-                        continue
-                    tc.kill(victim)
-                    time.sleep(rng.uniform(0.05, LEASE["lease_duration"] * 1.5))
-                    tc.revive(victim)
-                    load.down.discard(victim)
-                elif how == "kill":
+                    candidates = rng.sample(tc.ids, len(tc.ids))
+                    fired = False
+                    for victim in candidates:
+                        if kill_in_window(victim):
+                            fired = True
+                            break
+                    if fired:
+                        in_window += 1
+                    else:
+                        assert i > 0, "no member reached its overlapped window: the schedule did not run"
+                    continue
+                victim = rng.choice(tc.ids)
+                if how == "kill":
                     load.down.add(victim)
                     tc.kill(victim)
                     time.sleep(rng.uniform(0.05, LEASE["lease_duration"] * 1.5))
@@ -545,4 +724,6 @@ def test_no_acknowledged_commit_is_lost_with_kills_inside_the_overlapped_window(
                     time.sleep(rng.uniform(0.05, LEASE["lease_duration"] * 1.5))
                     net.heal()
             time.sleep(SECONDS / 3)
+        assert in_window >= 1
+        print(f"\n{n} members, seed {seed}: {in_window} kill(s) inside the overlapped window")
         _check(tc, load, tc.ids)

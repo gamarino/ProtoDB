@@ -2150,8 +2150,8 @@ class ClusterCoordinator:
         records have left: the caller reports the outcome unknown).
 
         A member that answers without storing them, or does not answer within
-        ``request_timeout``, is replaced by the next member of the preference list (and tried
-        last for one lease duration).  Timing only: the copies are those whose ``stored``
+        ``request_timeout`` (counted from the end of ``meanwhile()``), is replaced by the next
+        member of the preference list (and tried last for one lease duration).  Timing only: the copies are those whose ``stored``
         acknowledgement arrived, each sent after the records were durable there."""
         wanted = self._majority - 1
         asked = []
@@ -2167,6 +2167,9 @@ class ClusterCoordinator:
             if meanwhile is not None:
                 meanwhile()
                 meanwhile = None
+                # The hedge deadline counts from here: a slow own sync must not make a replica
+                # that is still syncing look unresponsive (Task 8.3j review M1).
+                hedge_at = time.monotonic() + self._request_timeout
             with self._cond:
                 while not send:
                     stored = waiter.stored
