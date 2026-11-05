@@ -55,6 +55,16 @@ Saving
     keeps the atom a load of ``ptr`` would produce (:meth:`Atom._decoded_twin`, Task 8.3i),
     never the live object, whose runtime state (an op log, for example) a loaded atom has not.
 
+History links (Task 8.3l, ruling R92)
+    A class lists in ``_history_links`` the persisted attributes that link an older version
+    of the data (``DatabaseRoot.previous``, ``SpaceRoot.cluster_previous``).  Such an
+    attribute is stored like any atom reference (an ``@ref``; the format is unchanged), but in
+    memory the atom holds only the linked atom's pointer and type: every read of the attribute
+    asks the atom's ``context`` to ``load`` it, which returns the shared atom of a bounded
+    cache or a fresh stub.  A loaded atom therefore never keeps its predecessor loaded, and
+    walking history loads one version at a time: history is kept on disk, never in memory
+    (P1).  A link to an atom not yet saved holds that atom until it has a pointer.
+
 Type tags (format version 3, D51)
     A built-in type is written as its small integer alias, its index in
     :data:`BUILTIN_TYPE_ALIASES` (:func:`type_tag`); any other type as its name.  Readers
@@ -244,6 +254,16 @@ def _check_context(context) -> None:
         _CONTEXT_CLASSES.add(cls)
 
 
+def _link_ref(value):
+    """How a history link holds ``value``: ``(pointer, type name)`` for a saved atom, else the
+    value itself (``None``, or an atom without a pointer yet)."""
+    if isinstance(value, Atom):
+        ptr = value.atom_pointer
+        if ptr is not None:
+            return ptr, type(value).__type_name__
+    return value
+
+
 class Atom:
     """Base class of every persistent object.
 
@@ -260,6 +280,9 @@ class Atom:
     #: Whether such a context keeps this type's atoms decoded on save even when they hold large
     #: values inline (review 8.3i I1); otherwise those are left to the read path.
     _cache_large_on_save = False
+    #: Persisted attributes linking an older version, held as pointers in memory and loaded on
+    #: each read through the context (Task 8.3l, see the module docstring).
+    _history_links: tuple = ()
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -336,7 +359,44 @@ class Atom:
         except AttributeError:
             if name == "oid":
                 return self._assign_oid()
+            links = self.__dict__.get("_links")
+            if links is not None and name in links:
+                return self._follow_link(links, name)
             return self._absent_attribute(name)
+
+    # -- history links (Task 8.3l) --------------------------------------------------------
+
+    def _set_link(self, name: str, value) -> None:
+        """Install the history link ``name`` (one of ``_history_links``) to ``value`` (protected:
+        used by constructors and :meth:`_restore`): a saved atom is held as ``(pointer, type
+        name)``, anything else (``None``, an atom not saved yet) as itself."""
+        links = self.__dict__.get("_links")
+        if links is None:
+            links = {}
+            object.__setattr__(self, "_links", links)
+        # Without a context the link could not be loaded again: the atom is held until one is bound.
+        links[name] = _link_ref(value) if self.__dict__.get("context") is not None else value
+
+    def _follow_link(self, links: dict, name: str):
+        """The value of the history link ``name``: the linked atom loaded on demand through
+        this atom's context, never kept by this atom."""
+        ref = links[name]
+        if type(ref) is tuple:
+            return self.context.load(ref[0], ref[1])
+        if isinstance(ref, Atom) and ref.atom_pointer is not None and self.context is not None:
+            links[name] = _link_ref(ref)        # saved since: from now on held by pointer only
+        return ref
+
+    def _link_values(self) -> dict:
+        """The history links as values to persist: stubs for the links held by pointer."""
+        links = self.__dict__.get("_links")
+        if not links:
+            return {}
+        context = self.context
+        out = {}
+        for name, ref in links.items():
+            out[name] = Atom._stub(context, ref[0], ref[1]) if type(ref) is tuple else ref
+        return out
 
     def _assign_oid(self) -> uuid.UUID:
         """Return the oid of a loaded atom, generating it on first need (D21)."""
@@ -400,8 +460,12 @@ class Atom:
             if name.startswith("_") or name in RESERVED_NAMES or hasattr(cls, name):
                 raise ProtoCorruptionError(f"Invalid persisted attribute name {name!r} for {cls.__type_name__}")
         osa = object.__setattr__
+        links = cls._history_links
         for name, value in state.items():
-            osa(self, name, value)
+            if name in links:
+                self._set_link(name, value)
+            else:
+                osa(self, name, value)
 
     # -- save -----------------------------------------------------------------------
 
@@ -412,8 +476,11 @@ class Atom:
         threads may add runtime keys concurrently, such as a lazily assigned ``oid``.
         """
         self._load()
-        return {k: v for k, v in vars(self).copy().items()
-                if not k.startswith("_") and k not in RESERVED_NAMES}
+        state = {k: v for k, v in vars(self).copy().items()
+                 if not k.startswith("_") and k not in RESERVED_NAMES}
+        if type(self)._history_links:
+            state.update(self._link_values())
+        return state
 
     def _save(self) -> AtomPointer:
         """Save this atom (children first) unless already saved; return its pointer.

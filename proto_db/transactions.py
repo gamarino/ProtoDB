@@ -10,6 +10,8 @@ Layout of a space (D32)
     aware UTC datetime, never decreasing along the chain) and ``previous``, the
     DatabaseRoot it replaced, which :meth:`Database.history` walks.  Every atom is
     immutable; a commit builds new root atoms and publishes a new storage root.
+    ``previous`` is loaded on demand, never kept loaded by its root (Task 8.3l, D53):
+    history is on disk, not in memory.
 
 Snapshot isolation and the read set (D9)
     A transaction reads the storage root once, when it starts, and every read goes to
@@ -169,6 +171,7 @@ class SpaceRoot(_Immutable, Atom):
 
     __type_name__ = "proto_db.transactions.SpaceRoot"
     _CLUSTER_FIELDS = ("cluster_term", "cluster_epoch", "cluster_previous")
+    _history_links = ("cluster_previous",)
 
     def __init__(self, *, databases: Dictionary, context: PersistenceContext | None = None,
                  cluster: Optional["_ClusterStamp"] = None, previous: Optional["SpaceRoot"] = None):
@@ -178,7 +181,7 @@ class SpaceRoot(_Immutable, Atom):
         if cluster is not None:
             object.__setattr__(self, "cluster_term", cluster.term)
             object.__setattr__(self, "cluster_epoch", cluster.epoch)
-            object.__setattr__(self, "cluster_previous", previous)
+            self._set_link("cluster_previous", previous)
 
     def _absent_attribute(self, name: str):
         if name in self._CLUSTER_FIELDS:
@@ -200,9 +203,14 @@ class _ClusterStamp:
 class DatabaseRoot(_Immutable, Atom):
     """One version of a database: ``objects`` (root name -> value), ``mutables`` (mutable
     name -> value, D35), ``version``, ``committed_at`` and the ``previous`` version
-    (``None`` for version 0)."""
+    (``None`` for version 0).
+
+    ``previous`` (and ``SpaceRoot.cluster_previous``) is a history link (Task 8.3l, D53): held
+    as a pointer and loaded on each read through the root's context, so a root never keeps
+    its predecessors loaded."""
 
     __type_name__ = "proto_db.transactions.DatabaseRoot"
+    _history_links = ("previous",)
 
     def __init__(self, *, objects: Dictionary, mutables: Dictionary, previous: Optional["DatabaseRoot"],
                  version: int, committed_at: datetime.datetime, context: PersistenceContext | None = None):
@@ -211,7 +219,7 @@ class DatabaseRoot(_Immutable, Atom):
         osa = object.__setattr__
         osa(self, "objects", objects)
         osa(self, "mutables", mutables)
-        osa(self, "previous", previous)
+        self._set_link("previous", previous)
         osa(self, "version", version)
         osa(self, "committed_at", committed_at)
 

@@ -3,7 +3,8 @@
 ``TieredCluster(tmp_path, n, store=...)`` starts a :class:`~tests.support.cluster.Cluster`
 of ``n`` coordinators and, per node, a :class:`~proto_db.storage.tiered.TieredStorage` in
 ``tmp_path/<node>`` over ``store`` (a ``FakeObjectStore`` by default) with an
-:class:`~proto_db.transactions.ObjectSpace` attached to the node's coordinator.  The
+:class:`~proto_db.transactions.ObjectSpace` attached to the node's coordinator (extra space
+arguments in ``space_kw``).  The
 constructor returns once every member has finished its first rejoin.
 
 * ``kill(node)``: the process dies: its transport and persister stop, its space and
@@ -43,13 +44,14 @@ def incr(tr):
 class TieredCluster:
     """``n`` nodes, each with a tiered storage and a space (see the module docstring)."""
 
-    def __init__(self, tmp_path, n: int = 3, *, store=None, storage_kw=None, **coordinator_kw):
+    def __init__(self, tmp_path, n: int = 3, *, store=None, storage_kw=None, space_kw=None, **coordinator_kw):
         kw = dict(FAST)
         kw.update(coordinator_kw)
         self.path = str(tmp_path)
         self.store = store if store is not None else FakeObjectStore()
         self.storage_kw = dict(durability="none", ship_interval=0.02, backoff=(0.001, 0.01), retries=2)
         self.storage_kw.update(storage_kw or {})
+        self.space_kw = dict(space_kw or {})
         self.cluster = Cluster(n, **kw)
         self.ids = self.cluster.ids
         self.storages = {}
@@ -76,7 +78,8 @@ class TieredCluster:
     def _open(self, node: str) -> None:
         storage = TieredStorage(os.path.join(self.path, node), self.store, **self.storage_kw)
         self.storages[node] = storage
-        self.spaces[node] = ObjectSpace(storage, coordinator=self.cluster[node], lock_timeout=5.0)
+        self.spaces[node] = ObjectSpace(storage, coordinator=self.cluster[node], lock_timeout=5.0,
+                                        **self.space_kw)
 
     def __getitem__(self, node: str):
         return self.cluster[node]
