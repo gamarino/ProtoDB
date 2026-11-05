@@ -21,7 +21,7 @@ import pytest
 from proto_db.core.atom import AtomPointer
 from proto_db import errors
 from proto_db.storage import tiered
-from proto_db.storage.format import FORMAT_VERSION, RecordKind, RootRecord, encode_record
+from proto_db.storage.format import FORMAT_VERSION, RecordKind, RootRecord, encode_record, encode_segment_header
 from proto_db.storage.logfile import read_log
 from tests.support.fake_object_store import FakeObjectStore
 from tests.support.power_loss import PowerLoss
@@ -336,5 +336,93 @@ def test_a_restored_prefix_survives_a_power_loss_before_the_checkpoint(tmp_path,
     try:
         assert st.local_record(a) is not None
         assert st.local_record(_ptrs(records)[0]) == records[0][2]
+    finally:
+        st.close()
+
+
+def test_a_released_segment_of_an_older_format_rebuilt_from_the_header_still_ships(tmp_path, monkeypatch):
+    """Task 8.3j re-review 2, N5.  A released segment written under format 2 gets back a run
+    that starts at the header: the file is rebuilt with a header of the current format, so
+    it differs from the store's object in the version field only.  The header's version is
+    informational (the codec reads both forms by shape), so shipping keeps the store's
+    object; on 7cc6606 every ship refused it and the strict order stalled the later segments."""
+    from proto_db.storage import format as fmt
+    store = FakeObjectStore()
+    path = str(tmp_path / "n0")
+    monkeypatch.setattr(fmt, "FORMAT_VERSION", 2)          # an earlier release wrote this segment
+    st = _open(path, store)
+    a = st.push_blob(b"A" * 50)
+    st.ship(force=True)
+    st.close()
+    monkeypatch.setattr(fmt, "FORMAT_VERSION", 3)
+    segment = a.segment
+    os.remove(os.path.join(path, segment.hex + ".seg"))     # released
+    remote_before, _ = store.get(st.segment_key(segment))
+    st = _open(path, store)
+    try:
+        records = [[segment.bytes, a.offset, encode_record(RecordKind.BLOB, b"A" * 50)]]
+        st.store_commit(records, _root(records), 3, tiered.TieredStorage._ranges_of(records))
+        b = st.push_blob(b"B" * 10)
+        st.ship(force=True)
+        st.ship(force=True)
+        with st._lock:
+            assert st._own[segment].uploaded
+            assert st._own[b.segment].uploaded             # the later segment is not held back
+            assert st._sealed[segment] == len(remote_before)
+        assert store.get(st.segment_key(segment))[0] == remote_before   # never overwritten
+    finally:
+        st.close()
+
+
+def test_a_store_object_of_another_segment_is_still_refused(tmp_path):
+    """N5's header tolerance is the version field only: a store object whose header names
+    another segment never matches the local file."""
+    store = FakeObjectStore()
+    path = str(tmp_path / "n0")
+    st = _open(path, store)
+    a = st.push_blob(b"A" * 50)
+    st.ship(force=True)
+    segment = a.segment
+    st.close()
+    key = st.segment_key(segment)
+    data, _ = store.get(key)
+    store.delete(key)
+    store.put_if_absent(key, encode_segment_header(uuid.uuid4()) + data[len(encode_segment_header(segment)):])
+    st = _open(path, store)
+    try:
+        with pytest.raises(errors.ProtoUnexpectedError):
+            st.ship(force=True)
+    finally:
+        st.close()
+
+
+def test_a_corrupt_store_object_is_reported_as_corruption_not_as_a_refusal(tmp_path, caplog):
+    """Task 8.3j re-review 2, N6: only an unreachable store or a missing object refuses the
+    write (transient, conservative).  A store object that fails its integrity check is
+    corruption: logged as an error and raised as ``ProtoCorruptionError``; nothing is
+    written.  On 7cc6606 it was turned into a refusal like the rest."""
+    store = FakeObjectStore()
+    path = str(tmp_path / "n0")
+    st = _open(path, store)
+    a = st.push_blob(b"A" * 50)
+    st.ship(force=True)
+    segment = a.segment
+    st.close()
+    sealed = os.path.getsize(os.path.join(path, segment.hex + ".seg"))
+    os.remove(os.path.join(path, segment.hex + ".seg"))
+    key = st.segment_key(segment)
+    data, _ = store.get(key)
+    store.delete(key)
+    store.put_if_absent(key, encode_segment_header(uuid.uuid4()) + data[len(encode_segment_header(segment)):])
+    st = _open(path, store)
+    try:
+        records = _carried(path, segment, [b"B" * 60], start=sealed)
+        before = len(read_log(os.path.join(path, "roots.log"), b"ROOT"))
+        with caplog.at_level("ERROR", logger="proto_db.storage.tiered"):
+            with pytest.raises(errors.ProtoCorruptionError):
+                st.accept_replication(3, _root(records), records)
+        assert any(r.levelname == "ERROR" for r in caplog.records)
+        assert len(read_log(os.path.join(path, "roots.log"), b"ROOT")) == before
+        assert not os.path.exists(os.path.join(path, segment.hex + ".seg"))
     finally:
         st.close()

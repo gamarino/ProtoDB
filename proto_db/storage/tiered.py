@@ -283,6 +283,23 @@ def _runs(items: list) -> list:
     return [(start, parts[0] if len(parts) == 1 else b"".join(parts)) for start, _, parts in runs]
 
 
+def _one_prefixes_the_other(a: bytes, b: bytes) -> bool:
+    """True when one of two images of the same segment is a prefix of the other.  The format
+    version in their headers may differ (Task 8.3j re-review 2, N5): a header rebuilt by
+    :meth:`TieredStorage._carry_prior` or by a copy write carries the current version, and the
+    version is informational (it must be readable; the codec reads both forms by their shape).
+    The magic and the segment's UUID must match."""
+    if len(a) < SEGMENT_HEADER_SIZE or len(b) < SEGMENT_HEADER_SIZE:
+        return a.startswith(b) or b.startswith(a)
+    try:
+        if decode_segment_header(a) != decode_segment_header(b):
+            return False
+    except ProtoDBError:
+        return False
+    a, b = a[SEGMENT_HEADER_SIZE:], b[SEGMENT_HEADER_SIZE:]
+    return a.startswith(b) or b.startswith(a)
+
+
 def _pwrite_all(fd: int, data, offset: int) -> None:
     """Write every byte of ``data`` at ``offset`` of ``fd``: a short write is continued, a write
     that makes no progress raises ``OSError``."""
@@ -1530,8 +1547,10 @@ class TieredStorage(SharedStorage):
     def _carry_prefixes(self, groups: dict) -> dict:
         """Download, with no lock held, the store's bytes of every segment in ``groups`` that
         :meth:`_carry_prior` must rebuild before it extends it: a segment whose file is gone
-        and whose carried records start past the header (Task 8.3j re-review N2).  A segment
-        that cannot be read refuses the write (``ProtoWriteRefusedError``)."""
+        and whose carried records start past the header (Task 8.3j re-review N2).  A store
+        that cannot be reached, or that holds neither the segment's object nor a part of it,
+        refuses the write (``ProtoWriteRefusedError``); an object that fails its checks raises
+        as corruption (re-review 2, N6)."""
         prefixes = {}
         for segment, items in groups.items():
             with self._lock:
@@ -1540,10 +1559,18 @@ class TieredStorage(SharedStorage):
                 continue
             try:
                 prefixes[segment] = self._segment_object(segment)
-            except ProtoDBError as e:
-                raise ProtoWriteRefusedError(
-                    f"Records of own segment {segment.hex} came back but its local file is gone and the "
-                    f"object store cannot give its first bytes ({e}); nothing was written") from e
+            except (ProtoDBError, ObjectNotFoundError) as e:
+                # Refused (transient, conservative) only when the store is unreachable or does
+                # not hold the segment; an object that fails its checks is corruption, reported
+                # as such (re-review 2, N6).
+                cause = e if isinstance(e, ObjectNotFoundError) else e.__cause__
+                if isinstance(cause, (TransientObjectStoreError, OutcomeUnknownError, ObjectNotFoundError)):
+                    raise ProtoWriteRefusedError(
+                        f"Records of own segment {segment.hex} came back but its local file is gone and the "
+                        f"object store cannot give its first bytes now ({e}); nothing was written") from e
+                logger.error("Records of own segment %s came back but the object store's copy of its first "
+                             "bytes is unusable: %s", segment.hex, e)
+                raise
         return prefixes
 
     def _carry_prior(self, records: list, order: tuple, *, sync: bool, prefixes: Optional[dict] = None) -> None:
@@ -1888,7 +1915,9 @@ class TieredStorage(SharedStorage):
           loss under ``flush`` or ``none`` durability (Task 8.3j re-review N4); the store's
           object holds the true bytes, and the local file is a prefix of it.
 
-        Any other difference raises: the bytes at a pointer never change (P1)."""
+        The headers may differ in their format version (re-review 2, N5,
+        :func:`_one_prefixes_the_other`); the store's object is kept.  Any other difference
+        raises: the bytes at a pointer never change (P1)."""
         key = self.segment_key(segment)
 
         def attempt():
@@ -1898,7 +1927,7 @@ class TieredStorage(SharedStorage):
             except PreconditionFailedError as e:
                 conflict = e
             existing, _ = self._store.get(key)
-            if not (data.startswith(existing) or existing.startswith(data)):
+            if not _one_prefixes_the_other(data, existing):
                 raise ProtoUnexpectedError(f"Segment object {key} already exists with different content") from conflict
             return len(existing)
 
@@ -2022,7 +2051,7 @@ class TieredStorage(SharedStorage):
                 self._store.put_if_absent(key, data)
             except PreconditionFailedError as e:
                 existing, _ = self._store.get(key)
-                if existing != data:
+                if len(existing) != len(data) or not _one_prefixes_the_other(existing, data):
                     raise ProtoCorruptionError(f"Part object {key} disagrees with the local copy") from e
 
         self._retrying(attempt, f"Uploading segment part {key}")

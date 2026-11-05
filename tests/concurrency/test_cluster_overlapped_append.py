@@ -245,6 +245,37 @@ def test_a_write_refused_by_a_healthy_tier_refuses_only_that_acceptance(tmp_path
         assert tc["n1"]._tier_failure is None
 
 
+def test_when_every_data_replica_refuses_the_commit_is_unknown_and_every_tier_stays_healthy(tmp_path):
+    """Task 8.3j re-review 2 (test gap): n1 and n2 refuse every write that carries records
+    (the acceptance and the stored-only fallback) with ``ProtoWriteRefusedError``.  The hedge
+    finds no data replica: the caller gets ``ProtoOutcomeUnknownError``, never a commit, and
+    no member's tier fails; once they store again the cluster converges on either outcome."""
+    from proto_db import errors
+    with _cluster(tmp_path) as tc:
+        tc.db("n0").run(incr, **RUN_KW)
+        reals, refusals = {}, {"n1": 0, "n2": 0}
+        for node in ("n1", "n2"):
+            st = tc.storages[node]
+            real = reals[node] = st.accept_replication
+
+            def refuse(*a, _real=real, _node=node, **kw):
+                if kw.get("ranges") is not None or any(r[2] is not None for r in a[2]):
+                    refusals[_node] += 1
+                    raise errors.ProtoWriteRefusedError("refused for the test")
+                return _real(*a, **kw)
+
+            st.accept_replication = refuse
+        with pytest.raises(ProtoOutcomeUnknownError):
+            tc.db("n0").run(incr, retries=0)
+        for node in ("n1", "n2"):
+            tc.storages[node].accept_replication = reals[node]
+        assert refusals["n1"] and refusals["n2"], f"the hedge did not reach both replicas: {refusals}"
+        _no_tier_failed(tc)
+        unknown = _commit_until_acknowledged(tc, "n0")
+        _converge(tc, tc.ids, set(range(2, 4 + unknown)))
+        _no_tier_failed(tc)
+
+
 def test_a_failed_own_sync_is_never_acknowledged_even_when_the_replica_accepted(tmp_path):
     """The holder's own append fails after its replica stored and accepted the root: the
     commit's outcome is unknown, the root is never sent alone, and the cluster goes on
