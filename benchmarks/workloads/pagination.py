@@ -23,8 +23,9 @@ by ``k``, with and without a range predicate (``k >= N/2``).
     page's last key known (no random jump);
   * sqlite3 keyset, jump to offset o: o/50 chained keyset fetches from the start.
 
-``query_cache``: a range plus a residual filter (``lo <= k < lo + 2·10^4 and g < 50``, about
-10^4 rows) and an ordered filtered scan (``g == 7`` ordered by ``k``, N/100 rows), each:
+``query_cache``: a range plus a residual filter (``k between lo and lo + 2·10^4 - 1 and g < 50``,
+about 10^4 rows) and, at N = 10^5 only, an ordered filtered scan (``g == 7`` ordered by ``k``,
+N/100 rows, every row read: ``g`` is not indexed), each:
 executed without the cache, through the cache on a miss (cache cleared before the request),
 through the cache on a hit, and by sqlite3 (which has no result cache: every request runs).
 """
@@ -137,7 +138,7 @@ def _ids(rows) -> list:
 
 @benchmark("deep_page", quick={"n": 2_000, "offsets": [0, 500, 1_500], "requests": 5, "jump_max": 1_000},
            full={"n": 1_000_000, "offsets": [0, 10_000, 100_000, 900_000], "requests": 20,
-                 "jump_max": 100_000})
+                 "jump_max": 100_000, "islice_max": 100_000})
 def deep_page(ctx, p):
     """Page of 50 rows at deep offsets: ProtoDB pager by rank vs islice vs sqlite3 OFFSET and keyset."""
     from proto_db import plan_query
@@ -213,8 +214,10 @@ def deep_page(ctx, p):
             return [[row[0] for row in cur.execute("SELECT id, k, g FROM t WHERE k > ? ORDER BY k LIMIT ?",
                                                    (last, PAGE))] for _ in range(requests)]
 
-        variants = [(f"protodb pager.page by rank @{offset}", pager_page, expect),
-                    (f"protodb islice ordered scan (no rank) @{offset}", proto_islice, [want] * scan_requests),
+        variants = [(f"protodb pager.page by rank @{offset}", pager_page, expect)]
+        if offset <= p.get("islice_max", offset):
+            variants.append((f"protodb islice ordered scan (no rank) @{offset}", proto_islice, [want] * scan_requests))
+        variants += [
                     (f"sqlite3 OFFSET @{offset}", sql_offset, expect),
                     (f"sqlite3 keyset next page @{offset}", sql_keyset_next, expect)]
         if offset in (p["offsets"][0], p["offsets"][-1]):
@@ -251,7 +254,7 @@ def deep_page(ctx, p):
 
 
 @benchmark("query_cache", quick={"n": 2_000, "span": 400},
-           full={"sizes": [100_000, 1_000_000], "span": 20_000})
+           full={"sizes": [100_000, 1_000_000], "span": 20_000, "b_max": 100_000})
 def query_cache(ctx, p):
     """A repeated query: ProtoDB without cache, cache miss, cache hit vs sqlite3 re-execution."""
     from proto_db import F, from_collection
@@ -268,7 +271,7 @@ def query_cache(ctx, p):
         want_b = (len(model_b), sum(model_b), model_b[:5])
 
         def q_a(tx):
-            return from_collection(tx.get_root_object("t")).where((F.k >= lo) & (F.k < lo + span) & (F.g < 50))
+            return from_collection(tx.get_root_object("t")).where(F.k.between(lo, lo + span - 1) & (F.g < 50))
 
         def q_b(tx):
             return from_collection(tx.get_root_object("t")).where(F.g == 7).order_by(F.k)
@@ -290,13 +293,16 @@ def query_cache(ctx, p):
         result.work[f"plan_A@{n}"] = _shape(plan_a)
         result.work[f"plan_B@{n}"] = _shape(plan_b)
 
-        for name, build, summarize, want, sql_text, sql_args, sql_summary in (
+        queries = (
                 ("A range+filter", q_a, summary_a, want_a,
-                 "SELECT id, k, g FROM t WHERE k >= ? AND k < ? AND g < 50", (lo, lo + span),
+                 "SELECT id, k, g FROM t WHERE k BETWEEN ? AND ? AND g < 50", (lo, lo + span - 1),
                  lambda rows: (len(rows), sum(r[0] for r in rows))),
                 ("B filter ordered by k", q_b, summary_b, want_b,
                  "SELECT id, k, g FROM t WHERE g = 7 ORDER BY k", (),
-                 lambda rows: (len(rows), sum(r[0] for r in rows), [r[0] for r in rows[:5]]))):
+                 lambda rows: (len(rows), sum(r[0] for r in rows), [r[0] for r in rows[:5]])))
+        if n > p.get("b_max", n):
+            queries = queries[:1]     # B reads every row (g is not indexed): minutes per sample at 10^6
+        for name, build, summarize, want, sql_text, sql_args, sql_summary in queries:
 
             def no_cache(build=build, summarize=summarize):
                 with d.db.new_transaction() as tx:
