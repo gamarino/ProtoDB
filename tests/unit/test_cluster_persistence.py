@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from proto_db.errors import ProtoTimeoutError
+from proto_db.errors import ProtoOutcomeUnknownError, ProtoTimeoutError
 from proto_db.storage.tiered import TieredStorage
 from proto_db.transactions import ObjectSpace
 from tests.support.fake_object_store import FakeObjectStore
@@ -226,7 +226,15 @@ def test_steady_state_commits_write_nothing_in_the_object_store_under_the_lease(
     reads are expected; they are counted and reported, never forbidden (R70a: remote data is
     a normal case).  Ruling R89: every commit's records reach every member's cache with the
     commit (best effort, no durable copy), so in steady state a committer finds its base's
-    records cached and fetches next to nothing from a peer under a permission."""
+    records cached and fetches next to nothing from a peer under a permission.
+
+    That steady state is what the miss bound is asserted on (review 8.3m I3, ruling R105): the
+    30 commits run one at a time, rotating among the members, and each next commit starts once
+    the records the previous one pushed are in every other member's record cache -- an observed
+    condition, never a delay, because warming is asynchronous and best effort.  A commit whose
+    outcome is unknown (P5: a lease ending under CPU contention) is resolved as R86 rules: every
+    acknowledged commit is applied, an unknown one at most once; the commit after it is not in
+    steady state and its misses are reported, not bounded."""
     calls = []
 
     class Recording(FakeObjectStore):
@@ -242,44 +250,94 @@ def test_steady_state_commits_write_nothing_in_the_object_store_under_the_lease(
         _commit(tc, tc.ids, 6)                           # warm up
         for n in tc.ids:
             tc.spaces[n].sync(timeout=10)
+        # The observable end of R89 warming (review 8.3m I3, ruling R105): what each member's
+        # record cache received (warmed or cached on receipt), and what each commit pushed.
+        cached = {n: set() for n in tc.ids}
+        pushed = {n: [] for n in tc.ids}
+        for n in tc.ids:
+            tier = tc.storages[n]
+
+            def cache_records(records, _n=n, _real=tier.cache_records):
+                got = _real(records)
+                cached[_n].update((raw, offset) for raw, offset, framed in records if framed is not None)
+                return got
+
+            def push_atom(payload, _n=n, _real=tier.push_atom):
+                ptr = _real(payload)
+                if threading.current_thread().name.startswith("committer-"):
+                    pushed[_n].append((ptr.segment.bytes, ptr.offset))
+                return ptr
+            tier.cache_records = cache_records
+            tier.push_atom = push_atom
         base = {n: tc.storages[n].stats() for n in tc.ids}
         before = {n: tc[n].stats()["critical_commits"] for n in tc.ids}
         base_coord = {n: tc[n].stats() for n in tc.ids}
         calls.clear()
-        errors = []
+        outcomes = []
+        misses = 0          # critical-section misses of commits whose base was warmed
 
-        def committer(node):
-            try:
-                for _ in range(10):
-                    tc.db(node).run(incr, **RUN_KW)
-            except BaseException as e:      # reported by the assertion below
-                errors.append(e)
-                raise
+        def critical_misses():
+            return sum(tc.storages[n].stats()["critical_misses"] for n in tc.ids)
 
-        threads = [threading.Thread(target=committer, args=(n,), name=f"committer-{n}") for n in tc.ids]
-        for t in threads:
+        def warmed(node, records):
+            return all(set(records) <= cached[m] for m in tc.ids if m != node)
+
+        steady = True       # the previous commit was acknowledged and its records reached every member
+        for i in range(30):
+            node = tc.ids[i % len(tc.ids)]
+            pushed[node].clear()
+            start = critical_misses()
+            result = {}
+
+            def committer(_node=node):
+                try:
+                    tc.db(_node).run(incr, **RUN_KW)
+                    result["outcome"] = "acked"
+                except ProtoOutcomeUnknownError:
+                    result["outcome"] = "unknown"   # P5 / R86: a conservative outcome, resolved below
+            t = threading.Thread(target=committer, name=f"committer-{node}")
             t.start()
-        for t in threads:
             t.join(60)
-        assert not errors
-        assert tc.eventually("n0", 36)
+            assert "outcome" in result, f"commit {i} on {node} raised or hung"
+            outcomes.append(result["outcome"])
+            if steady:
+                misses += critical_misses() - start
+            steady = result["outcome"] == "acked"
+            if steady:
+                records = list(pushed[node])
+                assert records, f"commit {i} pushed nothing: the warming wait would prove nothing"
+                deadline = time.monotonic() + 10
+                while not warmed(node, records):            # an observable condition, not a delay
+                    assert time.monotonic() < deadline, f"commit {i}: its records never reached every member"
+                    time.sleep(0.002)
+        acked, unknown = outcomes.count("acked"), outcomes.count("unknown")
+        # R86: every acknowledged commit is applied; an unknown one at most once.
+        assert unknown <= 3, outcomes                                     # a generous progress bound
+        final = None
+        deadline = time.monotonic() + 10
+        while final is None or final < 6 + acked:
+            assert time.monotonic() < deadline, (final, outcomes)
+            final = tc.value("n0")
+            time.sleep(0.01)
+        assert 6 + acked <= final <= 6 + acked + unknown, (final, outcomes)
         committer_calls = [op for name, op in calls if name.startswith("committer-")]
         assert set(committer_calls) <= {"get"}, committer_calls[:5]       # reads only, never writes
-        misses = 0
         for n in tc.ids:
-            stats = tc.storages[n].stats()
-            misses += stats["critical_misses"] - base[n]["critical_misses"]
-            assert stats["root_writes_in_critical"] == 0
+            assert tc.storages[n].stats()["root_writes_in_critical"] == 0
         fetched = {k: sum(tc[n].stats()[k] - base_coord[n][k] for n in tc.ids)
                    for k in ("record_fetches", "record_fetches_permitted", "records_warmed")}
-        print(f"\n30 commits: {misses} critical-section cache misses, {len(committer_calls)} store reads "
-              f"by committing threads, {fetched}")
-        # Review M2: recorded bounds -- near zero in steady state under R89 (30 commits).
+        total_misses = critical_misses() - sum(base[n]["critical_misses"] for n in tc.ids)
+        print(f"\n30 commits ({acked} acked, {unknown} unknown): {misses} critical-section cache misses "
+              f"after warmed bases ({total_misses} in all), {len(committer_calls)} store reads by "
+              f"committing threads, {fetched}")
+        # Review M2: recorded bounds -- near zero in steady state under R89, asserted once the
+        # base's records reached every member (R105: the warming is waited for, never timed).
         assert misses <= 3, misses
         assert len(committer_calls) <= 3, committer_calls
         assert fetched["record_fetches_permitted"] <= 3, fetched
         assert fetched["records_warmed"] > 0, fetched
-        assert sum(tc[n].stats()["critical_commits"] - before[n] for n in tc.ids) == 30
+        critical = sum(tc[n].stats()["critical_commits"] - before[n] for n in tc.ids)
+        assert acked <= critical <= acked + unknown, (critical, outcomes)
 
 
 def test_the_backlog_limit_refuses_commits_until_the_store_drains_it(tmp_path):

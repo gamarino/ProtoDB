@@ -25,13 +25,16 @@ pytestmark = pytest.mark.timeout(120)
 
 
 def _git_ok() -> bool:
+    """Whether REPO is the top level of a git work tree.  An export placed inside another work tree
+    (review 8.3m M6) would otherwise run git against the enclosing repository."""
     try:
-        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True).returncode == 0
+        top = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=REPO, capture_output=True, text=True)
     except OSError:
         return False
+    return top.returncode == 0 and os.path.realpath(top.stdout.strip()) == os.path.realpath(REPO)
 
 
-@pytest.mark.skipif(not _git_ok(), reason="needs the git repository")
+@pytest.mark.skipif(not _git_ok(), reason="needs REPO to be a git repository's top level")
 def test_an_export_is_clean_until_it_is_changed(tmp_path):
     from benchmarks.export import export
     dest = tmp_path / "export"
