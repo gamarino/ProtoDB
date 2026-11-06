@@ -17,6 +17,11 @@ rqlite's documentation (https://rqlite.io/docs/api/read-consistency/), summarise
 benchmark process, one keep-alive connection each, so every rqlite read pays an HTTP round
 trip that an embedded ProtoDB read does not.
 
+Before the window, every node of either system must see the whole catalog in a local read
+(ProtoDB: a new transaction on that node; rqlite: a ``level=none`` count on that node): without
+that wait, ``level=none`` reads on a follower that had not applied the catalog yet returned no
+row in the first run of Task 9c (1-5 reads per run), as rqlite documents for that level.
+
 Cells, each run separately: writers only, readers only, writers and readers together.  Every
 read is checked against the catalog's value; every write is verified as in the write workloads
 (ProtoDB: the persisted state holds exactly the acknowledged ids and values; rqlite: a strong
@@ -56,7 +61,11 @@ def protodb_cell(ctx, writers: int, readers: int, seconds: float, catalog: int) 
     out = {"system": "protodb", "writers": writers, "readers": readers, "ok": r["ok"],
            "commits": r["commits"], "commit_rate": r["rate"] if writers else None,
            "commit_latency_ms": r["latency_ms"] if writers else None,
-           "syncs_per_commit": r["fsync"]["total_per_commit"] if writers else None}
+           "syncs_per_commit": r["fsync"]["total_per_commit"] if writers else None,
+           # why a failed run failed: lost or extra ids, writer threads that died (an unknown outcome)
+           "ids_missing": r["ids_missing"], "ids_extra": r["ids_extra"], "ids_duplicated": r["ids_duplicated"],
+           "thread_errors": [[e[:200] for e in errs] for errs in r["thread_errors_by_peer"]],
+           "commits_by_peer": r["commits_by_peer"], "kept_run_dir": r["kept_run_dir"]}
     if readers:
         rd = r["reads"]
         out.update({"reads": rd["reads"], "bad_reads": rd["bad"], "read_rate": rd["reads_per_s"],
@@ -77,6 +86,25 @@ def _rqlite_query(conn, level: str, key: int):
     return values[0][0] if values else None
 
 
+def _await_catalog(port: int, catalog: int, timeout: float = 60.0) -> None:
+    """Wait until the node at ``port`` answers a local (``level=none``) count of the whole catalog."""
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            body = json.dumps([["SELECT COUNT(*) FROM catalog"]])
+            conn.request("POST", "/db/query?level=none", body=body, headers={"Content-Type": "application/json"})
+            data = json.loads(conn.getresponse().read().decode())
+            values = data["results"][0].get("values") if "error" not in data["results"][0] else None
+            if values and values[0][0] == catalog:
+                return
+            if time.monotonic() > deadline:
+                raise RuntimeError(f"rqlite node on port {port} did not apply the catalog: {data}")
+            time.sleep(0.05)
+    finally:
+        conn.close()
+
+
 def rqlite_cell(ctx, binary: str, writers: int, readers: int, level, seconds: float, catalog: int) -> dict:
     """One verified rqlite cell (``level`` None when there are no readers)."""
     from benchmarks.workloads.rqlite import RqliteCluster
@@ -93,6 +121,11 @@ def rqlite_cell(ctx, binary: str, writers: int, readers: int, level, seconds: fl
         if loaded != catalog:
             raise RuntimeError(f"rqlite catalog holds {loaded} rows, not {catalog}")
         nodes = len(cl.http)
+        # Every node must have applied the whole catalog before the window, as every ProtoDB peer
+        # waits until its own reads see it: a level=none read on a follower that has not applied
+        # the catalog yet returns no row (rqlite's documented semantics for none, Task 9c).
+        for port in cl.http:
+            _await_catalog(port, catalog)
         w_counts = [0] * (writers * nodes)
         w_lat, r_lat, r_stats = [], [], []
         lock = threading.Lock()
@@ -235,7 +268,8 @@ def mixed_read_write(ctx, p):
         label = cell_label(*cell)
         ok = all(r["ok"] for r in rs)
         result.check(f"{label}: every read right, writes exactly the acknowledged ones", ok,
-                     "; ".join(json.dumps({k: r.get(k) for k in ("ok", "bad_reads", "write_check")}) for r in rs))
+                     "; ".join(json.dumps({k: r.get(k) for k in ("ok", "bad_reads", "write_check", "ids_missing", "ids_extra",
+                                                               "thread_errors")}) for r in rs))
         checksum[label], expected[label] = ok, True
         if cell[1]:
             result.add_rate(f"{label}: commits/s", [r["commit_rate"] for r in rs], "commits/s")
