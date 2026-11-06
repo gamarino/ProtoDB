@@ -219,3 +219,158 @@ def test_atoms_nested_in_result_values_are_references_too():
         assert groups == list(q)
         plain = space.query_cache.result(from_collection(tx.get_root_object("objs")).select(["n"]))
         assert plain[0] is plain[0]           # an atom-free row is returned as stored, not rebuilt
+
+
+# -- fix round 1 (review of Task 8.4b; ruling R99) -------------------------------------------
+
+def test_aggregates_are_keyed_by_the_decimal_context():
+    """C1 (review repro r1_decimal.py): sum/avg over Decimals depend on the decimal context, so a
+    result computed under one context is never served under another."""
+    import decimal
+    import threading
+    from decimal import Decimal
+    from proto_db.query.plans import GroupBy
+    space, db = _space()
+    db.run(lambda tx: tx.set_root_object("items", tx.new_list().extend(
+        [{"g": 1, "v": Decimal("1.23456789")} for _ in range(3)])))
+    with db.new_transaction() as tx:
+        plan = GroupBy(CollectionScanPlan(tx.get_root_object("items")), "g",
+                       {"s": ("sum", "v"), "a": ("avg", "v")})
+        fresh = list(plan.execute())
+        low = {}
+
+        def in_low_precision():
+            with decimal.localcontext(prec=3):
+                low["key"] = cache_key(plan)[0]
+                low["rows"] = list(space.query_cache.result(plan))
+                low["fresh"] = list(plan.execute())
+        thread = threading.Thread(target=in_low_precision)
+        thread.start()
+        thread.join()
+        assert low["rows"] == low["fresh"] != fresh
+        assert low["key"] != cache_key(plan)[0]
+        assert list(space.query_cache.result(plan)) == fresh
+        default_key = cache_key(plan)[0]
+        with decimal.localcontext(rounding=decimal.ROUND_DOWN):
+            assert cache_key(plan)[0] != default_key
+        with decimal.localcontext() as ctx:
+            ctx.traps[decimal.Inexact] = True
+            assert cache_key(plan)[0] != default_key
+        # A plan without arithmetic does not depend on the context: one key in every context.
+        scan = CollectionScanPlan(tx.get_root_object("items"))
+        with decimal.localcontext(prec=3):
+            assert cache_key(scan)[0] == cache_key(CollectionScanPlan(tx.get_root_object("items")))[0]
+
+
+def test_index_plans_are_keyed_by_structured_arguments_not_display_strings():
+    """I1 (review repro r2_vector_where.py): a filtered vector plan on ``tag == b"x"`` and one on
+    ``tag == "b'x'"`` describe their predicates alike; their keys must differ."""
+    from proto_db.indexing import VectorIndex
+    from proto_db.query.terms import NearQuery
+    space, db = _space()
+
+    def build(tx):
+        items = tx.new_list().add_index(VectorIndex("v", "vec", dim=2, metric="l2"))
+        tx.set_root_object("items", items.extend([{"vec": (1.0, 0.0), "tag": b"x", "id": 1},
+                                                  {"vec": (0.0, 1.0), "tag": "b'x'", "id": 2}]))
+    db.run(build)
+    with db.new_transaction() as tx:
+        index = tx.get_root_object("items").indexes.get("v")
+        near = Term("vec", "near[]", NearQuery((0.5, 0.5), k=5))
+        p_bytes = index.filtered_plan(near, Term("tag", "==", b"x"))
+        p_str = index.filtered_plan(near, Term("tag", "==", "b'x'"))
+        assert cache_key(p_bytes)[0] != cache_key(p_str)[0]
+        assert [e["id"] for e in space.query_cache.result(p_bytes)] == [1]
+        assert [e["id"] for e in space.query_cache.result(p_str)] == [2]
+
+
+def test_an_index_plan_without_cache_arguments_is_not_cacheable():
+    """I1: a custom index's IndexPlan keys only what the index declares (``cache_args``)."""
+    from proto_db.query.plans import IndexPlan
+    space, db = _space()
+    _seed(db)
+    with db.new_transaction() as tx:
+        index = tx.get_root_object("items").get_index("k")
+        plan = IndexPlan(index, Term("k", "==", 3), lambda: iter(()), kind="IndexLookup")
+        key, reason = cache_key(plan)
+        assert key is None and "cache arguments" in reason
+
+
+def test_keyspec_subclasses_and_index_subclasses_must_opt_in():
+    """M2: a KeySpec subclass overriding ``extract`` is not keyed as the plain spec.  M3: an index
+    subclass must restate ``_plan_cacheable`` (its ``plan`` may compute something else)."""
+    from proto_db.indexing.keyspec import KeySpec
+    from proto_db.query.plans import Sort
+
+    class Doubled(KeySpec):
+        def extract(self, element):
+            return 2 * super().extract(element)
+
+    class Mine(RangeIndex):
+        __type_name__ = "tests.t84b.MineIndex"
+
+    space, db = _space()
+    _seed(db)
+    with db.new_transaction() as tx:
+        items = tx.get_root_object("items")
+        spec = Doubled.path("k")
+        key, reason = cache_key(Sort(CollectionScanPlan(items), [(spec, False)]))
+        assert key is None and "Doubled" in reason
+        assert cache_key(Sort(CollectionScanPlan(items), [(KeySpec.path("k"), False)]))[0] is not None
+    assert not Mine("m", "k")._plans_deterministic()
+    assert RangeIndex("m", "k")._plans_deterministic()
+
+
+def test_key_bytes_count_in_the_bound():
+    """I3 (review repro r6_keybytes.py): queries with large operand tuples and tiny results must
+    not hold far more memory than the cache's capacity."""
+    import tracemalloc
+    from proto_db.indexing import EqualityIndex
+    space, db = _space(query_cache_bytes=1 << 20)
+    db.run(lambda tx: tx.set_root_object("c", tx.new_list().add_index(EqualityIndex("k", "k")).extend(
+        [{"k": i} for i in range(10)])))
+    with db.new_transaction() as tx:
+        c = tx.get_root_object("c")
+        gc.collect()
+        tracemalloc.start()
+        try:
+            base = tracemalloc.get_traced_memory()[0]
+            for q in range(120):
+                ops = tuple("op-%d-%06d-padding-padding" % (q, j) for j in range(2000))
+                space.query_cache.result(plan_query(c, Term("k", "in", ops)))
+                del ops
+            gc.collect()
+            held = tracemalloc.get_traced_memory()[0] - base
+        finally:
+            tracemalloc.stop()
+    stats = space.query_cache_stats()
+    assert stats["bytes"] <= stats["capacity"]
+    assert held < 3 * (1 << 20), f"{held / 2**20:.1f} MiB held under a 1 MiB budget"
+    assert stats["entries"] < 120
+
+
+def test_a_shared_result_cannot_be_changed():
+    """M5: a hit returns the same QueryResult to every caller, so none may change it."""
+    space, db = _space()
+    _seed(db)
+    with db.new_transaction() as tx:
+        result = space.query_cache.result(from_collection(tx.get_root_object("items")).where(F.k == 3))
+        for name in ("key", "reason", "_entries", "_load", "_size", "other"):
+            with pytest.raises(Exception):
+                setattr(result, name, None)
+        with pytest.raises(Exception):
+            del result.key
+        assert result.key is not None and len(result) == 4
+
+
+def test_a_disabled_cache_counts_no_misses_and_no_refusals():
+    """M7: with capacity 0 nothing is looked up or stored, and nothing is reported as too large."""
+    space, db = _space(query_cache_bytes=0)
+    _seed(db)
+    with db.new_transaction() as tx:
+        q = from_collection(tx.get_root_object("items")).where(F.k == 3)
+        assert list(space.query_cache.result(q)) == list(q)
+        space.query_cache.result(q)
+    stats = space.query_cache_stats()
+    assert stats["refused"] == 0 and stats["misses"] == 0 and stats["hits"] == 0 and stats["entries"] == 0
+    assert stats["capacity"] == 0

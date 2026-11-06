@@ -121,7 +121,7 @@ class Index(Atom, metaclass=ABCMeta):
     _definition: tuple = ("name", "key_spec")
     #: True when every plan of this index is a deterministic function of the index's stored
     #: content and the plan's arguments, so its results may be cached by the index's pointer
-    #: (D56).  False by default: a custom index opts in explicitly.
+    #: (D56).  False by default: every class opts in explicitly, subclasses included.
     _plan_cacheable: bool = False
     #: Public fields holding a :class:`KeySpec`, persisted as plain data.
     _keyspec_fields: tuple = ("key_spec",)
@@ -202,8 +202,10 @@ class Index(Atom, metaclass=ABCMeta):
     def _plans_deterministic(self) -> bool:
         """Whether this index version's plans may be cached by its pointer (D56); default
         ``_plan_cacheable``.  An index whose answers depend on more than its stored content
-        (process state, randomness) returns False."""
-        return bool(type(self)._plan_cacheable)
+        (process state, randomness) returns False.  The flag is read from the index's own
+        class only: a subclass may change what plans compute, so it opts in by restating
+        ``_plan_cacheable = True`` (R99 M3)."""
+        return vars(type(self)).get("_plan_cacheable", False) is True
 
     def _on_key(self, term: Term) -> bool:
         """True iff ``term`` names this index's key (its path is ``key_spec.term_path``)."""

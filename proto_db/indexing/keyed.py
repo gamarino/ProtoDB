@@ -284,9 +284,6 @@ class KeyGroupIndex(Index):
     (:meth:`supports`) and whether it offers ordered iteration.
     """
 
-    #: Plans read only the stored trees: deterministic, so results are cacheable by pointer (D56).
-    _plan_cacheable = True
-
     def __init__(self, name: str, key_spec: KeySpec | str, *, context: PersistenceContext | None = None):
         """Create an EMPTY index on ``key_spec`` (a ``str`` means ``KeySpec.path(key_spec)``)."""
         if isinstance(key_spec, str):
@@ -425,7 +422,7 @@ class KeyGroupIndex(Index):
         if self._has_weights():
             rank = _rank_access(lambda: self._term_segments(term))
             sorted_rank = self._sorted_rank(lambda desc: self._sorted_segments(term, desc))
-        return IndexPlan(self, term, producer, kind=kind, rank=rank, sorted_rank=sorted_rank)
+        return IndexPlan(self, term, producer, kind=kind, rank=rank, sorted_rank=sorted_rank, cache_args=())
 
     # -- rank access (D56) ----------------------------------------------------------------
 
@@ -538,7 +535,8 @@ class KeyGroupIndex(Index):
             sorted_rank = self._sorted_rank(self._ordered_segments)
         return IndexPlan(self, None, produce, kind="IndexOrderedScan",
                          estimate=Estimate(rows=n, cost=n + _count(groups) + 1),
-                         details={"descending": bool(descending)}, rank=rank, sorted_rank=sorted_rank)
+                         details={"descending": bool(descending)}, rank=rank, sorted_rank=sorted_rank,
+                         cache_args=(("descending", bool(descending)),))
 
     # -- explain and validate -------------------------------------------------------------------
 

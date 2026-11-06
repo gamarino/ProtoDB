@@ -71,7 +71,9 @@ def _recipe(where, order, window, tail):
         if where is not None:
             q = q.where(where)
         if order is not None:
-            q = q.order_by(F[order[0]], order[1]).then_by(F.v)
+            q = q.order_by(F[order[0]], order[1])
+            if order[0] == "s":          # a tie-breaker on one key only: single-key orders are drawn too
+                q = q.then_by(F.v)
         if window is not None:
             q = q.skip(window[0]).take(window[1])
         if tail == "select":
@@ -220,3 +222,111 @@ def test_equal_keys_mean_equal_results(initial, recipes):
             if key is not None:
                 assert by_key.setdefault(key, fresh) == fresh, q.explain()
             assert _exact(space.query_cache.result(q)) == fresh, q.explain()
+
+
+# -- plan families over the whole plan vocabulary (fix round 1, ruling R99 M1) ---------------
+#
+# Plans are built directly from the plan nodes, from small pools of components, so that two
+# plans differing in exactly one component are common: a single-key order in either
+# direction, an ordered index scan ascending and descending, projections whose output names
+# differ, aggregations differing in their operator (under different decimal contexts),
+# inner and left joins, unnest with and without the parent, union and intersection, vector
+# searches with and without a residual predicate (including operands whose display strings
+# coincide, b"x" and "b'x'"), and terms differing in their path.  Plans sharing a key must
+# give identical results, each executed afresh in its own decimal context.
+
+import decimal  # noqa: E402
+
+from proto_db.indexing import VectorIndex  # noqa: E402
+from proto_db.query.plans import (CollectionScanPlan, Filter, GroupBy, Intersect, Join, Limit,  # noqa: E402
+                                  Project, Sort, Union, Unnest, VectorSearch)
+from proto_db.query.terms import NearQuery  # noqa: E402
+
+CONTEXTS = [None, {"prec": 3}, {"prec": 5, "rounding": decimal.ROUND_DOWN}]
+TAGS = [b"x", "b'x'", "y"]
+
+
+@st.composite
+def rich_records(draw):
+    return {"k": draw(st.integers(0, 4)), "s": draw(st.sampled_from(["x", "y"])), "v": draw(st.integers(-5, 5)),
+            "tags": draw(st.lists(st.integers(0, 2), max_size=2)), "tag": draw(st.sampled_from(TAGS)),
+            "vec": (float(draw(st.integers(-3, 3))), float(draw(st.integers(-3, 3)))),
+            "price": draw(st.sampled_from([Decimal("1.234567"), Decimal("2.5"), Decimal("0.333333")]))}
+
+
+def _sources(coll):
+    k = coll.get_index("k")
+    return [CollectionScanPlan(coll), k.ordered_plan(False), k.ordered_plan(True),
+            k.plan(Term("k", ">=", 2)), coll.get_index("s").plan(Term("s", "==", "x"))]
+
+
+def _build(coll, recipe):
+    """A plan from a recipe: a tuple of small pool indexes, interpreted node by node."""
+    sources = _sources(coll)
+    vec = coll.get_index("vec")
+    src = sources[recipe[0] % len(sources)]
+    other = sources[recipe[1] % len(sources)]
+    node, a, b = recipe[2], recipe[3], recipe[4]
+    if node == 0:
+        return Sort(src, [("v", bool(a % 2))])
+    if node == 1:
+        return Project(src, [{"a": "k", "b": "v"}, {"b": "k", "a": "v"}, {"a": "v"}][a % 3])
+    if node == 2:
+        return GroupBy(src, "s", {"x": (["count", "sum", "min", "max", "avg"][a % 5], "price" if b % 2 else "v")})
+    if node == 3:
+        return Join(src, other, "k", "k", ["inner", "left"][a % 2])
+    if node == 4:
+        return Unnest(src, "tags", with_parent=bool(a % 2))
+    if node == 5:
+        return (Union if a % 2 else Intersect)(src, other)
+    if node == 6:
+        near = Term("vec", "near[]", NearQuery((float(a % 3), 1.0), k=1 + a % 4))
+        where = [None, Term("tag", "==", b"x"), Term("tag", "==", "b'x'"), Term("s", "==", "x")][b % 4]
+        return VectorSearch(vec, near, where)
+    if node == 7:
+        near = Term("vec", "near[]", NearQuery((1.0, float(a % 3)), k=3))
+        return vec.filtered_plan(near, Term("tag", "==", TAGS[b % 3]))
+    if node == 8:
+        return Limit(src, a % 4, b % 3)
+    return Filter(src, Term(["k", "v"][a % 2], ">=", b % 3))
+
+
+def _in_context(context, fn):
+    if context is None:
+        return fn()
+    with decimal.localcontext(**context):
+        return fn()
+
+
+plan_recipes = st.tuples(st.integers(0, 4), st.integers(0, 4), st.integers(0, 9), st.integers(0, 5),
+                         st.integers(0, 5), st.sampled_from(range(len(CONTEXTS))))
+
+
+@settings(max_examples=120, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@given(initial=st.lists(rich_records(), min_size=4, max_size=18),
+       bases=st.lists(plan_recipes, min_size=2, max_size=8))
+def test_plan_families_with_equal_keys_give_equal_results(initial, bases):
+    space = ObjectSpace(MemoryStorage())
+    db = space.new_database("db")
+
+    def seed(tx):
+        coll = tx.new_list().add_index(RangeIndex("k", "k")).add_index(EqualityIndex("s", "s")) \
+            .add_index(VectorIndex("vec", "vec", dim=2, metric="l2"))
+        tx.set_root_object("c", coll.extend(initial))
+    db.run(seed)
+    with db.new_transaction() as tx:
+        coll = tx.get_root_object("c")
+        by_key = {}
+        # Every base recipe with its neighbours differing in exactly one parameter (a join kind,
+        # union or intersection, a vector predicate, an aggregation, a decimal context...).
+        recipes = [base[:i] + (base[i] + d,) + base[i + 1:] for base in bases
+                   for i in (3, 4) for d in (0, 1, 2, 3)]
+        recipes += [base[:5] + (c,) for base in bases for c in range(len(CONTEXTS))]
+        for recipe in recipes:
+            plan = _build(coll, recipe)
+            context = CONTEXTS[recipe[5]]
+            key, reason = _in_context(context, lambda: cache_key(plan))
+            assert key is not None, reason
+            fresh = _in_context(context, lambda: _exact(list(plan.execute())))
+            assert by_key.setdefault(key, (fresh, recipe))[0] == fresh, (recipe, by_key[key][1], plan.explain())
+            assert _in_context(context, lambda: _exact(space.query_cache.result(plan))) == fresh, recipe

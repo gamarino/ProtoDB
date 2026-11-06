@@ -7,17 +7,26 @@ valid for as long as anyone asks for that key: no invalidation exists or is need
 commit produces new pointers, hence new keys; old entries simply stop being asked for
 and the LRU evicts them.
 
-The key (:func:`cache_key`) is ``(QUERY_SEMANTICS_VERSION, plan key)``, where the plan
-key is built from the physical plan, node by node, without executing anything:
+The key (:func:`cache_key`) is ``(QUERY_SEMANTICS_VERSION, decimal context, plan key)``,
+where the plan key is built from the physical plan, node by node, without executing
+anything, from the plans' structured fields (never from ``explain()`` display strings):
 
 * a collection scan by the collection's pointer; an index plan by the index's pointer,
-  its kind, its term and its details (an index belongs to one collection version);
+  its kind, its term and the arguments the index declares (``IndexPlan.cache_args``; a
+  plan without them is not cacheable); an index belongs to one collection version;
 * terms by path, operator and exact operands (:func:`proto_db.values.exact_token`, so
   ``1``, ``1.0`` and ``Decimal("1.00")`` are three keys; atoms by pointer);
 * registered extractors (``@name`` paths, ``KeySpec.extractor``) by name and
   registration generation, so a name registered again with another function gets
   another key;
-* every other node by its parameters and its children.
+* every other node by its parameters and its children;
+* the decimal context (precision, rounding, exponent limits, clamping, traps) when a
+  node computes with numbers (``sum``/``avg`` aggregations), else ``None``: Decimal
+  arithmetic depends on the calling thread's context.
+
+Registered extractors must be pure functions of the element (see
+:func:`~proto_db.indexing.keyspec.register_extractor`): a result computed once is served
+for as long as the versions it read are asked for.
 
 Equal keys give equal results: equal leaf pointers mean equal leaf contents, an equal
 key means an equal plan tree, and every plan node is a deterministic function of its
@@ -27,36 +36,41 @@ output order or content changes, so two library versions never share a key.
 Not cacheable (the reason is reported, never silently skipped): Python callables
 (``PythonFilter``, ``PythonPredicate``, callable keys, projections and aggregations),
 ``ValuesScan`` (values held only in memory), vector searches on a backend that is not
-deterministic (``hnsw``), indexes that do not opt in (``Index._plan_cacheable``), any
+deterministic (``hnsw``), indexes whose own class does not opt in (``_plan_cacheable``,
+restated by every subclass), KeySpec subclasses (they may override ``extract``), any
 leaf without a pointer (a collection changed in the running transaction), and any plan
 node this module does not know.
 
 A cached :class:`QueryResult` is immutable.  It holds atoms as ``(pointer, class)``
 references, resolved through the space's decoded-atom cache when read, so it never pins
 loaded atoms (the 8.3l rule); other values are held frozen (D25).  :class:`QueryCache`
-is bounded by an estimated byte size; one result may take at most an eighth of it.
+is bounded by an estimated byte size, its key included; one entry may take at most an
+eighth of it.  :func:`key_digest` is BLAKE2b-128 of a key's ``repr``, for explain and
+logs; :func:`plan_digest` is the process-independent digest a pager token carries.
 """
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import sys
 import threading
 import uuid
 from collections.abc import Iterator, Sequence
 from datetime import date, datetime, time, timedelta
+import decimal
 from decimal import Decimal
 
 from ..core.atom import Atom
-from ..errors import ProtoValidationError
+from ..errors import ProtoUserError, ProtoValidationError
 from ..storage.cache import BoundedCache
 from ..values import MISSING, FrozenDict, FrozenList, MutableObject, exact_token
-from .expressions import And, Not, Or, PythonPredicate
+from .expressions import And, Expression, Not, Or, PythonPredicate
 from .plans import (CollectionScanPlan, Count, Distinct, Filter, GroupBy, IndexPlan, Intersect, Join, Limit,
                     Project, PythonFilter, QueryPlan, Sort, Union, Unnest, ValuesScan, VectorSearch)
 from .terms import NearQuery, Term
 
 __all__ = ["QUERY_SEMANTICS_VERSION", "QUERY_CACHE_BYTES", "QueryCache", "QueryResult", "cache_key",
-           "as_plan"]
+           "as_plan", "plan_digest", "key_digest"]
 
 #: Version of the executors' observable behaviour (row order, ties, grouping).  Part of every
 #: key and of every pager token: raise it whenever a plan node's output changes for some input.
@@ -110,19 +124,32 @@ def _value_key(value):
     return exact_token(value, _atom_token)
 
 
+def _generation(name: str):
+    from ..indexing.keyspec import extractor_generation
+    return extractor_generation(name)
+
+
+#: How a key names a registered extractor: by its registration generation in this process
+#: (the cache key), or by its process-independent fingerprint (a pager token's plan digest).
+_EXTRACTOR_ID = contextvars.ContextVar("proto_db_extractor_id", default=_generation)
+
+
 def _path_key(path):
     if isinstance(path, str) and path.startswith("@"):
-        from ..indexing.keyspec import extractor_generation
-        return ("@", path[1:], extractor_generation(path[1:]))
+        return ("@", path[1:], _EXTRACTOR_ID.get()(path[1:]))
     return path
 
 
 def _spec_key(spec) -> tuple:
-    from ..indexing.keyspec import EXTRACTOR, KeySpec, extractor_generation
-    if not isinstance(spec, KeySpec):
+    from ..indexing.keyspec import EXTRACTOR, KeySpec
+    if type(spec) is not KeySpec:
+        if isinstance(spec, KeySpec):
+            # A subclass may override ``extract``: its keys are not the plain spec's (R99 M2).
+            raise _Uncacheable(f"a key of type {type(spec).__name__}, a KeySpec subclass (not cacheable unless "
+                               f"it is a plain KeySpec)")
         raise _Uncacheable(f"a key given as a Python callable ({getattr(spec, '__qualname__', spec)!r})")
     kind, arg = spec.to_data()
-    return (kind, arg, extractor_generation(arg)) if kind == EXTRACTOR else (kind, arg)
+    return (kind, arg, _EXTRACTOR_ID.get()(arg)) if kind == EXTRACTOR else (kind, arg)
 
 
 def _extract_key(extract) -> tuple:
@@ -144,6 +171,23 @@ def _expr_key(expr) -> tuple:
     raise _Uncacheable(f"an unknown expression node {type(expr).__name__}")
 
 
+def _arg_key(value):
+    return _expr_key(value) if isinstance(value, Expression) else _value_key(value)
+
+
+#: Aggregations whose result depends on the decimal context (Decimal arithmetic).
+_ARITHMETIC = frozenset({"sum", "avg"})
+
+
+def _decimal_context_key() -> tuple:
+    """The parts of the current decimal context that change computed values (R99 C1): precision,
+    rounding, exponent limits, clamping and the trapped signals (flags are outputs, ``capitals``
+    only changes how values print)."""
+    ctx = decimal.getcontext()
+    traps = tuple(sorted(signal.__name__ for signal, on in ctx.traps.items() if on))
+    return ("decimal", ctx.prec, ctx.rounding, ctx.Emin, ctx.Emax, ctx.clamp, traps)
+
+
 def _index_leaf(index, what: str) -> tuple:
     deterministic = getattr(index, "_plans_deterministic", None)
     if deterministic is None or not deterministic():
@@ -152,49 +196,55 @@ def _index_leaf(index, what: str) -> tuple:
     return (type(index).__type_name__, _ptr(index, what))
 
 
-def _plan_key(plan) -> tuple:
+def _plan_key(plan, state: dict) -> tuple:
+    """The key of ``plan``; ``state["arithmetic"]`` is set when a node computes with numbers."""
     t = type(plan)
     if t is CollectionScanPlan:
         c = plan.collection
         return ("scan", type(c).__type_name__, _ptr(c, f"the collection {type(c).__name__}"))
     if t is IndexPlan:
-        details = tuple(sorted((k, _value_key(v)) for k, v in plan._details.items()))
+        if plan.cache_args is None:
+            raise _Uncacheable(f"the index plan {plan.kind} of {type(plan.index).__name__} declares no cache "
+                               f"arguments (IndexPlan.cache_args)")
         term = None if plan.term is None else _expr_key(plan.term)
-        return ("index", _index_leaf(plan.index, "the index"), plan.kind, term, details)
+        args = tuple((name, _arg_key(value)) for name, value in plan.cache_args)
+        return ("index", _index_leaf(plan.index, "the index"), plan.kind, term, args)
     if t is VectorSearch:
         index = plan.index
         where = None if plan.where is None else _expr_key(plan.where)
         return ("vector", _index_leaf(index, "the vector index"), _expr_key(plan.term), where)
     if t is Filter:
-        return ("filter", _expr_key(plan.expr), _plan_key(plan.source))
+        return ("filter", _expr_key(plan.expr), _plan_key(plan.source, state))
     if t in (Union, Intersect):
-        return (t.__name__, tuple(_plan_key(s) for s in plan.sources))
+        return (t.__name__, tuple(_plan_key(s, state) for s in plan.sources))
     if t is Project:
         if plan.fn is not None:
             raise _Uncacheable(f"a Python projection ({plan.function})")
         fields = tuple((name, _extract_key(extract)) for name, extract in plan._extractors)
-        return ("project", fields, _plan_key(plan.source))
+        return ("project", fields, _plan_key(plan.source, state))
     if t is Sort:
         keys = tuple((_extract_key(extract), descending) for extract, _, descending in plan._keys)
-        return ("sort", keys, _plan_key(plan.source))
+        return ("sort", keys, _plan_key(plan.source, state))
     if t is Limit:
-        return ("limit", plan.n, plan.offset, _plan_key(plan.source))
+        return ("limit", plan.n, plan.offset, _plan_key(plan.source, state))
     if t is Count:
-        return ("count", _plan_key(plan.source))
+        return ("count", _plan_key(plan.source, state))
     if t is Distinct:
-        return ("distinct", _plan_key(plan.source))
+        return ("distinct", _plan_key(plan.source, state))
     if t is GroupBy:
         aggs = []
         for name, op, count_all, extract in plan._aggregations:
             if callable(op):
                 raise _Uncacheable(f"a Python aggregation ({plan.aggregations[name]['op']})")
+            if op in _ARITHMETIC:
+                state["arithmetic"] = True
             aggs.append((name, op, count_all, _extract_key(extract)))
-        return ("group", _extract_key(plan._extract), tuple(aggs), _plan_key(plan.source))
+        return ("group", _extract_key(plan._extract), tuple(aggs), _plan_key(plan.source, state))
     if t is Join:
         return ("join", _extract_key(plan._left_key), _extract_key(plan._right_key), plan.kind,
-                _plan_key(plan.left), _plan_key(plan.right))
+                _plan_key(plan.left, state), _plan_key(plan.right, state))
     if t is Unnest:
-        return ("unnest", _extract_key(plan._extract), plan.with_parent, _plan_key(plan.source))
+        return ("unnest", _extract_key(plan._extract), plan.with_parent, _plan_key(plan.source, state))
     if t is PythonFilter:
         raise _Uncacheable(f"a Python filter ({plan.description})")
     if t is ValuesScan:
@@ -207,10 +257,57 @@ def cache_key(source) -> tuple:
 
     ``source`` is a QueryPlan, a Queryable or a collection (:func:`as_plan`)."""
     plan = as_plan(source)
+    state = {}
     try:
-        return (QUERY_SEMANTICS_VERSION, _plan_key(plan)), None
+        key = _plan_key(plan, state)
     except _Uncacheable as e:
         return None, str(e.args[0])
+    context = _decimal_context_key() if state.get("arithmetic") else None
+    return (QUERY_SEMANTICS_VERSION, context, key), None
+
+
+def _strip_estimates(info):
+    if isinstance(info, dict):
+        return {k: _strip_estimates(v) for k, v in info.items() if k != "estimate"}
+    if isinstance(info, list):
+        return [_strip_estimates(v) for v in info]
+    return info
+
+
+def plan_digest(source) -> tuple:
+    """``(digest, extractors)``: a process-independent digest of the plan's structure, and the
+    fingerprints of the registered extractors it names (D56, R99 I4 and M4).  Pager tokens
+    carry both, so a resumed pager whose query plans differently -- another planner or
+    library version, another extractor function under a name -- is refused, never paged in
+    another order.  For a plan without a cache key the digest covers its ``explain()`` tree
+    without estimates."""
+    from ..indexing.keyspec import extractor_fingerprint
+    plan = as_plan(source)
+    seen = {}
+
+    def identity(name):
+        seen[name] = extractor_fingerprint(name)
+        return seen[name]
+    token = _EXTRACTOR_ID.set(identity)
+    try:
+        try:
+            structure = (QUERY_SEMANTICS_VERSION, _plan_key(plan, {}))
+        except _Uncacheable:
+            structure = (QUERY_SEMANTICS_VERSION, "explain", _strip_estimates(plan.explain()))
+    finally:
+        _EXTRACTOR_ID.reset(token)
+    return key_digest(structure), dict(sorted(seen.items()))
+
+
+def _key_size(key) -> int:
+    """Estimated bytes held by a key (I3): every tuple, str, bytes and number in it."""
+    size, stack = 0, [key]
+    while stack:
+        item = stack.pop()
+        size += sys.getsizeof(item)
+        if type(item) is tuple:
+            stack.extend(item)
+    return size
 
 
 def key_digest(key: tuple) -> str:
@@ -305,11 +402,18 @@ class QueryResult(Sequence):
     __slots__ = ("key", "reason", "_entries", "_load", "_size")
 
     def __init__(self, key, reason, entries: tuple, load, size: int):
-        self.key = key
-        self.reason = reason
-        self._entries = entries
-        self._load = load
-        self._size = size
+        osa = object.__setattr__
+        osa(self, "key", key)
+        osa(self, "reason", reason)
+        osa(self, "_entries", entries)
+        osa(self, "_load", load)
+        osa(self, "_size", size)
+
+    def __setattr__(self, name, value):
+        raise ProtoUserError("A QueryResult is immutable: a cached one is shared by every caller")
+
+    def __delattr__(self, name):
+        raise ProtoUserError("A QueryResult is immutable: a cached one is shared by every caller")
 
     def __len__(self) -> int:
         return len(self._entries)
@@ -374,25 +478,33 @@ class QueryCache:
             with self._lock:
                 self._uncacheable += 1
             return QueryResult(None, reason, tuple(plan.execute()), None, 0)
-        hit = self._cache.get(key)
-        if hit is not None:
-            return hit
-        rows = tuple(plan.execute())
-        size = [64]
+        enabled = self._cache.max_bytes > 0
+        if enabled:
+            hit = self._cache.get(key)
+            if hit is not None:
+                return hit
+        result = self._stored(key, tuple(plan.execute()))
+        if result.key is None or not enabled:
+            # Disabled (capacity 0): nothing is looked up or stored, no miss or refusal counted.
+            return result
+        if result._size * _MAX_ENTRY_FRACTION > self._cache.max_bytes:
+            with self._lock:
+                self._refused += 1
+            return result
+        self._cache.put(key, result)
+        return result
+
+    def _stored(self, key, rows: tuple) -> QueryResult:
+        """``rows`` in stored form under ``key``, sized with the key (I3); an uncacheable result when
+        a row holds a value that has no stored form."""
+        size = [64 + _key_size(key)]
         try:
             entries = tuple(_entry(v, size) for v in rows)
         except _Uncacheable as e:
             with self._lock:
                 self._uncacheable += 1
             return QueryResult(None, str(e.args[0]), rows, None, 0)
-        size[0] += 8 * len(entries)
-        result = QueryResult(key, None, entries, self._load, size[0])
-        if size[0] * _MAX_ENTRY_FRACTION > self._cache.max_bytes:
-            with self._lock:
-                self._refused += 1
-            return result
-        self._cache.put(key, result)
-        return result
+        return QueryResult(key, None, entries, self._load, size[0] + 8 * len(entries))
 
     def explain(self, source) -> dict:
         """``plan.explain()`` plus ``"cache"``: ``{"key": digest, "cached": bool}`` or ``{"uncacheable": reason}``."""

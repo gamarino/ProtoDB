@@ -297,11 +297,16 @@ class IndexPlan(QueryPlan):
     exactly ``islice(execute(), start, stop)`` and ``rows`` the exact row count.
     ``sorted_rank(key_spec, descending)`` returns such a pair over the rows in the order a
     stable :class:`Sort` by ``key_spec`` gives them, or ``None``.
+    ``cache_args`` (D56, R99) names everything besides the index content and ``term`` that
+    the producer's output depends on, as ``(name, value)`` pairs of exact values or
+    Expressions; the query result cache keys the plan by them.  ``None`` (the default)
+    makes the plan uncacheable: ``details`` are display strings and never part of a key.
     """
 
     def __init__(self, index, term, producer: Callable[[], Iterator], *, kind: str = "IndexLookup",
                  estimate: Estimate | None = None, details: dict | None = None,
-                 rank: tuple | None = None, sorted_rank: Callable | None = None):
+                 rank: tuple | None = None, sorted_rank: Callable | None = None,
+                 cache_args: tuple | None = None):
         if not callable(producer):
             raise ProtoValidationError(f"IndexPlan needs a callable producer, not {type(producer).__name__}")
         if not isinstance(kind, str) or not kind:
@@ -327,6 +332,10 @@ class IndexPlan(QueryPlan):
             raise ProtoValidationError("IndexPlan sorted_rank must be callable")
         self._rank = rank
         self._sorted_rank = sorted_rank
+        if cache_args is not None and (not isinstance(cache_args, tuple) or not all(
+                isinstance(a, tuple) and len(a) == 2 and isinstance(a[0], str) for a in cache_args)):
+            raise ProtoValidationError("IndexPlan cache_args must be a tuple of (name, value) pairs")
+        self.cache_args = cache_args
         self._freeze()
 
     def execute(self) -> Iterator:

@@ -33,6 +33,9 @@ __all__ = ["RangeIndex"]
 class RangeIndex(KeyGroupIndex):
     """Range index: ``RangeIndex(name, key_spec)``; ``key_spec`` is a KeySpec or a dotted path str."""
 
+    #: Plans read only the stored trees: cacheable by the index's pointer (D56).
+    _plan_cacheable = True
+
     __type_name__ = "proto_db.indexing.RangeIndex"
     #: Operators this index answers exactly.
     SUPPORTED_OPS = frozenset({EQ, IN, NE, LT, LE, GT, GE, BETWEEN, BETWEEN_EXCL_BOTH, BETWEEN_EXCL_LOW,

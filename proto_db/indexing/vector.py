@@ -156,8 +156,9 @@ class VectorIndex(Index):
         return backend_for(self.backend)
 
     def _plans_deterministic(self) -> bool:
-        """Cacheable by pointer (D56) unless the backend's search is not deterministic (hnsw)."""
-        return self._impl().deterministic
+        """Cacheable by pointer (D56) unless the backend's search is not deterministic (hnsw) or
+        a subclass did not opt in (it must restate ``_plan_cacheable``)."""
+        return super()._plans_deterministic() and self._impl().deterministic
 
     def _vector(self, element):
         return canonical_vector(self.key_spec.extract(element), self.dim)
@@ -299,7 +300,8 @@ class VectorIndex(Index):
         if where is not None:
             details["where"] = where.describe()
         return IndexPlan(self, term, produce, kind=impl.kind,
-                         estimate=impl.estimate(self, k, threshold, where is not None), details=details)
+                         estimate=impl.estimate(self, k, threshold, where is not None), details=details,
+                         cache_args=(("where", where),))
 
     # -- explain and validate ---------------------------------------------------------------------------
 

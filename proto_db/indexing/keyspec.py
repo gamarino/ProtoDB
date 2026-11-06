@@ -62,6 +62,13 @@ def register_extractor(name: str, fn: Callable) -> None:
     function again is a no-op; binding a registered name to another function
     raises ``ProtoValidationError``, because persisted indexes rely on the
     name keeping its meaning.  Thread-safe.
+
+    ``fn`` must be a pure function of the element: the same element always gives the
+    same key, whatever the time, the process or any state outside the element.  Indexes
+    store the keys it computed, and the query result cache (D56) serves a result computed
+    once for as long as the versions it read are asked for: an impure extractor (one that
+    reads the clock, say) gives stale cached results, silently.  Pager tokens identify the
+    function by :func:`extractor_fingerprint` and refuse to resume when it changed.
     """
     _check_extractor_name(name)
     if not callable(fn):
@@ -80,9 +87,10 @@ def register_extractor(name: str, fn: Callable) -> None:
 def unregister_extractor(name: str) -> None:
     """Remove the registration of ``name`` (``ProtoValidationError`` if it is not registered).
 
-    Until ``name`` is registered again, indexes and terms naming it raise on use.  A new
-    registration gets a new generation (:func:`extractor_generation`), so query results
-    cached under the old function are never served for the new one (D56).  Stored indexes
+    Until ``name`` is registered again, indexes and terms naming it raise on use.  The
+    name's generation is forgotten, and a new registration takes a fresh one
+    (:func:`extractor_generation`), so query results cached under the old function are
+    never served for the new one (D56).  Stored indexes
     built with the old function are not rebuilt: rebinding a name to a function with another
     meaning makes them disagree with their elements, as the registry docstring warns.
     """
@@ -103,6 +111,21 @@ def extractor_generation(name: str) -> int:
     if generation is None:
         _registered(name)  # raises the usual "not registered" error
     return generation
+
+
+def extractor_fingerprint(name: str) -> str:
+    """A process-independent identity of the function registered under ``name`` (D56, R99 M4):
+    a digest of its module, qualified name and code (bytecode, constants, names), the same
+    in every process that registers the same function.  Pager tokens carry it.  Captured
+    state (closure cells, globals) is not covered: extractors must be pure (see
+    :func:`register_extractor`)."""
+    import hashlib
+    fn = _registered(name)
+    code = getattr(fn, "__code__", None)
+    parts = [getattr(fn, "__module__", None) or "", getattr(fn, "__qualname__", None) or type(fn).__qualname__]
+    if code is not None:
+        parts += [code.co_code.hex(), repr(code.co_consts), repr(code.co_names)]
+    return hashlib.blake2b("\x1f".join(parts).encode(), digest_size=16).hexdigest()
 
 
 def _registered(name: str) -> Callable:
