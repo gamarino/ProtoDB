@@ -334,7 +334,7 @@ def test_reading_a_root_and_checking_it_at_commit_do_not_load_it(tmp_path, monke
         tr = db.new_transaction()
         lst = tr.get_root_object("l")
         ptr = object.__getattribute__(lst, "atom_pointer")
-        assert object.__getattribute__(lst, "_loaded") is False
+        assert not object.__getattribute__(lst, "_loaded")
         with db.new_transaction() as other:
             other.set_root_object("x", 1)
         tr.set_root_object("y", 2)

@@ -117,7 +117,7 @@ from .collections.dictionaries import Dictionary, RepeatedKeysDictionary
 from .collections.hash_dictionaries import HashDictionary
 from .collections.lists import List
 from .collections.sets import CountedSet, Set
-from .core.atom import Atom, AtomPointer, PersistenceContext
+from .core.atom import _UNLOADED, Atom, AtomPointer, PersistenceContext
 from .core.dbobject import DBObject, MutableObject
 from .errors import (ProtoClosedError, ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoOutcomeUnknownError,
                      ProtoReferenceError, ProtoTimeoutError, ProtoUnexpectedError, ProtoUserError,
@@ -420,7 +420,8 @@ class _AtomCache:
     atom never keeps evicted state reachable.  ``_ident`` maps every pointer to a weak reference
     of the one object served for it while anything holds that object (stub or loaded), so a
     parent's child and a fresh load are the same object.  Only objects produced here (stubs from
-    :meth:`load`, decoded twins) carry the ``_cached`` mark and are ever admitted or unloaded.
+    :meth:`load`, decoded twins) carry the mark (``_loaded`` is ``_UNLOADED`` or a generation
+    token, see :mod:`proto_db.core.atom`) and are ever admitted or unloaded.
     """
 
     def __init__(self, storage, entries: int):
@@ -457,7 +458,7 @@ class _AtomCache:
             # Another type for a known pointer (corrupt reference): a one-off stub, never marked,
             # so its load can never be admitted and displace the shared atom (review 8.3m M2).
             return stub
-        object.__setattr__(stub, "_cached", True)
+        object.__setattr__(stub, "_loaded", _UNLOADED)     # the mark: same key, no layout change
         with self._lock:
             ref = self._ident.get(ptr)
             other = ref() if ref is not None else None
@@ -500,7 +501,6 @@ class _AtomCache:
             # later refers to it as an unloaded stub, and its bytes are read only if something
             # reads it (a write-only ingest retains none of them).
             return
-        object.__setattr__(twin, "_cached", True)
         with self._lock:
             if self._closed:
                 return
@@ -1340,9 +1340,14 @@ class ObjectSpace:
             durable.  A node grants and acknowledges only while a space is open on it.  Every writer of the space must use a coordinator of the
             same cluster.  The caller owns the coordinator (:meth:`close` detaches it but
             does not stop it).  ``None`` (default): no cluster, unchanged behaviour.
-        atom_cache_entries: how many decoded atoms the space shares between its
-            transactions and threads, by storage pointer (ruling R75): a pointer's content
-            never changes, so the cache needs no invalidation and is never stale.  ``0``
+        atom_cache_entries: how many decoded atoms the space keeps loaded and shares between
+            its transactions and threads, by storage pointer (ruling R75): a pointer's content
+            never changes, so the cache needs no invalidation and is never stale.  The bound is
+            on loaded atoms (Task 8.3m): an atom the cache evicts goes back to an unloaded stub
+            and is read again (record cache, then storage) when something reads it next.
+            Sizing: a read path stays warm when the atoms its concurrent transactions touch fit
+            -- about ``2 * log2(n)`` per point read in a collection of ``n`` entries, plus every
+            record a query returns; a larger working set costs reloads, never memory.  ``0``
             disables it (each transaction decodes what it reads).
         query_cache_bytes: capacity, in estimated bytes, of the space's query result cache
             (:attr:`query_cache`, D56), shared by its transactions and threads and keyed by
@@ -1396,8 +1401,9 @@ class ObjectSpace:
         return self._query_cache.stats()
 
     def atom_cache_stats(self) -> Optional[dict]:
-        """Counters of the shared decoded-atom cache (``hits``, ``misses``, ``entries``,
-        ``capacity``), or ``None`` when it is disabled."""
+        """Counters of the shared decoded-atom cache (``hits``, ``misses``, ``entries``: loaded
+        atoms resident, ``capacity``, ``unloads``: atoms returned to stubs, ``identity_map``:
+        objects served and still alive), or ``None`` when it is disabled."""
         return None if self._atoms is None else self._atoms.stats()
 
     @property
@@ -1516,7 +1522,12 @@ class ObjectSpace:
         return [] if space is None else sorted(space.databases.keys())
 
     def close(self) -> None:
-        """Close the space and its storage (detaching the coordinator first).  Idempotent."""
+        """Close the space and its storage (detaching the coordinator first).  Idempotent.
+
+        Objects read from the space outlive it only as values already materialized: reading
+        an object, or part of one, that is not loaded (never read, or unloaded by the atom
+        cache) raises :class:`~proto_db.errors.ProtoClosedError`.  To keep data after close,
+        copy it out first."""
         with self._state_lock:
             if self._closed:
                 return

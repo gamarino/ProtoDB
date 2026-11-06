@@ -98,7 +98,7 @@ def test_readers_share_lazy_stubs_while_writers_commit(tmp_path, request):
         shared_items, shared_meta = tr0.get_root_object("items"), tr0.get_root_object("meta")
         tr0.abort()     # the stubs outlive the transaction that loaded them (D34)
         # Reading a root does not load it (D34 amendment): the readers race on the first load.
-        assert object.__getattribute__(shared_items, "_loaded") is False, "the shared root must start as a stub"
+        assert not object.__getattribute__(shared_items, "_loaded"), "the shared root must start as a stub"
         attempts = Attempts()
         state_lock = threading.Lock()
         # Signalled after every commit and when a writer ends; readers wait on it between snapshots.

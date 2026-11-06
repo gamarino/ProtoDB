@@ -177,7 +177,7 @@ def test_a_cached_saved_atom_is_what_a_load_produces(tmp_path):
     ptr = live.atom_pointer
     cached = space._atoms._cache.get(ptr)
     assert cached is not None and cached is not live and type(cached) is type(live)
-    assert cached.__dict__.get("_loaded") and cached.__dict__.get("_cached") is True, "the cached atom is decoded already"
+    assert cached.__dict__.get("_loaded"), "the cached atom is decoded already"
     assert cached.context is space._atoms
     assert cached._op_log == () and cached.log_is_complete is False
     assert live._op_log != ()                          # the live version keeps its own log
@@ -247,7 +247,7 @@ def test_large_value_boxes_are_not_cached_on_save():
     db.run(lambda tr: tr.set_root_object("blobs", tr.new_dictionary().set_at(1, b"v" * 100_000)))
     cached = [entry[0] for entry in space._atoms._cache._items.values()]
     boxes = [atom for atom in cached if isinstance(atom, ValueBox)]
-    assert cached and all(box.__dict__.get("_loaded") is False and "value" not in box.__dict__
+    assert cached and all(not box.__dict__.get("_loaded") and "value" not in box.__dict__
                           for box in boxes), "a box is cached at most as an unloaded stub, as a decode makes it"
     with db.new_transaction() as tr:
         assert tr.get_root_object("blobs").get_at(1) == b"v" * 100_000

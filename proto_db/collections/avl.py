@@ -215,7 +215,10 @@ class KeyNode(_Node):
 
     def _order_key(self):
         """Return ``order_key(self.key)``, computing and caching it on first use (stubs)."""
-        okey = self.__dict__.get("_okey")
+        try:
+            okey = object.__getattribute__(self, "_okey")     # never materializes the dict (8.3m)
+        except AttributeError:
+            okey = None
         if okey is None:
             okey = order_key(self.key)
             # Benign race: every thread computes the same immutable tuple.

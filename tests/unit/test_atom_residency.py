@@ -216,9 +216,9 @@ def test_one_object_per_pointer_while_held_and_oid_without_loading():
         o = tr.get_root_object("o")
         oid, ptr = o.oid, o.atom_pointer
     space._atoms._unload_all()
-    assert o.__dict__["_loaded"] is False and "a" not in o.__dict__
+    assert o.__dict__["_loaded"] is atom_mod._UNLOADED and "a" not in o.__dict__
     assert space._atoms.load(ptr, DBObject.__type_name__) is o
-    assert o.oid == oid and hash(o) == hash(oid) and o.__dict__["_loaded"] is False, "oid and hash never load"
+    assert o.oid == oid and hash(o) == hash(oid) and not o.__dict__["_loaded"], "oid and hash never load"
     assert o.a == 1 and o.__dict__["_loaded"]
     space.close()
 
@@ -234,7 +234,7 @@ def test_a_type_mismatched_load_never_displaces_the_shared_atom():
         o = tr.get_root_object("o")
         assert o.a == 1
     odd = space._atoms.load(o.atom_pointer, Dictionary.__type_name__)
-    assert odd is not o and "_cached" not in odd.__dict__
+    assert odd is not o and odd.__dict__["_loaded"] is False, "a one-off stub carries no mark"
     with pytest.raises(Exception):
         odd.count                       # a corrupt type: the load refuses it
     assert o.__dict__["_loaded"] and o.a == 1
@@ -256,6 +256,94 @@ def test_key_remove_of_an_absent_key_returns_the_same_root_after_eviction():
             new_root = avl.key_remove(root, k)[0]
             assert new_root is root, f"a no-op remove of {k!r} path-copied the tree"
     space.close()
+
+
+def test_cache_atoms_keep_the_inline_values_layout():
+    """The mark lives in the value of ``_loaded``, never in an extra key: a key added after the
+    class's usual ones materializes the instance dict, and every attribute read of that atom then
+    takes the slower dict path (measured: query paths 15-35 % slower with a ``_cached`` key)."""
+    internal = pytest.importorskip("_testinternalcapi")
+    space = _space(10**6)
+    db = space.new_database("db")
+    _build_inventory(db, commits=2, per_commit=500)
+
+    def layouts():
+        # DBObject is left out: records of every attribute set share one key table per process
+        # (other tests' records fill it), with or without this cache.  Tree nodes, collections,
+        # indexes and roots have fixed attribute sets.
+        gc.collect()
+        return {(type(o).__name__, internal.has_inline_values(o)) for o in gc.get_objects()
+                if isinstance(o, Atom) and type(o) is not DBObject
+                and o.__dict__.get("context") is space._atoms and o.__dict__.get("_loaded")}
+    twins = layouts()
+    assert twins and all(inline for _, inline in twins), sorted(twins)
+    space._atoms._unload_all()
+    with db.new_transaction() as tr:
+        d = tr.get_root_object("objs")
+        assert sum(r.v for _, r in d.items()) == sum((i * 7919) % 1000 for i in range(1000))
+        assert len(list(from_collection(d).where(F.g == 3))) == len([i for i in range(1000) if i % 17 == 3])
+    reloaded = layouts()
+    assert ("CountedKeyNode", True) in reloaded and all(inline for _, inline in reloaded), sorted(reloaded)
+    space.close()
+
+
+def _materialized(atom) -> bool:
+    """Whether ``atom``'s instance dict exists as an object (``gc`` lists it as a referent)."""
+    return any(type(r) is dict and "_loaded" in r for r in gc.get_referents(atom))
+
+
+class _Row(DBObject):
+    """Records of this module only: DBObject's key table is shared by every test's records (other
+    attribute sets fill it, and CPython then materializes their dicts itself)."""
+
+    __type_name__ = "tests.unit.test_atom_residency.Row"
+
+
+def test_the_residency_paths_never_materialize_the_instance_dict():
+    """Once an object's ``__dict__`` exists, CPython 3.14 never specializes attribute reads on it
+    (``LOAD_ATTR_INSTANCE_VALUE``; measured 43 against 9 ns per read).  Saving (the twin),
+    admission, a lookup by pointer, eviction (unload), a reload, ``has_defined_attr``, KeySpec
+    extraction and ``_state`` must therefore read attributes, never the dict."""
+    space = _space(10**6)
+    db = space.new_database("db")
+
+    def build(tr):
+        d = tr.new_dictionary().add_index(EqualityIndex("by_g", "g"))
+        for i in range(200):
+            d = d.set_at(i, _Row(id=i, g=i % 17, v=(i * 7919) % 1000, name=f"n{i}"))
+        tr.set_root_object("objs", d)
+    db.run(build)
+    gc.collect()
+
+    def cache_atoms():
+        return [o for o in gc.get_objects() if type(o) in (_Row, avl.KeyNode, avl.CountedKeyNode)
+                and _get_context(o) is space._atoms]
+    twins = cache_atoms()
+    assert len(twins) > 200 and not [o for o in twins if _materialized(o)], "saving or admission materialized a dict"
+    with db.new_transaction() as tr:
+        d = tr.get_root_object("objs")
+        assert d.get_at(42).name == "n42"
+    space._atoms._unload_all()
+    assert not [o for o in cache_atoms() if _materialized(o)], "an unload materialized a dict"
+    with db.new_transaction() as tr:
+        d = tr.get_root_object("objs")
+        rows = [r for _, r in d.items()]
+        assert sum(r.v for r in rows) == sum((i * 7919) % 1000 for i in range(200))
+        assert all(r.has_defined_attr("g") and not r.has_defined_attr("zz") for r in rows)
+        assert [KeySpec.path("id").extract(r) for r in rows[:5]] == [0, 1, 2, 3, 4]
+        assert rows[0]._state() == {"id": 0, "g": 0, "v": 0, "name": "n0"}
+        assert len(list(from_collection(d).where(F.g == 3))) == len([i for i in range(200) if i % 17 == 3])
+    reloaded = [o for o in cache_atoms() if object.__getattribute__(o, "_loaded")]
+    assert len(reloaded) > 200 and not [o for o in reloaded if _materialized(o)], \
+        "a reload or a reader materialized a dict"
+    space.close()
+
+
+def _get_context(atom):
+    try:
+        return object.__getattribute__(atom, "context")
+    except AttributeError:
+        return None
 
 
 # -- eligibility (I4) -------------------------------------------------------------------------------
@@ -287,7 +375,8 @@ def test_only_cache_produced_atoms_are_ever_unloaded():
 
 @pytest.mark.xfail(strict=True, reason="planted: eligibility by 'has a pointer' unloads a saved live collection")
 def test_planted_pointer_only_eligibility_loses_the_op_log(monkeypatch):
-    monkeypatch.setattr(atom_mod, "_is_cache_produced", lambda d: d.get("atom_pointer") is not None)
+    monkeypatch.setattr(atom_mod, "_is_cache_produced",
+                        lambda a: bool(a.__dict__.get("_loaded")) and a.__dict__.get("atom_pointer") is not None)
     _eligibility_check(planted=True)
 
 
@@ -329,7 +418,7 @@ def _race_republish(monkeypatch):
     cache._cache._max = 1
     other = cache.load(ptr2, DBObject.__type_name__)
     assert other.a == 3                             # admission evicts and unloads the stub
-    assert stub.__dict__["_loaded"] is False
+    assert not stub.__dict__["_loaded"]
     b_go.set()
     tb.join(10)
     resident = any(a is stub for a, _ in list(cache._cache._items.values()))
@@ -339,14 +428,23 @@ def _race_republish(monkeypatch):
 def test_a_load_racing_an_unload_never_publishes_into_the_newer_stub(monkeypatch):
     result, stub, resident, space = _race_republish(monkeypatch)
     assert result.get("b") == (1, 2, 1), result
-    assert "_payload" not in stub.__dict__
+    assert set(stub.__dict__) <= set(atom_mod._STUB_KEYS) | {"a", "b"}, sorted(stub.__dict__)
     assert not stub.__dict__["_loaded"] or resident, "a loaded shared atom escaped the cache bound"
     space.close()
 
 
-@pytest.mark.xfail(strict=True, reason="planted: phase 3 publishes whatever the generation")
-def test_planted_publish_into_any_generation_escapes_the_bound(monkeypatch):
-    monkeypatch.setattr(atom_mod, "_same_generation", lambda d, payload: True)
+@pytest.mark.xfail(strict=True, reason="planted: the reviewed design -- a publish into a newer generation, not admitted")
+def test_planted_unadmitted_publish_escapes_the_bound(monkeypatch):
+    """Since the payload travels in ``_loaded`` (no ``_payload`` key), a publish into a newer
+    generation carries equal content (P1) and is admitted like any other, so removing the
+    generation check alone is not observable.  The guard that matters is that every publish is
+    admitted: planting the reviewed design's failure -- B's publish lands in the newer stub and
+    is not admitted -- leaves a loaded shared atom outside the bound."""
+    from proto_db.transactions import _AtomCache
+    monkeypatch.setattr(atom_mod, "_same_generation", lambda d, pending: True)
+    admit = _AtomCache._atom_loaded
+    monkeypatch.setattr(_AtomCache, "_atom_loaded",
+                        lambda self, atom: None if threading.current_thread().name == "B" else admit(self, atom))
     result, stub, resident, space = _race_republish(monkeypatch)
     assert result.get("b") == (1, 2, 1), result
     assert not stub.__dict__["_loaded"] or resident, "a loaded shared atom escaped the cache bound"
@@ -354,11 +452,14 @@ def test_planted_publish_into_any_generation_escapes_the_bound(monkeypatch):
 
 # -- check-then-read sites (condition 2) ---------------------------------------------------------
 
-class _Trap:
+class _Trap(atom_mod._Generation):
     """A load-generation token whose first truth test unloads its atom: an unload lands exactly
     between a reader's check of ``_loaded`` and its read of the attribute."""
 
-    def __init__(self, atom):
+    __slots__ = ("atom", "fired")
+
+    def __init__(self, atom, names=()):
+        super().__init__(names)
         self.atom, self.fired = atom, False
 
     def __bool__(self):
@@ -370,7 +471,7 @@ class _Trap:
 
 def _trapped(atom):
     atom._load()
-    trap = _Trap(atom)
+    trap = _Trap(atom, atom.__dict__["_loaded"].names)
     object.__setattr__(atom, "_loaded", trap)
     return trap
 
@@ -486,13 +587,13 @@ def _pause_unload_midway(monkeypatch):
     paused, go = threading.Event(), threading.Event()
     orig = atom_mod._drop_state
 
-    def drop(atom, d):
-        names = [k for k in d.copy() if k not in atom_mod._STUB_KEYS]
-        for k in names[: len(names) // 2]:
+    def drop(atom, names):
+        half = [k for k in names if k not in atom_mod._STUB_KEYS]
+        for k in half[: len(half) // 2]:
             object.__delattr__(atom, k)
         paused.set()
         go.wait(10)
-        orig(atom, d)
+        orig(atom, names)
     monkeypatch.setattr(atom_mod, "_drop_state", drop)
     return paused, go
 
