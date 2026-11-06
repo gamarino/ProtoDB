@@ -299,11 +299,13 @@ _STUB_KEYS = frozenset({"_loaded", "atom_pointer", "context", "oid"})
 #: Result of :meth:`Atom._probe` for a name the loaded state does not define.
 _ABSENT = object()
 
-#: Attribute reads that never materialize the instance ``__dict__``.  Materializing it costs the
-#: atom its specialized attribute reads for good (CPython 3.14: ``LOAD_ATTR_INSTANCE_VALUE`` is
-#: never chosen for an object whose dict exists; measured 4x per read, Task 8.3m), so the
-#: residency paths -- load, admission, unload, the readers' re-checks -- read attributes, not
-#: the dict.
+#: The residency paths -- load, admission, unload, the readers' re-checks -- read attributes,
+#: never the instance ``__dict__``: materializing it costs the atom its specialized attribute
+#: reads for good (CPython 3.14: ``LOAD_ATTR_INSTANCE_VALUE`` is never chosen for an object whose
+#: dict exists; measured 4x per read, Task 8.3m).  Plain attribute syntax is used wherever the
+#: name is present or starts with ``_`` (``__getattr__`` refuses those at once); this reads a
+#: public name that may be absent without entering ``__getattr__`` (about 5x slower than the
+#: syntax, so kept off the paths that do not need it).
 _get = object.__getattribute__
 
 
@@ -325,8 +327,10 @@ def _installed_names(cls, state: dict) -> tuple:
     """The keys :meth:`Atom._restore` installs for ``state``: its attributes, and ``_links`` for
     the history links among them."""
     links = cls._history_links
+    if not links:
+        return tuple(state)
     names = tuple(name for name in state if name not in links)
-    if links and any(name in state for name in links):
+    if any(name in state for name in links):
         names += ("_links",)
     return names
 
@@ -351,7 +355,7 @@ def _is_cache_produced(atom) -> bool:
     """Whether the loaded ``atom`` may be unloaded: produced by a decoded-atom cache (its
     ``_loaded`` is a generation token) and saved (Task 8.3m, review I4)."""
     try:
-        return isinstance(_get(atom, "_loaded"), _Generation) and _get(atom, "atom_pointer") is not None
+        return isinstance(atom._loaded, _Generation) and _get(atom, "atom_pointer") is not None
     except AttributeError:
         return False
 
@@ -377,7 +381,7 @@ class _Pending:
 def _same_generation(atom, pending) -> bool:
     """Whether phase 3 of a load may publish: ``_loaded`` is still the :class:`_Pending` phase 1
     installed, so no load published (and no unload followed) in between (review 8.3m C1)."""
-    return _get(atom, "_loaded") is pending
+    return atom._loaded is pending
 
 
 def _drop_state(atom, names: tuple) -> None:
@@ -479,7 +483,7 @@ class Atom:
             raise AttributeError(name)
         while True:
             try:
-                token = _get(self, "_loaded")
+                token = self._loaded
             except AttributeError:
                 raise AttributeError(name) from None
             if not token:
@@ -492,10 +496,10 @@ class Atom:
             except AttributeError:
                 pass
             try:
-                links = _get(self, "_links")
+                links = self._links
             except AttributeError:
                 links = None
-            if _get(self, "_loaded") is token:
+            if self._loaded is token:
                 return self._missing_attribute(links, name)
 
     def _attribute_in(self, snapshot: dict, name: str):
@@ -523,7 +527,7 @@ class Atom:
             return _ABSENT
         while True:
             try:
-                token = _get(self, "_loaded")
+                token = self._loaded
             except AttributeError:
                 token = True
             if not token:
@@ -536,7 +540,7 @@ class Atom:
             except AttributeError:
                 pass
             try:
-                current = _get(self, "_loaded")
+                current = self._loaded
             except AttributeError:
                 current = True
             if current is token:
@@ -549,7 +553,7 @@ class Atom:
         copy, as before Task 8.3m)."""
         while True:
             try:
-                token = _get(self, "_loaded")
+                token = self._loaded
             except AttributeError:
                 token = True
             if isinstance(token, _Generation):
@@ -558,7 +562,7 @@ class Atom:
                     copy["context"] = _get(self, "context")
                 except AttributeError:
                     continue                # unloaded meanwhile
-                if _get(self, "_loaded") is token:
+                if self._loaded is token:
                     return copy
                 continue
             if token:
@@ -574,7 +578,7 @@ class Atom:
         used by constructors and :meth:`_restore`): a saved atom is held as ``(pointer, class)``,
         anything else (``None``, an atom not saved yet) as itself."""
         try:
-            links = _get(self, "_links")
+            links = self._links
         except AttributeError:
             links = {}
             object.__setattr__(self, "_links", links)
@@ -646,7 +650,7 @@ class Atom:
         the context (``_atom_loaded``, a decoded-atom cache admits the atom); otherwise ``None``.
         """
         try:
-            if _get(self, "_loaded"):
+            if self._loaded:
                 return None
         except AttributeError:
             return None
@@ -654,14 +658,14 @@ class Atom:
         from . import codec
         while True:
             with lock:
-                marker = _get(self, "_loaded")
+                marker = self._loaded
                 if marker:
                     return None
                 if type(marker) is _Pending:
                     pending = marker        # another loader fetched it: share its payload
                 else:
-                    ptr = _get(self, "atom_pointer")
-                    payload = _get(self, "context").storage.get_atom(ptr)
+                    ptr = self.atom_pointer
+                    payload = self.context.storage.get_atom(ptr)
                     if not isinstance(payload, dict) or set(payload) != {"t", "oid", "s"}:
                         raise ProtoCorruptionError(f"Malformed atom payload at {ptr}")
                     stored = type_name_of(payload["t"])
@@ -673,19 +677,19 @@ class Atom:
                         raise ProtoCorruptionError(f"Malformed oid in atom at {ptr}")
                     pending = _Pending(payload, marker is _UNLOADED)
                     object.__setattr__(self, "_loaded", pending)
-            context = _get(self, "context")
+            context = self.context
             payload = pending.payload
             state = codec.decode_state(payload["s"], context.load)
             oid = uuid.UUID(bytes=payload["oid"])
             with lock:
-                if _get(self, "_loaded"):
+                if self._loaded:
                     return None
                 if not _same_generation(self, pending):
                     continue                # loaded and unloaded since phase 1: fetch again
                 self._restore(state)
                 object.__setattr__(self, "oid", oid)
                 names = _installed_names(type(self), state)
-                snapshot = {name: _get(self, name) for name in names}
+                snapshot = {name: getattr(self, name) for name in names}    # installed just above
                 snapshot["oid"] = oid
                 snapshot["context"] = context
                 object.__setattr__(self, "_loaded", _Generation(names) if pending.marked else True)
@@ -707,7 +711,7 @@ class Atom:
         with _lock_for(self):
             if not _is_cache_produced(self):
                 return False
-            token = _get(self, "_loaded")
+            token = self._loaded
             object.__setattr__(self, "_loaded", _UNLOADED)
             _drop_state(self, token.names)
         return True
