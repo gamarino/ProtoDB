@@ -678,12 +678,29 @@ def test_acks_after_the_predecessors_validity_give_an_unknown_that_took_effect(t
                 results[key] = "unknown"
             except ProtoConflictError:
                 results[key] = "conflict"
-        proposed = a.stats()["proposals"]
         abandoned = {m: tc[m].stats()["terms_abandoned"] for m in tc.ids}
         armed.set()
         ta = threading.Thread(target=run, args=("n0", "a", 0))
         ta.start()
-        _await(lambda: a.stats()["proposals"] > proposed, what="A's proposal")
+        owner = {}
+
+        def proposed_to_owner():
+            # A's proposal reached the owner, so B's permit is issued on it.  A's ``proposals``
+            # counter is no witness: it counts sends (re-review N1; the earlier test of this file
+            # waits the same way).
+            for m in tc.ids:
+                with tc[m]._cond:
+                    own = tc[m]._ownership
+                    if own is not None and any(e.node == "n0" and e.proposal is not None for e in own.pipeline):
+                        owner["term"], owner["node"] = own.term, m
+                        return True
+            return False
+        _await(proposed_to_owner, what="A's proposal at the owner")
+        # B must also know that owner's term: it asks the owner of the term it learnt last, and an
+        # owner refuses a request for another term ("not_owner").  Under CPU contention B had not
+        # always processed the new term's ballot yet: refused, B took the unpipelined path and
+        # never reached its data stage (6 of 40 GIL-on runs; review 8.3m, ruling R105).
+        _await(lambda: b._owner_hint == (owner["term"], owner["node"]), what="B knowing the owner's term", tc=tc)
         tb = threading.Thread(target=run, args=("n1", "b", 200))
         tb.start()
         _await(lambda: b.stats()["stores_sent"] >= 1 or b.stats()["gate_open_at_send"] >= 1,
