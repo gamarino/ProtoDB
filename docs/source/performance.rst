@@ -80,6 +80,10 @@ Tag             File                                                       Commi
 [INV]           ``2026-11-06-8b439cd-inventory-*.json``                    ``8b439cd``  inventory scale ladder
 ==============  =========================================================  ===========  ======================================
 
+The [SES] file's ``summary`` block predates fix round 1: for the one cell with failed runs, its
+medians include them. This page takes that cell from the per-run ``records`` instead; every
+other cell had no failed run.
+
 The stray-process check (no ``rqlited``, no other benchmark process) passed before every
 session. It is stored in [SES] and in ``2026-11-06-8b439cd-inventory-ladder.log``. For the suite
 and mixed runs it is in ``2026-11-06-task9c-run-checks.log``, copied from the driver logs; those
