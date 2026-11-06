@@ -24,18 +24,29 @@ pytestmark = [pytest.mark.timeout(180)]
 N = 2000
 PER_NODE = 20
 CAPACITY = 64
+BUILD_CHUNK = 200
 
 
 def test_cluster_commits_stay_correct_when_the_working_set_exceeds_the_cache(tmp_path):
     with TieredCluster(tmp_path, space_kw=dict(atom_cache_entries=CAPACITY)) as tc:
         tc.spaces["n0"].new_database("db")
 
-        def build(tr):
-            d = tr.new_dictionary()
-            for i in range(N):
+        # Setup in chunks: one 2,000-record commit can outlast the 0.9 s lease under a loaded
+        # GIL-on suite.  Each chunk is idempotent (it sets its records to v=0), so an unknown
+        # outcome (P5) is resolved by running the chunk again.
+        def build(tr, lo):
+            d = tr.get_root_object("d") or tr.new_dictionary()
+            for i in range(lo, min(lo + BUILD_CHUNK, N)):
                 d = d.set_at(i, tr.new_object(v=0))
             tr.set_root_object("d", d)
-        tc.db("n0").run(build, **RUN_KW)
+        for lo in range(0, N, BUILD_CHUNK):
+            for attempt in range(3):
+                try:
+                    tc.db("n0").run(lambda tr, lo=lo: build(tr, lo), **RUN_KW)
+                    break
+                except ProtoOutcomeUnknownError:
+                    if attempt == 2:
+                        raise
         for n in tc.ids:
             tc.spaces[n].sync(timeout=20)
         acked = {n: [] for n in tc.ids}
