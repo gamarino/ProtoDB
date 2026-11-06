@@ -1347,8 +1347,10 @@ class ObjectSpace:
             and is read again (record cache, then storage) when something reads it next.
             Sizing: a read path stays warm when the atoms its concurrent transactions touch fit
             -- about ``2 * log2(n)`` per point read in a collection of ``n`` entries, plus every
-            record a query returns; a larger working set costs reloads, never memory.  ``0``
-            disables it (each transaction decodes what it reads).
+            record a query returns; a larger working set costs reloads, never memory.  Each
+            resident atom costs its decoded state plus about 0.4 KB of bookkeeping (measured
+            on CPython 3.14t, Task 8.3m).  ``0`` disables it (each transaction decodes what it
+            reads).
         query_cache_bytes: capacity, in estimated bytes, of the space's query result cache
             (:attr:`query_cache`, D56), shared by its transactions and threads and keyed by
             the pointers of what each query reads, so it is never stale.  ``0`` stores

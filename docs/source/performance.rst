@@ -78,6 +78,8 @@ Tag             File                                                       Commi
 [MX0] / [MX1]   ``2026-11-06-8b439cd-mixed-gil-off.json`` / ``-gil-on``    ``8b439cd``  ``mixed_read_write`` (and
                                                                                         ``cluster_peers`` with the GIL on)
 [INV]           ``2026-11-06-8b439cd-inventory-*.json``                    ``8b439cd``  inventory scale ladder
+[RES]           ``2026-11-06-1845993-residency-ladder.log``                ``1845993``  inventory ladder to 10^7 after Task
+                                                                                        8.3m, with ``26f3b85`` at 10^6
 ==============  =========================================================  ===========  ======================================
 
 The [SES] file's ``summary`` block predates fix round 1: for the one cell with failed runs, its
@@ -500,10 +502,16 @@ Step (each a single run)     ProtoDB build     SQLite build      ProtoDB on disk
 95,645 (28 sites) [S0]       3,458 (1.01)      386,009 (113)     147 / 423              15 / 31
 958,665 (277 sites) [INV]    2,830 (0.82)      378,779 (109)     157 / 424              18 / 31
 10^7 (2,769 sites)           did not fit [1]   --                --                     --
+10^7 after Task 8.3m [RES]   2,051 [2]         --                --                     --
 ===========================  ================  ================  =====================  ====================
 
-[1] Single run, stopped at 5,921,408 objects; the limit comes from a known retention defect being
-fixed in Task 8.3m (R102), and the ladder will be regenerated afterwards (see below).
+[1] Single run at ``8b439cd``, stopped at 5,921,408 objects by a retention defect of the
+decoded-atom cache, fixed in Task 8.3m (see below).
+
+[2] Single run at ``1845993``, ProtoDB only, default cache (50,000 loaded atoms), GIL off, under
+``MemoryMax=8G``: 9,626,985 objects in 78 min (4,694 s), peak RSS 0.27 GB. Not directly
+comparable with the rows above, which were measured in another session (the same session's
+10^6 builds: ``26f3b85`` 1,974 objects/s, ``1845993`` 1,907).
 
 Allocated is what ZFS reports after compression (``du``), apparent the file sizes. The 10^5
 build is a single run; the 10^6 build a single run per GIL mode (GIL on: 2,775 and 322,266
@@ -516,14 +524,31 @@ at a site 2.35 ms against 132 us (SQLite 175 against 7 us); path trace 31.6 ms a
 (SQLite 0.67 ms against 0.29 ms). ProtoDB's cold cost is decoding: a new instance decodes every
 node it visits.
 
-.. admonition:: Known defect: these scale and memory figures will be regenerated
+.. admonition:: Fixed in Task 8.3m: the cache now bounds loaded atoms
 
-   The memory growth below, the 10^7 limit and the in-suite ``parallel_scan`` figures come from
-   a **known retention defect** in the decoded-atom cache. It is being fixed in **Task 8.3m**
-   (ruling R102: the cache must bound memory, not only entries). Once that fix lands, the
-   inventory ladder, the memory figures and ``parallel_scan`` will be measured again and this
-   section rewritten. Until then, read "did not fit" as a property of the current
-   implementation, not of ProtoDB's model.
+   The memory growth and the 10^7 limit described below came from a retention defect of the
+   decoded-atom cache. Since Task 8.3m (D53 amendment, rulings R102-R104) the cache holds at most
+   ``atom_cache_entries`` loaded atoms and unloads what it evicts. The same ladder [RES], default
+   cache, GIL off (at 10^6 the last column gives both trees, ``26f3b85`` / ``1845993``):
+
+   =================  =======================  =====================  =======================
+   Objects            ``26f3b85`` peak RSS     ``1845993`` peak RSS   loaded atoms at the end
+   =================  =======================  =====================  =======================
+   958,665            2.61 GB                  0.26 GB                2,756,907 / 50,000
+   2,972,442          --                       0.26 GB                50,000
+   9,626,985          --                       0.27 GB                50,000
+   =================  =======================  =====================  =======================
+
+   The price is read speed when the working set does not fit: after the 10^6 build, with
+   50,000 entries, a warm port lookup takes 0.93 ms (``26f3b85``: 78 us), the ports
+   of a site 484 ms (15 ms), a path trace 29 ms (0.87 ms),
+   because every walk reloads atoms. With ``atom_cache_entries=3_000_000`` (the working set
+   fits) the reads take 75 us, 13.5 ms and 0.78 ms, faster than ``26f3b85``, and the build
+   peaks at 4.09 GB for 2.79 million loaded atoms: 1.57x the base's peak for the same atoms.
+   The end RSS (3.31 against 2.18 GB) puts the residency bookkeeping (identity map, LRU entry,
+   generation token) at about 0.4 KB per resident atom; the split among them was not measured. Size the cache to the working set when reads matter more than memory
+   (``ObjectSpace`` docstring, D53 "Sizing"). The warm figures of `Object graphs`_ at 10^6
+   were measured before the fix, when every atom stayed loaded.
 
 **Memory, and the limit of the ladder.** The building process's peak RSS at 10^6 objects was 2.64 GB with the GIL
 off and 2.59 GB with it on (``/usr/bin/time -v``, both systems in one process), about 2.7 KB per
@@ -533,8 +558,9 @@ The 10^7 step ran under ``MemoryMax=20G`` with swap barred. It was stopped delib
 35 minutes, when available memory fell under 8 GB (earlyoom on this machine acts at 10 % of RAM).
 At that point it had committed 5,921,408 objects (1,496 of 2,769 sites) and its peak RSS was
 14.87 GB, still growing linearly at about 2.5 KB per object. Its extrapolated peak (about 26 GB)
-exceeds the cap. **At commit 8b439cd, on this machine, the ladder stops between 10^6 and 10^7
-objects** (``2026-11-06-8b439cd-inventory-ladder.log``), because of the defect described next. The limit is not the data: the same database,
+exceeds the cap. **At commit 8b439cd, on this machine, the ladder stopped between 10^6 and 10^7
+objects** (``2026-11-06-8b439cd-inventory-ladder.log``), because of the defect described next
+(fixed since; see the box above). The limit is not the data: the same database,
 reopened by a new process, read its counts with a peak RSS of 32 MB.
 
 **What holds the memory: the decoded-atom cache pins whole subtrees.** A deterministic
@@ -558,9 +584,9 @@ cached. The cache bounds its *entries*, but eviction frees nothing that a cached
 reaches, so a writing process keeps every node it ever wrote decoded. This contradicts the
 reading of D53 / 8.3l that resident memory is bounded by the decoded-atom cache. It is a
 ProtoDB retention defect, not a property of the workload (the workload keeps only the current
-site's rows). It is being fixed in Task 8.3m (R102), and the figures of this section will be
-regenerated afterwards. The same live heap is the likely reason
-``parallel_scan`` does not scale inside the full suite (`Parallel work`_).
+site's rows). It is fixed by Task 8.3m (R102): evicted atoms are unloaded in place, so a cached
+ancestor reaches its children as stubs (box above). The 9c inference that the same live heap
+made ``parallel_scan`` stop scaling inside the full suite was not confirmed (`Parallel work`_).
 
 **Where SQLite is the better choice:** loading data: 112x (10^5) and 134x (10^6) faster per
 object, and 9.6x and 8.6x smaller on disk as allocated (13.6x in apparent size at both steps). A data set that is loaded in bulk and rarely changed belongs in SQLite.
@@ -602,9 +628,11 @@ workers (``2026-11-06-4aab0f2-parallel-alone-gil-off.json``). Inside the full su
 same code gave 1.03 / 0.82 / 1.07 / 1.15 / 1.12x. The suite runs it after workloads that leave a
 large live heap in the process (the 10^6-row pagination and query-cache data sets, kept decoded
 as described under `Bulk load and scale`_). The free-threaded collector's stop-the-world passes
-then grow with that heap (the retention defect of `Bulk load and scale`_, being fixed in Task
-8.3m; these figures will be regenerated after it). The cause is inferred from the alone/in-suite contrast and was not
-measured further. *History:* the 2026-11-03 suite (``8ad6bf3``, dirty tree) reported 4.15x at 8
+then grow with that heap. That cause was inferred from the alone/in-suite contrast and is not
+confirmed: Task 8.3m ran ``parallel_scan`` after the 14 preceding workloads at reduced sizes, on
+``26f3b85`` and with the residency fix, and it scaled in both (5.21x and 5.01x at 16 workers,
+with 1.9-2.1 million live gc objects). The full-size collapse has not been reproduced since,
+and the retention fix is not expected to explain it. *History:* the 2026-11-03 suite (``8ad6bf3``, dirty tree) reported 4.15x at 8
 workers.
 
 ``concurrent_reads``, GIL off [S0]: ``get_at`` 208k -> 345k ops/s at 8 threads (1.65x),
