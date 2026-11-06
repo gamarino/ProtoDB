@@ -116,7 +116,11 @@ def test_stats_snapshot_counts_hits_misses_and_size():
     c.put("a", b"aaaa")
     c.get("a")
     c.get("zz")
-    assert c.stats() == {"hits": 1, "misses": 1, "entries": 1, "bytes": 4, "capacity": 10}
+    assert c.stats() == {"hits": 1, "misses": 1, "entries": 1, "bytes": 4, "capacity": 10,
+                         "admissions": 1, "evictions": 0}
+    c.put("b", b"bbbb")
+    c.put("c", b"cccc")                 # evicts "a"
+    assert (c.stats()["admissions"], c.stats()["evictions"], c.stats()["entries"]) == (3, 1, 2)
 
 
 def test_file_storage_cache_stats_count_reads_after_reopen(tmp_path):

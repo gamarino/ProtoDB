@@ -35,6 +35,8 @@ class BoundedCache:
         self._size = 0
         self.hits = 0
         self.misses = 0
+        self.evictions = 0
+        self.admissions = 0
 
     @property
     def max_bytes(self) -> int:
@@ -53,10 +55,12 @@ class BoundedCache:
 
     def stats(self) -> dict:
         """A consistent snapshot of the counters: ``hits``, ``misses``, ``entries``, ``bytes``
-        (total size of the cached values) and ``capacity`` (``max_bytes``)."""
+        (total size of the cached values), ``capacity`` (``max_bytes``), ``admissions`` (values
+        stored) and ``evictions`` (values dropped for room)."""
         with self._lock:
             return {"hits": self.hits, "misses": self.misses, "entries": len(self._items),
-                    "bytes": self._size, "capacity": self._max}
+                    "bytes": self._size, "capacity": self._max, "admissions": self.admissions,
+                    "evictions": self.evictions}
 
     def get(self, key: Hashable) -> Optional[Any]:
         """Return the value cached under ``key`` (marking it recently used) or ``None``."""
@@ -87,9 +91,11 @@ class BoundedCache:
                 return
             self._items[key] = (value, size)
             self._size += size
+            self.admissions += 1
             while self._size > self._max:
                 _, (_, evicted) = self._items.popitem(last=False)
                 self._size -= evicted
+                self.evictions += 1
 
     def touch(self, key: Hashable) -> None:
         """Mark ``key`` recently used if present, without counting a hit or a miss."""
@@ -112,9 +118,11 @@ class BoundedCache:
                 return dropped
             self._items[key] = (value, size)
             self._size += size
+            self.admissions += 1
             while self._size > self._max:
                 _, (evicted, evicted_size) = self._items.popitem(last=False)
                 self._size -= evicted_size
+                self.evictions += 1
                 dropped.append(evicted)
         return dropped
 

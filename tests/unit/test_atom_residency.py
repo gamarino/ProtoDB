@@ -112,9 +112,36 @@ def test_stats_report_residency():
     db = space.new_database("db")
     _build_inventory(db, commits=2, per_commit=200)
     stats = space.atom_cache_stats()
-    assert set(stats) >= {"hits", "misses", "entries", "capacity", "unloads", "identity_map"}
-    assert stats["entries"] <= 50 and stats["unloads"] > 0
+    assert set(stats) >= {"hits", "misses", "entries", "capacity", "loads", "saved", "unloads", "identity_map"}
+    assert stats["entries"] <= 50 and stats["unloads"] > 0 and stats["saved"] > 0
     space.close()
+
+
+def test_unloads_per_load_tell_a_fitting_working_set_from_thrashing():
+    """The thrash signal of D53 "Sizing" (ruling R105): over an interval of reads, ``unloads`` per
+    ``loads`` is about 0 when the working set fits and about 1 when it does not."""
+    def ratio(capacity):
+        space = _space(capacity)
+        db = space.new_database("db")
+        _build_inventory(db, commits=2, per_commit=200)
+        space._atoms._unload_all()
+        with db.new_transaction() as tr:
+            d = tr.get_root_object("objs")
+            for i in range(400):
+                assert d.get_at(i).id == i      # warm-up: loads the path and the record
+            before = space.atom_cache_stats()
+            for _ in range(3):
+                for i in range(400):
+                    assert d.get_at(i).id == i
+            after = space.atom_cache_stats()
+        loads = after["loads"] - before["loads"]
+        unloads = after["unloads"] - before["unloads"]
+        space.close()
+        return loads, unloads
+    loads, unloads = ratio(100_000)
+    assert loads == 0 and unloads == 0                  # fits: nothing loads again
+    loads, unloads = ratio(50)
+    assert loads > 100 and unloads / loads > 0.9, (loads, unloads)
 
 
 # -- every structure after unloading -----------------------------------------------------------------
@@ -740,9 +767,9 @@ def test_an_admission_racing_close_leaves_nothing_resident(monkeypatch):
     cache._unload_all()
     real = cache._cache.put_evicting
 
-    def close_first(key, value):
+    def close_first(key, value, *args):
         cache.close()                   # close() runs entirely between the check and the put
-        return real(key, value)
+        return real(key, value, *args)
     monkeypatch.setattr(cache._cache, "put_evicting", close_first)
     with db.new_transaction() as tr:
         assert tr.get_root_object("o").a == 1
