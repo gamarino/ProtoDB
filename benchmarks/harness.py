@@ -705,6 +705,33 @@ def parse_params(items: List[str]) -> Dict[str, dict]:
     return out
 
 
+def stray_processes() -> list:
+    """``rqlited`` and benchmark processes other than this one and its ancestors (``pgrep -af``).
+
+    A benchmark sharing the machine with a stray cluster or suite measures that contention, so
+    every results file records this check (Task 9c review M9)."""
+    mine, pid = set(), os.getpid()
+    while pid > 1:                        # this process and its ancestors (the shell that started it)
+        mine.add(str(pid))
+        try:
+            with open(f"/proc/{pid}/stat") as f:
+                pid = int(f.read().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            break
+    try:
+        out = subprocess.run(["pgrep", "-af", "rqlited|cluster_peer|benchmarks|pytest"], capture_output=True,
+                             text=True).stdout.splitlines()
+    except OSError:                       # no pgrep: say so rather than claim a clean machine
+        return ["(pgrep unavailable: check not performed)"]
+    return [line for line in out if line.split()[0] not in mine and "pgrep" not in line]
+
+
+def stray_check(workdir: str) -> dict:
+    """The recorded pre-run check: stray processes, when, and the free space of ``workdir``."""
+    return {"stray_processes": stray_processes(), "checked_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "workdir_free_bytes": shutil.disk_usage(workdir).free}
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     """Entry point: run the selected workloads, verify, report, write JSON, compare."""
     import importlib
@@ -739,6 +766,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     unknown = [n for n in names if n not in REGISTRY]
     if unknown:
         raise SystemExit(f"unknown workload(s): {', '.join(unknown)}; see --list")
+    check = stray_check(workdir)
     env = capture_environment(ctx)
     print(f"ProtoDB performance suite ({'quick' if args.quick else 'full'})")
     print(f"python {env['python']} free-threaded build={env['free_threaded_build']} "
@@ -746,6 +774,10 @@ def main(argv: Optional[List[str]] = None) -> int:
           f"cpu frequency {env['cpu_frequency']}")
     print(f"workdir {workdir} ({env['workdir_fs']}); threads {threads}; repeat {ctx.repeat} warmup {ctx.warmup}")
     print(f"source {env['git'].get('commit')} clean={env['git'].get('clean')} ({env['git'].get('source')})")
+    print(f"stray-process check: {check['stray_processes'] or 'none'}; "
+          f"free {check['workdir_free_bytes'] / 2**30:.0f} GiB in {workdir}")
+    if check["stray_processes"]:
+        print("WARNING: other benchmark or rqlited processes are running; their load is in these figures")
     if env["workdir_fs"] in ("tmpfs", "ramfs") and not args.quick:
         print("WARNING: the work directory is in memory: fsync costs nothing there and the durability "
               "workloads do not measure a disk")
@@ -766,7 +798,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     pending = [n for n, r in results.items() if r["status"] == "pending"]
     print(f"\n{len(results)} workload(s) in {total:.1f} s: {len(results) - len(failed) - len(pending)} verified, "
           f"{len(pending)} pending, {len(failed)} failed{(': ' + ', '.join(failed)) if failed else ''}")
-    doc = {"schema": SCHEMA, "mode": "quick" if args.quick else "full", "environment": env,
+    doc = {"schema": SCHEMA, "mode": "quick" if args.quick else "full", "environment": env, "check": check,
            "options": {"threads": threads, "repeat": ctx.repeat, "warmup": ctx.warmup, "params": ctx.overrides},
            "total_s": total, "results": results}
     if args.json:

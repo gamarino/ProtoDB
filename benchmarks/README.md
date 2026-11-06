@@ -46,7 +46,11 @@ Interleaved sessions (`python -m benchmarks.session --reps 5 --rqlite PATH --jso
 cluster headline cells (3 peers x 4 threads at 100 B, 50 ids per commit, 5 peers; rqlite with the
 same work) and the mixed read/write cells once per repetition each, alternating `-X gil=0` and
 `-X gil=1` for every cell, and refuse to start while an `rqlited` or another benchmark process is
-running (the check is recorded in the JSON).
+running (the check is recorded in the JSON). A session's per-cell medians and ranges cover its
+verified runs only; failed runs are counted (`failed`) and listed (`failed_runs`), never averaged in.
+
+Every suite run also records the stray-process check (`check.stray_processes`, `checked_at`,
+`workdir_free_bytes`) in its results JSON and warns when the list is not empty.
 
 Options:
 

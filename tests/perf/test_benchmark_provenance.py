@@ -5,6 +5,8 @@
 * a directory that is not the top of a git work tree records no commit (an export inside the
   repository's tree must not report the repository's HEAD);
 * ``--param NAME.KEY=JSON`` overrides one parameter of one workload;
+* every results file records the stray-process check, and a session cell's figures are medians
+  over its verified runs only (Task 9c review M9, I2);
 * the inventory model is consistent: links are an involution between two different sites,
   every link id is its lower port, and a path never revisits a port.
 """
@@ -80,8 +82,27 @@ def test_param_overrides_reach_the_workload(tmp_path):
         doc = json.loads(out.read_text())
         assert doc["options"]["params"] == {"__param_probe__": {"n": 7, "m": "text"}}
         assert doc["results"]["__param_probe__"]["params"]["n"] == 7
+        assert isinstance(doc["check"]["stray_processes"], list) and doc["check"]["checked_at"]
     finally:
         harness.REGISTRY.pop("__param_probe__", None)
+
+
+def test_stray_check_excludes_this_process_and_its_ancestors():
+    me = str(os.getpid())
+    assert all(line.split()[0] != me for line in harness.stray_processes())
+
+
+def test_session_summary_never_averages_failed_runs():
+    from benchmarks.session import _summary
+    ok = [{"ok": True, "commit_rate": r, "rep": i} for i, r in enumerate((12.8, 13.1))]
+    bad = [{"ok": False, "commit_rate": r, "rep": 9, "thread_errors": [["ProtoOutcomeUnknownError"]],
+            "ids_extra": 4, "ids_missing": 0} for r in (8.1, 10.6, 12.0)]
+    out = _summary(ok + bad)
+    assert (out["runs"], out["verified"], out["failed"]) == (5, 2, 3)
+    assert out["commit_rate"] == {"median": 12.95, "min": 12.8, "max": 13.1}
+    assert len(out["failed_runs"]) == 3 and out["failed_runs"][0]["ids_extra"] == 4
+    nothing = _summary(bad)
+    assert nothing["verified"] == 0 and "commit_rate" not in nothing
 
 
 def test_param_needs_a_name_and_a_key():

@@ -34,7 +34,7 @@ import tempfile
 import threading
 import time
 
-from benchmarks.harness import REPO, latency_ms
+from benchmarks.harness import REPO, latency_ms, stray_check
 
 PAYLOAD = 100
 
@@ -161,25 +161,19 @@ def run_child(kind: str, args: dict, seconds: float, workdir: str, rqlite) -> di
 
 # -- session (the parent) ----------------------------------------------------------------------
 
-def stray_processes() -> list:
-    """``rqlited`` and benchmark processes other than this one (``pgrep -af``)."""
-    mine, pid = set(), os.getpid()
-    while pid > 1:                        # this process and its ancestors (the shell that started it)
-        mine.add(str(pid))
-        try:
-            with open(f"/proc/{pid}/stat") as f:
-                pid = int(f.read().rsplit(")", 1)[1].split()[1])
-        except (OSError, ValueError, IndexError):
-            break
-    out = subprocess.run(["pgrep", "-af", "rqlited|cluster_peer|benchmarks|pytest"], capture_output=True,
-                         text=True).stdout.splitlines()
-    return [line for line in out if line.split()[0] not in mine and "pgrep" not in line]
-
-
 def _summary(records: list) -> dict:
+    """Medians and ranges over the *verified* runs of one cell (Task 9c review I2): a failed run
+    is counted and its errors kept, never averaged in (a run whose writer threads died understates
+    its rate by construction).  A cell with no verified run has no figures."""
     keys = ("rate", "row_rate", "commit_rate", "read_rate", "read_p50_us", "read_p99_us", "read_steady_p99_us",
             "syncs_per_commit")
-    out = {"runs": len(records), "failed": sum(1 for r in records if not r.get("ok"))}
+    failed = [r for r in records if not r.get("ok")]
+    out = {"runs": len(records), "verified": len(records) - len(failed), "failed": len(failed)}
+    if failed:
+        out["failed_runs"] = [{"rep": r.get("rep"), "thread_errors": r.get("thread_errors"),
+                               "ids_missing": r.get("ids_missing"), "ids_extra": r.get("ids_extra"),
+                               "error": (r.get("error") or "")[-300:] or None} for r in failed]
+    records = [r for r in records if r.get("ok")]
     for k in keys:
         xs = [r[k] for r in records if r.get(k) is not None]
         if xs:
@@ -214,11 +208,9 @@ def main(argv=None) -> int:
         with open(a.cell_out, "w") as f:
             json.dump(record, f)
         return 0
-    stray = stray_processes()
-    usage = shutil.disk_usage(workdir)
-    check = {"stray_processes": stray, "checked_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-             "workdir_free_bytes": usage.free}
-    print(f"stray-process check: {stray or 'none'}; free {usage.free / 2**30:.0f} GiB in {workdir}")
+    check = stray_check(workdir)
+    stray = check["stray_processes"]
+    print(f"stray-process check: {stray or 'none'}; free {check['workdir_free_bytes'] / 2**30:.0f} GiB in {workdir}")
     if stray:
         print("refusing to start: stop the processes above first")
         return 2
