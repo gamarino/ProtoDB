@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from ..errors import ProtoUserError, ProtoValidationError
 from ..values import MutableObject, canonical
-from .atom import RESERVED_NAMES, Atom, PersistenceContext, _check_context
+from .atom import _ABSENT, RESERVED_NAMES, Atom, PersistenceContext, _check_context
 
 __all__ = ["DBObject", "MutableObject"]
 
@@ -77,8 +77,7 @@ class DBObject(Atom):
         """Return True if ``name`` is a persisted attribute of this record (even if ``None``)."""
         if not isinstance(name, str) or name.startswith("_") or name in RESERVED_NAMES:
             return False
-        self._load()
-        return name in self.__dict__
+        return self._probe(name) is not _ABSENT
 
     def with_(self, **changes) -> "DBObject":
         """Return a new version with ``changes`` applied: a new atom with a new ``oid`` (D18).

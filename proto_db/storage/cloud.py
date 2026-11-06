@@ -69,7 +69,7 @@ from typing import Optional, Protocol
 import msgpack
 
 from ..core.atom import AtomPointer
-from ..errors import (ProtoConflictError, ProtoCorruptionError, ProtoLockingError,
+from ..errors import (ProtoClosedError, ProtoConflictError, ProtoCorruptionError, ProtoLockingError,
                       ProtoNotAuthorizedError, ProtoNotSupportedError, ProtoOutcomeUnknownError,
                       ProtoTimeoutError,
                       ProtoUnexpectedError, ProtoValidationError)
@@ -278,7 +278,7 @@ class CloudStorage(SharedStorage):
 
     def _check_open(self):
         if self._closed:
-            raise ProtoValidationError("Storage is closed")
+            raise ProtoClosedError("Storage is closed")
 
     # --- retries ---------------------------------------------------------------------------
 

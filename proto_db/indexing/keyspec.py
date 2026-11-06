@@ -26,7 +26,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from ..core.atom import RESERVED_NAMES, Atom
+from ..core.atom import _ABSENT, RESERVED_NAMES, Atom
 from ..core.dbobject import DBObject
 from ..errors import ProtoCorruptionError, ProtoValidationError
 from ..values import MISSING, canonical
@@ -155,8 +155,8 @@ def _step(value, name: str):
             return MISSING
         if isinstance(value, DBObject):
             return getattr(value, name) if value.has_defined_attr(name) else MISSING
-        value._load()
-        return value.__dict__.get(name, MISSING)
+        found = value._probe(name)          # safe across an unload by the atom cache (8.3m)
+        return MISSING if found is _ABSENT else found
     return MISSING
 
 

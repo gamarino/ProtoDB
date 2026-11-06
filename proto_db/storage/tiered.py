@@ -194,7 +194,7 @@ from typing import Callable, Optional
 import msgpack
 
 from ..core.atom import AtomPointer
-from ..errors import (ProtoBacklogFullError, ProtoCorruptionError, ProtoDBError, ProtoLockingError,
+from ..errors import (ProtoClosedError, ProtoBacklogFullError, ProtoCorruptionError, ProtoDBError, ProtoLockingError,
                       ProtoNotSupportedError, ProtoTimeoutError, ProtoUnexpectedError,
                       ProtoValidationError, ProtoWriteRefusedError, attach_secondary_errors)
 from ..cluster import protocol as _protocol
@@ -631,7 +631,7 @@ class TieredStorage(SharedStorage):
 
     def _check_open(self) -> None:
         if self._closed:
-            raise ProtoValidationError("Storage is closed")
+            raise ProtoClosedError("Storage is closed")
 
     def _refuse_closed(self, what: str, *, local: bool = True) -> None:
         """Refuse a write once :meth:`close` has started (``ProtoValidationError``) and, for a
@@ -640,7 +640,7 @@ class TieredStorage(SharedStorage):
         before releasing it (module docstring), so a write that passes this check completes
         before ``close()`` does."""
         if self._closed:
-            raise ProtoValidationError(f"Storage is closed: {what} refused")
+            raise ProtoClosedError(f"Storage is closed: {what} refused")
         if local:
             self._refuse_failed(what)
 

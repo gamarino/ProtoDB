@@ -91,6 +91,41 @@ class BoundedCache:
                 _, (_, evicted) = self._items.popitem(last=False)
                 self._size -= evicted
 
+    def touch(self, key: Hashable) -> None:
+        """Mark ``key`` recently used if present, without counting a hit or a miss."""
+        with self._lock:
+            if key in self._items:
+                self._items.move_to_end(key)
+
+    def put_evicting(self, key: Hashable, value: Any) -> list:
+        """:meth:`put`, returning the values it dropped: the one ``key`` held before, when it is
+        another object, and those evicted for room (callers release them outside the lock)."""
+        size = self._sizeof(value)
+        dropped = []
+        with self._lock:
+            old = self._items.pop(key, None)
+            if old is not None:
+                self._size -= old[1]
+                if old[0] is not value:
+                    dropped.append(old[0])
+            if size > self._max:
+                return dropped
+            self._items[key] = (value, size)
+            self._size += size
+            while self._size > self._max:
+                _, (evicted, evicted_size) = self._items.popitem(last=False)
+                self._size -= evicted_size
+                dropped.append(evicted)
+        return dropped
+
+    def drain(self) -> list:
+        """Remove every entry and return the values (callers release them outside the lock)."""
+        with self._lock:
+            values = [entry[0] for entry in self._items.values()]
+            self._items.clear()
+            self._size = 0
+        return values
+
     def invalidate(self, key: Hashable) -> None:
         """Drop ``key`` if present."""
         with self._lock:

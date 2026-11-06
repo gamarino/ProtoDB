@@ -177,7 +177,7 @@ def test_a_cached_saved_atom_is_what_a_load_produces(tmp_path):
     ptr = live.atom_pointer
     cached = space._atoms._cache.get(ptr)
     assert cached is not None and cached is not live and type(cached) is type(live)
-    assert cached.__dict__.get("_loaded") is True, "the cached atom is decoded already"
+    assert cached.__dict__.get("_loaded") and cached.__dict__.get("_cached") is True, "the cached atom is decoded already"
     assert cached.context is space._atoms
     assert cached._op_log == () and cached.log_is_complete is False
     assert live._op_log != ()                          # the live version keeps its own log

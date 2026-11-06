@@ -1,0 +1,603 @@
+"""Residency of the decoded-atom cache (Task 8.3m, rulings R102-R104, D53 amendment).
+
+The space's cache bounds the number of LOADED shared atoms; an atom it evicts goes back to the
+stub state (pointer, class, context, oid) and is loaded again, through the existing lazy-load
+path, by whoever reads it next.  Checks, most of them deterministic interleavings:
+
+- the bound: loaded shared atoms never exceed the capacity, and no loaded shared atom outside the
+  cache is reachable from it (fails before 8.3m: every atom a commit writes stays loaded);
+- every collection, index and root reads correctly after every atom was unloaded, and under
+  continuous eviction (capacity 1 and 16);
+- one object per pointer while it is held (identity map), and the type-mismatch guard (M2);
+- only cache-produced atoms are ever unloaded: a saved live collection keeps its op log (I4);
+- a load whose decode raced an unload never publishes into the newer stub (C1);
+- every check-then-read site survives an unload between its check and its read (condition 2);
+- a stub read after its space is closed raises ProtoClosedError (I3, R104).
+
+Planted mutations (strict xfail) show each guard is what makes its test pass.
+"""
+import gc
+import threading
+
+import pytest
+
+from proto_db import MemoryStorage, ObjectSpace
+from proto_db.collections import avl
+from proto_db.core import atom as atom_mod
+from proto_db.core import codec
+from proto_db.core.atom import Atom
+from proto_db.core.dbobject import DBObject
+from proto_db.errors import ProtoClosedError, ProtoValidationError
+from proto_db.indexing import EqualityIndex, RangeIndex
+from proto_db.indexing.keyspec import KeySpec
+from proto_db.query.linq import F, from_collection
+from proto_db.storage.file import FileStorage
+
+
+def _space(entries, tmp_path=None):
+    storage = MemoryStorage() if tmp_path is None else FileStorage(str(tmp_path / "s"), durability="none")
+    return ObjectSpace(storage, atom_cache_entries=entries)
+
+
+def _children(atom):
+    """Atoms in the persisted state of ``atom`` (attributes, nested tuples / lists / dicts)."""
+    out = []
+
+    def walk(v):
+        if isinstance(v, Atom):
+            out.append(v)
+        elif isinstance(v, (tuple, list)):
+            for x in v:
+                walk(x)
+        elif isinstance(v, dict):
+            for x in v.values():
+                walk(x)
+    for k, v in list(atom.__dict__.items()):
+        if not k.startswith("_") and k not in atom_mod.RESERVED_NAMES:
+            walk(v)
+    return out
+
+
+def _build_inventory(db, commits, per_commit):
+    def init(tr):
+        tr.set_root_object("objs", tr.new_dictionary().add_index(EqualityIndex("by_g", "g"))
+                           .add_index(RangeIndex("by_v", "v")))
+    db.run(init)
+    for c in range(commits):
+        def fn(tr, c=c):
+            d = tr.get_root_object("objs")
+            for i in range(c * per_commit, (c + 1) * per_commit):
+                d = d.set_at(i, tr.new_object(id=i, g=i % 17, v=(i * 7919) % 1000, name=f"n{i}"))
+            tr.set_root_object("objs", d)
+        db.run(fn)
+
+
+# -- the bound -------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("capacity", [200, 2000])
+def test_loaded_shared_atoms_stay_within_the_capacity(capacity):
+    space = _space(capacity)
+    db = space.new_database("db")
+    _build_inventory(db, commits=12, per_commit=1000)
+    with db.new_transaction() as tr:            # a full read: before 8.3m it left every node loaded
+        assert sum(1 for _, r in tr.get_root_object("objs").items() if r.name) == 12_000
+    gc.collect()
+    loaded_saved = [o for o in gc.get_objects() if isinstance(o, Atom) and o.__dict__.get("_loaded")
+                    and o.__dict__.get("atom_pointer") is not None]
+    # Before 8.3m (26f3b85): 24,000+ loaded saved atoms here whatever the capacity.
+    assert len(loaded_saved) <= capacity + 1, f"{len(loaded_saved)} loaded saved atoms, capacity {capacity}"
+    resident = {id(a) for a, _ in list(space._atoms._cache._items.values())}
+    # Reachability: from the cache entries, through loaded atoms only, nothing loaded is outside it.
+    seen, frontier, escaped = set(resident), [a for a, _ in list(space._atoms._cache._items.values())], []
+    while frontier:
+        nxt = []
+        for a in frontier:
+            for c in _children(a):
+                if c.__dict__.get("_loaded") and id(c) not in seen:
+                    seen.add(id(c))
+                    nxt.append(c)
+                    if c.__dict__.get("context") is space._atoms:
+                        escaped.append(c)
+        frontier = nxt
+    assert not escaped, f"{len(escaped)} loaded shared atoms reachable from the cache but not resident"
+    with db.new_transaction() as tr:
+        d = tr.get_root_object("objs")
+        assert d.count == 12_000 and d.get_at(4321).name == "n4321"
+        assert sorted(x.id for x in from_collection(d).where(F.g == 5)) == [i for i in range(12_000) if i % 17 == 5]
+    space.close()
+
+
+def test_stats_report_residency():
+    space = _space(50)
+    db = space.new_database("db")
+    _build_inventory(db, commits=2, per_commit=200)
+    stats = space.atom_cache_stats()
+    assert set(stats) >= {"hits", "misses", "entries", "capacity", "unloads", "identity_map"}
+    assert stats["entries"] <= 50 and stats["unloads"] > 0
+    space.close()
+
+
+# -- every structure after unloading -----------------------------------------------------------------
+
+def _all_structures(tr):
+    rows = [tr.new_object(i=i, g=i % 5, v=(i * 37) % 101, s=f"s{i}") for i in range(300)]
+    lst = tr.new_list()
+    for r in rows:
+        lst = lst.append_last(r)
+    tr.set_root_object("list", lst.add_index(EqualityIndex("by_g", "g")))
+    d = tr.new_dictionary().add_index(EqualityIndex("by_g", "g")).add_index(RangeIndex("by_v", "v"))
+    for r in rows:
+        d = d.set_at(r.i, r)
+    tr.set_root_object("dict", d)
+    h = tr.new_hash_dictionary()
+    for r in rows:
+        h = h.set_at(f"k{r.i}", r)
+    tr.set_root_object("hdict", h)
+    s = tr.new_set()
+    for i in range(300):
+        s = s.add(i * 3)
+    tr.set_root_object("set", s)
+    c = tr.new_counted_set()
+    for i in range(300):
+        c = c.add(i % 40)
+    tr.set_root_object("cset", c)
+    rk = tr.new_repeated_keys_dictionary()
+    for r in rows:
+        rk = rk.set_at(r.g, r)
+    tr.set_root_object("rkd", rk)
+    tr.set_root_object("holder", tr.new_object(child=rows[7], many=(rows[1], rows[2]), m={"x": rows[3]}))
+
+
+def _check_all_structures(tr):
+    lst = tr.get_root_object("list")
+    assert [r.i for r in lst.elements()] == list(range(300))
+    assert sorted(r.i for r in from_collection(lst).where(F.g == 2)) == [i for i in range(300) if i % 5 == 2]
+    d = tr.get_root_object("dict")
+    assert d.count == 300 and d.get_at(123).s == "s123"
+    assert sorted(r.i for r in from_collection(d).where(F.g == 3)) == [i for i in range(300) if i % 5 == 3]
+    assert sorted(r.i for r in from_collection(d).where(F.v < 10)) == sorted(i for i in range(300) if (i * 37) % 101 < 10)
+    by_v = [r.v for r in from_collection(d).order_by(F.v)]
+    assert by_v == sorted((i * 37) % 101 for i in range(300))
+    h = tr.get_root_object("hdict")
+    assert h.get_at("k299").i == 299 and sum(1 for _ in h.items()) == 300
+    s = tr.get_root_object("set")
+    assert sorted(s.elements()) == [i * 3 for i in range(300)] and 297 in s
+    c = tr.get_root_object("cset")
+    assert sorted(c.items()) == sorted((k, sum(1 for i in range(300) if i % 40 == k)) for k in range(40))
+    rk = tr.get_root_object("rkd")
+    assert sorted(r.i for r in rk.get_at(4).elements()) == [i for i in range(300) if i % 5 == 4]
+    holder = tr.get_root_object("holder")
+    assert holder.child.i == 7 and [r.i for r in holder.many] == [1, 2] and holder.m["x"].i == 3
+
+
+@pytest.mark.parametrize("capacity", [1, 16, 100_000])
+def test_every_structure_reads_correctly_after_every_atom_is_unloaded(capacity):
+    space = _space(capacity)
+    db = space.new_database("db")
+    db.run(_all_structures)
+    for _ in range(3):
+        space._atoms._unload_all()
+        with db.new_transaction() as tr:
+            _check_all_structures(tr)
+    # Derived versions built over unloaded atoms are correct too (commit path).
+    db.run(lambda tr: tr.set_root_object("dict", tr.get_root_object("dict").set_at(1000, tr.new_object(i=1000, g=0, v=5, s="x"))))
+    space._atoms._unload_all()
+    with db.new_transaction() as tr:
+        d = tr.get_root_object("dict")
+        assert d.count == 301 and sorted(r.i for r in from_collection(d).where(F.v == 5))[-1] == 1000
+    space.close()
+
+
+def test_history_and_roots_read_correctly_after_unloading():
+    space = _space(4)
+    db = space.new_database("db")
+    for i in range(10):
+        db.run(lambda tr, i=i: tr.set_root_object("n", i))
+    space._atoms._unload_all()
+    entries = db.history()
+    assert [e.version for e in entries][:3] == [10, 9, 8]
+    root = db.new_transaction()._db_root
+    seen = []
+    while root is not None:
+        space._atoms._unload_all()
+        seen.append(root.version)
+        root = root.previous
+    assert seen == list(range(10, -1, -1))
+    space.close()
+
+
+# -- identity ---------------------------------------------------------------------------------------
+
+def test_one_object_per_pointer_while_held_and_oid_without_loading():
+    space = _space(10)
+    db = space.new_database("db")
+    db.run(lambda tr: tr.set_root_object("o", tr.new_object(a=1)))
+    with db.new_transaction() as tr:
+        o = tr.get_root_object("o")
+        oid, ptr = o.oid, o.atom_pointer
+    space._atoms._unload_all()
+    assert o.__dict__["_loaded"] is False and "a" not in o.__dict__
+    assert space._atoms.load(ptr, DBObject.__type_name__) is o
+    assert o.oid == oid and hash(o) == hash(oid) and o.__dict__["_loaded"] is False, "oid and hash never load"
+    assert o.a == 1 and o.__dict__["_loaded"]
+    space.close()
+
+
+def test_a_type_mismatched_load_never_displaces_the_shared_atom():
+    """Review M2: load(ptr, other type) returns a one-off stub; it is never admitted, so its load
+    cannot displace (and unload) the shared atom of that pointer."""
+    from proto_db.collections.dictionaries import Dictionary
+    space = _space(10)
+    db = space.new_database("db")
+    db.run(lambda tr: tr.set_root_object("o", tr.new_object(a=1)))
+    with db.new_transaction() as tr:
+        o = tr.get_root_object("o")
+        assert o.a == 1
+    odd = space._atoms.load(o.atom_pointer, Dictionary.__type_name__)
+    assert odd is not o and "_cached" not in odd.__dict__
+    with pytest.raises(Exception):
+        odd.count                       # a corrupt type: the load refuses it
+    assert o.__dict__["_loaded"] and o.a == 1
+    space.close()
+
+
+def test_key_remove_of_an_absent_key_returns_the_same_root_after_eviction():
+    """Review M3: avl.key_remove returns ``root`` itself when the key is absent; under eviction this
+    holds because the identity map returns the child object still held."""
+    space = _space(8)
+    db = space.new_database("db")
+    db.run(lambda tr: tr.set_root_object("d", tr.new_dictionary().__class__.from_items(
+        ((i, i) for i in range(500)), context=tr)))
+    with db.new_transaction() as tr:
+        d = tr.get_root_object("d")
+        for k in (-1, 10_000, 250.5):
+            space._atoms._unload_all()
+            root = d.root
+            new_root = avl.key_remove(root, k)[0]
+            assert new_root is root, f"a no-op remove of {k!r} path-copied the tree"
+    space.close()
+
+
+# -- eligibility (I4) -------------------------------------------------------------------------------
+
+def _eligibility_check(planted):
+    space = _space(4)
+    db = space.new_database("db")
+    db.run(lambda tr: tr.set_root_object("ids", tr.new_counted_set().add(0)))
+    tr = db.new_transaction()
+    live = tr.get_root_object("ids").add(1).add(2)
+    tr.set_root_object("ids", live)
+    tr.commit()
+    assert live.atom_pointer is not None and live._op_log, "a saved live collection with an op log"
+    space._atoms._admit(live)                       # what a stray admission would do
+    space._atoms._unload_all()
+    for i in range(50):                             # and eviction pressure
+        db.run(lambda tr, i=i: tr.set_root_object(f"r{i}", i))
+    assert live.__dict__.get("_loaded") and live._op_log, "the live collection lost its loaded state"
+    # The next transaction rebases over it as D33 expects.
+    db.run(lambda tr: tr.set_root_object("ids", live.add(3)))
+    with db.new_transaction() as tr:
+        assert sorted(tr.get_root_object("ids").items()) == [(0, 1), (1, 1), (2, 1), (3, 1)]
+    space.close()
+
+
+def test_only_cache_produced_atoms_are_ever_unloaded():
+    _eligibility_check(planted=False)
+
+
+@pytest.mark.xfail(strict=True, reason="planted: eligibility by 'has a pointer' unloads a saved live collection")
+def test_planted_pointer_only_eligibility_loses_the_op_log(monkeypatch):
+    monkeypatch.setattr(atom_mod, "_is_cache_produced", lambda d: d.get("atom_pointer") is not None)
+    _eligibility_check(planted=True)
+
+
+# -- C1: a load racing an unload ----------------------------------------------------------------
+
+def _race_republish(monkeypatch):
+    """Thread B decodes S while thread A loads S, the cache admits S and evicts (unloads) it; B's
+    publish must not land in the new stub generation (review 8.3m C1)."""
+    space = _space(1000)
+    db = space.new_database("d")
+    db.run(lambda tr: (tr.set_root_object("o", tr.new_object(a=1, b=2)), tr.set_root_object("p", tr.new_object(a=3))))
+    with db.new_transaction() as t:
+        ptr, ptr2 = t.get_root_object("o").atom_pointer, t.get_root_object("p").atom_pointer
+    cache = space._atoms
+    cache._unload_all()
+    gc.collect()
+    stub = cache.load(ptr, DBObject.__type_name__)
+    assert not stub.__dict__["_loaded"]
+    orig = codec.decode_state
+    b_in_decode, b_go = threading.Event(), threading.Event()
+
+    def decode_state(data, load):
+        if threading.current_thread().name == "B":
+            b_in_decode.set()
+            b_go.wait(10)
+        return orig(data, load)
+    monkeypatch.setattr(codec, "decode_state", decode_state)
+    result = {}
+
+    def reader_b():
+        try:
+            result["b"] = (stub.a, stub.b, getattr(stub, "a", "DEFAULT"))
+        except BaseException as e:  # noqa: BLE001
+            result["b_error"] = repr(e)
+    tb = threading.Thread(target=reader_b, name="B")
+    tb.start()
+    assert b_in_decode.wait(10)
+    assert stub.a == 1                              # A loads, publishes, is admitted
+    cache._cache._max = 1
+    other = cache.load(ptr2, DBObject.__type_name__)
+    assert other.a == 3                             # admission evicts and unloads the stub
+    assert stub.__dict__["_loaded"] is False
+    b_go.set()
+    tb.join(10)
+    resident = any(a is stub for a, _ in list(cache._cache._items.values()))
+    return result, stub, resident, space
+
+
+def test_a_load_racing_an_unload_never_publishes_into_the_newer_stub(monkeypatch):
+    result, stub, resident, space = _race_republish(monkeypatch)
+    assert result.get("b") == (1, 2, 1), result
+    assert "_payload" not in stub.__dict__
+    assert not stub.__dict__["_loaded"] or resident, "a loaded shared atom escaped the cache bound"
+    space.close()
+
+
+@pytest.mark.xfail(strict=True, reason="planted: phase 3 publishes whatever the generation")
+def test_planted_publish_into_any_generation_escapes_the_bound(monkeypatch):
+    monkeypatch.setattr(atom_mod, "_same_generation", lambda d, payload: True)
+    result, stub, resident, space = _race_republish(monkeypatch)
+    assert result.get("b") == (1, 2, 1), result
+    assert not stub.__dict__["_loaded"] or resident, "a loaded shared atom escaped the cache bound"
+
+
+# -- check-then-read sites (condition 2) ---------------------------------------------------------
+
+class _Trap:
+    """A load-generation token whose first truth test unloads its atom: an unload lands exactly
+    between a reader's check of ``_loaded`` and its read of the attribute."""
+
+    def __init__(self, atom):
+        self.atom, self.fired = atom, False
+
+    def __bool__(self):
+        if not self.fired:
+            self.fired = True
+            self.atom._unload()
+        return True
+
+
+def _trapped(atom):
+    atom._load()
+    trap = _Trap(atom)
+    object.__setattr__(atom, "_loaded", trap)
+    return trap
+
+
+def _loaded_object(space, db, **attrs):
+    db.run(lambda tr: tr.set_root_object("o", tr.new_object(**attrs)))
+    with db.new_transaction() as tr:
+        o = tr.get_root_object("o")
+    space._atoms._unload_all()
+    return o
+
+
+def test_has_defined_attr_survives_an_unload_between_check_and_read():
+    space = _space(10)
+    db = space.new_database("db")
+    o = _loaded_object(space, db, a=1, b=None)
+    trap = _trapped(o)
+    assert o.has_defined_attr("a") is True and trap.fired
+    trap = _trapped(o)
+    assert o.has_defined_attr("b") is True and trap.fired
+    assert o.has_defined_attr("zzz") is False
+    space.close()
+
+
+@pytest.mark.xfail(strict=True, reason="planted: a probe without the generation re-check")
+def test_planted_probe_without_recheck_reports_a_defined_attribute_absent(monkeypatch):
+    def probe(self, name):
+        d = self.__dict__
+        if not d.get("_loaded", True):
+            self._load()
+        return d.get(name, atom_mod._ABSENT)
+    monkeypatch.setattr(Atom, "_probe", probe)
+    space = _space(10)
+    db = space.new_database("db")
+    o = _loaded_object(space, db, a=1)
+    _trapped(o)
+    assert o.has_defined_attr("a") is True
+
+
+def _trap_read(atom, name):
+    """Read ``name`` with an unload landing between the reader's generation check and its read:
+    the attribute is removed from the loaded state first, so the read goes to __getattr__."""
+    _trapped(atom)
+    if name in atom.__dict__:
+        object.__delattr__(atom, name)
+    return getattr(atom, name)
+
+
+def test_getattr_never_reports_an_existing_attribute_absent_across_an_unload():
+    """DBObject returns None for an absent attribute: across an unload a defined one must never
+    read as absent, nor raise AttributeError."""
+    space = _space(10)
+    db = space.new_database("db")
+    o = _loaded_object(space, db, a=1, b=2)
+    assert _trap_read(o, "a") == 1 and _trap_read(o, "b") == 2
+    assert _trap_read(o, "nope") is None
+    space.close()
+
+
+@pytest.mark.xfail(strict=True, reason="planted: __getattr__ without the generation re-check")
+def test_planted_getattr_without_recheck_reads_none(monkeypatch):
+    def getattr_(self, name):                    # the product's __getattr__ minus the re-check
+        if name.startswith("_"):
+            raise AttributeError(name)
+        d = object.__getattribute__(self, "__dict__")
+        while True:
+            token = d.get("_loaded")
+            if token is None:
+                raise AttributeError(name)
+            if not token:
+                snapshot = self._load()
+                if snapshot is not None:
+                    return self._attribute_in(snapshot, name)
+                continue
+            value = d.get(name, atom_mod._ABSENT)
+            if value is not atom_mod._ABSENT:
+                return value
+            return self._missing_attribute(d.get("_links"), name)
+    monkeypatch.setattr(Atom, "__getattr__", getattr_)
+    space = _space(10)
+    db = space.new_database("db")
+    o = _loaded_object(space, db, a=1)
+    assert _trap_read(o, "a") == 1
+
+
+def test_unload_after_load_returns_and_before_the_read(monkeypatch):
+    space = _space(10)
+    db = space.new_database("db")
+    o = _loaded_object(space, db, a=1, b=(1, 2))
+    orig = Atom._load
+    fired = []
+
+    def load_then_unload(self):
+        out = orig(self)
+        if not fired and self is o:
+            fired.append(1)
+            self._unload()
+            return None
+        return out
+    monkeypatch.setattr(Atom, "_load", load_then_unload)
+    assert o.a == 1 and fired
+    fired.clear()
+    space._atoms._unload_all()
+    assert o._state() == {"a": 1, "b": (1, 2)} and fired
+    fired.clear()
+    space._atoms._unload_all()
+    assert o.has_defined_attr("b") and fired
+    space.close()
+
+
+def _pause_unload_midway(monkeypatch):
+    """Patch _drop_state so an unload stops after deleting half the keys, holding the stripe."""
+    paused, go = threading.Event(), threading.Event()
+    orig = atom_mod._drop_state
+
+    def drop(atom, d):
+        names = [k for k in d.copy() if k not in atom_mod._STUB_KEYS]
+        for k in names[: len(names) // 2]:
+            object.__delattr__(atom, k)
+        paused.set()
+        go.wait(10)
+        orig(atom, d)
+    monkeypatch.setattr(atom_mod, "_drop_state", drop)
+    return paused, go
+
+
+def _state_during_unload(monkeypatch):
+    space = _space(10)
+    db = space.new_database("db")
+    o = _loaded_object(space, db, a=1, b=2, c=3, d=4, e=5, f=6)
+    o._load()
+    paused, go = _pause_unload_midway(monkeypatch)
+    entered = threading.Event()
+    orig_load = Atom._load
+
+    def load(self):
+        if self is o:
+            entered.set()
+        return orig_load(self)
+    monkeypatch.setattr(Atom, "_load", load)
+    t = threading.Thread(target=o._unload)
+    t.start()
+    assert paused.wait(10)
+    out = {}
+    r = threading.Thread(target=lambda: out.update(state=o._state(), probe=o.has_defined_attr("f")))
+    r.start()
+    entered.wait(2)                         # the reader saw the stub and waits on the stripe
+    go.set()
+    t.join(10)
+    r.join(10)
+    space.close()
+    return out
+
+
+def test_state_copy_during_an_unload_is_complete(monkeypatch):
+    out = _state_during_unload(monkeypatch)
+    assert out["state"] == {"a": 1, "b": 2, "c": 3, "d": 4, "e": 5, "f": 6} and out["probe"] is True
+
+
+@pytest.mark.xfail(strict=True, reason="planted: a state copy that does not check the load generation")
+def test_planted_unchecked_state_copy_is_torn(monkeypatch):
+    monkeypatch.setattr(Atom, "_snapshot", lambda self: dict(self.__dict__))
+    out = _state_during_unload(monkeypatch)
+    assert out["state"] == {"a": 1, "b": 2, "c": 3, "d": 4, "e": 5, "f": 6}
+
+
+def test_root_fields_survive_an_unload_between_check_and_read():
+    """DatabaseRoot.previous / origin and the SpaceRoot fields default to None when absent (review
+    4.2), so a torn read through the cache would be silent."""
+    space = _space(10)
+    db = space.new_database("db")
+    db.run(lambda tr: tr.set_root_object("n", 1))
+    db.run(lambda tr: tr.set_root_object("n", 2))
+    with db.new_transaction() as tr:
+        root = tr._db_root
+        space_root = tr._snapshot_space
+    want = {"version": root.version, "origin": root.origin, "committed_at": root.committed_at,
+            "prev": root.previous.version}
+    want_space = {"databases": space_root.databases.atom_pointer, "cluster_epoch": space_root.cluster_epoch}
+    for _ in range(2):
+        space._atoms._unload_all()
+        assert _trap_read(root, "version") == want["version"]
+        assert _trap_read(root, "origin") == want["origin"]
+        assert _trap_read(root, "committed_at") == want["committed_at"]
+        assert _trap_read(root, "previous").version == want["prev"]
+        assert _trap_read(space_root, "databases").atom_pointer == want_space["databases"]
+        assert _trap_read(space_root, "cluster_epoch") == want_space["cluster_epoch"]
+    space.close()
+
+
+def test_keyspec_paths_read_across_an_unload():
+    space = _space(10)
+    db = space.new_database("db")
+    o = _loaded_object(space, db, a=1, nested=None)
+    _trapped(o)
+    assert KeySpec.path("a").extract(o) == 1
+    space.close()
+
+
+# -- after close (I3, R104) -----------------------------------------------------------------------
+
+def test_a_stub_read_after_its_space_closed_raises_protoclosederror(tmp_path):
+    space = _space(10, tmp_path)
+    db = space.new_database("d")
+
+    def build(tr):
+        c = tr.new_dictionary()
+        for i in range(100):
+            c = c.set_at(i, tr.new_object(id=i, name=f"n{i}"))
+        tr.set_root_object("c", c)
+    db.run(build)
+    with db.new_transaction() as tr:
+        rows = [tr.get_root_object("c").get_at(i) for i in range(100)]
+        assert all(r.name == f"n{i}" for i, r in enumerate(rows))
+    space.close()
+    ok = closed = 0
+    for i, r in enumerate(rows):
+        try:
+            assert r.name == f"n{i}"
+            ok += 1
+        except ProtoClosedError:
+            closed += 1
+    assert ok + closed == 100 and closed >= 80, (ok, closed)
+    assert issubclass(ProtoClosedError, ProtoValidationError)
+    assert space.atom_cache_stats()["entries"] == 0 and space.atom_cache_stats()["identity_map"] == 0
+    stub = next(r for r in rows if not r.__dict__["_loaded"])
+    with pytest.raises(ProtoClosedError):
+        getattr(stub, "name", "default")       # never a silent default
+    with pytest.raises(ProtoClosedError):
+        stub.has_defined_attr("name")

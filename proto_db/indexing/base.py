@@ -162,8 +162,8 @@ class Index(Atom, metaclass=ABCMeta):
         raise ProtoUserError(f"{type(self).__name__} is immutable; cannot delete {name!r}")
 
     def _public_state(self) -> dict:
-        self._load()
-        return {k: v for k, v in vars(self).copy().items()
+        # One complete copy of the loaded state, safe across an unload by the atom cache (8.3m).
+        return {k: v for k, v in self._snapshot().items()
                 if not k.startswith("_") and k not in RESERVED_NAMES}
 
     def _state(self) -> dict:

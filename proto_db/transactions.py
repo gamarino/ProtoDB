@@ -101,6 +101,7 @@ from __future__ import annotations
 
 import copy
 import datetime
+import functools
 import logging
 import random
 import sys
@@ -108,6 +109,7 @@ import threading
 import time
 import uuid
 import weakref
+from _weakref import _remove_dead_weakref
 from typing import Any, Callable, Optional
 
 from .collections.base import ConcurrentOptimized, _Immutable
@@ -117,7 +119,7 @@ from .collections.lists import List
 from .collections.sets import CountedSet, Set
 from .core.atom import Atom, AtomPointer, PersistenceContext
 from .core.dbobject import DBObject, MutableObject
-from .errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoOutcomeUnknownError,
+from .errors import (ProtoClosedError, ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoOutcomeUnknownError,
                      ProtoReferenceError, ProtoTimeoutError, ProtoUnexpectedError, ProtoUserError,
                      ProtoValidationError)
 from .storage.base import check_lock_timeout
@@ -405,32 +407,81 @@ class _AtomCache:
     Safe without invalidation: a storage instance never changes the content at a pointer
     (records are appended, never rewritten), and a decoded atom is immutable.  An atom
     served here is bound to a space-level context whose ``load`` goes through this cache, so
-    the children of a shared atom are shared too.  Bounded LRU by entry count; an evicted
-    atom stays valid for whoever holds it.  Thread-safe (:class:`BoundedCache`; loading a
+    the children of a shared atom are shared too.  Thread-safe (:class:`BoundedCache`; loading a
     stub is thread-safe, :meth:`Atom._load`).
 
     It also receives every atom saved through it or through a transaction that shares it
     (:meth:`_atom_saved`, Task 8.3i), decoded already: the next build on a root this space committed
     finds that root's new atoms without reading or decoding them.
+
+    Residency (Task 8.3m, rulings R102-R104): the bound is on LOADED atoms.  ``_cache`` holds the
+    loaded atoms this cache produced, by pointer, at most ``entries`` of them; an atom it evicts
+    is unloaded (:meth:`Atom._unload`: back to the stub state, read again on demand), so a loaded
+    atom never keeps evicted state reachable.  ``_ident`` maps every pointer to a weak reference
+    of the one object served for it while anything holds that object (stub or loaded), so a
+    parent's child and a fresh load are the same object.  Only objects produced here (stubs from
+    :meth:`load`, decoded twins) carry the ``_cached`` mark and are ever admitted or unloaded.
     """
 
     def __init__(self, storage, entries: int):
         self.storage = storage
         self._cache = BoundedCache(entries, sizeof=_one)
+        self._lock = threading.Lock()
+        self._ident: dict = {}
+        self._forget = functools.partial(_forget_dead, self._ident)
+        self._closed = False
+        self.hits = 0
+        self.misses = 0
+        self.unloads = 0
 
     def save(self, atom: Atom) -> AtomPointer:
         """Persist ``atom`` (children first) and return its pointer."""
         return _save_atom(self, atom)
 
     def load(self, ptr: AtomPointer, type_name: str) -> Atom:
-        """The shared atom stored at ``ptr`` (a lazy stub on a miss, cached)."""
-        atom = self._cache.get(ptr)
-        if atom is not None and type(atom).__type_name__ == type_name:
+        """The shared atom stored at ``ptr``: the object already served for it while anything holds
+        it, else a new lazy stub."""
+        with self._lock:
+            ref = self._ident.get(ptr)
+            atom = ref() if ref is not None else None
+            hit = atom is not None and type(atom).__type_name__ == type_name
+            if hit:
+                self.hits += 1
+            else:
+                self.misses += 1
+        if hit:
+            self._cache.touch(ptr)
             return atom
         stub = Atom._stub(self, ptr, type_name)
-        if atom is None:
-            self._cache.put(ptr, stub)
+        if atom is not None:
+            # Another type for a known pointer (corrupt reference): a one-off stub, never marked,
+            # so its load can never be admitted and displace the shared atom (review 8.3m M2).
+            return stub
+        object.__setattr__(stub, "_cached", True)
+        with self._lock:
+            ref = self._ident.get(ptr)
+            other = ref() if ref is not None else None
+            if other is not None and type(other).__type_name__ == type_name:
+                return other                # another thread served this pointer meanwhile
+            if not self._closed:
+                self._ident[ptr] = weakref.KeyedRef(stub, self._forget, ptr)
         return stub
+
+    def _admit(self, atom: Atom) -> None:
+        """Make the loaded ``atom`` resident; unload what that evicts (no lock held meanwhile)."""
+        if self._closed or not atom._cache_produced():
+            return
+        unloaded = 0
+        for victim in self._cache.put_evicting(atom.atom_pointer, atom):
+            if victim._unload():
+                unloaded += 1
+        if unloaded:
+            with self._lock:
+                self.unloads += unloaded
+
+    def _atom_loaded(self, atom: Atom) -> None:
+        """The :meth:`Atom._load` hook: ``atom`` was just loaded (published by this call)."""
+        self._admit(atom)
 
     def _atom_saved(self, atom: Atom, ptr: AtomPointer, state: dict) -> None:
         """``atom`` was just pushed at ``ptr`` with ``state`` (the :meth:`Atom._save` hook,
@@ -439,23 +490,53 @@ class _AtomCache:
         reads nor decodes it.  The live ``atom`` is never cached (its runtime state, an op log
         for example, is not what a load produces)."""
         cls = type(atom)
-        if not cls._cache_on_save:
+        if not cls._cache_on_save or self._closed:
             return
         inline = [0]
         twin = atom._decoded_twin(self, ptr, state, inline)
         if inline[0] > SAVED_INLINE_MAX and not cls._cache_large_on_save:
-            # Review 8.3i I1: a decoded atom stays reachable from the cached atoms that refer to
-            # it whatever the cache evicts, so an atom holding large values inline is left to the
-            # read path: a parent cached later refers to it as an unloaded stub, and its bytes
-            # are read only if something reads it (a write-only ingest retains none of them).
+            # Review 8.3i I1: an entry is one atom of any size (the bound counts atoms, not bytes),
+            # so an atom holding large values inline is left to the read path: a parent cached
+            # later refers to it as an unloaded stub, and its bytes are read only if something
+            # reads it (a write-only ingest retains none of them).
             return
-        self._cache.put(ptr, twin)
+        object.__setattr__(twin, "_cached", True)
+        with self._lock:
+            if self._closed:
+                return
+            self._ident[ptr] = weakref.KeyedRef(twin, self._forget, ptr)
+        self._admit(twin)
+
+    def _unload_all(self) -> int:
+        """Unload every resident atom (memory pressure, diagnostics); return how many."""
+        unloaded = sum(1 for atom in self._cache.drain() if atom._unload())
+        with self._lock:
+            self.unloads += unloaded
+        return unloaded
+
+    def close(self) -> None:
+        """Forget every atom (the space is closing), without unloading: an atom the application
+        still holds keeps the state it has, and nothing else stays reachable through this cache
+        (``atom.context`` is this cache).  Reading what is not loaded then raises
+        :class:`~proto_db.errors.ProtoClosedError` (the storage is closed)."""
+        with self._lock:
+            self._closed = True
+            self._ident.clear()
+        self._cache.clear()
 
     def stats(self) -> dict:
-        """``hits``, ``misses``, ``entries`` and ``capacity`` (in atoms)."""
+        """``hits`` and ``misses`` of :meth:`load`, ``entries`` (loaded atoms resident) and
+        ``capacity``, ``unloads`` and ``identity_map`` (objects served and still alive)."""
         stats = self._cache.stats()
-        stats.pop("bytes", None)
-        return stats
+        with self._lock:
+            return {"hits": self.hits, "misses": self.misses, "entries": stats["entries"],
+                    "capacity": stats["capacity"], "unloads": self.unloads, "identity_map": len(self._ident)}
+
+
+def _forget_dead(ident: dict, ref) -> None:
+    """Weak-reference callback: drop ``ident[ref.key]`` only if it is still this dead reference
+    (atomic, as ``WeakValueDictionary`` does)."""
+    _remove_dead_weakref(ident, ref.key)
 
 
 def _load_space(context, record) -> Optional[SpaceRoot]:
@@ -1388,7 +1469,7 @@ class ObjectSpace:
 
     def _check_open(self) -> None:
         if self._closed:
-            raise ProtoValidationError("ObjectSpace is closed")
+            raise ProtoClosedError("ObjectSpace is closed")
 
     def _current_space(self, context) -> Optional[SpaceRoot]:
         self._check_open()
@@ -1444,6 +1525,8 @@ class ObjectSpace:
             self._coordinator.detach(self._tier)
             if self._tier is not self._storage:
                 self._tier.close()          # the node's acceptor log of a shared storage
+        if self._atoms is not None:
+            self._atoms.close()
         self._storage.close()
 
     def __enter__(self):

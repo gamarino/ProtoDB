@@ -49,6 +49,12 @@ class ProtoStalePagerError(ProtoReferenceError):
     version, another extractor function): resuming it could page another order (D56, R99)."""
 
 
+class ProtoClosedError(ProtoValidationError):
+    """An operation on a closed ``ObjectSpace`` or storage: in particular reading an object of a
+    closed space whose state was not loaded.  Objects outlive their space only as values already
+    materialized; copy data out before closing to keep it (Task 8.3m, ruling R104)."""
+
+
 class ProtoUserError(ProtoDBError):
     """Error caused by incorrect use of the API."""
     default_code = USER_ERROR

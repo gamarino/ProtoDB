@@ -65,6 +65,28 @@ History links (Task 8.3l, ruling R92)
     walking history loads one version at a time: history is kept on disk, never in memory
     (P1).  A link to an atom not yet saved holds that atom until it has a pointer.
 
+Residency (Task 8.3m, rulings R102-R104)
+    A context that caches decoded atoms (the space's ``_AtomCache``) bounds how many of them are
+    loaded.  It marks the objects it produces -- stubs from its ``load`` and decoded twins -- with
+    ``_cached``; only such an atom is ever *unloaded* (:meth:`Atom._unload`), never a live atom,
+    an unsaved one or one of another context.  Unloading returns the atom to the stub state in
+    place, under its stripe: ``_loaded`` is set False FIRST, then every key but
+    :data:`_STUB_KEYS` (pointer, context, oid, the mark) is deleted.  A load publishes the decoded
+    state and sets ``_loaded`` LAST, to a fresh generation token (never ``True``), and tells the
+    context through ``_atom_loaded(atom)`` so that it is admitted again.
+
+    Why readers stay correct: a pointer's content never changes (P1), so every generation of an
+    atom's state holds equal values, and any interleaving of an old and a reloaded state reads
+    equal values.  Only two failures are possible, and both are excluded here:
+
+    - a missing attribute taken as absent: a reader that misses a name re-checks that the
+      generation token it saw is still the current one (:meth:`__getattr__`, :meth:`_probe`); a
+      multi-key reader takes an atomic ``dict.copy()`` and trusts it only if the copy says loaded
+      (:meth:`_snapshot`);
+    - a publish into the wrong generation: phase 3 of :meth:`_load` publishes only if the dict
+      still holds the very payload its phase 1 saw (:func:`_same_generation`); otherwise the atom
+      was loaded and unloaded meanwhile and the load restarts (review 8.3m C1).
+
 Type tags (format version 3, D51)
     A built-in type is written as its small integer alias, its index in
     :data:`BUILTIN_TYPE_ALIASES` (:func:`type_tag`); any other type as its name.  Readers
@@ -266,6 +288,46 @@ def _link_ref(value):
     return value
 
 
+#: Keys an unloaded atom keeps: what a stub has, its oid (equality and hashing never load) and the
+#: mark of the cache that produced it.
+_STUB_KEYS = frozenset({"_loaded", "atom_pointer", "context", "oid", "_cached"})
+
+#: Result of :meth:`Atom._probe` for a name the loaded state does not define.
+_ABSENT = object()
+
+
+class _Generation:
+    """A load generation token: the truthy value of ``_loaded`` for one loaded state of an atom
+    that may be unloaded (a fresh object per load, so a reader can tell two generations apart)."""
+
+    __slots__ = ()
+
+    def __repr__(self):
+        return "<loaded>"
+
+
+def _is_cache_produced(d: dict) -> bool:
+    """Whether the atom whose dict is ``d`` may be unloaded: produced by a decoded-atom cache (its
+    stubs and twins carry the mark) and saved (Task 8.3m, review I4)."""
+    return d.get("_cached") is True and d.get("atom_pointer") is not None
+
+
+def _same_generation(d: dict, payload) -> bool:
+    """Whether phase 3 of a load may publish: the dict still holds the payload phase 1 stored, so
+    no load published (and no unload followed) in between (review 8.3m C1)."""
+    return d.get("_payload") is payload
+
+
+def _drop_state(atom, d: dict) -> None:
+    """Delete every key of an unloading atom but :data:`_STUB_KEYS` (caller holds its stripe and
+    has set ``_loaded`` False)."""
+    for name in [k for k in d.copy() if k not in _STUB_KEYS]:
+        try:
+            object.__delattr__(atom, name)
+        except AttributeError:
+            pass        # another writer of a runtime key (``_okey``) raced the unload: nothing to drop
+
+
 class Atom:
     """Base class of every persistent object.
 
@@ -345,26 +407,74 @@ class Atom:
     # -- lazy load ----------------------------------------------------------------
 
     def __getattr__(self, name: str):
-        # Only reached when normal lookup fails: an unloaded stub or a truly absent attribute.
+        # Only reached when normal lookup fails: an unloaded stub, an atom unloaded meanwhile, or a
+        # truly absent attribute.  Absence is concluded only from a generation that is still
+        # current after the miss (see "Residency" in the module docstring).
         if name.startswith("_"):
             raise AttributeError(name)
         try:
-            loaded = object.__getattribute__(self, "_loaded")
+            d = object.__getattribute__(self, "__dict__")
         except AttributeError:
             raise AttributeError(name) from None
-        if not loaded:
-            self._load()
-        # Look again even when the atom was already loaded: another thread may have
-        # finished the load between the failed normal lookup and the flag check.
-        try:
-            return object.__getattribute__(self, name)
-        except AttributeError:
-            if name == "oid":
-                return self._assign_oid()
-            links = self.__dict__.get("_links")
-            if links is not None and name in links:
-                return self._follow_link(links, name)
-            return self._absent_attribute(name)
+        while True:
+            token = d.get("_loaded")
+            if token is None:
+                raise AttributeError(name)
+            if not token:
+                snapshot = self._load()
+                if snapshot is not None:
+                    return self._attribute_in(snapshot, name)
+                continue                    # another thread published first: read the dict again
+            value = d.get(name, _ABSENT)
+            if value is not _ABSENT:
+                return value
+            links = d.get("_links")
+            if d.get("_loaded") is token:
+                return self._missing_attribute(links, name)
+
+    def _attribute_in(self, snapshot: dict, name: str):
+        """The attribute ``name`` read from ``snapshot``, a complete loaded state."""
+        value = snapshot.get(name, _ABSENT)
+        if value is not _ABSENT:
+            return value
+        return self._missing_attribute(snapshot.get("_links"), name)
+
+    def _missing_attribute(self, links, name: str):
+        """``name`` is not an attribute of the current loaded state: the lazily assigned oid, a
+        history link, or the class's answer for an absent attribute."""
+        if name == "oid":
+            return self._assign_oid()
+        if links is not None and name in links:
+            return self._follow_link(links, name)
+        return self._absent_attribute(name)
+
+    def _probe(self, name: str):
+        """The persisted attribute ``name`` of the loaded state, or :data:`_ABSENT` (loading the
+        atom if needed; safe across an unload, like :meth:`__getattr__`)."""
+        d = object.__getattribute__(self, "__dict__")
+        while True:
+            token = d.get("_loaded", True)
+            if not token:
+                snapshot = self._load()
+                if snapshot is not None:
+                    return snapshot.get(name, _ABSENT)
+                continue
+            value = d.get(name, _ABSENT)
+            if value is not _ABSENT or d.get("_loaded", True) is token:
+                return value
+
+    def _snapshot(self) -> dict:
+        """A complete copy of the loaded state's dict (loading the atom if needed): an atomic copy
+        trusted only when it says loaded, since an unload sets ``_loaded`` False before it deletes
+        anything and a load sets it last."""
+        d = object.__getattribute__(self, "__dict__")
+        while True:
+            copy = d.copy()
+            if copy.get("_loaded", True):
+                return copy
+            snapshot = self._load()
+            if snapshot is not None:
+                return snapshot
 
     # -- history links (Task 8.3l) --------------------------------------------------------
 
@@ -389,12 +499,11 @@ class Atom:
             links[name] = _link_ref(ref)        # saved since: from now on held by pointer only
         return ref
 
-    def _link_values(self) -> dict:
-        """The history links as values to persist: stubs for the links held by pointer."""
-        links = self.__dict__.get("_links")
+    def _link_values(self, links, context) -> dict:
+        """The history links ``links`` (of a loaded state whose context is ``context``) as values
+        to persist: stubs for the links held by pointer."""
         if not links:
             return {}
-        context = self.context
         osa = object.__setattr__
         out = {}
         for name, ref in links.items():
@@ -424,43 +533,75 @@ class Atom:
         """Value of a public attribute that is not set on a loaded atom (default: raise)."""
         raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
 
-    def _load(self) -> None:
-        """Load the state of a stub, once; a no-op for loaded atoms.
+    def _load(self) -> Optional[dict]:
+        """Load the state of a stub; a no-op for loaded atoms.
 
         Three steps, so that no stripe is held while other atoms are touched:
         fetch the payload once under the stripe, decode it unlocked (decoding
         creates child stubs and may hash them, which loads them), publish under
-        the stripe unless another thread published first.
+        the stripe unless another thread published first.  Publication happens only into the
+        generation phase 1 saw (:func:`_same_generation`); if the atom was loaded and unloaded
+        meanwhile, the load starts again (review 8.3m C1).  The publishing call returns a copy of
+        the dict it published (complete, so its caller reads it without retrying) after telling
+        the context (``_atom_loaded``, a decoded-atom cache admits the atom); otherwise ``None``.
         """
-        if self._loaded:
-            return
+        d = object.__getattribute__(self, "__dict__")
+        if d.get("_loaded", True):
+            return None
         lock = _lock_for(self)
-        with lock:
-            if self._loaded:
-                return
-            payload = self.__dict__.get("_payload")
-            if payload is None:
-                payload = self.context.storage.get_atom(self.atom_pointer)
-                if not isinstance(payload, dict) or set(payload) != {"t", "oid", "s"}:
-                    raise ProtoCorruptionError(f"Malformed atom payload at {self.atom_pointer}")
-                stored = type_name_of(payload["t"])
-                if stored != type(self).__type_name__:
-                    raise ProtoCorruptionError(
-                        f"Atom at {self.atom_pointer} is a {stored!r}, expected {type(self).__type_name__!r}")
-                raw_oid = payload["oid"]
-                if not isinstance(raw_oid, bytes) or len(raw_oid) != 16:
-                    raise ProtoCorruptionError(f"Malformed oid in atom at {self.atom_pointer}")
-                object.__setattr__(self, "_payload", payload)
         from . import codec
-        state = codec.decode_state(payload["s"], self.context.load)
-        oid = uuid.UUID(bytes=payload["oid"])
-        with lock:
-            if self._loaded:
-                return
-            self._restore(state)
-            object.__setattr__(self, "oid", oid)
-            object.__setattr__(self, "_loaded", True)
-            object.__delattr__(self, "_payload")
+        while True:
+            with lock:
+                if d.get("_loaded"):
+                    return None
+                payload = d.get("_payload")
+                if payload is None:
+                    payload = self.context.storage.get_atom(self.atom_pointer)
+                    if not isinstance(payload, dict) or set(payload) != {"t", "oid", "s"}:
+                        raise ProtoCorruptionError(f"Malformed atom payload at {self.atom_pointer}")
+                    stored = type_name_of(payload["t"])
+                    if stored != type(self).__type_name__:
+                        raise ProtoCorruptionError(
+                            f"Atom at {self.atom_pointer} is a {stored!r}, expected {type(self).__type_name__!r}")
+                    raw_oid = payload["oid"]
+                    if not isinstance(raw_oid, bytes) or len(raw_oid) != 16:
+                        raise ProtoCorruptionError(f"Malformed oid in atom at {self.atom_pointer}")
+                    object.__setattr__(self, "_payload", payload)
+            context = self.context
+            state = codec.decode_state(payload["s"], context.load)
+            oid = uuid.UUID(bytes=payload["oid"])
+            with lock:
+                if d.get("_loaded"):
+                    return None
+                if not _same_generation(d, payload):
+                    continue                # loaded and unloaded since phase 1: fetch again
+                self._restore(state)
+                object.__setattr__(self, "oid", oid)
+                object.__delattr__(self, "_payload")
+                object.__setattr__(self, "_loaded", _Generation())
+                snapshot = d.copy()
+            hook = getattr(context, "_atom_loaded", None)
+            if hook is not None:
+                hook(self)                  # no stripe held (lock order rule)
+            return snapshot
+
+    def _cache_produced(self) -> bool:
+        """Whether a decoded-atom cache may admit and unload this atom (:func:`_is_cache_produced`)."""
+        return _is_cache_produced(object.__getattribute__(self, "__dict__"))
+
+    def _unload(self) -> bool:
+        """Return this atom to the stub state, in place, if a decoded-atom cache produced it
+        (:func:`_is_cache_produced`) and it is loaded; return whether it did (Task 8.3m).
+
+        Under the stripe: ``_loaded`` False first, then every key but :data:`_STUB_KEYS` is
+        deleted.  The next read loads it again through ``context``."""
+        d = object.__getattribute__(self, "__dict__")
+        with _lock_for(self):
+            if not d.get("_loaded") or not _is_cache_produced(d):
+                return False
+            object.__setattr__(self, "_loaded", False)
+            _drop_state(self, d)
+        return True
 
     def _restore(self, state: dict) -> None:
         """Install a decoded state on a stub (protected hook; default sets attributes)."""
@@ -481,12 +622,11 @@ class Atom:
     def _state(self) -> dict:
         """Return the persisted state: public instance attributes except the reserved ones.
 
-        Iterates over a copy of the instance dictionary (copied atomically): other
-        threads may add runtime keys concurrently, such as a lazily assigned ``oid``.
+        Reads one complete copy of the loaded state (:meth:`_snapshot`): other threads may add
+        runtime keys concurrently (a lazily assigned ``oid``), and a cache may unload the atom.
         """
-        self._load()
-        state = {k: v for k, v in vars(self).copy().items()
-                 if not k.startswith("_") and k not in RESERVED_NAMES}
+        d = self._snapshot()
+        state = {k: v for k, v in d.items() if not k.startswith("_") and k not in RESERVED_NAMES}
         links = type(self)._history_links
         if links:
             for name in links:
@@ -496,7 +636,7 @@ class Atom:
                     raise ProtoValidationError(
                         f"{name!r} of {type(self).__type_name__} is a history link: set it in the "
                         f"constructor (_set_link), not by assignment")
-            state.update(self._link_values())
+            state.update(self._link_values(d.get("_links"), d.get("context")))
         return state
 
     def _save(self) -> AtomPointer:
@@ -553,7 +693,7 @@ class Atom:
         osa(twin, "context", context)
         twin._restore(decoded)
         osa(twin, "oid", self.oid)
-        osa(twin, "_loaded", True)
+        osa(twin, "_loaded", _Generation())
         return twin
 
     # -- identity -------------------------------------------------------------------

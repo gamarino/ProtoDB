@@ -7,7 +7,7 @@ from typing import Optional
 import msgpack
 
 from ..core.atom import AtomPointer
-from ..errors import (ProtoConflictError, ProtoCorruptionError, ProtoLockingError,
+from ..errors import (ProtoClosedError, ProtoConflictError, ProtoCorruptionError, ProtoLockingError,
                       ProtoTimeoutError, ProtoValidationError)
 from .base import SharedStorage, check_lock_timeout
 from .format import FORMAT_VERSION, RecordKind, RootRecord
@@ -41,7 +41,7 @@ class MemoryStorage(SharedStorage):
 
     def _check_open(self):
         if self._closed:
-            raise ProtoValidationError("Storage is closed")
+            raise ProtoClosedError("Storage is closed")
 
     def _append(self, kind: RecordKind, data: bytes) -> AtomPointer:
         with self._state_lock:

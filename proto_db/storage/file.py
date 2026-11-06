@@ -55,7 +55,7 @@ from typing import Optional
 import msgpack
 
 from ..core.atom import AtomPointer
-from ..errors import (ProtoConflictError, ProtoCorruptionError, ProtoLockingError,
+from ..errors import (ProtoClosedError, ProtoConflictError, ProtoCorruptionError, ProtoLockingError,
                       ProtoNotSupportedError, ProtoTimeoutError, ProtoUnexpectedError,
                       ProtoValidationError)
 from .base import SharedStorage, check_lock_timeout
@@ -324,7 +324,7 @@ class FileStorage(SharedStorage):
 
     def _check_open(self):
         if self._closed:
-            raise ProtoValidationError("Storage is closed")
+            raise ProtoClosedError("Storage is closed")
 
     def _check_writable(self):
         self._check_open()
