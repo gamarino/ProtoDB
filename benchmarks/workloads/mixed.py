@@ -65,7 +65,8 @@ def protodb_cell(ctx, writers: int, readers: int, seconds: float, catalog: int) 
            # why a failed run failed: lost or extra ids, writer threads that died (an unknown outcome)
            "ids_missing": r["ids_missing"], "ids_extra": r["ids_extra"], "ids_duplicated": r["ids_duplicated"],
            "thread_errors": [[e[:200] for e in errs] for errs in r["thread_errors_by_peer"]],
-           "commits_by_peer": r["commits_by_peer"], "kept_run_dir": r["kept_run_dir"]}
+           "commits_by_peer": r["commits_by_peer"], "kept_run_dir": r["kept_run_dir"],
+           "replication_failures_by_peer": r["replication_failures_by_peer"], "healthy_by_peer": r["healthy_by_peer"]}
     if readers:
         rd = r["reads"]
         out.update({"reads": rd["reads"], "bad_reads": rd["bad"], "read_rate": rd["reads_per_s"],
