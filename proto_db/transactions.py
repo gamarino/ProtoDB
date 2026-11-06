@@ -1463,6 +1463,7 @@ class Database:
         """Bind the handle; use :meth:`ObjectSpace.new_database` / :meth:`ObjectSpace.open_database`."""
         self._space = space
         self._name = name
+        self._origin_value = _ABSENT
 
     @property
     def space(self) -> ObjectSpace:
@@ -1502,9 +1503,14 @@ class Database:
         self._space.sync(timeout)
 
     def _origin(self):
-        """This database's identity (``DatabaseRoot.origin`` of its current version, D56)."""
-        context = _SpaceContext(self._space.storage)
-        return self._root_in(context, self._space._read_storage_root()).origin
+        """This database's identity (``DatabaseRoot.origin``, D56): read once per handle (R101 N2).
+        It never changes: ``new_database`` draws it, every commit copies it, and no API removes or
+        renames a database."""
+        origin = self._origin_value
+        if origin is _ABSENT:
+            context = _SpaceContext(self._space.storage)
+            origin = self._origin_value = self._root_in(context, self._space._read_storage_root()).origin
+        return origin
 
     def _check_owned(self, name, root) -> None:
         """``ProtoReferenceError`` unless ``root`` is a version of this database (R99 I2): the name
@@ -1535,22 +1541,27 @@ class Database:
         elif isinstance(ref, HistoryEntry):
             name, root = ref._database, ref.root
         else:
-            fields = decode_ref(ref, self._space._space_load)
-            name = fields["db"]
-            if name != self._name:
-                raise ProtoReferenceError(f"The reference names the database {name!r}, not {self._name!r}")
-            if fields["origin"] != self._origin():
-                raise ProtoReferenceError(f"The reference names another database than {self._name!r} "
-                                          f"(another incarnation of the name, or another space)")
-            root = self._space._space_load(fields["root"], DatabaseRoot.__type_name__)
-            try:
-                root._load()
-                root.origin, root.version            # a pointer that does not hold a DatabaseRoot fails here
-            except (ProtoCorruptionError, ProtoValidationError, AttributeError, TypeError) as e:
-                raise ProtoReferenceError(f"The reference names no version of {self._name!r} "
-                                          f"({type(e).__name__})") from None
-            if type(root) is not DatabaseRoot:
-                raise ProtoReferenceError(f"The reference names no version of {self._name!r}")
+            return self._snapshot_of(decode_ref(ref, self._space._space_load))
+        self._check_owned(name, root)
+        return Snapshot(self, root)
+
+    def _snapshot_of(self, fields: dict) -> Snapshot:
+        """The snapshot a decoded reference names, after the identity checks of :meth:`snapshot_at`."""
+        name = fields["db"]
+        if name != self._name:
+            raise ProtoReferenceError(f"The reference names the database {name!r}, not {self._name!r}")
+        if fields["origin"] != self._origin():
+            raise ProtoReferenceError(f"The reference names another database than {self._name!r} "
+                                      f"(another incarnation of the name, or another space)")
+        root = self._space._space_load(fields["root"], DatabaseRoot.__type_name__)
+        try:
+            root._load()
+            root.origin, root.version            # a pointer that does not hold a DatabaseRoot fails here
+        except (ProtoCorruptionError, ProtoValidationError, AttributeError, TypeError) as e:
+            raise ProtoReferenceError(f"The reference names no version of {self._name!r} "
+                                      f"({type(e).__name__})") from None
+        if type(root) is not DatabaseRoot:
+            raise ProtoReferenceError(f"The reference names no version of {self._name!r}")
         self._check_owned(name, root)
         return Snapshot(self, root)
 
@@ -1559,10 +1570,11 @@ class Database:
         any later transaction, the same pages (Task 8.4b, D56).  ``ProtoReferenceError`` for a
         malformed token or one of another database; ``ProtoStalePagerError`` when the query
         no longer plans as it did (another query semantics version, planner or extractor
-        function), since its pages could then come in another order."""
+        version), since its pages could then come in another order."""
+        self._space._check_open()
         fields = decode_ref(token, self._space._space_load)
         arguments = pager_arguments(fields)
-        snapshot = self.snapshot_at(token)
+        snapshot = self._snapshot_of(fields)
         root_name = arguments.pop("root_name")
         try:
             pager = snapshot.pager(root_name, **arguments)

@@ -15,7 +15,7 @@ A *portable* pager (made by ``Transaction.pager``, ``Snapshot.pager`` or
 (``DatabaseRoot.origin``), the ``DatabaseRoot`` of the snapshot, the root holding the
 collection, the predicate (in the 0.1 list syntax, operands in the codec's wire form), the
 order, the page size, :data:`~proto_db.query.cache.QUERY_SEMANTICS_VERSION`, the digest of
-the plan it pages and the fingerprints of the extractors that plan names.  Any process may
+the plan it pages and the names and declared versions of the extractors that plan names.  Any process may
 resume it with ``Database.resume_pager(token)``: it plans the query again on that snapshot
 and serves the same pages.  A token whose query now plans differently (another semantics
 version, planner or extractor function) is refused (``ProtoStalePagerError``) rather than
@@ -89,11 +89,27 @@ def decode_ref(data: bytes, load=_no_load) -> dict:
     for name, value in body.items():
         if name not in ("v", "kind", "db", "origin", "root"):
             try:
-                out[name] = codec.decode_value(value, load)
-            except Exception as e:  # a client-supplied field that is not a wire value
+                out[name] = decoded = codec.decode_value(value, load)
+                _probe_atoms(decoded)
+            except Exception as e:  # a client-supplied field that is not a wire value or names no atom
                 raise ProtoReferenceError(f"Malformed snapshot reference (field {name!r}: "
                                           f"{type(e).__name__})") from None
     return out
+
+
+def _probe_atoms(value) -> None:
+    """Load every atom a decoded token field refers to (R101 N5): a forged reference anywhere in a
+    token fails here, as a client error, not later during planning as a storage error."""
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, Atom):
+            item._load()
+        elif isinstance(item, dict):
+            stack.extend(item.keys())
+            stack.extend(item.values())
+        elif isinstance(item, (list, tuple)):
+            stack.extend(item)
 
 
 def _normalize_order(order_by) -> list | None:
@@ -236,12 +252,15 @@ def portable_pager(collection, *, database: str, origin: bytes | None, root_ptr:
 
 def check_resumed(pager: Pager, fields: dict) -> Pager:
     """``pager`` (built again from a token's ``fields``) when it plans exactly as the pager that
-    wrote the token; ``ProtoStalePagerError`` otherwise (R99 I4, M4)."""
-    digest, extractors = plan_digest(pager.plan)
+    wrote the token; ``ProtoStalePagerError`` otherwise (R99 I4, R101)."""
+    try:
+        digest, extractors = plan_digest(pager.plan)
+    except ProtoUserError as e:
+        raise ProtoStalePagerError(f"The pager token's query now plans differently: {e}") from None
     recorded = fields.get("ex")
     if recorded != extractors:
         changed = sorted(n for n in set(recorded) | set(extractors) if recorded.get(n) != extractors.get(n))
-        raise ProtoStalePagerError(f"The pager token was written for other extractor functions ({changed}): "
+        raise ProtoStalePagerError(f"The pager token was written for other extractor versions ({changed}): "
                                    f"its pages could differ")
     if fields.get("plan") != digest:
         raise ProtoStalePagerError("The pager token's query now plans differently (another planner or library "
@@ -265,7 +284,7 @@ def pager_arguments(fields: dict) -> dict:
     if type(page) is not int or page < 1:
         raise ProtoReferenceError("Malformed pager token (page size)")
     if not isinstance(plan, str) or not isinstance(extractors, dict) or not all(
-            isinstance(k, str) and isinstance(v, str) for k, v in extractors.items()):
+            isinstance(k, str) and (v is None or isinstance(v, str)) for k, v in extractors.items()):
         raise ProtoReferenceError("Malformed pager token (plan digest)")
     if order is not None and not (isinstance(order, list) and all(
             isinstance(o, list) and len(o) == 2 and (o[0] is None or isinstance(o[0], str))

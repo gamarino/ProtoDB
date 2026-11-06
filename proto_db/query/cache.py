@@ -20,9 +20,9 @@ anything, from the plans' structured fields (never from ``explain()`` display st
   registration generation, so a name registered again with another function gets
   another key;
 * every other node by its parameters and its children;
-* the decimal context (precision, rounding, exponent limits, clamping, traps) when a
-  node computes with numbers (``sum``/``avg`` aggregations), else ``None``: Decimal
-  arithmetic depends on the calling thread's context.
+* the decimal context (precision, rounding, exponent limits, clamping, traps), in every
+  key: Decimal arithmetic depends on the calling thread's context, and a trapped signal
+  changes the outcome of comparisons.
 
 Registered extractors must be pure functions of the element (see
 :func:`~proto_db.indexing.keyspec.register_extractor`): a result computed once is served
@@ -130,7 +130,7 @@ def _generation(name: str):
 
 
 #: How a key names a registered extractor: by its registration generation in this process
-#: (the cache key), or by its process-independent fingerprint (a pager token's plan digest).
+#: (the cache key), or by its declared version (a pager token's plan digest, R101).
 _EXTRACTOR_ID = contextvars.ContextVar("proto_db_extractor_id", default=_generation)
 
 
@@ -175,14 +175,12 @@ def _arg_key(value):
     return _expr_key(value) if isinstance(value, Expression) else _value_key(value)
 
 
-#: Aggregations whose result depends on the decimal context (Decimal arithmetic).
-_ARITHMETIC = frozenset({"sum", "avg"})
-
-
 def _decimal_context_key() -> tuple:
-    """The parts of the current decimal context that change computed values (R99 C1): precision,
-    rounding, exponent limits, clamping and the trapped signals (flags are outputs, ``capitals``
-    only changes how values print)."""
+    """The parts of the current decimal context that can change a result (R99 C1, R101 N4):
+    precision, rounding, exponent limits, clamping and the trapped signals (flags are outputs,
+    ``capitals`` only changes how values print).  Part of every key: arithmetic depends on it,
+    and a trapped signal (``FloatOperation`` on a mixed Decimal/float comparison) changes the
+    outcome of a sort or a range."""
     ctx = decimal.getcontext()
     traps = tuple(sorted(signal.__name__ for signal, on in ctx.traps.items() if on))
     return ("decimal", ctx.prec, ctx.rounding, ctx.Emin, ctx.Emax, ctx.clamp, traps)
@@ -197,7 +195,7 @@ def _index_leaf(index, what: str) -> tuple:
 
 
 def _plan_key(plan, state: dict) -> tuple:
-    """The key of ``plan``; ``state["arithmetic"]`` is set when a node computes with numbers."""
+    """The key of ``plan`` (``state`` collects what the walk meets; reserved for callers)."""
     t = type(plan)
     if t is CollectionScanPlan:
         c = plan.collection
@@ -236,8 +234,6 @@ def _plan_key(plan, state: dict) -> tuple:
         for name, op, count_all, extract in plan._aggregations:
             if callable(op):
                 raise _Uncacheable(f"a Python aggregation ({plan.aggregations[name]['op']})")
-            if op in _ARITHMETIC:
-                state["arithmetic"] = True
             aggs.append((name, op, count_all, _extract_key(extract)))
         return ("group", _extract_key(plan._extract), tuple(aggs), _plan_key(plan.source, state))
     if t is Join:
@@ -262,38 +258,30 @@ def cache_key(source) -> tuple:
         key = _plan_key(plan, state)
     except _Uncacheable as e:
         return None, str(e.args[0])
-    context = _decimal_context_key() if state.get("arithmetic") else None
-    return (QUERY_SEMANTICS_VERSION, context, key), None
-
-
-def _strip_estimates(info):
-    if isinstance(info, dict):
-        return {k: _strip_estimates(v) for k, v in info.items() if k != "estimate"}
-    if isinstance(info, list):
-        return [_strip_estimates(v) for v in info]
-    return info
+    return (QUERY_SEMANTICS_VERSION, _decimal_context_key(), key), None
 
 
 def plan_digest(source) -> tuple:
-    """``(digest, extractors)``: a process-independent digest of the plan's structure, and the
-    fingerprints of the registered extractors it names (D56, R99 I4 and M4).  Pager tokens
-    carry both, so a resumed pager whose query plans differently -- another planner or
-    library version, another extractor function under a name -- is refused, never paged in
-    another order.  For a plan without a cache key the digest covers its ``explain()`` tree
-    without estimates."""
-    from ..indexing.keyspec import extractor_fingerprint
+    """``(digest, extractors)``: a process-independent digest of the plan's structure (the cache
+    key's structure, leaf pointers included, with the registered extractors named by name and
+    declared version instead of their per-process generation) and ``{name: version}`` of the
+    extractors it names (D56; R99 I4, R101).  Pager tokens carry both, so a resumed pager whose
+    query plans differently -- another planner or library version, another extractor version
+    -- is refused, never paged in another order.  ``ProtoUserError`` for a plan without a
+    structured key (R101 N6): no weaker digest is offered."""
+    from ..indexing.keyspec import extractor_version
     plan = as_plan(source)
     seen = {}
 
     def identity(name):
-        seen[name] = extractor_fingerprint(name)
-        return seen[name]
+        seen[name] = extractor_version(name)
+        return ("v", seen[name])
     token = _EXTRACTOR_ID.set(identity)
     try:
-        try:
-            structure = (QUERY_SEMANTICS_VERSION, _plan_key(plan, {}))
-        except _Uncacheable:
-            structure = (QUERY_SEMANTICS_VERSION, "explain", _strip_estimates(plan.explain()))
+        structure = (QUERY_SEMANTICS_VERSION, _plan_key(plan, {}))
+    except _Uncacheable as e:
+        raise ProtoUserError(f"This pager's plan has no structured digest ({e.args[0]}), so it has no token: "
+                             f"page it in this process only") from None
     finally:
         _EXTRACTOR_ID.reset(token)
     return key_digest(structure), dict(sorted(seen.items()))

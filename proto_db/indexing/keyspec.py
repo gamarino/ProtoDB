@@ -43,6 +43,9 @@ _extractors: dict[str, Callable] = {}
 #: Registration generation of every registered name (D56): a process-wide counter value taken at
 #: registration, so a name registered again after :func:`unregister_extractor` gets a new one.
 _generations: dict[str, int] = {}
+#: The version string declared at registration (R101), or None: with the name, an extractor's
+#: identity across processes.
+_versions: dict[str, str | None] = {}
 _next_generation = 1
 _extractors_lock = threading.Lock()
 
@@ -54,7 +57,7 @@ def _check_extractor_name(name) -> None:
             f"An extractor name must be a non-empty str without whitespace or a leading '@', not {name!r}")
 
 
-def register_extractor(name: str, fn: Callable) -> None:
+def register_extractor(name: str, fn: Callable, *, version: str | None = None) -> None:
     """Register ``fn(element) -> key`` under ``name`` for :meth:`KeySpec.extractor`.
 
     Registration is process-wide and must happen (typically at import time)
@@ -67,19 +70,30 @@ def register_extractor(name: str, fn: Callable) -> None:
     same key, whatever the time, the process or any state outside the element.  Indexes
     store the keys it computed, and the query result cache (D56) serves a result computed
     once for as long as the versions it read are asked for: an impure extractor (one that
-    reads the clock, say) gives stale cached results, silently.  Pager tokens identify the
-    function by :func:`extractor_fingerprint` and refuse to resume when it changed.
+    reads the clock, say) gives stale cached results, silently.
+
+    Identity across processes (D56, R101): an extractor is identified by its ``name`` and
+    the optional ``version`` string declared here, never by its code.  Pager tokens record
+    both and refuse to resume where the name is registered with another version.  So
+    changing what an extractor returns for some element requires a new name or a new
+    ``version``, exactly as changing an index definition does; registering a different
+    function under the same name and version is a promise that it computes the same keys.
+    Within a process, the registration generation (:func:`extractor_generation`) also keys
+    the result cache.
     """
     _check_extractor_name(name)
     if not callable(fn):
         raise ProtoValidationError(f"Extractor {name!r} must be callable, not {type(fn).__name__}")
+    if version is not None and (not isinstance(version, str) or not version):
+        raise ProtoValidationError(f"Extractor {name!r} version must be a non-empty str or None, not {version!r}")
     global _next_generation
     with _extractors_lock:
         current = _extractors.get(name)
-        if current is not None and current is not fn:
-            raise ProtoValidationError(f"Extractor {name!r} is already registered with another function")
+        if current is not None and (current is not fn or _versions[name] != version):
+            raise ProtoValidationError(f"Extractor {name!r} is already registered with another function or version")
         if current is None:
             _extractors[name] = fn
+            _versions[name] = version
             _generations[name] = _next_generation
             _next_generation += 1
 
@@ -99,6 +113,7 @@ def unregister_extractor(name: str) -> None:
         if _extractors.pop(name, None) is None:
             raise ProtoValidationError(f"No key extractor is registered under {name!r}")
         del _generations[name]
+        del _versions[name]
 
 
 def extractor_generation(name: str) -> int:
@@ -113,19 +128,12 @@ def extractor_generation(name: str) -> int:
     return generation
 
 
-def extractor_fingerprint(name: str) -> str:
-    """A process-independent identity of the function registered under ``name`` (D56, R99 M4):
-    a digest of its module, qualified name and code (bytecode, constants, names), the same
-    in every process that registers the same function.  Pager tokens carry it.  Captured
-    state (closure cells, globals) is not covered: extractors must be pure (see
-    :func:`register_extractor`)."""
-    import hashlib
-    fn = _registered(name)
-    code = getattr(fn, "__code__", None)
-    parts = [getattr(fn, "__module__", None) or "", getattr(fn, "__qualname__", None) or type(fn).__qualname__]
-    if code is not None:
-        parts += [code.co_code.hex(), repr(code.co_consts), repr(code.co_names)]
-    return hashlib.blake2b("\x1f".join(parts).encode(), digest_size=16).hexdigest()
+def extractor_version(name: str) -> str | None:
+    """The version declared when ``name`` was registered, or None (``ProtoValidationError`` if
+    unregistered).  With the name, the extractor's identity across processes (R101)."""
+    _registered(name)
+    with _extractors_lock:
+        return _versions.get(name)
 
 
 def _registered(name: str) -> Callable:

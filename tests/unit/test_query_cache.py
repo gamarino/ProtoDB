@@ -256,10 +256,12 @@ def test_aggregates_are_keyed_by_the_decimal_context():
         with decimal.localcontext() as ctx:
             ctx.traps[decimal.Inexact] = True
             assert cache_key(plan)[0] != default_key
-        # A plan without arithmetic does not depend on the context: one key in every context.
+        # Every key holds the context (R101 N4), plans without arithmetic too; one context, one key.
         scan = CollectionScanPlan(tx.get_root_object("items"))
+        scan_key = cache_key(scan)[0]
+        assert scan_key == cache_key(CollectionScanPlan(tx.get_root_object("items")))[0]
         with decimal.localcontext(prec=3):
-            assert cache_key(scan)[0] == cache_key(CollectionScanPlan(tx.get_root_object("items")))[0]
+            assert cache_key(scan)[0] != scan_key
 
 
 def test_index_plans_are_keyed_by_structured_arguments_not_display_strings():
@@ -374,3 +376,29 @@ def test_a_disabled_cache_counts_no_misses_and_no_refusals():
     stats = space.query_cache_stats()
     assert stats["refused"] == 0 and stats["misses"] == 0 and stats["hits"] == 0 and stats["entries"] == 0
     assert stats["capacity"] == 0
+
+
+def test_every_key_holds_the_decimal_context_and_exceptions_are_never_cached():
+    """N4 (re-review repro t10_floatop.py): a trapped FloatOperation changes a sort's outcome, so
+    every key holds the full context; a query that raised stores nothing."""
+    import decimal
+    from decimal import Decimal
+    space, db = _space()
+    db.run(lambda tx: tx.set_root_object("t", tx.new_list().extend([{"v": Decimal("1.5")}, {"v": 2.0}, {"v": 1}])))
+    with db.new_transaction() as tx:
+        q = from_collection(tx.get_root_object("t")).order_by(F.v)
+
+        def trapped():
+            with decimal.localcontext() as ctx:
+                ctx.traps[decimal.FloatOperation] = True
+                return q.cached(space.query_cache)
+        with pytest.raises(decimal.FloatOperation):
+            trapped()
+        assert space.query_cache_stats()["entries"] == 0
+        assert [r["v"] for r in q.cached(space.query_cache)] == [1, Decimal("1.5"), 2.0]
+        with pytest.raises(decimal.FloatOperation):
+            trapped()                          # not served the rows the default context computed
+        scan = CollectionScanPlan(tx.get_root_object("t"))
+        default_key = cache_key(scan)[0]
+        with decimal.localcontext(prec=5):
+            assert cache_key(scan)[0] != default_key

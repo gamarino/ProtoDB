@@ -329,20 +329,20 @@ def test_a_token_whose_plan_changed_is_refused_as_stale(monkeypatch):
         db.resume_pager(token)
 
 
-def test_a_token_over_an_extractor_is_refused_when_the_function_changed():
-    """M4: the token carries the extractors' identities; another function under the name is
-    refused, the same function registered again is not."""
+def test_a_token_names_extractors_by_name_and_declared_version():
+    """M4, R101: across processes an extractor's identity is its name plus the version declared at
+    registration (no code fingerprint).  Another version under the name is refused as stale;
+    the same name and version resume, whatever function object is registered."""
     from proto_db.errors import ProtoStalePagerError
-    from proto_db.indexing.keyspec import KeySpec, register_extractor, unregister_extractor
+    from proto_db.indexing.keyspec import (KeySpec, extractor_version, register_extractor,
+                                           unregister_extractor)
     from proto_db.query.terms import Term
 
     def double(e):
         return 2 * e["k"]
-
-    def triple(e):
-        return 3 * e["k"]
-    register_extractor("t84b_tok", double)
+    register_extractor("t84b_tok", double, version="1")
     try:
+        assert extractor_version("t84b_tok") == "1"
         space = ObjectSpace(MemoryStorage())
         db = space.new_database("db")
         db.run(lambda tx: tx.set_root_object("p", tx.new_list().add_index(
@@ -350,11 +350,128 @@ def test_a_token_over_an_extractor_is_refused_when_the_function_changed():
         with db.new_transaction() as tx:
             token = tx.pager("p", where=Term("@t84b_tok", ">=", 4), order_by="@t84b_tok", page_size=2).token()
         unregister_extractor("t84b_tok")
-        register_extractor("t84b_tok", double)
+        register_extractor("t84b_tok", lambda e: 2 * e["k"], version="1")       # same identity
         assert [r["k"] for r in db.resume_pager(token).page(0)] == [2, 3]
         unregister_extractor("t84b_tok")
-        register_extractor("t84b_tok", triple)
+        register_extractor("t84b_tok", double, version="2")
+        with pytest.raises(ProtoStalePagerError, match="t84b_tok"):
+            db.resume_pager(token)
+        unregister_extractor("t84b_tok")
+        register_extractor("t84b_tok", double)                                   # no version
         with pytest.raises(ProtoStalePagerError):
             db.resume_pager(token)
+        with pytest.raises(ProtoValidationError):
+            register_extractor("t84b_bad", double, version=3)
     finally:
         unregister_extractor("t84b_tok")
+
+
+_XPROC_EXTRACTORS = textwrap.dedent("""
+    import sys
+    from proto_db.indexing.keyspec import register_extractor
+    def genexpr_key(e):
+        return sum(1 for c in e["s"] if c in "aeiou")
+    def setconst_key(e):
+        return e["s"] in {"alpha", "beta", "gamma", "delta", "epsilon", "zeta"}
+    register_extractor("genexpr_key", genexpr_key)
+    register_extractor("setconst_key", setconst_key, version="2026-11")
+""")
+
+
+def test_extractor_tokens_resume_in_processes_with_other_hash_seeds(tmp_path):
+    """N1 (re-review repro t3_xproc.py): a token over extractors holding a generator expression and
+    a set literal, written in one process, resumes in processes with other hash seeds."""
+    path = str(tmp_path / "store")
+    write = _XPROC_EXTRACTORS + textwrap.dedent(f"""
+        from proto_db.storage.file import FileStorage
+        from proto_db.transactions import ObjectSpace
+        space = ObjectSpace(FileStorage({path!r}))
+        db = space.new_database("db")
+        words = ["alpha", "beta", "gamma", "omega", "zeta", "iota", "kappa"]
+        db.run(lambda tx: tx.set_root_object("items", tx.new_list().extend(
+            [{{"s": words[i % 7] + str(i), "i": i}} for i in range(40)])))
+        with db.new_transaction() as tx:
+            for n in ("genexpr_key", "setconst_key"):
+                p = tx.pager("items", order_by="@" + n, page_size=7)
+                print(n, p.token().hex(), ",".join(str(e["i"]) for e in p.page(1)))
+        space.close()
+    """)
+    resume = _XPROC_EXTRACTORS + textwrap.dedent(f"""
+        from proto_db.storage.file import FileStorage
+        from proto_db.transactions import ObjectSpace
+        space = ObjectSpace(FileStorage({path!r}))
+        db = space.open_database("db")
+        for line in sys.stdin:
+            n, tok, page = line.split()
+            got = ",".join(str(e["i"]) for e in db.resume_pager(bytes.fromhex(tok)).page(1))
+            print(n, got == page)
+        space.close()
+    """)
+
+    def run(code, seed, stdin=None):
+        env = dict(os.environ, PYTHONHASHSEED=str(seed), PYTHONPATH=ROOT)
+        out = subprocess.run([sys.executable, "-c", code], input=stdin, capture_output=True, text=True,
+                             env=env, cwd=ROOT, timeout=120)
+        assert out.returncode == 0, out.stderr
+        return out.stdout
+    tokens = run(write, 1)
+    for seed in (2, 3):
+        assert run(resume, seed, tokens).split() == ["genexpr_key", "True", "setconst_key", "True"]
+
+
+def test_a_forged_atom_operand_in_a_token_is_a_client_error():
+    """N5 (re-review repro t8_errors.py): a reference anywhere in a token, including an atom
+    operand of its predicate, is probed while decoding: never ProtoCorruptionError."""
+    import uuid as uuid_module
+    import msgpack
+    from proto_db.errors import ProtoReferenceError
+    space = ObjectSpace(MemoryStorage())
+    db = space.new_database("db")
+    db.run(lambda tx: tx.set_root_object("p", tx.new_list().add_index(RangeIndex("k", "k")).extend(
+        [{"k": i, "o": None} for i in range(30)])))
+    with db.new_transaction() as tx:
+        token = tx.pager("p", where=["o", "==", None], order_by="k", page_size=5).token()
+        seg = tx._db_root.atom_pointer.segment.bytes
+    for wire in ({"@ref": [seg, 10 ** 9, 0]}, {"@ref": [uuid_module.uuid4().bytes, 1, 0]},
+                 {"@ref": [seg, 1, 999999]}):
+        body = msgpack.unpackb(token, raw=False)
+        body["where"] = ["o", "==", wire]
+        with pytest.raises(ProtoReferenceError):
+            db.resume_pager(msgpack.packb(body, use_bin_type=True)).page(0)
+
+
+def test_a_pager_whose_plan_has_no_structured_digest_has_no_token():
+    """N6: a token is built only from the structured digest; a plan without one (here an index
+    class that did not opt in to caching) pages normally but refuses token() clearly."""
+    from proto_db.indexing.range import RangeIndex as Base
+
+    class Private(Base):
+        __type_name__ = "tests.t84b.PrivateRangeIndex"
+    space = ObjectSpace(MemoryStorage())
+    db = space.new_database("db")
+    db.run(lambda tx: tx.set_root_object("p", tx.new_list().add_index(Private("k", "k")).extend(
+        [{"k": i} for i in range(10)])))
+    with db.new_transaction() as tx:
+        pager = tx.pager("p", order_by="k", page_size=3)
+        assert [r["k"] for r in pager.page(1)] == [3, 4, 5]
+        with pytest.raises(ProtoUserError, match="no structured digest"):
+            pager.token()
+
+
+def test_resume_reads_the_database_identity_once_per_handle(monkeypatch):
+    """N2: a database's identity never changes, so a handle reads it once, not on every resume."""
+    space, db = _db()
+    _seed(db, 50)
+    with db.new_transaction() as tx:
+        token = tx.pager("items", order_by="k", page_size=5).token()
+    db.resume_pager(token)
+    reads = [0]
+    original = type(space)._read_storage_root
+
+    def counting(self, *a, **kw):
+        reads[0] += 1
+        return original(self, *a, **kw)
+    monkeypatch.setattr(type(space), "_read_storage_root", counting)
+    for _ in range(5):
+        db.resume_pager(token).page(1)
+    assert reads[0] == 0, reads
