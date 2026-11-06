@@ -23,12 +23,15 @@ How to read these numbers
 - **Every figure is verified, in every repetition.** Each workload checks its work against an
   independent computation: a brute-force scan, a model computed from pure functions, a read-back
   of the persisted state by a new instance, or a strongly consistent query on rqlite. One wrong
-  repetition fails the run, and a failed run is reported, never averaged in.
+  repetition fails the run, and a failed run is reported, never averaged in. In the session
+  [SES], one cell had failed runs (ProtoDB, 4 readers per node, GIL on); it is reported run by
+  run, and its rates come only from verified runs (`Mixed reads and writes`_).
 - **Medians and ranges.** The suite runs 5 timed repetitions after 1 warm-up (bulk loads 3; the
   cluster workloads 3 runs of 3 s; the rqlite workloads 2). The interleaved session runs every
   cell 5 times, alternating the GIL mode cell by cell. Figures are medians, with the range of the
   runs in brackets (``[min-max]``). With fewer than 20 samples the raw files report the maximum
-  (minimum for a rate) rather than a p95. A figure from one run is marked *single run*.
+  (minimum for a rate) rather than a p95. A figure from one run is marked *single run*: the
+  inventory builds (one per step and GIL mode) and the 10^7 step are single runs.
 - **GIL off is the default**; figures with the GIL on (``-X gil=1``) follow in parentheses or in
   their own column.
 - **One machine, one disk.** All cluster peers and all rqlite nodes share one laptop CPU and one
@@ -78,7 +81,10 @@ Tag             File                                                       Commi
 ==============  =========================================================  ===========  ======================================
 
 The stray-process check (no ``rqlited``, no other benchmark process) passed before every
-session and is recorded in [SES] and in the run logs.
+session. It is stored in [SES] and in ``2026-11-06-8b439cd-inventory-ladder.log``. For the suite
+and mixed runs it is in ``2026-11-06-task9c-run-checks.log``, copied from the driver logs; those
+JSON files predate the harness field. From Task 9c fix round 1 on, the harness stores the check
+in every results file (``check``).
 
 Profiles at a glance
 --------------------
@@ -88,17 +94,21 @@ Profile                                     Where ProtoDB fits                  
 ==========================================  ==========================================  ==========================================
 `Writes in a cluster`_                      an embedded peer: no server hop, data       rqlite: 1.8-19x the rows/s on every
                                             built where it is written                   commit shape measured here
-`Mixed reads and writes`_                   reads never wait and never leave the node:  rqlite when reads must be linearizable
-                                            18-22 us p50, 75,000-117,000 reads/s         and the CPU is shared with the writers
+`Mixed reads and writes`_                   reads never wait and never leave the node:  rqlite when reads must be linearizable,
+                                            p50 18-22 us with 1 reader per node, 50-64  and when readers share the writers'
+                                            us with 4 (p99 up to 2.3 ms); but readers   CPU: its writers lose 5 % (1 reader
+                                            take the writers' CPU: commits -34 % (1     per node) to 40 % (4), ProtoDB's 34 %
+                                            reader per node), -79 % (4)                 to 79 %
 `Point reads`_                              (on par for a primary key)                  SQLite: secondary-index and ad-hoc reads
-                                                                                        3-40x faster
+                                                                                        3-60x faster
 `Deep pages`_                               random jumps to any page: flat ~215 us      SQLite keyset for next-page browsing
 `Repeated queries`_                         a repeated query on an unchanged root:      SQLite for a first, ad-hoc query
                                             served by pointer in ~3.5 ms
 `History and "as of"`_                      any past version, every query, no           SQLite with an audit table when the
                                             schema work                                 history question is known in advance
 `Object graphs`_                            (functional, not fast)                      SQLite joins and recursive CTEs
-`Bulk load and scale`_                      --                                          SQLite: 100x faster to load, 8x smaller
+`Bulk load and scale`_                      -- (scale limited by a known defect, R102)  SQLite: 112-134x faster to load, 8.6-9.6x
+                                                                                        smaller (allocated)
 `Single-process commits`_                   ``none``/``flush`` with free threading      SQLite at matched durability
 `Operations`_                               object-store latency off the commit path;   rqlite: a server any client can reach
                                             peers embedded in the application
@@ -108,25 +118,44 @@ Writes in a cluster
 -------------------
 
 **Conceptual fit.** rqlite is a replicated SQLite on Raft: the leader orders every write, appends
-it to a log that it fsyncs, replicates it, and applies it to SQLite. Each write is one Raft entry;
-the log's fsync is shared by the entries that arrive together. ProtoDB peers are embedded in the
+it to a log that it fsyncs, replicates it, and applies it to SQLite. Each write request is one Raft
+entry (our reading of the design; whether entries share a sync is not documented). ProtoDB peers are embedded in the
 application: each node builds its own commits (path copies of persistent structures), asks the
 owner of the term for a write permission, groups the transactions pending on that node into one
 round, and replicates one self-describing append to its data replicas (D50, D54, D55). The
 ProtoDB commit has no client-server hop, but it has more work per commit in Python (build,
 merge, serialize) and a permission round between nodes.
 
-**rqlite's durability, verified.** rqlite's documentation states that "the Raft subsystem calls
-``fsync()`` after every write to its log" (https://rqlite.io/docs/guides/performance/); the Raft
-log is "the authoritative record of every change", while the SQLite database runs with
-``SYNCHRONOUS=OFF`` and is rebuilt from the log or a snapshot after a crash
-(https://rqlite.io/docs/design/). A normal write "waits until a majority of nodes have committed
-it"; queued writes (``?queue``), which acknowledge before the log is written, are opt-in per
-request and are not used here (https://rqlite.io/docs/api/queued-writes/). So every acknowledged
-rqlite write is on a majority's synced log, the same class as ProtoDB with
-``durability="fsync"``. rqlite's syncs were not counted in this task; *history:* Task 9 counted
-0.61 log syncs per request per node with ``strace`` (``8ad6bf3``), concurrent requests sharing one
-sync.
+**rqlite's durability, from its documentation.** The performance guide says "the Raft
+subsystem calls fsync() after every write to its log", so "the change is safely persisted in
+permanent storage before writing those changes to the SQLite database"
+(https://rqlite.io/docs/guides/performance/). The design page calls the Raft log "the
+authoritative record of every change that has happened to the system". It also says: "SQLite
+runs in WAL mode and with SYNCHRONOUS=OFF"; "rqlite periodically switches SQLite to
+SYNCHRONOUS=FULL mode, thereby fsync'ing the entire SQLite database to disk"; "When rqlite
+restarts, it starts from the last known fsync'ed version of the SQLite database"; and, when no
+such copy is available, "the SQLite database is completely rebuilt using the information stored
+in the Raft log" (https://rqlite.io/docs/design/). On writes: "Normally rqlite waits until a
+write request has been safely committed to a majority of SQLite databases before returning a
+response to the client". Queued writes (``?queue``) instead return "after queuing the requests
+but before the data is committed to the Raft log"; they are opt-in per request and are not used
+here (https://rqlite.io/docs/api/queued-writes/).
+
+*Our inference, not stated by the documentation:* an acknowledged rqlite write is on the synced
+Raft log of a majority, which would put it in the same durability class as ProtoDB with
+``durability="fsync"``. The documentation says the log is synced before the change is applied
+and that the response waits for a majority commit. It does not say in one place that every
+majority member has synced before the client is acknowledged.
+
+The documentation does not say whether concurrent writes share one log fsync. rqlite's syncs
+were not counted in this task. *History:* Task 9 counted 0.61 log syncs per request per node
+with ``strace`` (``8ad6bf3``), which suggests concurrent requests share syncs; that is a
+measurement, not documented behaviour.
+
+*Storage mode.* rqlite v10.6.6 offers no in-memory or on-disk option (``rqlited -h`` lists none),
+and the cited pages do not say where the SQLite file lives. The harness passes no storage flag.
+The design page's WAL mode and its periodic fsync of "the entire SQLite database to disk" imply
+an on-disk database; that is our reading.
 
 3 members, 4 client threads per member, 3 s per run; ProtoDB TCP peers with
 ``durability="fsync"``; each commit (or rqlite request) writes one 100-byte value and one id, or
@@ -176,9 +205,11 @@ workload of large transactions, or of many small writes from clients that are no
 processes, belongs on rqlite.
 
 **Where ProtoDB fits.** The writer is the application process itself, with no server to run or
-reach. The 100 KB payload moves about 1.3x rqlite's bytes, not more. Throughput holds from 1
-to 8 peers (317 to 327 commits/s with the GIL off) rather than falling with the member count,
-because only ``f + 1`` replicas sync the data (D54).
+reach. The 100 KB payload moves about 1.3x rqlite's bytes, not more. With the GIL off,
+throughput holds from 1 to 8 peers (317 to 327 commits/s), although syncs per commit rise from
+0.84 to 2.19. With the GIL on it falls from 324 to 234 over the same range. The design reason for
+the flat GIL-off curve is that only ``f + 1`` replicas sync the data (D54); that cause was not
+measured here.
 
 Mixed reads and writes
 ----------------------
@@ -241,16 +272,35 @@ reads/s), which is the run-to-run variance of these cells on this machine. With 
 rqlite readers (Python HTTP clients) read 25-40 % fewer rows per second at ``none`` and ``weak``
 [SES]; that is the client, not rqlite.
 
-With the GIL on [SES]: ProtoDB readers keep their latency (p50 18-19 us, p99 91-174 us), but the
-writers starve: 211 commits/s alone, 27.6 with 1 reader per node and 12.0 with 4. **Four of the
-five GIL-on runs with 4 readers per node failed verification**: in three, one node's writer
-threads got ``ProtoOutcomeUnknownError`` (an acknowledgement arrived after the permission or
-lease ended) and each such commit took effect (4 extra ids, none missing, none duplicated); in
-the fourth, ids were exact and no thread died but the run reported an unhealthy member or a
-failed replication (the cell did not record which; it does from the next commit on). These are
-the conservative failures the protocol allows (R86: an unknown outcome, never a lost
-acknowledged commit), caused by reader threads holding the GIL for longer than the timing
-margins. The suite's two GIL-on runs [MX1] passed.
+**With the GIL on**, ProtoDB readers keep their latency, but the writers starve: they compete
+with the readers for the interpreter. Medians of 5 verified runs [SES]: 211.4 commits/s with no
+readers; 27.6 [25.7-28.6] with 1 reader per node (reads 90,263/s, p50 19 us, p99 134 us);
+readers alone 117,739/s (1 per node) and 97,266/s (4 per node).
+
+The cell with **4 writers and 4 readers per node, GIL on, is not measurable as a median: 4 of
+its 5 session runs failed verification** [SES]:
+
+====  ========  ==============  ==========  ============================================================
+run   verified  commits/s       reads/s     outcome
+====  ========  ==============  ==========  ============================================================
+1     no        (12.0)          (91,424)    writer threads of one node died with
+                                            ``ProtoOutcomeUnknownError``; 4 extra ids, none missing
+2     no        (10.6)          (87,664)    the same; 4 extra ids, none missing
+3     no        (8.1)           (91,133)    the same; 4 extra ids, none missing
+4     yes       12.8            64,584      read p50 28 us, p99 336 us
+5     no        (13.1)          (91,307)    ids exact, no thread error; an unhealthy member or a failed
+                                            replication (the run did not record which)
+====  ========  ==============  ==========  ============================================================
+
+Rates in parentheses come from failed runs and are not figures: a run whose writer threads died
+understates its rate by construction. The verified figures for this cell are the one session
+run (12.8 commits/s, 64,584 reads/s) and the suite's two runs [MX1], which passed: 15.0
+[14.1-15.8] commits/s and 90,395 reads/s. The failures are the conservative ones the protocol
+allows (R86): an unknown outcome whose commit took effect, never a lost acknowledged commit.
+They occur when reader threads hold the GIL past the commit path's timing margins (our reading
+of the errors, which say the acknowledgement was counted after the permission or lease ended).
+Since fix round 1 the session takes its medians over verified runs only and lists the failed
+runs (``benchmarks/session.py``).
 
 What the numbers show:
 
@@ -258,13 +308,17 @@ What the numbers show:
   moves under writes (p50 18 -> 22 us with one reader per node). The writers lose throughput to
   the readers' CPU: -34 % with one reader per node and -79 % with four, because 12 reader
   threads plus 12 writers plus 3 nodes' protocol threads run on 6 cores. With the GIL on the
-  readers win the interpreter and the writers nearly stop. A deployment that must keep write
+  readers win the interpreter and the writers nearly stop (27.6 and 12.8-15.8 commits/s, above).
+  "Readers never wait" still holds; what readers cost is the writers' CPU. A deployment that must keep write
   throughput under heavy reads needs the reads on other cores or another member (a learner,
   D54), not more threads in the writer's process.
-- **rqlite's reads leave its writers almost untouched** (-5 % with one reader per node at
-  ``none``), because its reads cost a client round trip and little server CPU, but each read
-  costs 0.4-0.9 ms at ``none``/``weak`` and 10-21 ms at ``linearizable``/``strong`` under write
-  load.
+- **rqlite's writers lose less to its readers, but not nothing.** With one reader per node
+  they lose 5 % at ``none`` (596.5 -> 565.3 commits/s), 8 % at ``weak``, 0.6 % at
+  ``linearizable`` and 2.7 % at ``strong``. With four readers per node they lose 40 % at ``none``
+  (355 commits/s), 18 % at ``weak`` (488), 17 % at ``linearizable`` (493) and 16 % at
+  ``strong`` (501). The same steps cost ProtoDB's writers 34 % and 79 % (188 and 58 commits/s).
+  Each rqlite read under write load costs 0.5-0.7 ms at ``none``/``weak`` with one reader per
+  node (1.2-1.5 ms with four), and 11-21 ms at ``linearizable``/``strong``.
 - Per read, an embedded ProtoDB snapshot read is about 22x faster than an rqlite ``none`` read
   through HTTP on this machine, and 500x faster than a linearizable one under load. The
   comparison is between an embedded read and a client-server read, which is the point of the
@@ -298,7 +352,8 @@ top-10 of ``city == c`` by score   603 us (715)        1.4 ms (heapq)     79.5 u
 =================================  ==================  =================  ==================
 
 **Where SQLite is the better choice:** everywhere but the primary key: 3-18x on indexed reads,
-and a full scan is about 40x slower in ProtoDB. *History:* top-10 of ``score >= x`` was 12.9 ms in Task 9 (R28
+and an unindexed scan is 42x slower in ProtoDB for a point query and 60x for a range (52.1 ms
+against 0.86 ms). *History:* top-10 of ``score >= x`` was 12.9 ms in Task 9 (R28
 carry item, the ordered scan started at the lowest key); it is 175 us now.
 
 Deep pages
@@ -382,8 +437,12 @@ The bulk change itself (one commit, the same region) costs ProtoDB 663 / 424 us 
 and SQLite, trigger included, 80 / 15 us.
 
 ``versions`` [S0]: a new version per update costs ProtoDB 42 / 55 / 67 us at 10^3 / 10^4 / 10^5
-entries; a Python ``dict`` copy costs 8 us / 158 us / 3.1 ms. From 10^4 entries on, every
-retained version is cheaper in ProtoDB, and every one stays readable.
+entries; a Python ``dict`` copy costs 8 us / 158 us / 3.1 ms. Those ProtoDB figures are versions
+in memory, not committed. A *committed* update (one transaction, ``durability="none"``) costs
+1.14 / 1.50 / 1.52 ms at the same sizes (GIL on [S1]: 1.11 / 1.34 / 1.60 ms). So an uncommitted
+version is cheaper than a ``dict`` copy from 10^4 entries on. A committed, durable version costs
+more than a ``dict`` copy at 10^3 and 10^4 entries and about half of one at 10^5 (1.5 ms against
+3.1 ms); unlike the copy, it is persisted, and every one stays readable.
 
 **Where SQLite is the better choice:** a history question known in advance, served by an audit
 table: 6-11x faster per row here. ProtoDB is the better choice when the question is not known in
@@ -430,14 +489,17 @@ SQLite in WAL with ``synchronous=FULL``. The answers are checked against a model
 pure functions of the ids.
 
 ===========================  ================  ================  =====================  ====================
-Step                         ProtoDB build     SQLite build      ProtoDB on disk        SQLite on disk
+Step (each a single run)     ProtoDB build     SQLite build      ProtoDB on disk        SQLite on disk
                              objects/s         objects/s         bytes / object         bytes / object
                              (commits/s)       (commits/s)       (alloc. / apparent)    (alloc. / apparent)
 ===========================  ================  ================  =====================  ====================
 95,645 (28 sites) [S0]       3,458 (1.01)      386,009 (113)     147 / 423              15 / 31
 958,665 (277 sites) [INV]    2,830 (0.82)      378,779 (109)     157 / 424              18 / 31
-10^7 (2,769 sites)           did not fit       --                --                     --
+10^7 (2,769 sites)           did not fit [1]   --                --                     --
 ===========================  ================  ================  =====================  ====================
+
+[1] Single run, stopped at 5,921,408 objects; the limit comes from a known retention defect being
+fixed in Task 8.3m (R102), and the ladder will be regenerated afterwards (see below).
 
 Allocated is what ZFS reports after compression (``du``), apparent the file sizes. The 10^5
 build is a single run; the 10^6 build a single run per GIL mode (GIL on: 2,775 and 322,266
@@ -450,6 +512,15 @@ at a site 2.35 ms against 132 us (SQLite 175 against 7 us); path trace 31.6 ms a
 (SQLite 0.67 ms against 0.29 ms). ProtoDB's cold cost is decoding: a new instance decodes every
 node it visits.
 
+.. admonition:: Known defect: these scale and memory figures will be regenerated
+
+   The memory growth below, the 10^7 limit and the in-suite ``parallel_scan`` figures come from
+   a **known retention defect** in the decoded-atom cache. It is being fixed in **Task 8.3m**
+   (ruling R102: the cache must bound memory, not only entries). Once that fix lands, the
+   inventory ladder, the memory figures and ``parallel_scan`` will be measured again and this
+   section rewritten. Until then, read "did not fit" as a property of the current
+   implementation, not of ProtoDB's model.
+
 **Memory, and the limit of the ladder.** The building process's peak RSS at 10^6 objects was 2.64 GB with the GIL
 off and 2.59 GB with it on (``/usr/bin/time -v``, both systems in one process), about 2.7 KB per
 object built.
@@ -458,8 +529,8 @@ The 10^7 step ran under ``MemoryMax=20G`` with swap barred. It was stopped delib
 35 minutes, when available memory fell under 8 GB (earlyoom on this machine acts at 10 % of RAM).
 At that point it had committed 5,921,408 objects (1,496 of 2,769 sites) and its peak RSS was
 14.87 GB, still growing linearly at about 2.5 KB per object. Its extrapolated peak (about 26 GB)
-exceeds the cap. **On this machine the ladder stops between 10^6 and 10^7 objects**
-(``2026-11-06-8b439cd-inventory-ladder.log``). The limit is not the data: the same database,
+exceeds the cap. **At commit 8b439cd, on this machine, the ladder stops between 10^6 and 10^7
+objects** (``2026-11-06-8b439cd-inventory-ladder.log``), because of the defect described next. The limit is not the data: the same database,
 reopened by a new process, read its counts with a peak RSS of 32 MB.
 
 **What holds the memory: the decoded-atom cache pins whole subtrees.** A deterministic
@@ -482,12 +553,13 @@ cached interior node refers strongly to its decoded children, and the newest roo
 cached. The cache bounds its *entries*, but eviction frees nothing that a cached ancestor still
 reaches, so a writing process keeps every node it ever wrote decoded. This contradicts the
 reading of D53 / 8.3l that resident memory is bounded by the decoded-atom cache. It is a
-ProtoDB retention finding, not a property of the workload (the workload keeps only the current
-site's rows). It is reported, not fixed, in this task. The same live heap is the likely reason
+ProtoDB retention defect, not a property of the workload (the workload keeps only the current
+site's rows). It is being fixed in Task 8.3m (R102), and the figures of this section will be
+regenerated afterwards. The same live heap is the likely reason
 ``parallel_scan`` does not scale inside the full suite (`Parallel work`_).
 
-**Where SQLite is the better choice:** loading data: 100-130x faster per object, and 8-9x
-smaller on disk. A data set that is loaded in bulk and rarely changed belongs in SQLite.
+**Where SQLite is the better choice:** loading data: 112x (10^5) and 134x (10^6) faster per
+object, and 9.6x and 8.6x smaller on disk as allocated (13.6x in apparent size at both steps). A data set that is loaded in bulk and rarely changed belongs in SQLite.
 
 Single-process commits
 ----------------------
@@ -526,7 +598,8 @@ workers (``2026-11-06-4aab0f2-parallel-alone-gil-off.json``). Inside the full su
 same code gave 1.03 / 0.82 / 1.07 / 1.15 / 1.12x. The suite runs it after workloads that leave a
 large live heap in the process (the 10^6-row pagination and query-cache data sets, kept decoded
 as described under `Bulk load and scale`_). The free-threaded collector's stop-the-world passes
-then grow with that heap. The cause is inferred from the alone/in-suite contrast and was not
+then grow with that heap (the retention defect of `Bulk load and scale`_, being fixed in Task
+8.3m; these figures will be regenerated after it). The cause is inferred from the alone/in-suite contrast and was not
 measured further. *History:* the 2026-11-03 suite (``8ad6bf3``, dirty tree) reported 4.15x at 8
 workers.
 
@@ -543,8 +616,10 @@ Operations
 ----------
 
 - **Object-store latency stays off the commit path** (D46). 3 in-process peers, blind adds:
-  434 commits/s with a 0 ms store and 391 with a 30 ms store, ratio 0.90 [S0]; with the GIL on
-  209 and 215, ratio 1.03 [S1]. The CAS-only baseline (writers arbitrated by the store's
+  434 [429.7-436.5] commits/s with a 0 ms store and 391 [144.2-446.7] with a 30 ms store,
+  ratio of medians 0.90 [S0]. The 30 ms runs include one at 144 commits/s, so on this evidence a
+  slow store is not always free; three runs cannot say how often that happens. With the GIL on
+  the figures are 209 [201.3-215.5] and 215 [213.4-216.6], ratio 1.03 [S1]. The CAS-only baseline (writers arbitrated by the store's
   conditional write, the reverted D5 design) falls to 6.6 commits/s with one writer and 6.2 with
   four at 30 ms (p95 3.6 s, 0.17-0.26 failed root CAS per commit) [S0].
 

@@ -1,0 +1,10 @@
+# Task 9c pre-run stray-process checks, copied from the driver logs (scratchpad runall.log, run2.log).
+# Pattern: pgrep -af 'rqlited|cluster_peer' (the suite JSONs of 4aab0f2/8b439cd predate the harness field).
+== session 2026-11-06T03:46:15-03:00 stray: none; free: 1005G
+== mixed-gil0 2026-11-06T04:08:57-03:00 stray: none; free: 1005G
+== mixed-gil1 2026-11-06T04:12:36-03:00 stray: none; free: 1005G
+== suite-gil0 2026-11-06T02:41:41-03:00 stray: none; free: 1005G
+== suite-gil1 2026-11-06T03:12:52-03:00 stray: none; free: 1005G
+== session 2026-11-06T03:44:22-03:00 stray: none; free: 1005G
+== parallel_scan + concurrent_reads alone (2026-11-06-4aab0f2-parallel-alone-gil-off.json), run on 2026-11-06 after the memory diagnosis: pgrep -af 'rqlited|benchmarks|memdiag' printed 'stray: none' before the run
+# inventory ladder steps: see 2026-11-06-8b439cd-inventory-ladder.log
