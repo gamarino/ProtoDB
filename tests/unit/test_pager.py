@@ -173,8 +173,11 @@ def test_snapshot_references_are_validated():
         db.snapshot_at(b"garbage")
     with pytest.raises(ProtoValidationError):
         db.snapshot_at("not bytes")
-    with pytest.raises(ProtoCorruptionError):
-        db.snapshot_at(encode_ref("snapshot", "db", items_ptr))
+    from proto_db.errors import ProtoReferenceError
+    with db.new_transaction() as tx:
+        origin = tx._db_root.origin
+    with pytest.raises(ProtoReferenceError):          # a pointer to a collection, not a version (M6)
+        db.snapshot_at(encode_ref("snapshot", "db", items_ptr, origin))
     with pytest.raises(ProtoValidationError, match="Not a pager token"):
         db.resume_pager(ref)
     assert decode_ref(ref)["kind"] == "snapshot"
@@ -227,3 +230,131 @@ def test_queryable_conveniences_cached_and_pager():
         import pytest
         with pytest.raises(Exception):
             q.cached(None)
+
+
+# -- fix round 1 (review of Task 8.4b; ruling R99) -------------------------------------------
+
+def _two_databases():
+    space = ObjectSpace(MemoryStorage())
+    a, b = space.new_database("a"), space.new_database("b")
+    for db, tag in ((a, "secret-a"), (b, "b")):
+        db.run(lambda tx, tag=tag: tx.set_root_object("people", tx.new_list().add_index(RangeIndex("age", "age"))
+                                                      .extend([{"name": f"{tag}-{i}", "age": i} for i in range(5)])))
+    return space, a, b
+
+
+def test_a_token_or_entry_of_another_database_is_refused():
+    """I2 (review repro r3_token.py): the database a token names is checked against the identity
+    the snapshot itself carries, not only the token's own field; a HistoryEntry or Snapshot of
+    another database is refused too.  A misuse check, not a security boundary (R99)."""
+    import msgpack
+    from proto_db.errors import ProtoReferenceError
+    space, a, b = _two_databases()
+    with a.new_transaction() as tx:
+        token = tx.pager("people", order_by="age", page_size=10).token()
+        ref = tx.snapshot_ref
+    body = msgpack.unpackb(token, raw=False)
+    body["db"] = "b"
+    forged = msgpack.packb(body, use_bin_type=True)
+    for call in (lambda: b.resume_pager(forged), lambda: b.snapshot_at(forged), lambda: b.snapshot_at(ref),
+                 lambda: b.snapshot_at(a.history()[0]), lambda: b.snapshot_at(a.snapshot_at(ref))):
+        with pytest.raises(ProtoReferenceError):
+            call()
+    assert [r["name"] for r in a.resume_pager(token).page(0)][:1] == ["secret-a-0"]
+    # The database's own references still open.
+    assert a.snapshot_at(a.history()[0]).get_root_object("people").count == 5
+
+
+def test_a_recreated_database_refuses_the_old_incarnations_tokens():
+    """I2: the identity is the database's incarnation, created with it, not its name."""
+    from proto_db.errors import ProtoReferenceError
+    space1 = ObjectSpace(MemoryStorage())
+    db1 = space1.new_database("db")
+    db1.run(lambda tx: tx.set_root_object("p", tx.new_list().extend([1, 2])))
+    with db1.new_transaction() as tx:
+        ref = tx.snapshot_ref
+    space2 = ObjectSpace(MemoryStorage())
+    db2 = space2.new_database("db")
+    db2.run(lambda tx: tx.set_root_object("p", tx.new_list().extend([1, 2])))
+    with pytest.raises(ProtoReferenceError):
+        db2.snapshot_at(ref)                  # same name, another database: refused, not "corruption"
+
+
+def test_malformed_and_foreign_tokens_raise_a_client_error():
+    """M6 (review repro r7_malformed.py): never TypeError/ValueError, never ProtoCorruptionError."""
+    import uuid as uuid_module
+    import msgpack
+    from proto_db.errors import ProtoReferenceError
+    space = ObjectSpace(MemoryStorage())
+    db = space.new_database("db")
+    db.run(lambda tx: tx.set_root_object("p", tx.new_list().add_index(RangeIndex("k", "k"))
+                                         .extend([{"k": i} for i in range(5)])))
+    with db.new_transaction() as tx:
+        token = tx.pager("p", order_by="k", page_size=2).token()
+    original = msgpack.unpackb(token, raw=False)
+
+    def forge(**changes):
+        body = dict(original)
+        body.update(changes)
+        return msgpack.packb(body, use_bin_type=True)
+    cases = [forge(order=5), forge(order=[[1, 2, 3]]), forge(page=True), forge(name=7), forge(where=[1]),
+             forge(root=[uuid_module.uuid4().bytes, 0]), forge(root=[original["root"][0], 10 ** 12]),
+             forge(qv=None), forge(plan=b"other"), b"\x00garbage", 17]
+    for bad in cases:
+        with pytest.raises(ProtoReferenceError):
+            db.resume_pager(bad)
+    assert issubclass(ProtoReferenceError, ProtoValidationError)
+
+
+def test_a_token_whose_plan_changed_is_refused_as_stale(monkeypatch):
+    """I4 (review repro r8_ties.py): a resumed pager re-plans; if the plan differs (a planner
+    change, another library version) it would page another tie order, so it is refused."""
+    from proto_db.errors import ProtoStalePagerError
+    from proto_db.query import planner
+    from proto_db.query.plans import CollectionScanPlan, Filter, Sort
+    from proto_db.query.terms import Term
+    space = ObjectSpace(MemoryStorage())
+    db = space.new_database("db")
+    db.run(lambda tx: tx.set_root_object("p", tx.new_list().add_index(RangeIndex("k", "k")).extend(
+        [{"k": (7 * i) % 10, "o": i % 2, "i": i} for i in range(10)])))
+    term = Term("k", ">=", 3)
+    with db.new_transaction() as tx:
+        token = tx.pager("p", where=term, order_by=[("o", False)], page_size=3).token()
+    assert db.resume_pager(token).rows == 7                     # same plan: resumes
+
+    def other_plan(collection, where=None, order_by=None, **kw):
+        return Sort(Filter(CollectionScanPlan(collection), where), order_by)
+    monkeypatch.setattr(planner, "plan_query", other_plan)
+    with pytest.raises(ProtoStalePagerError):
+        db.resume_pager(token)
+
+
+def test_a_token_over_an_extractor_is_refused_when_the_function_changed():
+    """M4: the token carries the extractors' identities; another function under the name is
+    refused, the same function registered again is not."""
+    from proto_db.errors import ProtoStalePagerError
+    from proto_db.indexing.keyspec import KeySpec, register_extractor, unregister_extractor
+    from proto_db.query.terms import Term
+
+    def double(e):
+        return 2 * e["k"]
+
+    def triple(e):
+        return 3 * e["k"]
+    register_extractor("t84b_tok", double)
+    try:
+        space = ObjectSpace(MemoryStorage())
+        db = space.new_database("db")
+        db.run(lambda tx: tx.set_root_object("p", tx.new_list().add_index(
+            RangeIndex("x", KeySpec.extractor("t84b_tok"))).extend([{"k": i} for i in range(6)])))
+        with db.new_transaction() as tx:
+            token = tx.pager("p", where=Term("@t84b_tok", ">=", 4), order_by="@t84b_tok", page_size=2).token()
+        unregister_extractor("t84b_tok")
+        register_extractor("t84b_tok", double)
+        assert [r["k"] for r in db.resume_pager(token).page(0)] == [2, 3]
+        unregister_extractor("t84b_tok")
+        register_extractor("t84b_tok", triple)
+        with pytest.raises(ProtoStalePagerError):
+            db.resume_pager(token)
+    finally:
+        unregister_extractor("t84b_tok")

@@ -118,7 +118,11 @@ def test_the_stored_form_is_unchanged(tmp_path):
         state = space.storage.get_atom(root.atom_pointer)["s"]
     ref = state["previous"]["@ref"]
     assert ref[0] == previous_ptr.segment.bytes and ref[1] == previous_ptr.offset
-    assert set(state) == {"objects", "mutables", "previous", "version", "committed_at"}
+    # ``origin`` (the database's identity, D56 fix round 1, R99 I2): 16 bytes, carried unchanged.
+    assert set(state) == {"objects", "mutables", "previous", "version", "committed_at", "origin"}
+    with db.new_transaction() as tr:
+        root = tr._db_root
+        assert type(root.origin) is bytes and len(root.origin) == 16 and root.previous.origin == root.origin
     space.close()
 
 

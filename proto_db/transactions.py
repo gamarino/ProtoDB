@@ -106,6 +106,7 @@ import random
 import sys
 import threading
 import time
+import uuid
 import weakref
 from typing import Any, Callable, Optional
 
@@ -117,12 +118,12 @@ from .collections.sets import CountedSet, Set
 from .core.atom import Atom, AtomPointer, PersistenceContext
 from .core.dbobject import DBObject, MutableObject
 from .errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoOutcomeUnknownError,
-                     ProtoTimeoutError, ProtoUnexpectedError, ProtoUserError,
+                     ProtoReferenceError, ProtoTimeoutError, ProtoUnexpectedError, ProtoUserError,
                      ProtoValidationError)
 from .storage.base import check_lock_timeout
 from .storage.cache import BoundedCache
 from .query.cache import QUERY_CACHE_BYTES, QueryCache
-from .query.pager import decode_ref, encode_ref, pager_arguments, portable_pager
+from .query.pager import check_resumed, decode_ref, encode_ref, pager_arguments, portable_pager
 from .storage.format import FORMAT_VERSION, RootRecord
 from .cluster.coordinator import REFOUND_TERM_STEP
 from .cluster.lease import Permission
@@ -204,8 +205,10 @@ class _ClusterStamp:
 
 class DatabaseRoot(_Immutable, Atom):
     """One version of a database: ``objects`` (root name -> value), ``mutables`` (mutable
-    name -> value, D35), ``version``, ``committed_at`` and the ``previous`` version
-    (``None`` for version 0).
+    name -> value, D35), ``version``, ``committed_at``, the ``previous`` version
+    (``None`` for version 0) and ``origin``: 16 random bytes drawn when the database is
+    created and carried by every later version, the database's identity across processes
+    (D56, R99 I2).  A database created before ``origin`` existed has none (``None``).
 
     ``previous`` (and ``SpaceRoot.cluster_previous``) is a history link (Task 8.3l, D53): held
     as a pointer and loaded on each read through the root's context, so a root never keeps
@@ -215,7 +218,8 @@ class DatabaseRoot(_Immutable, Atom):
     _history_links = ("previous",)
 
     def __init__(self, *, objects: Dictionary, mutables: Dictionary, previous: Optional["DatabaseRoot"],
-                 version: int, committed_at: datetime.datetime, context: PersistenceContext | None = None):
+                 version: int, committed_at: datetime.datetime, origin: bytes | None = None,
+                 context: PersistenceContext | None = None):
         """Create a database version."""
         super().__init__(context=context)
         osa = object.__setattr__
@@ -224,8 +228,12 @@ class DatabaseRoot(_Immutable, Atom):
         self._set_link("previous", previous)
         osa(self, "version", version)
         osa(self, "committed_at", committed_at)
+        if origin is not None:
+            osa(self, "origin", origin)
 
     def _absent_attribute(self, name: str):
+        if name == "origin":
+            return None
         if name == "mutables":
             # Written before the mutable table existed (D35); no migration is provided.
             raise ProtoCorruptionError(
@@ -241,13 +249,14 @@ class HistoryEntry:
     :attr:`mutable_names` and :meth:`get_mutable` load that version's tables on access.
     """
 
-    __slots__ = ("version", "committed_at", "_root")
+    __slots__ = ("version", "committed_at", "_root", "_database")
 
-    def __init__(self, root: DatabaseRoot):
-        """Describe the database version ``root``."""
+    def __init__(self, root: DatabaseRoot, database: str | None = None):
+        """Describe the database version ``root`` of the database named ``database``."""
         self.version = root.version
         self.committed_at = root.committed_at
         self._root = root
+        self._database = database
 
     @property
     def root_names(self) -> tuple:
@@ -309,7 +318,7 @@ class Snapshot:
     @property
     def ref(self) -> bytes:
         """A reference to this version, valid in any process of the space (bytes)."""
-        return encode_ref("snapshot", self._database.name, self._root.atom_pointer)
+        return encode_ref("snapshot", self._database.name, self._root.atom_pointer, self._root.origin)
 
     @property
     def root_names(self) -> tuple:
@@ -336,7 +345,8 @@ class Snapshot:
         collection = self.get_root_object(_check_name(root_name))
         if collection is None:
             raise ProtoValidationError(f"Root {root_name!r} does not exist in version {self.version}")
-        return portable_pager(collection, database=self._database.name, root_ptr=self._root.atom_pointer,
+        return portable_pager(collection, database=self._database.name, origin=self._root.origin,
+                              root_ptr=self._root.atom_pointer,
                               root_name=root_name, where=where, order_by=order_by, page_size=page_size,
                               cache=self._database.space.query_cache)
 
@@ -1396,7 +1406,8 @@ class ObjectSpace:
             if databases.has(name):
                 raise ProtoValidationError(f"Database {name!r} already exists")
             root = DatabaseRoot(objects=Dictionary(context=context), mutables=Dictionary(context=context),
-                                previous=None, version=0, committed_at=_utc_now(), context=context)
+                                previous=None, version=0, committed_at=_utc_now(), origin=uuid.uuid4().bytes,
+                                context=context)
             return context.save(_new_space_root(databases.set_at(name, root), context, stamp, space))
 
         _commit_root(self._storage, self._lock_timeout, build, self._coordinator)
@@ -1482,13 +1493,28 @@ class Database:
         root = self._root_in(context, self._space._read_storage_root())
         entries = []
         while root is not None:
-            entries.append(HistoryEntry(root))
+            entries.append(HistoryEntry(root, self._name))
             root = root.previous
         return entries
 
     def sync(self, timeout: Optional[float] = None) -> None:
         """Wait until the commits this node knows are persisted (see :meth:`ObjectSpace.sync`)."""
         self._space.sync(timeout)
+
+    def _origin(self):
+        """This database's identity (``DatabaseRoot.origin`` of its current version, D56)."""
+        context = _SpaceContext(self._space.storage)
+        return self._root_in(context, self._space._read_storage_root()).origin
+
+    def _check_owned(self, name, root) -> None:
+        """``ProtoReferenceError`` unless ``root`` is a version of this database (R99 I2): the name
+        recorded with the reference and the identity the version itself carries must both be
+        this database's.  A misuse check, not a security boundary (references carry no MAC)."""
+        if name is not None and name != self._name:
+            raise ProtoReferenceError(f"The reference names the database {name!r}, not {self._name!r}")
+        if root.origin != self._origin():
+            raise ProtoReferenceError(f"The reference names a version of another database, not of "
+                                      f"{self._name!r} (another incarnation of the name, or another space)")
 
     def snapshot_at(self, ref) -> Snapshot:
         """A read-only :class:`Snapshot` of the version ``ref`` names (Task 8.4b, D56).
@@ -1497,30 +1523,54 @@ class Database:
         :attr:`Snapshot.ref`, a pager token (:meth:`Pager.token`), a :class:`Snapshot` or a
         :class:`HistoryEntry`.  Any process of the space may open it; the version is read
         through the space's atom cache, or from the object store when no local copy is
-        left.  ``ProtoValidationError`` for a malformed reference or one naming another
-        database; ``ProtoCorruptionError`` when the pointer does not hold a database version.
+        left.  ``ProtoReferenceError`` (a client error) for a malformed reference, one that
+        names no database version, or one of another database: the version's own identity
+        (``DatabaseRoot.origin``) is checked, not only the name a reference records.  This
+        is a misuse check, not a security boundary: a reference carries no MAC, so never hand
+        one to a party that must not read every version of the database.
         """
         self._space._check_open()
         if isinstance(ref, Snapshot):
-            root = ref._root
-            if ref.database.name != self._name:
-                raise ProtoValidationError(f"The snapshot belongs to {ref.database.name!r}, not {self._name!r}")
+            name, root = ref.database.name, ref._root
         elif isinstance(ref, HistoryEntry):
-            root = ref.root
+            name, root = ref._database, ref.root
         else:
             fields = decode_ref(ref, self._space._space_load)
-            if fields["db"] != self._name:
-                raise ProtoValidationError(f"The reference names the database {fields['db']!r}, not {self._name!r}")
+            name = fields["db"]
+            if name != self._name:
+                raise ProtoReferenceError(f"The reference names the database {name!r}, not {self._name!r}")
+            if fields["origin"] != self._origin():
+                raise ProtoReferenceError(f"The reference names another database than {self._name!r} "
+                                          f"(another incarnation of the name, or another space)")
             root = self._space._space_load(fields["root"], DatabaseRoot.__type_name__)
-            root._load()            # a pointer that does not hold a DatabaseRoot fails here
+            try:
+                root._load()
+                root.origin, root.version            # a pointer that does not hold a DatabaseRoot fails here
+            except (ProtoCorruptionError, ProtoValidationError, AttributeError, TypeError) as e:
+                raise ProtoReferenceError(f"The reference names no version of {self._name!r} "
+                                          f"({type(e).__name__})") from None
+            if type(root) is not DatabaseRoot:
+                raise ProtoReferenceError(f"The reference names no version of {self._name!r}")
+        self._check_owned(name, root)
         return Snapshot(self, root)
 
     def resume_pager(self, token: bytes):
         """The pager a token describes (:meth:`Pager.token`), on the same snapshot: in any process,
-        any later transaction, the same pages (Task 8.4b, D56).  ``ProtoValidationError`` for a
-        token of another query semantics version (its tie order could differ)."""
-        arguments = pager_arguments(decode_ref(token, self._space._space_load))
-        return self.snapshot_at(token).pager(arguments.pop("root_name"), **arguments)
+        any later transaction, the same pages (Task 8.4b, D56).  ``ProtoReferenceError`` for a
+        malformed token or one of another database; ``ProtoStalePagerError`` when the query
+        no longer plans as it did (another query semantics version, planner or extractor
+        function), since its pages could then come in another order."""
+        fields = decode_ref(token, self._space._space_load)
+        arguments = pager_arguments(fields)
+        snapshot = self.snapshot_at(token)
+        root_name = arguments.pop("root_name")
+        try:
+            pager = snapshot.pager(root_name, **arguments)
+        except ProtoReferenceError:
+            raise
+        except (ProtoValidationError, ProtoUserError) as e:
+            raise ProtoReferenceError(f"The pager token does not describe a query of this version: {e}") from None
+        return check_resumed(pager, fields)
 
     def run(self, fn: Callable[["Transaction"], Any], retries: int = 10,
             backoff: tuple = (0.001, 0.2)) -> Any:
@@ -1669,7 +1719,7 @@ class Transaction:
     @property
     def snapshot_ref(self) -> bytes:
         """A reference to the version this transaction reads (:meth:`Database.snapshot_at`)."""
-        return encode_ref("snapshot", self._database.name, self._db_root.atom_pointer)
+        return encode_ref("snapshot", self._database.name, self._db_root.atom_pointer, self._db_root.origin)
 
     def pager(self, root_name: str, *, where=None, order_by=None, page_size: int):
         """A portable pager over root ``root_name`` of this transaction's snapshot (see
@@ -1940,7 +1990,8 @@ class Transaction:
                 mutables = mutables.remove_at(name)
         new_root = DatabaseRoot(objects=objects, mutables=mutables, previous=db_root,
                                 version=db_root.version + 1,
-                                committed_at=max(_utc_now(), db_root.committed_at), context=self)
+                                committed_at=max(_utc_now(), db_root.committed_at), origin=db_root.origin,
+                                context=self)
         new_space = _new_space_root(space.databases.set_at(self._database.name, new_root), self, stamp, space)
         ptr = self.save(new_space)
         if stamp is not None:

@@ -11,13 +11,18 @@ by slicing.  The pager keeps its own reference to that result, so an eviction fr
 cache never makes it compute again.
 
 A *portable* pager (made by ``Transaction.pager``, ``Snapshot.pager`` or
-``Database.resume_pager``) also has a token: msgpack naming the database, the
-``DatabaseRoot`` of the snapshot, the root holding the collection, the predicate (in the
-0.1 list syntax, operands in the codec's wire form), the order, the page size and
-:data:`~proto_db.query.cache.QUERY_SEMANTICS_VERSION`.  Any process may resume it with
-``Database.resume_pager(token)``: it plans the query again on that snapshot (planning is
-deterministic) and serves the same pages.  A token written by another semantics version
-is refused rather than risk another tie order.
+``Database.resume_pager``) also has a token: msgpack naming the database and its identity
+(``DatabaseRoot.origin``), the ``DatabaseRoot`` of the snapshot, the root holding the
+collection, the predicate (in the 0.1 list syntax, operands in the codec's wire form), the
+order, the page size, :data:`~proto_db.query.cache.QUERY_SEMANTICS_VERSION`, the digest of
+the plan it pages and the fingerprints of the extractors that plan names.  Any process may
+resume it with ``Database.resume_pager(token)``: it plans the query again on that snapshot
+and serves the same pages.  A token whose query now plans differently (another semantics
+version, planner or extractor function) is refused (``ProtoStalePagerError``) rather than
+paged in another order; a malformed token, or one of another database, raises
+``ProtoReferenceError``.  Tokens carry no MAC: the database check is a misuse check, not a
+security boundary, so a token must never reach a party that may not read every version of
+the database.
 """
 from __future__ import annotations
 
@@ -28,8 +33,8 @@ import msgpack
 
 from ..core import codec
 from ..core.atom import Atom, AtomPointer
-from ..errors import ProtoUserError, ProtoValidationError
-from .cache import QUERY_SEMANTICS_VERSION, QueryCache, QueryResult, as_plan
+from ..errors import ProtoReferenceError, ProtoStalePagerError, ProtoUserError, ProtoValidationError
+from .cache import QUERY_SEMANTICS_VERSION, QueryCache, QueryResult, as_plan, plan_digest
 from .expressions import Expression
 
 __all__ = ["Pager", "encode_ref", "decode_ref", "REF_VERSION"]
@@ -51,34 +56,43 @@ def _no_load(ptr, type_name):  # pragma: no cover - replaced by the caller's loa
     raise ProtoValidationError("This reference holds no atoms to load")
 
 
-def encode_ref(kind: str, database: str, root_ptr: AtomPointer, **extra) -> bytes:
+def encode_ref(kind: str, database: str, root_ptr: AtomPointer, origin: bytes | None = None, **extra) -> bytes:
     """A reference to the ``DatabaseRoot`` at ``root_ptr`` of ``database`` (``kind`` "snapshot" or
-    "pager"; ``extra`` fields are encoded with the codec's wire form)."""
-    body = {"v": REF_VERSION, "kind": kind, "db": database, "root": [root_ptr.segment.bytes, root_ptr.offset]}
+    "pager"), whose identity is ``origin`` (``DatabaseRoot.origin``; ``None`` for a database
+    created before identities existed); ``extra`` fields are encoded with the codec's wire form."""
+    body = {"v": REF_VERSION, "kind": kind, "db": database, "origin": origin,
+            "root": [root_ptr.segment.bytes, root_ptr.offset]}
     for name, value in extra.items():
         body[name] = codec.encode_value(value, _saved_only)
     return msgpack.packb(body, use_bin_type=True)
 
 
 def decode_ref(data: bytes, load=_no_load) -> dict:
-    """The fields of a reference or token: ``kind``, ``db``, ``root`` (an AtomPointer) and the
-    extra fields decoded (atoms through ``load``).  ``ProtoValidationError`` if malformed."""
+    """The fields of a reference or token: ``kind``, ``db``, ``origin``, ``root`` (an AtomPointer)
+    and the extra fields decoded (atoms through ``load``).  ``ProtoReferenceError`` (a client
+    error) if malformed."""
     if not isinstance(data, (bytes, bytearray)):
-        raise ProtoValidationError(f"A snapshot reference is bytes, not {type(data).__name__}")
+        raise ProtoReferenceError(f"A snapshot reference is bytes, not {type(data).__name__}")
     try:
         body = msgpack.unpackb(bytes(data), raw=False)
-    except (ValueError, msgpack.ExtraData, msgpack.FormatError, msgpack.StackError) as e:
-        raise ProtoValidationError(f"Malformed snapshot reference: {e}") from None
+    except Exception as e:  # any msgpack failure on client-supplied bytes is a malformed reference
+        raise ProtoReferenceError(f"Malformed snapshot reference: {type(e).__name__}") from None
     if not isinstance(body, dict) or body.get("v") != REF_VERSION or body.get("kind") not in ("snapshot", "pager"):
-        raise ProtoValidationError("Malformed snapshot reference (unknown version or kind)")
-    root = body.get("root")
+        raise ProtoReferenceError("Malformed snapshot reference (unknown version or kind)")
+    root, origin = body.get("root"), body.get("origin")
     if (not isinstance(body.get("db"), str) or not isinstance(root, list) or len(root) != 2
-            or not isinstance(root[0], bytes) or len(root[0]) != 16 or type(root[1]) is not int or root[1] < 0):
-        raise ProtoValidationError("Malformed snapshot reference (database or root)")
-    out = {"kind": body["kind"], "db": body["db"], "root": AtomPointer(uuid.UUID(bytes=root[0]), root[1])}
+            or not isinstance(root[0], bytes) or len(root[0]) != 16 or type(root[1]) is not int or root[1] < 0
+            or not (origin is None or (isinstance(origin, bytes) and len(origin) == 16))):
+        raise ProtoReferenceError("Malformed snapshot reference (database, identity or root)")
+    out = {"kind": body["kind"], "db": body["db"], "origin": origin,
+           "root": AtomPointer(uuid.UUID(bytes=root[0]), root[1])}
     for name, value in body.items():
-        if name not in ("v", "kind", "db", "root"):
-            out[name] = codec.decode_value(value, load)
+        if name not in ("v", "kind", "db", "origin", "root"):
+            try:
+                out[name] = codec.decode_value(value, load)
+            except Exception as e:  # a client-supplied field that is not a wire value
+                raise ProtoReferenceError(f"Malformed snapshot reference (field {name!r}: "
+                                          f"{type(e).__name__})") from None
     return out
 
 
@@ -124,6 +138,8 @@ class Pager:
         self._result: QueryResult | None = None
         self._lock = threading.Lock()
         self._token: bytes | None = None
+        #: Builds the token on first use (the plan digest costs a walk of the plan).
+        self._make_token = None
 
     @property
     def page_size(self) -> int:
@@ -171,7 +187,16 @@ class Pager:
 
     def token(self) -> bytes:
         """The portable token of this pager (``ProtoUserError`` for a pager built from a plan or
-        Queryable, which may hold Python callables and names no snapshot)."""
+        Queryable, which may hold Python callables and names no snapshot).
+
+        A token is a bearer reference to a version of the database: it carries no MAC, and
+        ``Database.resume_pager`` checks only that it names a version of that database (a
+        misuse check, not a security boundary).  Never hand one to a party that may not read
+        every version of the database."""
+        if self._token is None and self._make_token is not None:
+            with self._lock:
+                if self._token is None:
+                    self._token = self._make_token()
         if self._token is None:
             raise ProtoUserError("This pager has no token: make it with Transaction.pager, Snapshot.pager "
                                  "or Database.resume_pager to page across processes")
@@ -180,40 +205,71 @@ class Pager:
     def explain(self) -> dict:
         """``{"pager": {"page_size", "by_rank", "portable"}, "plan": plan.explain()}``."""
         return {"pager": {"page_size": self._page_size, "by_rank": self._ranked,
-                          "portable": self._token is not None}, "plan": self._plan.explain()}
+                          "portable": self._make_token is not None}, "plan": self._plan.explain()}
 
     def __repr__(self):
         return f"<Pager page_size={self._page_size} {'by rank' if self._ranked else 'materialized'}>"
 
 
-def portable_pager(collection, *, database: str, root_ptr: AtomPointer, root_name: str, where, order_by,
-                   page_size: int, cache: QueryCache | None) -> Pager:
+def portable_pager(collection, *, database: str, origin: bytes | None, root_ptr: AtomPointer, root_name: str,
+                   where, order_by, page_size: int, cache: QueryCache | None) -> Pager:
     """A pager over ``collection`` (the value of ``root_name`` in the snapshot ``root_ptr``) whose
     token lets any process resume it (used by ``Transaction.pager`` and ``Snapshot.pager``)."""
     from ..collections.base import IndexedCollection
-    from .planner import plan_query
     if not isinstance(collection, IndexedCollection):
         raise ProtoValidationError(f"Root {root_name!r} holds {type(collection).__name__}, not a collection")
     if collection.atom_pointer is None:
         raise ProtoUserError(f"Root {root_name!r} is not saved; a pager pages a committed snapshot")
     expr = None if where is None else Expression.compile(where)
     order = _normalize_order(order_by)
-    pager = Pager(plan_query(collection, where=expr, order_by=_order_arg(order)), page_size, cache=cache)
+    from . import planner
+    pager = Pager(planner.plan_query(collection, where=expr, order_by=_order_arg(order)), page_size, cache=cache)
     where_list = None if expr is None else expr.to_list()
-    pager._token = encode_ref("pager", database, root_ptr, name=root_name, where=where_list, order=order,
-                              page=page_size, qv=QUERY_SEMANTICS_VERSION)
+
+    def make_token():
+        digest, extractors = plan_digest(pager.plan)
+        return encode_ref("pager", database, root_ptr, origin, name=root_name, where=where_list, order=order,
+                          page=page_size, qv=QUERY_SEMANTICS_VERSION, plan=digest, ex=extractors)
+    pager._make_token = make_token
+    return pager
+
+
+def check_resumed(pager: Pager, fields: dict) -> Pager:
+    """``pager`` (built again from a token's ``fields``) when it plans exactly as the pager that
+    wrote the token; ``ProtoStalePagerError`` otherwise (R99 I4, M4)."""
+    digest, extractors = plan_digest(pager.plan)
+    recorded = fields.get("ex")
+    if recorded != extractors:
+        changed = sorted(n for n in set(recorded) | set(extractors) if recorded.get(n) != extractors.get(n))
+        raise ProtoStalePagerError(f"The pager token was written for other extractor functions ({changed}): "
+                                   f"its pages could differ")
+    if fields.get("plan") != digest:
+        raise ProtoStalePagerError("The pager token's query now plans differently (another planner or library "
+                                   "version): resuming it could page another order")
     return pager
 
 
 def pager_arguments(fields: dict) -> dict:
-    """The ``Snapshot.pager`` arguments recorded in a decoded pager token; ``ProtoValidationError``
-    when the token is not a pager token or was written by another query semantics version."""
+    """The ``Snapshot.pager`` arguments recorded in a decoded pager token; ``ProtoReferenceError``
+    when the token is not a well-formed pager token, ``ProtoStalePagerError`` when it was written
+    by another query semantics version."""
     if fields.get("kind") != "pager":
-        raise ProtoValidationError("Not a pager token (a snapshot reference names no query)")
+        raise ProtoReferenceError("Not a pager token (a snapshot reference names no query)")
     if fields.get("qv") != QUERY_SEMANTICS_VERSION:
-        raise ProtoValidationError(f"The pager token was written by query semantics version {fields.get('qv')!r}, "
+        raise ProtoStalePagerError(f"The pager token was written by query semantics version {fields.get('qv')!r}, "
                                    f"this library has {QUERY_SEMANTICS_VERSION}: its pages could differ")
-    order = fields.get("order")
-    return {"root_name": fields.get("name"), "where": fields.get("where"),
-            "order_by": None if order is None else _order_arg([list(o) for o in order]),
-            "page_size": fields.get("page")}
+    name, where, order, page = fields.get("name"), fields.get("where"), fields.get("order"), fields.get("page")
+    plan, extractors = fields.get("plan"), fields.get("ex")
+    if not isinstance(name, str) or not (where is None or isinstance(where, list)):
+        raise ProtoReferenceError("Malformed pager token (root name or predicate)")
+    if type(page) is not int or page < 1:
+        raise ProtoReferenceError("Malformed pager token (page size)")
+    if not isinstance(plan, str) or not isinstance(extractors, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in extractors.items()):
+        raise ProtoReferenceError("Malformed pager token (plan digest)")
+    if order is not None and not (isinstance(order, list) and all(
+            isinstance(o, list) and len(o) == 2 and (o[0] is None or isinstance(o[0], str))
+            and isinstance(o[1], bool) for o in order)):
+        raise ProtoReferenceError("Malformed pager token (order)")
+    return {"root_name": name, "where": where, "order_by": None if order is None else _order_arg(order),
+            "page_size": page}

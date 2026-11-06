@@ -38,6 +38,17 @@ class ProtoValidationError(ProtoDBError):
     default_code = VALIDATION_ERROR
 
 
+class ProtoReferenceError(ProtoValidationError):
+    """A snapshot reference or pager token that is malformed or names another database (D56, R99).
+
+    A misuse check, not a security boundary: references and tokens carry no MAC."""
+
+
+class ProtoStalePagerError(ProtoReferenceError):
+    """A pager token whose query no longer plans the same way (another planner or library
+    version, another extractor function): resuming it could page another order (D56, R99)."""
+
+
 class ProtoUserError(ProtoDBError):
     """Error caused by incorrect use of the API."""
     default_code = USER_ERROR
