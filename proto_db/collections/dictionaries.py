@@ -167,7 +167,7 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
         raise ProtoValidationError(f"Unknown Dictionary op {op!r}")
 
     def __repr__(self):
-        if not self.__dict__.get("_loaded", True):
+        if not self._loaded_now():
             return super().__repr__()  # never load a stub to describe it
         return f"<Dictionary count={self.count}>"
 
@@ -376,7 +376,7 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
         return target
 
     def __repr__(self):
-        if not self.__dict__.get("_loaded", True):
+        if not self._loaded_now():
             return super().__repr__()  # never load a stub to describe it
         return f"<RepeatedKeysDictionary keys={0 if self.root is None else self.root.count} count={self.count}>"
 

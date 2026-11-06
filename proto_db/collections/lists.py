@@ -153,6 +153,6 @@ class List(IndexedCollection):
         return self.slice(n, None)
 
     def __repr__(self):
-        if not self.__dict__.get("_loaded", True):
+        if not self._loaded_now():
             return super().__repr__()  # never load a stub to describe it
         return f"<List count={self.count}>"

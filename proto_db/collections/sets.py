@@ -156,7 +156,7 @@ class _HashBuckets(ConcurrentOptimized, IndexedCollection):
         return all(other.has(e) for e in self.elements())
 
     def __repr__(self):
-        if not self.__dict__.get("_loaded", True):
+        if not self._loaded_now():
             return super().__repr__()  # never load a stub to describe it
         return f"<{type(self).__name__} count={self.count}>"
 

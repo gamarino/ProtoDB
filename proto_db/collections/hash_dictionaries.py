@@ -163,6 +163,6 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
         raise ProtoValidationError(f"Unknown HashDictionary op {op!r}")
 
     def __repr__(self):
-        if not self.__dict__.get("_loaded", True):
+        if not self._loaded_now():
             return super().__repr__()  # never load a stub to describe it
         return f"<HashDictionary count={self.count}>"

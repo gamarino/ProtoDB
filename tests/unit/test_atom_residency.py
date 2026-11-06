@@ -702,3 +702,159 @@ def test_a_stub_read_after_its_space_closed_raises_protoclosederror(tmp_path):
         getattr(stub, "name", "default")       # never a silent default
     with pytest.raises(ProtoClosedError):
         stub.has_defined_attr("name")
+
+
+def test_repr_never_materializes_the_instance_dict():
+    """Review 8.3m M4: describing a cached atom (logging, an error message) must not cost it its
+    specialized attribute reads."""
+    space = _space(1000)
+    db = space.new_database("d")
+
+    def build(tr):
+        tr.set_root_object("row", _Row(a=1, context=tr))
+        tr.set_root_object("dict", tr.new_dictionary().set_at(1, "x"))
+        tr.set_root_object("list", tr.new_list().append_last(1))
+        tr.set_root_object("set", tr.new_set().add(1))
+        tr.set_root_object("hash", tr.new_hash_dictionary().set_at(1, "x"))
+        tr.set_root_object("rep", tr.new_repeated_keys_dictionary().set_at(1, "x"))
+    db.run(build)
+    names = ["row", "dict", "list", "set", "hash", "rep"]
+    with db.new_transaction() as tr:
+        atoms = [tr.get_root_object(n) for n in names]
+        for a in atoms:
+            repr(a)                             # loaded (decoded twins)
+        space._atoms._unload_all()
+        for a in atoms:
+            repr(a)                             # unloaded stubs
+        bad = [n for n, a in zip(names, atoms) if _materialized(a)]
+    assert not bad, bad
+
+
+def test_an_admission_racing_close_leaves_nothing_resident(monkeypatch):
+    """Review 8.3m M2: an admission that passed the closed check before ``close()`` and puts after
+    it must not leave the atom resident in the closed cache."""
+    space = _space(100)
+    db = space.new_database("d")
+    db.run(lambda tr: tr.set_root_object("o", tr.new_object(a=1)))
+    cache = space._atoms
+    cache._unload_all()
+    real = cache._cache.put_evicting
+
+    def close_first(key, value):
+        cache.close()                   # close() runs entirely between the check and the put
+        return real(key, value)
+    monkeypatch.setattr(cache._cache, "put_evicting", close_first)
+    with db.new_transaction() as tr:
+        assert tr.get_root_object("o").a == 1
+    assert cache.stats()["entries"] == 0
+
+
+# -- the _restore contract (review 8.3m I1 / M7, ruling R105) ------------------------------------
+
+class _Renaming(DBObject):
+    """A load-time rename: ``_restore`` installs ``new`` for a persisted ``old``."""
+    __type_name__ = "tests.unit.test_atom_residency.Renaming"
+
+    def _restore(self, state):
+        state = dict(state)
+        if "old" in state:
+            state["new"] = state.pop("old")
+        super()._restore(state)
+
+
+class _Deriving(DBObject):
+    """``_restore`` installs a derived key besides the persisted ones (it would survive an unload)."""
+    __type_name__ = "tests.unit.test_atom_residency.Deriving"
+
+    def _restore(self, state):
+        super()._restore(state)
+        object.__setattr__(self, "derived", 1)
+
+
+class _Keeping(DBObject):
+    """A legitimate override: values transformed, the key set kept (like ``Index._restore``)."""
+    __type_name__ = "tests.unit.test_atom_residency.Keeping"
+
+    def _restore(self, state):
+        super()._restore({k: (v * 2 if k == "x" else v) for k, v in state.items()})
+
+
+def _bounded(fn, seconds=20, unstick=None):
+    """Run ``fn`` in a thread; return ``(raised, value)``; fail the test if it does not finish
+    (a residency loop that never terminates must fail, not hang the suite: ``unstick`` releases
+    it before the failure is reported)."""
+    out = {}
+
+    def run():
+        try:
+            out["value"] = fn()
+        except BaseException as e:      # reported to the caller
+            out["raised"] = e
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(seconds)
+    if t.is_alive() and unstick is not None:
+        unstick()
+        t.join(seconds)
+    assert "raised" in out or "value" in out, "did not terminate (a residency loop spins)"
+    return out.get("raised"), out.get("value")
+
+
+def _assert_contract_error(raised, cls, detail):
+    from proto_db.errors import ProtoUserError
+    assert isinstance(raised, ProtoUserError), repr(raised)
+    msg = str(raised)
+    assert cls.__type_name__ in msg and "_restore" in msg and detail in msg, msg
+
+
+@pytest.mark.parametrize("cls, detail", [(_Renaming, "'old'"), (_Deriving, "'derived'")])
+def test_a_restore_that_breaks_the_contract_raises_one_clear_error_on_load(cls, detail):
+    space = _space(0)               # no decoded twin on save: the error comes from the stub load
+    db = space.new_database("db")
+    db.run(lambda tr: tr.set_root_object("o", cls(old=1, context=tr)))
+    space2 = ObjectSpace(space._storage, atom_cache_entries=100)     # a stub load from storage
+
+    def read():
+        with space2.open_database("db").new_transaction() as tr:
+            o = tr.get_root_object("o")
+            return getattr(o, "new", None), getattr(o, "old", None)
+    raised, _ = _bounded(read)
+    _assert_contract_error(raised, cls, detail)
+
+
+@pytest.mark.parametrize("cls, detail", [(_Renaming, "'old'"), (_Deriving, "'derived'")])
+def test_a_restore_that_breaks_the_contract_raises_on_the_saved_twin(cls, detail):
+    space = _space(100)
+    db = space.new_database("db")
+    raised, _ = _bounded(lambda: db.run(lambda tr: tr.set_root_object("o", cls(old=1, context=tr))))
+    _assert_contract_error(raised, cls, detail)
+
+
+def test_a_restore_that_keeps_the_key_set_loads_and_unloads():
+    space = _space(100)
+    db = space.new_database("db")
+    db.run(lambda tr: tr.set_root_object("o", _Keeping(x=1, y=2, context=tr)))
+    space2 = ObjectSpace(space._storage, atom_cache_entries=100)
+    db2 = space2.open_database("db")
+    with db2.new_transaction() as tr:
+        o = tr.get_root_object("o")
+        assert (o.x, o.y) == (2, 2)
+        assert o._state() == {"x": 2, "y": 2}
+    space2._atoms._unload_all()
+    with db2.new_transaction() as tr:
+        assert tr.get_root_object("o").x == 2
+
+
+def test_a_snapshot_whose_recorded_name_is_missing_raises_instead_of_spinning():
+    """Defence in depth: a generation token naming a key that is not installed, with the token
+    still current, is an invariant violation -- one error, never a retry loop."""
+    space = _space(100)
+    db = space.new_database("db")
+    db.run(lambda tr: tr.set_root_object("o", tr.new_object(a=1)))
+    with db.new_transaction() as tr:
+        o = tr.get_root_object("o")
+        token = o._loaded
+        assert isinstance(token, atom_mod._Generation)
+        object.__setattr__(o, "_loaded", atom_mod._Generation(token.names + ("ghost",)))
+        raised, _ = _bounded(o._snapshot, 10, lambda: object.__setattr__(o, "_loaded", True))
+    _assert_contract_error(raised, type(o), "'ghost'")

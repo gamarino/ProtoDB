@@ -384,6 +384,35 @@ def _same_generation(atom, pending) -> bool:
     return atom._loaded is pending
 
 
+def _contract_error(cls, missing, extra) -> ProtoUserError:
+    """The error of a :meth:`Atom._restore` that does not install exactly the decoded state's keys."""
+    return ProtoUserError(
+        f"{cls.__type_name__}._restore broke the residency contract: it must install exactly the "
+        f"keys of the decoded state (history links under _links), because an unload deletes those "
+        f"and a load reads them back; missing {sorted(missing)}, extra {sorted(extra)} "
+        f"(Atom._restore docstring, D53)")
+
+
+def _check_restore(atom, state: dict, names: tuple) -> None:
+    """Check, for a class that overrides :meth:`Atom._restore` or :meth:`Atom._set_link`, that the
+    override installs exactly ``names`` for ``state`` (review 8.3m I1 / M7, ruling R105): the hook
+    is run on a scratch instance, whose dict may be inspected at no cost to ``atom``.  A class that
+    keeps the default hooks installs ``names`` by construction and is not checked."""
+    cls = type(atom)
+    if not cls._custom_restore:
+        return
+    scratch = object.__new__(cls)
+    osa = object.__setattr__
+    osa(scratch, "_loaded", False)
+    osa(scratch, "atom_pointer", None)
+    osa(scratch, "context", _get(atom, "context"))
+    scratch._restore(state)
+    installed = set(_get(scratch, "__dict__")) - _STUB_KEYS
+    expected = set(names)
+    if installed != expected:
+        raise _contract_error(cls, expected - installed, installed - expected)
+
+
 def _drop_state(atom, names: tuple) -> None:
     """Delete the keys ``names`` that the unloading atom's load installed (caller holds its
     stripe and has set ``_loaded`` to :data:`_UNLOADED`).  Runtime keys a reader added since
@@ -416,9 +445,13 @@ class Atom:
     #: Persisted attributes linking an older version, held as pointers in memory and loaded on
     #: each read through the context (Task 8.3l, see the module docstring).
     _history_links: tuple = ()
+    #: Whether this class overrides the hooks that install a loaded state, so that each load
+    #: checks they installed exactly the decoded state's keys (:func:`_check_restore`).
+    _custom_restore = False
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
+        cls._custom_restore = cls._restore is not Atom._restore or cls._set_link is not Atom._set_link
         if "__type_name__" not in cls.__dict__:
             cls.__type_name__ = f"{cls.__module__}.{cls.__qualname__}"
         register_atom_class(cls)
@@ -557,10 +590,15 @@ class Atom:
             except AttributeError:
                 token = True
             if isinstance(token, _Generation):
+                copy = {}
                 try:
-                    copy = {name: _get(self, name) for name in token.names}
+                    for name in token.names:
+                        copy[name] = _get(self, name)
                     copy["context"] = _get(self, "context")
                 except AttributeError:
+                    if self._loaded is token:
+                        # Not an unload: the load did not install a name it recorded (I1, R105).
+                        raise _contract_error(type(self), [name], ()) from None
                     continue                # unloaded meanwhile
                 if self._loaded is token:
                     return copy
@@ -686,9 +724,10 @@ class Atom:
                     return None
                 if not _same_generation(self, pending):
                     continue                # loaded and unloaded since phase 1: fetch again
+                names = _installed_names(type(self), state)
+                _check_restore(self, state, names)
                 self._restore(state)
                 object.__setattr__(self, "oid", oid)
-                names = _installed_names(type(self), state)
                 snapshot = {name: getattr(self, name) for name in names}    # installed just above
                 snapshot["oid"] = oid
                 snapshot["context"] = context
@@ -717,7 +756,16 @@ class Atom:
         return True
 
     def _restore(self, state: dict) -> None:
-        """Install a decoded state on a stub (protected hook; default sets attributes)."""
+        """Install a decoded state on a stub (protected hook; default sets attributes).
+
+        Contract (Task 8.3m, ruling R105): an override installs exactly the keys of ``state`` --
+        each as an attribute, the history links through :meth:`_set_link` -- and nothing else.
+        It may transform the values (``Index._restore`` rebuilds its KeySpecs), not rename, drop or
+        add keys: an unload deletes the keys of the decoded state and a load reads them back, so a
+        renamed key would be read as missing and an added one would survive the unload.  Every
+        load of a class that overrides this hook checks the contract and raises
+        ``ProtoUserError`` naming the class if it is broken; a schema change belongs in a new
+        version written by a transaction, not in the load."""
         cls = type(self)
         for name in state:
             if name.startswith("_") or name in RESERVED_NAMES or hasattr(cls, name):
@@ -804,9 +852,11 @@ class Atom:
         osa(twin, "_loaded", False)
         osa(twin, "atom_pointer", ptr)
         osa(twin, "context", context)
+        names = _installed_names(type(twin), decoded)
+        _check_restore(twin, decoded, names)
         twin._restore(decoded)
         osa(twin, "oid", self.oid)
-        osa(twin, "_loaded", _Generation(_installed_names(type(twin), decoded)))
+        osa(twin, "_loaded", _Generation(names))
         return twin
 
     # -- identity -------------------------------------------------------------------
@@ -819,7 +869,19 @@ class Atom:
     def __hash__(self):
         return hash(self.oid)
 
+    def _loaded_now(self) -> bool:
+        """Whether the state is loaded at this moment (for ``__repr__``, which never loads a stub
+        to describe it); read as an attribute, never through ``__dict__`` (review 8.3m M4)."""
+        try:
+            return bool(self._loaded)
+        except AttributeError:
+            return True
+
     def __repr__(self):
-        if self.__dict__.get("_loaded", True):
-            return f"<{type(self).__type_name__} oid={self.__dict__.get('oid')}>"
+        if self._loaded_now():
+            try:
+                oid = _get(self, "oid")
+            except AttributeError:
+                oid = None
+            return f"<{type(self).__type_name__} oid={oid}>"
         return f"<{type(self).__type_name__} stub at {self.atom_pointer}>"

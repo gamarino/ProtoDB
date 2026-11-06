@@ -102,7 +102,7 @@ class DBObject(Atom):
         raise ProtoUserError("DBObject is immutable; attributes cannot be deleted")
 
     def __repr__(self):
-        if not self.__dict__.get("_loaded", True):
+        if not self._loaded_now():
             return super().__repr__()
         fields = ", ".join(f"{k}={v!r}" for k, v in self._state().items())
         return f"{type(self).__name__}({fields})"

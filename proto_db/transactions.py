@@ -476,6 +476,10 @@ class _AtomCache:
         for victim in self._cache.put_evicting(atom.atom_pointer, atom):
             if victim._unload():
                 unloaded += 1
+        if self._closed:
+            # Review 8.3m M2: close() ran after the check above.  It sets _closed before clearing
+            # the LRU, so a put that landed after the clear sees _closed here and is undone.
+            self._cache.invalidate(atom.atom_pointer)
         if unloaded:
             with self._lock:
                 self.unloads += unloaded
