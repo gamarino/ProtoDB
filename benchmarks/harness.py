@@ -241,6 +241,14 @@ class Context:
     workdir: str
     rqlite: Optional[str] = None
     scratch: List[str] = field(default_factory=list)
+    #: ``{workload: {key: value}}`` from ``--param``: overrides of the selected parameter set.
+    overrides: Dict[str, dict] = field(default_factory=dict)
+
+    def params_of(self, bench: "Benchmark", quick: bool) -> dict:
+        """The parameter set of ``bench`` for this mode, with the ``--param`` overrides applied."""
+        params = dict(bench.quick if quick else bench.full)
+        params.update(self.overrides.get(bench.name, {}))
+        return params
 
     def tempdir(self, name: str) -> str:
         """A fresh, empty directory under the work directory, removed after the workload."""
@@ -325,15 +333,75 @@ def filesystem_of(path: str) -> str:
     return kind
 
 
+#: Written by :mod:`benchmarks.export` at the root of a clean ``git archive`` export: the
+#: commit and a SHA-256 per exported file, so a run can prove it measured that commit unmodified.
+SOURCE_FILE = "BENCH_SOURCE.json"
+_SKIP_DIRS = {"__pycache__", ".work", ".pytest_cache", ".hypothesis"}
+
+
+def tree_digests(root: str, paths) -> dict:
+    """``{path: sha256}`` of the files ``paths`` (relative to ``root``)."""
+    import hashlib
+    out = {}
+    for rel in paths:
+        h = hashlib.sha256()
+        with open(os.path.join(root, rel), "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        out[rel] = h.hexdigest()
+    return out
+
+
+def _python_files(root: str) -> set:
+    """Every ``.py`` file under ``root``'s ``proto_db`` and ``benchmarks`` (caches and work dirs excluded)."""
+    found = set()
+    for top in ("proto_db", "benchmarks"):
+        for dirpath, dirnames, filenames in os.walk(os.path.join(root, top)):
+            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+            found.update(os.path.relpath(os.path.join(dirpath, f), root) for f in filenames if f.endswith(".py"))
+    return found
+
+
+def source_revision(root: str = REPO) -> Optional[dict]:
+    """The provenance recorded by :mod:`benchmarks.export`, re-verified, or ``None`` without one.
+
+    ``clean`` is True only when every exported file still has its exported digest and no
+    Python file was added to ``proto_db`` or ``benchmarks`` after the export."""
+    path = os.path.join(root, SOURCE_FILE)
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        source = json.load(f)
+    files = source.get("files", {})
+    missing = [rel for rel in files if not os.path.exists(os.path.join(root, rel))]
+    present = [rel for rel in files if rel not in missing]
+    changed = [rel for rel, digest in tree_digests(root, present).items() if digest != files[rel]]
+    added = sorted(_python_files(root) - set(files))
+    clean = not changed and not missing and not added
+    return {"commit": source["commit"][:7], "commit_full": source["commit"], "dirty": not clean, "clean": clean,
+            "source": "git archive export", "changed": changed[:20], "missing": missing[:20], "added": added[:20]}
+
+
 def _git_revision() -> dict:
+    """The measured source: a verified export (:func:`source_revision`) or this git work tree.
+
+    A directory that is not the top of a git work tree (an export inside another repository's
+    tree, for instance) records no commit rather than the enclosing repository's."""
+    exported = source_revision()
+    if exported is not None:
+        return exported
     try:
+        top = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=REPO, capture_output=True,
+                             text=True, timeout=10).stdout.strip()
+        if not top or os.path.realpath(top) != os.path.realpath(REPO):
+            return {"commit": None, "dirty": None, "clean": False, "source": "not a git work tree"}
         rev = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=REPO, capture_output=True,
                              text=True, timeout=10).stdout.strip()
         dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=REPO,
                                capture_output=True, text=True, timeout=10).stdout.strip() != ""
-        return {"commit": rev or None, "dirty": dirty}
+        return {"commit": rev or None, "dirty": dirty, "clean": not dirty, "source": "git work tree"}
     except (OSError, subprocess.SubprocessError):
-        return {"commit": None, "dirty": None}
+        return {"commit": None, "dirty": None, "clean": False, "source": "git unavailable"}
 
 
 def _version_of(module: str) -> Optional[str]:
@@ -452,7 +520,7 @@ def run_one(bench: Benchmark, ctx: Context, quick: bool) -> dict:
     A verification failure or an exception is recorded as ``failed`` (with the error and
     the work dict of the workload's result, when it had created one); it never stops the run.
     """
-    params = bench.quick if quick else bench.full
+    params = ctx.params_of(bench, quick)
     gil_before = gil_enabled()
     started = time.perf_counter()
     _CURRENT.result = None
@@ -492,7 +560,7 @@ def run_isolated(bench: Benchmark, ctx: Context, quick: bool, plugins: List[str]
     A child that crashes or writes no valid record yields a ``failed`` record carrying the
     tail of the child's stderr (its traceback); the run continues.
     """
-    params = bench.quick if quick else bench.full
+    params = ctx.params_of(bench, quick)
     out = tempfile.NamedTemporaryFile(prefix=f"{bench.name}-", suffix=".json", dir=ctx.workdir, delete=False)
     out.close()
     cmd = child_command("-m", "benchmarks", "--child", bench.name, "--child-out", out.name,
@@ -500,6 +568,8 @@ def run_isolated(bench: Benchmark, ctx: Context, quick: bool, plugins: List[str]
                         "--repeat", str(ctx.repeat), "--warmup", str(ctx.warmup))
     for plugin in plugins:
         cmd += ["--plugin", plugin]
+    for key, value in ctx.overrides.get(bench.name, {}).items():
+        cmd += ["--param", f"{bench.name}.{key}={json.dumps(value)}"]
     if quick:
         cmd.append("--quick")
     if ctx.rqlite:
@@ -612,9 +682,27 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
                    help="path of the rqlited binary (or env PROTODB_BENCH_RQLITED); absent: rqlite pending")
     p.add_argument("--plugin", action="append", default=[], metavar="MODULE",
                    help="import an extra module registering workloads (repeatable)")
+    p.add_argument("--param", action="append", default=[], metavar="NAME.KEY=JSON",
+                   help="override one parameter of a workload, e.g. inventory.objects=1000000 (repeatable)")
     p.add_argument("--child", help=argparse.SUPPRESS)
     p.add_argument("--child-out", help=argparse.SUPPRESS)
     return p.parse_args(argv)
+
+
+def parse_params(items: List[str]) -> Dict[str, dict]:
+    """``["name.key=json", ...]`` -> ``{name: {key: value}}`` (a value that is not JSON is a string)."""
+    out: Dict[str, dict] = {}
+    for item in items:
+        target, sep, raw = item.partition("=")
+        name, dot, key = target.partition(".")
+        if not sep or not dot or not name or not key:
+            raise SystemExit(f"--param needs NAME.KEY=VALUE, got {item!r}")
+        try:
+            value = json.loads(raw)
+        except ValueError:
+            value = raw
+        out.setdefault(name, {})[key] = value
+    return out
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -636,7 +724,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     os.makedirs(workdir, exist_ok=True)
     rqlite = os.path.abspath(args.rqlite) if args.rqlite else None
     ctx = Context(quick=args.quick, threads=threads, repeat=args.repeat or (2 if args.quick else 5),
-                  warmup=args.warmup if args.warmup is not None else 1, workdir=workdir, rqlite=rqlite)
+                  warmup=args.warmup if args.warmup is not None else 1, workdir=workdir, rqlite=rqlite,
+                  overrides=parse_params(args.param))
 
     if args.child:
         bench = REGISTRY[args.child]
@@ -656,6 +745,7 @@ def main(argv: Optional[List[str]] = None) -> int:
           f"gil_enabled={env['gil_enabled']} cpus={env['cpu_count']} ({env['cpu_model']}); "
           f"cpu frequency {env['cpu_frequency']}")
     print(f"workdir {workdir} ({env['workdir_fs']}); threads {threads}; repeat {ctx.repeat} warmup {ctx.warmup}")
+    print(f"source {env['git'].get('commit')} clean={env['git'].get('clean')} ({env['git'].get('source')})")
     if env["workdir_fs"] in ("tmpfs", "ramfs") and not args.quick:
         print("WARNING: the work directory is in memory: fsync costs nothing there and the durability "
               "workloads do not measure a disk")
@@ -677,7 +767,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"\n{len(results)} workload(s) in {total:.1f} s: {len(results) - len(failed) - len(pending)} verified, "
           f"{len(pending)} pending, {len(failed)} failed{(': ' + ', '.join(failed)) if failed else ''}")
     doc = {"schema": SCHEMA, "mode": "quick" if args.quick else "full", "environment": env,
-           "options": {"threads": threads, "repeat": ctx.repeat, "warmup": ctx.warmup},
+           "options": {"threads": threads, "repeat": ctx.repeat, "warmup": ctx.warmup, "params": ctx.overrides},
            "total_s": total, "results": results}
     if args.json:
         os.makedirs(os.path.dirname(os.path.abspath(args.json)), exist_ok=True)

@@ -27,6 +27,27 @@ python -m benchmarks --compare benchmarks/results/2026-11-03-py314t-gil-off.json
 python -m benchmarks --list
 ```
 
+Measurements that are reported are taken from a clean export of a commit, never from a working
+tree (Task 9c):
+
+```bash
+.venv314t/bin/python -m benchmarks.export <commit> benchmarks/.work/export-<commit>   # git archive + digests
+cd benchmarks/.work/export-<commit>
+../../../.venv314t/bin/python -m benchmarks --workdir ../run --json ../gil-off.json
+```
+
+The export carries `BENCH_SOURCE.json` (the full commit hash and a SHA-256 per file); the harness
+re-verifies it at start and records `git.commit` and `git.clean` in the results JSON (a file
+edited or a Python file added after the export makes it `clean: false`). A run from a working
+tree records the tree's HEAD and whether it was dirty; a directory that is not the top of a git
+work tree records no commit.
+
+Interleaved sessions (`python -m benchmarks.session --reps 5 --rqlite PATH --json OUT`) run the
+cluster headline cells (3 peers x 4 threads at 100 B, 50 ids per commit, 5 peers; rqlite with the
+same work) and the mixed read/write cells once per repetition each, alternating `-X gil=0` and
+`-X gil=1` for every cell, and refuse to start while an `rqlited` or another benchmark process is
+running (the check is recorded in the JSON).
+
 Options:
 
 | Option | Meaning |
@@ -36,6 +57,7 @@ Options:
 | `--compare BASE` | flag medians worse than `BASE` by more than `--threshold` (default 15 %) and outside `BASE`'s own sample range; exit status 3 when any. Refused (exit 4, "NOT COMPARABLE") when the environments differ: GIL state, quick/full, CPU model or count, Python |
 | `--allow-env-mismatch` | compare anyway across a different environment |
 | `--plugin MODULE` | import an extra module of workloads (repeatable; passed on to isolated children) |
+| `--param NAME.KEY=JSON` | override one parameter of one workload (repeatable), e.g. `inventory.objects=1000000` for a step of the inventory scale ladder |
 | `--threads 1,2,4,8,16` | thread counts of the scaling workloads |
 | `--only NAME ...` | run only these workloads |
 | `--repeat N`, `--warmup N` | timed and untimed repetitions per variant (default 5 and 1; quick 2 and 1) |

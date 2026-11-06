@@ -307,14 +307,18 @@ def loopback_bytes() -> Optional[int]:
 
 
 def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 1, durability: str = "fsync",
-                    payload: int = 0, *, threads_by_node: Optional[list] = None, cpu: int = 0) -> dict:
+                    payload: int = 0, *, threads_by_node: Optional[list] = None, cpu: int = 0,
+                    readers: int = 0, catalog: int = 0) -> dict:
     """Run ``peers`` subprocess peers over TCP and verify the persisted result; return figures.
 
     ``payload`` > 0: each commit also writes one value of that many bytes (``cluster_peer``),
     and the persisted ``blobs`` Dictionary must hold exactly one such value per acknowledged
     commit.  ``threads_by_node``: committing threads of each peer, in id order, instead of
     ``threads`` everywhere (0 makes a peer a voter and replica only).  ``cpu``: iterations of
-    the CPU-heavy body each transaction runs (``cluster_peer.cpu_work``)."""
+    the CPU-heavy body each transaction runs (``cluster_peer.cpu_work``).  ``readers`` and
+    ``catalog`` (Task 9c, R97): ``readers`` threads per peer read a ``catalog`` of that many
+    entries during the window (see :mod:`benchmarks.cluster_peer`); every read must return its
+    catalog value, and the figures are in ``reads``."""
     import json
     import subprocess
     import tempfile
@@ -333,7 +337,7 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
     def command(node_id):
         cmd = child_command(PEER_SCRIPT, node_id, os.path.join(root, node_id), store_dir,
                             str(counts_of[int(node_id[1:])]), str(seconds), str(batch), durability, str(payload),
-                            str(cpu))
+                            str(cpu), str(readers), str(catalog))
         return [w.replace("{node}", node_id) for w in shlex.split(wrapper)] + cmd
 
     procs = [subprocess.Popen(command(node_id),
@@ -360,9 +364,15 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
         for pr, e in zip(procs, errs):
             if recv(pr, e) != {"ready": True}:
                 raise RuntimeError("peer not ready")
-        lo_before = loopback_bytes()
         for pr in procs:
             send(pr, {"go": True})
+        if catalog:
+            for pr, e in zip(procs, errs):
+                if recv(pr, e) != {"loaded": True}:
+                    raise RuntimeError("peer did not load the catalog")
+            for pr in procs:
+                send(pr, {"go2": True})
+        lo_before = loopback_bytes()
         results = [recv(pr, e) for pr, e in zip(procs, errs)]
         lo_after = loopback_bytes()
         for pr in procs:
@@ -391,7 +401,10 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
     try:
         tr = reader.open_database("db").new_transaction()
         got = tr.get_root_object("ids")
-        ok = got is not None and sorted(got.elements()) == expected_ids and all(c == 1 for _, c in got.items())
+        if got is None:
+            ok = not expected_ids                    # a read-only run commits nothing
+        else:
+            ok = sorted(got.elements()) == expected_ids and all(c == 1 for _, c in got.items())
         # Which way a failed check went (Task 8.3k): an acknowledged id missing is a loss; an
         # extra id is a commit whose caller got an unknown outcome (its thread stopped) and
         # that took effect -- the exact check fails either way.
@@ -404,13 +417,16 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
             blobs = tr.get_root_object("blobs")
             firsts = [node * 10**9 + t * 10**7 + j * batch
                       for node, r in enumerate(results) for t, c in enumerate(r["counts"]) for j in range(c)]
-            ok = ok and blobs is not None and blobs.count == len(firsts) and all(
+            ok = ok and (blobs is None and not firsts or blobs is not None and blobs.count == len(firsts) and all(
                 len(v) == payload and v == payload_value(k, payload)
-                for k, v in ((k, blobs.get_at(k)) for k in firsts))
+                for k, v in ((k, blobs.get_at(k)) for k in firsts)))
         tr.abort()
     finally:
         reader.close()
     thread_errors = [r.get("thread_errors", []) for r in results]
+    reads = read_figures(results) if readers else None
+    if reads is not None and (reads["bad"] or not reads["reads"] or reads["readers_reporting"] != readers * peers):
+        ok = False
     healthy = ok and all(r["failures"] == 0 and r["healthy"] for r in results) and not any(thread_errors)
     kept = None
     if not ok or any(thread_errors):
@@ -440,7 +456,7 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
             "commits_by_peer": [sum(r["counts"]) for r in results],
             "pipeline": {k: sum(r.get("pipeline", {}).get(k, 0) for r in results)
                          for k in {k for r in results for k in r.get("pipeline", {})}},
-            "payload": payload,
+            "payload": payload, "reads": reads,
             "wire_by_type": {k: sum(r.get("wire", {}).get(k, 0) for r in results)
                              for k in sorted({k for r in results for k in r.get("wire", {})})},
             "loopback_bytes": (lo_after - lo_before) if lo_before is not None and lo_after is not None else None,
@@ -450,6 +466,36 @@ def run_tcp_cluster(ctx, peers: int, threads: int, seconds: float, batch: int = 
             "window_syncs_by_node": [sum(row[4] for row in r["syncs_window"]) for r in results],
             "syncs_per_process": [r["syncs_before_window"] + sum(row[-1] for row in r["syncs_until_persisted"])
                                   for r in results]}
+
+
+def read_figures(results) -> dict:
+    """Read throughput and latency of the peers' reader threads (``reads`` of each peer)."""
+    from benchmarks.harness import percentile
+    every, steady, by_node, versions = [], [], [], []
+    total = bad = reporting = 0
+    window = max(r["seconds"] for r in results)
+    for r in results:
+        node_lat = []
+        for x in r.get("reads", []):
+            reporting += 1
+            total += x["reads"]
+            bad += x["bad"]
+            node_lat.extend(x["latencies_us"])
+            steady.extend(x["latencies_us"][x["steady_from"]:])
+            if x["versions"]:
+                versions.append(x["versions"])
+        every.extend(node_lat)
+        by_node.append({"reads": len(node_lat),
+                        "p50_us": percentile(node_lat, 50) if node_lat else None,
+                        "p99_us": percentile(node_lat, 99) if node_lat else None,
+                        "max_us": max(node_lat) if node_lat else None})
+
+    def q(xs, p):
+        return percentile(xs, p) if xs else None
+    return {"reads": total, "bad": bad, "readers_reporting": reporting, "reads_per_s": total / window,
+            "p50_us": q(every, 50), "p99_us": q(every, 99), "max_us": max(every) if every else None,
+            "steady_p50_us": q(steady, 50), "steady_p99_us": q(steady, 99), "by_node": by_node,
+            "versions_seen": [min(v[0] for v in versions), max(v[1] for v in versions)] if versions else None}
 
 
 def fsync_breakdown(results, commits: int) -> dict:
