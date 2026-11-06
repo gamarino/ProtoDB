@@ -20,6 +20,11 @@ How to read these numbers
   export (``python -m benchmarks.export``). Each results file records the commit and a clean flag
   that the harness re-verifies against a SHA-256 of every exported file. Figures from earlier tasks
   appear only as labelled history, with their commit.
+- **Task 9c predates Task 8.3m.** Every tagged figure except [RES] was measured at ``4aab0f2`` or
+  ``8b439cd``, before the residency change of Task 8.3m (the decoded-atom cache now unloads what
+  it evicts). They are history for the current code; the measured differences are listed in
+  `Measured costs of Task 8.3m`_ and must be applied when reading them. The full regeneration
+  follows when Task 8.3m closes.
 - **Every figure is verified, in every repetition.** Each workload checks its work against an
   independent computation: a brute-force scan, a model computed from pure functions, a read-back
   of the persisted state by a new instance, or a strongly consistent query on rqlite. One wrong
@@ -81,6 +86,39 @@ Tag             File                                                       Commi
 [RES]           ``2026-11-06-1845993-residency-ladder.log``                ``1845993``  inventory ladder to 10^7 after Task
                                                                                         8.3m, with ``26f3b85`` at 10^6
 ==============  =========================================================  ===========  ======================================
+
+Measured costs of Task 8.3m
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Task 8.3m bounded the decoded-atom cache by loaded atoms (D53 amendment, rulings R102-R105).
+Measured against ``26f3b85``, the commit before it, in interleaved runs on this machine (Task 8.3m
+report; ratios are speeds, below 1 slower):
+
+- **Cluster commits: 9-11 % fewer with the GIL off, 3-13 % with it on.** The 3 x 4, 100 B
+  headline gave 199.3 and 199.0 commits/s against 219.5 and 224.0 in two sessions of 5 paired runs
+  (GIL on: 153.8 and 153.1 against 159.2 and 176.6). The critical-section stage that grew is the
+  path copy (+0.3-0.4 ms per commit). Every ProtoDB figure of `Writes in a cluster`_ ([SES], [S0],
+  [S1]) is from before this change.
+- **Cold requests (a new instance per request): about 10 % slower** even when the cache holds
+  every atom (inventory point lookup, equipment at a site and path trace 0.87-0.91x): each load
+  is now admitted to the bounded cache and registered in its identity map (about 4.5 us per load).
+- **Reads whose working set does not fit the default 50,000 entries reload,** and the loss is a
+  cliff, not a slope: a reload costs a storage read and a decode, and a read pattern that cycles
+  through more atoms than the cache holds reloads most of them on every pass. In the suite at the
+  default capacity: ``concurrent_reads`` ``get_at`` at 1 thread 0.55x (GIL on 0.58x), about 20 %
+  over the capacity; inventory warm port lookup 0.77x, ``query_cache`` hit 0.87x, inventory
+  build 0.81-0.83x. On the 10^6-object inventory, 50 times over the capacity, reads are 8-34x
+  slower (`Bulk load and scale`_). In a 20,000-record probe whose working set is 20 % over the
+  capacity, a lookup took 197 us against 4.6 us when it fit. A CLOCK second-chance bit was
+  measured and not adopted: it softened that case (136 us) but cost 14-39 % on point reads when
+  the cache fits (D53 "Sizing"). Size ``atom_cache_entries`` to the
+  working set (``ObjectSpace`` docstring, D53 "Sizing", which also tells how to read the thrash
+  signal in ``atom_cache_stats()``).
+- **When the working set fits,** the suite's other read paths are level with ``26f3b85`` or
+  faster (Task 8.3m report). Part of that gain comes from two layout fixes made in the same task
+  (no extra instance keys, no materialized instance dicts), not from residency itself.
+- **Memory:** a resident atom costs about 0.4 KB of bookkeeping on top of its decoded state; with
+  the default capacity, memory stays flat in the size of the database ([RES]).
 
 The [SES] file's ``summary`` block predates fix round 1: for the one cell with failed runs, its
 medians include them. This page takes that cell from the per-run ``records`` instead; every
@@ -176,6 +214,10 @@ Work                                   ProtoDB commits/s              rqlite req
   rows/s                               1,399 (1,310)                  26,780 (25,569)
 1 id + 100 B, 5 ProtoDB peers          265.6 [241.9-278.4] (215.8)    --                             71.4 / --
 =====================================  =============================  =============================  ===================
+
+*Measured before Task 8.3m* (``8b439cd``, ``4aab0f2``): the current code commits 9-11 % less with
+the GIL off and 3-13 % less with it on in the 3 x 4, 100 B headline (`Measured costs of Task
+8.3m`_); the ProtoDB columns of this section are not regenerated yet.
 
 ProtoDB syncs per commit, counted in every peer (``benchmarks/fsync_probe.py``): 1.42 at 3 peers
 and 1.96 at 5 (GIL off); 6.35 for the 50-id commit [SES].
@@ -543,8 +585,10 @@ node it visits.
    50,000 entries, a warm port lookup takes 0.93 ms (``26f3b85``: 78 us), the ports
    of a site 484 ms (15 ms), a path trace 29 ms (0.87 ms),
    because every walk reloads atoms. With ``atom_cache_entries=3_000_000`` (the working set
-   fits) the reads take 75 us, 13.5 ms and 0.78 ms, faster than ``26f3b85``, and the build
-   peaks at 4.09 GB for 2.79 million loaded atoms: 1.57x the base's peak for the same atoms.
+   fits) the reads take 75 us, 13.5 ms and 0.78 ms (single runs, as are the ``26f3b85`` figures:
+   at or slightly below them, within this machine's run-to-run noise of about 8 %; part of any
+   gain comes from the layout fixes of Task 8.3m, not from residency), and the build peaks at
+   4.09 GB for 2.79 million loaded atoms: 1.57x the base's peak for the same atoms.
    The end RSS (3.31 against 2.18 GB) puts the residency bookkeeping (identity map, LRU entry,
    generation token) at about 0.4 KB per resident atom; the split among them was not measured. Size the cache to the working set when reads matter more than memory
    (``ObjectSpace`` docstring, D53 "Sizing"). The warm figures of `Object graphs`_ at 10^6
@@ -635,10 +679,13 @@ with 1.9-2.1 million live gc objects). The full-size collapse has not been repro
 and the retention fix is not expected to explain it. *History:* the 2026-11-03 suite (``8ad6bf3``, dirty tree) reported 4.15x at 8
 workers.
 
-``concurrent_reads``, GIL off [S0]: ``get_at`` 208k -> 345k ops/s at 8 threads (1.65x),
-EqualityIndex queries 4.26x at 16 threads, a Python ``dict`` 4.71x. Alone it gives 1.53x and
-3.48x, so the ``get_at`` ceiling is not a suite effect. With the GIL on [S1] nothing scales
-(0.90-1.0x).
+``concurrent_reads``, GIL off [S0], *measured before Task 8.3m* (``4aab0f2``): ``get_at`` 208k ->
+345k ops/s at 8 threads (1.65x), EqualityIndex queries 4.26x at 16 threads, a Python ``dict``
+4.71x. Alone it gives 1.53x and 3.48x, so the ``get_at`` ceiling is not a suite effect. With the
+GIL on [S1] nothing scales (0.90-1.0x). Since Task 8.3m its working set (60,117 atoms) is about
+20 % over the default capacity: the 1-thread ``get_at`` rate is 0.55x the pre-8.3m code (GIL on
+0.58x), with 67 % of its time in reloads; at 2-16 threads, measured after it, it runs 1.5-2.3x
+the pre-8.3m code, and from 4 threads on it reloads nothing (Task 8.3m report).
 
 Vector search [S0] (GIL on [S1]): 10,000 vectors of 32 dimensions, k = 10, recall 1.0 for every
 backend; per query: numpy brute force 1.21 ms, ``exact`` 0.78 ms (0.74), ``ivf_flat`` 1.24 ms
