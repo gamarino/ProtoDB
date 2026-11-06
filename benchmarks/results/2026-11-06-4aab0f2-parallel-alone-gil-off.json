@@ -1,0 +1,715 @@
+{
+ "schema": 1,
+ "mode": "full",
+ "environment": {
+  "timestamp": "2026-11-06T08:14:28+00:00",
+  "cpu_model": "AMD Ryzen 5 5500U with Radeon Graphics",
+  "cpu_count": 12,
+  "cpu_affinity": 12,
+  "cpu_frequency": {
+   "governor": "powersave",
+   "driver": "amd-pstate-epp",
+   "energy_performance_preference": "balance_power",
+   "boost": "1"
+  },
+  "platform": "Linux-7.0.0-42-generic-x86_64-desconocido-with-glibc2.43",
+  "python": "3.14.6",
+  "python_implementation": "CPython",
+  "free_threaded_build": true,
+  "gil_enabled": false,
+  "xoptions": {
+   "gil": "0"
+  },
+  "proto_db": "2.0.0.dev0",
+  "git": {
+   "commit": "4aab0f2",
+   "commit_full": "4aab0f24d635c8504008a26a0d59dd5b16ff85c4",
+   "dirty": false,
+   "clean": true,
+   "source": "git archive export",
+   "changed": [],
+   "missing": [],
+   "added": []
+  },
+  "sqlite": "3.53.1",
+  "numpy": "2.5.4",
+  "hnswlib": "0.8.0",
+  "workdir": "/home/gamarino/Documentos/proyectos/ProtoBase/benchmarks/.work/9c/pscan",
+  "workdir_fs": "zfs",
+  "rqlite": null
+ },
+ "options": {
+  "threads": [
+   1,
+   2,
+   4,
+   8,
+   16
+  ],
+  "repeat": 5,
+  "warmup": 1,
+  "params": {}
+ },
+ "total_s": 31.806851405010093,
+ "results": {
+  "parallel_scan": {
+   "status": "ok",
+   "work": {
+    "items": 2000,
+    "spin": 4000,
+    "workers": [
+     1,
+     2,
+     4,
+     8,
+     16
+    ]
+   },
+   "checksum": 4299980615064,
+   "expected": 4299980615064,
+   "checks": [
+    {
+     "name": "sequential results",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "1 worker(s): results equal the sequential run",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "2 worker(s): results equal the sequential run",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "4 worker(s): results equal the sequential run",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "8 worker(s): results equal the sequential run",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "16 worker(s): results equal the sequential run",
+     "ok": true,
+     "detail": ""
+    }
+   ],
+   "timings": {
+    "sequential loop": {
+     "unit": "s",
+     "better": "lower",
+     "per": 2000,
+     "samples": [
+      0.882650293991901,
+      0.889409819006687,
+      0.8900453649985138,
+      0.8872069359931629,
+      0.8922106170211919
+     ],
+     "n": 5,
+     "median": 0.889409819006687,
+     "p95": null,
+     "min": 0.882650293991901,
+     "max": 0.8922106170211919,
+     "mean": 0.8883046062022913,
+     "tail_label": "max",
+     "tail": 0.8922106170211919,
+     "per_op_us": 444.7049095033435,
+     "per_op_us_tail": 446.10530851059593
+    },
+    "ParallelPool.scan, 1 worker(s)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 2000,
+     "samples": [
+      0.8976336199848447,
+      0.9174670289794449,
+      0.9013369570020586,
+      0.9094539590005297,
+      0.9527912090125028
+     ],
+     "n": 5,
+     "median": 0.9094539590005297,
+     "p95": null,
+     "min": 0.8976336199848447,
+     "max": 0.9527912090125028,
+     "mean": 0.9157365547958761,
+     "tail_label": "max",
+     "tail": 0.9527912090125028,
+     "per_op_us": 454.72697950026486,
+     "per_op_us_tail": 476.3956045062514
+    },
+    "ParallelPool.scan, 2 worker(s)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 2000,
+     "samples": [
+      0.4952808319940232,
+      0.49386001101811416,
+      0.49184715701267123,
+      0.5017853019817267,
+      0.49936241799150594
+     ],
+     "n": 5,
+     "median": 0.4952808319940232,
+     "p95": null,
+     "min": 0.49184715701267123,
+     "max": 0.5017853019817267,
+     "mean": 0.49642714399960824,
+     "tail_label": "max",
+     "tail": 0.5017853019817267,
+     "per_op_us": 247.64041599701162,
+     "per_op_us_tail": 250.89265099086333
+    },
+    "ParallelPool.scan, 4 worker(s)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 2000,
+     "samples": [
+      0.27225419000023976,
+      0.26740492798853666,
+      0.26716174598550424,
+      0.271334121003747,
+      0.2635763779981062
+     ],
+     "n": 5,
+     "median": 0.26740492798853666,
+     "p95": null,
+     "min": 0.2635763779981062,
+     "max": 0.27225419000023976,
+     "mean": 0.26834627259522675,
+     "tail_label": "max",
+     "tail": 0.27225419000023976,
+     "per_op_us": 133.70246399426833,
+     "per_op_us_tail": 136.12709500011988
+    },
+    "ParallelPool.scan, 8 worker(s)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 2000,
+     "samples": [
+      0.18961280898656696,
+      0.19395077400258742,
+      0.2074578760075383,
+      0.1905883330036886,
+      0.19867041299585253
+     ],
+     "n": 5,
+     "median": 0.19395077400258742,
+     "p95": null,
+     "min": 0.18961280898656696,
+     "max": 0.2074578760075383,
+     "mean": 0.19605604099924676,
+     "tail_label": "max",
+     "tail": 0.2074578760075383,
+     "per_op_us": 96.97538700129371,
+     "per_op_us_tail": 103.72893800376914
+    },
+    "ParallelPool.scan, 16 worker(s)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 2000,
+     "samples": [
+      0.18042586400406435,
+      0.17572941299295053,
+      0.1837408139836043,
+      0.19425855998997577,
+      0.1767615060089156
+     ],
+     "n": 5,
+     "median": 0.18042586400406435,
+     "p95": null,
+     "min": 0.17572941299295053,
+     "max": 0.19425855998997577,
+     "mean": 0.18218323139590212,
+     "tail_label": "max",
+     "tail": 0.19425855998997577,
+     "per_op_us": 90.21293200203218,
+     "per_op_us_tail": 97.12927999498788
+    }
+   },
+   "metrics": {
+    "speedup vs sequential": {
+     "1": 0.98,
+     "2": 1.8,
+     "4": 3.33,
+     "8": 4.59,
+     "16": 4.93
+    }
+   },
+   "notes": [],
+   "params": {
+    "items": 2000,
+    "spin": 4000
+   },
+   "elapsed_s": 18.66314438599511,
+   "gil_before": false,
+   "gil_after": false
+  },
+  "concurrent_reads": {
+   "status": "ok",
+   "work": {
+    "rows": 20000,
+    "lookups_per_thread": 4000,
+    "queries_per_thread": 200,
+    "threads": [
+     1,
+     2,
+     4,
+     8,
+     16
+    ]
+   },
+   "checksum": {
+    "protodb get_at, 1 thread(s)": true,
+    "protodb EqualityIndex query, 1 thread(s)": true,
+    "python dict lookup, 1 thread(s)": true,
+    "protodb get_at, 2 thread(s)": true,
+    "protodb EqualityIndex query, 2 thread(s)": true,
+    "python dict lookup, 2 thread(s)": true,
+    "protodb get_at, 4 thread(s)": true,
+    "protodb EqualityIndex query, 4 thread(s)": true,
+    "python dict lookup, 4 thread(s)": true,
+    "protodb get_at, 8 thread(s)": true,
+    "protodb EqualityIndex query, 8 thread(s)": true,
+    "python dict lookup, 8 thread(s)": true,
+    "protodb get_at, 16 thread(s)": true,
+    "protodb EqualityIndex query, 16 thread(s)": true,
+    "python dict lookup, 16 thread(s)": true
+   },
+   "expected": {
+    "protodb get_at, 1 thread(s)": true,
+    "protodb EqualityIndex query, 1 thread(s)": true,
+    "python dict lookup, 1 thread(s)": true,
+    "protodb get_at, 2 thread(s)": true,
+    "protodb EqualityIndex query, 2 thread(s)": true,
+    "python dict lookup, 2 thread(s)": true,
+    "protodb get_at, 4 thread(s)": true,
+    "protodb EqualityIndex query, 4 thread(s)": true,
+    "python dict lookup, 4 thread(s)": true,
+    "protodb get_at, 8 thread(s)": true,
+    "protodb EqualityIndex query, 8 thread(s)": true,
+    "python dict lookup, 8 thread(s)": true,
+    "protodb get_at, 16 thread(s)": true,
+    "protodb EqualityIndex query, 16 thread(s)": true,
+    "python dict lookup, 16 thread(s)": true
+   },
+   "checks": [
+    {
+     "name": "protodb get_at, 1 thread(s): every thread's sum",
+     "ok": true,
+     "detail": "[39603023] != 39603023"
+    },
+    {
+     "name": "protodb EqualityIndex query, 1 thread(s): every thread's sum",
+     "ok": true,
+     "detail": "[399847400] != 399847400"
+    },
+    {
+     "name": "python dict lookup, 1 thread(s): every thread's sum",
+     "ok": true,
+     "detail": "[39603023] != 39603023"
+    },
+    {
+     "name": "protodb get_at, 2 thread(s): every thread's sum",
+     "ok": true,
+     "detail": "[39603023, 39603023] != 39603023"
+    },
+    {
+     "name": "protodb EqualityIndex query, 2 thread(s): every thread's sum",
+     "ok": true,
+     "detail": "[399847400, 399847400] != 399847400"
+    },
+    {
+     "name": "python dict lookup, 2 thread(s): every thread's sum",
+     "ok": true,
+     "detail": "[39603023, 39603023] != 39603023"
+    },
+    {
+     "name": "protodb get_at, 4 thread(s): every thread's sum",
+     "ok": true,
+     "detail": "[39603023, 39603023, 39603023, 39603023] != 39603023"
+    },
+    {
+     "name": "protodb EqualityIndex query, 4 thread(s): every thread's sum",
+     "ok": true,
+     "detail": "[399847400, 399847400, 399847400, 399847400] != 399847400"
+    },
+    {
+     "name": "python dict lookup, 4 thread(s): every thread's sum",
+     "ok": true,
+     "detail": "[39603023, 39603023, 39603023, 39603023] != 39603023"
+    },
+    {
+     "name": "protodb get_at, 8 thread(s): every thread's sum",
+     "ok": true,
+     "detail": "[39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023] != 39603023"
+    },
+    {
+     "name": "protodb EqualityIndex query, 8 thread(s): every thread's sum",
+     "ok": true,
+     "detail": "[399847400, 399847400, 399847400, 399847400, 399847400, 399847400, 399847400, 399847400] != 399847400"
+    },
+    {
+     "name": "python dict lookup, 8 thread(s): every thread's sum",
+     "ok": true,
+     "detail": "[39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023] != 39603023"
+    },
+    {
+     "name": "protodb get_at, 16 thread(s): every thread's sum",
+     "ok": true,
+     "detail": "[39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023] != 39603023"
+    },
+    {
+     "name": "protodb EqualityIndex query, 16 thread(s): every thread's sum",
+     "ok": true,
+     "detail": "[399847400, 399847400, 399847400, 399847400, 399847400, 399847400, 399847400, 399847400, 399847400, 399847400, 399847400, 399847400, 399847400, 399847400, 399847400, 399847400] != 399847400"
+    },
+    {
+     "name": "python dict lookup, 16 thread(s): every thread's sum",
+     "ok": true,
+     "detail": "[39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023, 39603023] != 39603023"
+    }
+   ],
+   "timings": {
+    "protodb get_at: ops/s, 1 thread(s)": {
+     "unit": "ops/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      231454.46490690878,
+      215571.38975649688,
+      187249.68222694038,
+      220208.74373193205,
+      216227.3667456454
+     ],
+     "n": 5,
+     "median": 216227.3667456454,
+     "p95": null,
+     "min": 187249.68222694038,
+     "max": 231454.46490690878,
+     "mean": 214142.32947358472,
+     "tail_label": "min",
+     "tail": 187249.68222694038
+    },
+    "protodb EqualityIndex query: ops/s, 1 thread(s)": {
+     "unit": "ops/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      4220.817024527307,
+      4471.384136217721,
+      4524.7458139663995,
+      4663.6541192501845,
+      4744.010579665968
+     ],
+     "n": 5,
+     "median": 4524.7458139663995,
+     "p95": null,
+     "min": 4220.817024527307,
+     "max": 4744.010579665968,
+     "mean": 4524.922334725516,
+     "tail_label": "min",
+     "tail": 4220.817024527307
+    },
+    "python dict lookup: ops/s, 1 thread(s)": {
+     "unit": "ops/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      964856.3185529965,
+      832348.0423465862,
+      871748.3802444177,
+      723721.4941565179,
+      700426.3999060043
+     ],
+     "n": 5,
+     "median": 832348.0423465862,
+     "p95": null,
+     "min": 700426.3999060043,
+     "max": 964856.3185529965,
+     "mean": 818620.1270413045,
+     "tail_label": "min",
+     "tail": 700426.3999060043
+    },
+    "protodb get_at: ops/s, 2 thread(s)": {
+     "unit": "ops/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      329073.1932676557,
+      200643.4435937306,
+      177892.9179599577,
+      190361.17147580752,
+      207967.62978562643
+     ],
+     "n": 5,
+     "median": 200643.4435937306,
+     "p95": null,
+     "min": 177892.9179599577,
+     "max": 329073.1932676557,
+     "mean": 221187.67121655558,
+     "tail_label": "min",
+     "tail": 177892.9179599577
+    },
+    "protodb EqualityIndex query: ops/s, 2 thread(s)": {
+     "unit": "ops/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      7949.834948971435,
+      7394.2985472912405,
+      7697.024930875426,
+      7459.817737613996,
+      7449.736259034493
+     ],
+     "n": 5,
+     "median": 7459.817737613996,
+     "p95": null,
+     "min": 7394.2985472912405,
+     "max": 7949.834948971435,
+     "mean": 7590.142484757319,
+     "tail_label": "min",
+     "tail": 7394.2985472912405
+    },
+    "python dict lookup: ops/s, 2 thread(s)": {
+     "unit": "ops/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      2046226.299433941,
+      1507544.1314391491,
+      1508755.5883345497,
+      1225987.876730494,
+      1124350.808320431
+     ],
+     "n": 5,
+     "median": 1507544.1314391491,
+     "p95": null,
+     "min": 1124350.808320431,
+     "max": 2046226.299433941,
+     "mean": 1482572.940851713,
+     "tail_label": "min",
+     "tail": 1124350.808320431
+    },
+    "protodb get_at: ops/s, 4 thread(s)": {
+     "unit": "ops/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      293396.18907544133,
+      284544.7103868806,
+      292165.9196723429,
+      301931.2675026188,
+      307030.17949255224
+     ],
+     "n": 5,
+     "median": 293396.18907544133,
+     "p95": null,
+     "min": 284544.7103868806,
+     "max": 307030.17949255224,
+     "mean": 295813.6532259672,
+     "tail_label": "min",
+     "tail": 284544.7103868806
+    },
+    "protodb EqualityIndex query: ops/s, 4 thread(s)": {
+     "unit": "ops/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      12782.291721647183,
+      9173.851868878173,
+      13770.70349866278,
+      11856.508033760656,
+      10478.349077452885
+     ],
+     "n": 5,
+     "median": 11856.508033760656,
+     "p95": null,
+     "min": 9173.851868878173,
+     "max": 13770.70349866278,
+     "mean": 11612.340840080335,
+     "tail_label": "min",
+     "tail": 9173.851868878173
+    },
+    "python dict lookup: ops/s, 4 thread(s)": {
+     "unit": "ops/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      3093753.080428198,
+      3147088.644274768,
+      3289711.0820957376,
+      2569487.3710178304,
+      2125682.8604726577
+     ],
+     "n": 5,
+     "median": 3093753.080428198,
+     "p95": null,
+     "min": 2125682.8604726577,
+     "max": 3289711.0820957376,
+     "mean": 2845144.607657838,
+     "tail_label": "min",
+     "tail": 2125682.8604726577
+    },
+    "protodb get_at: ops/s, 8 thread(s)": {
+     "unit": "ops/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      351467.2340234232,
+      330678.63486385875,
+      327225.7332664164,
+      329129.43504048494,
+      363590.5264784187
+     ],
+     "n": 5,
+     "median": 330678.63486385875,
+     "p95": null,
+     "min": 327225.7332664164,
+     "max": 363590.5264784187,
+     "mean": 340418.3127345204,
+     "tail_label": "min",
+     "tail": 327225.7332664164
+    },
+    "protodb EqualityIndex query: ops/s, 8 thread(s)": {
+     "unit": "ops/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      14798.895176536238,
+      14725.0823425865,
+      15958.747432894617,
+      15647.540250973138,
+      13670.714841805695
+     ],
+     "n": 5,
+     "median": 14798.895176536238,
+     "p95": null,
+     "min": 13670.714841805695,
+     "max": 15958.747432894617,
+     "mean": 14960.196008959238,
+     "tail_label": "min",
+     "tail": 13670.714841805695
+    },
+    "python dict lookup: ops/s, 8 thread(s)": {
+     "unit": "ops/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      2315522.4996889187,
+      3487311.9620154644,
+      2566378.581465685,
+      3492176.045024615,
+      2571549.3417331306
+     ],
+     "n": 5,
+     "median": 2571549.3417331306,
+     "p95": null,
+     "min": 2315522.4996889187,
+     "max": 3492176.045024615,
+     "mean": 2886587.6859855624,
+     "tail_label": "min",
+     "tail": 2315522.4996889187
+    },
+    "protodb get_at: ops/s, 16 thread(s)": {
+     "unit": "ops/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      302867.58769539493,
+      313387.5692835209,
+      306379.6769846559,
+      312715.5339856587,
+      311460.4035787153
+     ],
+     "n": 5,
+     "median": 311460.4035787153,
+     "p95": null,
+     "min": 302867.58769539493,
+     "max": 313387.5692835209,
+     "mean": 309362.15430558915,
+     "tail_label": "min",
+     "tail": 302867.58769539493
+    },
+    "protodb EqualityIndex query: ops/s, 16 thread(s)": {
+     "unit": "ops/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      19344.444228431326,
+      15818.981888969822,
+      13053.177979232858,
+      15440.785696465644,
+      15750.595154346882
+     ],
+     "n": 5,
+     "median": 15750.595154346882,
+     "p95": null,
+     "min": 13053.177979232858,
+     "max": 19344.444228431326,
+     "mean": 15881.596989489306,
+     "tail_label": "min",
+     "tail": 13053.177979232858
+    },
+    "python dict lookup: ops/s, 16 thread(s)": {
+     "unit": "ops/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      5129050.934305174,
+      4001685.2094718474,
+      3919780.4637280838,
+      3894542.3690443384,
+      4080152.5554057336
+     ],
+     "n": 5,
+     "median": 4001685.2094718474,
+     "p95": null,
+     "min": 3894542.3690443384,
+     "max": 5129050.934305174,
+     "mean": 4205042.306391036,
+     "tail_label": "min",
+     "tail": 3894542.3690443384
+    }
+   },
+   "metrics": {
+    "protodb get_at: speedup vs 1 thread(s)": {
+     "1": 1.0,
+     "2": 0.93,
+     "4": 1.36,
+     "8": 1.53,
+     "16": 1.44
+    },
+    "protodb EqualityIndex query: speedup vs 1 thread(s)": {
+     "1": 1.0,
+     "2": 1.65,
+     "4": 2.62,
+     "8": 3.27,
+     "16": 3.48
+    },
+    "python dict lookup: speedup vs 1 thread(s)": {
+     "1": 1.0,
+     "2": 1.81,
+     "4": 3.72,
+     "8": 3.09,
+     "16": 4.81
+    }
+   },
+   "notes": [],
+   "params": {
+    "n": 20000,
+    "lookups": 4000,
+    "queries": 200
+   },
+   "elapsed_s": 13.143411247001495,
+   "gil_before": false,
+   "gil_after": false
+  }
+ }
+}

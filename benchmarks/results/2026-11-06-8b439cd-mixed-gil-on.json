@@ -1,0 +1,3519 @@
+{
+ "schema": 1,
+ "mode": "full",
+ "environment": {
+  "timestamp": "2026-11-06T07:12:36+00:00",
+  "cpu_model": "AMD Ryzen 5 5500U with Radeon Graphics",
+  "cpu_count": 12,
+  "cpu_affinity": 12,
+  "cpu_frequency": {
+   "governor": "powersave",
+   "driver": "amd-pstate-epp",
+   "energy_performance_preference": "balance_power",
+   "boost": "1"
+  },
+  "platform": "Linux-7.0.0-42-generic-x86_64-desconocido-with-glibc2.43",
+  "python": "3.14.6",
+  "python_implementation": "CPython",
+  "free_threaded_build": true,
+  "gil_enabled": true,
+  "xoptions": {
+   "gil": "1"
+  },
+  "proto_db": "2.0.0.dev0",
+  "git": {
+   "commit": "8b439cd",
+   "commit_full": "8b439cdd4d4c36f4f741491fb8d244f0e820c99c",
+   "dirty": false,
+   "clean": true,
+   "source": "git archive export",
+   "changed": [],
+   "missing": [],
+   "added": []
+  },
+  "sqlite": "3.53.1",
+  "numpy": "2.5.4",
+  "hnswlib": "0.8.0",
+  "workdir": "/home/gamarino/Documentos/proyectos/ProtoBase/benchmarks/.work/9c/run2/m1",
+  "workdir_fs": "zfs",
+  "rqlite": "/tmp/claude-1000/-home-gamarino-Documentos-proyectos/a16d8aae-6175-4ff4-8c16-3f66436bd422/scratchpad/rqlite/dist/rqlite-v10.6.6-linux-amd64/rqlited"
+ },
+ "options": {
+  "threads": [
+   1,
+   2,
+   4,
+   8,
+   16
+  ],
+  "repeat": 5,
+  "warmup": 1,
+  "params": {}
+ },
+ "total_s": 284.1318405639904,
+ "results": {
+  "mixed_read_write": {
+   "status": "ok",
+   "work": {
+    "members": 3,
+    "writers_per_node": 4,
+    "catalog": 10000,
+    "seconds": 3.0,
+    "readers_per_node": [
+     1,
+     4
+    ],
+    "cells": 22,
+    "rqlite_levels": [
+     "none",
+     "weak",
+     "linearizable",
+     "strong"
+    ]
+   },
+   "checksum": {
+    "protodb, writers only": true,
+    "protodb, readers only, 1 reader(s)/node": true,
+    "protodb, writers + readers, 1 reader(s)/node": true,
+    "protodb, readers only, 4 reader(s)/node": true,
+    "protodb, writers + readers, 4 reader(s)/node": true,
+    "rqlite, writers only": true,
+    "rqlite, readers only, 1 reader(s)/node, level=none": true,
+    "rqlite, writers + readers, 1 reader(s)/node, level=none": true,
+    "rqlite, readers only, 4 reader(s)/node, level=none": true,
+    "rqlite, writers + readers, 4 reader(s)/node, level=none": true,
+    "rqlite, readers only, 1 reader(s)/node, level=weak": true,
+    "rqlite, writers + readers, 1 reader(s)/node, level=weak": true,
+    "rqlite, readers only, 4 reader(s)/node, level=weak": true,
+    "rqlite, writers + readers, 4 reader(s)/node, level=weak": true,
+    "rqlite, readers only, 1 reader(s)/node, level=linearizable": true,
+    "rqlite, writers + readers, 1 reader(s)/node, level=linearizable": true,
+    "rqlite, readers only, 4 reader(s)/node, level=linearizable": true,
+    "rqlite, writers + readers, 4 reader(s)/node, level=linearizable": true,
+    "rqlite, readers only, 1 reader(s)/node, level=strong": true,
+    "rqlite, writers + readers, 1 reader(s)/node, level=strong": true,
+    "rqlite, readers only, 4 reader(s)/node, level=strong": true,
+    "rqlite, writers + readers, 4 reader(s)/node, level=strong": true
+   },
+   "expected": {
+    "protodb, writers only": true,
+    "protodb, readers only, 1 reader(s)/node": true,
+    "protodb, writers + readers, 1 reader(s)/node": true,
+    "protodb, readers only, 4 reader(s)/node": true,
+    "protodb, writers + readers, 4 reader(s)/node": true,
+    "rqlite, writers only": true,
+    "rqlite, readers only, 1 reader(s)/node, level=none": true,
+    "rqlite, writers + readers, 1 reader(s)/node, level=none": true,
+    "rqlite, readers only, 4 reader(s)/node, level=none": true,
+    "rqlite, writers + readers, 4 reader(s)/node, level=none": true,
+    "rqlite, readers only, 1 reader(s)/node, level=weak": true,
+    "rqlite, writers + readers, 1 reader(s)/node, level=weak": true,
+    "rqlite, readers only, 4 reader(s)/node, level=weak": true,
+    "rqlite, writers + readers, 4 reader(s)/node, level=weak": true,
+    "rqlite, readers only, 1 reader(s)/node, level=linearizable": true,
+    "rqlite, writers + readers, 1 reader(s)/node, level=linearizable": true,
+    "rqlite, readers only, 4 reader(s)/node, level=linearizable": true,
+    "rqlite, writers + readers, 4 reader(s)/node, level=linearizable": true,
+    "rqlite, readers only, 1 reader(s)/node, level=strong": true,
+    "rqlite, writers + readers, 1 reader(s)/node, level=strong": true,
+    "rqlite, readers only, 4 reader(s)/node, level=strong": true,
+    "rqlite, writers + readers, 4 reader(s)/node, level=strong": true
+   },
+   "checks": [
+    {
+     "name": "protodb, writers only: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": null, \"write_check\": null, \"ids_missing\": 0, \"ids_extra\": 0, \"thread_errors\": [[], [], []]}; {\"ok\": true, \"bad_reads\": null, \"write_check\": null, \"ids_missing\": 0, \"ids_extra\": 0, \"thread_errors\": [[], [], []]}"
+    },
+    {
+     "name": "protodb, readers only, 1 reader(s)/node: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": null, \"ids_missing\": 0, \"ids_extra\": 0, \"thread_errors\": [[], [], []]}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": null, \"ids_missing\": 0, \"ids_extra\": 0, \"thread_errors\": [[], [], []]}"
+    },
+    {
+     "name": "protodb, writers + readers, 1 reader(s)/node: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": null, \"ids_missing\": 0, \"ids_extra\": 0, \"thread_errors\": [[], [], []]}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": null, \"ids_missing\": 0, \"ids_extra\": 0, \"thread_errors\": [[], [], []]}"
+    },
+    {
+     "name": "protodb, readers only, 4 reader(s)/node: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": null, \"ids_missing\": 0, \"ids_extra\": 0, \"thread_errors\": [[], [], []]}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": null, \"ids_missing\": 0, \"ids_extra\": 0, \"thread_errors\": [[], [], []]}"
+    },
+    {
+     "name": "protodb, writers + readers, 4 reader(s)/node: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": null, \"ids_missing\": 0, \"ids_extra\": 0, \"thread_errors\": [[], [], []]}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": null, \"ids_missing\": 0, \"ids_extra\": 0, \"thread_errors\": [[], [], []]}"
+    },
+    {
+     "name": "rqlite, writers only: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": null, \"write_check\": [1854, 185400, 185400], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}; {\"ok\": true, \"bad_reads\": null, \"write_check\": [1807, 180700, 180700], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}"
+    },
+    {
+     "name": "rqlite, readers only, 1 reader(s)/node, level=none: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": [0, 0, 0], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": [0, 0, 0], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}"
+    },
+    {
+     "name": "rqlite, writers + readers, 1 reader(s)/node, level=none: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": [1943, 194300, 194300], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": [1830, 183000, 183000], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}"
+    },
+    {
+     "name": "rqlite, readers only, 4 reader(s)/node, level=none: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": [0, 0, 0], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": [0, 0, 0], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}"
+    },
+    {
+     "name": "rqlite, writers + readers, 4 reader(s)/node, level=none: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": [1495, 149500, 149500], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": [1530, 153000, 153000], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}"
+    },
+    {
+     "name": "rqlite, readers only, 1 reader(s)/node, level=weak: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": [0, 0, 0], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": [0, 0, 0], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}"
+    },
+    {
+     "name": "rqlite, writers + readers, 1 reader(s)/node, level=weak: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": [1731, 173100, 173100], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": [1891, 189100, 189100], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}"
+    },
+    {
+     "name": "rqlite, readers only, 4 reader(s)/node, level=weak: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": [0, 0, 0], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": [0, 0, 0], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}"
+    },
+    {
+     "name": "rqlite, writers + readers, 4 reader(s)/node, level=weak: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": [1454, 145400, 145400], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": [1516, 151600, 151600], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}"
+    },
+    {
+     "name": "rqlite, readers only, 1 reader(s)/node, level=linearizable: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": [0, 0, 0], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": [0, 0, 0], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}"
+    },
+    {
+     "name": "rqlite, writers + readers, 1 reader(s)/node, level=linearizable: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": [1940, 194000, 194000], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": [1945, 194500, 194500], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}"
+    },
+    {
+     "name": "rqlite, readers only, 4 reader(s)/node, level=linearizable: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": [0, 0, 0], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": [0, 0, 0], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}"
+    },
+    {
+     "name": "rqlite, writers + readers, 4 reader(s)/node, level=linearizable: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": [1739, 173900, 173900], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": [1791, 179100, 179100], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}"
+    },
+    {
+     "name": "rqlite, readers only, 1 reader(s)/node, level=strong: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": [0, 0, 0], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": [0, 0, 0], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}"
+    },
+    {
+     "name": "rqlite, writers + readers, 1 reader(s)/node, level=strong: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": [1823, 182300, 182300], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": [1862, 186200, 186200], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}"
+    },
+    {
+     "name": "rqlite, readers only, 4 reader(s)/node, level=strong: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": [0, 0, 0], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": [0, 0, 0], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}"
+    },
+    {
+     "name": "rqlite, writers + readers, 4 reader(s)/node, level=strong: every read right, writes exactly the acknowledged ones",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"write_check\": [1561, 156100, 156100], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}; {\"ok\": true, \"bad_reads\": 0, \"write_check\": [1654, 165400, 165400], \"ids_missing\": null, \"ids_extra\": null, \"thread_errors\": null}"
+    }
+   ],
+   "timings": {
+    "protodb, writers only: commits/s": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      205.82127697457983,
+      242.41024698545675
+     ],
+     "n": 2,
+     "median": 224.1157619800183,
+     "p95": null,
+     "min": 205.82127697457983,
+     "max": 242.41024698545675,
+     "mean": 224.1157619800183,
+     "tail_label": "min",
+     "tail": 205.82127697457983
+    },
+    "protodb, readers only, 1 reader(s)/node: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      122449.59050957441,
+      117993.17857088154
+     ],
+     "n": 2,
+     "median": 120221.38454022797,
+     "p95": null,
+     "min": 117993.17857088154,
+     "max": 122449.59050957441,
+     "mean": 120221.38454022797,
+     "tail_label": "min",
+     "tail": 117993.17857088154
+    },
+    "protodb, writers + readers, 1 reader(s)/node: commits/s": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      23.361492399413535,
+      24.492225986512896
+     ],
+     "n": 2,
+     "median": 23.926859192963214,
+     "p95": null,
+     "min": 23.361492399413535,
+     "max": 24.492225986512896,
+     "mean": 23.926859192963214,
+     "tail_label": "min",
+     "tail": 23.361492399413535
+    },
+    "protodb, writers + readers, 1 reader(s)/node: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      101680.09561733785,
+      100163.8585670271
+     ],
+     "n": 2,
+     "median": 100921.97709218247,
+     "p95": null,
+     "min": 100163.8585670271,
+     "max": 101680.09561733785,
+     "mean": 100921.97709218247,
+     "tail_label": "min",
+     "tail": 100163.8585670271
+    },
+    "protodb, readers only, 4 reader(s)/node: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      100592.92518431482,
+      99234.40188382061
+     ],
+     "n": 2,
+     "median": 99913.66353406772,
+     "p95": null,
+     "min": 99234.40188382061,
+     "max": 100592.92518431482,
+     "mean": 99913.66353406772,
+     "tail_label": "min",
+     "tail": 99234.40188382061
+    },
+    "protodb, writers + readers, 4 reader(s)/node: commits/s": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      15.81970681766449,
+      14.088807348518479
+     ],
+     "n": 2,
+     "median": 14.954257083091484,
+     "p95": null,
+     "min": 14.088807348518479,
+     "max": 15.81970681766449,
+     "mean": 14.954257083091484,
+     "tail_label": "min",
+     "tail": 14.088807348518479
+    },
+    "protodb, writers + readers, 4 reader(s)/node: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      92925.6035492803,
+      87864.8470290355
+     ],
+     "n": 2,
+     "median": 90395.22528915791,
+     "p95": null,
+     "min": 87864.8470290355,
+     "max": 92925.6035492803,
+     "mean": 90395.22528915791,
+     "tail_label": "min",
+     "tail": 87864.8470290355
+    },
+    "rqlite, writers only: commits/s": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      602.8642227516798,
+      592.9883095927529
+     ],
+     "n": 2,
+     "median": 597.9262661722164,
+     "p95": null,
+     "min": 592.9883095927529,
+     "max": 602.8642227516798,
+     "mean": 597.9262661722164,
+     "tail_label": "min",
+     "tail": 592.9883095927529
+    },
+    "rqlite, readers only, 1 reader(s)/node, level=none: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      4119.154277401639,
+      4186.123246146731
+     ],
+     "n": 2,
+     "median": 4152.638761774185,
+     "p95": null,
+     "min": 4119.154277401639,
+     "max": 4186.123246146731,
+     "mean": 4152.638761774185,
+     "tail_label": "min",
+     "tail": 4119.154277401639
+    },
+    "rqlite, writers + readers, 1 reader(s)/node, level=none: commits/s": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      630.9181412332435,
+      598.3433655455908
+     ],
+     "n": 2,
+     "median": 614.6307533894171,
+     "p95": null,
+     "min": 598.3433655455908,
+     "max": 630.9181412332435,
+     "mean": 614.6307533894171,
+     "tail_label": "min",
+     "tail": 598.3433655455908
+    },
+    "rqlite, writers + readers, 1 reader(s)/node, level=none: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      2990.6104378580408,
+      2722.625795026303
+     ],
+     "n": 2,
+     "median": 2856.618116442172,
+     "p95": null,
+     "min": 2722.625795026303,
+     "max": 2990.6104378580408,
+     "mean": 2856.618116442172,
+     "tail_label": "min",
+     "tail": 2722.625795026303
+    },
+    "rqlite, readers only, 4 reader(s)/node, level=none: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      4025.381320474957,
+      3899.0248197012156
+     ],
+     "n": 2,
+     "median": 3962.2030700880864,
+     "p95": null,
+     "min": 3899.0248197012156,
+     "max": 4025.381320474957,
+     "mean": 3962.2030700880864,
+     "tail_label": "min",
+     "tail": 3899.0248197012156
+    },
+    "rqlite, writers + readers, 4 reader(s)/node, level=none: commits/s": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      479.60519321256015,
+      491.11825996041085
+     ],
+     "n": 2,
+     "median": 485.3617265864855,
+     "p95": null,
+     "min": 479.60519321256015,
+     "max": 491.11825996041085,
+     "mean": 485.3617265864855,
+     "tail_label": "min",
+     "tail": 479.60519321256015
+    },
+    "rqlite, writers + readers, 4 reader(s)/node, level=none: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      3021.352314164476,
+      2850.0908694042405
+     ],
+     "n": 2,
+     "median": 2935.721591784358,
+     "p95": null,
+     "min": 2850.0908694042405,
+     "max": 3021.352314164476,
+     "mean": 2935.721591784358,
+     "tail_label": "min",
+     "tail": 2850.0908694042405
+    },
+    "rqlite, readers only, 1 reader(s)/node, level=weak: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      2730.151771990017,
+      3624.5492731861705
+     ],
+     "n": 2,
+     "median": 3177.3505225880936,
+     "p95": null,
+     "min": 2730.151771990017,
+     "max": 3624.5492731861705,
+     "mean": 3177.3505225880936,
+     "tail_label": "min",
+     "tail": 2730.151771990017
+    },
+    "rqlite, writers + readers, 1 reader(s)/node, level=weak: commits/s": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      567.7596088423551,
+      618.9740401789292
+     ],
+     "n": 2,
+     "median": 593.3668245106421,
+     "p95": null,
+     "min": 567.7596088423551,
+     "max": 618.9740401789292,
+     "mean": 593.3668245106421,
+     "tail_label": "min",
+     "tail": 567.7596088423551
+    },
+    "rqlite, writers + readers, 1 reader(s)/node, level=weak: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      2144.1043113821347,
+      2605.8447032598915
+     ],
+     "n": 2,
+     "median": 2374.9745073210133,
+     "p95": null,
+     "min": 2144.1043113821347,
+     "max": 2605.8447032598915,
+     "mean": 2374.9745073210133,
+     "tail_label": "min",
+     "tail": 2144.1043113821347
+    },
+    "rqlite, readers only, 4 reader(s)/node, level=weak: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      2754.9460827721587,
+      3641.5391369366794
+     ],
+     "n": 2,
+     "median": 3198.2426098544192,
+     "p95": null,
+     "min": 2754.9460827721587,
+     "max": 3641.5391369366794,
+     "mean": 3198.2426098544192,
+     "tail_label": "min",
+     "tail": 2754.9460827721587
+    },
+    "rqlite, writers + readers, 4 reader(s)/node, level=weak: commits/s": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      466.3891750907282,
+      487.1098059942683
+     ],
+     "n": 2,
+     "median": 476.7494905424983,
+     "p95": null,
+     "min": 466.3891750907282,
+     "max": 487.1098059942683,
+     "mean": 476.7494905424983,
+     "tail_label": "min",
+     "tail": 466.3891750907282
+    },
+    "rqlite, writers + readers, 4 reader(s)/node, level=weak: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      2580.53707950819,
+      2772.28456867978
+     ],
+     "n": 2,
+     "median": 2676.410824093985,
+     "p95": null,
+     "min": 2580.53707950819,
+     "max": 2772.28456867978,
+     "mean": 2676.410824093985,
+     "tail_label": "min",
+     "tail": 2580.53707950819
+    },
+    "rqlite, readers only, 1 reader(s)/node, level=linearizable: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      2617.4603100055774,
+      2643.511947969488
+     ],
+     "n": 2,
+     "median": 2630.4861289875325,
+     "p95": null,
+     "min": 2617.4603100055774,
+     "max": 2643.511947969488,
+     "mean": 2630.4861289875325,
+     "tail_label": "min",
+     "tail": 2617.4603100055774
+    },
+    "rqlite, writers + readers, 1 reader(s)/node, level=linearizable: commits/s": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      635.2319663568214,
+      636.9661054356249
+     ],
+     "n": 2,
+     "median": 636.0990358962231,
+     "p95": null,
+     "min": 635.2319663568214,
+     "max": 636.9661054356249,
+     "mean": 636.0990358962231,
+     "tail_label": "min",
+     "tail": 635.2319663568214
+    },
+    "rqlite, writers + readers, 1 reader(s)/node, level=linearizable: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      267.19035285936405,
+      284.2604521944074
+     ],
+     "n": 2,
+     "median": 275.7254025268857,
+     "p95": null,
+     "min": 267.19035285936405,
+     "max": 284.2604521944074,
+     "mean": 275.7254025268857,
+     "tail_label": "min",
+     "tail": 267.19035285936405
+    },
+    "rqlite, readers only, 4 reader(s)/node, level=linearizable: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      3151.4149777519133,
+      3103.990117516744
+     ],
+     "n": 2,
+     "median": 3127.7025476343288,
+     "p95": null,
+     "min": 3103.990117516744,
+     "max": 3151.4149777519133,
+     "mean": 3127.7025476343288,
+     "tail_label": "min",
+     "tail": 3103.990117516744
+    },
+    "rqlite, writers + readers, 4 reader(s)/node, level=linearizable: commits/s": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      558.5257498884844,
+      574.5673012050992
+     ],
+     "n": 2,
+     "median": 566.5465255467918,
+     "p95": null,
+     "min": 558.5257498884844,
+     "max": 574.5673012050992,
+     "mean": 566.5465255467918,
+     "tail_label": "min",
+     "tail": 558.5257498884844
+    },
+    "rqlite, writers + readers, 4 reader(s)/node, level=linearizable: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      768.5751118361951,
+      809.398827995793
+     ],
+     "n": 2,
+     "median": 788.986969915994,
+     "p95": null,
+     "min": 768.5751118361951,
+     "max": 809.398827995793,
+     "mean": 788.986969915994,
+     "tail_label": "min",
+     "tail": 768.5751118361951
+    },
+    "rqlite, readers only, 1 reader(s)/node, level=strong: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      191.82293546807958,
+      184.90438383419095
+     ],
+     "n": 2,
+     "median": 188.36365965113526,
+     "p95": null,
+     "min": 184.90438383419095,
+     "max": 191.82293546807958,
+     "mean": 188.36365965113526,
+     "tail_label": "min",
+     "tail": 184.90438383419095
+    },
+    "rqlite, writers + readers, 1 reader(s)/node, level=strong: commits/s": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      596.5587600511378,
+      609.3478475951323
+     ],
+     "n": 2,
+     "median": 602.953303823135,
+     "p95": null,
+     "min": 596.5587600511378,
+     "max": 609.3478475951323,
+     "mean": 602.953303823135,
+     "tail_label": "min",
+     "tail": 596.5587600511378
+    },
+    "rqlite, writers + readers, 1 reader(s)/node, level=strong: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      146.60357899227085,
+      151.84608017408237
+     ],
+     "n": 2,
+     "median": 149.22482958317661,
+     "p95": null,
+     "min": 146.60357899227085,
+     "max": 151.84608017408237,
+     "mean": 149.22482958317661,
+     "tail_label": "min",
+     "tail": 146.60357899227085
+    },
+    "rqlite, readers only, 4 reader(s)/node, level=strong: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      583.0019658757961,
+      623.7509364890852
+     ],
+     "n": 2,
+     "median": 603.3764511824406,
+     "p95": null,
+     "min": 583.0019658757961,
+     "max": 623.7509364890852,
+     "mean": 603.3764511824406,
+     "tail_label": "min",
+     "tail": 583.0019658757961
+    },
+    "rqlite, writers + readers, 4 reader(s)/node, level=strong: commits/s": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      501.94165792274856,
+      531.1877264656371
+     ],
+     "n": 2,
+     "median": 516.5646921941928,
+     "p95": null,
+     "min": 501.94165792274856,
+     "max": 531.1877264656371,
+     "mean": 516.5646921941928,
+     "tail_label": "min",
+     "tail": 501.94165792274856
+    },
+    "rqlite, writers + readers, 4 reader(s)/node, level=strong: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      500.9770038716478,
+      533.1146468760323
+     ],
+     "n": 2,
+     "median": 517.0458253738401,
+     "p95": null,
+     "min": 500.9770038716478,
+     "max": 533.1146468760323,
+     "mean": 517.0458253738401,
+     "tail_label": "min",
+     "tail": 500.9770038716478
+    }
+   },
+   "metrics": {
+    "protodb, writers only: runs": [
+     {
+      "system": "protodb",
+      "writers": 4,
+      "readers": 0,
+      "ok": true,
+      "commits": 637,
+      "commit_rate": 205.82127697457983,
+      "commit_latency_ms": {
+       "p50": 54.55,
+       "p95": 80.81
+      },
+      "syncs_per_commit": 1.97,
+      "ids_missing": 0,
+      "ids_extra": 0,
+      "ids_duplicated": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits_by_peer": [
+       212,
+       212,
+       213
+      ],
+      "kept_run_dir": null
+     },
+     {
+      "system": "protodb",
+      "writers": 4,
+      "readers": 0,
+      "ok": true,
+      "commits": 749,
+      "commit_rate": 242.41024698545675,
+      "commit_latency_ms": {
+       "p50": 47.11,
+       "p95": 66.03
+      },
+      "syncs_per_commit": 2.11,
+      "ids_missing": 0,
+      "ids_extra": 0,
+      "ids_duplicated": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits_by_peer": [
+       249,
+       248,
+       252
+      ],
+      "kept_run_dir": null
+     }
+    ],
+    "protodb, readers only, 1 reader(s)/node: read p50/p99 us, each run": [
+     [
+      17,
+      88
+     ],
+     [
+      18,
+      94
+     ]
+    ],
+    "protodb, readers only, 1 reader(s)/node: runs": [
+     {
+      "system": "protodb",
+      "writers": 0,
+      "readers": 1,
+      "ok": true,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "syncs_per_commit": null,
+      "ids_missing": 0,
+      "ids_extra": 0,
+      "ids_duplicated": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits_by_peer": [
+       0,
+       0,
+       0
+      ],
+      "kept_run_dir": null,
+      "reads": 368466,
+      "bad_reads": 0,
+      "read_rate": 122449.59050957441,
+      "read_p50_us": 17,
+      "read_p99_us": 88,
+      "read_max_us": 12814,
+      "read_steady_p50_us": 17,
+      "read_steady_p99_us": 46,
+      "read_by_node": [
+       {
+        "reads": 135614,
+        "p50_us": 17,
+        "p99_us": 35,
+        "max_us": 4774
+       },
+       {
+        "reads": 115069,
+        "p50_us": 18,
+        "p99_us": 114,
+        "max_us": 10082
+       },
+       {
+        "reads": 117783,
+        "p50_us": 17,
+        "p99_us": 108,
+        "max_us": 12814
+       }
+      ],
+      "versions_seen": [
+       1,
+       1
+      ]
+     },
+     {
+      "system": "protodb",
+      "writers": 0,
+      "readers": 1,
+      "ok": true,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "syncs_per_commit": null,
+      "ids_missing": 0,
+      "ids_extra": 0,
+      "ids_duplicated": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits_by_peer": [
+       0,
+       0,
+       0
+      ],
+      "kept_run_dir": null,
+      "reads": 355130,
+      "bad_reads": 0,
+      "read_rate": 117993.17857088154,
+      "read_p50_us": 18,
+      "read_p99_us": 94,
+      "read_max_us": 12329,
+      "read_steady_p50_us": 18,
+      "read_steady_p99_us": 50,
+      "read_by_node": [
+       {
+        "reads": 133272,
+        "p50_us": 18,
+        "p99_us": 34,
+        "max_us": 1953
+       },
+       {
+        "reads": 112228,
+        "p50_us": 18,
+        "p99_us": 120,
+        "max_us": 10859
+       },
+       {
+        "reads": 109630,
+        "p50_us": 18,
+        "p99_us": 120,
+        "max_us": 12329
+       }
+      ],
+      "versions_seen": [
+       1,
+       1
+      ]
+     }
+    ],
+    "protodb, writers + readers, 1 reader(s)/node: read p50/p99 us, each run": [
+     [
+      18,
+      115
+     ],
+     [
+      18,
+      116
+     ]
+    ],
+    "protodb, writers + readers, 1 reader(s)/node: runs": [
+     {
+      "system": "protodb",
+      "writers": 4,
+      "readers": 1,
+      "ok": true,
+      "commits": 73,
+      "commit_rate": 23.361492399413535,
+      "commit_latency_ms": {
+       "p50": 500.62,
+       "p95": 663.95
+      },
+      "syncs_per_commit": 3.22,
+      "ids_missing": 0,
+      "ids_extra": 0,
+      "ids_duplicated": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits_by_peer": [
+       24,
+       24,
+       25
+      ],
+      "kept_run_dir": null,
+      "reads": 317730,
+      "bad_reads": 0,
+      "read_rate": 101680.09561733785,
+      "read_p50_us": 18,
+      "read_p99_us": 115,
+      "read_max_us": 34000,
+      "read_steady_p50_us": 18,
+      "read_steady_p99_us": 59,
+      "read_by_node": [
+       {
+        "reads": 120963,
+        "p50_us": 18,
+        "p99_us": 39,
+        "max_us": 30703
+       },
+       {
+        "reads": 98440,
+        "p50_us": 18,
+        "p99_us": 135,
+        "max_us": 15754
+       },
+       {
+        "reads": 98327,
+        "p50_us": 18,
+        "p99_us": 134,
+        "max_us": 34000
+       }
+      ],
+      "versions_seen": [
+       1,
+       62
+      ]
+     },
+     {
+      "system": "protodb",
+      "writers": 4,
+      "readers": 1,
+      "ok": true,
+      "commits": 76,
+      "commit_rate": 24.492225986512896,
+      "commit_latency_ms": {
+       "p50": 519.35,
+       "p95": 628.15
+      },
+      "syncs_per_commit": 3.28,
+      "ids_missing": 0,
+      "ids_extra": 0,
+      "ids_duplicated": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits_by_peer": [
+       24,
+       25,
+       27
+      ],
+      "kept_run_dir": null,
+      "reads": 310811,
+      "bad_reads": 0,
+      "read_rate": 100163.8585670271,
+      "read_p50_us": 18,
+      "read_p99_us": 116,
+      "read_max_us": 44109,
+      "read_steady_p50_us": 18,
+      "read_steady_p99_us": 63,
+      "read_by_node": [
+       {
+        "reads": 118994,
+        "p50_us": 18,
+        "p99_us": 39,
+        "max_us": 44109
+       },
+       {
+        "reads": 96899,
+        "p50_us": 19,
+        "p99_us": 136,
+        "max_us": 13019
+       },
+       {
+        "reads": 94918,
+        "p50_us": 19,
+        "p99_us": 136,
+        "max_us": 13486
+       }
+      ],
+      "versions_seen": [
+       1,
+       65
+      ]
+     }
+    ],
+    "protodb, readers only, 4 reader(s)/node: read p50/p99 us, each run": [
+     [
+      18,
+      168
+     ],
+     [
+      19,
+      168
+     ]
+    ],
+    "protodb, readers only, 4 reader(s)/node: runs": [
+     {
+      "system": "protodb",
+      "writers": 0,
+      "readers": 4,
+      "ok": true,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "syncs_per_commit": null,
+      "ids_missing": 0,
+      "ids_extra": 0,
+      "ids_duplicated": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits_by_peer": [
+       0,
+       0,
+       0
+      ],
+      "kept_run_dir": null,
+      "reads": 304671,
+      "bad_reads": 0,
+      "read_rate": 100592.92518431482,
+      "read_p50_us": 18,
+      "read_p99_us": 168,
+      "read_max_us": 72202,
+      "read_steady_p50_us": 18,
+      "read_steady_p99_us": 92,
+      "read_by_node": [
+       {
+        "reads": 119727,
+        "p50_us": 17,
+        "p99_us": 53,
+        "max_us": 67035
+       },
+       {
+        "reads": 90711,
+        "p50_us": 19,
+        "p99_us": 230,
+        "max_us": 55588
+       },
+       {
+        "reads": 94233,
+        "p50_us": 18,
+        "p99_us": 210,
+        "max_us": 72202
+       }
+      ],
+      "versions_seen": [
+       1,
+       1
+      ]
+     },
+     {
+      "system": "protodb",
+      "writers": 0,
+      "readers": 4,
+      "ok": true,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "syncs_per_commit": null,
+      "ids_missing": 0,
+      "ids_extra": 0,
+      "ids_duplicated": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits_by_peer": [
+       0,
+       0,
+       0
+      ],
+      "kept_run_dir": null,
+      "reads": 300530,
+      "bad_reads": 0,
+      "read_rate": 99234.40188382061,
+      "read_p50_us": 19,
+      "read_p99_us": 168,
+      "read_max_us": 82746,
+      "read_steady_p50_us": 19,
+      "read_steady_p99_us": 91,
+      "read_by_node": [
+       {
+        "reads": 111397,
+        "p50_us": 18,
+        "p99_us": 61,
+        "max_us": 67335
+       },
+       {
+        "reads": 97207,
+        "p50_us": 19,
+        "p99_us": 191,
+        "max_us": 52206
+       },
+       {
+        "reads": 91926,
+        "p50_us": 19,
+        "p99_us": 229,
+        "max_us": 82746
+       }
+      ],
+      "versions_seen": [
+       1,
+       1
+      ]
+     }
+    ],
+    "protodb, writers + readers, 4 reader(s)/node: read p50/p99 us, each run": [
+     [
+      18,
+      161
+     ],
+     [
+      19,
+      181
+     ]
+    ],
+    "protodb, writers + readers, 4 reader(s)/node: runs": [
+     {
+      "system": "protodb",
+      "writers": 4,
+      "readers": 4,
+      "ok": true,
+      "commits": 49,
+      "commit_rate": 15.81970681766449,
+      "commit_latency_ms": {
+       "p50": 814.2,
+       "p95": 1075.26
+      },
+      "syncs_per_commit": 3.33,
+      "ids_missing": 0,
+      "ids_extra": 0,
+      "ids_duplicated": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits_by_peer": [
+       17,
+       16,
+       16
+      ],
+      "kept_run_dir": null,
+      "reads": 287828,
+      "bad_reads": 0,
+      "read_rate": 92925.6035492803,
+      "read_p50_us": 18,
+      "read_p99_us": 161,
+      "read_max_us": 79923,
+      "read_steady_p50_us": 18,
+      "read_steady_p99_us": 96,
+      "read_by_node": [
+       {
+        "reads": 111071,
+        "p50_us": 18,
+        "p99_us": 54,
+        "max_us": 63168
+       },
+       {
+        "reads": 87873,
+        "p50_us": 19,
+        "p99_us": 215,
+        "max_us": 79565
+       },
+       {
+        "reads": 88884,
+        "p50_us": 19,
+        "p99_us": 188,
+        "max_us": 79923
+       }
+      ],
+      "versions_seen": [
+       1,
+       42
+      ]
+     },
+     {
+      "system": "protodb",
+      "writers": 4,
+      "readers": 4,
+      "ok": true,
+      "commits": 44,
+      "commit_rate": 14.088807348518479,
+      "commit_latency_ms": {
+       "p50": 959.49,
+       "p95": 1212.5
+      },
+      "syncs_per_commit": 3.86,
+      "ids_missing": 0,
+      "ids_extra": 0,
+      "ids_duplicated": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits_by_peer": [
+       15,
+       16,
+       13
+      ],
+      "kept_run_dir": null,
+      "reads": 274406,
+      "bad_reads": 0,
+      "read_rate": 87864.8470290355,
+      "read_p50_us": 19,
+      "read_p99_us": 181,
+      "read_max_us": 99950,
+      "read_steady_p50_us": 19,
+      "read_steady_p99_us": 98,
+      "read_by_node": [
+       {
+        "reads": 106700,
+        "p50_us": 18,
+        "p99_us": 57,
+        "max_us": 91727
+       },
+       {
+        "reads": 84712,
+        "p50_us": 20,
+        "p99_us": 232,
+        "max_us": 99950
+       },
+       {
+        "reads": 82994,
+        "p50_us": 20,
+        "p99_us": 266,
+        "max_us": 75482
+       }
+      ],
+      "versions_seen": [
+       1,
+       33
+      ]
+     }
+    ],
+    "rqlite, writers only: runs": [
+     {
+      "system": "rqlite",
+      "level": null,
+      "writers": 4,
+      "readers": 0,
+      "commits": 1854,
+      "commit_rate": 602.8642227516798,
+      "commit_latency_ms": {
+       "p50": 19.25,
+       "p95": 26.02
+      },
+      "write_check": [
+       1854,
+       185400,
+       185400
+      ],
+      "ok": true
+     },
+     {
+      "system": "rqlite",
+      "level": null,
+      "writers": 4,
+      "readers": 0,
+      "commits": 1807,
+      "commit_rate": 592.9883095927529,
+      "commit_latency_ms": {
+       "p50": 20.74,
+       "p95": 26.09
+      },
+      "write_check": [
+       1807,
+       180700,
+       180700
+      ],
+      "ok": true
+     }
+    ],
+    "rqlite, readers only, 1 reader(s)/node, level=none: read p50/p99 us, each run": [
+     [
+      672,
+      1501
+     ],
+     [
+      682,
+      1249
+     ]
+    ],
+    "rqlite, readers only, 1 reader(s)/node, level=none: runs": [
+     {
+      "system": "rqlite",
+      "level": "none",
+      "writers": 0,
+      "readers": 1,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "write_check": [
+       0,
+       0,
+       0
+      ],
+      "reads": 12414,
+      "bad_reads": 0,
+      "read_rate": 4119.154277401639,
+      "read_p50_us": 672,
+      "read_p99_us": 1501,
+      "read_max_us": 7466,
+      "read_steady_p50_us": 675,
+      "read_steady_p99_us": 1508,
+      "read_by_node": [
+       {
+        "reads": 4138,
+        "p50_us": 672,
+        "p99_us": 1491,
+        "max_us": 7466
+       },
+       {
+        "reads": 4133,
+        "p50_us": 672,
+        "p99_us": 1564,
+        "max_us": 4573
+       },
+       {
+        "reads": 4143,
+        "p50_us": 673,
+        "p99_us": 1484,
+        "max_us": 5474
+       }
+      ],
+      "ok": true
+     },
+     {
+      "system": "rqlite",
+      "level": "none",
+      "writers": 0,
+      "readers": 1,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "write_check": [
+       0,
+       0,
+       0
+      ],
+      "reads": 12587,
+      "bad_reads": 0,
+      "read_rate": 4186.123246146731,
+      "read_p50_us": 682,
+      "read_p99_us": 1249,
+      "read_max_us": 3868,
+      "read_steady_p50_us": 683,
+      "read_steady_p99_us": 1237,
+      "read_by_node": [
+       {
+        "reads": 4178,
+        "p50_us": 682,
+        "p99_us": 1240,
+        "max_us": 3868
+       },
+       {
+        "reads": 4201,
+        "p50_us": 679,
+        "p99_us": 1279,
+        "max_us": 3512
+       },
+       {
+        "reads": 4208,
+        "p50_us": 686,
+        "p99_us": 1241,
+        "max_us": 3079
+       }
+      ],
+      "ok": true
+     }
+    ],
+    "rqlite, writers + readers, 1 reader(s)/node, level=none: read p50/p99 us, each run": [
+     [
+      794,
+      3554
+     ],
+     [
+      883,
+      3910
+     ]
+    ],
+    "rqlite, writers + readers, 1 reader(s)/node, level=none: runs": [
+     {
+      "system": "rqlite",
+      "level": "none",
+      "writers": 4,
+      "readers": 1,
+      "commits": 1943,
+      "commit_rate": 630.9181412332435,
+      "commit_latency_ms": {
+       "p50": 17.97,
+       "p95": 25.51
+      },
+      "write_check": [
+       1943,
+       194300,
+       194300
+      ],
+      "reads": 9210,
+      "bad_reads": 0,
+      "read_rate": 2990.6104378580408,
+      "read_p50_us": 794,
+      "read_p99_us": 3554,
+      "read_max_us": 26656,
+      "read_steady_p50_us": 792,
+      "read_steady_p99_us": 3403,
+      "read_by_node": [
+       {
+        "reads": 3069,
+        "p50_us": 792,
+        "p99_us": 3554,
+        "max_us": 8766
+       },
+       {
+        "reads": 3065,
+        "p50_us": 803,
+        "p99_us": 3411,
+        "max_us": 12149
+       },
+       {
+        "reads": 3076,
+        "p50_us": 785,
+        "p99_us": 3907,
+        "max_us": 26656
+       }
+      ],
+      "ok": true
+     },
+     {
+      "system": "rqlite",
+      "level": "none",
+      "writers": 4,
+      "readers": 1,
+      "commits": 1830,
+      "commit_rate": 598.3433655455908,
+      "commit_latency_ms": {
+       "p50": 19.64,
+       "p95": 26.33
+      },
+      "write_check": [
+       1830,
+       183000,
+       183000
+      ],
+      "reads": 8327,
+      "bad_reads": 0,
+      "read_rate": 2722.625795026303,
+      "read_p50_us": 883,
+      "read_p99_us": 3910,
+      "read_max_us": 6843,
+      "read_steady_p50_us": 861,
+      "read_steady_p99_us": 3678,
+      "read_by_node": [
+       {
+        "reads": 2775,
+        "p50_us": 882,
+        "p99_us": 3976,
+        "max_us": 6030
+       },
+       {
+        "reads": 2786,
+        "p50_us": 873,
+        "p99_us": 3885,
+        "max_us": 6843
+       },
+       {
+        "reads": 2766,
+        "p50_us": 894,
+        "p99_us": 3746,
+        "max_us": 5928
+       }
+      ],
+      "ok": true
+     }
+    ],
+    "rqlite, readers only, 4 reader(s)/node, level=none: read p50/p99 us, each run": [
+     [
+      2558,
+      8532
+     ],
+     [
+      2672,
+      8321
+     ]
+    ],
+    "rqlite, readers only, 4 reader(s)/node, level=none: runs": [
+     {
+      "system": "rqlite",
+      "level": "none",
+      "writers": 0,
+      "readers": 4,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "write_check": [
+       0,
+       0,
+       0
+      ],
+      "reads": 12320,
+      "bad_reads": 0,
+      "read_rate": 4025.381320474957,
+      "read_p50_us": 2558,
+      "read_p99_us": 8532,
+      "read_max_us": 44163,
+      "read_steady_p50_us": 2597,
+      "read_steady_p99_us": 8804,
+      "read_by_node": [
+       {
+        "reads": 4087,
+        "p50_us": 2565,
+        "p99_us": 8592,
+        "max_us": 43697
+       },
+       {
+        "reads": 4179,
+        "p50_us": 2512,
+        "p99_us": 8457,
+        "max_us": 26933
+       },
+       {
+        "reads": 4054,
+        "p50_us": 2603,
+        "p99_us": 8317,
+        "max_us": 44163
+       }
+      ],
+      "ok": true
+     },
+     {
+      "system": "rqlite",
+      "level": "none",
+      "writers": 0,
+      "readers": 4,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "write_check": [
+       0,
+       0,
+       0
+      ],
+      "reads": 11875,
+      "bad_reads": 0,
+      "read_rate": 3899.0248197012156,
+      "read_p50_us": 2672,
+      "read_p99_us": 8321,
+      "read_max_us": 32452,
+      "read_steady_p50_us": 2714,
+      "read_steady_p99_us": 8304,
+      "read_by_node": [
+       {
+        "reads": 3934,
+        "p50_us": 2675,
+        "p99_us": 8390,
+        "max_us": 12875
+       },
+       {
+        "reads": 3946,
+        "p50_us": 2676,
+        "p99_us": 8134,
+        "max_us": 13457
+       },
+       {
+        "reads": 3995,
+        "p50_us": 2666,
+        "p99_us": 8195,
+        "max_us": 32452
+       }
+      ],
+      "ok": true
+     }
+    ],
+    "rqlite, writers + readers, 4 reader(s)/node, level=none: read p50/p99 us, each run": [
+     [
+      3329,
+      11090
+     ],
+     [
+      3522,
+      11934
+     ]
+    ],
+    "rqlite, writers + readers, 4 reader(s)/node, level=none: runs": [
+     {
+      "system": "rqlite",
+      "level": "none",
+      "writers": 4,
+      "readers": 4,
+      "commits": 1495,
+      "commit_rate": 479.60519321256015,
+      "commit_latency_ms": {
+       "p50": 23.46,
+       "p95": 35.03
+      },
+      "write_check": [
+       1495,
+       149500,
+       149500
+      ],
+      "reads": 9418,
+      "bad_reads": 0,
+      "read_rate": 3021.352314164476,
+      "read_p50_us": 3329,
+      "read_p99_us": 11090,
+      "read_max_us": 74683,
+      "read_steady_p50_us": 3332,
+      "read_steady_p99_us": 10819,
+      "read_by_node": [
+       {
+        "reads": 3173,
+        "p50_us": 3271,
+        "p99_us": 10705,
+        "max_us": 51226
+       },
+       {
+        "reads": 3115,
+        "p50_us": 3381,
+        "p99_us": 10971,
+        "max_us": 74683
+       },
+       {
+        "reads": 3130,
+        "p50_us": 3334,
+        "p99_us": 11323,
+        "max_us": 73438
+       }
+      ],
+      "ok": true
+     },
+     {
+      "system": "rqlite",
+      "level": "none",
+      "writers": 4,
+      "readers": 4,
+      "commits": 1530,
+      "commit_rate": 491.11825996041085,
+      "commit_latency_ms": {
+       "p50": 22.68,
+       "p95": 34.62
+      },
+      "write_check": [
+       1530,
+       153000,
+       153000
+      ],
+      "reads": 8879,
+      "bad_reads": 0,
+      "read_rate": 2850.0908694042405,
+      "read_p50_us": 3522,
+      "read_p99_us": 11934,
+      "read_max_us": 94823,
+      "read_steady_p50_us": 3563,
+      "read_steady_p99_us": 11595,
+      "read_by_node": [
+       {
+        "reads": 2948,
+        "p50_us": 3531,
+        "p99_us": 12212,
+        "max_us": 94823
+       },
+       {
+        "reads": 2975,
+        "p50_us": 3453,
+        "p99_us": 12238,
+        "max_us": 91414
+       },
+       {
+        "reads": 2956,
+        "p50_us": 3545,
+        "p99_us": 11444,
+        "max_us": 74235
+       }
+      ],
+      "ok": true
+     }
+    ],
+    "rqlite, readers only, 1 reader(s)/node, level=weak: read p50/p99 us, each run": [
+     [
+      1005,
+      2457
+     ],
+     [
+      794,
+      1524
+     ]
+    ],
+    "rqlite, readers only, 1 reader(s)/node, level=weak: runs": [
+     {
+      "system": "rqlite",
+      "level": "weak",
+      "writers": 0,
+      "readers": 1,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "write_check": [
+       0,
+       0,
+       0
+      ],
+      "reads": 8230,
+      "bad_reads": 0,
+      "read_rate": 2730.151771990017,
+      "read_p50_us": 1005,
+      "read_p99_us": 2457,
+      "read_max_us": 12022,
+      "read_steady_p50_us": 985,
+      "read_steady_p99_us": 2464,
+      "read_by_node": [
+       {
+        "reads": 3269,
+        "p50_us": 845,
+        "p99_us": 2110,
+        "max_us": 12022
+       },
+       {
+        "reads": 2476,
+        "p50_us": 1114,
+        "p99_us": 2512,
+        "max_us": 7324
+       },
+       {
+        "reads": 2485,
+        "p50_us": 1101,
+        "p99_us": 2747,
+        "max_us": 5853
+       }
+      ],
+      "ok": true
+     },
+     {
+      "system": "rqlite",
+      "level": "weak",
+      "writers": 0,
+      "readers": 1,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "write_check": [
+       0,
+       0,
+       0
+      ],
+      "reads": 10924,
+      "bad_reads": 0,
+      "read_rate": 3624.5492731861705,
+      "read_p50_us": 794,
+      "read_p99_us": 1524,
+      "read_max_us": 10774,
+      "read_steady_p50_us": 798,
+      "read_steady_p99_us": 1528,
+      "read_by_node": [
+       {
+        "reads": 4349,
+        "p50_us": 668,
+        "p99_us": 1251,
+        "max_us": 3004
+       },
+       {
+        "reads": 3280,
+        "p50_us": 856,
+        "p99_us": 1587,
+        "max_us": 4173
+       },
+       {
+        "reads": 3295,
+        "p50_us": 854,
+        "p99_us": 1672,
+        "max_us": 10774
+       }
+      ],
+      "ok": true
+     }
+    ],
+    "rqlite, writers + readers, 1 reader(s)/node, level=weak: read p50/p99 us, each run": [
+     [
+      1104,
+      4726
+     ],
+     [
+      938,
+      3681
+     ]
+    ],
+    "rqlite, writers + readers, 1 reader(s)/node, level=weak: runs": [
+     {
+      "system": "rqlite",
+      "level": "weak",
+      "writers": 4,
+      "readers": 1,
+      "commits": 1731,
+      "commit_rate": 567.7596088423551,
+      "commit_latency_ms": {
+       "p50": 20.38,
+       "p95": 29.43
+      },
+      "write_check": [
+       1731,
+       173100,
+       173100
+      ],
+      "reads": 6537,
+      "bad_reads": 0,
+      "read_rate": 2144.1043113821347,
+      "read_p50_us": 1104,
+      "read_p99_us": 4726,
+      "read_max_us": 11289,
+      "read_steady_p50_us": 1087,
+      "read_steady_p99_us": 4556,
+      "read_by_node": [
+       {
+        "reads": 1979,
+        "p50_us": 1225,
+        "p99_us": 5082,
+        "max_us": 11289
+       },
+       {
+        "reads": 2553,
+        "p50_us": 919,
+        "p99_us": 4339,
+        "max_us": 10202
+       },
+       {
+        "reads": 2005,
+        "p50_us": 1217,
+        "p99_us": 4677,
+        "max_us": 8032
+       }
+      ],
+      "ok": true
+     },
+     {
+      "system": "rqlite",
+      "level": "weak",
+      "writers": 4,
+      "readers": 1,
+      "commits": 1891,
+      "commit_rate": 618.9740401789292,
+      "commit_latency_ms": {
+       "p50": 18.72,
+       "p95": 25.69
+      },
+      "write_check": [
+       1891,
+       189100,
+       189100
+      ],
+      "reads": 7961,
+      "bad_reads": 0,
+      "read_rate": 2605.8447032598915,
+      "read_p50_us": 938,
+      "read_p99_us": 3681,
+      "read_max_us": 13388,
+      "read_steady_p50_us": 951,
+      "read_steady_p99_us": 3684,
+      "read_by_node": [
+       {
+        "reads": 2445,
+        "p50_us": 1028,
+        "p99_us": 3676,
+        "max_us": 8815
+       },
+       {
+        "reads": 2419,
+        "p50_us": 1037,
+        "p99_us": 3844,
+        "max_us": 13388
+       },
+       {
+        "reads": 3097,
+        "p50_us": 798,
+        "p99_us": 3555,
+        "max_us": 8251
+       }
+      ],
+      "ok": true
+     }
+    ],
+    "rqlite, readers only, 4 reader(s)/node, level=weak: read p50/p99 us, each run": [
+     [
+      3791,
+      12331
+     ],
+     [
+      2919,
+      8696
+     ]
+    ],
+    "rqlite, readers only, 4 reader(s)/node, level=weak: runs": [
+     {
+      "system": "rqlite",
+      "level": "weak",
+      "writers": 0,
+      "readers": 4,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "write_check": [
+       0,
+       0,
+       0
+      ],
+      "reads": 8390,
+      "bad_reads": 0,
+      "read_rate": 2754.9460827721587,
+      "read_p50_us": 3791,
+      "read_p99_us": 12331,
+      "read_max_us": 30338,
+      "read_steady_p50_us": 3723,
+      "read_steady_p99_us": 11298,
+      "read_by_node": [
+       {
+        "reads": 2746,
+        "p50_us": 3901,
+        "p99_us": 11906,
+        "max_us": 30338
+       },
+       {
+        "reads": 2880,
+        "p50_us": 3621,
+        "p99_us": 11985,
+        "max_us": 30043
+       },
+       {
+        "reads": 2764,
+        "p50_us": 3833,
+        "p99_us": 12424,
+        "max_us": 27141
+       }
+      ],
+      "ok": true
+     },
+     {
+      "system": "rqlite",
+      "level": "weak",
+      "writers": 0,
+      "readers": 4,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "write_check": [
+       0,
+       0,
+       0
+      ],
+      "reads": 11079,
+      "bad_reads": 0,
+      "read_rate": 3641.5391369366794,
+      "read_p50_us": 2919,
+      "read_p99_us": 8696,
+      "read_max_us": 37710,
+      "read_steady_p50_us": 2948,
+      "read_steady_p99_us": 8516,
+      "read_by_node": [
+       {
+        "reads": 3826,
+        "p50_us": 2820,
+        "p99_us": 8705,
+        "max_us": 15760
+       },
+       {
+        "reads": 3645,
+        "p50_us": 2932,
+        "p99_us": 8662,
+        "max_us": 37710
+       },
+       {
+        "reads": 3608,
+        "p50_us": 3013,
+        "p99_us": 8579,
+        "max_us": 19932
+       }
+      ],
+      "ok": true
+     }
+    ],
+    "rqlite, writers + readers, 4 reader(s)/node, level=weak: read p50/p99 us, each run": [
+     [
+      3937,
+      12589
+     ],
+     [
+      3704,
+      11558
+     ]
+    ],
+    "rqlite, writers + readers, 4 reader(s)/node, level=weak: runs": [
+     {
+      "system": "rqlite",
+      "level": "weak",
+      "writers": 4,
+      "readers": 4,
+      "commits": 1454,
+      "commit_rate": 466.3891750907282,
+      "commit_latency_ms": {
+       "p50": 24.06,
+       "p95": 36.4
+      },
+      "write_check": [
+       1454,
+       145400,
+       145400
+      ],
+      "reads": 8045,
+      "bad_reads": 0,
+      "read_rate": 2580.53707950819,
+      "read_p50_us": 3937,
+      "read_p99_us": 12589,
+      "read_max_us": 110663,
+      "read_steady_p50_us": 3840,
+      "read_steady_p99_us": 12273,
+      "read_by_node": [
+       {
+        "reads": 2776,
+        "p50_us": 3806,
+        "p99_us": 12204,
+        "max_us": 110663
+       },
+       {
+        "reads": 2619,
+        "p50_us": 4021,
+        "p99_us": 13157,
+        "max_us": 60819
+       },
+       {
+        "reads": 2650,
+        "p50_us": 3982,
+        "p99_us": 12904,
+        "max_us": 88488
+       }
+      ],
+      "ok": true
+     },
+     {
+      "system": "rqlite",
+      "level": "weak",
+      "writers": 4,
+      "readers": 4,
+      "commits": 1516,
+      "commit_rate": 487.1098059942683,
+      "commit_latency_ms": {
+       "p50": 22.82,
+       "p95": 35.19
+      },
+      "write_check": [
+       1516,
+       151600,
+       151600
+      ],
+      "reads": 8628,
+      "bad_reads": 0,
+      "read_rate": 2772.28456867978,
+      "read_p50_us": 3704,
+      "read_p99_us": 11558,
+      "read_max_us": 109944,
+      "read_steady_p50_us": 3741,
+      "read_steady_p99_us": 11613,
+      "read_by_node": [
+       {
+        "reads": 2923,
+        "p50_us": 3613,
+        "p99_us": 11982,
+        "max_us": 109944
+       },
+       {
+        "reads": 2855,
+        "p50_us": 3734,
+        "p99_us": 11708,
+        "max_us": 90552
+       },
+       {
+        "reads": 2850,
+        "p50_us": 3771,
+        "p99_us": 10999,
+        "max_us": 75604
+       }
+      ],
+      "ok": true
+     }
+    ],
+    "rqlite, readers only, 1 reader(s)/node, level=linearizable: read p50/p99 us, each run": [
+     [
+      1075,
+      1964
+     ],
+     [
+      1058,
+      1953
+     ]
+    ],
+    "rqlite, readers only, 1 reader(s)/node, level=linearizable: runs": [
+     {
+      "system": "rqlite",
+      "level": "linearizable",
+      "writers": 0,
+      "readers": 1,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "write_check": [
+       0,
+       0,
+       0
+      ],
+      "reads": 7888,
+      "bad_reads": 0,
+      "read_rate": 2617.4603100055774,
+      "read_p50_us": 1075,
+      "read_p99_us": 1964,
+      "read_max_us": 6834,
+      "read_steady_p50_us": 1080,
+      "read_steady_p99_us": 1951,
+      "read_by_node": [
+       {
+        "reads": 2469,
+        "p50_us": 1157,
+        "p99_us": 2020,
+        "max_us": 5895
+       },
+       {
+        "reads": 2468,
+        "p50_us": 1162,
+        "p99_us": 2055,
+        "max_us": 6069
+       },
+       {
+        "reads": 2951,
+        "p50_us": 965,
+        "p99_us": 1796,
+        "max_us": 6834
+       }
+      ],
+      "ok": true
+     },
+     {
+      "system": "rqlite",
+      "level": "linearizable",
+      "writers": 0,
+      "readers": 1,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "write_check": [
+       0,
+       0,
+       0
+      ],
+      "reads": 7966,
+      "bad_reads": 0,
+      "read_rate": 2643.511947969488,
+      "read_p50_us": 1058,
+      "read_p99_us": 1953,
+      "read_max_us": 8875,
+      "read_steady_p50_us": 1061,
+      "read_steady_p99_us": 1908,
+      "read_by_node": [
+       {
+        "reads": 2500,
+        "p50_us": 1144,
+        "p99_us": 2009,
+        "max_us": 8875
+       },
+       {
+        "reads": 2504,
+        "p50_us": 1134,
+        "p99_us": 1988,
+        "max_us": 6839
+       },
+       {
+        "reads": 2962,
+        "p50_us": 956,
+        "p99_us": 1820,
+        "max_us": 7051
+       }
+      ],
+      "ok": true
+     }
+    ],
+    "rqlite, writers + readers, 1 reader(s)/node, level=linearizable: read p50/p99 us, each run": [
+     [
+      11459,
+      22033
+     ],
+     [
+      10658,
+      24173
+     ]
+    ],
+    "rqlite, writers + readers, 1 reader(s)/node, level=linearizable: runs": [
+     {
+      "system": "rqlite",
+      "level": "linearizable",
+      "writers": 4,
+      "readers": 1,
+      "commits": 1940,
+      "commit_rate": 635.2319663568214,
+      "commit_latency_ms": {
+       "p50": 17.85,
+       "p95": 24.41
+      },
+      "write_check": [
+       1940,
+       194000,
+       194000
+      ],
+      "reads": 816,
+      "bad_reads": 0,
+      "read_rate": 267.19035285936405,
+      "read_p50_us": 11459,
+      "read_p99_us": 22033,
+      "read_max_us": 26925,
+      "read_steady_p50_us": 11295,
+      "read_steady_p99_us": 23309,
+      "read_by_node": [
+       {
+        "reads": 252,
+        "p50_us": 12032,
+        "p99_us": 22392,
+        "max_us": 26925
+       },
+       {
+        "reads": 254,
+        "p50_us": 11822,
+        "p99_us": 23309,
+        "max_us": 25422
+       },
+       {
+        "reads": 310,
+        "p50_us": 10478,
+        "p99_us": 21307,
+        "max_us": 25746
+       }
+      ],
+      "ok": true
+     },
+     {
+      "system": "rqlite",
+      "level": "linearizable",
+      "writers": 4,
+      "readers": 1,
+      "commits": 1945,
+      "commit_rate": 636.9661054356249,
+      "commit_latency_ms": {
+       "p50": 17.66,
+       "p95": 24.72
+      },
+      "write_check": [
+       1945,
+       194500,
+       194500
+      ],
+      "reads": 868,
+      "bad_reads": 0,
+      "read_rate": 284.2604521944074,
+      "read_p50_us": 10658,
+      "read_p99_us": 24173,
+      "read_max_us": 45485,
+      "read_steady_p50_us": 10527,
+      "read_steady_p99_us": 24173,
+      "read_by_node": [
+       {
+        "reads": 281,
+        "p50_us": 10835,
+        "p99_us": 25621,
+        "max_us": 37855
+       },
+       {
+        "reads": 314,
+        "p50_us": 10112,
+        "p99_us": 20470,
+        "max_us": 45485
+       },
+       {
+        "reads": 273,
+        "p50_us": 11030,
+        "p99_us": 24529,
+        "max_us": 27936
+       }
+      ],
+      "ok": true
+     }
+    ],
+    "rqlite, readers only, 4 reader(s)/node, level=linearizable: read p50/p99 us, each run": [
+     [
+      3440,
+      9518
+     ],
+     [
+      3458,
+      9859
+     ]
+    ],
+    "rqlite, readers only, 4 reader(s)/node, level=linearizable: runs": [
+     {
+      "system": "rqlite",
+      "level": "linearizable",
+      "writers": 0,
+      "readers": 4,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "write_check": [
+       0,
+       0,
+       0
+      ],
+      "reads": 9591,
+      "bad_reads": 0,
+      "read_rate": 3151.4149777519133,
+      "read_p50_us": 3440,
+      "read_p99_us": 9518,
+      "read_max_us": 31292,
+      "read_steady_p50_us": 3473,
+      "read_steady_p99_us": 9550,
+      "read_by_node": [
+       {
+        "reads": 3332,
+        "p50_us": 3270,
+        "p99_us": 9452,
+        "max_us": 18693
+       },
+       {
+        "reads": 3123,
+        "p50_us": 3518,
+        "p99_us": 9554,
+        "max_us": 31292
+       },
+       {
+        "reads": 3136,
+        "p50_us": 3503,
+        "p99_us": 9318,
+        "max_us": 21393
+       }
+      ],
+      "ok": true
+     },
+     {
+      "system": "rqlite",
+      "level": "linearizable",
+      "writers": 0,
+      "readers": 4,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "write_check": [
+       0,
+       0,
+       0
+      ],
+      "reads": 9443,
+      "bad_reads": 0,
+      "read_rate": 3103.990117516744,
+      "read_p50_us": 3458,
+      "read_p99_us": 9859,
+      "read_max_us": 30553,
+      "read_steady_p50_us": 3492,
+      "read_steady_p99_us": 9333,
+      "read_by_node": [
+       {
+        "reads": 3329,
+        "p50_us": 3252,
+        "p99_us": 9603,
+        "max_us": 20676
+       },
+       {
+        "reads": 3033,
+        "p50_us": 3598,
+        "p99_us": 9927,
+        "max_us": 30553
+       },
+       {
+        "reads": 3081,
+        "p50_us": 3520,
+        "p99_us": 10240,
+        "max_us": 21037
+       }
+      ],
+      "ok": true
+     }
+    ],
+    "rqlite, writers + readers, 4 reader(s)/node, level=linearizable: read p50/p99 us, each run": [
+     [
+      15082,
+      40213
+     ],
+     [
+      14160,
+      35510
+     ]
+    ],
+    "rqlite, writers + readers, 4 reader(s)/node, level=linearizable: runs": [
+     {
+      "system": "rqlite",
+      "level": "linearizable",
+      "writers": 4,
+      "readers": 4,
+      "commits": 1739,
+      "commit_rate": 558.5257498884844,
+      "commit_latency_ms": {
+       "p50": 19.29,
+       "p95": 30.69
+      },
+      "write_check": [
+       1739,
+       173900,
+       173900
+      ],
+      "reads": 2393,
+      "bad_reads": 0,
+      "read_rate": 768.5751118361951,
+      "read_p50_us": 15082,
+      "read_p99_us": 40213,
+      "read_max_us": 85304,
+      "read_steady_p50_us": 14781,
+      "read_steady_p99_us": 42583,
+      "read_by_node": [
+       {
+        "reads": 830,
+        "p50_us": 14618,
+        "p99_us": 39021,
+        "max_us": 58717
+       },
+       {
+        "reads": 788,
+        "p50_us": 15082,
+        "p99_us": 42860,
+        "max_us": 85304
+       },
+       {
+        "reads": 775,
+        "p50_us": 15391,
+        "p99_us": 39724,
+        "max_us": 53277
+       }
+      ],
+      "ok": true
+     },
+     {
+      "system": "rqlite",
+      "level": "linearizable",
+      "writers": 4,
+      "readers": 4,
+      "commits": 1791,
+      "commit_rate": 574.5673012050992,
+      "commit_latency_ms": {
+       "p50": 19.0,
+       "p95": 28.93
+      },
+      "write_check": [
+       1791,
+       179100,
+       179100
+      ],
+      "reads": 2523,
+      "bad_reads": 0,
+      "read_rate": 809.398827995793,
+      "read_p50_us": 14160,
+      "read_p99_us": 35510,
+      "read_max_us": 106503,
+      "read_steady_p50_us": 13752,
+      "read_steady_p99_us": 36183,
+      "read_by_node": [
+       {
+        "reads": 820,
+        "p50_us": 14427,
+        "p99_us": 35878,
+        "max_us": 76361
+       },
+       {
+        "reads": 889,
+        "p50_us": 13408,
+        "p99_us": 35322,
+        "max_us": 74799
+       },
+       {
+        "reads": 814,
+        "p50_us": 14581,
+        "p99_us": 35539,
+        "max_us": 106503
+       }
+      ],
+      "ok": true
+     }
+    ],
+    "rqlite, readers only, 1 reader(s)/node, level=strong: read p50/p99 us, each run": [
+     [
+      15621,
+      24121
+     ],
+     [
+      15547,
+      65877
+     ]
+    ],
+    "rqlite, readers only, 1 reader(s)/node, level=strong: runs": [
+     {
+      "system": "rqlite",
+      "level": "strong",
+      "writers": 0,
+      "readers": 1,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "write_check": [
+       0,
+       0,
+       0
+      ],
+      "reads": 578,
+      "bad_reads": 0,
+      "read_rate": 191.82293546807958,
+      "read_p50_us": 15621,
+      "read_p99_us": 24121,
+      "read_max_us": 26720,
+      "read_steady_p50_us": 15546,
+      "read_steady_p99_us": 24319,
+      "read_by_node": [
+       {
+        "reads": 184,
+        "p50_us": 15944,
+        "p99_us": 25222,
+        "max_us": 26720
+       },
+       {
+        "reads": 185,
+        "p50_us": 15831,
+        "p99_us": 24121,
+        "max_us": 25245
+       },
+       {
+        "reads": 209,
+        "p50_us": 14886,
+        "p99_us": 22100,
+        "max_us": 25243
+       }
+      ],
+      "ok": true
+     },
+     {
+      "system": "rqlite",
+      "level": "strong",
+      "writers": 0,
+      "readers": 1,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "write_check": [
+       0,
+       0,
+       0
+      ],
+      "reads": 558,
+      "bad_reads": 0,
+      "read_rate": 184.90438383419095,
+      "read_p50_us": 15547,
+      "read_p99_us": 65877,
+      "read_max_us": 68860,
+      "read_steady_p50_us": 15379,
+      "read_steady_p99_us": 68486,
+      "read_by_node": [
+       {
+        "reads": 199,
+        "p50_us": 14830,
+        "p99_us": 68486,
+        "max_us": 68860
+       },
+       {
+        "reads": 180,
+        "p50_us": 15746,
+        "p99_us": 65877,
+        "max_us": 68740
+       },
+       {
+        "reads": 179,
+        "p50_us": 15860,
+        "p99_us": 68516,
+        "max_us": 68548
+       }
+      ],
+      "ok": true
+     }
+    ],
+    "rqlite, writers + readers, 1 reader(s)/node, level=strong: read p50/p99 us, each run": [
+     [
+      20209,
+      30270
+     ],
+     [
+      19036,
+      33689
+     ]
+    ],
+    "rqlite, writers + readers, 1 reader(s)/node, level=strong: runs": [
+     {
+      "system": "rqlite",
+      "level": "strong",
+      "writers": 4,
+      "readers": 1,
+      "commits": 1823,
+      "commit_rate": 596.5587600511378,
+      "commit_latency_ms": {
+       "p50": 20.04,
+       "p95": 26.36
+      },
+      "write_check": [
+       1823,
+       182300,
+       182300
+      ],
+      "reads": 448,
+      "bad_reads": 0,
+      "read_rate": 146.60357899227085,
+      "read_p50_us": 20209,
+      "read_p99_us": 30270,
+      "read_max_us": 34308,
+      "read_steady_p50_us": 19906,
+      "read_steady_p99_us": 31681,
+      "read_by_node": [
+       {
+        "reads": 147,
+        "p50_us": 20209,
+        "p99_us": 29409,
+        "max_us": 34308
+       },
+       {
+        "reads": 154,
+        "p50_us": 19801,
+        "p99_us": 30270,
+        "max_us": 32818
+       },
+       {
+        "reads": 147,
+        "p50_us": 20530,
+        "p99_us": 31681,
+        "max_us": 31876
+       }
+      ],
+      "ok": true
+     },
+     {
+      "system": "rqlite",
+      "level": "strong",
+      "writers": 4,
+      "readers": 1,
+      "commits": 1862,
+      "commit_rate": 609.3478475951323,
+      "commit_latency_ms": {
+       "p50": 19.28,
+       "p95": 26.85
+      },
+      "write_check": [
+       1862,
+       186200,
+       186200
+      ],
+      "reads": 464,
+      "bad_reads": 0,
+      "read_rate": 151.84608017408237,
+      "read_p50_us": 19036,
+      "read_p99_us": 33689,
+      "read_max_us": 40380,
+      "read_steady_p50_us": 18861,
+      "read_steady_p99_us": 29476,
+      "read_by_node": [
+       {
+        "reads": 160,
+        "p50_us": 18074,
+        "p99_us": 33401,
+        "max_us": 35997
+       },
+       {
+        "reads": 152,
+        "p50_us": 19759,
+        "p99_us": 33689,
+        "max_us": 40380
+       },
+       {
+        "reads": 152,
+        "p50_us": 19224,
+        "p99_us": 35291,
+        "max_us": 38282
+       }
+      ],
+      "ok": true
+     }
+    ],
+    "rqlite, readers only, 4 reader(s)/node, level=strong: read p50/p99 us, each run": [
+     [
+      20377,
+      62330
+     ],
+     [
+      18974,
+      30355
+     ]
+    ],
+    "rqlite, readers only, 4 reader(s)/node, level=strong: runs": [
+     {
+      "system": "rqlite",
+      "level": "strong",
+      "writers": 0,
+      "readers": 4,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "write_check": [
+       0,
+       0,
+       0
+      ],
+      "reads": 1773,
+      "bad_reads": 0,
+      "read_rate": 583.0019658757961,
+      "read_p50_us": 20377,
+      "read_p99_us": 62330,
+      "read_max_us": 95964,
+      "read_steady_p50_us": 20525,
+      "read_steady_p99_us": 28459,
+      "read_by_node": [
+       {
+        "reads": 610,
+        "p50_us": 19717,
+        "p99_us": 55549,
+        "max_us": 94783
+       },
+       {
+        "reads": 580,
+        "p50_us": 20616,
+        "p99_us": 63903,
+        "max_us": 95964
+       },
+       {
+        "reads": 583,
+        "p50_us": 20528,
+        "p99_us": 83555,
+        "max_us": 94994
+       }
+      ],
+      "ok": true
+     },
+     {
+      "system": "rqlite",
+      "level": "strong",
+      "writers": 0,
+      "readers": 4,
+      "commits": 0,
+      "commit_rate": null,
+      "commit_latency_ms": null,
+      "write_check": [
+       0,
+       0,
+       0
+      ],
+      "reads": 1897,
+      "bad_reads": 0,
+      "read_rate": 623.7509364890852,
+      "read_p50_us": 18974,
+      "read_p99_us": 30355,
+      "read_max_us": 37555,
+      "read_steady_p50_us": 19117,
+      "read_steady_p99_us": 30641,
+      "read_by_node": [
+       {
+        "reads": 660,
+        "p50_us": 17682,
+        "p99_us": 30641,
+        "max_us": 36599
+       },
+       {
+        "reads": 619,
+        "p50_us": 19724,
+        "p99_us": 29713,
+        "max_us": 37555
+       },
+       {
+        "reads": 618,
+        "p50_us": 19734,
+        "p99_us": 30496,
+        "max_us": 36088
+       }
+      ],
+      "ok": true
+     }
+    ],
+    "rqlite, writers + readers, 4 reader(s)/node, level=strong: read p50/p99 us, each run": [
+     [
+      21984,
+      46895
+     ],
+     [
+      20298,
+      98600
+     ]
+    ],
+    "rqlite, writers + readers, 4 reader(s)/node, level=strong: runs": [
+     {
+      "system": "rqlite",
+      "level": "strong",
+      "writers": 4,
+      "readers": 4,
+      "commits": 1561,
+      "commit_rate": 501.94165792274856,
+      "commit_latency_ms": {
+       "p50": 21.78,
+       "p95": 39.03
+      },
+      "write_check": [
+       1561,
+       156100,
+       156100
+      ],
+      "reads": 1558,
+      "bad_reads": 0,
+      "read_rate": 500.9770038716478,
+      "read_p50_us": 21984,
+      "read_p99_us": 46895,
+      "read_max_us": 103267,
+      "read_steady_p50_us": 22291,
+      "read_steady_p99_us": 49027,
+      "read_by_node": [
+       {
+        "reads": 514,
+        "p50_us": 21982,
+        "p99_us": 46895,
+        "max_us": 96575
+       },
+       {
+        "reads": 528,
+        "p50_us": 21827,
+        "p99_us": 46014,
+        "max_us": 102026
+       },
+       {
+        "reads": 516,
+        "p50_us": 22175,
+        "p99_us": 49027,
+        "max_us": 103267
+       }
+      ],
+      "ok": true
+     },
+     {
+      "system": "rqlite",
+      "level": "strong",
+      "writers": 4,
+      "readers": 4,
+      "commits": 1654,
+      "commit_rate": 531.1877264656371,
+      "commit_latency_ms": {
+       "p50": 20.27,
+       "p95": 29.41
+      },
+      "write_check": [
+       1654,
+       165400,
+       165400
+      ],
+      "reads": 1660,
+      "bad_reads": 0,
+      "read_rate": 533.1146468760323,
+      "read_p50_us": 20298,
+      "read_p99_us": 98600,
+      "read_max_us": 149737,
+      "read_steady_p50_us": 20269,
+      "read_steady_p99_us": 100197,
+      "read_by_node": [
+       {
+        "reads": 569,
+        "p50_us": 19863,
+        "p99_us": 96865,
+        "max_us": 142432
+       },
+       {
+        "reads": 546,
+        "p50_us": 20639,
+        "p99_us": 98600,
+        "max_us": 130725
+       },
+       {
+        "reads": 545,
+        "p50_us": 20544,
+        "p99_us": 99651,
+        "max_us": 149737
+       }
+      ],
+      "ok": true
+     }
+    ]
+   },
+   "notes": [],
+   "params": {
+    "seconds": 3.0,
+    "catalog": 10000,
+    "readers": [
+     1,
+     4
+    ],
+    "levels": [
+     "none",
+     "weak",
+     "linearizable",
+     "strong"
+    ],
+    "repeat": 2
+   },
+   "elapsed_s": 221.72678619698854,
+   "gil_before": true,
+   "gil_after": true
+  },
+  "cluster_peers": {
+   "status": "ok",
+   "work": {
+    "peers": [
+     1,
+     2,
+     4,
+     8
+    ],
+    "threads_per_peer": 4,
+    "seconds": 2.0,
+    "modes": [
+     "blind",
+     "increment"
+    ],
+    "durability": "fsync (local tier)",
+    "store_latency_s": 0.0
+   },
+   "checksum": {
+    "blind, 1 peer(s)": true,
+    "blind, 2 peer(s)": true,
+    "blind, 4 peer(s)": true,
+    "blind, 8 peer(s)": true,
+    "increment, 1 peer(s)": true,
+    "increment, 2 peer(s)": true,
+    "increment, 4 peer(s)": true,
+    "increment, 8 peer(s)": true
+   },
+   "expected": {
+    "blind, 1 peer(s)": true,
+    "blind, 2 peer(s)": true,
+    "blind, 4 peer(s)": true,
+    "blind, 8 peer(s)": true,
+    "increment, 1 peer(s)": true,
+    "increment, 2 peer(s)": true,
+    "increment, 4 peer(s)": true,
+    "increment, 8 peer(s)": true
+   },
+   "checks": [
+    {
+     "name": "blind, 1 peer(s): exact final state, no failed replication, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    },
+    {
+     "name": "blind, 2 peer(s): exact final state, no failed replication, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    },
+    {
+     "name": "blind, 4 peer(s): exact final state, no failed replication, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    },
+    {
+     "name": "blind, 8 peer(s): exact final state, no failed replication, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    },
+    {
+     "name": "increment, 1 peer(s): exact final state, no failed replication, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    },
+    {
+     "name": "increment, 2 peer(s): exact final state, no failed replication, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    },
+    {
+     "name": "increment, 4 peer(s): exact final state, no failed replication, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    },
+    {
+     "name": "increment, 8 peer(s): exact final state, no failed replication, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    }
+   ],
+   "timings": {
+    "blind: commits/s, 1 peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      109.25225792056774,
+      307.56208193836795,
+      310.44194262633346
+     ],
+     "n": 3,
+     "median": 307.56208193836795,
+     "p95": null,
+     "min": 109.25225792056774,
+     "max": 310.44194262633346,
+     "mean": 242.41876082842305,
+     "tail_label": "min",
+     "tail": 109.25225792056774
+    },
+    "blind: commits/s, 2 peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      157.0519417048871,
+      160.0152162005973,
+      167.68112809457642
+     ],
+     "n": 3,
+     "median": 160.0152162005973,
+     "p95": null,
+     "min": 157.0519417048871,
+     "max": 167.68112809457642,
+     "mean": 161.58276200002027,
+     "tail_label": "min",
+     "tail": 157.0519417048871
+    },
+    "blind: commits/s, 4 peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      175.07935682466663,
+      193.25026587846295,
+      178.9917600179521
+     ],
+     "n": 3,
+     "median": 178.9917600179521,
+     "p95": null,
+     "min": 175.07935682466663,
+     "max": 193.25026587846295,
+     "mean": 182.44046090702724,
+     "tail_label": "min",
+     "tail": 175.07935682466663
+    },
+    "blind: commits/s, 8 peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      120.89192326000546,
+      128.81331323723816,
+      143.59646698976735
+     ],
+     "n": 3,
+     "median": 128.81331323723816,
+     "p95": null,
+     "min": 120.89192326000546,
+     "max": 143.59646698976735,
+     "mean": 131.10056782900367,
+     "tail_label": "min",
+     "tail": 120.89192326000546
+    },
+    "increment: commits/s, 1 peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      189.93277194545107,
+      161.76651216537238,
+      130.6278780239983
+     ],
+     "n": 3,
+     "median": 161.76651216537238,
+     "p95": null,
+     "min": 130.6278780239983,
+     "max": 189.93277194545107,
+     "mean": 160.77572071160725,
+     "tail_label": "min",
+     "tail": 130.6278780239983
+    },
+    "increment: commits/s, 2 peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      92.45706199922428,
+      87.2970394852637,
+      83.25155569774601
+     ],
+     "n": 3,
+     "median": 87.2970394852637,
+     "p95": null,
+     "min": 83.25155569774601,
+     "max": 92.45706199922428,
+     "mean": 87.668552394078,
+     "tail_label": "min",
+     "tail": 83.25155569774601
+    },
+    "increment: commits/s, 4 peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      65.58559629149002,
+      65.16494250328861,
+      69.24886280099538
+     ],
+     "n": 3,
+     "median": 65.58559629149002,
+     "p95": null,
+     "min": 65.16494250328861,
+     "max": 69.24886280099538,
+     "mean": 66.66646719859135,
+     "tail_label": "min",
+     "tail": 65.16494250328861
+    },
+    "increment: commits/s, 8 peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      52.19108888393867,
+      52.130072483667554,
+      54.566213334939114
+     ],
+     "n": 3,
+     "median": 52.19108888393867,
+     "p95": null,
+     "min": 52.130072483667554,
+     "max": 54.566213334939114,
+     "mean": 52.96245823418178,
+     "tail_label": "min",
+     "tail": 52.130072483667554
+    }
+   },
+   "metrics": {
+    "blind, 1 peer(s): commit latency ms": {
+     "p50": 11.76,
+     "p95": 26.29
+    },
+    "blind, 1 peer(s): attempts per commit": 1.0,
+    "blind, 1 peer(s): lease acquisitions tried per commit": 0.0,
+    "blind, 1 peer(s): critical section ms per commit": {
+     "validation": 0.013,
+     "replay": 0.097,
+     "path_copy": 1.088,
+     "replication": 4.393
+    },
+    "blind, 1 peer(s): commits per peer, each run": [
+     [
+      223
+     ],
+     [
+      620
+     ],
+     [
+      628
+     ]
+    ],
+    "blind, 2 peer(s): commit latency ms": {
+     "p50": 48.23,
+     "p95": 74.23
+    },
+    "blind, 2 peer(s): attempts per commit": 1.0,
+    "blind, 2 peer(s): lease acquisitions tried per commit": 0.01,
+    "blind, 2 peer(s): critical section ms per commit": {
+     "validation": 0.093,
+     "replay": 0.378,
+     "path_copy": 1.237,
+     "replication": 27.776
+    },
+    "blind, 2 peer(s): commits per peer, each run": [
+     [
+      152,
+      172
+     ],
+     [
+      153,
+      178
+     ],
+     [
+      157,
+      191
+     ]
+    ],
+    "blind, 4 peer(s): commit latency ms": {
+     "p50": 75.43,
+     "p95": 149.78
+    },
+    "blind, 4 peer(s): attempts per commit": 1.0,
+    "blind, 4 peer(s): lease acquisitions tried per commit": 0.01,
+    "blind, 4 peer(s): critical section ms per commit": {
+     "validation": 0.065,
+     "replay": 0.457,
+     "path_copy": 1.384,
+     "replication": 32.582
+    },
+    "blind, 4 peer(s): commits per peer, each run": [
+     [
+      93,
+      96,
+      96,
+      93
+     ],
+     [
+      100,
+      104,
+      104,
+      104
+     ],
+     [
+      97,
+      98,
+      100,
+      96
+     ]
+    ],
+    "blind, 8 peer(s): commit latency ms": {
+     "p50": 200.29,
+     "p95": 448.59
+    },
+    "blind, 8 peer(s): attempts per commit": 1.0,
+    "blind, 8 peer(s): lease acquisitions tried per commit": 0.01,
+    "blind, 8 peer(s): critical section ms per commit": {
+     "validation": 0.209,
+     "replay": 0.776,
+     "path_copy": 1.761,
+     "replication": 42.519
+    },
+    "blind, 8 peer(s): commits per peer, each run": [
+     [
+      38,
+      37,
+      36,
+      37,
+      36,
+      36,
+      40,
+      36
+     ],
+     [
+      37,
+      36,
+      36,
+      36,
+      37,
+      38,
+      36,
+      39
+     ],
+     [
+      40,
+      42,
+      44,
+      40,
+      42,
+      40,
+      40,
+      39
+     ]
+    ],
+    "increment, 1 peer(s): commit latency ms": {
+     "p50": 15.22,
+     "p95": 101.77
+    },
+    "increment, 1 peer(s): attempts per commit": 2.52,
+    "increment, 1 peer(s): lease acquisitions tried per commit": 0.01,
+    "increment, 1 peer(s): critical section ms per commit": {
+     "validation": 0.005,
+     "replay": 0.099,
+     "path_copy": 1.157,
+     "replication": 3.358
+    },
+    "increment, 1 peer(s): commits per peer, each run": [
+     [
+      387
+     ],
+     [
+      334
+     ],
+     [
+      265
+     ]
+    ],
+    "increment, 2 peer(s): commit latency ms": {
+     "p50": 74.9,
+     "p95": 232.99
+    },
+    "increment, 2 peer(s): attempts per commit": 4.74,
+    "increment, 2 peer(s): lease acquisitions tried per commit": 0.01,
+    "increment, 2 peer(s): critical section ms per commit": {
+     "validation": 0.004,
+     "replay": 0.334,
+     "path_copy": 1.165,
+     "replication": 6.877
+    },
+    "increment, 2 peer(s): commits per peer, each run": [
+     [
+      96,
+      99
+     ],
+     [
+      89,
+      96
+     ],
+     [
+      92,
+      89
+     ]
+    ],
+    "increment, 4 peer(s): commit latency ms": {
+     "p50": 216.66,
+     "p95": 521.06
+    },
+    "increment, 4 peer(s): attempts per commit": 4.61,
+    "increment, 4 peer(s): lease acquisitions tried per commit": 0.01,
+    "increment, 4 peer(s): critical section ms per commit": {
+     "validation": 0.004,
+     "replay": 0.574,
+     "path_copy": 1.434,
+     "replication": 9.458
+    },
+    "increment, 4 peer(s): commits per peer, each run": [
+     [
+      36,
+      42,
+      40,
+      33
+     ],
+     [
+      41,
+      39,
+      33,
+      35
+     ],
+     [
+      38,
+      39,
+      43,
+      36
+     ]
+    ],
+    "increment, 8 peer(s): commit latency ms": {
+     "p50": 443.26,
+     "p95": 1487.05
+    },
+    "increment, 8 peer(s): attempts per commit": 4.47,
+    "increment, 8 peer(s): lease acquisitions tried per commit": 0.01,
+    "increment, 8 peer(s): critical section ms per commit": {
+     "validation": 0.004,
+     "replay": 0.533,
+     "path_copy": 1.429,
+     "replication": 12.567
+    },
+    "increment, 8 peer(s): commits per peer, each run": [
+     [
+      17,
+      19,
+      15,
+      22,
+      17,
+      17,
+      17,
+      14
+     ],
+     [
+      20,
+      18,
+      19,
+      21,
+      16,
+      18,
+      16,
+      16
+     ],
+     [
+      20,
+      19,
+      17,
+      20,
+      20,
+      18,
+      16,
+      17
+     ]
+    ]
+   },
+   "notes": [],
+   "params": {
+    "peers": [
+     1,
+     2,
+     4,
+     8
+    ],
+    "threads": 4,
+    "seconds": 2.0,
+    "modes": [
+     "blind",
+     "increment"
+    ],
+    "repeat": 3
+   },
+   "elapsed_s": 62.40287514901138,
+   "gil_before": true,
+   "gil_after": true
+  }
+ }
+}
