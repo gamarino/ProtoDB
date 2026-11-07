@@ -33,7 +33,8 @@ from proto_db.cluster.rootlog import compare_roots
 from proto_db.errors import ProtoConflictError, ProtoDBError, ProtoOutcomeUnknownError
 from proto_db import transactions
 from tests.concurrency.test_cluster_owner_failures import Load, _check, _FrozenPowerLoss
-from tests.support.outcomes import CommitTokens, add_blind_token, assert_outcomes_resolved, blind_snapshot_of
+from tests.support.outcomes import (CommitTokens, add_blind_token, assert_outcomes_resolved, blind_snapshot_of,
+                                    snapshot_of, write_token)
 from tests.support.tiered_cluster import RUN_KW, TieredCluster, incr
 
 pytestmark = [pytest.mark.timeout(300)]
@@ -78,7 +79,7 @@ def _confirmed(tc):
     empty commit, ``needs_confirmation``), which a schedule must not take for the commit it
     drives."""
     for node in tc.ids:
-        tc.db(node).run(_setter("w"), **RUN_KW)
+        tc.commit(node, _setter("w"))
 
 
 def _no_owner(tc, timeout=5.0):
@@ -182,6 +183,8 @@ def _rounds_per_second(tmp_path, monkeypatch, depth, seconds=3.0):
         for node, values in res.values.items():
             assert values == {k: sum(1 for t in res.present if t.rsplit("-", 1)[0] == k) for k in keys}, (node, values)
         return {"rate": rounds / elapsed, "pipelined": pipelined / max(1, issued), "issued": issued,
+                "pipelined_permits": pipelined, "stores_sent": sum(s["stores_sent"] for s in stats),
+                "gate_open_at_send": sum(s["gate_open_at_send"] for s in stats),
                 "abandoned": sum(s["terms_abandoned"] for s in stats), "unknown": len(tokens.unknown_tokens),
                 "rounds": rounds, "acked": len(tokens.acked_tokens)}
 
@@ -199,9 +202,19 @@ def test_permits_overlap_the_predecessors_durability(tmp_path, monkeypatch):
     serial = _rounds_per_second(tmp_path, monkeypatch, 0)
     piped = _rounds_per_second(tmp_path, monkeypatch, 1)
     print(f"\nrounds/s serial {serial['rate']:.1f}, pipelined {piped['rate']:.1f}; pipelined permits "
-          f"{piped['pipelined']:.0%} of {piped['issued']}; unknown {serial['unknown']} / {piped['unknown']}")
-    assert serial["pipelined"] == 0
+          f"{piped['pipelined']:.0%} of {piped['issued']}; data stages sent before the base was known "
+          f"committed {piped['stores_sent']} (gate open at send {piped['gate_open_at_send']}); "
+          f"terms abandoned {serial['abandoned']} / {piped['abandoned']}; "
+          f"unknown {serial['unknown']} / {piped['unknown']}")
+    assert serial["pipelined"] == 0 and serial["stores_sent"] == 0
     assert piped["pipelined"] >= 0.8, f"only {piped['pipelined']:.0%} of the permits were issued on a proposal"
+    # Fix round 1 (review I5): the overlap itself.  A pipelined permit's data stage leaves as a
+    # ``store`` while its gate is closed -- before this node knows the predecessor's root
+    # committed -- so the successor's durability work runs during the predecessor's.  A
+    # regression that waited for the gate before the data stage would keep the share above
+    # and send no store at all.
+    assert piped["stores_sent"] >= piped["pipelined_permits"] // 2, \
+        f"only {piped['stores_sent']} of {piped['pipelined_permits']} pipelined permits overlapped their data stage"
     # The first term may be abandoned at start-up (base behaviour); a later one only with an
     # unknown outcome (P5: a conservative end, resolved by the tokens above).
     assert piped["abandoned"] <= 1 + piped["unknown"], piped
@@ -225,10 +238,10 @@ def _p1_schedule(tmp_path, monkeypatch, *, first_of_term: bool, rule: str):
         fs.writeback(str(tmp_path))
         tc.store.set_outage(True)       # the object store never holds root k's records
         for node in tc.ids:             # every member has confirmed its committed root
-            tc.db(node).run(_setter("w"), **RUN_KW)
+            tc.commit(node, _setter("w"))
         _no_owner(tc)                   # A's next commit opens a term
         if not first_of_term:
-            tc.db("n0").run(_setter("w"), **RUN_KW)    # the term's first root; k is the next one
+            tc.commit("n0", _setter("w"))    # the term's first root; k is the next one
         assert tc["n0"]._ownership is not None or first_of_term
         a, b = tc["n0"], tc["n1"]
         if a.persister is not None:
@@ -333,7 +346,7 @@ def test_the_first_root_of_every_term_is_accepted_through_the_older_label_exempt
         return commit_base(coordinator, tier, lease, label, base)
     monkeypatch.setattr(transactions, "_commit_base", spy)
     with _cluster(tmp_path) as tc:
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         decisions = []
         for node in ("n1", "n2"):
             c = tc[node]
@@ -346,7 +359,7 @@ def test_the_first_root_of_every_term_is_accepted_through_the_older_label_exempt
             c._may_accept = recording
         send = tc["n0"].transport.send
         tc["n0"].transport.send = lambda to, msg: None if msg["type"] in ("done", "release") else send(to, msg)
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         tc.kill("n0")
         for _ in range(10):
             try:
@@ -386,7 +399,7 @@ def test_p2_a_closed_gate_after_a_store_is_a_truthful_conflict(tmp_path, monkeyp
     if planted:
         monkeypatch.setattr(ClusterCoordinator, "_store_entry", _p2_mutation)
     with _cluster(tmp_path) as tc:
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         _confirmed(tc)
         tc.store.set_outage(True)       # no persister teaches B committed roots from the store
         a, b = tc["n0"], tc["n1"]
@@ -433,7 +446,7 @@ def test_p2_a_closed_gate_after_a_store_is_a_truthful_conflict(tmp_path, monkeyp
         assert b.stats()["gate_fallbacks"] >= 1
         # An owner change: a fresh phase 1 decides what the term left behind.
         _no_owner(tc, timeout=10)
-        tc.db("n2").run(_setter("n2"), **RUN_KW)
+        tc.commit("n2", _setter("n2"))
         _await(lambda: len({str(_read_keys(tc, n, ("n1",))) for n in tc.ids}) == 1, what="convergence")
         value = _read_keys(tc, "n2", ("n1",))["n1"]
         assert results.get("n1") == "conflict", results
@@ -452,7 +465,7 @@ def test_p4_a_failed_data_stage_after_an_own_acceptance_is_unknown(tmp_path, mon
     if planted:
         monkeypatch.setattr(ClusterCoordinator, "_data_stage_acceptable", staticmethod(lambda use_store: False))
     with _cluster(tmp_path) as tc:
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         _await(lambda: all(tc.value(n) == 1 for n in tc.ids), what="convergence")
         _no_owner(tc)
         a = tc["n0"]
@@ -462,35 +475,46 @@ def test_p4_a_failed_data_stage_after_an_own_acceptance_is_unknown(tmp_path, mon
         a.transport.send = lambda to, msg: None if dropping.is_set() and (
             msg["type"] in ("records", "store") or (msg["type"] == "replicate" and msg["records"])) \
             else send(to, msg)
-        acked, unknown = 1, 0
+        # A token per increment (Task 8.3n fix round 1, I1): with only the counter, a bound
+        # ``acked <= n <= acked + unknown`` could hide a lost acknowledged increment behind an
+        # applied unknown one.  The planted P4 retries a commit that took effect: one token
+        # present, the counter two above the setup's.
+        tokens = CommitTokens()
+
+        def bump(token):
+            def fn(tr):
+                incr(tr)
+                write_token(tr, token)
+            return fn
+        first = tokens.new("n0")
         try:
-            tc.db("n0").run(incr, retries=0)
-            acked += 1
+            tc.db("n0").run(bump(first), retries=0)
+            tokens.acked(first)
+            retry = False
         except ProtoOutcomeUnknownError:
-            unknown += 1
+            tokens.unknown(first)
             retry = False
         except ProtoConflictError:
-            retry = True
-        else:
-            retry = False
+            retry = True        # reported as nothing applied: the caller retries with the same intent
         dropping.clear()
         # The caller's policy (Database.run's): a conflict is retried -- after an owner change.
         _no_owner(tc, timeout=10)
         tc.kill(next(n for n in tc.ids if n != "n0" and n != "n1"))
-        if retry:
-            for _ in range(10):
-                try:
-                    tc.db("n0").run(incr, **RUN_KW)
-                    acked += 1
-                    break
-                except ProtoOutcomeUnknownError:
-                    unknown += 1
-        else:
-            tc.db("n1").run(lambda tr: None, **RUN_KW)
         live = ["n0", "n1"]
-        _await(lambda: len({tc.value(n) for n in live}) == 1, timeout=10, what="convergence")
-        value = tc.value("n1")
-        assert acked <= value <= acked + unknown, (value, acked, unknown)
+        # A conflict claims nothing applied, so the retry is the same increment: its token is a
+        # new one, and the planted double application shows as the counter above the tokens.
+        node = "n0" if retry else "n1"
+        for _ in range(10):
+            token = tokens.new(node)
+            try:
+                tc.db(node).run(bump(token), **RUN_KW)
+                tokens.acked(token)
+                break
+            except ProtoOutcomeUnknownError:
+                tokens.unknown(token)
+        res = assert_outcomes_resolved(
+            {n: (lambda n=n: snapshot_of(tc.db(n), lambda tr: tr.get_root_object("n"))) for n in live}, tokens)
+        assert set(res.values.values()) == {1 + len(res.present)}, (res.values, sorted(res.present))
 
 
 # -- P5: a proposal base is never re-proposed --------------------------------------------------
@@ -556,7 +580,7 @@ def test_a_lost_done_to_the_successor_is_answered_by_the_fallback_query(tmp_path
     the plain query/answer fallback (ruling R94) within about ``request_timeout``, the term is
     not abandoned, and both commits are acknowledged."""
     with _cluster(tmp_path) as tc:
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         _confirmed(tc)
         tc.store.set_outage(True)       # no persister teaches B committed roots from the store
         a, b = tc["n0"], tc["n1"]
@@ -611,7 +635,7 @@ def test_a_successor_whose_base_records_are_nowhere_gets_a_retryable_conflict(tm
         _no_owner(tc)
         tc.store.set_outage(outage)
         a, b, o = tc["n0"], tc["n1"], tc["n2"]
-        tc.db("n2").run(_setter("o"), **RUN_KW)          # n2 owns the term
+        tc.commit("n2", _setter("o"))          # n2 owns the term
         assert o._ownership is not None
         send_a = a.transport.send
         a.transport.send = lambda to, msg: None if msg["type"] in ("warm", "records", "store") or (
@@ -668,7 +692,7 @@ def test_a_successor_whose_base_records_are_nowhere_gets_a_retryable_conflict(tm
         # The conflict is truthful: in the next term, b was never applied.
         tc.store.set_outage(False)
         _no_owner(tc, timeout=10)
-        tc.db("n2").run(_setter("c"), **RUN_KW)
+        tc.commit("n2", _setter("c"))
         for node in ("n1", "n2"):
             _await(lambda: _read_keys(tc, node, ("c",))["c"] == 1, what=f"the next term at {node}")
             assert _read_keys(tc, node, ("b",))["b"] is None, node
@@ -745,7 +769,7 @@ def test_acks_after_the_predecessors_validity_give_an_unknown_that_took_effect(t
         tb.join(60)
         armed.clear()
         _no_owner(tc, timeout=10)
-        tc.db("n2").run(_setter("c"), **RUN_KW)
+        tc.commit("n2", _setter("c"))
         _await(lambda: len({str(_read_keys(tc, m, ("a", "b", "c"))) for m in tc.ids}) == 1, what="convergence")
         reads = _read_keys(tc, "n2", ("a", "b", "c"))
         assert results == {"a": "unknown", "b": "acked"}, results
@@ -760,7 +784,7 @@ def test_a_failing_predecessor_turns_its_successor_into_a_retried_conflict(tmp_p
     never opens, so the successor's commit ends with a conflict, which ``Database.run``
     retries in a later term; nothing of the conflicted round is ever visible (R86)."""
     with _cluster(tmp_path) as tc:
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         _confirmed(tc)
         a, b = tc["n0"], tc["n1"]
         hold = threading.Event()
@@ -811,7 +835,7 @@ def test_a_gate_closed_early_ends_its_permission(tmp_path, monkeypatch):
         _no_owner(tc)
         tc.store.set_outage(True)
         a, b, o = tc["n0"], tc["n1"], tc["n2"]
-        tc.db("n2").run(_setter("o"), **RUN_KW)          # n2 owns the term
+        tc.commit("n2", _setter("o"))          # n2 owns the term
         assert o._ownership is not None
         closed, late_rounds = set(), []
         wait = b._await_gate
@@ -876,7 +900,7 @@ def test_a_successor_that_finishes_first_waits_at_the_gate(tmp_path):
     successor's own acceptance and root stage come only after it learnt ``committed(root_k)``,
     and both commits are acknowledged."""
     with _cluster(tmp_path, lease_duration=3.0, request_timeout=0.5) as tc:
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         _confirmed(tc)
         a, b = tc["n0"], tc["n1"]
         events = []
@@ -927,7 +951,7 @@ def test_a_store_is_never_an_acceptance(tmp_path):
     replica's accepted root and permission sequence do not move, its ack says ``stored`` and
     never ``ok``, and its root log replays no acceptance of that root (kind 6)."""
     with _cluster(tmp_path) as tc:
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         _confirmed(tc)
         a = tc["n0"]
         hold = threading.Event()
@@ -1109,8 +1133,8 @@ def test_no_acknowledged_commit_is_lost_with_the_pipeline_under_faults(tmp_path,
     (delay jitter) and the schedule kills members, partitions, and aims faults at the
     pipeline: a holder killed at its gate, a predecessor killed right after its proposal or
     right after its root stage, a proposer's acknowledgements delayed past its validity.  Each
-    aimed fault must land (counted), and ruling R86 bounds hold: ``acked <= n <= acked +
-    unknown``."""
+    aimed fault must land (counted), and every outcome is resolved by its token on every
+    member (``_check``; rulings R86, R114)."""
     rng = random.Random(seed * 104729 + n)
     issued_on_proposals = [0]       # across incarnations: a revived member's counters restart
     successors = set()              # (term, seq, holder) of every proposal a permit was issued on

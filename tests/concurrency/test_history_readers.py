@@ -29,6 +29,7 @@ from proto_db.errors import ProtoOutcomeUnknownError
 from proto_db.storage.file import FileStorage
 from proto_db.transactions import ObjectSpace
 from tests.concurrency.harness import Attempts, report, run_threads
+from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, snapshot_of, write_token
 from tests.support.tiered_cluster import TieredCluster
 
 WRITERS = 3
@@ -73,10 +74,11 @@ def _walk(root, base: int, where: str) -> int:
     return seen
 
 
-def _workload(dbs_w, dbs_r, base: int, extra_check=None):
+def _workload(dbs_w, dbs_r, base: int, extra_check=None, tokens: CommitTokens = None):
     """Writers on ``dbs_w``, readers on ``dbs_r``; return (elapsed, attempts, versions checked,
     outcomes unknown).  An unknown outcome (cluster mode, timing-bound and conservative, P5)
-    is counted, not raised: either way the versions keep the invariant."""
+    is counted, not raised: either way the versions keep the invariant.  With ``tokens``, each
+    commit also writes a token and records its outcome (resolved by the caller, R114)."""
     attempts = Attempts()
     done = threading.Event()
     left = [WRITERS]
@@ -91,11 +93,22 @@ def _workload(dbs_w, dbs_r, base: int, extra_check=None):
         def body():
             try:
                 for _ in range(COMMITS_PER_WRITER):
+                    token = tokens.new(f"w{i}") if tokens is not None else None
+
+                    def fn(tr, token=token):
+                        _commit(tr)
+                        if token is not None:
+                            write_token(tr, token)
                     try:
-                        attempts.run(dbs_w[i % len(dbs_w)], _commit, **RUN_KW)
+                        attempts.run(dbs_w[i % len(dbs_w)], fn, **RUN_KW)
                     except ProtoOutcomeUnknownError:
+                        if token is not None:
+                            tokens.unknown(token)
                         with lock:
                             unknown[0] += 1
+                        continue
+                    if token is not None:
+                        tokens.acked(token)
             finally:
                 with lock:
                     left[0] -= 1
@@ -160,7 +173,7 @@ def test_cluster_readers_walk_both_links_while_two_nodes_commit(tmp_path):
     cluster = TieredCluster(tmp_path, 3, lease_duration=3.0, space_kw=dict(atom_cache_entries=16))
     try:
         cluster.spaces["n0"].new_database("db")
-        cluster.db("n0").run(_setup, **RUN_KW)
+        cluster.commit("n0", _setup, **RUN_KW)
         base = cluster.db("n0").history()[0].version
         assert cluster.eventually("n2", 0)
 
@@ -176,13 +189,19 @@ def test_cluster_readers_walk_both_links_while_two_nodes_commit(tmp_path):
                 assert previous.databases.get_at("db").version <= space.databases.get_at("db").version
                 space = previous
 
+        tokens = CommitTokens()
         elapsed, attempts, checked, unknown = _workload([cluster.db("n0"), cluster.db("n1")],
-                                                        [cluster.db("n2")], base, space_chain)
-        committed = attempts.commits
-        cluster.db("n0").run(lambda tr: None, **RUN_KW)     # learn the newest committed root
-        final = cluster.value("n0")
-        assert committed <= final <= committed + unknown
-        assert cluster.eventually("n2", final, timeout=10.0)
+                                                        [cluster.db("n2")], base, space_chain, tokens)
+        assert attempts.commits == len(tokens.acked_tokens)
+        # Task 8.3n fix round 1 (I1): every outcome resolved by its token on every member, the
+        # counter read in the same snapshot.  Before, ``committed <= n <= committed + unknown``
+        # on n0 after a commit that wrote nothing (a no-op: it obtains no permission, so n0
+        # learnt nothing) could fail on timing and could hide a lost acknowledged commit behind
+        # an applied unknown one.
+        res = assert_outcomes_resolved(
+            {n: (lambda n=n: snapshot_of(cluster.db(n), lambda tr: tr.get_root_object("n"))) for n in cluster.ids},
+            tokens)
+        assert set(res.values.values()) == {len(res.present)}, (res.values, len(res.present))
         stats = cluster.spaces["n2"].atom_cache_stats()
         assert stats["entries"] <= 16 and stats["misses"] > 50 * 16, stats   # evicted again and again
         report("cluster history readers", elapsed, attempts, f"{checked} versions checked",
