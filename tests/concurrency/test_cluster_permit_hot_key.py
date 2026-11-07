@@ -159,8 +159,9 @@ def test_each_usable_permit_of_a_delayed_holder_commits(tmp_path, round_, thread
               f"{gaps[len(gaps) // 2] * 1000 if gaps else None} max {gaps[-1] * 1000 if gaps else None}")
         assert any(o == "committed" for _, o in retried), "no retry under a permit committed (D-LIVE-2)"
         # Liveness (generous): a conflicted permit is retried under itself unless the retry came
-        # after the keep's 0.1 s hold (_RETRY_HOLD) or the permit's validity; 0 such in 40 runs
-        # per mode, against 15-16 per run with the keep removed (planted).
+        # after the keep's 0.1 s hold (_RETRY_HOLD) or the permit's validity.  Task 8.3n proofs
+        # (40 runs per mode, 320 holder runs, 4,033 retried permits): one such permit in 6 runs,
+        # none in the other 314.
         assert len(unkept) <= len(retried), (len(unkept), len(retried))
         assert wasted == [], f"{len(wasted)} of {len(retried)} retried permits sent nothing while valid"
         # Every outcome resolved by its token; the counter, read in the same snapshot, matches.
