@@ -1497,12 +1497,23 @@ class ObjectSpace:
         This is a durability barrier, not a visibility barrier: it says nothing about commits
         this node has not learnt yet.  A commit another member acknowledged reaches this node
         with its release, asynchronously, so a transaction started right after ``sync()`` can
-        still miss it (it reads the newest committed root this node knows, a snapshot).  To
-        read every commit acknowledged anywhere before the read starts, commit on this node
-        first and start the reading transaction after that commit returns: its base is at or
-        above every acknowledged commit, and this node then knows the root it committed.  An
-        ``ObjectSpace`` API for such a read without a write does not exist yet (Task 8.3n
-        report, ruling proposal on R113)."""
+        still miss it (it reads the newest committed root this node knows, a snapshot).
+
+        To read every commit acknowledged anywhere before the read starts, run a barrier commit
+        on this node and start the reading transaction after it returns normally, for example
+        ``db.run(lambda tr: tr.set_root_object("_read_barrier", True))``.  It is a barrier
+        only when both hold:
+
+        * it writes at least one root or mutable: a transaction that writes nothing returns at
+          once, obtains no permission and teaches this node nothing (``db.run(lambda tr:
+          None)`` and an empty ``commit()`` are no barrier);
+        * it returns normally: ``ProtoOutcomeUnknownError``, a conflict after the retries and a
+          timeout are no barrier (they raise, so the caller knows; retry or give up).
+
+        Then its base was at or above every acknowledged commit (else one would be lost, D50
+        chain rule) and this node knows the root it committed.  An ``ObjectSpace`` API for such
+        a read without a write does not exist yet (D46 amendment, Task 8.3n: ``read_barrier``
+        is proposed, not implemented)."""
         self._check_open()
         if self._coordinator is None:
             return

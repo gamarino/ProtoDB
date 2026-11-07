@@ -368,6 +368,9 @@ def test_sync_promises_local_persistence_and_a_commit_on_the_reader_sees_every_a
         for n in tc.ids:
             tc.spaces[n].sync(timeout=10)
         assert tc.eventually("n2", 1)
+        # n0's commit made it the term's owner, so n0's second commit needs no permit from n2
+        # and nothing n2 drops changes its shape (review M2: stated, not assumed).
+        assert tc["n0"].owner == "n0" and tc["n2"].owner == "n0"
         reader = tc["n2"]
         route = reader._route
         reader._route = lambda msg: None if msg["type"] in _UNPROMPTED else route(msg)
@@ -376,6 +379,10 @@ def test_sync_promises_local_persistence_and_a_commit_on_the_reader_sees_every_a
             tc.db("n0").run(incr, **TRUN_KW)                     # acknowledged by n0 and n1
             tc.spaces["n2"].sync(timeout=5)                   # returns: n2's knowledge is persisted
             assert tc.value("n2") == 1, "precondition: n2 has not learnt the commit"
+            # Review I2: a commit that writes nothing is no barrier (it returns at once).
+            tc.db("n2").run(lambda tr: None, **TRUN_KW)
+            tc.db("n2").new_transaction().commit()
+            assert tc.value("n2") == 1, "a commit that writes nothing taught n2 something"
 
             def barrier(tr):
                 tr.set_root_object("barrier", (tr.get_root_object("barrier") or 0) + 1)

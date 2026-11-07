@@ -285,9 +285,12 @@ node. rqlite offers read consistency levels, quoted here from its documentation
 
 **Honest caveats.** A ProtoDB read is a *snapshot* read of the node's last known committed root.
 It is not linearizable unless something on the reading node first learns from the term owner;
-the only public way today is a commit on the reading node before the read (its base is at or
-above every acknowledged commit), which costs a write round and is not measured here. A read-only
-barrier has no API yet (Task 8.3n, ruling proposal on R113). ``sync()`` is a durability barrier
+the only public way today is a barrier commit on the reading node before the read (its base is
+at or above every acknowledged commit), which costs a write round and is not measured here. It is
+a barrier only if it writes at least one root and returns normally: a transaction that writes
+nothing returns at once and learns nothing, and an unknown outcome, a conflict or a timeout is no
+barrier (see ``ObjectSpace.sync``). A read-only barrier has no API yet (Task 8.3n, ruling
+proposal on R113). ``sync()`` is a durability barrier
 and does not make another node's commits visible. Otherwise a ProtoDB read
 is the same class as rqlite ``none`` with the difference that its snapshot is always a complete
 committed version. A ProtoDB read whose records are not in the node's caches fetches them, from
