@@ -55,10 +55,10 @@ def test_the_busy_member_keeps_committing_after_an_idle_owner_releases(tmp_path,
                 except tx.ProtoOutcomeUnknownError:
                     tokens.unknown(token)    # P5: an attempt that ended, not a stall (Task 8.3n audit)
                     continue
-                tokens.acked(token)
                 except BaseException as e:    # reported by the assertion below
                     errors.append(repr(e))
                     return
+                tokens.acked(token)
                 with lock:
                     stamps.append(time.monotonic())
         threads = [threading.Thread(target=work, daemon=True) for _ in range(4)]
