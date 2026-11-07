@@ -25,33 +25,81 @@ pytestmark = [pytest.mark.timeout(120)]
 WINDOW = 4.0
 
 
+#: Observed causes that end a conflicted permission without a retry under it, each allowed:
+#: the keep's ``_RETRY_HOLD`` timer ended it, ``_take_kept`` found it no longer usable, the
+#: retry wait timed out (timing, R82), or a D55 rule ended it (a proposed root, a closed gate,
+#: an unknown outcome).
+EXCUSES = {"keep timer", "take refused", "retry wait timed out", "proposed", "gate closed", "unknown"}
+
+
 def _watch(tc, holder):
-    """Record the holder's permits ``(rounds, outcome)`` -- ``rounds`` lists, per round run under
-    the permit, ``(conflicted, valid when it returned)`` -- and, per thread, the delay between a
-    conflicting commit and that thread's next commit attempt."""
+    """Record the holder's permits ``(rounds, outcome, causes)`` -- ``rounds`` lists, per round run
+    under the permission, ``(conflicted, valid when it returned)``; ``causes`` the observed
+    events of :data:`EXCUSES` and ``"kept"`` -- and, per thread, the delay between a conflicting
+    commit and that thread's next commit attempt."""
     node = tc[holder]
     retry_gaps, lock = [], threading.Lock()
-    seen = {}           # id -> (permission, [rounds]); the permission is kept so its id is never reused
+    seen = {}           # id -> (permission, [rounds], {causes}); the permission keeps its id unique
+
+    def entry(permission):
+        return seen.setdefault(id(permission), (permission, [], set()))
+
+    def note(permission, cause):
+        with lock:
+            entry(permission)[2].add(cause)
 
     def permits():
-        """``(rounds, outcome)`` of every permission the holder ran a round under; a round is
-        ``(conflicted, valid when it returned)``, ``None`` while it runs."""
+        """``(rounds, outcome, causes)`` of every permission the holder ran a round under; a
+        round is ``(conflicted, valid when it returned)``, ``None`` while it runs."""
         with lock:
-            return [(list(r), p.outcome) for p, r in seen.values()]
-    original_round = tx._permit_round
+            return [(list(r), p.outcome, set(c)) for p, r, c in seen.values()]
+    originals = {name: getattr(tx, name) for name in
+                 ("_permit_round", "_keep", "_take_kept", "_end_permission", "_await_retries")}
 
     def permit_round(coordinator, tier, permission, entries, group, **kw):
         if coordinator is not node:
-            return original_round(coordinator, tier, permission, entries, group, **kw)
+            return originals["_permit_round"](coordinator, tier, permission, entries, group, **kw)
         with lock:
-            rounds = seen.setdefault(id(permission), (permission, []))[1]
+            rounds = entry(permission)[1]
             rounds.append(None)
             i = len(rounds) - 1
-        result = original_round(coordinator, tier, permission, entries, group, **kw)
+        result = originals["_permit_round"](coordinator, tier, permission, entries, group, **kw)
         with lock:
             rounds[i] = (bool(result), permission.is_valid())
+            causes = entry(permission)[2]
+            if getattr(permission, "proposed", False):
+                causes.add("proposed")
+            if getattr(permission, "gate_closed", False):
+                causes.add("gate closed")
+            if permission.outcome == "unknown":
+                causes.add("unknown")
         return result
-    tx._permit_round = permit_round
+
+    def keep(group, permission, tier, rounds, coordinator):
+        if coordinator is node:
+            note(permission, "kept")
+        return originals["_keep"](group, permission, tier, rounds, coordinator)
+
+    def take_kept(group, coordinator, tier):
+        with group.cond:
+            kept = group.kept
+        result = originals["_take_kept"](group, coordinator, tier)
+        if coordinator is node and kept is not None and result is None:
+            note(kept[0], "take refused")
+        return result
+
+    def end_permission(coordinator, permission):
+        if coordinator is node and isinstance(threading.current_thread(), threading.Timer):
+            note(permission, "keep timer")
+        return originals["_end_permission"](coordinator, permission)
+
+    def await_retries(group, conflicted, tier, permission):
+        result = originals["_await_retries"](group, conflicted, tier, permission)
+        if not result:
+            note(permission, "retry wait timed out")
+        return result
+    tx._permit_round, tx._keep, tx._take_kept = permit_round, keep, take_kept
+    tx._end_permission, tx._await_retries = end_permission, await_retries
     original_commit = tx._commit_under_lease
     last_conflict = threading.local()
 
@@ -70,7 +118,9 @@ def _watch(tc, holder):
             raise
     tx._commit_under_lease = commit_under_lease
     def undo():
-        tx._commit_under_lease, tx._permit_round = original_commit, original_round
+        tx._commit_under_lease = original_commit
+        for name, fn in originals.items():
+            setattr(tx, name, fn)
     return permits, retry_gaps, undo
 
 
@@ -148,21 +198,26 @@ def test_each_usable_permit_of_a_delayed_holder_commits(tmp_path, round_, thread
         # no majority answered in time (P5 / R86, resolved by the tokens below).  A retry round
         # that returned after the permit expired is excused: expiry is a conservative end.
         permits = permits()
-        retried = [(r, o) for r, o in permits if len(r) >= 2 and r[0] and r[0][0]]
-        wasted = [o for r, o in retried if o not in ("committed", "unknown") and r[-1] and r[-1][1]]
-        expired = [o for r, o in retried if o not in ("committed", "unknown") and not (r[-1] and r[-1][1])]
-        unkept = [o for r, o in permits if len(r) == 1 and r[0] and r[0][0] and r[0][1]]
+        retried = [(r, o, c) for r, o, c in permits if len(r) >= 2 and r[0] and r[0][0]]
+        wasted = [o for r, o, c in retried if o not in ("committed", "unknown") and r[-1] and r[-1][1]]
+        expired = [o for r, o, c in retried if o not in ("committed", "unknown") and not (r[-1] and r[-1][1])]
+        unkept = [c for r, o, c in permits if len(r) == 1 and r[0] and r[0][0] and r[0][1]]
+        unexcused = [sorted(c) for c in unkept if not c & EXCUSES]
         gaps = sorted(gaps)
         print(f"holder {holder}: permits {len(permits)}, retried {len(retried)}, wasted {len(wasted)} "
               f"{sorted(set(wasted))}, expired in the retry {len(expired)}, conflicted and not retried "
-              f"{len(unkept)}; acked {acked}, unknown {len(tokens.unknown_tokens)}; retry gap ms p50 "
-              f"{gaps[len(gaps) // 2] * 1000 if gaps else None} max {gaps[-1] * 1000 if gaps else None}")
-        assert any(o == "committed" for _, o in retried), "no retry under a permit committed (D-LIVE-2)"
-        # Liveness (generous): a conflicted permit is retried under itself unless the retry came
-        # after the keep's 0.1 s hold (_RETRY_HOLD) or the permit's validity.  Task 8.3n proofs
-        # (40 runs per mode, 320 holder runs, 4,033 retried permits): one such permit in 6 runs,
-        # none in the other 314.
-        assert len(unkept) <= len(retried), (len(unkept), len(retried))
+              f"{len(unkept)} {[sorted(c) for c in unkept]}; acked {acked}, unknown {len(tokens.unknown_tokens)}; "
+              f"retry gap ms p50 {gaps[len(gaps) // 2] * 1000 if gaps else None} "
+              f"max {gaps[-1] * 1000 if gaps else None}")
+        assert any(o == "committed" for _, o, _ in retried), "no retry under a permit committed (D-LIVE-2)"
+        # Fix round 1 (review I4): a conflicted permit that was still valid and ran no second
+        # round must have an observed cause in EXCUSES (the keep's hold timer or validity ended
+        # it, the retry did not come in time, or a D55 rule ended it).  A lost keep has none,
+        # with one thread or two.  Before, a ratio bound let half of them go unretried.
+        assert unexcused == [], f"{len(unexcused)} conflicted permits ended unretried with no cause: {unexcused}"
+        # A retried permit that ended neither committed nor unknown: either its last round
+        # returned while it was still valid (wasted, never allowed), or its validity ended in
+        # that round (expired: the clock ended it, an observed cause; 0 in the 8.3n proof runs).
         assert wasted == [], f"{len(wasted)} of {len(retried)} retried permits sent nothing while valid"
         # Every outcome resolved by its token; the counter, read in the same snapshot, matches.
         res = assert_outcomes_resolved(
@@ -181,7 +236,7 @@ def test_a_permission_kept_for_a_slow_retry_is_released_for_the_other_members(tm
         a, b, c = tc.ids
         tc.spaces[a].new_database("db")
         for n in tc.ids:
-            tc.db(n).run(incr, **RUN_KW)
+            tc.commit(n, incr)
         time.sleep(0.3)
         abandoned = sum(tc[n].stats().get("terms_abandoned", 0) for n in tc.ids)
         started, latency = [], []
@@ -207,7 +262,7 @@ def test_a_permission_kept_for_a_slow_retry_is_released_for_the_other_members(tm
             tr.set_root_object("n", v + 1)
 
         for _ in range(10):
-            tc.db(b).run(fn, **RUN_KW)
+            tc.commit(b, fn)
             if started:
                 break
         assert started, "the schedule never kept a permission"
