@@ -435,7 +435,6 @@ class _AtomCache:
         self.misses = 0
         self.unloads = 0
         self.saved = 0
-        self.loads = 0
         self.read_unloads = 0
 
     def save(self, atom: Atom) -> AtomPointer:
@@ -473,8 +472,9 @@ class _AtomCache:
 
     def _admit(self, atom: Atom, loaded: bool = False) -> None:
         """Make the loaded ``atom`` resident; unload what that evicts (no lock held meanwhile).
-        ``loaded``: ``atom`` was just loaded by a read (not a saved atom's twin), so it counts in
-        ``loads`` and what it evicted in ``read_unloads`` (the thrash signal, re-review 8.3m N4)."""
+        ``loaded``: ``atom`` was just loaded by a read (not a saved atom's twin), so what it
+        evicted also counts in ``read_unloads`` (the thrash signal, re-review 8.3m N4).  The lock
+        is taken only when something was unloaded, as before: a load that fits takes none."""
         if self._closed or not atom._cache_produced():
             return
         unloaded = 0
@@ -485,14 +485,11 @@ class _AtomCache:
             # Review 8.3m M2: close() ran after the check above.  It sets _closed before clearing
             # the LRU, so a put that landed after the clear sees _closed here and is undone.
             self._cache.invalidate(atom.atom_pointer)
-        if loaded:
+        if unloaded:
             with self._lock:
                 self.unloads += unloaded
-                self.loads += 1
-                self.read_unloads += unloaded
-        elif unloaded:
-            with self._lock:
-                self.unloads += unloaded
+                if loaded:
+                    self.read_unloads += unloaded
 
     def _atom_loaded(self, atom: Atom) -> None:
         """The :meth:`Atom._load` hook: ``atom`` was just loaded (published by this call)."""
@@ -548,8 +545,11 @@ class _AtomCache:
         signal (D53 "Sizing")."""
         stats = self._cache.stats()
         with self._lock:
+            # loads: the LRU's admissions (counted under its lock) less the saved twins (counted
+            # just before their admission, so the difference is transiently low by in-flight saves).
             return {"hits": self.hits, "misses": self.misses, "entries": stats["entries"],
-                    "capacity": stats["capacity"], "loads": self.loads, "saved": self.saved,
+                    "capacity": stats["capacity"], "loads": max(0, stats["admissions"] - self.saved),
+                    "saved": self.saved,
                     "unloads": self.unloads, "read_unloads": self.read_unloads,
                     "identity_map": len(self._ident)}
 
