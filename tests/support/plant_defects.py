@@ -31,7 +31,7 @@ from typing import NamedTuple
 class Plant(NamedTuple):
     edits: tuple            # ((path, old, new), ...)
     targets: tuple          # pytest node ids
-    message: str            # a substring every failing run must print
+    message: object         # a substring every failing run must print (a tuple: any one of them)
     what: str
 
 
@@ -138,8 +138,9 @@ def blind_snapshot_of'''),),
     "nostore": Plant((
         ("proto_db/cluster/coordinator.py", "            use_store = bounded and not gate_open\n",
          "            use_store = False   # PLANT: no data stage leaves before the gate opens\n"),),
+        # Without stores the pipeline also degrades: either assertion of the test may fire first.
         ("tests/concurrency/test_cluster_pipelined_permits.py::test_permits_overlap_the_predecessors_durability",),
-        "overlapped their data stage", "product: a pipelined permit's data stage no longer overlaps (review I5)"),
+        ("overlapped their data stage", "of the permits were issued on a proposal"), "product: a pipelined permit's data stage no longer overlaps (review I5)"),
     "shiplock": Plant((
         ("proto_db/storage/tiered.py", "            data = self._copy_prefix(segment, end)",
          "            with self._ship_lock:   # PLANT: the hole is filled under the ship lock\n"
@@ -188,10 +189,12 @@ def run(work: str, runs: int, only=None) -> int:
                 out = proc.stdout + proc.stderr
                 summary = next((ln for ln in reversed(out.splitlines()) if " in " in ln and ("passed" in ln or
                                                                                          "failed" in ln)), "")
-                ok = proc.returncode != 0 and plant.message in out
+                messages = plant.message if isinstance(plant.message, tuple) else (plant.message,)
+                found = any(m in out for m in messages)
+                ok = proc.returncode != 0 and found
                 bad += not ok
                 print(f"{name} run {i + 1} gil{gil}: {'FAILS as planted' if ok else 'NOT DETECTED'} "
-                      f"(rc={proc.returncode}, message {'found' if plant.message in out else 'missing'}) "
+                      f"(rc={proc.returncode}, message {'found' if found else 'missing'}) "
                       f"{summary.strip('= ')}", flush=True)
     print("every plant detected" if not bad else f"{bad} planted runs not detected")
     return 1 if bad else 0
