@@ -27,6 +27,11 @@ python -m benchmarks --compare benchmarks/results/2026-11-03-py314t-gil-off.json
 python -m benchmarks --list
 ```
 
+Probes outside the suite: `benchmarks/residency_probe.py` (Task 8.3m) measures point lookups
+with a decoded-atom cache that fits the working set and with one 20 % smaller, and the thrash
+signal; it prints one JSON line (`python -X gil=0 -m benchmarks.residency_probe WORKDIR`, from the
+root of the tree to measure). Its log is `results/2026-11-06-8.3m-residency-probe.log`.
+
 Measurements that are reported are taken from a clean export of a commit, never from a working
 tree (Task 9c):
 

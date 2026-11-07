@@ -105,13 +105,19 @@ report; ratios are speeds, below 1 slower):
 - **Reads whose working set does not fit the default 50,000 entries reload,** and the loss is a
   cliff, not a slope: a reload costs a storage read and a decode, and a read pattern that cycles
   through more atoms than the cache holds reloads most of them on every pass. In the suite at the
-  default capacity: ``concurrent_reads`` ``get_at`` at 1 thread 0.55x (GIL on 0.58x), about 20 %
-  over the capacity; inventory warm port lookup 0.77x, ``query_cache`` hit 0.87x, inventory
-  build 0.81-0.83x. On the 10^6-object inventory, 50 times over the capacity, reads are 8-34x
-  slower (`Bulk load and scale`_). In a 20,000-record probe whose working set is 20 % over the
-  capacity, a lookup took 197 us against 4.6 us when it fit. A CLOCK second-chance bit was
-  measured and not adopted: it softened that case (136 us) but cost 14-39 % on point reads when
-  the cache fits (D53 "Sizing"). Size ``atom_cache_entries`` to the
+  default capacity against ``26f3b85`` (5 interleaved runs per GIL mode; each figure is the median
+  of the per-run ratios, the range in brackets): ``concurrent_reads`` ``get_at`` at 1 thread
+  0.59x [0.38-0.66] with the GIL off and 0.62x [0.53-0.65] with it on, about 20 % over the
+  capacity; inventory warm port lookup 0.95x [0.45-1.75] and 0.88x [0.78-1.09];
+  ``query_cache`` hit 0.87x [0.84-0.90] and 0.90x [0.80-0.92]; inventory build 0.84x
+  [0.82-0.89] and 0.81x [0.72-0.91]. On the 10^6-object inventory, 50 times over the capacity,
+  reads are 8-34x slower (`Bulk load and scale`_, single runs). In a 20,000-record probe whose
+  working set is 20 % over the capacity (``benchmarks/residency_probe.py``, median of 3 runs,
+  log ``benchmarks/results/2026-11-06-8.3m-residency-probe.log``), a lookup takes 201 us against
+  4.6 us when it fits with the GIL off (209 against 4.9 us with it on). A CLOCK second-chance
+  bit was measured and not adopted: it softened that case (144 us; 148 with the GIL on) but cost
+  7-39 % on point reads when the cache fits (medians of paired runs; D53 "Sizing"). Size
+  ``atom_cache_entries`` to the
   working set (``ObjectSpace`` docstring, D53 "Sizing", which also tells how to read the thrash
   signal in ``atom_cache_stats()``).
 - **When the working set fits,** the suite's other read paths are level with ``26f3b85`` or
@@ -683,9 +689,12 @@ workers.
 345k ops/s at 8 threads (1.65x), EqualityIndex queries 4.26x at 16 threads, a Python ``dict``
 4.71x. Alone it gives 1.53x and 3.48x, so the ``get_at`` ceiling is not a suite effect. With the
 GIL on [S1] nothing scales (0.90-1.0x). Since Task 8.3m its working set (60,117 atoms) is about
-20 % over the default capacity: the 1-thread ``get_at`` rate is 0.55x the pre-8.3m code (GIL on
-0.58x), with 67 % of its time in reloads; at 2-16 threads, measured after it, it runs 1.5-2.3x
-the pre-8.3m code, and from 4 threads on it reloads nothing (Task 8.3m report).
+20 % over the default capacity. Against the pre-8.3m code (``26f3b85``, 5 interleaved runs per
+GIL mode, median of the per-run ratios and their range): the 1-thread ``get_at`` rate is 0.59x
+[0.38-0.66] with the GIL off and 0.62x [0.53-0.65] with it on, with 67 % of its time in
+reloads; at 2-16 threads, measured after it, it runs 1.46-2.18x [1.44-2.54] with the GIL off
+but 0.99-1.18x [0.75-1.40] with it on, and from 4 threads on it reloads nothing (Task 8.3m
+report).
 
 Vector search [S0] (GIL on [S1]): 10,000 vectors of 32 dimensions, k = 10, recall 1.0 for every
 backend; per query: numpy brute force 1.21 ms, ``exact`` 0.78 ms (0.74), ``ivf_flat`` 1.24 ms
