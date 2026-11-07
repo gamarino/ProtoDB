@@ -9,6 +9,7 @@ from proto_db.errors import ProtoOutcomeUnknownError, ProtoTimeoutError
 from proto_db.storage.tiered import TieredStorage
 from proto_db.transactions import ObjectSpace
 from tests.support.fake_object_store import FakeObjectStore
+from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, read_tokens_of, write_token
 from tests.support.tiered_cluster import FAST, RUN_KW, TieredCluster, incr
 
 pytestmark = [pytest.mark.timeout(120)]
@@ -36,6 +37,14 @@ def _remote_value_in(store, local):
             tr.abort()
     finally:
         space.close()
+
+
+#: Bounds of the concurrent schedule, about twice the worst of 40 measured runs (re-review 8.3m
+#: N3): misses and record fetches after warmed rounds 0-5 per run with the GIL off, 2-11 with it
+#: on; with warming observed but nothing stored (the reviewer's plant) 66-98 misses and 177-207
+#: fetches.  Log: benchmarks/results/2026-11-06-8.3m-cluster-test-proofs.log.
+CONCURRENT_MISS_BOUND = 24
+CONCURRENT_FETCH_BOUND = 24
 
 
 def _commit(tc, nodes, count):
@@ -218,23 +227,12 @@ def test_losing_a_majority_with_the_survivor_outside_the_quorum_rolls_back_to_th
         assert _remote_value(tc.store) == 5
 
 
-def test_steady_state_commits_write_nothing_in_the_object_store_under_the_lease(tmp_path):
-    """D46: committing threads never write the object store, and no root is written in the
-    critical section.  Since bounded replication (Task 8.3g, D54) a committer that is not a
-    data replica of its base reads the base's records on demand -- from a peer, or from the
-    store once the replicas released them -- so critical-section cache misses and store
-    reads are expected; they are counted and reported, never forbidden (R70a: remote data is
-    a normal case).  Ruling R89: every commit's records reach every member's cache with the
-    commit (best effort, no durable copy), so in steady state a committer finds its base's
-    records cached and fetches next to nothing from a peer under a permission.
-
-    That steady state is what the miss bound is asserted on (review 8.3m I3, ruling R105): the
-    30 commits run one at a time, rotating among the members, and each next commit starts once
-    the records the previous one pushed are in every other member's record cache -- an observed
-    condition, never a delay, because warming is asynchronous and best effort.  A commit whose
-    outcome is unknown (P5: a lease ending under CPU contention) is resolved as R86 rules: every
-    acknowledged commit is applied, an unknown one at most once; the commit after it is not in
-    steady state and its misses are reported, not bounded."""
+def _steady_state(tmp_path, rounds: int, per_round: int) -> dict:
+    """Commit ``rounds`` rounds of ``per_round`` concurrent commits on distinct members (one
+    thread each, named ``committer-<member>``), each an increment plus a unique token (R114 N1),
+    after 6 warm-up commits (with tokens too).  Before each next round, wait until the records every acknowledged
+    commit of the round pushed are in every other member's record cache (the observable end of
+    R89 warming, R105).  Return the measurements; assert what holds for every schedule."""
     calls = []
 
     class Recording(FakeObjectStore):
@@ -245,13 +243,20 @@ def test_steady_state_commits_write_nothing_in_the_object_store_under_the_lease(
             super()._enter(operation, key)
 
     store = Recording()
+    tokens = CommitTokens()
     with TieredCluster(tmp_path, store=store) as tc:
         tc.spaces["n0"].new_database("db")
-        _commit(tc, tc.ids, 6)                           # warm up
+        for i in range(6):                               # warm up: with tokens too (P5 / R86)
+            token = tokens.new(f"warm{i}")
+            try:
+                tc.db(tc.ids[i % len(tc.ids)]).run(lambda tr, t=token: (incr(tr), write_token(tr, t)), **RUN_KW)
+                tokens.acked(token)
+            except ProtoOutcomeUnknownError:
+                tokens.unknown(token)
         for n in tc.ids:
             tc.spaces[n].sync(timeout=10)
-        # The observable end of R89 warming (review 8.3m I3, ruling R105): what each member's
-        # record cache received (warmed or cached on receipt), and what each commit pushed.
+        # What each member's record cache received (warmed or cached on receipt), and what each
+        # member's committing thread pushed in its current attempt.
         cached = {n: set() for n in tc.ids}
         pushed = {n: [] for n in tc.ids}
         for n in tc.ids:
@@ -274,52 +279,67 @@ def test_steady_state_commits_write_nothing_in_the_object_store_under_the_lease(
         base_coord = {n: tc[n].stats() for n in tc.ids}
         calls.clear()
         outcomes = []
-        misses = 0          # critical-section misses of commits whose base was warmed
+        misses = 0          # critical-section misses of rounds whose bases were warmed
+        steady_fetches = 0  # record fetches by those rounds
 
         def critical_misses():
             return sum(tc.storages[n].stats()["critical_misses"] for n in tc.ids)
 
+        def record_fetches():
+            return sum(tc[n].stats()["record_fetches"] for n in tc.ids)
+
         def warmed(node, records):
             return all(set(records) <= cached[m] for m in tc.ids if m != node)
 
-        steady = True       # the previous commit was acknowledged and its records reached every member
-        for i in range(30):
-            node = tc.ids[i % len(tc.ids)]
-            pushed[node].clear()
-            start = critical_misses()
+        steady = True       # every commit of the previous round was acknowledged and warmed
+        for r in range(rounds):
+            members = [tc.ids[(r * per_round + k) % len(tc.ids)] for k in range(per_round)]
+            assert len(set(members)) == per_round
+            start, start_fetches = critical_misses(), record_fetches()
             result = {}
+            go = threading.Barrier(per_round)
 
-            def committer(_node=node):
+            def committer(_node):
+                token = tokens.new(_node)
+
+                def bump(tr):
+                    pushed[_node].clear()               # this attempt's records only
+                    incr(tr)
+                    write_token(tr, token)
+                go.wait()
                 try:
-                    tc.db(_node).run(incr, **RUN_KW)
-                    result["outcome"] = "acked"
+                    tc.db(_node).run(bump, **RUN_KW)
+                    tokens.acked(token)
+                    result[_node] = "acked"
                 except ProtoOutcomeUnknownError:
-                    result["outcome"] = "unknown"   # P5 / R86: a conservative outcome, resolved below
-            t = threading.Thread(target=committer, name=f"committer-{node}")
-            t.start()
-            t.join(60)
-            assert "outcome" in result, f"commit {i} on {node} raised or hung"
-            outcomes.append(result["outcome"])
+                    tokens.unknown(token)               # P5: resolved by its token below (R86)
+                    result[_node] = "unknown"
+            threads = [threading.Thread(target=committer, args=(m,), name=f"committer-{m}") for m in members]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(60)
+            assert set(result) == set(members), f"round {r}: a commit raised or hung ({result})"
+            outcomes.extend(result.values())
             if steady:
                 misses += critical_misses() - start
-            steady = result["outcome"] == "acked"
-            if steady:
-                records = list(pushed[node])
-                assert records, f"commit {i} pushed nothing: the warming wait would prove nothing"
+                steady_fetches += record_fetches() - start_fetches
+            steady = all(o == "acked" for o in result.values())
+            for m in members:
+                if result[m] != "acked":
+                    continue
+                records = list(pushed[m])
+                assert records, f"round {r}: {m} pushed nothing: the warming wait would prove nothing"
                 deadline = time.monotonic() + 10
-                while not warmed(node, records):            # an observable condition, not a delay
-                    assert time.monotonic() < deadline, f"commit {i}: its records never reached every member"
+                while not warmed(m, records):               # an observable condition, not a delay
+                    assert time.monotonic() < deadline, f"round {r}: {m}'s records never reached every member"
                     time.sleep(0.002)
         acked, unknown = outcomes.count("acked"), outcomes.count("unknown")
-        # R86: every acknowledged commit is applied; an unknown one at most once.
         assert unknown <= 3, outcomes                                     # a generous progress bound
-        final = None
-        deadline = time.monotonic() + 10
-        while final is None or final < 6 + acked:
-            assert time.monotonic() < deadline, (final, outcomes)
-            final = tc.value("n0")
-            time.sleep(0.01)
-        assert 6 + acked <= final <= 6 + acked + unknown, (final, outcomes)
+        # R114 N1: every outcome resolved by its token, and the counter matches the tokens.
+        present = assert_outcomes_resolved({n: (lambda n=n: read_tokens_of(tc.db(n))) for n in tc.ids}, tokens)
+        values = {n: tc.value(n) for n in tc.ids}
+        assert set(values.values()) == {len(present)}, (values, len(present), outcomes)
         committer_calls = [op for name, op in calls if name.startswith("committer-")]
         assert set(committer_calls) <= {"get"}, committer_calls[:5]       # reads only, never writes
         for n in tc.ids:
@@ -327,17 +347,54 @@ def test_steady_state_commits_write_nothing_in_the_object_store_under_the_lease(
         fetched = {k: sum(tc[n].stats()[k] - base_coord[n][k] for n in tc.ids)
                    for k in ("record_fetches", "record_fetches_permitted", "records_warmed")}
         total_misses = critical_misses() - sum(base[n]["critical_misses"] for n in tc.ids)
-        print(f"\n30 commits ({acked} acked, {unknown} unknown): {misses} critical-section cache misses "
-              f"after warmed bases ({total_misses} in all), {len(committer_calls)} store reads by "
-              f"committing threads, {fetched}")
-        # Review M2: recorded bounds -- near zero in steady state under R89, asserted once the
-        # base's records reached every member (R105: the warming is waited for, never timed).
-        assert misses <= 3, misses
-        assert len(committer_calls) <= 3, committer_calls
-        assert fetched["record_fetches_permitted"] <= 3, fetched
-        assert fetched["records_warmed"] > 0, fetched
         critical = sum(tc[n].stats()["critical_commits"] - before[n] for n in tc.ids)
         assert acked <= critical <= acked + unknown, (critical, outcomes)
+        print(f"\n{rounds} x {per_round} commits ({acked} acked, {unknown} unknown): {misses} "
+              f"critical-section cache misses and {steady_fetches} record fetches after warmed "
+              f"bases ({total_misses} misses in all), {len(committer_calls)} store reads by "
+              f"committing threads, {fetched}")
+        return {"misses": misses, "steady_fetches": steady_fetches, "fetched": fetched,
+                "committer_calls": committer_calls}
+
+
+def test_steady_state_commits_write_nothing_in_the_object_store_under_the_lease(tmp_path):
+    """D46: committing threads never write the object store, and no root is written in the
+    critical section.  Since bounded replication (Task 8.3g, D54) a committer that is not a
+    data replica of its base reads the base's records on demand -- from a peer, or from the
+    store once the replicas released them -- so critical-section cache misses and store
+    reads are expected; they are counted and reported, never forbidden (R70a: remote data is
+    a normal case).  Ruling R89: every commit's records reach every member's cache with the
+    commit (best effort, no durable copy), so in steady state a committer finds its base's
+    records cached and fetches next to nothing from a peer under a permission.
+
+    Sequential steady state (review 8.3m I3, ruling R105): the 30 commits run one at a time,
+    rotating among the members, and each next commit starts once the records the previous one
+    pushed are in every other member's record cache -- an observed condition, never a delay.
+    In this schedule a committer fetches what it lacks before its critical section, so the
+    live bound is on record fetches (re-review 8.3m N3: with warming observed and nothing
+    stored, the misses stay 0 and the fetches are 27); the concurrent schedule is
+    :func:`test_concurrent_steady_state_bounds_misses_after_warming`.  Each commit's outcome
+    is resolved by its token (P5 / R86, ruling R114 N1)."""
+    got = _steady_state(tmp_path, rounds=30, per_round=1)
+    assert got["misses"] <= 3, got
+    assert got["fetched"]["record_fetches"] <= 3, got["fetched"]
+    assert len(got["committer_calls"]) <= 3, got["committer_calls"]
+    assert got["fetched"]["record_fetches_permitted"] <= 3, got["fetched"]
+    assert got["fetched"]["records_warmed"] > 0, got["fetched"]
+
+
+def test_concurrent_steady_state_bounds_misses_after_warming(tmp_path):
+    """The miss bound under concurrent commits (re-review 8.3m N3, ruling R114): 10 rounds of
+    one commit on each of the 3 members at once; before each next round, the records every
+    commit of the round pushed are in every other member's cache (observed).  A commit whose
+    base is a commit of its own round may miss (R70a: its records are in flight); bases of
+    earlier rounds were warmed.  The bounds are on what the rounds after a warmed round
+    missed and fetched (:data:`CONCURRENT_MISS_BOUND`, :data:`CONCURRENT_FETCH_BOUND`)."""
+    got = _steady_state(tmp_path, rounds=10, per_round=3)
+    assert got["misses"] <= CONCURRENT_MISS_BOUND, got
+    assert got["steady_fetches"] <= CONCURRENT_FETCH_BOUND, got
+    assert len(got["committer_calls"]) <= 3, got["committer_calls"]
+    assert got["fetched"]["records_warmed"] > 0, got["fetched"]
 
 
 def test_the_backlog_limit_refuses_commits_until_the_store_drains_it(tmp_path):

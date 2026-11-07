@@ -8,7 +8,10 @@ write permissions in turn (FIFO at the owner), and a transaction that conflicts 
 permission is retried under the same permission from the root that permission just committed,
 so every permission commits at least one increment.
 
-Checks: no lost update (the counter equals the acknowledged commits), no member without
+Checks: no lost update (every commit writes a unique token besides its increment: after the
+members converge every acknowledged token is present, every unknown one -- P5, a lease ending
+under CPU contention -- is present on all members or on none, no other token is present, and
+the counter equals the tokens present on every member; ruling R114, N1), no member without
 commits, and the fewest commits of a member over the most of any member at least
 ``_MIN_RATIO`` (fair: about 1.0).  Measured (in-process, ``durability="none"``): base
 ``cc849dc`` hot key [436, 0] and [0, 0, 319] (both fail), blind [199, 198, 198]; with D50
@@ -20,6 +23,7 @@ import time
 import pytest
 
 from proto_db.errors import ProtoConflictError, ProtoOutcomeUnknownError
+from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, read_tokens_of, write_token
 from tests.support.tiered_cluster import TieredCluster
 
 pytestmark = [pytest.mark.timeout(240)]
@@ -34,7 +38,7 @@ def _hot_key_run(tmp_path, n: int, threads: int, *, blind: bool = False) -> dict
     try:
         cluster.spaces[cluster.ids[0]].new_database("db")
         acked = {node: 0 for node in cluster.ids}
-        unknown = [0]
+        tokens = CommitTokens()
         lock = threading.Lock()
         start = threading.Barrier(n * threads + 1)
         stop_at = []
@@ -45,19 +49,23 @@ def _hot_key_run(tmp_path, n: int, threads: int, *, blind: bool = False) -> dict
             j = 0
             while time.monotonic() < stop_at[0]:
                 tr = db.new_transaction()
+                token = None
                 try:
                     if blind:
                         tr.set_root_object(f"k-{node}-{index}-{j}", j)
                     else:
+                        token = tokens.new(f"{node}.{index}")
                         tr.set_root_object("n", (tr.get_root_object("n") or 0) + 1)
+                        write_token(tr, token)
                     tr.commit()
                 except ProtoConflictError:
-                    continue
-                except ProtoOutcomeUnknownError:      # P5: applied at most once (R86)
-                    with lock:
-                        unknown[0] += 1
+                    continue                          # not applied: its token must stay absent
+                except ProtoOutcomeUnknownError:      # P5: resolved by its token below (R86)
+                    tokens.unknown(token)
                     j += 1
                     continue
+                if token is not None:
+                    tokens.acked(token)
                 j += 1
                 with lock:
                     acked[node] += 1
@@ -70,16 +78,14 @@ def _hot_key_run(tmp_path, n: int, threads: int, *, blind: bool = False) -> dict
         for t in workers:
             t.join()
         total = sum(acked.values())
-        value = None
+        values = None
         if not blind:
-            # R86: acked <= applied <= acked + unknown.  Wait for every acknowledged increment.
-            deadline = time.monotonic() + 5.0
-            value = cluster.value(cluster.ids[0]) or 0
-            while value < total and time.monotonic() < deadline:
-                time.sleep(0.01)
-                value = cluster.value(cluster.ids[0]) or 0
+            present = assert_outcomes_resolved(
+                {node: (lambda node=node: read_tokens_of(cluster.db(node))) for node in cluster.ids}, tokens)
+            values = {node: cluster.value(node) for node in cluster.ids}
+            assert set(values.values()) == {len(present)}, (values, len(present))
         counts = [acked[node] for node in cluster.ids]
-        return {"counts": counts, "total": total, "value": value, "unknown": unknown[0],
+        return {"counts": counts, "total": total, "values": values, "unknown": len(tokens.unknown_tokens),
                 "ratio": min(counts) / max(counts) if max(counts) else 0.0}
     finally:
         cluster.close()
@@ -91,7 +97,7 @@ def test_hot_key_increments_never_starve_a_member(tmp_path, n, threads, capsys):
     with capsys.disabled():
         print(f"\nHOT KEY {n} members x {threads} threads, {_SECONDS:g} s: commits {result['counts']} "
               f"ratio {result['ratio']:.2f}")
-    assert result["total"] <= result["value"] <= result["total"] + result["unknown"], result  # R86
+    # Every outcome resolved by its token in _hot_key_run (R86, R114 N1).
     assert result["unknown"] <= 3, result
     assert min(result["counts"]) > 0, result                  # nobody starved
     assert result["ratio"] >= _MIN_RATIO, result
