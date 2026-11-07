@@ -9,7 +9,7 @@ from proto_db.errors import ProtoOutcomeUnknownError, ProtoTimeoutError
 from proto_db.storage.tiered import TieredStorage
 from proto_db.transactions import ObjectSpace
 from tests.support.fake_object_store import FakeObjectStore
-from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, read_tokens_of, write_token
+from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, read_tokens, snapshot_of, write_token
 from tests.support.tiered_cluster import FAST, RUN_KW, TieredCluster, incr
 
 pytestmark = [pytest.mark.timeout(120)]
@@ -304,6 +304,7 @@ def _steady_state(tmp_path, rounds: int, per_round: int) -> dict:
 
                 def bump(tr):
                     pushed[_node].clear()               # this attempt's records only
+                    tokens.observe(read_tokens(tr))     # P1: a committed base is history
                     incr(tr)
                     write_token(tr, token)
                 go.wait()
@@ -336,10 +337,11 @@ def _steady_state(tmp_path, rounds: int, per_round: int) -> dict:
                     time.sleep(0.002)
         acked, unknown = outcomes.count("acked"), outcomes.count("unknown")
         assert unknown <= 3, outcomes                                     # a generous progress bound
-        # R114 N1: every outcome resolved by its token, and the counter matches the tokens.
-        present = assert_outcomes_resolved({n: (lambda n=n: read_tokens_of(tc.db(n))) for n in tc.ids}, tokens)
-        values = {n: tc.value(n) for n in tc.ids}
-        assert set(values.values()) == {len(present)}, (values, len(present), outcomes)
+        # R114 N1: every outcome resolved by its token, and the counter, read in the same
+        # transaction as the tokens (P4), matches them on every member.
+        res = assert_outcomes_resolved(
+            {n: (lambda n=n: snapshot_of(tc.db(n), lambda tr: tr.get_root_object("n"))) for n in tc.ids}, tokens)
+        assert set(res.values.values()) == {len(res.present)}, (res.values, len(res.present), outcomes)
         committer_calls = [op for name, op in calls if name.startswith("committer-")]
         assert set(committer_calls) <= {"get"}, committer_calls[:5]       # reads only, never writes
         for n in tc.ids:

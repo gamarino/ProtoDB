@@ -1,4 +1,5 @@
-"""Per-commit tokens that resolve every commit outcome of a cluster test (ruling R114, N1).
+"""Per-commit tokens that resolve every commit outcome of a cluster test (rulings R114 N1, R113;
+Task 8.3n: re-review 2 of 8.3m, P1, P3, P4).
 
 A counter alone cannot tell an acknowledged commit that was lost from an unknown commit that
 took effect: one of each leaves the count unchanged.  So every commit a test makes also writes
@@ -7,7 +8,19 @@ a token unique to it, and once the members converge the test checks, token by to
 - every acknowledged token is present (no acknowledged commit lost);
 - every unknown token is present on all members or absent on all of them (the unknown outcome
   resolved: P5 / R86 allow either, never a split);
-- no other token is present (nothing applied that no commit wrote).
+- no other token is present (nothing applied that no commit wrote);
+- every token any member was ever seen to show is still present (history never loses a commit
+  once a member has observed it, P1: an unknown commit that became visible and then vanished
+  is a forked history, not a resolution);
+- at least ``min_acked`` tokens are acknowledged (P3: an empty run proves nothing).
+
+A reader returns a :class:`Snapshot`: the tokens and, from the SAME transaction, whatever else
+the test compares with them (P4: a counter read in another transaction can see an unknown
+commit that landed in between).  :func:`snapshot_of` builds one.
+
+Observations (P1) come from three places: :meth:`CommitTokens.observe`, which a test calls
+with any token set it read during the run; :func:`observe_members`, one read of every member;
+and every read :func:`assert_outcomes_resolved` itself makes while it waits.
 
 Typical use::
 
@@ -18,19 +31,37 @@ Typical use::
         tokens.acked(tok)
     except ProtoOutcomeUnknownError:
         tokens.unknown(tok)
+    observe_members(readers, tokens)          # e.g. after every round
     ...
-    present = assert_outcomes_resolved({n: lambda n=n: read_tokens_of(tc.db(n)) for n in ids}, tokens)
+    readers = {n: (lambda n=n: snapshot_of(tc.db(n), counter)) for n in ids}
+    res = assert_outcomes_resolved(readers, tokens)
+    assert all(v == len(res.present) for v in res.values.values())
 """
 import itertools
 import threading
 import time
+from typing import NamedTuple
 
 #: The root holding the tokens (a ``Dictionary`` mapping each token to ``True``).
 TOKENS_ROOT = "commit-tokens"
 
 
+class Snapshot(NamedTuple):
+    """What one transaction on one member saw: its tokens and the test's ``value``."""
+    tokens: frozenset
+    value: object = None
+
+
+class Resolution(NamedTuple):
+    """The converged outcome: the tokens present, and each member's ``value`` read in the same
+    transaction as the tokens it showed."""
+    present: frozenset
+    values: dict
+
+
 class CommitTokens:
-    """The tokens of a test's commits and their outcomes (thread-safe)."""
+    """The tokens of a test's commits, their outcomes and what members were seen to show
+    (thread-safe)."""
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -38,6 +69,7 @@ class CommitTokens:
         self.issued = set()
         self.acked_tokens = set()
         self.unknown_tokens = set()
+        self.observed = set()
 
     def new(self, label: str = "c") -> str:
         """A token no other commit of this test carries."""
@@ -54,6 +86,12 @@ class CommitTokens:
         with self._lock:
             self.unknown_tokens.add(token)
 
+    def observe(self, view) -> None:
+        """Record that some member showed the tokens ``view`` (a set, or a :class:`Snapshot`)."""
+        view = view.tokens if isinstance(view, Snapshot) else view
+        with self._lock:
+            self.observed |= view
+
 
 def write_token(tr, token: str, root: str = TOKENS_ROOT) -> None:
     """Record ``token`` in the transaction ``tr`` (call it inside the commit's function)."""
@@ -69,22 +107,46 @@ def read_tokens(tr, root: str = TOKENS_ROOT) -> frozenset:
     return frozenset() if tokens is None else frozenset(tokens.keys())
 
 
-def read_tokens_of(db, root: str = TOKENS_ROOT) -> frozenset:
-    """The tokens a new transaction on ``db`` sees."""
+def snapshot_of(db, value=None, root: str = TOKENS_ROOT) -> Snapshot:
+    """The tokens a new transaction on ``db`` sees and ``value(tr)`` from that same transaction
+    (P4)."""
     tr = db.new_transaction()
     try:
-        return read_tokens(tr, root)
+        return Snapshot(read_tokens(tr, root), value(tr) if value is not None else None)
     finally:
         tr.abort()
 
 
-def assert_outcomes_resolved(readers: dict, tokens: CommitTokens, timeout: float = 10.0) -> frozenset:
-    """Wait until every member (``readers``: member -> callable returning its token set) sees the
-    same tokens, including every acknowledged one, then assert the three rules of the module
-    docstring.  Return the tokens present."""
+def read_tokens_of(db, root: str = TOKENS_ROOT) -> frozenset:
+    """The tokens a new transaction on ``db`` sees."""
+    return snapshot_of(db, root=root).tokens
+
+
+def _snapshot(read) -> Snapshot:
+    view = read()
+    return view if isinstance(view, Snapshot) else Snapshot(frozenset(view))
+
+
+def observe_members(readers: dict, tokens: CommitTokens) -> None:
+    """Read every member once and record what each shows (P1)."""
+    for read in readers.values():
+        tokens.observe(_snapshot(read))
+
+
+def assert_outcomes_resolved(readers: dict, tokens: CommitTokens, timeout: float = 10.0, *,
+                             min_acked: int = 1) -> Resolution:
+    """Wait until every member (``readers``: member -> callable returning its :class:`Snapshot`
+    or token set) sees the same tokens, including every acknowledged one, then assert the rules
+    of the module docstring.  Return the tokens present and each member's value."""
+    assert len(tokens.acked_tokens) >= min_acked, \
+        f"only {len(tokens.acked_tokens)} acknowledged commits (at least {min_acked} needed): the run proves nothing"
+    assert readers, "no member to read"
     deadline = time.monotonic() + timeout
     while True:
-        seen = {member: read() for member, read in readers.items()}
+        snaps = {member: _snapshot(read) for member, read in readers.items()}
+        seen = {member: s.tokens for member, s in snaps.items()}
+        for view in seen.values():
+            tokens.observe(view)
         views = set(seen.values())
         converged = len(views) == 1 and tokens.acked_tokens <= next(iter(views))
         if converged or time.monotonic() > deadline:
@@ -99,4 +161,6 @@ def assert_outcomes_resolved(readers: dict, tokens: CommitTokens, timeout: float
     assert len(views) == 1, f"members did not converge: {seen}"
     phantom = sorted(present - tokens.acked_tokens - tokens.unknown_tokens)
     assert not phantom, f"tokens no acknowledged or unknown commit wrote: {phantom}"
-    return present
+    vanished = sorted(tokens.observed - present)
+    assert not vanished, f"commits a member showed and history later lost: {vanished}"
+    return Resolution(present, {member: s.value for member, s in snaps.items()})

@@ -23,7 +23,7 @@ import time
 import pytest
 
 from proto_db.errors import ProtoConflictError, ProtoOutcomeUnknownError
-from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, read_tokens_of, write_token
+from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, read_tokens, snapshot_of, write_token
 from tests.support.tiered_cluster import TieredCluster
 
 pytestmark = [pytest.mark.timeout(240)]
@@ -55,6 +55,7 @@ def _hot_key_run(tmp_path, n: int, threads: int, *, blind: bool = False) -> dict
                         tr.set_root_object(f"k-{node}-{index}-{j}", j)
                     else:
                         token = tokens.new(f"{node}.{index}")
+                        tokens.observe(read_tokens(tr))   # P1: the snapshot is a committed root
                         tr.set_root_object("n", (tr.get_root_object("n") or 0) + 1)
                         write_token(tr, token)
                     tr.commit()
@@ -80,10 +81,11 @@ def _hot_key_run(tmp_path, n: int, threads: int, *, blind: bool = False) -> dict
         total = sum(acked.values())
         values = None
         if not blind:
-            present = assert_outcomes_resolved(
-                {node: (lambda node=node: read_tokens_of(cluster.db(node))) for node in cluster.ids}, tokens)
-            values = {node: cluster.value(node) for node in cluster.ids}
-            assert set(values.values()) == {len(present)}, (values, len(present))
+            res = assert_outcomes_resolved(            # the counter from the tokens' snapshot (P4)
+                {node: (lambda node=node: snapshot_of(cluster.db(node), lambda tr: tr.get_root_object("n")))
+                 for node in cluster.ids}, tokens)
+            values = res.values
+            assert set(values.values()) == {len(res.present)}, (values, len(res.present))
         counts = [acked[node] for node in cluster.ids]
         return {"counts": counts, "total": total, "values": values, "unknown": len(tokens.unknown_tokens),
                 "ratio": min(counts) / max(counts) if max(counts) else 0.0}

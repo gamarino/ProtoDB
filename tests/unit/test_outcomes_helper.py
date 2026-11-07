@@ -1,7 +1,11 @@
-"""The commit-token helper of the cluster tests (ruling R114, N1) catches each defect it exists for."""
+"""The commit-token helper of the cluster tests (ruling R114, N1; Task 8.3n P1, P3, P4) catches each
+defect it exists for."""
 import pytest
 
-from tests.support.outcomes import CommitTokens, assert_outcomes_resolved
+from proto_db.storage.memory import MemoryStorage
+from proto_db.transactions import ObjectSpace
+from tests.support.outcomes import (CommitTokens, Snapshot, assert_outcomes_resolved, observe_members,
+                                    snapshot_of, write_token)
 
 
 def _tokens(acked=(), unknown=()):
@@ -19,7 +23,7 @@ def _readers(views):
 
 def test_resolved_outcomes_pass_and_return_the_tokens_present():
     t = _tokens(acked={"a", "b"}, unknown={"u", "w"})
-    assert assert_outcomes_resolved(_readers({"n0": {"a", "b", "u"}, "n1": {"a", "b", "u"}}), t, 0.1) \
+    assert assert_outcomes_resolved(_readers({"n0": {"a", "b", "u"}, "n1": {"a", "b", "u"}}), t, 0.1).present \
         == {"a", "b", "u"}
 
 
@@ -46,3 +50,80 @@ def test_members_that_never_converge_fail():
     t = _tokens(acked={"a"}, unknown={"u"})
     with pytest.raises(AssertionError):
         assert_outcomes_resolved(_readers({"n0": {"a", "u"}, "n1": {"a", "v"}}), t, 0.1)
+
+
+def _sequence(*views):
+    """A reader that returns ``views`` in turn, then the last one forever."""
+    views = [frozenset(v) for v in views]
+
+    def read():
+        return views.pop(0) if len(views) > 1 else views[0]
+    return read
+
+
+def test_a_commit_observed_and_then_removed_from_history_fails():
+    """P1: the unknown commit ``u`` became visible on n0, then vanished everywhere (a successor
+    built on a base without it).  The final state alone looks resolved (absent everywhere)."""
+    t = _tokens(acked={"a"}, unknown={"u"})
+    readers = {"n0": _sequence({"a", "u"}, {"a"}), "n1": _sequence({"a"})}
+    observe_members(readers, t)                      # during the run: n0 shows u
+    with pytest.raises(AssertionError, match="history later lost"):
+        assert_outcomes_resolved(readers, t, 0.1)
+
+
+def test_an_observation_made_while_waiting_counts_too():
+    """P1: the helper's own reads are observations: u shows on n0 in its first poll only."""
+    t = _tokens(acked={"a"}, unknown={"u"})
+    readers = {"n0": _sequence({"a", "u"}, {"a"}), "n1": _sequence({"a", "v"}, {"a"})}
+    with pytest.raises(AssertionError, match="history later lost"):
+        assert_outcomes_resolved(readers, t, 0.5)
+
+
+def test_an_unknown_that_was_never_seen_may_resolve_absent():
+    t = _tokens(acked={"a"}, unknown={"u"})
+    readers = {"n0": _sequence({"a"}), "n1": _sequence({"a"})}
+    observe_members(readers, t)
+    assert assert_outcomes_resolved(readers, t, 0.1).present == {"a"}
+
+
+def test_an_empty_run_fails():
+    """P3: no acknowledged commit at all, whatever the members show."""
+    with pytest.raises(AssertionError, match="proves nothing"):
+        assert_outcomes_resolved(_readers({"n0": set(), "n1": set()}), CommitTokens(), 0.1)
+    with pytest.raises(AssertionError, match="proves nothing"):
+        assert_outcomes_resolved(_readers({"n0": set(), "n1": set()}), _tokens(unknown={"u"}), 0.1)
+    t = _tokens(acked={"a"})
+    with pytest.raises(AssertionError, match="proves nothing"):
+        assert_outcomes_resolved(_readers({"n0": {"a"}}), t, 0.1, min_acked=2)
+
+
+def test_the_value_comes_from_the_snapshot_the_tokens_came_from():
+    """P4: ``snapshot_of`` reads the tokens and the counter in one transaction.  A commit that
+    lands between the two reads (here made by the value function itself, the worst case) is in
+    neither, so the counter still equals the tokens shown; the helper returns, per member, the
+    value of the snapshot whose tokens it judged."""
+    space = ObjectSpace(MemoryStorage())
+    try:
+        db = space.new_database("db")
+        t = CommitTokens()
+
+        def commit():
+            tok = t.new("n0")
+
+            def bump(tr):
+                tr.set_root_object("n", (tr.get_root_object("n") or 0) + 1)
+                write_token(tr, tok)
+            db.run(bump)
+            t.acked(tok)
+        for _ in range(3):
+            commit()
+
+        def counter_after_a_commit(tr):
+            commit()                                 # lands after the tokens were read
+            return tr.get_root_object("n")
+        snap = snapshot_of(db, counter_after_a_commit)
+        assert snap.value == len(snap.tokens) == 3
+        res = assert_outcomes_resolved({"n0": lambda: snapshot_of(db, lambda tr: tr.get_root_object("n"))}, t, 0.1)
+        assert res.values == {"n0": 4} and len(res.present) == 4
+    finally:
+        space.close()
