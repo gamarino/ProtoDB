@@ -15,9 +15,10 @@ node's drifting clock mapped back by ``DriftClock.to_real``):
 2. no committed update is lost or duplicated: every ``Database.run`` that returned added
    its unique id to a blind-written ``CountedSet`` exactly once, and no other id appears
    except those whose commit ended with ``ProtoOutcomeUnknownError`` (present at most
-   once).  The final state is read from the cluster after the faults stop (every live
-   node reopens its space; one more commit on the newest lineage), then from the storage
-   once it is persisted (D46): both agree;
+   once).  The final state is read from every live member after the faults stop (every
+   live node reopens its space; one more commit on the newest lineage) and resolved by
+   :func:`tests.support.outcomes.assert_outcomes_resolved` (each unknown id present on all
+   of them or on none), then from the storage once it is persisted (D46): both agree;
 3. a stale holder never commits: a holder whose replication resumed after its lease ended
    was refused (``ProtoConflictError`` or ``ProtoOutcomeUnknownError``); the persisters'
    root writes (the only ones, D46) all pass an expected epoch, and one whose expected
@@ -36,6 +37,7 @@ from hypothesis import strategies as st
 from proto_db.errors import ProtoConflictError, ProtoOutcomeUnknownError, ProtoTimeoutError, ProtoValidationError
 from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
+from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, blind_snapshot_of
 from tests.support.cluster import Cluster, DriftClock
 
 pytestmark = [pytest.mark.freethreaded, pytest.mark.timeout(240)]
@@ -297,10 +299,19 @@ def _run_schedule(schedule):
                           f"{type(e).__name__}: {e}")
                     if attempt == 10:
                         raise
-            tr = final.open_database("db").new_transaction()
-            counted = tr.get_root_object("ids")
-            in_cluster = {} if counted is None else dict(counted.items())
-            tr.abort()
+            # Review I7 (Task 8.3n fix round 1): every live member, not one.  Members do not
+            # read the shared storage: each starts its transactions from the committed root its
+            # coordinator knows, so an unknown id one member serves and another does not (a
+            # split resolution, a forked lineage) is visible only by reading each of them.
+            tokens = CommitTokens()
+            for uid in committed:
+                tokens.acked(uid)
+            for uid in unknown:
+                tokens.unknown(uid)
+            res = assert_outcomes_resolved(
+                {n: (lambda n=n: blind_snapshot_of(space_of(n).open_database("db"), root="ids")) for n in alive},
+                tokens, min_acked=0)
+            in_cluster = {uid: 1 for uid in res.present}
             final.sync(timeout=10)
         else:
             in_cluster = None
