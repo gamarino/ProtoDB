@@ -33,6 +33,7 @@ from proto_db.cluster.rootlog import compare_roots
 from proto_db.errors import ProtoConflictError, ProtoDBError, ProtoOutcomeUnknownError
 from proto_db import transactions
 from tests.concurrency.test_cluster_owner_failures import Load, _check, _FrozenPowerLoss
+from tests.support.outcomes import CommitTokens, add_blind_token, assert_outcomes_resolved, blind_snapshot_of
 from tests.support.tiered_cluster import RUN_KW, TieredCluster, incr
 
 pytestmark = [pytest.mark.timeout(300)]
@@ -132,18 +133,36 @@ def _slow_acceptor_writes(tc, seconds):
         st.accept_replication = slow
 
 
-def _rounds_per_second(tmp_path, monkeypatch, depth):
+def _rounds_per_second(tmp_path, monkeypatch, depth, seconds=3.0):
+    """Two threads per member of three increment their own keys for ``seconds`` with
+    records-bearing acceptor writes slowed to 20 ms and ``DEPTH = depth``.  Returns the rounds
+    per second, the share of permits issued on a proposal, the terms abandoned and the unknown
+    outcomes; every outcome is resolved by a blind token on every member, and each thread's key
+    equals its tokens present (R86, R114; used by ``benchmarks/pipelined_round_rate.py`` too)."""
     monkeypatch.setattr(coordinator_module, "DEPTH", depth)
     with _cluster(tmp_path / f"d{depth}", lease_duration=3.0, request_timeout=0.25) as tc:
         _slow_acceptor_writes(tc, 0.02)
-        stop = time.monotonic() + 3.0
-        done = []
+        stop = time.monotonic() + seconds
+        tokens = CommitTokens()
+        errors = []
 
         def work(node, i):
-            write = _setter(f"{node}-{i}")
-            while time.monotonic() < stop:
-                tc.db(node).run(write, **RUN_KW)
-                done.append(1)
+            key = f"{node}-{i}"
+            try:
+                while time.monotonic() < stop:
+                    token = tokens.new(key)
+
+                    def write(tr, token=token):
+                        tr.set_root_object(key, (tr.get_root_object(key) or 0) + 1)
+                        add_blind_token(tr, token)  # read nothing: the keys stay conflict-free
+                    try:
+                        tc.db(node).run(write, **RUN_KW)
+                    except ProtoOutcomeUnknownError:
+                        tokens.unknown(token)       # P5 / R86: resolved below
+                        continue
+                    tokens.acked(token)
+            except BaseException as e:              # reported by the assertion below
+                errors.append(repr(e))
         threads = [threading.Thread(target=work, args=(n, i)) for n in tc.ids for i in range(2)]
         started = time.monotonic()
         for t in threads:
@@ -151,25 +170,41 @@ def _rounds_per_second(tmp_path, monkeypatch, depth):
         for t in threads:
             t.join()
         elapsed = time.monotonic() - started
+        assert not errors, errors
         stats = [tc[n].stats() for n in tc.ids]
         issued = sum(s["permits_issued"] for s in stats)
         pipelined = sum(s["pipelined_permits"] for s in stats)
         rounds = sum(s["replications"] for s in stats)
-        return rounds / elapsed, pipelined / max(1, issued), sum(s["terms_abandoned"] for s in stats)
+        keys = [f"{n}-{i}" for n in tc.ids for i in range(2)]
+        res = assert_outcomes_resolved(
+            {n: (lambda n=n: blind_snapshot_of(tc.db(n), lambda tr: {k: tr.get_root_object(k) or 0 for k in keys}))
+             for n in tc.ids}, tokens)
+        for node, values in res.values.items():
+            assert values == {k: sum(1 for t in res.present if t.rsplit("-", 1)[0] == k) for k in keys}, (node, values)
+        return {"rate": rounds / elapsed, "pipelined": pipelined / max(1, issued), "issued": issued,
+                "abandoned": sum(s["terms_abandoned"] for s in stats), "unknown": len(tokens.unknown_tokens),
+                "rounds": rounds, "acked": len(tokens.acked_tokens)}
 
 
-def test_permits_overlap_the_predecessors_durability_and_raise_the_round_rate(tmp_path, monkeypatch):
-    """Records-bearing acceptor-log writes slowed to 20 ms at 3 members: at least 80 % of the permits are issued
-    before their predecessor's ``done`` (on a proposal), against 0 % serially (``DEPTH = 0``
-    issues no permit while one is outstanding: the base behaviour), and the cluster runs at
-    least 1.5x the rounds per second."""
-    serial_rate, serial_pipelined, _ = _rounds_per_second(tmp_path, monkeypatch, 0)
-    rate, pipelined, abandoned = _rounds_per_second(tmp_path, monkeypatch, 1)
-    print(f"\nrounds/s serial {serial_rate:.1f}, pipelined {rate:.1f}; pipelined permits {pipelined:.0%}")
-    assert serial_pipelined == 0
-    assert pipelined >= 0.8, f"only {pipelined:.0%} of the permits were issued on a proposal"
-    assert rate >= 1.5 * serial_rate, (rate, serial_rate)
-    assert abandoned <= 1          # the first term may be abandoned at start-up (base behaviour)
+def test_permits_overlap_the_predecessors_durability(tmp_path, monkeypatch):
+    """Records-bearing acceptor-log writes slowed to 20 ms at 3 members: at least 80 % of the
+    permits are issued before their predecessor's ``done`` (on a proposal), against 0 %
+    serially (``DEPTH = 0`` issues no permit while one is outstanding: the base behaviour).
+
+    Task 8.3n: the round-rate ratio (pipelined at least 1.5x serial) moved to
+    ``benchmarks/pipelined_round_rate.py``.  It is a throughput figure of one machine's load:
+    in 20 paired, interleaved GIL-on runs per tree it was below 1.5 in 7 runs on 550dde5 and 6
+    on 14dafb9 (medians 1.53 and 1.55; pipelined rate 14dafb9/550dde5 median 1.00), with no
+    defect.  The overlap it stood for is this test's functional assertion."""
+    serial = _rounds_per_second(tmp_path, monkeypatch, 0)
+    piped = _rounds_per_second(tmp_path, monkeypatch, 1)
+    print(f"\nrounds/s serial {serial['rate']:.1f}, pipelined {piped['rate']:.1f}; pipelined permits "
+          f"{piped['pipelined']:.0%} of {piped['issued']}; unknown {serial['unknown']} / {piped['unknown']}")
+    assert serial["pipelined"] == 0
+    assert piped["pipelined"] >= 0.8, f"only {piped['pipelined']:.0%} of the permits were issued on a proposal"
+    # The first term may be abandoned at start-up (base behaviour); a later one only with an
+    # unknown outcome (P5: a conservative end, resolved by the tokens above).
+    assert piped["abandoned"] <= 1 + piped["unknown"], piped
 
 
 # -- P1, P1v and V2 as written: the voters carry safety ------------------------------------------
