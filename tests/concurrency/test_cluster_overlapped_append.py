@@ -38,6 +38,7 @@ from proto_db.errors import ProtoDBError, ProtoOutcomeUnknownError
 from proto_db.storage.tiered import TieredStorage
 from proto_db.transactions import ObjectSpace
 from tests.concurrency.test_cluster_owner_failures import Load, _check, _FrozenPowerLoss
+from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, snapshot_of, write_token
 from tests.support.tiered_cluster import RUN_KW, TieredCluster, incr
 
 pytestmark = [pytest.mark.timeout(300)]
@@ -406,6 +407,7 @@ def _die_in_window(tc, fs, point, *, persist_after: bool, rolled: bool = False) 
     tc.revive("n0")
     if not persist_after:
         tc["n0"].persister.stop()
+    return state
 
 
 def _z_matches(tc, nodes, adopted) -> None:
@@ -455,15 +457,28 @@ def _restart(tc, node) -> None:
     tc[node].persister.stop()
 
 
-def _commit_until_acknowledged(tc, node, attempts: int = 10) -> int:
+def _token_incr(token):
+    def fn(tr):
+        incr(tr)
+        write_token(tr, token)
+    return fn
+
+
+def _commit_until_acknowledged(tc, node, attempts: int = 10, tokens: CommitTokens = None) -> int:
     """Commit an increment on ``node`` until one is acknowledged; return the number of unknown
-    outcomes met on the way (each may or may not have taken effect, ruling R86)."""
+    outcomes met on the way (each may or may not have taken effect, ruling R86).  With
+    ``tokens``, each increment writes a token and records its outcome there."""
     unknown = 0
     for _ in range(attempts):
+        token = tokens.new(node) if tokens is not None else None
         try:
-            tc.db(node).run(incr, **RUN_KW)
+            tc.db(node).run(incr if token is None else _token_incr(token), **RUN_KW)
+            if token is not None:
+                tokens.acked(token)
             return unknown
         except ProtoOutcomeUnknownError:
+            if token is not None:
+                tokens.unknown(token)
             unknown += 1
     pytest.fail(f"{node} got no commit acknowledged in {attempts} attempts")
 
@@ -505,17 +520,45 @@ def test_after_a_death_in_the_window_f_disk_losses_lose_nothing(tmp_path, monkey
     fail-stopped it."""
     fs = _FrozenPowerLoss(monkeypatch)
     kw = {"voters": [f"n{i}" for i in range(voters)]} if voters != 3 else {}
-    with _cluster(tmp_path, voters, storage_kw=dict(release_local=False), **kw) as tc:
+    # The shape is set here, never left to the persisters (Task 8.3n).  With the default 0.02 s
+    # ``ship_interval`` a persister cycle could roll n0's open segment before the persisters
+    # stop; and whether the open segment had a file at the window depended on whether a cycle
+    # had written it out.  Without a file an "open" case ran the "rolled" shape: after the power
+    # loss the re-carried records came back as a copy (``records_applied``, which the rolled
+    # case asserts), and the "open" path assertion failed on timing alone (3 of 12 runs).
+    storage_kw = dict(release_local=False, ship_interval=3600.0)
+    with _cluster(tmp_path, voters, storage_kw=storage_kw, **kw) as tc:
         tc.store.set_outage(True)                   # local copies are all there is from here on
         fs.writeback(str(tmp_path))
+        # A token per increment (Task 8.3n audit): the bound on ``n`` below admits unknown
+        # outcomes, and a count alone cannot tell an unknown increment that took effect from an
+        # acknowledged one lost.  ``z`` is the token of the commit that dies in the window.
+        tokens = CommitTokens()
         for _ in range(3):
-            tc.db("n0").run(incr, **RUN_KW)
+            token = tokens.new("n0")
+            tc.db("n0").run(_token_incr(token), **RUN_KW)
+            tokens.acked(token)
+
+        def resolved(nodes):
+            """Every outcome resolved alike on ``nodes``; ``n`` equals the tokens present plus the
+            window's commit when adopted, read in one snapshot."""
+            res = assert_outcomes_resolved(
+                {n: (lambda n=n: snapshot_of(tc.db(n), lambda tr: (tr.get_root_object("n"),
+                                                                  tr.get_root_object("z") is not None)))
+                 for n in nodes}, tokens)
+            for node, (n, has_z) in res.values.items():
+                assert n == len(res.present) + has_z, (node, n, sorted(res.present), has_z)
         for node in tc.ids:
             tc[node].persister.stop()
-        _die_in_window(tc, fs, point, persist_after=False, rolled=segment == "rolled")
-        unknown = _commit_until_acknowledged(tc, "n0")   # n0's term: phase 1 may re-propose the root
+        if segment == "open":
+            tc.storages["n0"].flush()               # the open segment has a file, as a cycle would write
+        shape = _die_in_window(tc, fs, point, persist_after=False, rolled=segment == "rolled")
+        if segment == "open":
+            assert shape["fresh"], "the window's segment had no file: the rolled shape, not the open one"
+        unknown = _commit_until_acknowledged(tc, "n0", tokens=tokens)   # phase 1 may re-propose the root
         _no_tier_failed(tc)
         value = _converge(tc, tc.ids, set(range(4, 6 + unknown)))
+        resolved(tc.ids)
         adopted = _read(tc, "n0")[1] is not None
         if adopted and voters == 3 and point in POINTS[:3]:
             # The C1 shape: n0 re-proposed the root and its own pre-crash records came back.
@@ -538,10 +581,12 @@ def test_after_a_death_in_the_window_f_disk_losses_lose_nothing(tmp_path, monkey
         expected = (value, {"k": 42} if adopted else None)
         for node in survivors:
             assert _read(tc, node) == expected, node
+        resolved(survivors)                         # history kept: every token seen before is here
         for node in lost:
             tc.revive(node)
-        unknown = _commit_until_acknowledged(tc, "n0")
+        unknown = _commit_until_acknowledged(tc, "n0", tokens=tokens)
         _converge(tc, tc.ids, set(range(value + 1, value + 2 + unknown)))
+        resolved(tc.ids)
         _no_tier_failed(tc)
 
 
