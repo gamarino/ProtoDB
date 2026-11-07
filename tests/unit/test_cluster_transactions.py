@@ -331,3 +331,41 @@ def test_sync_waits_for_the_persisted_epoch_and_exposes_both_epochs():
         assert tr._epoch == 6
         tr.abort()
         assert root is not None
+
+
+#: The message types that tell a member about another member's commit without its asking.
+_UNPROMPTED = ("done", "release", "replicate", "store", "propose", "warm", "records")
+
+
+def test_sync_promises_local_persistence_and_a_commit_on_the_reader_sees_every_acknowledged_commit(tmp_path):
+    """Task 8.3n, ruling proposal on R113: ``sync()`` waits until what THIS member knows is
+    persisted; it does not make another member's acknowledged commits visible here.  The
+    public way to read every commit acknowledged anywhere before the read starts is a commit
+    on the reading member first: its base is at or above every acknowledged commit (the chain
+    rule, else that commit would be lost), and once it is acknowledged the member's committed
+    root is its own.  Deterministic: the reader drops every message that would tell it of the
+    other members' commits unprompted, and the object store is out (so sync() cannot learn a
+    newer persisted root either)."""
+    from tests.support.tiered_cluster import TieredCluster, incr, RUN_KW as TRUN_KW
+    with TieredCluster(tmp_path) as tc:
+        tc.spaces["n0"].new_database("db")
+        tc.db("n0").run(incr, **TRUN_KW)
+        for n in tc.ids:
+            tc.spaces[n].sync(timeout=10)
+        assert tc.eventually("n2", 1)
+        reader = tc["n2"]
+        route = reader._route
+        reader._route = lambda msg: None if msg["type"] in _UNPROMPTED else route(msg)
+        tc.store.set_outage(True)
+        try:
+            tc.db("n0").run(incr, **TRUN_KW)                     # acknowledged by n0 and n1
+            tc.spaces["n2"].sync(timeout=5)                   # returns: n2's knowledge is persisted
+            assert tc.value("n2") == 1, "precondition: n2 has not learnt the commit"
+
+            def barrier(tr):
+                tr.set_root_object("barrier", (tr.get_root_object("barrier") or 0) + 1)
+            tc.db("n2").run(barrier, **TRUN_KW)
+            assert tc.value("n2") == 2                         # every acknowledged commit is visible
+        finally:
+            reader._route = route
+            tc.store.set_outage(False)

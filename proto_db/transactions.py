@@ -1492,7 +1492,17 @@ class ObjectSpace:
     def sync(self, timeout: Optional[float] = None) -> None:
         """Wait until every commit this node knows is persisted in the storage (cluster mode:
         the persisted epoch reaches the committed epoch); ``ProtoTimeoutError`` after
-        ``timeout`` seconds.  Without a cluster commits are persisted when they return."""
+        ``timeout`` seconds.  Without a cluster commits are persisted when they return.
+
+        This is a durability barrier, not a visibility barrier: it says nothing about commits
+        this node has not learnt yet.  A commit another member acknowledged reaches this node
+        with its release, asynchronously, so a transaction started right after ``sync()`` can
+        still miss it (it reads the newest committed root this node knows, a snapshot).  To
+        read every commit acknowledged anywhere before the read starts, commit on this node
+        first and start the reading transaction after that commit returns: its base is at or
+        above every acknowledged commit, and this node then knows the root it committed.  An
+        ``ObjectSpace`` API for such a read without a write does not exist yet (Task 8.3n
+        report, ruling proposal on R113)."""
         self._check_open()
         if self._coordinator is None:
             return
@@ -1623,7 +1633,8 @@ class Database:
         return entries
 
     def sync(self, timeout: Optional[float] = None) -> None:
-        """Wait until the commits this node knows are persisted (see :meth:`ObjectSpace.sync`)."""
+        """Wait until the commits this node knows are persisted (see :meth:`ObjectSpace.sync`:
+        a durability barrier, not a visibility one)."""
         self._space.sync(timeout)
 
     def _origin(self):
