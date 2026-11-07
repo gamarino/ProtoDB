@@ -35,6 +35,7 @@ def test_the_busy_member_keeps_committing_after_an_idle_owner_releases(tmp_path,
         n0._on_request("n2", make_message("request", "n2", term=higher, rid=10_000, inc=n2._inc, vs=0))
         stop = threading.Event()
         stamps = []
+        unknown, errors = [], []
         lock = threading.Lock()
 
         def work():
@@ -44,6 +45,12 @@ def test_the_busy_member_keeps_committing_after_an_idle_owner_releases(tmp_path,
                     db.run(incr, **RUN_KW)
                 except (tx.ProtoConflictError, tx.ProtoTimeoutError):
                     continue
+                except tx.ProtoOutcomeUnknownError:
+                    unknown.append(1)    # P5: an attempt that ended, not a stall (Task 8.3n audit)
+                    continue
+                except BaseException as e:    # reported by the assertion below
+                    errors.append(repr(e))
+                    return
                 with lock:
                     stamps.append(time.monotonic())
         threads = [threading.Thread(target=work, daemon=True) for _ in range(4)]
@@ -54,6 +61,7 @@ def test_the_busy_member_keeps_committing_after_an_idle_owner_releases(tmp_path,
         stop.set()
         for t in threads:
             t.join(30)
+        assert not errors, errors
         released = tc["n0"].stats()["terms_released_idle_local"]
         gaps = [b - a for a, b in zip([start] + stamps, stamps)]
         print(f"released {released} commits {len(stamps)} longest gap {max(gaps):.2f}s owner {tc['n1'].owner}")

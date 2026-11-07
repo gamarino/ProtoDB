@@ -74,6 +74,17 @@ class Peer:
         with self.cond:
             return {m["acked"] for m in self.lines if "acked" in m}
 
+    def traced(self):
+        """Ids whose commit may have taken effect: acknowledged, unknown, or the attempt in
+        flight when the process was killed (no outcome printed)."""
+        with self.cond:
+            done = {m[k] for m in self.lines for k in ("acked", "unknown", "failed") if k in m}
+            attempts = [m["attempt"] for m in self.lines if "attempt" in m]
+            failed = {m["failed"] for m in self.lines if "failed" in m}
+            in_flight = {a for a in attempts if a not in done}
+            assert len(in_flight) <= 1, in_flight          # one committing thread per peer
+            return (done - failed) | in_flight
+
     def owner(self):
         """The owner of the current term this peer reported with its latest commit (D50)."""
         with self.cond:
@@ -150,10 +161,11 @@ def test_sigkilled_peers_lose_no_acknowledged_commit(tmp_path, role):
             if i != victim:
                 p.kill()                                 # then the whole cluster
         acked = set().union(*(p.acked() for p in peers))
+        traced = set().union(*(p.traced() for p in peers))
     finally:
         for p in peers:
             p.close()
-    _verify(tmp_path, acked)
+    _verify(tmp_path, acked, traced)
 
 
 def test_an_owner_stopped_past_its_lease_loses_no_acknowledged_commit(tmp_path):
@@ -172,15 +184,18 @@ def test_an_owner_stopped_past_its_lease_loses_no_acknowledged_commit(tmp_path):
         for p in peers:
             p.kill()
         acked = set().union(*(p.acked() for p in peers))
+        traced = set().union(*(p.traced() for p in peers))
     finally:
         for p in peers:
             if p.proc.poll() is None:
                 p.signal(signal.SIGCONT)
             p.close()
-    _verify(tmp_path, acked)
+    _verify(tmp_path, acked, traced)
 
 
-def _verify(tmp_path, acked):
+def _verify(tmp_path, acked, traced):
+    """Every acknowledged id recovered and persisted; every id present traced to a commit that
+    may have taken effect (no phantom, Task 8.3n); the persisted root is the recovered one."""
     assert len(acked) >= 60
     peers = _start(tmp_path, "verify")
     try:
@@ -196,6 +211,7 @@ def _verify(tmp_path, acked):
             p.close()
     ids = set(result["ids"])
     assert acked <= ids, f"{len(acked - ids)} acknowledged commits lost"
+    assert ids <= traced, f"ids no commit wrote: {sorted(ids - traced)[:10]}"
     assert result["n"] == len(result["ids"]) == len(ids)  # every commit applied whole, none twice
     reader = ObjectSpace(TieredStorage(str(tmp_path / "reader"), DirObjectStore(str(tmp_path / "store"))))
     try:
@@ -205,3 +221,4 @@ def _verify(tmp_path, acked):
     finally:
         reader.close()
     assert acked <= persisted
+    assert persisted == ids, (sorted(persisted ^ ids)[:10])      # nothing committed since the read

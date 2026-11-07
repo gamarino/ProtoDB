@@ -10,9 +10,11 @@ the default (safe) startup grace.  Protocol with the parent, one JSON line each 
 2. the parent writes ``{"peers": [[id, host, port], ...]}``; the peer starts and prints
    ``{"ready": true}``; the parent writes ``{"go": true}``.
 3. ``MODE`` ``load``: the peer commits forever (each commit increments ``n`` and adds a
-   unique id to the ``ids`` CountedSet) and prints ``{"acked": id, "owner": ..}`` after each
-   commit that returned (``owner``: the member it believes owns the current term, D50), ``{"unknown": id}`` after an unknown outcome.  It never stops by itself: the
-   parent kills it.
+   unique id to the ``ids`` CountedSet).  It prints ``{"attempt": id}`` before each commit, then
+   ``{"acked": id, "owner": ..}`` after a commit that returned (``owner``: the member it believes
+   owns the current term, D50), ``{"unknown": id}`` after an unknown outcome and
+   ``{"failed": id}`` after a conflict or a timeout (not applied).  It never stops by itself:
+   the parent kills it, so its last attempt may have no outcome (in flight).
    ``MODE`` ``verify``: the peer reads ``n`` and ``ids`` and prints ``{"n": .., "ids": [..]}``,
    waits until the persisted root covers what it read, prints ``{"synced": true}``, then
    waits for ``{"stop": true}`` (it keeps granting until then) and exits cleanly.
@@ -80,12 +82,14 @@ def main():
                 def fn(tr, uid=uid):
                     tr.set_root_object("n", (tr.get_root_object("n") or 0) + 1)
                     tr.set_root_object("ids", tr.new_counted_set().add(uid))
+                _say({"attempt": uid})       # a kill before its outcome leaves it in flight
                 try:
                     db.run(fn, retries=10_000, backoff=(0.0005, 0.01))
                 except ProtoOutcomeUnknownError:
                     _say({"unknown": uid})
                     continue
                 except (ProtoConflictError, ProtoTimeoutError):
+                    _say({"failed": uid})        # not applied
                     continue
                 _say({"acked": uid, "owner": coordinator.owner})
         tr = db.new_transaction()

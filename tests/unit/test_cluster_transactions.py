@@ -10,6 +10,7 @@ from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
 from tests.support.cluster import Cluster
 from tests.support.fake_object_store import FakeObjectStore
+from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, snapshot_of, write_token
 
 pytestmark = pytest.mark.timeout(60)
 
@@ -262,10 +263,17 @@ def test_a_late_replication_is_refused_by_peers_that_granted_a_newer_term():
 
         cl["n0"].replicate = slow_replicate
         outcome = []
+        tokens = CommitTokens()
+
+        def token_incr(token):
+            def fn(tr):
+                _incr(tr)
+                write_token(tr, token)
+            return fn
 
         def first():
             try:
-                s0.open_database("db").run(_incr, retries=0)
+                s0.open_database("db").run(token_incr("n0-late"), retries=0)
                 outcome.append("committed")
             except ProtoOutcomeUnknownError:
                 outcome.append("unknown")
@@ -273,14 +281,21 @@ def test_a_late_replication_is_refused_by_peers_that_granted_a_newer_term():
         t = threading.Thread(target=first)
         t.start()
         time.sleep(FAST["lease_duration"] * 1.1)
-        s1.open_database("db").run(_incr, **RUN_KW)
+        s1.open_database("db").run(token_incr("n1-next"), **RUN_KW)
+        tokens.acked("n1-next")
         t.join(10)
         time.sleep(late)                                  # the delayed replicates arrive now
         assert outcome == ["unknown"]
+        tokens.unknown("n0-late")
         # n0's root may or may not have taken effect (n0 accepted it itself and may have
-        # reported it when granting n1's lease), but never both increments lost or doubled.
-        after = _value(s1)
-        assert after in (1, 2)
+        # reported it when granting n1's lease).  A count of 1 alone could also be n1's
+        # acknowledged increment lost and n0's applied (Task 8.3n): the tokens tell them apart,
+        # on both members, with the count read in the same snapshot.
+        res = assert_outcomes_resolved(
+            {n: (lambda s=s: snapshot_of(s.open_database("db"), lambda tr: tr.get_root_object("n")))
+             for n, s in (("n0", s0), ("n1", s1))}, tokens)
+        after = len(res.present)
+        assert set(res.values.values()) == {after}, res
         assert sum(cl[n].stats()["refused"] for n in ("n1", "n2")) >= 1   # the late copies
         cl["n0"].replicate = original
         s0.open_database("db").run(_incr, **RUN_KW)
