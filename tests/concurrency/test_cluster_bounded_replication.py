@@ -64,13 +64,19 @@ def test_a_commit_stores_its_records_on_f_plus_one_members_and_its_root_on_the_v
 
 
 def _count_syncs(monkeypatch):
-    counter = {"n": 0}
+    """Count the syncs of the commit path: every thread but the persisters'.  A persister syncs
+    its checkpoints, compactions and shipped segments once per cycle that finds work, so its
+    count grows with the run's wall time, not with the commits or the members (Task 8.3n:
+    6.55-7.10 "per commit" in slow runs against 6.05-6.40 alone, the commit path a steady
+    4.25)."""
+    counter = {"n": 0, "background": 0}
     real = os.fsync
     lock = threading.Lock()
 
     def fsync(fd):
+        key = "background" if threading.current_thread().name.startswith("proto-persister-") else "n"
         with lock:
-            counter["n"] += 1
+            counter[key] += 1
         return real(fd)
 
     monkeypatch.setattr(os, "fsync", fsync)
@@ -81,7 +87,9 @@ def _count_syncs(monkeypatch):
 def test_syncs_per_commit_do_not_grow_with_the_cluster(tmp_path, monkeypatch, members):
     """Each commit costs at most the committer's append, ``f`` replica appends and one
     acceptance per voter: 1 + 1 + 3 = 5 syncs with three voters, at any size (plus slack for a
-    checkpoint).  On d6743ae it grows with the members (one acceptance each)."""
+    manifest sync, a hedge or a new term).  On d6743ae it grows with the members (one
+    acceptance each).  Only the commit path is counted (:func:`_count_syncs`): the persisters'
+    syncs depend on how long the run takes, which is timing (R82), and are reported only."""
     with _cluster(tmp_path, members) as tc:
         committer = tc.ids[-1]
         for _ in range(3):
@@ -96,8 +104,9 @@ def test_syncs_per_commit_do_not_grow_with_the_cluster(tmp_path, monkeypatch, me
         for node in tc.ids:
             tc[node].wait_idle(5)
         per_commit = counter["n"] / n
-        print(f"\n{members} members: {per_commit:.2f} syncs per commit")
-        assert per_commit <= 6.5, f"{per_commit:.2f} syncs per commit with {members} members"
+        print(f"\n{members} members: {per_commit:.2f} commit-path syncs per commit "
+              f"(persisters: {counter['background'] / n:.2f})")
+        assert per_commit <= 5.5, f"{per_commit:.2f} syncs per commit with {members} members"
 
 
 def test_a_voter_refuses_a_root_whose_records_lack_their_copies(tmp_path):
@@ -220,27 +229,51 @@ def test_two_lost_committers_with_different_replicas_are_both_persisted(tmp_path
         assert tc.storages["n6"].stats()["parts_uploaded"] >= 1
 
 
+#: One open own segment for the whole scenario (Task 8.3n): with the default 0.02 s
+#: ``ship_interval`` the persister rolled n0's open segment at its next cycle, outage or not, so
+#: whether the hedged commits shared a segment with the others -- the split this scenario is
+#: about -- depended on when the persister ran; in a slow run every phase had a segment of its
+#: own, no copy had a hole, and nothing was filled.
+_SPLIT_STORAGE = dict(durability="fsync", ship_interval=3600.0)
+
+
+def _split_segment(tc) -> None:
+    """Task 8.3g review I1's setup: nine commits of n0 in ONE own segment, the middle three hedged
+    to n2 while n1 is partitioned away, so n1's copy lacks the middle and n2's the start.  The
+    split is asserted, not assumed."""
+    net = tc.cluster.net
+    tc.spaces["n0"].new_database("db")
+    tc.store.set_outage(True)
+    roots = []
+
+    def commit():
+        tc.db("n0").run(incr, **RUN_KW)
+        roots.append(tc["n0"].committed_root()[1])
+    for _ in range(3):
+        commit()                                    # n0's records -> n0 + n1
+    net.partition({"n0", "n2"}, {"n1"})
+    for _ in range(3):
+        commit()                                    # hedged: n0 + n2
+    net.heal()
+    time.sleep(LEASE["lease_duration"] * 1.6)       # liveness only: n1 is asked first again
+    for _ in range(3):
+        commit()                                    # n0 + n1 (or n2, if still suspect: a hole either way)
+    assert tc.eventually("n1", 9) and tc.eventually("n2", 9)
+    assert tc["n0"].stats()["replica_hedges"] >= 1
+    assert len({r.segment for r in roots}) == 1, "n0's commits are not in one segment"
+    ptr = [AtomPointer(r.segment, r.offset) for r in roots]
+    assert tc.storages["n2"]._local_record(ptr[0]) is None, "n2's copy has the start"
+    assert any(tc.storages["n1"]._local_record(p) is None for p in ptr[3:6]), "n1's copy has the middle"
+
+
 def test_a_segment_split_by_a_hedge_is_persisted_after_its_committers_disk_is_lost(tmp_path):
     """Task 8.3g review I1: a hedge sends some of n0's commits to n2 instead of n1, so n0's
     segment is split between two replicas with holes (n1 lacks the middle, n2 the start).  After
     one disk loss (n0) neither copy is a prefix; the persister fills the holes from the peers,
     record by record, and uploads the segment's true prefix.  Before, persistence stalled at
     epoch 0 for good and the hedged commits stayed at ``f`` copies."""
-    with TieredCluster(tmp_path, 3, storage_kw=dict(durability="fsync"), **LEASE) as tc:
-        net = tc.cluster.net
-        tc.spaces["n0"].new_database("db")
-        tc.store.set_outage(True)
-        for _ in range(3):
-            tc.db("n0").run(incr, **RUN_KW)             # n0's records -> n0 + n1
-        net.partition({"n0", "n2"}, {"n1"})
-        for _ in range(3):
-            tc.db("n0").run(incr, **RUN_KW)             # hedged: n0 + n2
-        net.heal()
-        time.sleep(LEASE["lease_duration"] * 1.6)       # the suspect period ends
-        for _ in range(3):
-            tc.db("n0").run(incr, **RUN_KW)             # n0 + n1 again
-        assert tc.eventually("n1", 9) and tc.eventually("n2", 9)
-        assert tc["n0"].stats()["replica_hedges"] >= 1
+    with TieredCluster(tmp_path, 3, storage_kw=_SPLIT_STORAGE, **LEASE) as tc:
+        _split_segment(tc)
         tc.wipe("n0")                                   # ONE disk lost
         tc.store.set_outage(False)
         for node in ("n1", "n2"):
@@ -279,41 +312,44 @@ def test_every_member_caches_each_commit_without_a_durable_copy(tmp_path):
 def test_filling_a_hole_from_peers_never_blocks_the_nodes_own_shipping(tmp_path):
     """Re-review N2: the persister fetches a split segment's holes outside ``_ship_lock`` (the
     bytes are immutable), so a slow or unanswered fill never holds up ``ship()``."""
-    with TieredCluster(tmp_path, 3, storage_kw=dict(durability="fsync"), **LEASE) as tc:
-        net = tc.cluster.net
-        tc.spaces["n0"].new_database("db")
-        tc.store.set_outage(True)
-        for _ in range(3):
-            tc.db("n0").run(incr, **RUN_KW)             # n0 + n1
-        net.partition({"n0", "n2"}, {"n1"})
-        for _ in range(3):
-            tc.db("n0").run(incr, **RUN_KW)             # hedged: n0 + n2
-        net.heal()
-        time.sleep(LEASE["lease_duration"] * 1.6)
-        for _ in range(3):
-            tc.db("n0").run(incr, **RUN_KW)             # n0 + n1 again
-        assert tc.eventually("n1", 9) and tc.eventually("n2", 9)
+    with TieredCluster(tmp_path, 3, storage_kw=_SPLIT_STORAGE, **LEASE) as tc:
+        _split_segment(tc)
         tc.wipe("n0")
+        # n1's persister waits until the measurement is over: otherwise it may upload the whole
+        # segment first (filling its own middle hole), and n2, finding the store covered, never
+        # fills anything (Task 8.3n: the "no fill started" failure).
+        n1 = tc.storages["n1"]
+        n1_ensure, n1_may_upload = n1.ensure_remote, threading.Event()
+
+        def gated_ensure(needs, **kw):
+            n1_may_upload.wait(30)
+            return n1_ensure(needs, **kw)
+        n1.ensure_remote = gated_ensure
         st = tc.storages["n2"]
         fetcher = st._fetcher
-        filling = threading.Event()
+        filling, answer = threading.Event(), threading.Event()
 
         def slow_fetcher(ptr):
             filling.set()
-            time.sleep(0.6)                             # a slow peer answer
+            answer.wait(30)                             # a peer answer that has not come yet
             return fetcher(ptr)
 
         st.set_fetcher(slow_fetcher)
-        tc.store.set_outage(False)                      # n2's persister now fills its front hole
-        assert filling.wait(10), "no fill started"
-        waits = []
-        end = time.monotonic() + 1.0
-        while time.monotonic() < end:
-            started = time.monotonic()
-            st.ship(force=True)
-            waits.append(time.monotonic() - started)
-            time.sleep(0.01)
-        assert max(waits) < 0.3, f"ship() waited {max(waits):.3f} s behind a fill"
+        try:
+            tc.store.set_outage(False)                  # n2's persister now fills its front hole
+            assert filling.wait(10), "no fill started"
+            # The fill is held until ``answer`` is set: a ship() that needed the lock the fill
+            # holds could not return before it.  An observed condition, not a duration; the
+            # join's 10 s is only how long a broken build is given before the test fails.
+            shipper = threading.Thread(target=lambda: st.ship(force=True))
+            shipper.start()
+            shipper.join(10)
+            assert not shipper.is_alive(), "ship() waits behind a fill"
+            assert not answer.is_set() and st.stats()["holes_filled"] == 0   # the fill is still pending
+        finally:
+            answer.set()
+            n1_may_upload.set()
+            n1.ensure_remote = n1_ensure
         st.set_fetcher(fetcher)
         for node in ("n1", "n2"):
             tc.spaces[node].sync(timeout=20)
