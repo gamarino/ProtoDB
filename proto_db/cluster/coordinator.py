@@ -3172,7 +3172,7 @@ class ClusterCoordinator:
             if wait is None or wait.reply is not None:
                 # Nobody waits for it any more: hand it back at once, so the owner moves on.
                 sends = [(sender, make_message("done", self._node, term=msg["term"], seq=msg["seq"], inc=self._inc,
-                                               outcome="none", root=None))]
+                                               outcome="none", root=None, copies=[], ranges=None))]
             else:
                 known, root, label = decode_labeled_root(msg["root"])
                 now = self._clock()

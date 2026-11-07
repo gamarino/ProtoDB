@@ -233,3 +233,40 @@ def test_a_permit_refusal_to_another_incarnation_is_dropped(h):
     finally:
         with b._cond:
             b._permit_waits.pop(1, None)
+
+
+def test_a_permit_arriving_after_its_request_gave_up_is_handed_back_at_once(h):
+    """Task 8.3n: a permit that reaches its requester after ``permit()`` gave up (a delayed
+    link) is handed back at once with ``done("none")``, so the owner issues the next
+    permission without waiting for this one's validity.  Before, the hand-back message lacked
+    the ``copies`` field that protocol 11 (Task 8.3g) added to ``done``: building it raised in
+    the transport worker, nothing was sent, and the owner held the permission until it timed
+    out (liveness only: an unanswered permission ends as an abandoned term, never a commit)."""
+    a, r1 = _setup(h)
+    b, c, net = h.nodes["b"], h.nodes["c"], h.net
+    held = []
+
+    def pump_b():
+        net.deliver(src="b", dst={"a"}, kinds=("permit_req",))
+        held.extend(net.take("a", {"b"}, ("permit",)))       # the permit is delayed past the wait
+    got = h._run(lambda: b.permit(timeout=0.3), pump_b)
+    assert isinstance(got, Exception), got
+    assert held, "the owner issued no permit"
+    for _, _, msg in held[:1]:
+        net.handlers["b"](msg)                                # it arrives late: nobody waits
+    b.wait_idle(5.0)
+    back = net.take("b", {"a"}, ("done",))
+    assert [m[2]["outcome"] for m in back] == ["none"], "the late permit was not handed back"
+    for _, _, msg in back:
+        net.handlers["a"](msg)
+    a.wait_idle(5.0)
+    assert not a._ownership.pipeline, "the owner still holds the handed-back permission"
+    assert a.stats()["terms_abandoned"] == 0       # "none" of the only entry: the base is reused
+
+    def pump_c():
+        net.deliver(src="c", dst={"a"}, kinds=("permit_req",))
+        net.deliver(src="a", dst={"c"}, kinds=("permit", "permit_no"))
+    pc = h._run(lambda: c.permit(timeout=5), pump_c)   # the fake clock never moved
+    assert not isinstance(pc, Exception), pc
+    assert pc.root == r1
+    net.drop(kinds=ALL)
