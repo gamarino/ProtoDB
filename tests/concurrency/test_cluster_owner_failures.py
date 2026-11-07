@@ -6,8 +6,12 @@ acknowledged or of unknown outcome.  While they run, one failure hits the lease 
 member granting write permissions) or a permission holder.  Afterwards the faults stop and
 the invariants are checked:
 
-* safety: ``acked <= n <= acked + unknown`` -- no acknowledged commit is lost and nothing
-  is applied that no thread attempted; every live member converges on the same ``n``;
+* safety, by a token per commit (ruling R114, Task 8.3n; :mod:`tests.support.outcomes`): on
+  every live member every acknowledged commit is present, every unknown one present
+  everywhere or nowhere, nothing that no commit wrote, nothing a member was seen to show and
+  then lost, and ``n`` (read with the tokens) equals the tokens present.  Before, the bound
+  ``acked <= n <= acked + unknown`` alone let an unknown commit that took effect hide a lost
+  acknowledged one;
 * liveness: every live member commits again after the fault (a new owner, or the old one,
   grants permissions).
 
@@ -21,6 +25,7 @@ import time
 import pytest
 
 from proto_db.errors import ProtoConflictError, ProtoOutcomeUnknownError, ProtoTimeoutError
+from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, read_tokens, snapshot_of, write_token
 from tests.support.power_loss import PowerLoss
 from tests.support.tiered_cluster import RUN_KW, TieredCluster, incr
 
@@ -32,14 +37,25 @@ THREADS = 2
 SECONDS = 1.6
 
 
+def _token_incr(tokens: CommitTokens, token: str):
+    """An increment of ``n`` that records ``token`` and observes its base's tokens (P1)."""
+    def fn(tr):
+        tokens.observe(read_tokens(tr))
+        incr(tr)
+        write_token(tr, token)
+    return fn
+
+
 class Load:
-    """Two committing threads per member; counts acknowledged and unknown commits."""
+    """Two committing threads per member; counts acknowledged and unknown commits, each with a
+    token (:mod:`tests.support.outcomes`)."""
 
     def __init__(self, tc: TieredCluster):
         self.tc = tc
         self.lock = threading.Lock()
         self.acked = 0
         self.unknown = 0
+        self.tokens = CommitTokens()
         self.stop = threading.Event()
         self.down = set()
         self.threads = [threading.Thread(target=self._worker, args=(node,), daemon=True)
@@ -54,18 +70,22 @@ class Load:
             if space is None:
                 time.sleep(0.01)
                 continue
+            token = self.tokens.new(node)
             try:
-                space.open_database("db").run(incr, **RUN_KW)
+                space.open_database("db").run(_token_incr(self.tokens, token), **RUN_KW)
             except ProtoOutcomeUnknownError:
+                self.tokens.unknown(token)
                 with self.lock:
                     self.unknown += 1
                 continue
             except (ProtoConflictError, ProtoTimeoutError):
-                continue
-            except Exception:           # the space closed under a killed node: not a commit
+                continue                # nothing applied: its token must stay absent
+            except Exception:           # the space closed under a killed node: not acknowledged
                 if node in self.down or self.tc.spaces.get(node) is not space:
+                    self.tokens.unknown(token)      # killed mid-commit: it may have taken effect
                     continue
                 raise
+            self.tokens.acked(token)
             with self.lock:
                 self.acked += 1
 
@@ -96,32 +116,34 @@ def _owner(tc: TieredCluster, timeout: float = 5.0) -> str:
 
 
 def _check(tc: TieredCluster, load: Load, live) -> None:
-    """Every live member commits again, then the safety invariant on the converged counter."""
+    """Every live member commits again, then every outcome is resolved by its token on every
+    live member, and the counter equals the tokens present (module docstring)."""
     tc.cluster.net.set_faults(drop=0.0, duplicate=0.0, delay=(0.0, 0.0))
     tc.cluster.net.heal()
+    tokens = load.tokens
     for node in live:
-        # An unknown outcome is conservative (ruling R86): counted, and the member commits a
-        # new increment until one is acknowledged (the bound below accounts for each one).
+        # An unknown outcome is conservative (ruling R86): resolved by its token below, and the
+        # member commits a new increment until one is acknowledged.
         for _ in range(5):
+            token = tokens.new(f"{node}.final")
             try:
-                tc.db(node).run(incr, **RUN_KW)
+                tc.db(node).run(_token_incr(tokens, token), **RUN_KW)
             except ProtoOutcomeUnknownError:
+                tokens.unknown(token)
                 load.unknown += 1
                 continue
+            tokens.acked(token)
             load.acked += 1
             break
         else:
             pytest.fail(f"{node} never got a commit acknowledged after the faults healed")
-    deadline = time.monotonic() + 10.0
-    while True:                 # a member learns the others' last commits from their "done"
-        values = {node: tc.value(node) for node in live}
-        if len(set(values.values())) == 1:
-            break
-        assert time.monotonic() < deadline, f"the members did not converge: {values}"
-        time.sleep(0.01)
-    value = values[live[0]]
-    assert load.acked <= value <= load.acked + load.unknown, \
-        f"n = {value}, acknowledged {load.acked}, unknown {load.unknown}"
+    # A member learns the others' last commits from their "done": the helper waits for every
+    # member to show every acknowledged token.
+    res = assert_outcomes_resolved(
+        {node: (lambda node=node: snapshot_of(tc.db(node), lambda tr: tr.get_root_object("n"))) for node in live},
+        tokens)
+    assert set(res.values.values()) == {len(res.present)}, \
+        f"n = {res.values}, tokens {len(res.present)}, acknowledged {load.acked}, unknown {load.unknown}"
     assert load.acked > 2 * len(live)
 
 

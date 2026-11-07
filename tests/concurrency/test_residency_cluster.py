@@ -6,17 +6,18 @@ space bounded to 64 loaded atoms, commit read-modify-write increments on random 
 path to a record, the record, the roots) is far over 64 atoms, so each commit reloads what earlier
 admissions evicted, on the committing member and on the members that apply or warm its records.
 
-Correctness only: after every member synced, the counters equal a model of the acknowledged
-commits, and the cache did unload.  Throughput and critical-section misses against the base are
+Correctness only: once every member shows every acknowledged commit's token, each member's
+counters equal the acknowledged commits plus the unknown ones that took effect (resolved by their
+tokens, R114), and the cache did unload.  Throughput and critical-section misses against the base are
 measured outside the suite (Task 8.3m report, "Fix round 1").
 """
 import random
 import threading
-import time
 
 import pytest
 
 from proto_db.errors import ProtoOutcomeUnknownError
+from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, read_tokens, snapshot_of, write_token
 from tests.support.tiered_cluster import RUN_KW, TieredCluster
 
 pytestmark = [pytest.mark.timeout(180)]
@@ -52,21 +53,29 @@ def test_cluster_commits_stay_correct_when_the_working_set_exceeds_the_cache(tmp
         acked = {n: [] for n in tc.ids}
         unknown = {n: [] for n in tc.ids}
         errors = []
+        tokens = CommitTokens()
+        key_of = {}                                   # token -> the record its commit bumped
 
         def committer(node, seed):
             rnd = random.Random(seed)
             try:
                 for _ in range(PER_NODE):
                     k = rnd.randrange(N)
+                    token = tokens.new(node)
+                    key_of[token] = k
 
-                    def bump(tr, k=k):
+                    def bump(tr, k=k, token=token):
+                        tokens.observe(read_tokens(tr))   # P1: the base is a committed root
                         d = tr.get_root_object("d")
                         tr.set_root_object("d", d.set_at(k, d.get_at(k).with_(v=d.get_at(k).v + 1)))
+                        write_token(tr, token)
                     try:
                         tc.db(node).run(bump, **RUN_KW)
                         acked[node].append(k)
+                        tokens.acked(token)
                     except ProtoOutcomeUnknownError:
-                        unknown[node].append(k)       # P5 / R86: applied at most once
+                        unknown[node].append(k)       # P5 / R86: resolved by its token below
+                        tokens.unknown(token)
             except BaseException as e:                # reported by the assertion below
                 errors.append(e)
                 raise
@@ -87,22 +96,19 @@ def test_cluster_commits_stay_correct_when_the_working_set_exceeds_the_cache(tmp
                 extra[k] += 1
         assert sum(len(u) for u in unknown.values()) <= 3, unknown
 
-        def read():
-            tr = tc.db("n1").new_transaction()
-            try:
-                d = tr.get_root_object("d")
-                return [d.get_at(i).v for i in range(N)]
-            finally:
-                tr.abort()
-        # A member learns another member's last commit when its release arrives (the reviewer's
-        # probe read n1 once and saw one commit missing in 2 of 11 GIL-on runs on 26f3b85;
-        # it converged): read until every acknowledged increment is visible, then check bounds.
-        deadline = time.monotonic() + 10
-        got = read()
-        while any(got[i] < low[i] for i in range(N)) and time.monotonic() < deadline:
-            time.sleep(0.05)
-            got = read()
-        # R86: every acknowledged increment applied, an unknown one at most once.
-        bad = [i for i in range(N) if not low[i] <= got[i] <= low[i] + extra[i]]
-        assert not bad, [(i, got[i], low[i], extra[i]) for i in bad[:10]]
+        def counters(tr):
+            d = tr.get_root_object("d")
+            return [d.get_at(i).v for i in range(N)]
+        # A member learns another member's last commit when its release arrives, and sync() is
+        # a durability barrier, not a visibility one (Task 8.3n, D46 amendment): the helper waits
+        # until every member shows every acknowledged token.  Then, per member and in the same
+        # snapshot (P4), each counter is its acknowledged increments plus the unknown ones whose
+        # tokens are present: every unknown resolved, none hiding a lost acknowledged commit.
+        res = assert_outcomes_resolved({n: (lambda n=n: snapshot_of(tc.db(n), counters)) for n in tc.ids}, tokens)
+        expected = list(low)
+        for token in res.present & tokens.unknown_tokens:
+            expected[key_of[token]] += 1
+        for n, got in res.values.items():
+            bad = [i for i in range(N) if got[i] != expected[i]]
+            assert not bad, (n, [(i, got[i], low[i], extra[i]) for i in bad[:10]])
         assert all(tc.spaces[n].atom_cache_stats()["unloads"] > 0 for n in tc.ids)

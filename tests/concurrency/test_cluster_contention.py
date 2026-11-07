@@ -41,6 +41,7 @@ from proto_db.transactions import ObjectSpace
 from tests.concurrency.harness import run_threads
 from tests.support.cluster import CasCountingStorage, Cluster
 from tests.support.fake_object_store import FakeObjectStore
+from tests.support.outcomes import CommitTokens, add_blind_token, assert_outcomes_resolved, blind_snapshot_of
 
 PEERS = 4
 THREADS = 4
@@ -132,16 +133,22 @@ def test_contending_peers_never_reach_the_storage(tmp_path, backend):
         elapsed = run_threads([worker_for(i % PEERS) for i in range(PEERS * THREADS)])
         stats = [cl[n].stats() for n in cl.ids]
         _settle(cl)
-        n, counted = _read(spaces[1])
         total = PEERS * THREADS * PER_THREAD
         assert len(acked) + len(unknown) == total
-        present = list(counted.elements())
-        assert all(counted.count_of(i) == 1 for i in present)                 # never doubled
-        assert set(acked) <= set(present), sorted(set(acked) - set(present))[:5]      # never lost
+        # Every outcome resolved by its id on EVERY member (R114, Task 8.3n): no acknowledged id
+        # lost, each unknown present everywhere or nowhere, none doubled or stray; the count,
+        # read in the same snapshot as the ids, moved with them.
+        tokens = CommitTokens()
+        for uid in acked:
+            tokens.acked(uid)
+        for uid in unknown:
+            tokens.unknown(uid)
+        res = assert_outcomes_resolved(
+            {i: (lambda db=db: blind_snapshot_of(db, lambda tr: tr.get_root_object("n"), root="ids"))
+             for i, db in enumerate(dbs)}, tokens)
+        present = res.present
         extra = set(present) - set(acked)
-        assert extra <= set(unknown), sorted(extra - set(unknown))[:5]          # each extra traced
-        assert n == len(present)                     # the count and the ids moved together
-        assert len(acked) <= n <= len(acked) + len(unknown)
+        assert set(res.values.values()) == {len(present)}, (res.values, len(present))
         assert set(acked.values()) == set(range(PEERS)), "a peer acknowledged no commit"     # progress
         spaces[1].sync(timeout=30)
         _storage_untouched_by_commits(storages, spaces)
@@ -168,6 +175,7 @@ def _throughput(storages_factory, tmp_path, peers, threads=4, seconds=1.5, break
         dbs = [s.open_database("db") for s in spaces]
         stop_at = []
         done = []
+        tokens = CommitTokens()
 
         def worker_for(db):
             def worker():
@@ -176,7 +184,12 @@ def _throughput(storages_factory, tmp_path, peers, threads=4, seconds=1.5, break
                 commits = 0
                 while time.monotonic() < stop_at[0]:
                     uid = next(counter)
-                    db.run(lambda tr: tr.set_root_object("ids", tr.new_counted_set().add(uid)), **RUN_KW)
+                    try:
+                        db.run(lambda tr: add_blind_token(tr, uid, root="ids"), **RUN_KW)
+                    except ProtoOutcomeUnknownError:
+                        tokens.unknown(uid)   # P5 / R86: resolved below, never retried blindly
+                        continue
+                    tokens.acked(uid)
                     commits += 1
                 done.append(commits)
             return worker
@@ -185,15 +198,15 @@ def _throughput(storages_factory, tmp_path, peers, threads=4, seconds=1.5, break
         failures = sum(cl[n].stats()["replication_failures"] for n in cl.ids)
         critical = [cl[n].stats() for n in cl.ids]
         _settle(cl)                    # the last commits' releases reached node 0
-        _, counted = _read(spaces[0])
         commits = sum(done)
-        # No lost update: the final state holds exactly the acknowledged commits.
-        assert sorted(counted.elements()) == list(range(commits))     # every committed id, no other
-        assert all(c == 1 for _, c in counted.items())                 # none applied twice
+        # No lost update, on every member: every acknowledged id once, every unknown one resolved
+        # alike, no other (R86, R114; Task 8.3n: before, any unknown outcome killed a worker).
+        assert_outcomes_resolved({i: (lambda db=db: blind_snapshot_of(db, root="ids")) for i, db in enumerate(dbs)},
+                                 tokens)
         _storage_untouched_by_commits(storages, spaces)
         for space in spaces:
             space.close()
-    assert failures == 0
+    assert failures <= len(tokens.unknown_tokens)    # every failed replication surfaced as unknown
     if breakdown is not None:
         n = sum(st["critical_commits"] for st in critical) or 1
         for key in ("validation", "replay", "path_copy", "replication"):
