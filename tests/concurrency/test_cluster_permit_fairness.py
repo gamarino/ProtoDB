@@ -19,7 +19,7 @@ import time
 
 import pytest
 
-from proto_db.errors import ProtoConflictError
+from proto_db.errors import ProtoConflictError, ProtoOutcomeUnknownError
 from tests.support.tiered_cluster import TieredCluster
 
 pytestmark = [pytest.mark.timeout(240)]
@@ -34,6 +34,7 @@ def _hot_key_run(tmp_path, n: int, threads: int, *, blind: bool = False) -> dict
     try:
         cluster.spaces[cluster.ids[0]].new_database("db")
         acked = {node: 0 for node in cluster.ids}
+        unknown = [0]
         lock = threading.Lock()
         start = threading.Barrier(n * threads + 1)
         stop_at = []
@@ -52,6 +53,11 @@ def _hot_key_run(tmp_path, n: int, threads: int, *, blind: bool = False) -> dict
                     tr.commit()
                 except ProtoConflictError:
                     continue
+                except ProtoOutcomeUnknownError:      # P5: applied at most once (R86)
+                    with lock:
+                        unknown[0] += 1
+                    j += 1
+                    continue
                 j += 1
                 with lock:
                     acked[node] += 1
@@ -64,9 +70,16 @@ def _hot_key_run(tmp_path, n: int, threads: int, *, blind: bool = False) -> dict
         for t in workers:
             t.join()
         total = sum(acked.values())
-        value = None if blind else (cluster.eventually(cluster.ids[0], total) and total)
+        value = None
+        if not blind:
+            # R86: acked <= applied <= acked + unknown.  Wait for every acknowledged increment.
+            deadline = time.monotonic() + 5.0
+            value = cluster.value(cluster.ids[0]) or 0
+            while value < total and time.monotonic() < deadline:
+                time.sleep(0.01)
+                value = cluster.value(cluster.ids[0]) or 0
         counts = [acked[node] for node in cluster.ids]
-        return {"counts": counts, "total": total, "value": value,
+        return {"counts": counts, "total": total, "value": value, "unknown": unknown[0],
                 "ratio": min(counts) / max(counts) if max(counts) else 0.0}
     finally:
         cluster.close()
@@ -78,7 +91,8 @@ def test_hot_key_increments_never_starve_a_member(tmp_path, n, threads, capsys):
     with capsys.disabled():
         print(f"\nHOT KEY {n} members x {threads} threads, {_SECONDS:g} s: commits {result['counts']} "
               f"ratio {result['ratio']:.2f}")
-    assert result["value"] == result["total"], result         # no lost update
+    assert result["total"] <= result["value"] <= result["total"] + result["unknown"], result  # R86
+    assert result["unknown"] <= 3, result
     assert min(result["counts"]) > 0, result                  # nobody starved
     assert result["ratio"] >= _MIN_RATIO, result
 
