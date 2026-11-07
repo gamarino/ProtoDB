@@ -95,9 +95,14 @@ class Peer:
             os.kill(self.proc.pid, sig)
 
     def kill(self):
+        """SIGKILL, then wait until every line the process printed has been read: the pipe
+        reaches EOF once the process is dead, so the reader thread ends (review I9: reading
+        ``lines`` before it does could miss the last attempt and report a false phantom)."""
         if self.proc.poll() is None:
             os.kill(self.proc.pid, signal.SIGKILL)
         self.proc.wait(10)
+        self.reader.join(10)
+        assert not self.reader.is_alive(), "the peer's output did not reach EOF after its death"
 
     def close(self):
         if self.proc.poll() is None:
