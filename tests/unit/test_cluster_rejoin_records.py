@@ -62,7 +62,7 @@ def test_y1_sequential_single_disk_losses_with_the_store_down_lose_nothing(tmp_p
         tc.spaces["n0"].new_database("db")
         tc.store.set_outage(True)
         for i in range(6):
-            tc.db(tc.ids[i % 3]).run(incr, **RUN_KW)
+            tc.commit(tc.ids[i % 3], incr)
         for node in ("n2", "n0", "n1"):
             tc.wipe(node)
             tc.revive(node)
@@ -70,7 +70,7 @@ def test_y1_sequential_single_disk_losses_with_the_store_down_lose_nothing(tmp_p
             assert tc[node].stats()["rejoin_blocked"] is None
         for node in tc.ids:
             assert tc.eventually(node, 6), (node, tc.value(node))
-        tc.db("n1").run(incr, **RUN_KW)
+        tc.commit("n1", incr)
         for node in tc.ids:
             assert tc.eventually(node, 7)
         tc.store.set_outage(False)
@@ -156,7 +156,7 @@ def test_y1_a_recommitted_base_carries_its_records(tmp_path):
         net = tc.cluster.net
         tc.spaces["n0"].new_database("db")
         tc.store.set_outage(True)
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         n0 = tc["n0"]
         replicate = n0.replicate
 
@@ -177,7 +177,7 @@ def test_y1_a_recommitted_base_carries_its_records(tmp_path):
         assert compare_roots(acc[2], acc[1], com[2], com[1]) > 0
         net.heal()
         net.partition({"n2"}, {"n0", "n1"})
-        tc.db("n1").run(incr, **RUN_KW)           # base Z re-committed, then n = 2 on top
+        tc.commit("n1", incr)           # base Z re-committed, then n = 2 on top
         net.heal()
         assert tc.eventually("n1", 2) and _eventually_z(tc, "n1", {42: 1})
         tc.wipe("n0")                             # Z's own records were on n0's disk
@@ -187,7 +187,7 @@ def test_y1_a_recommitted_base_carries_its_records(tmp_path):
         assert _eventually_z(tc, "n2", {42: 1})
         tc.revive("n0")
         assert _wait_rejoined(tc["n0"]), tc["n0"].stats().get("rejoin_blocked")
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         for node in tc.ids:
             assert tc.eventually(node, 3) and _eventually_z(tc, node, {42: 1})
         tc.store.set_outage(False)
@@ -207,7 +207,7 @@ def test_y1_any_acknowledger_of_a_recommitted_base_can_persist_it(tmp_path):
         net = tc.cluster.net
         tc.spaces["n0"].new_database("db")
         tc.store.set_outage(True)
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         n0 = tc["n0"]
         replicate = n0.replicate
 
@@ -221,7 +221,7 @@ def test_y1_any_acknowledger_of_a_recommitted_base_can_persist_it(tmp_path):
         n0.replicate = replicate
         net.heal()
         net.set_link_delay("n2", "n1", 0.3)       # n2's grants come too late: n1's majority is n0
-        tc.db("n1").run(incr, **RUN_KW)
+        tc.commit("n1", incr)
         net.set_link_delay("n2", "n1", 0)
         assert tc.eventually("n2", 2) and _eventually_z(tc, "n2", {42: 1})
         assert tc["n2"].wait_idle(5.0)

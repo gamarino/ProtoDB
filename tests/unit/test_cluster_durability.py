@@ -82,12 +82,12 @@ def test_a_node_restarted_after_a_refound_never_reloads_the_dead_branch(tmp_path
     with TieredCluster(tmp_path) as tc:
         tc.spaces["n0"].new_database("db")
         for i in range(4):
-            tc.db(tc.ids[i % 3]).run(incr, **RUN_KW)
+            tc.commit(tc.ids[i % 3], incr)
         for n in tc.ids:
             tc.spaces[n].sync(timeout=10)
         tc.store.set_outage(True)
         for i in range(5):
-            tc.db(("n0", "n1")[i % 2]).run(incr, **RUN_KW)  # a branch of 9 never persisted
+            tc.commit(("n0", "n1")[i % 2], incr)  # a branch of 9 never persisted
         assert tc.eventually("n1", 9)
         tc.wipe("n0")
         tc.wipe("n2")                                       # a majority of the disks is lost
@@ -99,9 +99,9 @@ def test_a_node_restarted_after_a_refound_never_reloads_the_dead_branch(tmp_path
         tc.revive("n0", force_rejoin=True)                  # the operator's disaster recovery
         tc.revive("n2", force_rejoin=True)
         assert tc.eventually("n0", 4)                       # refounded from the persisted state
-        tc.db("n2").run(incr, **RUN_KW)
+        tc.commit("n2", incr)
         tc.cluster.net.heal()
-        tc.db("n2").run(incr, **RUN_KW)                     # its release teaches n1 the new lineage
+        tc.commit("n2", incr)                     # its release teaches n1 the new lineage
         assert tc.eventually("n1", 6)
         dead_epoch = 10
         n1 = "n1"
@@ -124,17 +124,17 @@ def test_a_commit_larger_than_a_frame_is_chunked_and_an_unreplicable_record_is_r
             for i in range(60):
                 tr.set_root_object(f"k{i:02d}", "x" * 3000)
 
-        tc.db("n0").run(big, **RUN_KW)                      # ~180 KiB of records: several frames
+        tc.commit("n0", big)                      # ~180 KiB of records: several frames
         before = tc.storages["n1"].stats()["records_applied"]
         assert before > 0
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         assert tc.eventually("n1", 1)
         tr = tc.db("n2").new_transaction()
         assert tr.get_root_object("k59") == "x" * 3000
         tr.abort()
         with pytest.raises(ProtoValidationError, match="exceeds"):
             tc.db("n0").run(lambda tr: tr.set_root_object("huge", "y" * 20_000), **RUN_KW)
-        tc.db("n0").run(incr, **RUN_KW)                     # the node still commits
+        tc.commit("n0", incr)                     # the node still commits
         assert tc.eventually("n2", 2)
 
 
@@ -142,7 +142,7 @@ def test_a_commit_larger_than_a_frame_is_chunked_and_an_unreplicable_record_is_r
 def test_an_unexpected_worker_failure_fences_the_node(tmp_path):
     with TieredCluster(tmp_path) as tc:
         tc.spaces["n0"].new_database("db")
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         assert tc["n1"].healthy and tc["n1"].stats()["healthy"]
 
         def broken(*args, **kwargs):
@@ -150,7 +150,7 @@ def test_an_unexpected_worker_failure_fences_the_node(tmp_path):
 
         tc.storages["n1"].apply = broken
         tc.storages["n1"].accept_replication = broken       # the acceptance path (Task 8.3f phase B)
-        tc.db("n0").run(incr, **RUN_KW)                     # n0 and n2 still form a majority
+        tc.commit("n0", incr)                     # n0 and n2 still form a majority
         assert tc.eventually("n0", 2)
         assert _wait_for(lambda: not tc["n1"].healthy)
         stats = tc["n1"].stats()
@@ -158,7 +158,7 @@ def test_an_unexpected_worker_failure_fences_the_node(tmp_path):
         assert _wait_for(lambda: not tc["n1"]._worker.is_alive())      # re-raised: the thread failed loudly
         grants = stats["grants_given"]
         for _ in range(3):
-            tc.db("n2").run(incr, **RUN_KW)
+            tc.commit("n2", incr)
         assert tc["n1"].stats()["grants_given"] == grants  # a fenced node neither grants ...
         assert tc["n1"].stats()["accepted"] == stats["accepted"]   # ... nor acknowledges
         with pytest.raises(ProtoUnexpectedError, match="fenced"):
@@ -178,7 +178,7 @@ def test_an_unexpected_persister_failure_stops_persisting_but_not_voting(tmp_pat
             raise RuntimeError("upload queue corrupted")
 
         tc.storages["n2"].ship = broken
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         assert _wait_for(lambda: not tc["n2"].healthy)
         stats = tc["n2"].stats()
         assert "upload queue corrupted" in stats["failure"]
@@ -188,9 +188,9 @@ def test_an_unexpected_persister_failure_stops_persisting_but_not_voting(tmp_pat
         # needs n2's grant and acknowledgement, and gets them.
         tc.cluster.net.partition({"n0", "n2"}, {"n1"})
         accepted = tc["n2"].stats()["accepted"]
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         assert tc["n2"].stats()["accepted"] > accepted
-        tc.db("n2").run(incr, **RUN_KW)                     # and it still acquires
+        tc.commit("n2", incr)                     # and it still acquires
         assert tc.eventually("n0", 3)
         with pytest.raises(ProtoUnexpectedError, match="persister failed"):
             tc.spaces["n2"].sync(timeout=5)                 # fails at once, never a 5 s wait
@@ -233,11 +233,11 @@ def test_a_verified_dead_branch_root_never_shortens_the_persisters_walk(tmp_path
     from proto_db.storage.format import FORMAT_VERSION, RootRecord
     with TieredCluster(tmp_path) as tc:
         tc.spaces["n0"].new_database("db")
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         tc.spaces["n0"].sync(timeout=10)
         tc.store.set_outage(True)
         for _ in range(3):
-            tc.db("n0").run(incr, **RUN_KW)                 # three commits not persisted
+            tc.commit("n0", incr)                 # three commits not persisted
         persister = tc["n0"].persister
         persister.stop()
         known, record, label = tc["n0"].committed_root()[:3]

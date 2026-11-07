@@ -107,7 +107,7 @@ def test_a_fresh_peer_joining_during_an_outage_recovers_from_its_peers(tmp_path)
         tc.revive("n2")
         assert tc.eventually("n2", 10)                     # root and records from the peers
         assert tc.storages["n2"].stats()["reads_remote"] == 0
-        tc.db("n2").run(incr, **RUN_KW)
+        tc.commit("n2", incr)
         assert tc.eventually("n0", 11)
         tc.store.set_outage(False)
         tc.spaces["n2"].sync(timeout=15)
@@ -124,7 +124,7 @@ def test_a_restarted_cluster_on_empty_disks_recovers_from_the_object_store(tmp_p
     with TieredCluster(tmp_path / "b", store=store) as tc:
         assert tc.eventually("n1", 9)                       # the persisted root
         assert tc.storages["n1"].stats()["reads_remote"] > 0
-        tc.db("n2").run(incr, **RUN_KW)
+        tc.commit("n2", incr)
         assert tc.eventually("n0", 10)
         tc.spaces["n2"].sync(timeout=10)
         assert _remote_value(store) == 10
@@ -138,7 +138,7 @@ def test_a_node_restart_loses_nothing(tmp_path):
         for n in tc.ids:                                 # every node restarts, one at a time
             tc.kill(n)
             tc.revive(n)
-            tc.db(n).run(incr, **RUN_KW)
+            tc.commit(n, incr)
         assert tc.eventually("n0", 12) and tc.eventually("n2", 12)
         tc.store.set_outage(False)
         tc.spaces["n0"].sync(timeout=15)
@@ -157,7 +157,7 @@ def test_the_whole_cluster_restarting_on_its_disks_loses_nothing_unpersisted(tmp
     # start only).
     with TieredCluster(tmp_path, store=store, startup_grace=None) as tc:
         assert tc.eventually("n1", 7)
-        tc.db("n1").run(incr, **RUN_KW)
+        tc.commit("n1", incr)
         tc.spaces["n1"].sync(timeout=15)
         assert _remote_value(store) == 8
 
@@ -198,7 +198,7 @@ def test_losing_a_majority_before_persistence_loses_only_unpersisted_commits(tmp
         assert tc.eventually("n1", 9)
         tc.revive("n2", force_rejoin=True)
         assert tc.eventually("n2", 9) and tc.eventually("n0", 9)
-        tc.db("n2").run(incr, **RUN_KW)
+        tc.commit("n2", incr)
         assert tc.eventually("n1", 10)
         tc.store.set_outage(False)
         tc.spaces["n1"].sync(timeout=15)
@@ -220,7 +220,7 @@ def test_losing_a_majority_with_the_survivor_outside_the_quorum_rolls_back_to_th
         tc.revive("n0", force_rejoin=True)               # the operator's disaster recovery
         tc.revive("n2", force_rejoin=True)               # a quorum of empty disks
         assert tc.eventually("n0", 4)                       # the persisted state: unpersisted commits lost
-        tc.db("n2").run(incr, **RUN_KW)
+        tc.commit("n2", incr)
         tc.revive("n1")                                  # the survivor's newer roots are superseded
         assert tc.eventually("n1", 5) and tc.eventually("n0", 5)
         tc.spaces["n2"].sync(timeout=15)
@@ -416,7 +416,7 @@ def test_the_backlog_limit_refuses_commits_until_the_store_drains_it(tmp_path):
         assert type(refused).__name__ == "ProtoBacklogFullError", refused
         assert _wait(lambda: alerts)                    # raised by the persister thread
         assert alerts[0]["bytes"] >= 4800
-        tc.db("n1").run(incr, **RUN_KW)                 # other nodes keep committing
+        tc.commit("n1", incr)                 # other nodes keep committing
         tc.store.set_outage(False)
         assert _wait(lambda: not tc.storages["n0"].backlog()["over_limit"])
         db.run(incr, **RUN_KW)

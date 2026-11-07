@@ -122,7 +122,7 @@ def test_the_records_leave_for_the_data_replica_while_the_holders_own_append_run
     """Fails before Task 8.3j: the holder's own synced append returned before the replication
     was sent, so the replica's append could not start while it ran."""
     with _cluster(tmp_path, lease_duration=6.0) as tc:
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         own, replica = tc.storages["n0"], tc.storages["n1"]     # n1: n0's successor, its data replica
         own_append, replica_append = own.accept_replication, replica.accept_replication
         started = threading.Event()
@@ -143,7 +143,7 @@ def test_the_records_leave_for_the_data_replica_while_the_holders_own_append_run
             pass                        # before the change: the 1 s wait may outlast the permission
         assert seen.get("overlapped"), "the replica's append did not start during the holder's own append"
         own.accept_replication, replica.accept_replication = own_append, replica_append
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         assert _converge(tc, tc.ids, {3}) == 3
 
 
@@ -151,7 +151,7 @@ def test_the_root_alone_and_the_acknowledgement_wait_for_the_holders_own_sync(tm
     """The replica stores and acknowledges first; the holder's own sync is slow.  The root
     goes alone to the third voter, and ``run`` returns, only after the own sync."""
     with _cluster(tmp_path, lease_duration=6.0) as tc:
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         c0, own = tc["n0"], tc.storages["n0"]
         own_append = own.accept_replication
         replica_send = tc["n1"].transport.send
@@ -181,7 +181,7 @@ def test_the_root_alone_and_the_acknowledgement_wait_for_the_holders_own_sync(tm
         tc["n1"].transport.send = n1_send
         own.accept_replication = holder
         c0.transport.send = n0_send
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         returned = time.monotonic()
         tc["n1"].transport.send = replica_send
         own.accept_replication = own_append
@@ -197,7 +197,7 @@ def test_a_slow_own_sync_does_not_make_a_healthy_replica_a_suspect(tmp_path):
     (0.25 s) of the own append's end.  On 8c8c193 the deadline ran from the send, so the
     replica was hedged and marked suspect for a lease duration."""
     with _cluster(tmp_path, lease_duration=6.0, request_timeout=0.25) as tc:
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         own, replica = tc.storages["n0"], tc.storages["n1"]
         own_append, replica_append = own.accept_replication, replica.accept_replication
 
@@ -210,7 +210,7 @@ def test_a_slow_own_sync_does_not_make_a_healthy_replica_a_suspect(tmp_path):
             return replica_append(*a, **kw)
 
         own.accept_replication, replica.accept_replication = holder, data_replica
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         own.accept_replication, replica.accept_replication = own_append, replica_append
         assert tc["n0"].stats()["replica_hedges"] == 0
         assert "n1" not in tc["n0"]._replica_suspects
@@ -224,7 +224,7 @@ def test_a_write_refused_by_a_healthy_tier_refuses_only_that_acceptance(tmp_path
     from proto_db import errors
     refused = getattr(errors, "ProtoWriteRefusedError", errors.ProtoUnexpectedError)
     with _cluster(tmp_path) as tc:
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         st1 = tc.storages["n1"]
         append = st1.accept_replication
         calls = []
@@ -236,12 +236,12 @@ def test_a_write_refused_by_a_healthy_tier_refuses_only_that_acceptance(tmp_path
             return append(*a, **kw)
 
         st1.accept_replication = refuse_once
-        tc.db("n0").run(incr, **RUN_KW)             # hedged to n2
+        tc.commit("n0", incr)             # hedged to n2
         st1.accept_replication = append
         assert calls, "n1 was never asked"
         assert tc["n1"]._tier_failure is None
         for _ in range(3):
-            tc.db("n0").run(incr, **RUN_KW)
+            tc.commit("n0", incr)
         assert _converge(tc, tc.ids, {5}) == 5
         assert tc["n1"]._tier_failure is None
 
@@ -253,7 +253,7 @@ def test_when_every_data_replica_refuses_the_commit_is_unknown_and_every_tier_st
     no member's tier fails; once they store again the cluster converges on either outcome."""
     from proto_db import errors
     with _cluster(tmp_path) as tc:
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         reals, refusals = {}, {"n1": 0, "n2": 0}
         for node in ("n1", "n2"):
             st = tc.storages[node]
@@ -266,14 +266,18 @@ def test_when_every_data_replica_refuses_the_commit_is_unknown_and_every_tier_st
                 return _real(*a, **kw)
 
             st.accept_replication = refuse
+        tokens = CommitTokens()                     # review I1: the unknown resolved by its token
+        refused = tokens.new("n0")
         with pytest.raises(ProtoOutcomeUnknownError):
-            tc.db("n0").run(incr, retries=0)
+            tc.db("n0").run(_token_incr(refused), retries=0)
+        tokens.unknown(refused)
         for node in ("n1", "n2"):
             tc.storages[node].accept_replication = reals[node]
         assert refusals["n1"] and refusals["n2"], f"the hedge did not reach both replicas: {refusals}"
         _no_tier_failed(tc)
-        unknown = _commit_until_acknowledged(tc, "n0")
+        unknown = _commit_until_acknowledged(tc, "n0", tokens=tokens)
         _converge(tc, tc.ids, set(range(2, 4 + unknown)))
+        _resolved_by_tokens(tc, tc.ids, tokens, base=1)
         _no_tier_failed(tc)
 
 
@@ -282,7 +286,7 @@ def test_a_failed_own_sync_is_never_acknowledged_even_when_the_replica_accepted(
     commit's outcome is unknown, the root is never sent alone, and the cluster goes on
     (the failed tier is replaced by a restart)."""
     with _cluster(tmp_path) as tc:
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         c0, own = tc["n0"], tc.storages["n0"]
         own_append = own.accept_replication
         root_alone = []
@@ -311,9 +315,15 @@ def test_a_failed_own_sync_is_never_acknowledged_even_when_the_replica_accepted(
         c0.transport.send = send0
         tc.kill("n0")
         tc.revive("n0")
-        tc.db("n1").run(incr, **RUN_KW)
+        tc.commit("n1", incr)
         value = _converge(tc, tc.ids, {2, 3})
-        tc.db("n0").run(incr, **RUN_KW)
+        # Review I1: ``z`` is the unknown commit's token.  Every member counts the two
+        # acknowledged increments plus the unknown one exactly when it shows ``z``, in one
+        # snapshot (a lost acknowledged increment and an applied unknown would also give 2).
+        for node in tc.ids:
+            n, z = _read(tc, node)
+            assert n == 2 + (z is not None), (node, n, z)
+        tc.commit("n0", incr)
         assert _converge(tc, tc.ids, {value + 1}) == value + 1
 
 
@@ -386,7 +396,7 @@ def _die_in_window(tc, fs, point, *, persist_after: bool, rolled: bool = False) 
     def n0_send(to, msg):
         if _is_data(msg) and "root" not in state:
             state["root"] = decode_labeled_root(msg["root"])[1]
-            state["fresh"] = os.path.exists(os.path.join(n0_dir, st0._local.current_segment.hex + ".seg"))
+            state["had_file"] = os.path.exists(os.path.join(n0_dir, st0._local.current_segment.hex + ".seg"))
         if point == "stored acknowledged" and _is_root_alone(msg):
             die()
         send0(to, msg)
@@ -398,7 +408,7 @@ def _die_in_window(tc, fs, point, *, persist_after: bool, rolled: bool = False) 
         tc.db("n0").run(write_z, retries=0)
     assert n0_dead.is_set() and "root" in state, "the schedule did not run"
     if rolled:
-        assert not state["fresh"], "the window's segment had a file before the window"
+        assert not state["had_file"], "the window's segment had a file before the window"
     tc.kill("n0")
     replica_may_store.set()
     st1.accept_replication = replica_append
@@ -433,12 +443,12 @@ def test_a_holder_dying_inside_the_overlapped_window_loses_nothing(tmp_path, mon
     with _cluster(tmp_path) as tc:
         fs.writeback(str(tmp_path))
         for _ in range(3):
-            tc.db("n0").run(incr, **RUN_KW)
+            tc.commit("n0", incr)
         _die_in_window(tc, fs, point, persist_after=True)
-        tc.db("n1").run(incr, **RUN_KW)             # a new term: n1's phase 1 may adopt the root
+        tc.commit("n1", incr)             # a new term: n1's phase 1 may adopt the root
         value = _converge(tc, tc.ids, {4, 5})
         adopted = value == 5
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         value += 1
         assert _converge(tc, tc.ids, {value}) == value
         _z_matches(tc, tc.ids, adopted)
@@ -462,6 +472,14 @@ def _token_incr(token):
         incr(tr)
         write_token(tr, token)
     return fn
+
+
+def _resolved_by_tokens(tc, nodes, tokens: CommitTokens, base: int = 0) -> None:
+    """Every outcome of ``tokens`` resolved alike on ``nodes``, and each member's ``n`` equals
+    ``base`` (the tokenless increments before) plus the tokens present, in one snapshot."""
+    res = assert_outcomes_resolved(
+        {n: (lambda n=n: snapshot_of(tc.db(n), lambda tr: tr.get_root_object("n"))) for n in nodes}, tokens)
+    assert set(res.values.values()) == {base + len(res.present)}, (res.values, sorted(res.present))
 
 
 def _commit_until_acknowledged(tc, node, attempts: int = 10, tokens: CommitTokens = None) -> int:
@@ -536,7 +554,7 @@ def test_after_a_death_in_the_window_f_disk_losses_lose_nothing(tmp_path, monkey
         tokens = CommitTokens()
         for _ in range(3):
             token = tokens.new("n0")
-            tc.db("n0").run(_token_incr(token), **RUN_KW)
+            tc.commit("n0", _token_incr(token))      # exactly once (review I6): acknowledged
             tokens.acked(token)
 
         def resolved(nodes):
@@ -554,7 +572,7 @@ def test_after_a_death_in_the_window_f_disk_losses_lose_nothing(tmp_path, monkey
             tc.storages["n0"].flush()               # the open segment has a file, as a cycle would write
         shape = _die_in_window(tc, fs, point, persist_after=False, rolled=segment == "rolled")
         if segment == "open":
-            assert shape["fresh"], "the window's segment had no file: the rolled shape, not the open one"
+            assert shape["had_file"], "the window's segment had no file: the rolled shape, not the open one"
         unknown = _commit_until_acknowledged(tc, "n0", tokens=tokens)   # phase 1 may re-propose the root
         _no_tier_failed(tc)
         value = _converge(tc, tc.ids, set(range(4, 6 + unknown)))
@@ -604,7 +622,7 @@ def test_a_data_replica_holds_the_recarried_records_of_its_own_segment(tmp_path,
         tc.store.set_outage(True)
         fs.writeback(str(tmp_path))
         for _ in range(3):
-            tc.db("n0").run(incr, **RUN_KW)
+            tc.commit("n0", incr)
         for node in tc.ids:
             tc[node].persister.stop()
         root_of = {}
@@ -624,7 +642,7 @@ def test_a_data_replica_holds_the_recarried_records_of_its_own_segment(tmp_path,
         ptrs = [AtomPointer(seg, start) for seg, start, _ in ranges if seg in stored._own]
         assert ptrs, "the window wrote no record of n0's own segment"
         assert all(stored._local_record(p) is None for p in ptrs), "n0 kept window records"
-        tc.db("n2").run(incr, **RUN_KW)             # n2's term re-proposes the root, n0 its replica
+        tc.commit("n2", incr)             # n2's term re-proposes the root, n0 its replica
         assert _converge(tc, tc.ids, {4, 5}) == 5, "the root of the window was not re-proposed"
         _no_tier_failed(tc)
         tc.storages["n0"].checkpoint()
@@ -644,7 +662,7 @@ def test_a_data_replica_dying_during_the_holders_own_sync(tmp_path, when):
     with two durable copies: after the replica comes back, losing n0's disk loses nothing."""
     with _cluster(tmp_path) as tc:
         tc.store.set_outage(True)                   # nothing is persisted: copies are all there is
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         own = tc.storages["n0"]
         own_append = own.accept_replication
         replica_send = tc["n1"].transport.send
@@ -670,7 +688,7 @@ def test_a_data_replica_dying_during_the_holders_own_sync(tmp_path, when):
 
         tc["n1"].transport.send = n1_send
         own.accept_replication = holder
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         own.accept_replication = own_append
         assert killed.is_set()
         time.sleep(0.2)
@@ -679,7 +697,7 @@ def test_a_data_replica_dying_during_the_holders_own_sync(tmp_path, when):
         tc.wipe("n0")                               # ONE disk lost (f = 1)
         assert _converge(tc, ["n1", "n2"], {2}) == 2
         tc.revive("n0")
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         assert _converge(tc, tc.ids, {3}) == 3
 
 
@@ -693,7 +711,7 @@ def test_a_delayed_stored_of_an_earlier_commit_is_never_a_copy_of_the_next_one(t
     n2, and losing n0's disk afterwards loses nothing."""
     with _cluster(tmp_path) as tc:
         tc.store.set_outage(True)
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         replica_send = tc["n1"].transport.send
         held = []
 
@@ -703,7 +721,7 @@ def test_a_delayed_stored_of_an_earlier_commit_is_never_a_copy_of_the_next_one(t
             replica_send(to, msg)                   # ... and duplicated later
 
         tc["n1"].transport.send = n1_send
-        tc.db("n0").run(incr, **RUN_KW)             # commit k
+        tc.commit("n0", incr)             # commit k
         tc["n1"].transport.send = replica_send
         assert held
         c0, own = tc["n0"], tc.storages["n0"]
@@ -726,7 +744,7 @@ def test_a_delayed_stored_of_an_earlier_commit_is_never_a_copy_of_the_next_one(t
 
         c0.transport.send = n0_send
         own.accept_replication = holder
-        tc.db("n0").run(incr, **RUN_KW)             # commit k+1
+        tc.commit("n0", incr)             # commit k+1
         c0.transport.send = send0
         own.accept_replication = own_append
         assert delivered
@@ -741,7 +759,7 @@ def test_a_stale_stored_of_a_previous_incarnation_arriving_during_the_own_append
     reach n0.  The stale reply is dropped; B hedges to n1; losing n2's disk loses nothing."""
     with _cluster(tmp_path) as tc:
         tc.store.set_outage(True)
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         tc.kill("n2")
         tc.revive("n2")
         send0 = tc["n0"].transport.send
@@ -754,7 +772,7 @@ def test_a_stale_stored_of_a_previous_incarnation_arriving_during_the_own_append
             send0(to, msg)
 
         tc["n0"].transport.send = n0_send
-        tc.db("n2").run(incr, **RUN_KW)             # incarnation A
+        tc.commit("n2", incr)             # incarnation A
         assert held
         tc["n0"].transport.send = send0
         tc.kill("n2")
@@ -779,7 +797,7 @@ def test_a_stale_stored_of_a_previous_incarnation_arriving_during_the_own_append
 
         c2.transport.send = n2_send
         own.accept_replication = holder
-        tc.db("n2").run(incr, **RUN_KW)
+        tc.commit("n2", incr)
         assert rid.get("fired"), "the schedule did not run"
         stale = tc["n2"].stats().get("stale_replies", 0)
         c2.transport.send = send2
@@ -799,8 +817,8 @@ def test_no_acknowledged_commit_is_lost_with_kills_inside_the_overlapped_window(
     first fault of every schedule kills a member inside its own overlapped window (after its
     records left, before or right after its own append) and the schedule fails if no member
     reached its window in time (Task 8.3j review I1: every schedule counts); a second fault,
-    drawn at random, kills, partitions or kills in the window again.  Ruling R86 bounds:
-    ``acked <= n <= acked + unknown``."""
+    drawn at random, kills, partitions or kills in the window again.  Rulings R86 and R114:
+    every outcome resolved by its token on every member (``_check``)."""
     rng = random.Random(seed * 7919 + n)
     with _cluster(tmp_path, n) as tc:
         net = tc.cluster.net

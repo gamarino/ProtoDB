@@ -28,7 +28,7 @@ def test_a_stale_ack_is_never_a_copy_or_a_vote_of_the_next_incarnation(tmp_path)
     with TieredCluster(tmp_path) as tc:
         tc.spaces["n0"].new_database("db")
         tc.store.set_outage(True)                       # nothing is persisted: copies are all there is
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         tc.kill("n2")
         tc.revive("n2")
         n0 = tc["n0"]
@@ -42,7 +42,7 @@ def test_a_stale_ack_is_never_a_copy_or_a_vote_of_the_next_incarnation(tmp_path)
             send0(to, msg)
 
         n0._transport.send = n0_send
-        tc.db("n2").run(incr, **RUN_KW)                 # incarnation A: n0 stores, its ack is delayed
+        tc.commit("n2", incr)                 # incarnation A: n0 stores, its ack is delayed
         assert held
         n0._transport.send = send0
         tc.kill("n2")
@@ -60,7 +60,7 @@ def test_a_stale_ack_is_never_a_copy_or_a_vote_of_the_next_incarnation(tmp_path)
             send2(to, msg)
 
         n2._transport.send = n2_send
-        tc.db("n2").run(incr, **RUN_KW)
+        tc.commit("n2", incr)
         assert fired, "the schedule did not run"
         n2._transport.send = send2
         stale = tc["n2"].stats().get("stale_replies", 0)
@@ -74,9 +74,9 @@ def test_a_stale_fetched_reply_is_never_the_record_of_another_pointer(tmp_path):
     with TieredCluster(tmp_path) as tc:
         tc.spaces["n0"].new_database("db")
         tc.store.set_outage(True)                       # a peer is the only source of a record
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         r1 = tc["n0"].committed_root()[1]
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         r2 = tc["n0"].committed_root()[1]
         p1, p2 = AtomPointer(r1.segment, r1.offset), AtomPointer(r2.segment, r2.offset)
         true1, true2 = tc.storages["n0"].local_record(p1), tc.storages["n0"].local_record(p2)

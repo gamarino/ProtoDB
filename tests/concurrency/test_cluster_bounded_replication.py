@@ -49,7 +49,7 @@ def test_a_commit_stores_its_records_on_f_plus_one_members_and_its_root_on_the_v
     """On d6743ae every member holds every record and accepts every root (8 of 8)."""
     with _cluster(tmp_path, 8) as tc:
         for _ in range(3):
-            tc.db("n5").run(incr, **RUN_KW)
+            tc.commit("n5", incr)
         root, label = _root(tc, "n5")
         holders = _holders(tc, AtomPointer(root.segment, root.offset))
         assert holders == {"n5", "n6"}, holders           # the committer and its successor
@@ -93,13 +93,13 @@ def test_syncs_per_commit_do_not_grow_with_the_cluster(tmp_path, monkeypatch, me
     with _cluster(tmp_path, members) as tc:
         committer = tc.ids[-1]
         for _ in range(3):
-            tc.db(committer).run(incr, **RUN_KW)
+            tc.commit(committer, incr)
         for node in tc.ids:
             tc[node].wait_idle(5)
         counter = _count_syncs(monkeypatch)
         n = 20
         for _ in range(n):
-            tc.db(committer).run(incr, **RUN_KW)
+            tc.commit(committer, incr)
         time.sleep(0.2)
         for node in tc.ids:
             tc[node].wait_idle(5)
@@ -114,7 +114,7 @@ def test_a_voter_refuses_a_root_whose_records_lack_their_copies(tmp_path):
     the replication names ``majority`` members holding the commit's records durably (itself
     included when the records ride in this message)."""
     with _cluster(tmp_path, 3) as tc:
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         permission = tc["n0"].permit(timeout=5)
         try:
             n1 = tc["n1"]
@@ -146,11 +146,11 @@ def test_a_voter_refuses_a_root_whose_records_lack_their_copies(tmp_path):
 def test_a_dead_successor_does_not_stop_its_predecessors_commits(tmp_path):
     """n3's first data replica is n4; with n4 down the commit hedges to the next member."""
     with _cluster(tmp_path, 5) as tc:
-        tc.db("n3").run(incr, **RUN_KW)
+        tc.commit("n3", incr)
         tc.kill("n4")
         started = time.monotonic()
         for _ in range(5):
-            tc.db("n3").run(incr, **RUN_KW)
+            tc.commit("n3", incr)
         assert time.monotonic() - started < 5.0
         root, _ = _root(tc, "n3")
         holders = _holders(tc, AtomPointer(root.segment, root.offset))
@@ -162,7 +162,7 @@ def test_reads_fall_back_to_another_replica_then_to_the_object_store(tmp_path):
     with _cluster(tmp_path, 5) as tc:
         tc.store.set_outage(True)           # nothing persisted yet: n1 must ask a peer
         for _ in range(4):
-            tc.db("n3").run(incr, **RUN_KW)
+            tc.commit("n3", incr)
         tc.wipe("n4")                       # a data replica lost after its acknowledgement
         tc.kill("n1")
         tc.revive("n1")                     # its record cache (R89) is empty after a restart
@@ -179,7 +179,7 @@ def test_reads_fall_back_to_another_replica_then_to_the_object_store(tmp_path):
 def test_a_learner_with_an_empty_disk_reads_any_committed_root(tmp_path):
     with _cluster(tmp_path, 8) as tc:
         for node in ("n0", "n3", "n5", "n7"):
-            tc.db(node).run(incr, **RUN_KW)
+            tc.commit(node, incr)
         tc.wipe("n6")
         tc.revive("n6")
         assert tc["n6"].stats()["rejoins"] == 0
@@ -189,10 +189,10 @@ def test_a_learner_with_an_empty_disk_reads_any_committed_root(tmp_path):
 
 def test_voter_failures_stop_writes_only_beyond_f_and_learners_keep_reading(tmp_path):
     with _cluster(tmp_path, 5) as tc:
-        tc.db("n3").run(incr, **RUN_KW)
+        tc.commit("n3", incr)
         tc.kill("n1")                       # f = 1 voter down: writes continue
-        tc.db("n3").run(incr, **RUN_KW)
-        tc.db("n4").run(incr, **RUN_KW)
+        tc.commit("n3", incr)
+        tc.commit("n4", incr)
         assert tc.eventually("n4", 3)
         tc.kill("n2")                       # f + 1 voters down: writes stop
         with pytest.raises((ProtoTimeoutError, ProtoConflictError, ProtoOutcomeUnknownError)):
@@ -220,7 +220,7 @@ def test_two_lost_committers_with_different_replicas_are_both_persisted(tmp_path
     with tc:
         tc.spaces["n0"].new_database("db")
         for node in ("n3", "n5", "n3", "n5"):
-            tc.db(node).run(incr, **RUN_KW)
+            tc.commit(node, incr)
         assert tc.eventually("n0", 4)
         tc.kill("n3")                       # its records: n3 (lost) and n4
         tc.kill("n5")                       # its records: n5 (lost) and n6
@@ -288,13 +288,13 @@ def test_every_member_caches_each_commit_without_a_durable_copy(tmp_path):
     one of its data replicas keeps them only in its record cache (no append, no sync, no
     acknowledgement awaited), so it reads the commit without fetching."""
     with _cluster(tmp_path, 8) as tc:
-        tc.db("n5").run(incr, **RUN_KW)
+        tc.commit("n5", incr)
         for node in tc.ids:
             tc[node].wait_idle(5)
         before = {n: (tc[n].stats()["fetches_requested"], tc.storages[n].stats()["replicas_logged"])
                   for n in tc.ids}
         for _ in range(3):
-            tc.db("n5").run(incr, **RUN_KW)
+            tc.commit("n5", incr)
         for node in tc.ids:
             tc[node].wait_idle(5)
         root, _ = _root(tc, "n5")

@@ -16,6 +16,7 @@ import pytest
 import proto_db.transactions as tx
 from proto_db.cluster.coordinator import ballot_after
 from proto_db.cluster.protocol import make_message
+from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, snapshot_of, write_token
 from tests.support.tiered_cluster import RUN_KW, TieredCluster, incr
 
 pytestmark = [pytest.mark.timeout(120)]
@@ -26,7 +27,7 @@ def test_the_busy_member_keeps_committing_after_an_idle_owner_releases(tmp_path,
     with TieredCluster(tmp_path, 3, storage_kw=dict(durability="fsync"), lease_duration=2.4,
                        request_timeout=0.1, owner_idle_release=0.5) as tc:
         tc.spaces["n0"].new_database("db")
-        tc.db("n0").run(incr, **RUN_KW)                 # n0 owns a term
+        tc.commit("n0", incr)                 # n0 owns a term
         n0, n2 = tc["n0"], tc["n2"]
         assert n0.owner == "n0"
         # n0 refuses a higher ballot (busy), as after any lost attempt of another member: its
@@ -35,19 +36,26 @@ def test_the_busy_member_keeps_committing_after_an_idle_owner_releases(tmp_path,
         n0._on_request("n2", make_message("request", "n2", term=higher, rid=10_000, inc=n2._inc, vs=0))
         stop = threading.Event()
         stamps = []
-        unknown, errors = [], []
+        errors = []
         lock = threading.Lock()
+        tokens = CommitTokens()                # review M8: every increment carries a token
 
         def work():
             db = tc.db("n1")
             while not stop.is_set():
+                token = tokens.new("n1")
+
+                def step(tr, token=token):
+                    incr(tr)
+                    write_token(tr, token)
                 try:
-                    db.run(incr, **RUN_KW)
+                    db.run(step, **RUN_KW)
                 except (tx.ProtoConflictError, tx.ProtoTimeoutError):
                     continue
                 except tx.ProtoOutcomeUnknownError:
-                    unknown.append(1)    # P5: an attempt that ended, not a stall (Task 8.3n audit)
+                    tokens.unknown(token)    # P5: an attempt that ended, not a stall (Task 8.3n audit)
                     continue
+                tokens.acked(token)
                 except BaseException as e:    # reported by the assertion below
                     errors.append(repr(e))
                     return
@@ -62,6 +70,11 @@ def test_the_busy_member_keeps_committing_after_an_idle_owner_releases(tmp_path,
         for t in threads:
             t.join(30)
         assert not errors, errors
+        # Safety as well as liveness: each outcome resolved by its token on every member, and
+        # ``n`` is the setup increment plus the tokens present, read in one snapshot.
+        res = assert_outcomes_resolved(
+            {n: (lambda n=n: snapshot_of(tc.db(n), lambda tr: tr.get_root_object("n"))) for n in tc.ids}, tokens)
+        assert set(res.values.values()) == {1 + len(res.present)}, res.values
         released = tc["n0"].stats()["terms_released_idle_local"]
         gaps = [b - a for a, b in zip([start] + stamps, stamps)]
         print(f"released {released} commits {len(stamps)} longest gap {max(gaps):.2f}s owner {tc['n1'].owner}")
@@ -76,7 +89,7 @@ def test_a_member_whose_owner_ended_its_term_idle_takes_the_term(tmp_path, round
     with TieredCluster(tmp_path, 3, storage_kw=dict(durability="fsync"), lease_duration=2.4,
                        request_timeout=0.1) as tc:
         tc.spaces["n0"].new_database("db")
-        tc.db("n1").run(incr, **RUN_KW)                 # n1 learns n0 as the owner
+        tc.commit("n1", incr)                 # n1 learns n0 as the owner
         n0, n1, n2 = tc["n0"], tc["n1"], tc["n2"]
         assert n0.owner == "n0" and n1._owner_hint[1] == "n0"
         higher = ballot_after(n0._ownership.term, n0._ranks["n2"])
@@ -86,7 +99,7 @@ def test_a_member_whose_owner_ended_its_term_idle_takes_the_term(tmp_path, round
             time.sleep(0.02)                            # nobody asks: n0 ends its term
         assert n0._ownership is None and n1._owner_hint[1] == "n0"
         started = time.monotonic()
-        tc.db("n1").run(incr, **RUN_KW)
+        tc.commit("n1", incr)
         took = time.monotonic() - started
         print(f"n1's first commit after the end took {took:.2f}s")
         assert took < 1.0, f"n1 needed {took:.2f} s"

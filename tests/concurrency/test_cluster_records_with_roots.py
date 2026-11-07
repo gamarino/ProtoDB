@@ -80,7 +80,7 @@ def test_majority_power_loss_keeps_every_acknowledged_root_with_its_records(tmp_
         a, b, c = tc.ids
         tc.spaces[a].new_database("db")
         for node in tc.ids:
-            tc.db(node).run(incr, **RUN_KW)
+            tc.commit(node, incr)
         acked = 3
         assert _settle(tc, tc.ids, acked) == {n: acked for n in tc.ids}
         time.sleep(0.5)                       # persisted: the store holds the first commits
@@ -88,7 +88,7 @@ def test_majority_power_loss_keeps_every_acknowledged_root_with_its_records(tmp_
         store.set_outage(True)                # from now on records live on the local tiers only
         tc.cluster.net.partition([a, b], [c])
         for i in range(COMMITS):
-            tc.db((a, b)[i % 2]).run(incr, **RUN_KW)
+            tc.commit((a, b)[i % 2], incr)
             acked += 1
         assert _settle(tc, [a, b], acked) == {a: acked, b: acked}
         lost = [a, b]
@@ -124,7 +124,7 @@ def test_a_restart_redoes_the_records_and_checkpoints(tmp_path):
         a, b, c = tc.ids
         tc.spaces[a].new_database("db")
         for i in range(6):
-            tc.db(tc.ids[i % 3]).run(incr, **RUN_KW)
+            tc.commit(tc.ids[i % 3], incr)
         assert _settle(tc, tc.ids, 6) == {n: 6 for n in tc.ids}
         path = os.path.join(str(tmp_path), b)
         assert _kind5_entries(path) > 0
@@ -137,7 +137,7 @@ def test_a_restart_redoes_the_records_and_checkpoints(tmp_path):
         tc.kill(b)
         tc.revive(b)
         assert tc.storages[b].stats()["redo_entries"] == 0
-        tc.db(b).run(incr, **RUN_KW)
+        tc.commit(b, incr)
         assert _settle(tc, tc.ids, 7) == {n: 7 for n in tc.ids}
 
 
@@ -149,7 +149,7 @@ def test_a_torn_acceptor_log_tail_is_trimmed_and_the_rest_redone(tmp_path):
         a, b, c = tc.ids
         tc.spaces[a].new_database("db")
         for i in range(4):
-            tc.db(a).run(incr, **RUN_KW)
+            tc.commit(a, incr)
         assert _settle(tc, tc.ids, 4) == {n: 4 for n in tc.ids}
         path = os.path.join(str(tmp_path), b)
         tc.kill(b)
@@ -160,7 +160,7 @@ def test_a_torn_acceptor_log_tail_is_trimmed_and_the_rest_redone(tmp_path):
             f.truncate(size - 7)              # the last entry loses its end
         tc.revive(b)
         assert tc.storages[b].stats()["redo_entries"] >= 1
-        tc.db(b).run(incr, **RUN_KW)
+        tc.commit(b, incr)
         assert _settle(tc, tc.ids, 5) == {n: 5 for n in tc.ids}
 
 
@@ -173,12 +173,12 @@ def test_a_checkpoint_keeps_the_records_of_entries_appended_after_its_mark(tmp_p
         a, b, c = tc.ids
         tc.spaces[a].new_database("db")
         for i in range(5):
-            tc.db(tc.ids[i % 3]).run(incr, **RUN_KW)
+            tc.commit(tc.ids[i % 3], incr)
         assert _settle(tc, tc.ids, 5) == {n: 5 for n in tc.ids}
         assert tc.storages[b].stats()["checkpoints"] >= 3
         assert _kind5_entries(os.path.join(str(tmp_path), b)) >= 1     # the newest is kept with its records
         tc.kill(b)
         tc.revive(b)
         assert _settle(tc, tc.ids, 5) == {n: 5 for n in tc.ids}
-        tc.db(b).run(incr, **RUN_KW)
+        tc.commit(b, incr)
         assert _settle(tc, tc.ids, 6) == {n: 6 for n in tc.ids}
