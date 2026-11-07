@@ -359,7 +359,12 @@ def test_the_first_root_of_every_term_is_accepted_through_the_older_label_exempt
             c._may_accept = recording
         send = tc["n0"].transport.send
         tc["n0"].transport.send = lambda to, msg: None if msg["type"] in ("done", "release") else send(to, msg)
-        tc.commit("n0", incr)
+        # Nobody may learn the root committed from the object store either (Task 8.3n fix
+        # round 1): n0's persister writes a root it committed on its next pass (20 ms), and
+        # when that pass ran before the kill, n1 adopted the persisted root and re-proposed
+        # nothing (2 of 20 runs on 6bfef8a, 4 of 20 on 4073cbd; 0 of 40 with the persister stopped).
+        tc["n0"].persister.stop()
+        tc.db("n0").run(incr, **RUN_KW)       # the scenario's commit: its outcome is the test's
         tc.kill("n0")
         for _ in range(10):
             try:
