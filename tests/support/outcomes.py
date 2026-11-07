@@ -154,6 +154,47 @@ def blind_snapshot_of(db, value=None, root: str = BLIND_ROOT) -> Snapshot:
         tr.abort()
 
 
+#: The root of :func:`commit_once`'s step tokens.
+STEP_ROOT = "commit-once-tokens"
+_STEPS = itertools.count()
+
+
+def commit_once(db, fn, *, attempts: int = 10, root: str = STEP_ROOT, **run_kw) -> int:
+    """Commit ``fn`` on ``db`` so that it takes effect exactly once, whatever outcomes the
+    attempts report; return the number of unknown outcomes met (review I6, Task 8.3n fix
+    round 1).  For sequential setup steps: a timing-bound unknown outcome (a lease that ended
+    under load, R82) becomes another attempt instead of a test failure.
+
+    Every attempt writes a fresh token with ``fn``'s effect, and first reads the tokens of the
+    earlier attempts in its snapshot, a committed root.  If one is there, that attempt took
+    effect: the step is done and this attempt writes nothing.  If none is, this attempt applies
+    ``fn``; when it commits, its base -- a committed root without the earlier tokens -- shows
+    that no earlier attempt can take effect any more (one linear history).  A snapshot older
+    than an earlier attempt that did commit conflicts on the token root and is retried by
+    ``Database.run`` from the newer root.  A timeout (no permission obtained, nothing applied)
+    is retried the same way."""
+    from proto_db.errors import ProtoOutcomeUnknownError, ProtoTimeoutError
+    tried, unknown = [], 0
+    for _ in range(attempts):
+        token = f"step-{next(_STEPS)}"
+
+        def step(tr, token=token, earlier=tuple(tried)):
+            seen = read_tokens(tr, root)
+            if seen & set(earlier):
+                return                      # an earlier attempt took effect: write nothing
+            fn(tr)
+            write_token(tr, token, root)
+        tried.append(token)
+        try:
+            db.run(step, **run_kw)
+            return unknown
+        except ProtoOutcomeUnknownError:
+            unknown += 1
+        except ProtoTimeoutError:
+            pass
+    raise AssertionError(f"no attempt of the step was acknowledged in {attempts} attempts ({unknown} unknown)")
+
+
 def _snapshot(read) -> Snapshot:
     view = read()
     return view if isinstance(view, Snapshot) else Snapshot(frozenset(view))
@@ -163,6 +204,41 @@ def observe_members(readers: dict, tokens: CommitTokens) -> None:
     """Read every member once and record what each shows (P1)."""
     for read in readers.values():
         tokens.observe(_snapshot(read))
+
+
+class observing:
+    """Context manager: while the body runs, a thread reads every member every ``interval``
+    seconds and records what it shows (P1 during the run, review M1).  Reads take snapshots and
+    write nothing, so they add no conflicts.  An error raised by a read (a token applied twice,
+    say) is raised again when the body exits."""
+
+    def __init__(self, readers: dict, tokens: CommitTokens, interval: float = 0.005):
+        self.readers, self.tokens, self.interval = readers, tokens, interval
+        self.reads = 0
+        self._stop = threading.Event()
+        self._errors = []
+        self._thread = threading.Thread(target=self._run, name="outcome-observer", daemon=True)
+
+    def _run(self):
+        while not self._stop.is_set():
+            try:
+                observe_members(self.readers, self.tokens)
+                self.reads += 1
+            except BaseException as e:      # raised again on exit
+                self._errors.append(e)
+                return
+            self._stop.wait(self.interval)
+
+    def __enter__(self):
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._stop.set()
+        self._thread.join(30)
+        if self._errors and exc[0] is None:
+            raise self._errors[0]
+        return False
 
 
 def assert_outcomes_resolved(readers: dict, tokens: CommitTokens, timeout: float = 10.0, *,

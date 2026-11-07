@@ -147,3 +147,57 @@ def test_blind_tokens_merge_and_a_token_applied_twice_fails():
             blind_snapshot_of(db)
     finally:
         space.close()
+
+
+def test_commit_once_applies_a_step_exactly_once_across_unknown_outcomes():
+    """Review I6: ``commit_once`` turns an unknown outcome into a retry only when the step's
+    effect is absent from a committed snapshot.  A first attempt that took effect but reported
+    unknown is not applied again; one that took no effect is applied by the retry."""
+    from proto_db.errors import ProtoOutcomeUnknownError
+    from tests.support.outcomes import commit_once
+    space = ObjectSpace(MemoryStorage())
+    try:
+        db = space.new_database("db")
+        real_run = db.run
+        calls = []
+
+        def flaky_run(fn, **kw):
+            calls.append(1)
+            if len(calls) == 1:
+                real_run(fn, **kw)                     # applied ...
+                raise ProtoOutcomeUnknownError("planted: applied, reported unknown")
+            if len(calls) == 3:
+                raise ProtoOutcomeUnknownError("planted: nothing applied, reported unknown")
+            return real_run(fn, **kw)
+        db.run = flaky_run
+
+        def incr(tr):
+            tr.set_root_object("n", (tr.get_root_object("n") or 0) + 1)
+        assert commit_once(db, incr) == 1             # one unknown met, the effect kept once
+        assert commit_once(db, incr) == 1             # the unknown took nothing: applied by the retry
+        tr = db.new_transaction()
+        assert tr.get_root_object("n") == 2
+        tr.abort()
+    finally:
+        space.close()
+
+
+
+def test_observing_reads_during_the_body_and_raises_what_a_read_found():
+    """Review M1: the observer reads members while the body runs, records what they show (a
+    token seen mid-run counts as observed), and an error a read raised fails the block."""
+    import time
+    import pytest
+    from tests.support.outcomes import CommitTokens, Snapshot, observing
+    tokens = CommitTokens()
+    t = tokens.new("n0")
+    tokens.unknown(t)
+    with observing({"n0": lambda: Snapshot(frozenset({t}))}, tokens, interval=0.001) as obs:
+        time.sleep(0.05)
+    assert obs.reads > 0 and t in tokens.observed
+
+    def broken():
+        raise AssertionError("token applied twice")
+    with pytest.raises(AssertionError, match="applied twice"):
+        with observing({"n0": broken}, tokens, interval=0.001):
+            time.sleep(0.05)

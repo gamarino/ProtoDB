@@ -20,7 +20,10 @@ constructor returns once every member has finished its first rejoin.
   rulings R50 and R51), because a restarted node does not remember when its last grant ends;
 * ``value(node)``: the counter ``n`` of database ``db`` read by a new transaction;
 * ``eventually(node, expected)``: True once ``value(node) == expected`` (within 5 s): a
-  node learns another node's commit when its release arrives.
+  node learns another node's commit when its release arrives;
+* ``commit(node, fn)``: a setup step committed exactly once on ``node`` whatever its attempts
+  report (:func:`tests.support.outcomes.commit_once`); returns the unknown outcomes met.  A
+  step whose outcome the test itself examines uses ``db(node).run`` instead.
 """
 import os
 import shutil
@@ -95,6 +98,11 @@ class TieredCluster:
             return tr.get_root_object("n")
         finally:
             tr.abort()
+
+    def commit(self, node: str, fn, **run_kw) -> int:
+        """Commit the setup step ``fn`` on ``node`` exactly once (see the module docstring)."""
+        from tests.support.outcomes import commit_once
+        return commit_once(self.db(node), fn, **dict(RUN_KW, **run_kw))
 
     def eventually(self, node: str, expected, timeout: float = 5.0) -> bool:
         """Poll :meth:`value` until it equals ``expected``; False after ``timeout`` seconds."""
