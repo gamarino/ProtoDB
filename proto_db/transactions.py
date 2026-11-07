@@ -435,6 +435,8 @@ class _AtomCache:
         self.misses = 0
         self.unloads = 0
         self.saved = 0
+        self.loads = 0
+        self.read_unloads = 0
 
     def save(self, atom: Atom) -> AtomPointer:
         """Persist ``atom`` (children first) and return its pointer."""
@@ -469,8 +471,10 @@ class _AtomCache:
                 self._ident[ptr] = weakref.KeyedRef(stub, self._forget, ptr)
         return stub
 
-    def _admit(self, atom: Atom) -> None:
-        """Make the loaded ``atom`` resident; unload what that evicts (no lock held meanwhile)."""
+    def _admit(self, atom: Atom, loaded: bool = False) -> None:
+        """Make the loaded ``atom`` resident; unload what that evicts (no lock held meanwhile).
+        ``loaded``: ``atom`` was just loaded by a read (not a saved atom's twin), so it counts in
+        ``loads`` and what it evicted in ``read_unloads`` (the thrash signal, re-review 8.3m N4)."""
         if self._closed or not atom._cache_produced():
             return
         unloaded = 0
@@ -481,13 +485,18 @@ class _AtomCache:
             # Review 8.3m M2: close() ran after the check above.  It sets _closed before clearing
             # the LRU, so a put that landed after the clear sees _closed here and is undone.
             self._cache.invalidate(atom.atom_pointer)
-        if unloaded:
+        if loaded:
+            with self._lock:
+                self.unloads += unloaded
+                self.loads += 1
+                self.read_unloads += unloaded
+        elif unloaded:
             with self._lock:
                 self.unloads += unloaded
 
     def _atom_loaded(self, atom: Atom) -> None:
         """The :meth:`Atom._load` hook: ``atom`` was just loaded (published by this call)."""
-        self._admit(atom)
+        self._admit(atom, loaded=True)
 
     def _atom_saved(self, atom: Atom, ptr: AtomPointer, state: dict) -> None:
         """``atom`` was just pushed at ``ptr`` with ``state`` (the :meth:`Atom._save` hook,
@@ -532,15 +541,17 @@ class _AtomCache:
 
     def stats(self) -> dict:
         """``hits`` and ``misses`` of :meth:`load`, ``entries`` (loaded atoms resident) and
-        ``capacity``, ``loads`` (atoms loaded from the storage and admitted), ``saved`` (decoded
-        twins of saved atoms admitted), ``unloads`` and ``identity_map`` (objects served and still
-        alive).  ``unloads`` per ``loads`` over an interval is the thrash signal (D53 "Sizing")."""
+        ``capacity``, ``loads`` (atoms a read loaded from the storage and admitted), ``saved``
+        (decoded twins of saved atoms admitted), ``unloads`` (all of them), ``read_unloads`` (those
+        the admission of a load caused: at most one per load) and ``identity_map`` (objects
+        served and still alive).  ``read_unloads`` per ``loads`` over an interval is the thrash
+        signal (D53 "Sizing")."""
         stats = self._cache.stats()
         with self._lock:
-            saved = self.saved
             return {"hits": self.hits, "misses": self.misses, "entries": stats["entries"],
-                    "capacity": stats["capacity"], "loads": max(0, stats["admissions"] - saved),
-                    "saved": saved, "unloads": self.unloads, "identity_map": len(self._ident)}
+                    "capacity": stats["capacity"], "loads": self.loads, "saved": self.saved,
+                    "unloads": self.unloads, "read_unloads": self.read_unloads,
+                    "identity_map": len(self._ident)}
 
 
 def _forget_dead(ident: dict, ref) -> None:
@@ -1360,10 +1371,11 @@ class ObjectSpace:
             record a query returns; a larger working set costs reloads, never memory.  Each
             resident atom costs its decoded state plus about 0.4 KB of bookkeeping (measured
             on CPython 3.14t, Task 8.3m).  To tell whether it fits, compare two
-            :meth:`atom_cache_stats` snapshots taken around a stretch of reads: ``unloads``
-            divided by ``loads`` near 0 means the working set fits; near 1 means it does not
-            and reads are reloading (D53 "Sizing").  ``0`` disables it (each transaction decodes
-            what it reads).
+            :meth:`atom_cache_stats` snapshots: ``read_unloads`` divided by ``loads`` near 0
+            means the working set fits; near 1 means it does not and reads are reloading (D53
+            "Sizing").  A first pass over a cold set larger than the cache also gives about 1:
+            judge a second pass.  The total ``unloads`` is not the signal (saving evicts too).
+            ``0`` disables it (each transaction decodes what it reads).
         query_cache_bytes: capacity, in estimated bytes, of the space's query result cache
             (:attr:`query_cache`, D56), shared by its transactions and threads and keyed by
             the pointers of what each query reads, so it is never stale.  ``0`` stores
@@ -1417,10 +1429,11 @@ class ObjectSpace:
 
     def atom_cache_stats(self) -> Optional[dict]:
         """Counters of the shared decoded-atom cache (``hits``, ``misses``, ``entries``: loaded
-        atoms resident, ``capacity``, ``loads``: atoms loaded from the storage, ``saved``: decoded
-        twins of saved atoms, ``unloads``: atoms returned to stubs, ``identity_map``: objects
-        served and still alive), or ``None`` when it is disabled.  ``unloads`` per ``loads``
-        between two snapshots is the thrash signal (see ``atom_cache_entries``)."""
+        atoms resident, ``capacity``, ``loads``: atoms a read loaded from the storage, ``saved``:
+        decoded twins of saved atoms, ``unloads``: atoms returned to stubs, ``read_unloads``: the
+        unloads that loads caused, ``identity_map``: objects served and still alive), or ``None``
+        when it is disabled.  ``read_unloads`` per ``loads`` between two snapshots is the thrash
+        signal (see ``atom_cache_entries``)."""
         return None if self._atoms is None else self._atoms.stats()
 
     @property

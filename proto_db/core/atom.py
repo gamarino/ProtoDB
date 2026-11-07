@@ -393,13 +393,20 @@ def _contract_error(cls, missing, extra) -> ProtoUserError:
         f"(Atom._restore docstring, D53)")
 
 
-def _check_restore(atom, state: dict, names: tuple) -> None:
-    """Check, for a class that overrides :meth:`Atom._restore` or :meth:`Atom._set_link`, that the
-    override installs exactly ``names`` for ``state`` (review 8.3m I1 / M7, ruling R105): the hook
-    is run on a scratch instance, whose dict may be inspected at no cost to ``atom``.  A class that
-    keeps the default hooks installs ``names`` by construction and is not checked."""
+def _restore_checked(atom, state: dict, names: tuple) -> None:
+    """Install ``state`` on the stub ``atom`` through its :meth:`Atom._restore`, running the hook
+    exactly once (re-review 8.3m N2, ruling R114).
+
+    A class that keeps the default hooks installs ``names`` by construction and restores in
+    place.  For a class that overrides :meth:`Atom._restore` or :meth:`Atom._set_link`, the hook
+    runs on a scratch instance (whose dict may be inspected at no cost to ``atom``); the keys it
+    installed must be exactly ``names`` (review 8.3m I1 / M7, ruling R105), or one
+    ``ProtoUserError`` names the class and the keys; then the installed values are moved onto
+    ``atom`` in the order the hook installed them.  The hook never runs twice on one ``state``,
+    so an override may transform the values in place."""
     cls = type(atom)
     if not cls._custom_restore:
+        atom._restore(state)
         return
     scratch = object.__new__(cls)
     osa = object.__setattr__
@@ -407,10 +414,13 @@ def _check_restore(atom, state: dict, names: tuple) -> None:
     osa(scratch, "atom_pointer", None)
     osa(scratch, "context", _get(atom, "context"))
     scratch._restore(state)
-    installed = set(_get(scratch, "__dict__")) - _STUB_KEYS
+    installed = {name: value for name, value in _get(scratch, "__dict__").items()
+                 if name not in _STUB_KEYS}
     expected = set(names)
-    if installed != expected:
-        raise _contract_error(cls, expected - installed, installed - expected)
+    if installed.keys() != expected:
+        raise _contract_error(cls, expected - installed.keys(), installed.keys() - expected)
+    for name, value in installed.items():
+        osa(atom, name, value)
 
 
 def _drop_state(atom, names: tuple) -> None:
@@ -446,7 +456,7 @@ class Atom:
     #: each read through the context (Task 8.3l, see the module docstring).
     _history_links: tuple = ()
     #: Whether this class overrides the hooks that install a loaded state, so that each load
-    #: checks they installed exactly the decoded state's keys (:func:`_check_restore`).
+    #: checks they installed exactly the decoded state's keys (:func:`_restore_checked`).
     _custom_restore = False
 
     def __init_subclass__(cls, **kwargs):
@@ -591,14 +601,16 @@ class Atom:
                 token = True
             if isinstance(token, _Generation):
                 copy = {}
+                missing = None
                 try:
-                    for name in token.names:
-                        copy[name] = _get(self, name)
+                    for missing in token.names:
+                        copy[missing] = _get(self, missing)
+                    missing = "context"
                     copy["context"] = _get(self, "context")
                 except AttributeError:
                     if self._loaded is token:
                         # Not an unload: the load did not install a name it recorded (I1, R105).
-                        raise _contract_error(type(self), [name], ()) from None
+                        raise _contract_error(type(self), [missing], ()) from None
                     continue                # unloaded meanwhile
                 if self._loaded is token:
                     return copy
@@ -725,8 +737,7 @@ class Atom:
                 if not _same_generation(self, pending):
                     continue                # loaded and unloaded since phase 1: fetch again
                 names = _installed_names(type(self), state)
-                _check_restore(self, state, names)
-                self._restore(state)
+                _restore_checked(self, state, names)
                 object.__setattr__(self, "oid", oid)
                 snapshot = {name: getattr(self, name) for name in names}    # installed just above
                 snapshot["oid"] = oid
@@ -765,7 +776,10 @@ class Atom:
         renamed key would be read as missing and an added one would survive the unload.  Every
         load of a class that overrides this hook checks the contract and raises
         ``ProtoUserError`` naming the class if it is broken; a schema change belongs in a new
-        version written by a transaction, not in the load."""
+        version written by a transaction, not in the load.  The hook runs once per load (on a
+        scratch instance for an override, whose installed values are then moved onto the atom),
+        so it may transform the values of ``state`` in place; it must not depend on the
+        identity of ``self``."""
         cls = type(self)
         for name in state:
             if name.startswith("_") or name in RESERVED_NAMES or hasattr(cls, name):
@@ -853,8 +867,7 @@ class Atom:
         osa(twin, "atom_pointer", ptr)
         osa(twin, "context", context)
         names = _installed_names(type(twin), decoded)
-        _check_restore(twin, decoded, names)
-        twin._restore(decoded)
+        _restore_checked(twin, decoded, names)
         osa(twin, "oid", self.oid)
         osa(twin, "_loaded", _Generation(names))
         return twin

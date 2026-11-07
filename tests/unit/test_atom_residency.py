@@ -112,14 +112,15 @@ def test_stats_report_residency():
     db = space.new_database("db")
     _build_inventory(db, commits=2, per_commit=200)
     stats = space.atom_cache_stats()
-    assert set(stats) >= {"hits", "misses", "entries", "capacity", "loads", "saved", "unloads", "identity_map"}
+    assert set(stats) >= {"hits", "misses", "entries", "capacity", "loads", "saved", "unloads",
+                          "read_unloads", "identity_map"}
     assert stats["entries"] <= 50 and stats["unloads"] > 0 and stats["saved"] > 0
     space.close()
 
 
 def test_unloads_per_load_tell_a_fitting_working_set_from_thrashing():
-    """The thrash signal of D53 "Sizing" (ruling R105): over an interval of reads, ``unloads`` per
-    ``loads`` is about 0 when the working set fits and about 1 when it does not."""
+    """The thrash signal of D53 "Sizing" (rulings R105, R114 N4): over an interval of reads,
+    ``read_unloads`` per ``loads`` is about 0 when the working set fits and about 1 when it does not."""
     def ratio(capacity):
         space = _space(capacity)
         db = space.new_database("db")
@@ -135,13 +136,26 @@ def test_unloads_per_load_tell_a_fitting_working_set_from_thrashing():
                     assert d.get_at(i).id == i
             after = space.atom_cache_stats()
         loads = after["loads"] - before["loads"]
-        unloads = after["unloads"] - before["unloads"]
+        unloads = after["read_unloads"] - before["read_unloads"]
         space.close()
         return loads, unloads
     loads, unloads = ratio(100_000)
     assert loads == 0 and unloads == 0                  # fits: nothing loads again
     loads, unloads = ratio(50)
     assert loads > 100 and unloads / loads > 0.9, (loads, unloads)
+
+
+def test_the_read_signal_ignores_the_unloads_commits_cause():
+    """Re-review 8.3m N4: a saved atom's decoded twin is admitted without a load and evicts a
+    resident atom, so over an interval with commits ``unloads`` per ``loads`` is far above 1.
+    ``read_unloads`` counts only what read-path loads evicted: at most one per load."""
+    space = _space(50)
+    db = space.new_database("db")
+    _build_inventory(db, commits=4, per_commit=200)
+    stats = space.atom_cache_stats()
+    space.close()
+    assert stats["unloads"] > 1.5 * max(1, stats["loads"]), stats     # the skew of the total (2.4x)
+    assert stats["read_unloads"] <= stats["loads"], stats              # the read signal: <= 1
 
 
 # -- every structure after unloading -----------------------------------------------------------------
@@ -885,3 +899,52 @@ def test_a_snapshot_whose_recorded_name_is_missing_raises_instead_of_spinning():
         object.__setattr__(o, "_loaded", atom_mod._Generation(token.names + ("ghost",)))
         raised, _ = _bounded(o._snapshot, 10, lambda: object.__setattr__(o, "_loaded", True))
     _assert_contract_error(raised, type(o), "'ghost'")
+
+
+class _InPlace(DBObject):
+    """A legitimate override that transforms a value in place in the decoded state (key set kept),
+    counting its runs: the hook must run once per load (re-review 8.3m N2, ruling R114)."""
+    __type_name__ = "tests.unit.test_atom_residency.InPlace"
+    runs = 0
+
+    def _restore(self, state):
+        type(self).runs += 1
+        state["x"] = state["x"] * 2
+        super()._restore(state)
+
+
+@pytest.mark.parametrize("entries", [0, 100])
+def test_an_in_place_transforming_restore_runs_once_per_load(entries):
+    space = _space(entries)
+    db = space.new_database("db")
+    _InPlace.runs = 0
+    db.run(lambda tr: tr.set_root_object("o", _InPlace(x=1, context=tr)))
+    twins = _InPlace.runs                       # one per decoded twin of a save (0 without a cache)
+    assert twins == (1 if entries else 0)
+    if entries:
+        with db.new_transaction() as tr:        # the saved twin
+            assert tr.get_root_object("o").x == 2
+    space2 = ObjectSpace(space._storage, atom_cache_entries=100)
+    with space2.open_database("db").new_transaction() as tr:   # a stub load from storage
+        o = tr.get_root_object("o")
+        assert o.x == 2
+        assert o._state() == {"x": 2}
+    assert _InPlace.runs == twins + 1
+
+
+def test_a_snapshot_error_names_the_key_that_is_missing():
+    """Re-review 8.3m N8: a missing ``context`` is reported as such, not as the last recorded name."""
+    space = _space(100)
+    db = space.new_database("db")
+    db.run(lambda tr: tr.set_root_object("o", tr.new_object(a=1)))
+    with db.new_transaction() as tr:
+        o = tr.get_root_object("o")
+        assert isinstance(o._loaded, atom_mod._Generation)
+        context = o.context
+        object.__delattr__(o, "context")
+        try:
+            raised, _ = _bounded(o._snapshot, 10, lambda: object.__setattr__(o, "_loaded", True))
+        finally:
+            object.__setattr__(o, "context", context)
+    _assert_contract_error(raised, type(o), "'context'")
+    assert "'a'" not in str(raised)
