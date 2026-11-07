@@ -9,7 +9,6 @@ every acknowledged id is persisted once, every other persisted id ended with
 progress, and that no committing thread wrote a root (only the persisters did, D46).  The throughput tests print commits per second through the TCP
 transport (informational, for the Phase 9 record).
 """
-import itertools
 import json
 import os
 import subprocess
@@ -22,8 +21,10 @@ import pytest
 
 from proto_db.storage.file import FileStorage
 from proto_db.storage.tiered import TieredStorage
+from proto_db.errors import ProtoOutcomeUnknownError
 from proto_db.transactions import ObjectSpace
 from tests.support.dir_object_store import DirObjectStore
+from tests.support.outcomes import CommitTokens, add_blind_token, assert_outcomes_resolved, blind_snapshot_of
 
 PEER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cluster_peer.py")
 PEERS = 3
@@ -234,7 +235,9 @@ class _InProcessTcpCluster:
             # log would rejoin first, which needs both other members of three (D46, R47).
             memory_log_for(self.storage, f"n{i}").mark_rejoined()
         ObjectSpace(self.storage).new_database("db")
-        self._uids = itertools.count()
+        # Each commit adds its token to the counted set ``ids`` by a blind write (merged, never a
+        # conflict), so the tokens cost the workload nothing it did not do before.
+        self.tokens = CommitTokens()
 
     def rate(self, seconds: float) -> float:
         """Commits per second of four threads (two per committing member) over ``seconds``."""
@@ -245,9 +248,13 @@ class _InProcessTcpCluster:
             db = ObjectSpace(self.storage, coordinator=node).open_database("db")
             n = 0
             while time.monotonic() < stop_at:
-                uid = next(self._uids)
-                db.run(lambda tr: tr.set_root_object("ids", tr.new_counted_set().add(uid)),
-                       retries=10_000, backoff=(0.0005, 0.01))
+                uid = self.tokens.new(node.node_id)
+                try:
+                    db.run(lambda tr: add_blind_token(tr, uid, root="ids"), retries=10_000, backoff=(0.0005, 0.01))
+                except ProtoOutcomeUnknownError:
+                    self.tokens.unknown(uid)        # P5 / R86: resolved by check_outcomes()
+                    continue
+                self.tokens.acked(uid)
                 n += 1
             done.append(n)
 
@@ -261,6 +268,14 @@ class _InProcessTcpCluster:
         # Self-report: a worker that raised never appends (a share of 0 is contention, not failure).
         assert len(done) == len(threads) and sum(done) > 0, f"a worker failed or nothing committed: {done}"
         return sum(done) / elapsed
+
+    def check_outcomes(self) -> None:
+        """Every acknowledged commit is in ``ids`` once on every live member, and every unknown
+        one resolved alike (R86, R114; :mod:`tests.support.outcomes`)."""
+        dbs = {node.node_id: ObjectSpace(self.storage, coordinator=node).open_database("db") for node in self.nodes}
+
+        assert_outcomes_resolved({n: (lambda db=db: blind_snapshot_of(db, root="ids")) for n, db in dbs.items()},
+                                 self.tokens)
 
     def stop(self) -> None:
         """Stop the members and close the black hole."""
@@ -300,6 +315,8 @@ def test_an_unreachable_member_does_not_stall_the_healthy_majority(capsys):
         for _ in range(_PAIRS):
             healthy.append(clusters[0].rate(_WINDOW))
             degraded.append(clusters[1].rate(_WINDOW))
+        for c in clusters:
+            c.check_outcomes()
     finally:
         for c in clusters:
             c.stop()

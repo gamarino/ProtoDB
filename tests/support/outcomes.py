@@ -16,7 +16,9 @@ a token unique to it, and once the members converge the test checks, token by to
 
 A reader returns a :class:`Snapshot`: the tokens and, from the SAME transaction, whatever else
 the test compares with them (P4: a counter read in another transaction can see an unknown
-commit that landed in between).  :func:`snapshot_of` builds one.
+commit that landed in between).  :func:`snapshot_of` builds one.  A workload of blind writes
+records its tokens with :func:`add_blind_token` instead (a ``CountedSet`` merged blind, which
+also catches a commit applied twice) and reads them with :func:`blind_snapshot_of`.
 
 Observations (P1) come from three places: :meth:`CommitTokens.observe`, which a test calls
 with any token set it read during the run; :func:`observe_members`, one read of every member;
@@ -120,6 +122,36 @@ def snapshot_of(db, value=None, root: str = TOKENS_ROOT) -> Snapshot:
 def read_tokens_of(db, root: str = TOKENS_ROOT) -> frozenset:
     """The tokens a new transaction on ``db`` sees."""
     return snapshot_of(db, root=root).tokens
+
+
+#: The root of :func:`add_blind_token`: a ``CountedSet`` written blind (merged, never read).
+BLIND_ROOT = "commit-token-set"
+
+
+def add_blind_token(tr, token, root: str = BLIND_ROOT) -> None:
+    """Record ``token`` without reading anything: a blind add to a ``CountedSet`` root, merged
+    with concurrent adds (D33 intent merge), so a workload of blind writes keeps its contention
+    profile (a read of the token root would make every commit conflict with every other)."""
+    tr.set_root_object(root, tr.new_counted_set().add(token))
+
+
+def read_blind_tokens(tr, root: str = BLIND_ROOT) -> frozenset:
+    """The tokens of :func:`add_blind_token` visible to ``tr``; a token added twice (a commit
+    applied twice) fails here."""
+    counted = tr.get_root_object(root)
+    counts = {} if counted is None else dict(counted.items())
+    doubled = sorted(t for t, c in counts.items() if c != 1)
+    assert not doubled, f"commits applied more than once: {doubled[:10]}"
+    return frozenset(counts)
+
+
+def blind_snapshot_of(db, value=None, root: str = BLIND_ROOT) -> Snapshot:
+    """:func:`snapshot_of` for the tokens of :func:`add_blind_token`."""
+    tr = db.new_transaction()
+    try:
+        return Snapshot(read_blind_tokens(tr, root), value(tr) if value is not None else None)
+    finally:
+        tr.abort()
 
 
 def _snapshot(read) -> Snapshot:

@@ -127,3 +127,23 @@ def test_the_value_comes_from_the_snapshot_the_tokens_came_from():
         assert res.values == {"n0": 4} and len(res.present) == 4
     finally:
         space.close()
+
+
+def test_blind_tokens_merge_and_a_token_applied_twice_fails():
+    """``add_blind_token`` reads nothing, so two transactions adding concurrently both commit
+    (merged); a token present twice fails the read."""
+    from tests.support.outcomes import add_blind_token, blind_snapshot_of
+    space = ObjectSpace(MemoryStorage())
+    try:
+        db = space.new_database("db")
+        t1, t2 = db.new_transaction(), db.new_transaction()
+        add_blind_token(t1, "a")
+        add_blind_token(t2, "b")
+        t1.commit()
+        t2.commit()                                  # no conflict: nothing was read
+        assert blind_snapshot_of(db).tokens == {"a", "b"}
+        db.run(lambda tr: add_blind_token(tr, "a"))  # planted: "a" applied a second time
+        with pytest.raises(AssertionError, match="applied more than once"):
+            blind_snapshot_of(db)
+    finally:
+        space.close()
