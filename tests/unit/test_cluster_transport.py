@@ -239,3 +239,17 @@ def test_tcp_best_effort_warm_frames_never_crowd_out_control_messages(baseline_t
         release.set()
         a.stop()
         b.stop()
+
+
+@pytest.mark.protocol_errors_expected
+def test_a_protocol_error_raised_by_a_handler_is_recorded_for_the_test(request):
+    """Review M7: ``_deliver`` logs a handler's ``ClusterProtocolError`` and goes on; the suite's
+    autouse fixture records it, and fails every test not marked ``protocol_errors_expected``."""
+    from proto_db.cluster import transport
+    from proto_db.cluster.protocol import ClusterProtocolError
+
+    def handler(msg):
+        raise ClusterProtocolError("the done message lacks its copies")
+    transport._deliver(handler, {"type": "done"}, "test")
+    assert len(request.node.delivered_protocol_errors) == 1
+    assert "'done'" in request.node.delivered_protocol_errors[0]
