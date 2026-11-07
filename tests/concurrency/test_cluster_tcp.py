@@ -5,7 +5,8 @@ parent sends every peer the full peer list, then starts them together.  The peer
 one FileStorage, or each has a local tier (TieredStorage) over one shared directory
 object store.  The smoke tests check that no update is lost or duplicated (ruling R86:
 every acknowledged id is persisted once, every other persisted id ended with
-``ProtoOutcomeUnknownError``, and ``acked <= n <= acked + unknown``), that every peer made
+``ProtoOutcomeUnknownError``, each id is present once and ``n`` equals the ids present: each id
+is the commit's token), that every peer made
 progress, and that no committing thread wrote a root (only the persisters did, D46).  The throughput tests print commits per second through the TCP
 transport (informational, for the Phase 9 record).
 """
@@ -24,7 +25,8 @@ from proto_db.storage.tiered import TieredStorage
 from proto_db.errors import ProtoOutcomeUnknownError
 from proto_db.transactions import ObjectSpace
 from tests.support.dir_object_store import DirObjectStore
-from tests.support.outcomes import CommitTokens, add_blind_token, assert_outcomes_resolved, blind_snapshot_of
+from tests.support.outcomes import (CommitTokens, add_blind_token, assert_outcomes_resolved, blind_snapshot_of,
+                                    observing)
 
 PEER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cluster_peer.py")
 PEERS = 3
@@ -118,7 +120,7 @@ def _check_outcomes(results, ids, n=None):
     """Ruling R86: no lost and no duplicated update.  Every acknowledged id is present once,
     every other id present ended with ``ProtoOutcomeUnknownError`` (conservative, P5), no id
     is present twice, ``n`` (when counted) equals the ids present, so
-    ``acked <= n <= acked + unknown``; progress: every peer acknowledged a commit."""
+    the ids are the commits' tokens; progress: every peer acknowledged a commit."""
     acked = {uid for r in results for uid in r["acked"]}
     unknown = {uid for r in results for uid in r["unknown"]}
     assert sum(r["commits"] for r in results) == len(acked)
@@ -242,10 +244,13 @@ class _InProcessTcpCluster:
     def rate(self, seconds: float) -> float:
         """Commits per second of four threads (two per committing member) over ``seconds``."""
         done = []
+        # One space per committing member, shared by its workers and by the observer (review
+        # M1).  Opened before the window starts: attaching a space confirms the committed root.
+        dbs = {node.node_id: ObjectSpace(self.storage, coordinator=node).open_database("db") for node in self.nodes[:2]}
         stop_at = time.monotonic() + seconds
 
         def worker(node):
-            db = ObjectSpace(self.storage, coordinator=node).open_database("db")
+            db = dbs[node.node_id]
             n = 0
             while time.monotonic() < stop_at:
                 uid = self.tokens.new(node.node_id)
@@ -259,11 +264,14 @@ class _InProcessTcpCluster:
             done.append(n)
 
         threads = [threading.Thread(target=worker, args=(self.nodes[i % 2],)) for i in range(4)]
+        # Review M1: a member read mid-run must agree with the history read at the end (P1).
+        readers = {n: (lambda db=db: blind_snapshot_of(db, root="ids")) for n, db in dbs.items()}
         start = time.monotonic()
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        with observing(readers, self.tokens, interval=0.05):
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
         elapsed = time.monotonic() - start
         # Self-report: a worker that raised never appends (a share of 0 is contention, not failure).
         assert len(done) == len(threads) and sum(done) > 0, f"a worker failed or nothing committed: {done}"

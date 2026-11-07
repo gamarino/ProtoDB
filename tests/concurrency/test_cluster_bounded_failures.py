@@ -7,7 +7,8 @@ grants a permission, replicates or broadcasts ``done``; a data replica before or
 ``stored`` acknowledgement; a voter, a learner or the owner losing power -- or a random
 schedule of message faults and kills runs.  Afterwards the faults stop and the invariants of
 :mod:`tests.concurrency.test_cluster_owner_failures` are checked: every live member commits
-again, the members converge, and ``acked <= n <= acked + unknown`` (ruling R86).
+again and every outcome is resolved by its token on every live member, with ``n`` equal to
+the tokens present (rulings R86, R114; :mod:`tests.support.outcomes`).
 """
 import os
 import random

@@ -9,7 +9,8 @@ unique id to a ``CountedSet`` root written blind (intent merge).  Checks:
 * no lost and no duplicated update (ruling R86): every acknowledged id is present exactly
   once, every other id present is one whose commit ended with ``ProtoOutcomeUnknownError``
   (a conservative outcome, P5: it may or may not take effect), no id is present twice, and
-  the count equals the ids present, so ``acked <= n <= acked + unknown``.  A worker that gets
+  the count equals the ids present, on every member (the ids are the commits' tokens,
+  :mod:`tests.support.outcomes`).  A worker that gets
   an unknown outcome records it and goes on with its next id (never a blind retry of the
   same one).  Progress: every peer acknowledged at least one commit;
 * no committing thread wrote a storage root (only persister threads did, D46), no root
@@ -206,6 +207,8 @@ def _throughput(storages_factory, tmp_path, peers, threads=4, seconds=1.5, break
         _storage_untouched_by_commits(storages, spaces)
         for space in spaces:
             space.close()
+    # Review M5: the figure behind the bound (it was ``failures == 0`` before Task 8.3n).
+    print(f"\nreplication failures {failures}, unknown outcomes {len(tokens.unknown_tokens)}")
     assert failures <= len(tokens.unknown_tokens)    # every failed replication surfaced as unknown
     if breakdown is not None:
         n = sum(st["critical_commits"] for st in critical) or 1
