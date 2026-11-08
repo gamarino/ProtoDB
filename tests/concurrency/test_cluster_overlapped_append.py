@@ -50,7 +50,7 @@ RUNS = int(os.environ.get("PROTODB_OVERLAP_RUNS", "10"))
 
 def _cluster(tmp_path, n=3, *, storage_kw=None, **kw):
     tc = TieredCluster(tmp_path, n, storage_kw=dict(durability="fsync", **(storage_kw or {})), **dict(LEASE, **kw))
-    tc.spaces[tc.ids[0]].new_database("db")
+    tc.create_database(tc.ids[0])
     return tc
 
 
@@ -832,12 +832,21 @@ def test_no_acknowledged_commit_is_lost_with_kills_inside_the_overlapped_window(
                     return False
                 append = storage.accept_replication
                 fired = threading.Event()
+                armed = threading.Lock()
                 after = rng.random() < 0.5
 
                 def hooked(*a, **kw):
-                    if threading.current_thread().name.startswith("proto-cluster") or fired.is_set():
+                    if threading.current_thread().name.startswith("proto-cluster"):
                         return append(*a, **kw)         # an acceptor's append, not the holder's
-                    fired.set()
+                    with armed:
+                        # Fix round 2, item 2: decided under the lock the disarm takes, so a
+                        # holder that arrives as the wait times out either fires (and its
+                        # victim is killed and revived below) or finds the hook disarmed.
+                        # Before, it could crash its member after the wait had given up, and
+                        # that member stayed down, its tier failed, for the rest of the run.
+                        if fired.is_set():
+                            return append(*a, **kw)
+                        fired.set()
                     load.down.add(victim)
                     if after:
                         append(*a, **kw)
@@ -846,8 +855,13 @@ def test_no_acknowledged_commit_is_lost_with_kills_inside_the_overlapped_window(
 
                 storage.accept_replication = hooked
                 if not fired.wait(SECONDS):
+                    with armed:
+                        disarmed = not fired.is_set()
+                        if disarmed:
+                            fired.set()                 # a later holder appends normally
                     storage.accept_replication = append
-                    return False
+                    if disarmed:
+                        return False
                 tc.kill(victim)
                 time.sleep(rng.uniform(0.05, LEASE["lease_duration"] * 1.5))
                 tc.revive(victim)

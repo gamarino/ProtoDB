@@ -115,28 +115,73 @@ def _owner(tc: TieredCluster, timeout: float = 5.0) -> str:
     raise AssertionError("no member owns a term under load")
 
 
+#: Longest the final commits of :func:`_check` may take, once every live member is ready, to
+#: get one commit acknowledged on each member: a liveness detector (R82), generous on
+#: purpose.  Measured recoveries are printed by every run (fix round 2, item 2).
+RECOVERY_TIMEOUT = 60.0
+
+
+def _await_ready(tc: TieredCluster, live, timeout: float = RECOVERY_TIMEOUT) -> None:
+    """Wait until every live member can take part in a commit: its space is open (a killed
+    member was revived), its coordinator is healthy (no fenced node, no failed tier: a member
+    whose tier failed refuses every vote until its space is reopened) and it is not rejoining
+    (Task 8.3n fix round 2, item 2).  A member that never gets there is named."""
+    deadline = time.monotonic() + timeout
+    while True:
+        waiting = {}
+        for node in live:
+            if node not in tc.spaces:
+                waiting[node] = "no space open"
+                continue
+            st = tc[node].stats()
+            if not st["healthy"] or st["rejoining"]:
+                waiting[node] = f"healthy={st['healthy']} rejoining={st['rejoining']} failure={st['failure']}"
+        if not waiting:
+            return
+        if time.monotonic() > deadline:
+            pytest.fail(f"members not ready {timeout:g} s after the faults healed: {waiting}")
+        time.sleep(0.01)
+
+
 def _check(tc: TieredCluster, load: Load, live) -> None:
     """Every live member commits again, then every outcome is resolved by its token on every
-    live member, and the counter equals the tokens present (module docstring)."""
+    live member, and the counter equals the tokens present (module docstring).
+
+    Liveness after the faults (fix round 2, item 2): the final commits start once every live
+    member is ready (:func:`_await_ready`), and each member commits until one commit is
+    acknowledged.  An unknown outcome (conservative, ruling R86) is resolved by its token
+    below; a conflict or a timeout applied nothing (its token must stay absent) and is
+    retried.  No attempt count: only :data:`RECOVERY_TIMEOUT`, a liveness detector."""
     tc.cluster.net.set_faults(drop=0.0, duplicate=0.0, delay=(0.0, 0.0))
     tc.cluster.net.heal()
     tokens = load.tokens
+    healed = time.monotonic()
+    _await_ready(tc, live)
+    ready = time.monotonic()
+    attempts = {}
     for node in live:
-        # An unknown outcome is conservative (ruling R86): resolved by its token below, and the
-        # member commits a new increment until one is acknowledged.
-        for _ in range(5):
+        outcomes = attempts[node] = []
+        while True:
             token = tokens.new(f"{node}.final")
             try:
                 tc.db(node).run(_token_incr(tokens, token), **RUN_KW)
-            except ProtoOutcomeUnknownError:
+            except ProtoOutcomeUnknownError as e:
                 tokens.unknown(token)
                 load.unknown += 1
-                continue
-            tokens.acked(token)
-            load.acked += 1
-            break
-        else:
-            pytest.fail(f"{node} never got a commit acknowledged after the faults healed")
+                outcomes.append(f"unknown: {e}")
+            except (ProtoConflictError, ProtoTimeoutError) as e:
+                outcomes.append(f"{type(e).__name__}: {e}")     # nothing applied: retried
+            else:
+                tokens.acked(token)
+                load.acked += 1
+                break
+            if time.monotonic() - ready > RECOVERY_TIMEOUT:
+                pytest.fail(f"{node} got no commit acknowledged {RECOVERY_TIMEOUT:g} s after every member was "
+                            f"ready; its attempts: {outcomes}")
+    done = time.monotonic()
+    retried = {node: len(o) for node, o in attempts.items() if o}
+    print(f"\nrecovery: members ready {ready - healed:.2f} s after the heal, one acknowledged commit per member "
+          f"{done - ready:.2f} s later; attempts that did not commit: {retried or 'none'}")
     # A member learns the others' last commits from their "done": the helper waits for every
     # member to show every acknowledged token.
     res = assert_outcomes_resolved(
@@ -149,7 +194,7 @@ def _check(tc: TieredCluster, load: Load, live) -> None:
 
 def _cluster(tmp_path, **kw):
     tc = TieredCluster(tmp_path, 3, storage_kw=STORAGE, **dict(LEASE, **kw))
-    tc.spaces[tc.ids[0]].new_database("db")
+    tc.create_database(tc.ids[0])
     return tc
 
 
