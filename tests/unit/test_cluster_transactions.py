@@ -391,3 +391,45 @@ def test_sync_promises_local_persistence_and_a_commit_on_the_reader_sees_every_a
         finally:
             reader._route = route
             tc.store.set_outage(False)
+
+
+def test_a_space_opened_while_no_majority_has_a_space_gets_no_permission_until_one_does(caplog):
+    """Task 8.3n fix round 2, item 1 (concern 2 of fix round 1), reduced to its cause.  The
+    first snapshot of a space confirms the committed root under a write permission
+    (``needs_confirmation``).  A member with no space open has no acceptor log attached, so
+    it neither grants nor acknowledges (D46 amendment, item 3: ``reject`` reason
+    ``no_storage``; P5: no vote without a durable promise).  While a majority of the members
+    has no space open, no permission can exist: the confirmation fails after the space's
+    ``lock_timeout`` -- a timeout, the conservative failure P5 allows, logged -- and the read
+    starts from the newest committed root this node knows.  As soon as a majority has a space
+    open, every member commits.
+
+    An early version of the TCP test's observer opened the members' spaces one after another
+    in one thread: the first open waited out the 30 s default timeout because the opens that
+    would have formed a majority came after it in the same thread."""
+    from proto_db.cluster.rootlog import memory_log_for
+    shared = MemoryStorage()
+    for n in ("n0", "n1", "n2"):
+        memory_log_for(shared, n).mark_rejoined()      # a cluster that ran before: no rejoin
+    ObjectSpace(shared).new_database("db")
+    with Cluster(3, **dict(FAST, startup_grace=None)) as cl:    # a restart: the default grace
+        time.sleep(cl["n0"].restart_grace)              # the members grant nothing during it
+        lonely = ObjectSpace(shared, coordinator=cl["n0"], lock_timeout=0.5)
+        started = time.monotonic()
+        with caplog.at_level("WARNING", logger="proto_db.transactions"):
+            db0 = lonely.open_database("db")            # the first snapshot: the confirmation
+        waited = time.monotonic() - started
+        failed = [r for r in caplog.records if "Confirming the committed root" in r.getMessage()]
+        assert failed and "could not obtain a write permission" in failed[0].getMessage(), caplog.text
+        assert waited < 10, f"the confirmation waited {waited:.1f} s, not its lock_timeout of 0.5 s"
+        assert all(cl[n].stats()["grants_given"] == 0 for n in cl.ids)
+        assert all(cl[n].stats()["grants_refused_no_storage"] >= 1 for n in ("n1", "n2"))
+        with pytest.raises(ProtoTimeoutError):          # still no majority: nothing commits
+            db0.run(_incr, retries=0)
+        caplog.clear()
+        with caplog.at_level("WARNING", logger="proto_db.transactions"):
+            db1 = ObjectSpace(shared, coordinator=cl["n1"], lock_timeout=5.0).open_database("db")
+            db1.run(_incr, **RUN_KW)                    # n0 and n1: a majority with a space open
+            db0.run(_incr, **RUN_KW)
+        assert not [r for r in caplog.records if "Confirming the committed root" in r.getMessage()], caplog.text
+        assert _value(lonely) == 2

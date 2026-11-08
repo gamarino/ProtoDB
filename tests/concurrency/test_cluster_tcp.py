@@ -241,16 +241,35 @@ class _InProcessTcpCluster:
             # log would rejoin first, which needs both other members of three (D46, R47).
             memory_log_for(self.storage, f"n{i}").mark_rejoined()
         ObjectSpace(self.storage).new_database("db")
+        self.dbs = {}
         # Each commit adds its token to the counted set ``ids`` by a blind write (merged, never a
         # conflict), so the tokens cost the workload nothing it did not do before.
         self.tokens = CommitTokens()
+
+    def open_spaces(self) -> None:
+        """Open one space on every live member, all at once (fix round 2, item 1).  A space's
+        first snapshot confirms the committed root under a write permission, and a member
+        with no space open neither grants nor acknowledges (D46 amendment, ``no_storage``):
+        opened one after another, the first confirmation found no majority and waited out
+        its 30 s timeout, while the opens that would have formed one waited behind it."""
+        opened = {}
+
+        def open_one(node):
+            opened[node.node_id] = ObjectSpace(self.storage, coordinator=node).open_database("db")
+        threads = [threading.Thread(target=open_one, args=(node,)) for node in self.nodes]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert set(opened) == {node.node_id for node in self.nodes}, f"a space failed to open: {sorted(opened)}"
+        self.dbs = opened
 
     def rate(self, seconds: float) -> float:
         """Commits per second of four threads (two per committing member) over ``seconds``."""
         done = []
         # One space per committing member, shared by its workers and by the observer (review
-        # M1).  Opened before the window starts: attaching a space confirms the committed root.
-        dbs = {node.node_id: ObjectSpace(self.storage, coordinator=node).open_database("db") for node in self.nodes[:2]}
+        # M1), opened before the first window (``open_spaces``).
+        dbs = {node.node_id: self.dbs[node.node_id] for node in self.nodes[:2]}
         stop_at = time.monotonic() + seconds
 
         def worker(node):
@@ -284,9 +303,7 @@ class _InProcessTcpCluster:
     def check_outcomes(self) -> None:
         """Every acknowledged commit is in ``ids`` once on every live member, and every unknown
         one resolved alike (R86, R114; :mod:`tests.support.outcomes`)."""
-        dbs = {node.node_id: ObjectSpace(self.storage, coordinator=node).open_database("db") for node in self.nodes}
-
-        assert_outcomes_resolved({n: (lambda db=db: blind_snapshot_of(db, root="ids")) for n, db in dbs.items()},
+        assert_outcomes_resolved({n: (lambda db=db: blind_snapshot_of(db, root="ids")) for n, db in self.dbs.items()},
                                  self.tokens)
 
     def stop(self) -> None:
@@ -306,12 +323,15 @@ _WINDOW = 1.0
 #: against ran at 8 commits/s against 460 healthy (a ratio of 0.017): every commit waited on a
 #: connect to the unreachable member.  Healthy runs measure about 160 commits/s and degraded
 #: ones about 140 on the development machine, single-sample ratios spread from 0.22 (full-suite
-#: load) to 1.6 (8.3d re-review 13, N5).
+#: load) to 1.6 (8.3d re-review 13, N5).  Until Task 8.3n fix round 2 the healthy cluster's
+#: third member had no space open and refused every grant (``no_storage``), so both clusters
+#: committed with two acceptors; with its space open, on a loaded machine (load average about
+#: 30 on 12 cores), samples measured 98-210 commits/s healthy and 98-250 degraded.
 _MIN_DEGRADED_RATE = 20.0
 _MIN_MEDIAN_RATIO = 0.1
 
 
-def test_an_unreachable_member_does_not_stall_the_healthy_majority(capsys):
+def test_an_unreachable_member_does_not_stall_the_healthy_majority(capsys, caplog):
     """One unreachable member of three must not stall the two live ones.  Both clusters run
     side by side and are sampled alternately (healthy, degraded, healthy, ...), so a load phase
     of the machine affects both alike; the assertion is on medians, and on an absolute floor a
@@ -323,12 +343,21 @@ def test_an_unreachable_member_does_not_stall_the_healthy_majority(capsys):
         clusters.append(_InProcessTcpCluster(black_holed=False))
         clusters.append(_InProcessTcpCluster(black_holed=True))
         time.sleep(max(c.grace for c in clusters))     # the members grant nothing during their grace
+        for c in clusters:
+            c.open_spaces()
         healthy, degraded = [], []
         for _ in range(_PAIRS):
             healthy.append(clusters[0].rate(_WINDOW))
             degraded.append(clusters[1].rate(_WINDOW))
         for c in clusters:
             c.check_outcomes()
+        # Fix round 2, item 1: every member's first snapshot confirmed its committed root.
+        # A confirmation that finds no majority with a space open waits out its lock_timeout
+        # (30 s by default) and then gives up: before the spaces were opened together this
+        # cost 30 s per cluster before the first sample, and an early observer that opened
+        # them inside the window lost the whole first sample to it.
+        unconfirmed = [r.getMessage() for r in caplog.records if "Confirming the committed root" in r.getMessage()]
+        assert not unconfirmed, unconfirmed
     finally:
         for c in clusters:
             c.stop()
