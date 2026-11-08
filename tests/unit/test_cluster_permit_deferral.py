@@ -11,6 +11,7 @@ import time
 
 import pytest
 
+from proto_db.cluster.protocol import make_message
 from tests.support.cluster import Cluster
 
 pytestmark = [pytest.mark.timeout(60)]
@@ -64,3 +65,81 @@ def test_a_deferred_request_is_served_by_the_busy_owner():
         assert got["owner"] == "n0", got
         seconds = got["at"] - start
         assert seconds < LEASE / 4, f"the deferred request waited {seconds:.2f} s for the turn"
+
+
+def test_a_refusal_of_an_older_terms_request_keeps_the_owner_learnt_since():
+    """Task 8.3n fix round 2: n1 asks n0 for a permission under n0's term T1; n0's term ends
+    and n0 owns a newer term T2, which n1 learns (a renewal) before n0's refusal of the T1
+    request ("not_owner") arrives.  The refusal is about T1; it must not make n1 forget that
+    n0 owns T2.  Before the fix it did, and nothing restored it: n0's renewals of T2 teach
+    only a term above the hint's, so n1 asked nobody while n0 kept T2 -- in the proof of
+    fix round 2 a member made no commit for 30 s under a 0.25 s owner-to-member delay
+    (``test_duplicates_delayed_beyond_a_holder_restart``)."""
+    lease = 2.4
+    with Cluster(3, tiers=True, lease_duration=lease, request_timeout=0.1, startup_grace=0.0) as cl:
+        cl.wait_rejoined()
+        n0, n1 = cl["n0"], cl["n1"]
+        stop = threading.Event()
+        errors = []
+
+        def busy():                                  # n0 keeps asking: its term never idles
+            try:
+                while not stop.is_set():
+                    permission = n0.permit(timeout=5)
+                    time.sleep(0.005)
+                    n0.finish(permission)
+            except Exception as e:                   # reported by the assertions below
+                errors.append(e)
+
+        def wait_for(cond, what, timeout=10):
+            deadline = time.monotonic() + timeout
+            while not cond():
+                assert time.monotonic() < deadline, what
+                time.sleep(0.005)
+        worker = threading.Thread(target=busy)
+        worker.start()
+        wait_for(lambda: n0._ownership is not None and n1.owner == "n0", "n1 learns that n0 owns a term")
+        t1 = n0._ownership.term
+        cl.net.partition({"n1"}, {"n0", "n2"})       # n1's request under T1 stays unanswered
+        got = {}
+
+        def ask():
+            try:
+                permission = n1.permit(timeout=lease * 4)
+                got["at"], got["owner"] = time.monotonic(), permission.owner
+                n1.finish(permission)
+            except Exception as e:
+                got["error"] = e
+        asker = threading.Thread(target=ask)
+        asker.start()
+        try:
+            wait_for(lambda: len(n1._permit_waits) == 1, "n1 asks n0 under T1")
+            rid = next(iter(n1._permit_waits))
+            stop.set()
+            worker.join(10)
+            wait_for(lambda: n0._ownership is None, "n0's term T1 ends (idle)")
+            stop.clear()
+            worker = threading.Thread(target=busy)
+            worker.start()
+            wait_for(lambda: n0._ownership is not None, "n0 owns a new term")
+            t2 = n0._ownership.term
+            assert t2 > t1
+            with n1._cond:
+                n1._note_owner(t2)                   # a renewal of T2 reaches n1 first
+            assert n1.owner == "n0"
+            # Then n0's refusal of the T1 request (a retry reached n0 after T1 ended).
+            n1._on_permit_reply("n0", make_message("permit_no", "n0", term=t2, rid=rid, inc=n1._inc,
+                                                   reason="not_owner"))
+            assert n1.owner == "n0", "a refusal about T1 made n1 forget that n0 owns T2"
+            healed = time.monotonic()
+            cl.net.heal()
+            asker.join(lease * 4)
+        finally:
+            stop.set()
+            worker.join(10)
+            cl.net.heal()
+        assert errors == [] and not asker.is_alive()
+        assert got.get("owner") == "n0", got
+        assert n0.stats()["ownerships"] >= 2
+        seconds = got["at"] - healed
+        assert seconds < lease / 2, f"n1 waited {seconds:.2f} s for a permission from n0 after the heal"

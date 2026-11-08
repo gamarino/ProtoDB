@@ -143,6 +143,13 @@ def blind_snapshot_of'''),),
          '''    assert failures <= unknown, (failures, unknown)     # PLANT: the bound before db68f49'''),),
         ("tests/concurrency/test_cluster_contention.py::test_forced_replication_failures_surface_and_lose_nothing",),
         "assert 2 <= 1", "forced replication failures: the bound before db68f49 (a retried conflict uncounted)"),
+    "hint_forgotten": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                    if self._owner_hint[1] == sender and self._owner_hint[0] == wait.term:",
+         "                    if self._owner_hint[1] == sender:     # PLANT: any refusal forgets the owner"),),
+        ("tests/unit/test_cluster_permit_deferral.py::test_a_refusal_of_an_older_terms_request_keeps_the_owner_learnt_since",),
+        "made n1 forget that n0 owns T2",
+        "product: a refusal of an older term's request clears the owner learnt for a newer term"),
     "nokeep": Plant((
         ("proto_db/transactions.py",
          "                    keep = True         # this thread retries its own commit under the permission",

@@ -473,11 +473,14 @@ class _Waiter:
 
 class _PermitWait:
     """A request for a write permission awaiting the owner's answer (``reply``: a
-    :class:`~proto_db.cluster.lease.Permission`, ``"refused"``, or ``"gone"`` once abandoned)."""
+    :class:`~proto_db.cluster.lease.Permission`, ``"refused"``, or ``"gone"`` once abandoned).
+    ``term``: the owner's term the request was sent under (``0`` for this node's own
+    ownership); a refusal or a silence then speaks for that term only."""
 
-    def __init__(self, rid: int, sent_at: float):
+    def __init__(self, rid: int, sent_at: float, term: int = 0):
         self.rid = rid
         self.sent_at = sent_at
+        self.term = term
         self.reply = None
 
 
@@ -2931,7 +2934,7 @@ class ClusterCoordinator:
                 term, target = self._owner_hint
                 if target is None or target == self._node or term == 0:
                     return None
-                wait = _PermitWait(next(self._rids), self._clock())
+                wait = _PermitWait(next(self._rids), self._clock(), term)
                 self._permit_waits[wait.rid] = wait
                 self._stats["permit_requests_sent"] += 1
                 request = make_message("permit_req", self._node, term=term, rid=wait.rid, inc=self._inc)
@@ -2980,8 +2983,11 @@ class ClusterCoordinator:
                 own.queue = collections.deque(q for q in own.queue if q[3] is not wait)
         if reply is None and target is not None:
             with self._lock:
-                if self._owner_hint[1] == target:
-                    self._owner_hint = (self._owner_hint[0], None)     # unresponsive: try to own
+                # Unresponsive: try to own -- unless this node learnt a newer term of that
+                # member meanwhile (its renewals reached here), which the silence says
+                # nothing about (Task 8.3n fix round 2, as for a refusal).
+                if self._owner_hint == (wait.term, target):
+                    self._owner_hint = (self._owner_hint[0], None)
         self._check_running()
         self._check_healthy()
         return None
@@ -3140,7 +3146,7 @@ class ClusterCoordinator:
                 if wait is not None and wait.reply is None:
                     wait.reply = "refused"
                     self._stats["permits_refused"] += 1
-                    if self._owner_hint[1] == sender:
+                    if self._owner_hint[1] == sender and self._owner_hint[0] == wait.term:
                         # The member this node took for the owner answered this very request:
                         # it does not serve that term (not its owner, ending or abandoned).
                         # Forget it whatever term the refusal carries -- the sender's highest
@@ -3150,6 +3156,13 @@ class ClusterCoordinator:
                         # the former owner again until its permission timed out (measured: 27 s
                         # after an ``owner_idle_release`` end, ruling R80).  The term is kept,
                         # so the next owner's messages update the hint (timing only, D50).
+                        # Only while the hint still names the term the request was sent
+                        # under: a refusal of an older term's request says nothing about a
+                        # newer term of the same member, learnt since from its renewals, and
+                        # forgetting that one was never undone -- its renewals teach only a
+                        # term above the hint's, so this node asked nobody while that member
+                        # kept the term (Task 8.3n fix round 2: no commit for 30 s under a
+                        # 0.25 s owner-to-member delay).
                         self._owner_hint = (self._owner_hint[0], None)
                     self._cond.notify_all()
                 return
