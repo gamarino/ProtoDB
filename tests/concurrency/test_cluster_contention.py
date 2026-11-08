@@ -14,8 +14,10 @@ unique id to a ``CountedSet`` root written blind (intent merge).  Checks:
   an unknown outcome records it and goes on with its next id (never a blind retry of the
   same one).  Progress: every peer acknowledged at least one commit;
 * no committing thread wrote a storage root (only persister threads did, D46), no root
-  write was unconditional, every replication failure surfaced as an unknown outcome, and
-  every node stayed healthy: contention never reached the storage.
+  write was unconditional, every replication failure surfaced as an unknown outcome or, when
+  nothing a voter may accept left the node (rule H7), as a conflict ``Database.run`` retries
+  (that branch is forced deterministically in the last test), and every node stayed healthy:
+  contention never reached the storage.
 
 A node learns that another node's commit is committed from that commit's release, handled
 by its worker; a read on a node is therefore stale until then (never lost).  The checks
@@ -156,17 +158,25 @@ def test_contending_peers_never_reach_the_storage(tmp_path, backend):
         _storage_untouched_by_commits(storages, spaces)
         for space in spaces:
             space.close()
-    # A failed replication is reported to its commits as an unknown outcome (one round may
-    # carry several commits), or as a retried conflict when nothing acceptable left (H7);
-    # never silently (see ``_throughput``).
-    assert sum(st["replication_failures"] for st in stats) <= refused["unknown"] + refused["conflict"]
-    assert refused["unknown"] <= len(unknown)
+    _assert_failures_surfaced(sum(st["replication_failures"] for st in stats), refused, len(unknown))
     assert all(st["healthy"] for st in stats)
     print(f"\n[{backend}] {total} increments by {PEERS}x{THREADS} threads in {elapsed:.2f}s "
           f"({len(acked)} acknowledged, {len(unknown)} unknown, {len(extra)} of those took effect); "
           f"lease attempts {sum(st['attempts'] for st in stats)}, "
           f"acquired {sum(st['acquired'] for st in stats)}, "
           f"storage root reads {sum(st['storage_root_reads'] for st in stats)}")
+
+
+def _assert_failures_surfaced(failures: int, refused: dict, unknown: int) -> None:
+    """The replication-failure bound: every failed replication raised, as an unknown outcome
+    or -- when nothing a voter may accept left the node (rule H7) -- as a retryable conflict
+    that ``Database.run`` retries; never silently.  Every unknown outcome raised reached a
+    commit, which recorded it (one round may carry several commits).  ``refused`` comes from
+    :func:`_count_failed_replications`; the TCP test applies the same bound per peer."""
+    print(f"\nreplication failures {failures}, raised as unknown {refused['unknown']}, as conflicts "
+          f"{refused['conflict']}; unknown outcomes {unknown}")
+    assert failures <= refused["unknown"] + refused["conflict"], (failures, refused)
+    assert refused["unknown"] <= unknown, (refused, unknown)
 
 
 def _count_failed_replications(cl) -> dict:
@@ -234,15 +244,11 @@ def _throughput(storages_factory, tmp_path, peers, threads=4, seconds=1.5, break
         _storage_untouched_by_commits(storages, spaces)
         for space in spaces:
             space.close()
-    # Review M5: the figure behind the bound (it was ``failures == 0`` before Task 8.3n).  A
-    # failed replication surfaces as an unknown outcome, or -- when nothing a voter may accept
-    # left the node (rule H7) -- as a retryable conflict that ``Database.run`` retries; never
-    # silently.  (``failures <= unknown`` alone failed once in the 8.3n fix-round proof: 2
-    # failures, both H7 conflicts, 0 unknown outcomes.)
-    print(f"\nreplication failures {failures}, raised as unknown {refused['unknown']}, as conflicts "
-          f"{refused['conflict']}; unknown outcomes {len(tokens.unknown_tokens)}")
-    assert failures <= refused["unknown"] + refused["conflict"]
-    assert refused["unknown"] <= len(tokens.unknown_tokens)
+    # Review M5: the figure behind the bound (it was ``failures == 0`` before Task 8.3n;
+    # ``failures <= unknown`` alone failed once in the 8.3n fix-round-1 proof: 2 failures, both
+    # H7 conflicts, 0 unknown outcomes).  The branch with failures is forced in
+    # ``test_forced_replication_failures_surface_and_lose_nothing``.
+    _assert_failures_surfaced(failures, refused, len(tokens.unknown_tokens))
     if breakdown is not None:
         n = sum(st["critical_commits"] for st in critical) or 1
         for key in ("validation", "replay", "path_copy", "replication"):
@@ -344,3 +350,72 @@ def test_throughput_with_a_30ms_object_store(tmp_path, capsys):
         print("CRITICAL SECTION mean per commit (ms): "
               + ", ".join(f"{k}={v * 1000:.3f}" for k, v in breakdown.items()))
     assert tiered > cas
+
+
+def test_forced_replication_failures_surface_and_lose_nothing(tmp_path):
+    """Task 8.3n fix round 2, item 3: the branch of the replication-failure bound that no run
+    of the workloads above reached (every run after db68f49 had no failed replication), with
+    one failure of each kind forced, deterministically.  The schedule is that of
+    ``test_a_failing_predecessor_turns_its_successor_into_a_retried_conflict``:
+
+    * n0's round proposes its root, its records never leave n0, and its own sync fails once
+      the data stage was sent: an unknown outcome (the root may have left, P5);
+    * n1's pipelined permission, issued on that proposal, sends its ``store``; its gate never
+      opens, so nothing a voter may accept leaves n1 (rule H7): a conflict, which
+      ``Database.run`` retries in a later term until it is acknowledged.
+
+    Each commit adds its token blind, as in the throughput workload.  The bound holds with
+    both kinds counted (``failures <= unknown + conflict``; the old ``failures <= unknown``
+    fails here), and every token resolves alike on every member: a lost acknowledged commit
+    still fails the test in this branch (plant ``forced_lost``)."""
+    from tests.concurrency.test_cluster_pipelined_permits import _await, _cluster as _pipelined_cluster, _confirmed
+    from tests.support.tiered_cluster import RUN_KW as TIERED_RUN_KW, incr
+
+    tokens = CommitTokens()
+    with _pipelined_cluster(tmp_path) as tc:
+        tc.commit("n0", incr)
+        _confirmed(tc)
+        refused = _count_failed_replications(tc.cluster)
+        a, b = tc["n0"], tc["n1"]
+        hold = threading.Event()
+
+        def failing_own(*args, **kw):
+            hold.wait(5)
+            raise OSError("the holder's own sync failed")
+        a._self_accept_with_records = failing_own
+        send = a.transport.send
+        a.transport.send = lambda to, msg: None if msg["type"] in ("records", "replicate") else send(to, msg)
+        outcomes = {}
+
+        def run(node):
+            token = tokens.new(node)
+            try:
+                tc.db(node).run(lambda tr: add_blind_token(tr, token, root="ids"), **TIERED_RUN_KW)
+                tokens.acked(token)
+                outcomes[node] = "acked"
+            except ProtoOutcomeUnknownError:
+                tokens.unknown(token)
+                outcomes[node] = "unknown"
+        proposed = a.stats()["proposals"]
+        ta = threading.Thread(target=run, args=("n0",))
+        ta.start()
+        _await(lambda: a.stats()["proposals"] > proposed, what="n0's proposal")
+        tb = threading.Thread(target=run, args=("n1",))
+        tb.start()
+        _await(lambda: b.stats()["stores_sent"] >= 1, what="n1's store", tc=tc)
+        hold.set()
+        ta.join(30)
+        a.transport.send = send
+        tb.join(60)
+        assert not ta.is_alive() and not tb.is_alive(), "a commit hung"
+        failures = sum(tc[n].stats()["replication_failures"] for n in tc.ids)
+        # The schedule ran: n0's round ended unknown, n1's gate closed and its retry committed.
+        assert outcomes == {"n0": "unknown", "n1": "acked"}, outcomes
+        assert b.stats()["gate_closures"] >= 1
+        assert refused["unknown"] >= 1 and refused["conflict"] >= 1, refused
+        _assert_failures_surfaced(failures, refused, len(tokens.unknown_tokens))
+        # n0's tier failed with its own sync: the space is reopened on a healthy disk (module
+        # docstring of the coordinator, "Health"), then every member is read.
+        tc.kill("n0")
+        tc.revive("n0")
+        assert_outcomes_resolved({n: (lambda n=n: blind_snapshot_of(tc.db(n), root="ids")) for n in tc.ids}, tokens)

@@ -129,6 +129,20 @@ def blind_snapshot_of''', '''    return frozenset(counts) - {min(counts, default
 def blind_snapshot_of'''),),
         ("tests/concurrency/test_cluster_contention.py::test_contending_peers_never_reach_the_storage",),
         "acknowledged commits lost", "blind tokens: every member loses one commit"),
+    "forced_lost": Plant((
+        ("tests/concurrency/test_cluster_contention.py",
+         '''        assert_outcomes_resolved({n: (lambda n=n: blind_snapshot_of(tc.db(n), root="ids")) for n in tc.ids}, tokens)''',
+         '''        assert_outcomes_resolved({n: (lambda n=n: (lambda s: s._replace(tokens=s.tokens - {min(tokens.acked_tokens)}))(
+            blind_snapshot_of(tc.db(n), root="ids"))) for n in tc.ids}, tokens)   # PLANT'''),),
+        ("tests/concurrency/test_cluster_contention.py::test_forced_replication_failures_surface_and_lose_nothing",),
+        "acknowledged commits lost",
+        "forced replication failures (fix round 2, item 3): every member loses one acknowledged commit"),
+    "forced_old_bound": Plant((
+        ("tests/concurrency/test_cluster_contention.py",
+         '''    assert failures <= refused["unknown"] + refused["conflict"], (failures, refused)''',
+         '''    assert failures <= unknown, (failures, unknown)     # PLANT: the bound before db68f49'''),),
+        ("tests/concurrency/test_cluster_contention.py::test_forced_replication_failures_surface_and_lose_nothing",),
+        "assert 2 <= 1", "forced replication failures: the bound before db68f49 (a retried conflict uncounted)"),
     "nokeep": Plant((
         ("proto_db/transactions.py",
          "                    keep = True         # this thread retries its own commit under the permission",
