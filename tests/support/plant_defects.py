@@ -143,6 +143,14 @@ def blind_snapshot_of'''),),
          '''    assert failures <= unknown, (failures, unknown)     # PLANT: the bound before db68f49'''),),
         ("tests/concurrency/test_cluster_contention.py::test_forced_replication_failures_surface_and_lose_nothing",),
         "assert 2 <= 1", "forced replication failures: the bound before db68f49 (a retried conflict uncounted)"),
+    "renew_stale": Plant((
+        ("proto_db/cluster/lease.py",
+         "            if renew and self._active and self._holder == holder and self._term == term and self._inc == inc:",
+         "            if renew and term >= self._highest and self._active and self._holder == holder and self._term == term \\\n"
+         "                    and self._inc == inc:     # PLANT: a refused higher request blocks every renewal"),),
+        ("tests/unit/test_cluster_renewal.py::test_a_refused_higher_request_does_not_end_the_owners_term",),
+        ("renewal_failures\"] == before", "the owner's term ended while in use", "may or may not take effect"),
+        "product: the renewal is decided after the stale-term rule (the 4c8c949 failure)"),
     "hint_forgotten": Plant((
         ("proto_db/cluster/coordinator.py",
          "                    if self._owner_hint[1] == sender and self._owner_hint[0] == wait.term:",
