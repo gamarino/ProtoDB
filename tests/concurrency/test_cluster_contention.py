@@ -34,7 +34,7 @@ import time
 
 import pytest
 
-from proto_db.errors import ProtoOutcomeUnknownError
+from proto_db.errors import ProtoConflictError, ProtoOutcomeUnknownError
 from proto_db.storage.cloud import CloudStorage
 from proto_db.storage.file import FileStorage
 from proto_db.storage.tiered import TieredStorage
@@ -111,6 +111,7 @@ def test_contending_peers_never_reach_the_storage(tmp_path, backend):
         cl.wait_rejoined()      # every first start done first (a late member waits, R51)
         spaces[0].new_database("db")
         dbs = [s.open_database("db") for s in spaces]
+        refused = _count_failed_replications(cl)
 
         def worker_for(peer):
             db = dbs[peer]
@@ -156,14 +157,39 @@ def test_contending_peers_never_reach_the_storage(tmp_path, backend):
         for space in spaces:
             space.close()
     # A failed replication is reported to its commits as an unknown outcome (one round may
-    # carry several commits), never silently.
-    assert sum(st["replication_failures"] for st in stats) <= len(unknown)
+    # carry several commits), or as a retried conflict when nothing acceptable left (H7);
+    # never silently (see ``_throughput``).
+    assert sum(st["replication_failures"] for st in stats) <= refused["unknown"] + refused["conflict"]
+    assert refused["unknown"] <= len(unknown)
     assert all(st["healthy"] for st in stats)
     print(f"\n[{backend}] {total} increments by {PEERS}x{THREADS} threads in {elapsed:.2f}s "
           f"({len(acked)} acknowledged, {len(unknown)} unknown, {len(extra)} of those took effect); "
           f"lease attempts {sum(st['attempts'] for st in stats)}, "
           f"acquired {sum(st['acquired'] for st in stats)}, "
           f"storage root reads {sum(st['storage_root_reads'] for st in stats)}")
+
+
+def _count_failed_replications(cl) -> dict:
+    """Count, per outcome, the replications that raised on every member of ``cl``."""
+    counts = {"unknown": 0, "conflict": 0}
+    lock = threading.Lock()
+    for node in cl.ids:
+        coordinator = cl[node]
+        real = coordinator.replicate
+
+        def replicate(*a, _real=real, **kw):
+            try:
+                return _real(*a, **kw)
+            except ProtoOutcomeUnknownError:
+                with lock:
+                    counts["unknown"] += 1
+                raise
+            except ProtoConflictError:
+                with lock:
+                    counts["conflict"] += 1
+                raise
+        coordinator.replicate = replicate
+    return counts
 
 
 def _throughput(storages_factory, tmp_path, peers, threads=4, seconds=1.5, breakdown=None):
@@ -177,6 +203,7 @@ def _throughput(storages_factory, tmp_path, peers, threads=4, seconds=1.5, break
         stop_at = []
         done = []
         tokens = CommitTokens()
+        refused = _count_failed_replications(cl)
 
         def worker_for(db):
             def worker():
@@ -207,9 +234,15 @@ def _throughput(storages_factory, tmp_path, peers, threads=4, seconds=1.5, break
         _storage_untouched_by_commits(storages, spaces)
         for space in spaces:
             space.close()
-    # Review M5: the figure behind the bound (it was ``failures == 0`` before Task 8.3n).
-    print(f"\nreplication failures {failures}, unknown outcomes {len(tokens.unknown_tokens)}")
-    assert failures <= len(tokens.unknown_tokens)    # every failed replication surfaced as unknown
+    # Review M5: the figure behind the bound (it was ``failures == 0`` before Task 8.3n).  A
+    # failed replication surfaces as an unknown outcome, or -- when nothing a voter may accept
+    # left the node (rule H7) -- as a retryable conflict that ``Database.run`` retries; never
+    # silently.  (``failures <= unknown`` alone failed once in the 8.3n fix-round proof: 2
+    # failures, both H7 conflicts, 0 unknown outcomes.)
+    print(f"\nreplication failures {failures}, raised as unknown {refused['unknown']}, as conflicts "
+          f"{refused['conflict']}; unknown outcomes {len(tokens.unknown_tokens)}")
+    assert failures <= refused["unknown"] + refused["conflict"]
+    assert refused["unknown"] <= len(tokens.unknown_tokens)
     if breakdown is not None:
         n = sum(st["critical_commits"] for st in critical) or 1
         for key in ("validation", "replay", "path_copy", "replication"):

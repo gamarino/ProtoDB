@@ -132,7 +132,11 @@ def _check_outcomes(results, ids, n=None):
         assert n == len(ids)
         assert len(acked) <= n <= len(acked) + len(unknown)
     assert all(r["commits"] > 0 for r in results), [r["commits"] for r in results]    # progress
-    assert sum(r["failures"] for r in results) <= len(unknown)
+    # A failed replication surfaces as an unknown outcome or, when nothing acceptable left the
+    # node (rule H7), as a conflict that ``Database.run`` retries; never silently.
+    assert all(r["failures"] <= r["raised"]["unknown"] + r["raised"]["conflict"] for r in results), \
+        [(r["failures"], r["raised"]) for r in results]
+    assert sum(r["raised"]["unknown"] for r in results) <= len(unknown)
     return acked, unknown
 
 

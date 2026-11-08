@@ -22,7 +22,8 @@ line each way:
    ``unknown``: the ids whose commit was acknowledged or ended with
    ``ProtoOutcomeUnknownError`` -- conservative, recorded, the worker goes on with its next id
    (ruling R86); ``errors``: any other exception that stopped a worker;
-   ``failures``: replications without a majority; ``commit_publishes``: root writes made
+   ``failures``: replications without a majority; ``raised``: the replications that raised,
+   per outcome (``unknown``, ``conflict``); ``commit_publishes``: root writes made
    by other threads than the persister, D46;
    ``critical``: the tiered storage's critical-section counters, or ``None``);
 6. the parent writes ``{"stop": true}`` once every peer has finished (a peer keeps
@@ -38,7 +39,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from proto_db.cluster.coordinator import ClusterCoordinator  # noqa: E402
 from proto_db.cluster.transport import TcpTransport  # noqa: E402
-from proto_db.errors import ProtoOutcomeUnknownError, ProtoValidationError  # noqa: E402
+from proto_db.errors import ProtoConflictError, ProtoOutcomeUnknownError, ProtoValidationError  # noqa: E402
 from proto_db.storage.file import FileStorage  # noqa: E402
 from proto_db.storage.tiered import TieredStorage  # noqa: E402
 from proto_db.transactions import ObjectSpace  # noqa: E402
@@ -92,6 +93,23 @@ def main():
         prefix = int(node_id[1:]) * 1_000_000
 
         done_by = {}                              # commits completed, per worker
+        # Replications that raised, per outcome: a failed replication surfaces as an unknown
+        # outcome or, when nothing acceptable left this node (rule H7), as a retried conflict.
+        raised = {"unknown": 0, "conflict": 0}
+        real_replicate = coordinator.replicate
+
+        def replicate(*a, **kw):
+            try:
+                return real_replicate(*a, **kw)
+            except ProtoOutcomeUnknownError:
+                with lock:
+                    raised["unknown"] += 1
+                raise
+            except ProtoConflictError:
+                with lock:
+                    raised["conflict"] += 1
+                raise
+        coordinator.replicate = replicate
 
         def worker(index):
             try:
@@ -150,7 +168,7 @@ def main():
         if callable(stats):
             st = stats()
             critical = {k: st[k] for k in ("critical_misses", "root_writes_in_critical")}
-        _say({"commits": sum(counts), "acked": acked, "unknown": unknown, "errors": errors, "seconds": seconds, "failures": coordinator.stats()["replication_failures"],
+        _say({"commits": sum(counts), "acked": acked, "unknown": unknown, "errors": errors, "seconds": seconds, "failures": coordinator.stats()["replication_failures"], "raised": raised,
               "commit_publishes": sum(1 for name in storage.publishers if not name.startswith("proto-persister-")),
               "critical": critical, "breakdown": coordinator.stats()["critical"],
               "critical_commits": coordinator.stats()["critical_commits"]})
