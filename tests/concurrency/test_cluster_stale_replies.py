@@ -26,7 +26,7 @@ pytestmark = [pytest.mark.timeout(120)]
 
 def test_a_stale_ack_is_never_a_copy_or_a_vote_of_the_next_incarnation(tmp_path):
     with TieredCluster(tmp_path) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         tc.store.set_outage(True)                       # nothing is persisted: copies are all there is
         tc.commit("n0", incr)
         tc.kill("n2")
@@ -72,7 +72,7 @@ def test_a_stale_ack_is_never_a_copy_or_a_vote_of_the_next_incarnation(tmp_path)
 
 def test_a_stale_fetched_reply_is_never_the_record_of_another_pointer(tmp_path):
     with TieredCluster(tmp_path) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         tc.store.set_outage(True)                       # a peer is the only source of a record
         tc.commit("n0", incr)
         r1 = tc["n0"].committed_root()[1]

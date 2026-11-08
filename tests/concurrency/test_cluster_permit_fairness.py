@@ -36,7 +36,7 @@ KW = dict(lease_duration=2.0, request_timeout=0.25)
 def _hot_key_run(tmp_path, n: int, threads: int, *, blind: bool = False) -> dict:
     cluster = TieredCluster(tmp_path, n, storage_kw=dict(durability="none"), **KW)
     try:
-        cluster.spaces[cluster.ids[0]].new_database("db")
+        cluster.create_database(cluster.ids[0])
         acked = {node: 0 for node in cluster.ids}
         tokens = CommitTokens()
         lock = threading.Lock()

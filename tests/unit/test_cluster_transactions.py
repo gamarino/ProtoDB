@@ -10,7 +10,7 @@ from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
 from tests.support.cluster import Cluster
 from tests.support.fake_object_store import FakeObjectStore
-from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, snapshot_of, write_token
+from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, new_database_once, snapshot_of, write_token
 
 pytestmark = pytest.mark.timeout(60)
 
@@ -154,7 +154,7 @@ def test_transactions_read_the_committed_root_not_the_storage():
         storages = [RecordingStorage(shared) for _ in range(2)]
         spaces = [ObjectSpace(s, coordinator=cl[n]) for s, n in zip(storages, cl.ids)]
         cl.wait_rejoined()      # every first start done first (a late member waits, R51)
-        spaces[0].new_database("db")
+        new_database_once(spaces[0])
         dbs = [s.open_database("db") for s in spaces]
         for i in range(10):
             dbs[i % 2].run(_incr, **RUN_KW)
@@ -170,7 +170,7 @@ def test_the_commit_point_is_the_majority_acknowledgement():
         shared = MemoryStorage()
         spaces = [ObjectSpace(shared, coordinator=cl[n], lock_timeout=1.0) for n in cl.ids]
         cl.wait_rejoined()      # every first start done before any fault (a late member waits, R51)
-        db = spaces[0].new_database("db")
+        db = new_database_once(spaces[0])
         db.run(_incr, **RUN_KW)
         commits = cl["n0"].stats()["replications"] - cl["n0"].stats()["replication_failures"]
         assert commits >= 2
@@ -206,7 +206,7 @@ def test_a_holder_paused_past_its_lease_never_replicates():
         s1 = ObjectSpace(shared, coordinator=cl["n1"])
         ObjectSpace(shared, coordinator=cl["n2"])        # a new cluster rejoins once every member answers
         cl.wait_rejoined()      # every first start done before any fault (a late member waits, R51)
-        s0.new_database("db")
+        new_database_once(s0)
         entered, resume = threading.Event(), threading.Event()
         original = cl["n0"].tier.outgoing
         armed = [True]
@@ -247,7 +247,7 @@ def test_a_late_replication_is_refused_by_peers_that_granted_a_newer_term():
         s1 = ObjectSpace(shared, coordinator=cl["n1"])
         ObjectSpace(shared, coordinator=cl["n2"])        # a new cluster rejoins once every member answers
         cl.wait_rejoined()      # every first start done before any fault (a late member waits, R51)
-        s0.new_database("db")
+        new_database_once(s0)
         _value(s1)
         late = FAST["lease_duration"] * 1.5
         original = cl["n0"].replicate
@@ -310,7 +310,7 @@ def test_storage_root_reads_never_make_reads_go_backwards():
         s1 = ObjectSpace(shared, coordinator=cl["n1"])
         ObjectSpace(shared, coordinator=cl["n2"])        # n2 grants and acknowledges with a tier only
         cl.wait_rejoined()      # every first start done before any fault (a late member waits, R51)
-        db0 = s0.new_database("db")
+        db0 = new_database_once(s0)
         db0.run(_incr, **RUN_KW)
         assert _value(s1) == 1
         cl.net.partition({"n0", "n2"}, {"n1"})          # n1 misses the next commits
@@ -333,7 +333,7 @@ def test_sync_waits_for_the_persisted_epoch_and_exposes_both_epochs():
     with Cluster(3, **FAST) as cl:
         spaces = [ObjectSpace(shared, coordinator=cl[n]) for n in cl.ids]
         cl.wait_rejoined()      # every first start done before any fault (a late member waits, R51)
-        db = spaces[0].new_database("db")
+        db = new_database_once(spaces[0])
         for i in range(5):
             spaces[i % 3].open_database("db").run(_incr, **RUN_KW)
         spaces[1].sync(timeout=5)                         # the last committer
@@ -363,7 +363,7 @@ def test_sync_promises_local_persistence_and_a_commit_on_the_reader_sees_every_a
     newer persisted root either)."""
     from tests.support.tiered_cluster import TieredCluster, incr, RUN_KW as TRUN_KW
     with TieredCluster(tmp_path) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         tc.db("n0").run(incr, **TRUN_KW)
         for n in tc.ids:
             tc.spaces[n].sync(timeout=10)
@@ -433,3 +433,35 @@ def test_a_space_opened_while_no_majority_has_a_space_gets_no_permission_until_o
             db0.run(_incr, **RUN_KW)
         assert not [r for r in caplog.records if "Confirming the committed root" in r.getMessage()], caplog.text
         assert _value(lonely) == 2
+
+
+def test_a_setup_new_database_whose_recovery_query_goes_unanswered_conflicts_and_is_retried(tmp_path):
+    """Task 8.3n fix round 2, item 2 (the pipelined-faults ``[1-5]`` failure of fix round 1),
+    reduced.  A new cluster's first commit builds on an uncertain base, so its round asks the
+    other voters for their roots and waits ``request_timeout`` for a majority.  Under a loaded
+    suite the answers came late: ``recover_root`` raised a conflict ("only 1 of the 2
+    witnesses needed answered the recovery query") -- retryable, nothing sent (P5) -- and
+    ``new_database`` makes one attempt, so the test's setup failed.  Deterministic here: the
+    first query's answers are lost.  ``TieredCluster.create_database`` retries the step and
+    creates the database exactly once."""
+    from tests.support.tiered_cluster import TieredCluster, incr, RUN_KW as TRUN_KW
+    with TieredCluster(tmp_path) as tc:
+        lost = threading.Lock()
+        dropped = []
+        for node in ("n1", "n2"):
+            send = tc[node].transport.send
+
+            def filtered(to, msg, _send=send):
+                with lost:
+                    drop = to == "n0" and msg["type"] == "answer" and len(dropped) < 2
+                    if drop:
+                        dropped.append(msg["from"])
+                if not drop:
+                    _send(to, msg)
+            tc[node].transport.send = filtered
+        with pytest.raises(ProtoConflictError, match="witnesses needed answered the recovery query"):
+            tc.spaces["n0"].new_database("db")
+        assert sorted(dropped) == ["n1", "n2"] and tc.spaces["n0"].list_databases() == []
+        tc.create_database("n0")                           # the next queries are answered
+        tc.db("n0").run(incr, **TRUN_KW)
+        assert tc.spaces["n0"].list_databases() == ["db"] and tc.value("n0") == 1

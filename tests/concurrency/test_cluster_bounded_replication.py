@@ -29,7 +29,7 @@ LEASE = dict(lease_duration=0.9, request_timeout=0.1)
 
 def _cluster(tmp_path, n, **kw):
     tc = TieredCluster(tmp_path, n, storage_kw=dict(durability="fsync"), **dict(LEASE, **kw))
-    tc.spaces[tc.ids[0]].new_database("db")
+    tc.create_database(tc.ids[0])
     return tc
 
 
@@ -218,7 +218,7 @@ def test_two_lost_committers_with_different_replicas_are_both_persisted(tmp_path
     tc = TieredCluster(tmp_path, 8, storage_kw=dict(durability="fsync", ship_interval=600.0),
                        **dict(LEASE, persist_lag=0.2))
     with tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         for node in ("n3", "n5", "n3", "n5"):
             tc.commit(node, incr)
         assert tc.eventually("n0", 4)
@@ -242,12 +242,12 @@ def _split_segment(tc) -> None:
     to n2 while n1 is partitioned away, so n1's copy lacks the middle and n2's the start.  The
     split is asserted, not assumed."""
     net = tc.cluster.net
-    tc.spaces["n0"].new_database("db")
+    tc.create_database("n0")
     tc.store.set_outage(True)
     roots = []
 
     def commit():
-        tc.db("n0").run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         roots.append(tc["n0"].committed_root()[1])
     for _ in range(3):
         commit()                                    # n0's records -> n0 + n1

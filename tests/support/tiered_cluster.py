@@ -21,6 +21,8 @@ constructor returns once every member has finished its first rejoin.
 * ``value(node)``: the counter ``n`` of database ``db`` read by a new transaction;
 * ``eventually(node, expected)``: True once ``value(node) == expected`` (within 5 s): a
   node learns another node's commit when its release arrives;
+* ``create_database(node, name="db")``: the setup's ``new_database``, created exactly once
+  whatever its attempts report (:func:`tests.support.outcomes.new_database_once`);
 * ``commit(node, fn)``: a setup step committed exactly once on ``node`` whatever its attempts
   report (:func:`tests.support.outcomes.commit_once`); returns the unknown outcomes met.  A
   step whose outcome the test itself examines uses ``db(node).run`` instead.
@@ -103,6 +105,12 @@ class TieredCluster:
         """Commit the setup step ``fn`` on ``node`` exactly once (see the module docstring)."""
         from tests.support.outcomes import commit_once
         return commit_once(self.db(node), fn, **dict(RUN_KW, **run_kw))
+
+    def create_database(self, node: str, name: str = "db"):
+        """Create the database ``name`` on ``node`` exactly once, whatever its attempts report
+        (:func:`tests.support.outcomes.new_database_once`)."""
+        from tests.support.outcomes import new_database_once
+        return new_database_once(self.spaces[node], name)
 
     def eventually(self, node: str, expected, timeout: float = 5.0) -> bool:
         """Poll :meth:`value` until it equals ``expected``; False after ``timeout`` seconds."""

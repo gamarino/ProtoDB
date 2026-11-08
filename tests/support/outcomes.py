@@ -195,6 +195,36 @@ def commit_once(db, fn, *, attempts: int = 10, root: str = STEP_ROOT, **run_kw) 
     raise AssertionError(f"no attempt of the step was acknowledged in {attempts} attempts ({unknown} unknown)")
 
 
+def new_database_once(space, name: str = "db", *, attempts: int = 10):
+    """Create the database ``name`` on ``space`` exactly once, whatever its attempts report, and
+    return it: the :func:`commit_once` of a setup's ``new_database`` (Task 8.3n fix round 2,
+    item 2).  ``ObjectSpace.new_database`` commits once and retries nothing, and in cluster mode
+    a commit may end with a conflict (a recovery query that a majority did not answer within
+    ``request_timeout``, a permission that ended), a timeout or an unknown outcome under load:
+    conservative failures that P5 allows and R82 ties to timing only.  A conflict or a timeout
+    applied nothing, so the step is tried again.  After an unknown outcome the next attempt
+    decides: it builds on a committed root at or above the unknown commit's base, so it either
+    finds the database (the unknown commit took effect: done) or creates it (it did not, and
+    can no longer: one linear history).  "Already exists" without an earlier unknown outcome is
+    a real error and is raised."""
+    from proto_db.errors import (ProtoConflictError, ProtoOutcomeUnknownError, ProtoTimeoutError,
+                                 ProtoValidationError)
+    unknown = 0
+    for _ in range(attempts):
+        try:
+            return space.new_database(name)
+        except (ProtoConflictError, ProtoTimeoutError):
+            continue
+        except ProtoOutcomeUnknownError:
+            unknown += 1
+            continue
+        except ProtoValidationError as e:
+            if unknown and "already exists" in str(e):
+                return space.open_database(name)     # an earlier unknown attempt took effect
+            raise
+    raise AssertionError(f"database {name!r} not created in {attempts} attempts ({unknown} unknown)")
+
+
 def _snapshot(read) -> Snapshot:
     view = read()
     return view if isinstance(view, Snapshot) else Snapshot(frozenset(view))

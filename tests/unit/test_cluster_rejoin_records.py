@@ -59,7 +59,7 @@ def test_y1_sequential_single_disk_losses_with_the_store_down_lose_nothing(tmp_p
     rejoin complete), while the object store is unreachable.  Every committed value must stay
     readable, and the cluster must keep committing and persist it all once the store returns."""
     with TieredCluster(tmp_path) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         tc.store.set_outage(True)
         for i in range(6):
             tc.commit(tc.ids[i % 3], incr)
@@ -154,7 +154,7 @@ def test_y1_a_recommitted_base_carries_its_records(tmp_path):
     Z wrote) must stay readable, and everything must be persisted once the store returns."""
     with TieredCluster(tmp_path) as tc:
         net = tc.cluster.net
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         tc.store.set_outage(True)
         tc.commit("n0", incr)
         n0 = tc["n0"]
@@ -205,7 +205,7 @@ def test_y1_any_acknowledger_of_a_recommitted_base_can_persist_it(tmp_path):
     (review M1 restored the original schedule)."""
     with TieredCluster(tmp_path) as tc:
         net = tc.cluster.net
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         tc.store.set_outage(True)
         tc.commit("n0", incr)
         n0 = tc["n0"]

@@ -201,3 +201,32 @@ def test_observing_reads_during_the_body_and_raises_what_a_read_found():
     with pytest.raises(AssertionError, match="applied twice"):
         with observing({"n0": broken}, tokens, interval=0.001):
             time.sleep(0.05)
+
+
+def test_new_database_once_creates_the_database_exactly_once_across_failed_attempts():
+    """Fix round 2, item 2: ``new_database`` commits once; ``new_database_once`` retries an
+    attempt that applied nothing (a conflict or a timeout) and resolves an unknown outcome by
+    whether the database exists.  Planted: a conflict, then an attempt that took effect but
+    reported unknown.  A database that existed before is still an error."""
+    from proto_db.errors import ProtoConflictError, ProtoOutcomeUnknownError, ProtoValidationError
+    from tests.support.outcomes import new_database_once
+    space = ObjectSpace(MemoryStorage())
+    try:
+        real = space.new_database
+        calls = []
+
+        def flaky(name):
+            calls.append(name)
+            if len(calls) == 1:
+                raise ProtoConflictError("planted: nothing applied")
+            if len(calls) == 2:
+                real(name)                              # applied ...
+                raise ProtoOutcomeUnknownError("planted: applied, reported unknown")
+            return real(name)
+        space.new_database = flaky
+        db = new_database_once(space, "db")
+        assert len(calls) == 3 and db.name == "db" and space.list_databases() == ["db"]
+        with pytest.raises(ProtoValidationError, match="already exists"):
+            new_database_once(space, "db")              # no unknown outcome met: a real error
+    finally:
+        space.close()

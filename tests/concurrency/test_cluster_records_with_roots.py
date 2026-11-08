@@ -78,7 +78,7 @@ def test_majority_power_loss_keeps_every_acknowledged_root_with_its_records(tmp_
     store = FakeObjectStore()
     with TieredCluster(tmp_path, 3, store=store, storage_kw=dict(durability=durability), **LEASE) as tc:
         a, b, c = tc.ids
-        tc.spaces[a].new_database("db")
+        tc.create_database(a)
         for node in tc.ids:
             tc.commit(node, incr)
         acked = 3
@@ -122,7 +122,7 @@ def test_a_restart_redoes_the_records_and_checkpoints(tmp_path):
     left), and a second restart has nothing to redo."""
     with TieredCluster(tmp_path, 3, storage_kw=dict(durability="none", release_local=False), **LEASE) as tc:
         a, b, c = tc.ids
-        tc.spaces[a].new_database("db")
+        tc.create_database(a)
         for i in range(6):
             tc.commit(tc.ids[i % 3], incr)
         assert _settle(tc, tc.ids, 6) == {n: 6 for n in tc.ids}
@@ -147,7 +147,7 @@ def test_a_torn_acceptor_log_tail_is_trimmed_and_the_rest_redone(tmp_path):
     returned, so its sync had not run."""
     with TieredCluster(tmp_path, 3, storage_kw=dict(durability="none", release_local=False), **LEASE) as tc:
         a, b, c = tc.ids
-        tc.spaces[a].new_database("db")
+        tc.create_database(a)
         for i in range(4):
             tc.commit(a, incr)
         assert _settle(tc, tc.ids, 4) == {n: 4 for n in tc.ids}
@@ -171,7 +171,7 @@ def test_a_checkpoint_keeps_the_records_of_entries_appended_after_its_mark(tmp_p
     monkeypatch.setattr(tiered_module, "CHECKPOINT_BYTES", 1)     # checkpoint before every acceptance
     with TieredCluster(tmp_path, 3, storage_kw=dict(durability="none", release_local=False), **LEASE) as tc:
         a, b, c = tc.ids
-        tc.spaces[a].new_database("db")
+        tc.create_database(a)
         for i in range(5):
             tc.commit(tc.ids[i % 3], incr)
         assert _settle(tc, tc.ids, 5) == {n: 5 for n in tc.ids}

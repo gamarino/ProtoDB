@@ -30,7 +30,7 @@ BUILD_CHUNK = 200
 
 def test_cluster_commits_stay_correct_when_the_working_set_exceeds_the_cache(tmp_path):
     with TieredCluster(tmp_path, space_kw=dict(atom_cache_entries=CAPACITY)) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
 
         # Setup in chunks: one 2,000-record commit can outlast the 0.9 s lease under a loaded
         # GIL-on suite.  Each chunk is committed exactly once whatever its attempts report

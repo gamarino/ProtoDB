@@ -22,6 +22,7 @@ from proto_db.errors import ProtoUnexpectedError, ProtoValidationError
 from proto_db.storage.file import FileStorage
 from proto_db.transactions import ObjectSpace
 from tests.support.cluster import Cluster
+from tests.support.outcomes import commit_once, new_database_once
 from tests.support.tiered_cluster import FAST, RUN_KW, TieredCluster, incr
 
 pytestmark = [pytest.mark.timeout(120)]
@@ -47,8 +48,8 @@ def test_a_shared_file_storage_commit_survives_a_whole_cluster_crash_before_any_
         storages = [FileStorage(path, durability="fsync") for _ in cl.ids]    # one per process
         spaces = [ObjectSpace(s, coordinator=cl[n]) for s, n in zip(storages, cl.ids)]
         cl.wait_rejoined()      # every first start done first (a late member waits, R51)
-        spaces[0].new_database("db")
-        spaces[1].open_database("db").run(incr, **RUN_KW)
+        new_database_once(spaces[0])
+        commit_once(spaces[1].open_database("db"), incr, **RUN_KW)
         assert all(s.persisted_epoch == 0 for s in spaces)
         reader = FileStorage(path, durability="none")
         assert reader.read_root() is None                  # nothing persisted: the storage root is empty
@@ -80,7 +81,7 @@ def test_a_shared_file_storage_commit_survives_a_whole_cluster_crash_before_any_
 
 def test_a_node_restarted_after_a_refound_never_reloads_the_dead_branch(tmp_path):
     with TieredCluster(tmp_path) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         for i in range(4):
             tc.commit(tc.ids[i % 3], incr)
         for n in tc.ids:
@@ -118,7 +119,7 @@ def test_a_commit_larger_than_a_frame_is_chunked_and_an_unreplicable_record_is_r
     monkeypatch.setattr(protocol, "CHUNK_BYTES", 16 * 1024)
     monkeypatch.setattr(protocol, "MAX_RECORD_BYTES", 8 * 1024)
     with TieredCluster(tmp_path) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
 
         def big(tr):
             for i in range(60):
@@ -141,7 +142,7 @@ def test_a_commit_larger_than_a_frame_is_chunked_and_an_unreplicable_record_is_r
 @_THREAD_DIES
 def test_an_unexpected_worker_failure_fences_the_node(tmp_path):
     with TieredCluster(tmp_path) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         tc.commit("n0", incr)
         assert tc["n1"].healthy and tc["n1"].stats()["healthy"]
 
@@ -172,7 +173,7 @@ def test_an_unexpected_worker_failure_fences_the_node(tmp_path):
 @_THREAD_DIES
 def test_an_unexpected_persister_failure_stops_persisting_but_not_voting(tmp_path):
     with TieredCluster(tmp_path) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
 
         def broken(force=False):
             raise RuntimeError("upload queue corrupted")
@@ -232,7 +233,7 @@ def test_a_verified_dead_branch_root_never_shortens_the_persisters_walk(tmp_path
     from proto_db.cluster.rootlog import root_key
     from proto_db.storage.format import FORMAT_VERSION, RootRecord
     with TieredCluster(tmp_path) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         tc.commit("n0", incr)
         tc.spaces["n0"].sync(timeout=10)
         tc.store.set_outage(True)
@@ -301,9 +302,9 @@ def test_a_holder_never_ships_own_records_it_has_not_made_durable_locally(tmp_pa
     from proto_db.errors import ProtoDBError
     tc = TieredCluster(tmp_path, 3)
     try:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         for _ in range(3):
-            tc.db("n0").run(incr, **RUN_KW)
+            tc.commit("n0", incr)
         c0, st0 = tc["n0"], tc.storages["n0"]
         c0.persister.stop()                         # no background flush in the crash window
         original = c0._transport.send
@@ -347,7 +348,7 @@ def test_a_holder_never_ships_own_records_it_has_not_made_durable_locally(tmp_pa
             time.sleep(0.01)
         for n in ("n1", "n2"):
             tc.storages[n].refresh_remote()         # the peers learn what the store holds
-        tc.db("n1").run(incr, **RUN_KW)             # n1 builds on the root a majority accepted
+        tc.commit("n1", incr)                       # n1 builds on the root a majority accepted
         for n in ("n1", "n2", "n0"):
             tr = tc.db(n).new_transaction()
             try:

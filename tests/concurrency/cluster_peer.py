@@ -39,7 +39,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from proto_db.cluster.coordinator import ClusterCoordinator  # noqa: E402
 from proto_db.cluster.transport import TcpTransport  # noqa: E402
-from proto_db.errors import ProtoConflictError, ProtoOutcomeUnknownError, ProtoValidationError  # noqa: E402
+from proto_db.errors import (ProtoConflictError, ProtoOutcomeUnknownError, ProtoTimeoutError,  # noqa: E402
+                             ProtoValidationError)
 from proto_db.storage.file import FileStorage  # noqa: E402
 from proto_db.storage.tiered import TieredStorage  # noqa: E402
 from proto_db.transactions import ObjectSpace  # noqa: E402
@@ -80,11 +81,15 @@ def main():
         _hear()
         storage = CasCountingStorage(_storage(space_dir))
         space = ObjectSpace(storage, coordinator=coordinator)
-        if "db" not in space.list_databases():
+        while "db" not in space.list_databases():
             try:
                 space.new_database("db")          # a tiered space starts empty: one peer creates it
             except ProtoValidationError:
-                pass                              # another peer created it first
+                break                             # another peer created it first
+            except (ProtoConflictError, ProtoTimeoutError, ProtoOutcomeUnknownError):
+                time.sleep(0.05)                  # under load (fix round 2, item 2): try again;
+                #                                   an unknown attempt that took effect shows the
+                #                                   database at the next check
         db = space.open_database("db")
         counts = []
         errors = []                               # each worker's exception, reported to the parent

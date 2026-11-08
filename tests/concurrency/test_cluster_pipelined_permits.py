@@ -46,7 +46,7 @@ RUNS = int(os.environ.get("PROTODB_PIPELINE_RUNS", "6"))
 
 def _cluster(tmp_path, n=3, *, storage_kw=None, **kw):
     tc = TieredCluster(tmp_path, n, storage_kw=dict(durability="fsync", **(storage_kw or {})), **dict(LEASE, **kw))
-    tc.spaces[tc.ids[0]].new_database("db")
+    tc.create_database(tc.ids[0])
     return tc
 
 

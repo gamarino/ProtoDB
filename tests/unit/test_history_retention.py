@@ -19,7 +19,6 @@ import time
 from proto_db.storage.tiered import SEGMENT_SUFFIX
 from tests.support.tiered_cluster import TieredCluster
 
-RUN_KW = dict(retries=200, backoff=(0.001, 0.01))
 KEYS = 200
 
 
@@ -38,10 +37,10 @@ def test_an_old_root_stays_readable_after_every_node_released_its_segments(tmp_p
                         segment_cache_bytes=0),
         space_kw=dict(atom_cache_entries=0))
     try:
-        cluster.spaces["n0"].new_database("db")
-        cluster.db("n0").run(lambda tr: tr.set_root_object("d", tr.new_dictionary().__class__.from_items(
-            ((k, _value(k, 0)) for k in range(KEYS)), context=tr)), **RUN_KW)
-        cluster.db("n0").run(lambda tr: tr.set_root_object("n", 0), **RUN_KW)
+        cluster.create_database("n0")
+        cluster.commit("n0", lambda tr: tr.set_root_object("d", tr.new_dictionary().__class__.from_items(
+            ((k, _value(k, 0)) for k in range(KEYS)), context=tr)))
+        cluster.commit("n0", lambda tr: tr.set_root_object("n", 0))
         assert cluster.eventually("n2", 0)
         old = cluster.db("n2").new_transaction()        # the long report: holds the old root
         old_version = old._db_root.version
@@ -60,7 +59,7 @@ def test_an_old_root_stays_readable_after_every_node_released_its_segments(tmp_p
                         d = d.set_at(k, _value(k, generation))
                     tr.set_root_object("d", d)
                     tr.set_root_object("n", tr.get_root_object("n") + 1)
-                cluster.db("n0" if start % 40 else "n1").run(rewrite, **RUN_KW)
+                cluster.commit("n0" if start % 40 else "n1", rewrite)
         for node in cluster.ids:
             cluster.spaces[node].sync(timeout=20.0)
 
@@ -70,7 +69,7 @@ def test_an_old_root_stays_readable_after_every_node_released_its_segments(tmp_p
             assert time.monotonic() < deadline, {
                 node: (old_segments & _segment_files(os.path.join(cluster.path, node)),
                        cluster.storages[node].stats()) for node in cluster.ids}
-            cluster.db("n0").run(lambda tr: tr.set_root_object("n", tr.get_root_object("n") + 1), **RUN_KW)
+            cluster.commit("n0", lambda tr: tr.set_root_object("n", tr.get_root_object("n") + 1))
             for node in cluster.ids:
                 cluster.spaces[node].sync(timeout=20.0)
             time.sleep(0.05)

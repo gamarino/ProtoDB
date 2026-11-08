@@ -44,7 +44,8 @@ from proto_db.transactions import ObjectSpace
 from tests.concurrency.harness import run_threads
 from tests.support.cluster import CasCountingStorage, Cluster
 from tests.support.fake_object_store import FakeObjectStore
-from tests.support.outcomes import CommitTokens, add_blind_token, assert_outcomes_resolved, blind_snapshot_of
+from tests.support.outcomes import (CommitTokens, add_blind_token, assert_outcomes_resolved, blind_snapshot_of,
+                                    new_database_once)
 
 PEERS = 4
 THREADS = 4
@@ -111,7 +112,7 @@ def test_contending_peers_never_reach_the_storage(tmp_path, backend):
     with Cluster(PEERS, **CLUSTER_KW) as cl:
         spaces = [ObjectSpace(s, coordinator=cl[n]) for s, n in zip(storages, cl.ids)]
         cl.wait_rejoined()      # every first start done first (a late member waits, R51)
-        spaces[0].new_database("db")
+        new_database_once(spaces[0])
         dbs = [s.open_database("db") for s in spaces]
         refused = _count_failed_replications(cl)
 
@@ -208,7 +209,7 @@ def _throughput(storages_factory, tmp_path, peers, threads=4, seconds=1.5, break
     with Cluster(peers, **CLUSTER_KW) as cl:
         spaces = [ObjectSpace(s, coordinator=cl[n]) for s, n in zip(storages, cl.ids)]
         cl.wait_rejoined()      # every first start done first (a late member waits, R51)
-        spaces[0].new_database("db")
+        new_database_once(spaces[0])
         dbs = [s.open_database("db") for s in spaces]
         stop_at = []
         done = []
@@ -287,7 +288,7 @@ def test_a_read_before_the_release_is_handled_is_stale_never_lost(tmp_path):
     with Cluster(2, **CLUSTER_KW) as cl:
         spaces = [ObjectSpace(s, coordinator=cl[n]) for s, n in zip(storages, cl.ids)]
         cl.wait_rejoined()      # every first start done first (a late member waits, R51)
-        spaces[0].new_database("db")
+        new_database_once(spaces[0])
         dbs = [s.open_database("db") for s in spaces]
         dbs[1].run(lambda tr: tr.set_root_object("ids", tr.new_counted_set().add(0)), **RUN_KW)
         _settle(cl)

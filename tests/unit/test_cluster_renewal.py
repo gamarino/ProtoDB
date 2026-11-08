@@ -17,7 +17,7 @@ from tests.support.tiered_cluster import RUN_KW, TieredCluster, incr
 
 def test_a_refused_higher_request_does_not_end_the_owners_term(tmp_path):
     with TieredCluster(tmp_path, 2) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         db = tc.db("n0")
         db.run(incr, **RUN_KW)
         n0, n1 = tc["n0"], tc["n1"]

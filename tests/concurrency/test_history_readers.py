@@ -172,7 +172,7 @@ def test_readers_walk_history_while_writers_commit(tmp_path, cache):
 def test_cluster_readers_walk_both_links_while_two_nodes_commit(tmp_path):
     cluster = TieredCluster(tmp_path, 3, lease_duration=3.0, space_kw=dict(atom_cache_entries=16))
     try:
-        cluster.spaces["n0"].new_database("db")
+        cluster.create_database("n0")
         cluster.commit("n0", _setup, **RUN_KW)
         base = cluster.db("n0").history()[0].version
         assert cluster.eventually("n2", 0)

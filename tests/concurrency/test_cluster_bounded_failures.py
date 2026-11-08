@@ -28,7 +28,7 @@ VOTERS = ("n0", "n1", "n2")
 
 def _cluster(tmp_path, n=5, **kw):
     tc = TieredCluster(tmp_path, n, storage_kw=STORAGE, **dict(LEASE, **kw))
-    tc.spaces[tc.ids[0]].new_database("db")
+    tc.create_database(tc.ids[0])
     return tc
 
 

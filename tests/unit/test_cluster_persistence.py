@@ -49,7 +49,7 @@ CONCURRENT_FETCH_BOUND = 24
 
 def _commit(tc, nodes, count):
     for i in range(count):
-        tc.db(nodes[i % len(nodes)]).run(incr, **RUN_KW)
+        tc.commit(nodes[i % len(nodes)], incr)
 
 
 def _wait(predicate, timeout=10.0):
@@ -63,7 +63,7 @@ def _wait(predicate, timeout=10.0):
 
 def test_commits_are_persisted_asynchronously_and_sync_waits_for_them(tmp_path):
     with TieredCluster(tmp_path) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         _commit(tc, tc.ids, 12)
         space = tc.spaces["n2"]                          # the last committer (others learn it on release)
         space.sync(timeout=10)
@@ -74,7 +74,7 @@ def test_commits_are_persisted_asynchronously_and_sync_waits_for_them(tmp_path):
 
 def test_an_object_store_outage_never_stops_commits_and_catch_up_converges(tmp_path):
     with TieredCluster(tmp_path) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         _commit(tc, tc.ids, 6)
         tc.spaces["n0"].sync(timeout=10)
         before = time.perf_counter()
@@ -99,7 +99,7 @@ def test_an_object_store_outage_never_stops_commits_and_catch_up_converges(tmp_p
 
 def test_a_fresh_peer_joining_during_an_outage_recovers_from_its_peers(tmp_path):
     with TieredCluster(tmp_path) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         _commit(tc, ["n0", "n1"], 5)
         tc.store.set_outage(True)
         _commit(tc, ["n0", "n1"], 5)
@@ -117,7 +117,7 @@ def test_a_fresh_peer_joining_during_an_outage_recovers_from_its_peers(tmp_path)
 def test_a_restarted_cluster_on_empty_disks_recovers_from_the_object_store(tmp_path):
     store = FakeObjectStore()
     with TieredCluster(tmp_path / "a", store=store) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         _commit(tc, tc.ids, 9)
         for n in tc.ids:
             tc.spaces[n].sync(timeout=10)
@@ -132,7 +132,7 @@ def test_a_restarted_cluster_on_empty_disks_recovers_from_the_object_store(tmp_p
 
 def test_a_node_restart_loses_nothing(tmp_path):
     with TieredCluster(tmp_path) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         tc.store.set_outage(True)                        # nothing is persisted meanwhile
         _commit(tc, tc.ids, 9)
         for n in tc.ids:                                 # every node restarts, one at a time
@@ -148,7 +148,7 @@ def test_a_node_restart_loses_nothing(tmp_path):
 def test_the_whole_cluster_restarting_on_its_disks_loses_nothing_unpersisted(tmp_path):
     store = FakeObjectStore()
     with TieredCluster(tmp_path, store=store) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         store.set_outage(True)
         _commit(tc, tc.ids, 7)
     store.set_outage(False)
@@ -164,7 +164,7 @@ def test_the_whole_cluster_restarting_on_its_disks_loses_nothing_unpersisted(tmp
 
 def test_losing_a_minority_loses_nothing(tmp_path):
     with TieredCluster(tmp_path) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         tc.store.set_outage(True)
         _commit(tc, tc.ids, 9)
         tc.wipe("n2")                                    # a disk lost before anything was persisted
@@ -177,7 +177,7 @@ def test_losing_a_minority_loses_nothing(tmp_path):
 
 def test_losing_a_majority_before_persistence_loses_only_unpersisted_commits(tmp_path):
     with TieredCluster(tmp_path) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         _commit(tc, tc.ids, 4)
         for n in tc.ids:
             tc.spaces[n].sync(timeout=10)
@@ -207,7 +207,7 @@ def test_losing_a_majority_before_persistence_loses_only_unpersisted_commits(tmp
 
 def test_losing_a_majority_with_the_survivor_outside_the_quorum_rolls_back_to_the_persisted_state(tmp_path):
     with TieredCluster(tmp_path) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         _commit(tc, tc.ids, 4)
         for n in tc.ids:
             tc.spaces[n].sync(timeout=10)
@@ -245,7 +245,7 @@ def _steady_state(tmp_path, rounds: int, per_round: int) -> dict:
     store = Recording()
     tokens = CommitTokens()
     with TieredCluster(tmp_path, store=store) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         for i in range(6):                               # warm up: with tokens too (P5 / R86)
             token = tokens.new(f"warm{i}")
             try:
@@ -403,7 +403,7 @@ def test_the_backlog_limit_refuses_commits_until_the_store_drains_it(tmp_path):
     alerts = []
     kw = dict(backlog_limit_bytes=6000, on_backlog_alert=alerts.append, ship_interval=0.02)
     with TieredCluster(tmp_path, storage_kw=kw) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         tc.store.set_outage(True)
         db = tc.db("n0")
         refused = None
@@ -419,13 +419,13 @@ def test_the_backlog_limit_refuses_commits_until_the_store_drains_it(tmp_path):
         tc.commit("n1", incr)                 # other nodes keep committing
         tc.store.set_outage(False)
         assert _wait(lambda: not tc.storages["n0"].backlog()["over_limit"])
-        db.run(incr, **RUN_KW)
+        tc.commit("n0", incr)
         assert tc.eventually("n2", 2)
 
 
 def test_a_fresh_peer_joining_after_persistence_reads_from_the_object_store(tmp_path):
     with TieredCluster(tmp_path) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         _commit(tc, tc.ids, 9)
         for n in tc.ids:
             tc.spaces[n].sync(timeout=10)
@@ -443,7 +443,7 @@ def test_no_thread_outlives_the_cluster(tmp_path):
 
     before = ours()
     with TieredCluster(tmp_path) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         _commit(tc, tc.ids, 3)
         tc.kill("n1")
         tc.revive("n1")

@@ -26,7 +26,7 @@ pytestmark = [pytest.mark.timeout(120)]
 def test_the_busy_member_keeps_committing_after_an_idle_owner_releases(tmp_path, round_):
     with TieredCluster(tmp_path, 3, storage_kw=dict(durability="fsync"), lease_duration=2.4,
                        request_timeout=0.1, owner_idle_release=0.5) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         tc.commit("n0", incr)                 # n0 owns a term
         n0, n2 = tc["n0"], tc["n2"]
         assert n0.owner == "n0"
@@ -88,7 +88,7 @@ def test_a_member_whose_owner_ended_its_term_idle_takes_the_term(tmp_path, round
     (a quarter of the lease, D50), and n1, whose hint still names n0, starts committing."""
     with TieredCluster(tmp_path, 3, storage_kw=dict(durability="fsync"), lease_duration=2.4,
                        request_timeout=0.1) as tc:
-        tc.spaces["n0"].new_database("db")
+        tc.create_database("n0")
         tc.commit("n1", incr)                 # n1 learns n0 as the owner
         n0, n1, n2 = tc["n0"], tc["n1"], tc["n2"]
         assert n0.owner == "n0" and n1._owner_hint[1] == "n0"

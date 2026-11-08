@@ -143,7 +143,7 @@ def test_each_usable_permit_of_a_delayed_holder_commits(tmp_path, round_, thread
     tc = TieredCluster(tmp_path, 3, storage_kw=dict(durability="fsync"), lease_duration=2.4,
                        request_timeout=0.1)
     with tc:
-        tc.spaces[tc.ids[0]].new_database("db")
+        tc.create_database(tc.ids[0])
         stop = threading.Event()
         acked = {n: 0 for n in tc.ids}
         lock = threading.Lock()
@@ -234,7 +234,7 @@ def test_a_permission_kept_for_a_slow_retry_is_released_for_the_other_members(tm
     with TieredCluster(tmp_path, 3, storage_kw=dict(durability="fsync"), lease_duration=2.4,
                        request_timeout=0.1) as tc:
         a, b, c = tc.ids
-        tc.spaces[a].new_database("db")
+        tc.create_database(a)
         for n in tc.ids:
             tc.commit(n, incr)
         time.sleep(0.3)
