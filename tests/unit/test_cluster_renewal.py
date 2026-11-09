@@ -82,12 +82,18 @@ def test_a_refused_higher_request_does_not_end_the_owners_term(tmp_path):
             deadline = time.monotonic() + n0._duration * 2.5      # several renewals are due
             widest, unknowns = 0.0, []
             while time.monotonic() < deadline:
+                started = time.monotonic()
                 try:
                     db.run(incr, **RUN_KW)
                     commits += 1
                 except ProtoOutcomeUnknownError as e:
                     unknown += 1                                # resolved by the bound below
-                    unknowns.append(str(e))
+                    took = time.monotonic() - started
+                    # Observed, not inferred: an owner issues a permission only with at least
+                    # belief / 4 of its lease left (D50's D/4 rule), so a commit that ended
+                    # unknown sooner than that was no stall -- a possible product defect.
+                    assert took >= n0._belief / 4, f"an unknown outcome after only {took:.3f} s: {e}"
+                    unknowns.append((round(took, 3), str(e)))
                 now = time.monotonic()
                 widest, last = max(widest, now - last), now
             stats = n0.stats()
@@ -105,3 +111,47 @@ def test_a_refused_higher_request_does_not_end_the_owners_term(tmp_path):
                   f"outcome): "
                   f"{inconclusive}")
         assert commits <= tc.value("n0") <= commits + unknown, (tc.value("n0"), commits, unknown)
+
+
+def test_renewals_after_a_refused_higher_request_keep_the_term_deterministically():
+    """The property of the test above with no timing (Task 8.3n fix round 2): real
+    coordinators over a :class:`~tests.support.manual_cluster.ManualNet` and one fake clock,
+    every message delivered by hand.  a owns its term; b's real acquire for a higher ballot
+    is refused "busy" by a and by b's own grant table (both raise their highest term, as in
+    4c8c949); then a renews its term three times, the clock advanced past each lease, and
+    every renewal must be granted by both members and the term kept.  Under the 4c8c949
+    defect the first renewal is refused as a stale term."""
+    from proto_db.cluster.coordinator import _Ownership
+    from proto_db.cluster.lease import Lease
+    from tests.support.manual_cluster import D, Harness
+
+    h = Harness("ab")
+    try:
+        a, b = h.nodes["a"], h.nodes["b"]
+        lease = h.attempt("a", {"b"})
+        assert isinstance(lease, Lease), lease
+        own = _Ownership(lease, (lease.root is not None, lease.root, lease.root_term), lease.root_certain, 0.0)
+        with a._cond:
+            a._ownership = own                   # no ownership thread: the test drives renewals
+        refused = h.attempt("b", {"a"}, timeout=0.5)
+        assert not isinstance(refused, Lease), "b's higher ballot must be refused while a holds its term"
+        assert b._grants.highest_term > lease.term and a._grants.highest_term > lease.term
+        renewals = a.stats()["renewals"]
+        first_expiry = own.lease.valid_until
+        for i in range(3):
+            h.clock.t = own.lease.valid_until - 0.25 * (D - h.nodes["a"]._margin)   # renewal due
+            expiry = own.lease.valid_until
+
+            def pump():
+                h.net.deliver(src="a", dst={"b"}, kinds=("renew",))
+                h.net.deliver(src="b", dst={"a"}, kinds=("grant", "reject"))
+            h._run(lambda: a._renew(own), pump)
+            stats = a.stats()
+            assert stats["renewal_failures"] == 0, (i, stats)
+            assert stats["renewals"] == renewals + i + 1, (i, stats)
+            assert own.lease.valid_until > expiry, (i, own.lease.valid_until, expiry)
+            assert a._ownership is own
+        h.clock.t = first_expiry + 1.0               # past the lease of the acquire: the term lives on
+        assert own.lease.is_valid(), (own.lease, first_expiry)
+    finally:
+        h.close()
