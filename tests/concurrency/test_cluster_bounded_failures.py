@@ -159,7 +159,7 @@ def test_power_loss_of_every_role_under_load(tmp_path, monkeypatch, role):
                       "data replica": next(m for m in ("n4", "n0") if m != owner)}[role]
             path = os.path.realpath(os.path.join(str(tmp_path), victim))
             load.down.add(victim)
-            fs.frozen.add(path)
+            fs.freeze(path)
             tc.kill(victim)
             fs.power_loss(path)
             time.sleep(SECONDS / 3)

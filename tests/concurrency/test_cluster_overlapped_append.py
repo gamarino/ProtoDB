@@ -380,7 +380,7 @@ def _die_in_window(tc, fs, point, *, persist_after: bool, rolled: bool = False) 
             die()
         if point == "own entry unsynced, power lost":
             replica_stored()
-            fs.frozen.add(n0_dir)                   # the power goes: nothing more becomes durable
+            fs.freeze(n0_dir)                   # the power goes: nothing more becomes durable
             own_append(*a, **kw)
             die()
         own_append(*a, **kw)

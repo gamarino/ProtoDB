@@ -376,7 +376,17 @@ class _FrozenPowerLoss(PowerLoss):
 
     def __init__(self, monkeypatch):
         super().__init__(monkeypatch)
-        self.frozen = set()
+        self.frozen = frozenset()
+
+    # ``frozen`` is replaced, never changed in place (Task 8.3n fix round 2): the dead node's
+    # straggling threads read it in ``fsync`` while the test thread freezes a directory, and
+    # iterating a set that another thread changes raises ``RuntimeError`` -- it once fenced
+    # a live node's persister in the middle of a run (free-threaded 3.14t, GIL off).
+    def freeze(self, path: str) -> None:
+        self.frozen = self.frozen | {path}
+
+    def thaw_all(self) -> None:
+        self.frozen = frozenset()
 
     @staticmethod
     def _entries(path: str) -> dict:
@@ -413,7 +423,7 @@ def test_power_loss_of_the_owner_or_of_a_holder_under_load(tmp_path, monkeypatch
             victim = owner if role == "owner" else next(n for n in tc.ids if n != owner)
             path = os.path.realpath(os.path.join(str(tmp_path), victim))
             load.down.add(victim)
-            fs.frozen.add(path)                  # the power goes: nothing more becomes durable
+            fs.freeze(path)                  # the power goes: nothing more becomes durable
             tc.kill(victim)
             fs.power_loss(path)
             # Stays frozen: a straggling thread of the dead node may still call fsync on a file

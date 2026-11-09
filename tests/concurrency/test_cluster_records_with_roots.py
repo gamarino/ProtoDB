@@ -40,7 +40,17 @@ class _FrozenPowerLoss(PowerLoss):
 
     def __init__(self, monkeypatch):
         super().__init__(monkeypatch)
-        self.frozen = set()
+        self.frozen = frozenset()
+
+    # ``frozen`` is replaced, never changed in place (Task 8.3n fix round 2): the dead node's
+    # straggling threads read it in ``fsync`` while the test thread freezes a directory, and
+    # iterating a set that another thread changes raises ``RuntimeError`` -- it once fenced
+    # a live node's persister in the middle of a run (free-threaded 3.14t, GIL off).
+    def freeze(self, path: str) -> None:
+        self.frozen = self.frozen | {path}
+
+    def thaw_all(self) -> None:
+        self.frozen = frozenset()
 
     def _record_fd(self, fd):
         try:
@@ -93,7 +103,7 @@ def test_majority_power_loss_keeps_every_acknowledged_root_with_its_records(tmp_
         assert _settle(tc, [a, b], acked) == {a: acked, b: acked}
         lost = [a, b]
         for node in lost:
-            fs.frozen.add(os.path.realpath(os.path.join(str(tmp_path), node)))
+            fs.freeze(os.path.realpath(os.path.join(str(tmp_path), node)))
         for node in lost:
             tc.kill(node)
         for node in lost:

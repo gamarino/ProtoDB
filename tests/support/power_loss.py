@@ -128,7 +128,9 @@ class PowerLoss:
             full = os.path.join(path, name)
             if os.path.isdir(full):
                 continue
-            if (path + os.sep + name) in self.dirs or any(d.startswith(full + os.sep) for d in self.dirs):
+            # A snapshot: live nodes' fsync calls add entries meanwhile, and iterating a dict
+            # that another thread changes raises RuntimeError (Task 8.3n fix round 2).
+            if (path + os.sep + name) in self.dirs or any(d.startswith(full + os.sep) for d in tuple(self.dirs)):
                 os.mkdir(full)
                 self._restore_dir(full)
                 continue

@@ -284,12 +284,12 @@ def _p1_schedule(tmp_path, monkeypatch, *, first_of_term: bool, rule: str):
         # The whole cluster loses power.
         for node in list(tc.ids):
             path = os.path.realpath(os.path.join(str(tmp_path), node))
-            fs.frozen.add(path)
+            fs.freeze(path)
             tc.kill(node)
             fs.power_loss(path)
         power.set()
         ta.join(30)
-        fs.frozen.clear()
+        fs.thaw_all()
         for node in tc.ids:
             tc.revive(node)
         reads = {}
