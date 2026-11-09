@@ -13,6 +13,7 @@ import time
 from proto_db.cluster.coordinator import ballot_after
 from proto_db.cluster.protocol import make_message
 from proto_db.errors import ProtoOutcomeUnknownError
+from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, snapshot_of, write_token
 from tests.support.tiered_cluster import RUN_KW, TieredCluster, incr
 
 
@@ -45,8 +46,25 @@ def test_a_refused_higher_request_does_not_end_the_owners_term(tmp_path):
     with TieredCluster(tmp_path, 2) as tc:
         tc.create_database("n0")
         db = tc.db("n0")
-        tc.commit("n0", incr)                                   # exactly once
-        commits, unknown = 1, 0
+        # Every commit writes a token of its own (re-review 1, N1): the outcome of each is
+        # checked on both members at the end, with the counter read in the same snapshot.
+        tokens = CommitTokens()
+
+        def setup_commit():
+            token = tokens.new("setup")
+            tc.commit("n0", lambda tr: (incr(tr), write_token(tr, token)))     # exactly once
+            tokens.acked(token)
+
+        def load_commit():
+            token = tokens.new("n0")
+            try:
+                db.run(lambda tr: (incr(tr), write_token(tr, token)), **RUN_KW)
+            except ProtoOutcomeUnknownError:
+                tokens.unknown(token)                   # resolved by its token at the end
+                raise
+            tokens.acked(token)
+
+        setup_commit()
         n0, n1 = tc["n0"], tc["n1"]
         idle = n0._duration / 4
         refused = []                    # renewals of n0 refused under an active grant to n0
@@ -69,8 +87,7 @@ def test_a_refused_higher_request_does_not_end_the_owners_term(tmp_path):
         inconclusive = []
         rid = 10_000
         while True:
-            tc.commit("n0", incr)                               # exactly once: n0 owns a term
-            commits += 1
+            setup_commit()                                      # n0 owns a term
             last = time.monotonic()                             # every gap from here is measured
             own = n0._ownership
             assert own is not None, "n0 owns the term of its own commits"
@@ -84,10 +101,8 @@ def test_a_refused_higher_request_does_not_end_the_owners_term(tmp_path):
             while time.monotonic() < deadline:
                 started = time.monotonic()
                 try:
-                    db.run(incr, **RUN_KW)
-                    commits += 1
+                    load_commit()
                 except ProtoOutcomeUnknownError as e:
-                    unknown += 1                                # resolved by the bound below
                     took = time.monotonic() - started
                     # Observed, not inferred: an owner issues a permission only with at least
                     # belief / 4 of its lease left (D50's D/4 rule), so a commit that ended
@@ -110,7 +125,14 @@ def test_a_refused_higher_request_does_not_end_the_owners_term(tmp_path):
             print(f"\ntrials repeated (a pause over {idle:g} s between commits, a failed renewal or an unknown "
                   f"outcome): "
                   f"{inconclusive}")
-        assert commits <= tc.value("n0") <= commits + unknown, (tc.value("n0"), commits, unknown)
+        # Every outcome resolved on both members, the counter read in the same snapshot as the
+        # tokens (re-review 1, N1): a lost acknowledged commit, an unknown one resolved
+        # differently on n1, or a counter that disagrees with the tokens fails here.
+        res = assert_outcomes_resolved(
+            {n: (lambda n=n: snapshot_of(tc.db(n), lambda tr: tr.get_root_object("n"))) for n in ("n0", "n1")},
+            tokens)
+        assert all(v == len(res.present) for v in res.values.values()), \
+            f"the counter disagrees with the tokens: {res.values}, {len(res.present)} tokens present"
 
 
 def test_renewals_after_a_refused_higher_request_keep_the_term_deterministically():
@@ -154,4 +176,88 @@ def test_renewals_after_a_refused_higher_request_keep_the_term_deterministically
         h.clock.t = first_expiry + 1.0               # past the lease of the acquire: the term lives on
         assert own.lease.is_valid(), (own.lease, first_expiry)
     finally:
+        h.close()
+
+
+def test_a_term_ends_by_idle_or_by_expiry_only_while_its_renewals_succeed():
+    """Re-review 1, N6: the ownership thread itself (not ``_renew`` driven by hand), over a
+    :class:`~tests.support.manual_cluster.ManualNet` with one fake clock for every lease.
+
+    1. While a's own threads keep asking for permissions, every renewal falls due on the
+       fake clock and is granted by b and c: the term is kept for five renewals.
+    2. Demand stops: after ``lease_duration / 4`` without a request (D50 "idle", measured on
+       the monotonic clock) the term ends, released, never abandoned, no renewal failed.
+    3. a owns a new term with demand, and its renewals are lost: when the fake clock passes
+       the lease the term ends as expired; it was never kept past its lease."""
+    import threading as _threading
+    from tests.support.manual_cluster import D, Harness
+
+    h = Harness("abc")
+    a = h.nodes["a"]
+    deliver_renewals = _threading.Event()
+    deliver_renewals.set()
+    stop = _threading.Event()
+
+    def pump_forever():
+        while not stop.is_set():
+            if deliver_renewals.is_set():
+                h.net.deliver(src="a", dst={"b", "c"}, kinds=("renew", "request", "release"))
+                h.net.deliver(src=None, dst={"a"}, kinds=("grant", "reject"))
+            else:
+                h.net.drop(src="a", kinds=("renew",))
+                h.net.drop(src=None, dst={"a"}, kinds=("grant", "reject"))
+            time.sleep(0.001)
+    pumper = _threading.Thread(target=pump_forever, daemon=True)
+    pumper.start()
+
+    def wait_for(cond, what, timeout=10.0):
+        deadline = time.monotonic() + timeout
+        while not cond():
+            assert time.monotonic() < deadline, f"timed out waiting for {what}: {a.stats()}"
+            time.sleep(0.002)
+
+    def demand():
+        """One local permission, ended without a root (O5): a's own threads asking."""
+        p = a.permit(timeout=5)
+        p.outcome = "none"
+        a.finish(p)
+
+    try:
+        h.own("a")
+        own = a._ownership
+        assert own is not None
+        belief = a._belief
+        before = a.stats()
+        for i in range(5):
+            demand()
+            expiry = own.lease.valid_until
+            h.clock.t = expiry - belief / 2 + 0.001        # a renewal is due on the fake clock
+            with a._cond:
+                a._cond.notify_all()
+            wait_for(lambda: a.stats()["renewals"] > before["renewals"] + i, f"renewal {i + 1}")
+            assert own.lease.valid_until > expiry
+            assert a._ownership is own, f"the term ended while in use (renewal {i + 1})"
+        assert a.stats()["renewal_failures"] == before["renewal_failures"]
+        # 2. No demand: the term ends by idle, released and never abandoned.
+        idle_from = time.monotonic()
+        wait_for(lambda: a._ownership is None, "the idle end of the term", timeout=D)
+        assert time.monotonic() - idle_from >= D / 4 * 0.9 - 0.05
+        assert own.ended and not own.abandoned and own.lease.is_valid() is False
+        stats = a.stats()
+        assert stats["terms_abandoned"] == 0 and stats["renewal_failures"] == before["renewal_failures"]
+        # 3. A new term with demand; its renewals are lost; the fake clock passes its lease.
+        demand()
+        own2 = a._ownership
+        assert own2 is not None and own2 is not own and own2.term > own.term
+        deliver_renewals.clear()
+        demand()
+        h.clock.t = own2.lease.valid_until + 0.001
+        with a._cond:
+            a._cond.notify_all()
+        wait_for(lambda: a._ownership is None, "the expiry of the second term")
+        assert own2.ended and not own2.lease.is_valid()
+        assert a.stats()["terms_abandoned"] == 0       # nothing outstanding when it expired
+    finally:
+        stop.set()
+        pumper.join(5)
         h.close()

@@ -369,7 +369,8 @@ def test_forced_replication_failures_surface_and_lose_nothing(tmp_path):
     both kinds counted (``failures <= unknown + conflict``; the old ``failures <= unknown``
     fails here), and every token resolves alike on every member: a lost acknowledged commit
     still fails the test in this branch (plant ``forced_lost``)."""
-    from tests.concurrency.test_cluster_pipelined_permits import _await, _cluster as _pipelined_cluster, _confirmed
+    from tests.support.cluster_load import (await_condition as _await, confirm_every_member as _confirmed,
+                                            fsync_cluster as _pipelined_cluster)
     from tests.support.tiered_cluster import RUN_KW as TIERED_RUN_KW, incr
 
     tokens = CommitTokens()

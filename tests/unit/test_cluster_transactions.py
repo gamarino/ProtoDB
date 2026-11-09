@@ -435,6 +435,48 @@ def test_a_space_opened_while_no_majority_has_a_space_gets_no_permission_until_o
         assert _value(lonely) == 2
 
 
+def test_a_confirmation_in_progress_succeeds_once_a_majority_opens_its_spaces(caplog):
+    """Re-review 1, N5: the staggered start of a cluster.  n0 opens its space first: its
+    confirmation waits for a permission while no majority has a space open (the others
+    refuse, ``no_storage``).  n1 opens its space while n0's confirmation is still waiting;
+    from then on a majority can grant, and n0's confirmation must succeed within its
+    ``lock_timeout`` -- no "Confirming the committed root" warning -- having waited only until
+    the majority formed."""
+    from proto_db.cluster.rootlog import memory_log_for
+    shared = MemoryStorage()
+    for n in ("n0", "n1", "n2"):
+        memory_log_for(shared, n).mark_rejoined()      # a cluster that ran before: no rejoin
+    ObjectSpace(shared).new_database("db")
+    with Cluster(3, **dict(FAST, startup_grace=None)) as cl:    # a restart: the default grace
+        time.sleep(cl["n0"].restart_grace)              # the members grant nothing during it
+        lonely = ObjectSpace(shared, coordinator=cl["n0"], lock_timeout=10.0)
+        out = {}
+
+        def open_first():
+            started = time.monotonic()
+            out["db"] = lonely.open_database("db")      # the first snapshot: the confirmation
+            out["done"] = time.monotonic()
+            out["started"] = started
+        with caplog.at_level("WARNING", logger="proto_db.transactions"):
+            first = threading.Thread(target=open_first)
+            first.start()
+            deadline = time.monotonic() + 5
+            # n0's confirmation is in progress: its attempts were refused for want of storage.
+            while not all(cl[n].stats()["grants_refused_no_storage"] >= 1 for n in ("n1", "n2")):
+                assert time.monotonic() < deadline, "n0's confirmation never asked the others"
+                time.sleep(0.005)
+            assert first.is_alive(), "n0's confirmation ended before any majority existed"
+            formed = time.monotonic()
+            db1 = ObjectSpace(shared, coordinator=cl["n1"], lock_timeout=10.0).open_database("db")
+            first.join(15)
+            assert not first.is_alive()
+        assert not [r for r in caplog.records if "Confirming the committed root" in r.getMessage()], caplog.text
+        assert out["done"] - formed < 5, f"n0 confirmed {out['done'] - formed:.2f} s after the majority formed"
+        db1.run(_incr, **RUN_KW)
+        out["db"].run(_incr, **RUN_KW)
+        assert _value(lonely) == 2
+
+
 def test_a_setup_new_database_whose_recovery_query_goes_unanswered_conflicts_and_is_retried(tmp_path):
     """Task 8.3n fix round 2, item 2 (the pipelined-faults ``[1-5]`` failure of fix round 1),
     reduced.  A new cluster's first commit builds on an uncertain base, so its round asks the

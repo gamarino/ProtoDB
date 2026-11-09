@@ -17,8 +17,9 @@ import time
 
 import pytest
 
-from tests.concurrency.test_cluster_owner_failures import (LEASE, SECONDS, STORAGE, Load, _check,
-                                                            _FrozenPowerLoss, _hook_replicate, _owner)
+from tests.support.cluster_load import (LEASE, SECONDS, STORAGE, Load, check_after_faults as _check,
+                                        hook_replicate as _hook_replicate, owner_of as _owner)
+from tests.support.power_loss import FrozenPowerLoss as _FrozenPowerLoss
 from tests.support.tiered_cluster import TieredCluster
 
 pytestmark = [pytest.mark.timeout(300)]

@@ -37,7 +37,8 @@ from proto_db.core.atom import AtomPointer
 from proto_db.errors import ProtoDBError, ProtoOutcomeUnknownError
 from proto_db.storage.tiered import TieredStorage
 from proto_db.transactions import ObjectSpace
-from tests.concurrency.test_cluster_owner_failures import Load, _check, _FrozenPowerLoss
+from tests.support.cluster_load import Load, check_after_faults as _check
+from tests.support.power_loss import FrozenPowerLoss as _FrozenPowerLoss
 from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, snapshot_of, write_token
 from tests.support.tiered_cluster import RUN_KW, TieredCluster, incr
 

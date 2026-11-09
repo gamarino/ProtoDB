@@ -24,172 +24,12 @@ import time
 
 import pytest
 
-from proto_db.errors import ProtoConflictError, ProtoOutcomeUnknownError, ProtoTimeoutError
-from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, read_tokens, snapshot_of, write_token
-from tests.support.power_loss import PowerLoss
-from tests.support.tiered_cluster import RUN_KW, TieredCluster, incr
+from tests.support.cluster_load import (LEASE, SECONDS, STORAGE, Load, check_after_faults as _check,
+                                        hook_replicate as _hook_replicate, owner_of as _owner)
+from tests.support.power_loss import FrozenPowerLoss as _FrozenPowerLoss
+from tests.support.tiered_cluster import TieredCluster
 
 pytestmark = [pytest.mark.timeout(240)]
-
-LEASE = dict(lease_duration=0.9, request_timeout=0.1)
-STORAGE = dict(durability="fsync")
-THREADS = 2
-SECONDS = 1.6
-
-
-def _token_incr(tokens: CommitTokens, token: str):
-    """An increment of ``n`` that records ``token`` and observes its base's tokens (P1)."""
-    def fn(tr):
-        tokens.observe(read_tokens(tr))
-        incr(tr)
-        write_token(tr, token)
-    return fn
-
-
-class Load:
-    """Two committing threads per member; counts acknowledged and unknown commits, each with a
-    token (:mod:`tests.support.outcomes`)."""
-
-    def __init__(self, tc: TieredCluster):
-        self.tc = tc
-        self.lock = threading.Lock()
-        self.acked = 0
-        self.unknown = 0
-        self.tokens = CommitTokens()
-        self.stop = threading.Event()
-        self.down = set()
-        self.threads = [threading.Thread(target=self._worker, args=(node,), daemon=True)
-                        for node in tc.ids for _ in range(THREADS)]
-
-    def _worker(self, node: str) -> None:
-        while not self.stop.is_set():
-            if node in self.down:
-                time.sleep(0.01)
-                continue
-            space = self.tc.spaces.get(node)
-            if space is None:
-                time.sleep(0.01)
-                continue
-            token = self.tokens.new(node)
-            try:
-                space.open_database("db").run(_token_incr(self.tokens, token), **RUN_KW)
-            except ProtoOutcomeUnknownError:
-                self.tokens.unknown(token)
-                with self.lock:
-                    self.unknown += 1
-                continue
-            except (ProtoConflictError, ProtoTimeoutError):
-                continue                # nothing applied: its token must stay absent
-            except Exception:           # the space closed under a killed node: not acknowledged
-                if node in self.down or self.tc.spaces.get(node) is not space:
-                    self.tokens.unknown(token)      # killed mid-commit: it may have taken effect
-                    continue
-                raise
-            self.tokens.acked(token)
-            with self.lock:
-                self.acked += 1
-
-    def __enter__(self):
-        for t in self.threads:
-            t.start()
-        return self
-
-    def __exit__(self, *exc):
-        self.stop.set()
-        for t in self.threads:
-            t.join(30)
-        assert not any(t.is_alive() for t in self.threads), "a committing thread hung"
-
-
-def _owner(tc: TieredCluster, timeout: float = 5.0) -> str:
-    """The member owning the current term, as the members see it (waits for one)."""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        for node in tc.ids:
-            try:
-                if tc[node].owner == node:
-                    return node
-            except KeyError:
-                continue
-        time.sleep(0.005)
-    raise AssertionError("no member owns a term under load")
-
-
-#: Longest the final commits of :func:`_check` may take, once every live member is ready, to
-#: get one commit acknowledged on each member: a liveness detector (R82), generous on
-#: purpose.  Measured recoveries are printed by every run (fix round 2, item 2).
-RECOVERY_TIMEOUT = 60.0
-
-
-def _await_ready(tc: TieredCluster, live, timeout: float = RECOVERY_TIMEOUT) -> None:
-    """Wait until every live member can take part in a commit: its space is open (a killed
-    member was revived), its coordinator is healthy (no fenced node, no failed tier: a member
-    whose tier failed refuses every vote until its space is reopened) and it is not rejoining
-    (Task 8.3n fix round 2, item 2).  A member that never gets there is named."""
-    deadline = time.monotonic() + timeout
-    while True:
-        waiting = {}
-        for node in live:
-            if node not in tc.spaces:
-                waiting[node] = "no space open"
-                continue
-            st = tc[node].stats()
-            if not st["healthy"] or st["rejoining"]:
-                waiting[node] = f"healthy={st['healthy']} rejoining={st['rejoining']} failure={st['failure']}"
-        if not waiting:
-            return
-        if time.monotonic() > deadline:
-            pytest.fail(f"members not ready {timeout:g} s after the faults healed: {waiting}")
-        time.sleep(0.01)
-
-
-def _check(tc: TieredCluster, load: Load, live) -> None:
-    """Every live member commits again, then every outcome is resolved by its token on every
-    live member, and the counter equals the tokens present (module docstring).
-
-    Liveness after the faults (fix round 2, item 2): the final commits start once every live
-    member is ready (:func:`_await_ready`), and each member commits until one commit is
-    acknowledged.  An unknown outcome (conservative, ruling R86) is resolved by its token
-    below; a conflict or a timeout applied nothing (its token must stay absent) and is
-    retried.  No attempt count: only :data:`RECOVERY_TIMEOUT`, a liveness detector."""
-    tc.cluster.net.set_faults(drop=0.0, duplicate=0.0, delay=(0.0, 0.0))
-    tc.cluster.net.heal()
-    tokens = load.tokens
-    healed = time.monotonic()
-    _await_ready(tc, live)
-    ready = time.monotonic()
-    attempts = {}
-    for node in live:
-        outcomes = attempts[node] = []
-        while True:
-            token = tokens.new(f"{node}.final")
-            try:
-                tc.db(node).run(_token_incr(tokens, token), **RUN_KW)
-            except ProtoOutcomeUnknownError as e:
-                tokens.unknown(token)
-                load.unknown += 1
-                outcomes.append(f"unknown: {e}")
-            except (ProtoConflictError, ProtoTimeoutError) as e:
-                outcomes.append(f"{type(e).__name__}: {e}")     # nothing applied: retried
-            else:
-                tokens.acked(token)
-                load.acked += 1
-                break
-            if time.monotonic() - ready > RECOVERY_TIMEOUT:
-                pytest.fail(f"{node} got no commit acknowledged {RECOVERY_TIMEOUT:g} s after every member was "
-                            f"ready; its attempts: {outcomes}")
-    done = time.monotonic()
-    retried = {node: len(o) for node, o in attempts.items() if o}
-    print(f"\nrecovery: members ready {ready - healed:.2f} s after the heal, one acknowledged commit per member "
-          f"{done - ready:.2f} s later; attempts that did not commit: {retried or 'none'}")
-    # A member learns the others' last commits from their "done": the helper waits for every
-    # member to show every acknowledged token.
-    res = assert_outcomes_resolved(
-        {node: (lambda node=node: snapshot_of(tc.db(node), lambda tr: tr.get_root_object("n"))) for node in live},
-        tokens)
-    assert set(res.values.values()) == {len(res.present)}, \
-        f"n = {res.values}, tokens {len(res.present)}, acknowledged {load.acked}, unknown {load.unknown}"
-    assert load.acked > 2 * len(live)
 
 
 def _cluster(tmp_path, **kw):
@@ -238,22 +78,6 @@ def test_owner_stalled_past_its_lease_like_sigstop(tmp_path):
             load.down.discard(owner)
             time.sleep(SECONDS / 3)
         _check(tc, load, tc.ids)
-
-
-def _hook_replicate(tc: TieredCluster, node: str, action):
-    """Run ``action()`` once, right before ``node`` sends its next replication."""
-    coordinator = tc[node]
-    replicate = coordinator.replicate
-    fired = threading.Event()
-
-    def hooked(lease, root, **kw):
-        if not fired.is_set():
-            fired.set()
-            action()
-        return replicate(lease, root, **kw)
-
-    coordinator.replicate = hooked
-    return fired
 
 
 def test_a_stale_permission_after_an_owner_change_never_commits_a_fork(tmp_path):
@@ -368,47 +192,6 @@ def test_duplicates_delayed_beyond_a_holder_restart(tmp_path, round_):
             time.sleep(SECONDS / 2)
             net.set_link_delay(owner, holder, 0)
         _check(tc, load, tc.ids)
-
-
-class _FrozenPowerLoss(PowerLoss):
-    """:class:`PowerLoss` that stops recording ``fsync`` calls under a dead node's directory
-    (a host without power syncs nothing; closing its space must not make anything durable)."""
-
-    def __init__(self, monkeypatch):
-        super().__init__(monkeypatch)
-        self.frozen = frozenset()
-
-    # ``frozen`` is replaced, never changed in place (Task 8.3n fix round 2): the dead node's
-    # straggling threads read it in ``fsync`` while the test thread freezes a directory, and
-    # iterating a set that another thread changes raises ``RuntimeError`` -- it once fenced
-    # a live node's persister in the middle of a run (free-threaded 3.14t, GIL off).
-    def freeze(self, path: str) -> None:
-        self.frozen = self.frozen | {path}
-
-    def thaw_all(self) -> None:
-        self.frozen = frozenset()
-
-    @staticmethod
-    def _entries(path: str) -> dict:
-        # The live nodes create and remove files while a directory sync is recorded: an entry
-        # removed between the listing and its lstat is simply not in the recorded listing.
-        out = {}
-        for name in os.listdir(path):
-            try:
-                st = os.lstat(os.path.join(path, name))
-            except FileNotFoundError:
-                continue
-            out[name] = (st.st_dev, st.st_ino)
-        return out
-
-    def _record_fd(self, fd: int) -> None:
-        try:
-            path = os.readlink(f"/proc/self/fd/{fd}")
-        except OSError:
-            path = ""
-        if any(path == d or path.startswith(d + "/") for d in self.frozen):
-            return
-        super()._record_fd(fd)
 
 
 @pytest.mark.skipif(not os.path.isdir("/proc/self/fd"), reason="needs /proc/self/fd")

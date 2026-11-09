@@ -24,7 +24,7 @@ import pytest
 from proto_db.cluster.rootlog import RECORDS_KIND
 from proto_db.storage.logfile import read_log
 from tests.support.fake_object_store import FakeObjectStore
-from tests.support.power_loss import PowerLoss
+from tests.support.power_loss import FrozenPowerLoss as _FrozenPowerLoss
 from tests.support.tiered_cluster import RUN_KW, TieredCluster, incr
 
 pytestmark = [pytest.mark.timeout(240),
@@ -32,34 +32,6 @@ pytestmark = [pytest.mark.timeout(240),
 
 LEASE = dict(lease_duration=0.9, request_timeout=0.1)
 COMMITS = 10
-
-
-class _FrozenPowerLoss(PowerLoss):
-    """A power loss that also stops recording syncs of the directories it froze: a straggling
-    thread of a killed node never makes anything durable after the power went."""
-
-    def __init__(self, monkeypatch):
-        super().__init__(monkeypatch)
-        self.frozen = frozenset()
-
-    # ``frozen`` is replaced, never changed in place (Task 8.3n fix round 2): the dead node's
-    # straggling threads read it in ``fsync`` while the test thread freezes a directory, and
-    # iterating a set that another thread changes raises ``RuntimeError`` -- it once fenced
-    # a live node's persister in the middle of a run (free-threaded 3.14t, GIL off).
-    def freeze(self, path: str) -> None:
-        self.frozen = self.frozen | {path}
-
-    def thaw_all(self) -> None:
-        self.frozen = frozenset()
-
-    def _record_fd(self, fd):
-        try:
-            path = os.path.realpath(os.readlink(f"/proc/self/fd/{fd}"))
-        except OSError:
-            path = ""
-        if any(path == d or path.startswith(d + "/") for d in self.frozen):
-            return
-        super()._record_fd(fd)
 
 
 def _values(tc, nodes) -> dict:

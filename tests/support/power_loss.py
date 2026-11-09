@@ -145,3 +145,44 @@ def _remove_tree(path: str) -> None:
         for name in dirnames:
             os.rmdir(os.path.join(dirpath, name))
     os.rmdir(path)
+
+
+class FrozenPowerLoss(PowerLoss):
+    """:class:`PowerLoss` that stops recording ``fsync`` calls under a dead node's directory
+    (a host without power syncs nothing; closing its space must not make anything durable)."""
+
+    def __init__(self, monkeypatch):
+        super().__init__(monkeypatch)
+        self.frozen = frozenset()
+
+    # ``frozen`` is replaced, never changed in place (Task 8.3n fix round 2): the dead node's
+    # straggling threads read it in ``fsync`` while the test thread freezes a directory, and
+    # iterating a set that another thread changes raises ``RuntimeError`` -- it once fenced
+    # a live node's persister in the middle of a run (free-threaded 3.14t, GIL off).
+    def freeze(self, path: str) -> None:
+        self.frozen = self.frozen | {path}
+
+    def thaw_all(self) -> None:
+        self.frozen = frozenset()
+
+    @staticmethod
+    def _entries(path: str) -> dict:
+        # The live nodes create and remove files while a directory sync is recorded: an entry
+        # removed between the listing and its lstat is simply not in the recorded listing.
+        out = {}
+        for name in os.listdir(path):
+            try:
+                st = os.lstat(os.path.join(path, name))
+            except FileNotFoundError:
+                continue
+            out[name] = (st.st_dev, st.st_ino)
+        return out
+
+    def _record_fd(self, fd: int) -> None:
+        try:
+            path = os.path.realpath(os.readlink(f"/proc/self/fd/{fd}"))
+        except OSError:
+            path = ""
+        if any(path == d or path.startswith(d + "/") for d in self.frozen):
+            return
+        super()._record_fd(fd)

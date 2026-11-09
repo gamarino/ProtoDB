@@ -32,10 +32,13 @@ from proto_db.cluster.coordinator import ClusterCoordinator, _siblings
 from proto_db.cluster.rootlog import compare_roots
 from proto_db.errors import ProtoConflictError, ProtoDBError, ProtoOutcomeUnknownError
 from proto_db import transactions
-from tests.concurrency.test_cluster_owner_failures import Load, _check, _FrozenPowerLoss
+from tests.support.cluster_load import (Load, await_condition as _await, check_after_faults as _check,
+                                        confirm_every_member as _confirmed, fsync_cluster as _cluster,
+                                        setter as _setter)
+from tests.support.power_loss import FrozenPowerLoss as _FrozenPowerLoss
 from tests.support.outcomes import (CommitTokens, add_blind_token, assert_outcomes_resolved, blind_snapshot_of,
                                     snapshot_of, write_token)
-from tests.support.tiered_cluster import RUN_KW, TieredCluster, incr
+from tests.support.tiered_cluster import RUN_KW, incr
 
 pytestmark = [pytest.mark.timeout(300)]
 
@@ -44,42 +47,12 @@ SECONDS = 1.6
 RUNS = int(os.environ.get("PROTODB_PIPELINE_RUNS", "6"))
 
 
-def _cluster(tmp_path, n=3, *, storage_kw=None, **kw):
-    tc = TieredCluster(tmp_path, n, storage_kw=dict(durability="fsync", **(storage_kw or {})), **dict(LEASE, **kw))
-    tc.create_database(tc.ids[0])
-    return tc
-
-
-def _setter(key):
-    def write(tr):
-        tr.set_root_object(key, (tr.get_root_object(key) or 0) + 1)
-    return write
-
-
 def _read_keys(tc, node, keys):
     tr = tc.db(node).new_transaction()
     try:
         return {k: tr.get_root_object(k) for k in keys}
     finally:
         tr.abort()
-
-
-def _await(predicate, timeout=5.0, what="condition", tc=None):
-    deadline = time.monotonic() + timeout
-    while not predicate():
-        if time.monotonic() >= deadline:
-            stats = {} if tc is None else {n: {k: v for k, v in tc[n].stats().items() if isinstance(v, int) and v}
-                                            for n in tc.ids if n in tc.spaces}
-            raise AssertionError(f"timed out waiting for {what}; {stats}")
-        time.sleep(0.002)
-
-
-def _confirmed(tc):
-    """Every member commits once: its first commit after attach is a confirmation round (an
-    empty commit, ``needs_confirmation``), which a schedule must not take for the commit it
-    drives."""
-    for node in tc.ids:
-        tc.commit(node, _setter("w"))
 
 
 def _no_owner(tc, timeout=5.0):

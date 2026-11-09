@@ -106,12 +106,19 @@ PLANTS = {
         _STEADY_TARGET, "unknown outcomes not resolved alike on every member",
         "an unknown outcome resolves present on some members and absent on others"),
     "check_lost": Plant((
-        ("tests/concurrency/test_cluster_owner_failures.py",
+        ("tests/support/cluster_load.py",
          '''        {node: (lambda node=node: snapshot_of(tc.db(node), lambda tr: tr.get_root_object("n"))) for node in live},''',
          '''        {node: (lambda node=node: (lambda s: s._replace(tokens=s.tokens - {min(tokens.acked_tokens)}))(  # PLANT
             snapshot_of(tc.db(node), lambda tr: tr.get_root_object("n")))) for node in live},'''),),
         ("tests/concurrency/test_cluster_owner_failures.py::test_owner_crash_while_members_hold_or_await_permissions",),
-        "acknowledged commits lost", "Load/_check: every member loses one acknowledged commit"),
+        "acknowledged commits lost", "Load/check_after_faults: every member loses one acknowledged commit"),
+    "slow_recovery": Plant((
+        ("tests/support/cluster_load.py",
+         "    done = time.monotonic()\n    retried = ",
+         "    time.sleep(recovery_bound(tc, live) + 0.5)    # PLANT: a recovery slower than the bound\n"
+         "    done = time.monotonic()\n    retried = "),),
+        ("tests/concurrency/test_cluster_owner_failures.py::test_owner_partitioned_past_its_lease",),
+        "recovery took", "check_after_faults (N3): the recovery after the heal exceeds the configured timeouts"),
     "readers_lost": Plant((
         ("tests/concurrency/test_history_readers.py",
          '''            {n: (lambda n=n: snapshot_of(cluster.db(n), lambda tr: tr.get_root_object("n"))) for n in cluster.ids},''',
@@ -152,6 +159,29 @@ def blind_snapshot_of'''),),
          "tests/unit/test_cluster_renewal.py::test_renewals_after_a_refused_higher_request_keep_the_term_deterministically"),
         ("a renewal of the owner's term was refused under an active grant", 'renewal_failures"] == 0'),
         "product: the renewal is decided after the stale-term rule (the 4c8c949 failure)"),
+    "renewal_lost": Plant((
+        ("tests/unit/test_cluster_renewal.py",
+         "                db.run(lambda tr: (incr(tr), write_token(tr, token)), **RUN_KW)",
+         "                db.run(lambda tr: (incr(tr) if not token.endswith('-5') else None,  # PLANT: lost\n"
+         "                                   write_token(tr, token)), **RUN_KW)"),
+        ("tests/unit/test_cluster_renewal.py",
+         "                raise\n            tokens.acked(token)\n",
+         "                raise\n            (tokens.unknown if token.endswith('-6') else tokens.acked)(token)  # PLANT\n")),
+        ("tests/unit/test_cluster_renewal.py::test_a_refused_higher_request_does_not_end_the_owners_term",),
+        "the counter disagrees with the tokens",
+        "renewal test (N1): an acknowledged increment lost while an unknown one took effect"),
+    "renewal_split": Plant((
+        ("tests/unit/test_cluster_renewal.py",
+         "                raise\n            tokens.acked(token)\n",
+         "                raise\n            (tokens.unknown if token.endswith('-6') else tokens.acked)(token)  # PLANT\n"),
+        ("tests/unit/test_cluster_renewal.py",
+         """            {n: (lambda n=n: snapshot_of(tc.db(n), lambda tr: tr.get_root_object("n"))) for n in ("n0", "n1")},""",
+         """            {n: (lambda n=n: (lambda s: s._replace(tokens=s.tokens - {t for t in s.tokens if t.endswith("-6")})
+                               if n == "n1" else s)(snapshot_of(tc.db(n), lambda tr: tr.get_root_object("n"))))
+             for n in ("n0", "n1")},  # PLANT: n1 resolves the unknown commit differently""")),
+        ("tests/unit/test_cluster_renewal.py::test_a_refused_higher_request_does_not_end_the_owners_term",),
+        "unknown outcomes not resolved alike on every member",
+        "renewal test (N1): an unknown outcome resolved present on n0 and absent on n1"),
     "hint_forgotten": Plant((
         ("proto_db/cluster/coordinator.py",
          "                    if self._owner_hint[1] == sender and self._owner_hint[0] == wait.term:",
@@ -159,6 +189,13 @@ def blind_snapshot_of'''),),
         ("tests/unit/test_cluster_permit_deferral.py::test_a_refusal_of_an_older_terms_request_keeps_the_owner_learnt_since",),
         "made n1 forget that n0 owns T2",
         "product: a refusal of an older term's request clears the owner learnt for a newer term"),
+    "silence_forgets": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                if self._owner_hint == (wait.term, target):\n",
+         "                if self._owner_hint[1] == target:     # PLANT: any silence forgets the owner\n"),),
+        ("tests/unit/test_cluster_permit_deferral.py::test_a_silent_owner_is_forgotten_only_for_the_term_asked_under[True]",),
+        "made n1 forget that n0 owns T2",
+        "product: silence about an older term's request clears the owner learnt for a newer term (N4)"),
     "no_reserve": Plant((
         ("proto_db/cluster/coordinator.py",
          "        if left < self._send_reserve:\n",

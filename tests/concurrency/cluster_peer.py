@@ -60,6 +60,12 @@ def _say(obj):
     sys.stdout.flush()
 
 
+#: Longest a peer may take to create or see the shared database (a hang detector, R82): each
+#: attempt is bounded by the space's lock timeout (30 s by default), and a healthy start needs
+#: one or two.
+SETUP_TIMEOUT = 120.0
+
+
 def _hear():
     line = sys.stdin.readline()
     if not line:
@@ -81,15 +87,25 @@ def main():
         _hear()
         storage = CasCountingStorage(_storage(space_dir))
         space = ObjectSpace(storage, coordinator=coordinator)
+        # A tiered space starts empty: one peer creates the database.  Under load (fix round 2,
+        # item 2) an attempt may end with a conflict, a timeout or an unknown outcome; it is
+        # tried again, and an unknown attempt that took effect shows the database at the next
+        # check.  Bounded (re-review 1, N9): the database must be visible within
+        # SETUP_TIMEOUT, or the peer fails naming every attempt, instead of hanging until the
+        # parent's own timeout.
+        deadline = time.monotonic() + SETUP_TIMEOUT
+        attempts = []
         while "db" not in space.list_databases():
+            if time.monotonic() > deadline:
+                raise AssertionError(f"database 'db' neither created nor seen within {SETUP_TIMEOUT:g} s; "
+                                     f"attempts: {attempts}")
             try:
-                space.new_database("db")          # a tiered space starts empty: one peer creates it
+                space.new_database("db")
             except ProtoValidationError:
                 break                             # another peer created it first
-            except (ProtoConflictError, ProtoTimeoutError, ProtoOutcomeUnknownError):
-                time.sleep(0.05)                  # under load (fix round 2, item 2): try again;
-                #                                   an unknown attempt that took effect shows the
-                #                                   database at the next check
+            except (ProtoConflictError, ProtoTimeoutError, ProtoOutcomeUnknownError) as e:
+                attempts.append(f"{type(e).__name__}: {e}")
+                time.sleep(0.05)
         db = space.open_database("db")
         counts = []
         errors = []                               # each worker's exception, reported to the parent
