@@ -211,7 +211,8 @@ def test_each_usable_permit_of_a_delayed_holder_commits(tmp_path, round_, thread
         gaps = sorted(gaps)
         print(f"holder {holder}: permits {len(permits)}, retried {len(retried)}, wasted {len(wasted)} "
               f"{sorted(set(wasted))}, expired in the retry {len(expired)}, conflicted and not retried "
-              f"{len(unkept)} {[sorted(c) for c in unkept]}; acked {acked}, unknown {len(tokens.unknown_tokens)}; "
+              f"{len(unkept)} {[sorted(c) for c in unkept]}; sends refused for the reserve "
+              f"{tc[holder].stats()['sends_refused_reserve']}; acked {acked}, unknown {len(tokens.unknown_tokens)}; "
               f"retry gap ms p50 {gaps[len(gaps) // 2] * 1000 if gaps else None} "
               f"max {gaps[-1] * 1000 if gaps else None}")
         assert any(o == "committed" for _, o, _ in retried), "no retry under a permit committed (D-LIVE-2)"
