@@ -240,7 +240,9 @@ def test_a_term_ends_by_idle_or_by_expiry_only_while_its_renewals_succeed():
         assert a.stats()["renewal_failures"] == before["renewal_failures"]
         # 2. No demand: the term ends by idle, released and never abandoned.
         idle_from = time.monotonic()
-        wait_for(lambda: a._ownership is None, "the idle end of the term", timeout=D)
+        # The ownership is cleared first, then the lease released (outside the lock).
+        wait_for(lambda: a._ownership is None and own.lease.released_at is not None, "the idle end of the term",
+                 timeout=D)
         assert time.monotonic() - idle_from >= D / 4 * 0.9 - 0.05
         assert own.ended and not own.abandoned and own.lease.is_valid() is False
         stats = a.stats()
@@ -254,7 +256,7 @@ def test_a_term_ends_by_idle_or_by_expiry_only_while_its_renewals_succeed():
         h.clock.t = own2.lease.valid_until + 0.001
         with a._cond:
             a._cond.notify_all()
-        wait_for(lambda: a._ownership is None, "the expiry of the second term")
+        wait_for(lambda: a._ownership is None and own2.lease.released_at is not None, "the expiry of the second term")
         assert own2.ended and not own2.lease.is_valid()
         assert a.stats()["terms_abandoned"] == 0       # nothing outstanding when it expired
     finally:

@@ -34,7 +34,8 @@ EXCUSES = {"keep timer", "take refused", "retry wait timed out", "proposed", "ga
 
 def _watch(tc, holder):
     """Record the holder's permits ``(rounds, outcome, causes)`` -- ``rounds`` lists, per round run
-    under the permission, ``(conflicted, valid when it returned)``; ``causes`` the observed
+    under the permission, ``(conflicted, usable when it returned)`` (valid with at least
+    ``send_reserve`` left); ``causes`` the observed
     events of :data:`EXCUSES` and ``"kept"`` -- and, per thread, the delay between a conflicting
     commit and that thread's next commit attempt."""
     node = tc[holder]
@@ -65,7 +66,10 @@ def _watch(tc, holder):
             i = len(rounds) - 1
         result = originals["_permit_round"](coordinator, tier, permission, entries, group, **kw)
         with lock:
-            rounds[i] = (bool(result), permission.is_valid())
+            # Usable when it returned: valid with at least ``send_reserve`` left (Task 8.3n fix
+            # round 3, R121).  With less, the holder sends nothing acceptable by rule: a
+            # truthful conflict caused by the clock, like an expiry.
+            rounds[i] = (bool(result), permission.remaining() >= node._send_reserve)
             causes = entry(permission)[2]
             if getattr(permission, "proposed", False):
                 causes.add("proposed")
@@ -196,7 +200,8 @@ def test_each_usable_permit_of_a_delayed_holder_commits(tmp_path, round_, thread
         # retry delayed past that by the scheduler failed the test on timing alone).  The retry
         # builds on the permit's root, so it must send its root: "committed", or "unknown" when
         # no majority answered in time (P5 / R86, resolved by the tokens below).  A retry round
-        # that returned after the permit expired is excused: expiry is a conservative end.
+        # that returned after the permit expired, or with less than ``send_reserve`` left (the
+        # holder then sends nothing acceptable by rule, R121), is excused: the clock ended it.
         permits = permits()
         retried = [(r, o, c) for r, o, c in permits if len(r) >= 2 and r[0] and r[0][0]]
         wasted = [o for r, o, c in retried if o not in ("committed", "unknown") and r[-1] and r[-1][1]]
@@ -216,8 +221,8 @@ def test_each_usable_permit_of_a_delayed_holder_commits(tmp_path, round_, thread
         # with one thread or two.  Before, a ratio bound let half of them go unretried.
         assert unexcused == [], f"{len(unexcused)} conflicted permits ended unretried with no cause: {unexcused}"
         # A retried permit that ended neither committed nor unknown: either its last round
-        # returned while it was still valid (wasted, never allowed), or its validity ended in
-        # that round (expired: the clock ended it, an observed cause; 0 in the 8.3n proof runs).
+        # returned while it was still usable (wasted, never allowed), or its validity fell below
+        # ``send_reserve`` or ended in that round (the clock ended it, an observed cause).
         assert wasted == [], f"{len(wasted)} of {len(retried)} retried permits sent nothing while valid"
         # Every outcome resolved by its token; the counter, read in the same snapshot, matches.
         res = assert_outcomes_resolved(
