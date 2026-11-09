@@ -196,6 +196,14 @@ def blind_snapshot_of'''),),
         ("tests/unit/test_cluster_permit_deferral.py::test_a_silent_owner_is_forgotten_only_for_the_term_asked_under[True]",),
         "made n1 forget that n0 owns T2",
         "product: silence about an older term's request clears the owner learnt for a newer term (N4)"),
+    "cancel_wakes": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                    self._cond.wait_for(progress, timeout=max(0.0, backoff_end - time.monotonic()))\n",
+         "                    self._cond.wait_for(lambda: progress() or self._wakeups != seen[0],  # PLANT\n"
+         "                                        timeout=max(0.0, backoff_end - time.monotonic()))\n"),),
+        ("tests/unit/test_cluster_permit_backoff.py::test_cancels_do_not_end_the_back_off_of_a_refused_permit_request",),
+        "cancels ended the back-off",
+        "product: every cancel ends a refused permit request's back-off (N7)"),
     "no_reserve": Plant((
         ("proto_db/cluster/coordinator.py",
          "        if left < self._send_reserve:\n",

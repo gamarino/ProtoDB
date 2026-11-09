@@ -710,6 +710,7 @@ class ClusterCoordinator:
         self._hint = 0                      # highest term learnt from replies and roots
         self._rids = itertools.count(1)
         self._wakeups = 0                   # releases received
+        self._progress = 0                  # winners' releases and dones received (permit back-off)
         self._accepted = (False, None, 0)   # (known, RootRecord or None, label)
         self._committed = (False, None, 0)
         self._committed_by = None           # node that committed the committed root, if known
@@ -2013,8 +2014,11 @@ class ClusterCoordinator:
                 # its term decided is unknown here until a root of that term or later arrives.
                 self._suspect_term = max(self._suspect_term, msg["term"])
         # Any release -- a winner's or a lost attempt's cancel -- may free the peer that
-        # refused us, so it ends a waiting requester's back-off.
+        # refused us, so it ends a waiting requester's back-off.  ``permit()`` (N7) lets a
+        # cancel end only the busy extension of its back-off; a winner's release ends it all.
         self._wakeups += 1
+        if msg["held"]:
+            self._progress += 1
         self._cond.notify_all()
         return learnt
 
@@ -2912,21 +2916,46 @@ class ClusterCoordinator:
                 permission = self._permission_from_owner(deadline)
                 if permission is not None:
                     return permission
-                if self._become_owner(deadline):
+                with self._lock:
+                    # Dated from before the attempt (as in _acquire): what arrives meanwhile counts.
+                    seen = (self._wakeups, self._progress, self._owner_hint)
+                owned, busy = self._become_owner(deadline)
+                if owned:
                     continue
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise ProtoTimeoutError(
                         f"Node {self._node} could not obtain a write permission within {timeout} s")
+                # The back-off between lost attempts (re-review 1, N7; aligned with _acquire):
+                # the jittered exponential delay, extended to the refusing granters'
+                # ``busy_remaining``.  Progress -- a winner's release, a done, a newly learnt
+                # owner -- ends the whole wait.  Any other release (a lost attempt's cancel)
+                # may have freed a granter, so it ends the busy extension, never the back-off
+                # itself: every lost attempt broadcasts a cancel, and when each one ended every
+                # waiter's back-off, members retried every 2-4 ms while no majority could grant.
                 low, high = self._backoff
                 delay = min(high, low * (2 ** min(failures, 30))) * (0.5 + self._rng.random() / 2)
                 failures += 1
+                now = time.monotonic()
+                backoff_end = now + min(delay, remaining)
+                busy_end = now + min(max(delay, busy), remaining)
                 with self._cond:
                     self._check_running()
-                    seen = self._wakeups
-                    self._cond.wait_for(lambda: self._wakeups != seen or self._state != "running",
-                                        timeout=min(delay, remaining))
+
+                    def progress():
+                        return (self._progress != seen[1] or self._owner_hint != seen[2]
+                                or self._state != "running")
+                    self._cond.wait_for(progress, timeout=max(0.0, backoff_end - time.monotonic()))
+                    if not progress():
+                        self._cond.wait_for(lambda: progress() or self._wakeups != seen[0],
+                                            timeout=max(0.0, busy_end - time.monotonic()))
                     self._check_running()
+                    woken = progress() or self._wakeups != seen[0]
+                    # The member a release named for the turn asks at once; the others spread
+                    # out (and defer to it, _await_turn).
+                    spread = woken and not self._my_turn
+                if spread:
+                    time.sleep(self._rng.random() * _WAKE_SPREAD)
         finally:
             with self._lock:
                 self._acquirers -= 1
@@ -3014,18 +3043,20 @@ class ClusterCoordinator:
             else:
                 self._transport.send(target, msg)
 
-    def _become_owner(self, deadline: float) -> bool:
-        """Try once to acquire the lease and own its term; True when this node now owns it."""
+    def _become_owner(self, deadline: float) -> tuple:
+        """Try once to acquire the lease and own its term; return ``(owned, busy)``: True when
+        this node now owns it, and the refusing granters' ``busy_remaining`` after a lost
+        attempt (0 otherwise)."""
         if not self._local.acquire(timeout=max(0.0, deadline - time.monotonic())):
-            return False
+            return False, 0.0
         try:
             with self._lock:
                 if self._ownership is not None:
                     self._local.release()
-                    return True
+                    return True, 0.0
             if not self._await_turn(deadline, yield_to_owner=True):
                 self._local.release()       # an owner is known: permit() asks it
-                return False
+                return False, 0.0
             attempt, request, seen, promise = self._open_attempt()
             self._send_voters(request)
             if promise is not None and not self._promise(promise, attempt.term):
@@ -3042,7 +3073,7 @@ class ClusterCoordinator:
             # the owner is learnt from what only an owner's term carries (renew, permit,
             # replicate, done), all broadcast or sent within one round.
             self._local.release()
-            return False
+            return False, wait
         with self._cond:
             stopped = self._state != "running"
             if not stopped:
@@ -3057,9 +3088,9 @@ class ClusterCoordinator:
                 self._owner_threads = [t for t in self._owner_threads if t.is_alive()] + [thread]
         if stopped:
             self.release(lease)         # review M2: every exit gives the lease and local lock back
-            return False
+            return False, 0.0
         thread.start()
-        return True
+        return True, 0.0
 
     def _dispatch(self, own: "_Ownership") -> list:
         """Issue the next permission of ``own`` when rule O1 allows it (lock held); return the
@@ -3361,6 +3392,7 @@ class ClusterCoordinator:
                 outcome = msg["outcome"] if msg["inc"] == issued.inc else "unknown"
                 sends = self._permit_outcome(own, issued, outcome, root, label)
             self._wakeups += 1
+            self._progress += 1
             self._cond.notify_all()
         self._send_all(sends)
 
