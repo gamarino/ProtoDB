@@ -159,6 +159,14 @@ def blind_snapshot_of'''),),
         ("tests/unit/test_cluster_permit_deferral.py::test_a_refusal_of_an_older_terms_request_keeps_the_owner_learnt_since",),
         "made n1 forget that n0 owns T2",
         "product: a refusal of an older term's request clears the owner learnt for a newer term"),
+    "no_reserve": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "        if left < self._send_reserve:\n",
+         "        if False and left < self._send_reserve:     # PLANT: no send reserve (R121)\n"),),
+        ("tests/unit/test_cluster_send_reserve.py::"
+         "test_a_holder_with_less_than_the_reserve_left_sends_nothing_and_gets_a_retryable_conflict",),
+        "ProtoOutcomeUnknownError",
+        "product: a holder sends its root with less than send_reserve left (N2)"),
     "no_fallback": Plant((
         ("proto_db/cluster/coordinator.py",
          "                        if now >= fallback_at:\n                            if waiter is None:",

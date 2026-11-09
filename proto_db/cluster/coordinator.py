@@ -565,6 +565,15 @@ class ClusterCoordinator:
             far beyond real oscillators; it is a liveness and efficiency aid, never a premise
             of commit safety (D46, D50).
         request_timeout: seconds an attempt (and a recovery query) waits for a majority.
+        send_reserve: seconds of validity a lease or permission must have left before its
+            holder sends anything a voter may accept (Task 8.3n fix round 3, ruling R121).  With
+            less, nothing leaves and the commit ends with a retryable ``ProtoConflictError``
+            (rule H7).  A send that cannot finish in what is left ends unknown (P5), and an
+            unknown outcome abandons the owner's whole term (O6): the reserve turns that doomed
+            send into the truthful conflict it would have been.  Default ``request_timeout``,
+            the time this node already allows a majority to answer; ``0`` keeps the old rule
+            (any validity left).  Must be shorter than ``lease_duration - drift_margin``.
+            Liveness only: it never decides an acceptance or an acknowledgement.
         acquire_timeout: default seconds :meth:`acquire` tries before ``ProtoTimeoutError``.
         backoff: ``(min_seconds, max_seconds)`` of the jittered back-off between lost attempts.
         startup_grace: seconds after :meth:`start` during which this node grants nothing and
@@ -601,6 +610,7 @@ class ClusterCoordinator:
 
     def __init__(self, node_id: str, peers, *, transport=None, lease_duration: float = 2.0,
                  drift_margin: Optional[float] = None, request_timeout: float = 0.25,
+                 send_reserve: Optional[float] = None,
                  acquire_timeout: float = 30.0, backoff: tuple = (0.001, 0.05),
                  startup_grace: Optional[float] = None, fetch_timeout: Optional[float] = None,
                  persist_interval: float = 0.05, persist_lag: float = 1.0,
@@ -640,6 +650,11 @@ class ClusterCoordinator:
                                                                               owner_idle_release)
         if self._request_timeout >= self._duration - self._margin:
             raise ProtoValidationError("request_timeout must be shorter than lease_duration - drift_margin")
+        self._send_reserve = self._request_timeout if send_reserve is None else _number(
+            "send_reserve", send_reserve, positive=False)
+        if self._send_reserve >= self._duration - self._margin:
+            raise ProtoValidationError("send_reserve must be shorter than lease_duration - drift_margin, "
+                                       "or no lease or permission could ever send a root")
         self._acquire_timeout = _number("acquire_timeout", acquire_timeout, positive=False)
         try:
             low, high = backoff
@@ -768,7 +783,7 @@ class ClusterCoordinator:
                     "renewal_failures", "ownerships", "terms_abandoned", "permit_rounds", "permits_foreign_dropped",
                     "permit_requests_retried", "pipelined_permits", "proposals", "proposals_received",
                     "foreign_proposals", "gate_open_at_send", "gate_waits", "gate_fallbacks", "gate_closures",
-                    "stores_sent", "stores_applied", "records_cached_on_receipt"):
+                    "stores_sent", "stores_applied", "records_cached_on_receipt", "sends_refused_reserve"):
             self._stats[key] = 0
 
     # -- properties --------------------------------------------------------------------------
@@ -3607,6 +3622,10 @@ class ClusterCoordinator:
             if not lease.is_valid():
                 raise ProtoConflictError("The cluster write lease expired before the root was replicated; "
                                          "nothing was replicated")
+            # Ruling R121: every path that sends something acceptable passes here first.  The
+            # data stage and an ungated round send right after it; a gated round waits for its
+            # gate and checks again below.
+            self._check_reserve(lease, locked=True)
             if label < self._rejoin_ballot:
                 # This node's rejoin ballot (R78a) was promised by N - majority + 1 members: no
                 # term below it can gain a majority again, and every one of them refuses this
@@ -3672,6 +3691,8 @@ class ClusterCoordinator:
                 if not gate_open and not self._await_gate(lease, pred, tier):
                     raise ProtoConflictError("The base of this pipelined permission was not learnt committed "
                                              "while the permission lasted; nothing was replicated")
+                if not gate_open:
+                    self._check_reserve(lease)      # the gate's wait was charged to the permission
                 sending_acceptable()
             if with_records and not bounded:
                 self._self_accept_with_records(tier, waiter, label, root, seq, pred, pred_label,
@@ -3717,6 +3738,7 @@ class ClusterCoordinator:
                     if not self._await_gate(lease, pred, tier):
                         raise ProtoConflictError("The base of this pipelined permission was not learnt committed "
                                                  "while the permission lasted; nothing was replicated")
+                    self._check_reserve(lease)      # the data stage and the gate took their time
                     sending_acceptable()
                     self._self_accept_root(tier, waiter, label, root, seq, pred, pred_label, pred_root, ranges)
                 if copies is not None:
@@ -3849,6 +3871,19 @@ class ClusterCoordinator:
             if not self._tier_failed(tier, e, "recording a committed root"):
                 logger.warning("Node %s could not record committed root epoch %d: %s", self._node, root.epoch, e)
         return time.perf_counter() - started
+
+    def _check_reserve(self, lease: Lease, *, locked: bool = False) -> None:
+        """Rule R121 (``send_reserve``): raise ``ProtoConflictError`` when ``lease`` has less
+        than the reserve left, before anything a voter may accept leaves this node.  The
+        caller has sent nothing acceptable yet, so the conflict is truthful (H7).  ``locked``:
+        the caller holds ``_lock``."""
+        left = lease.remaining()
+        if left < self._send_reserve:
+            with contextlib.nullcontext() if locked else self._lock:
+                self._stats["sends_refused_reserve"] += 1
+            raise ProtoConflictError(f"Node {self._node}: the permission had {left * 1000:.0f} ms left, less than "
+                                     f"the {self._send_reserve * 1000:.0f} ms a replication needs (send_reserve); "
+                                     f"nothing was replicated")
 
     def _self_accept_with_records(self, tier, waiter: _Waiter, label: int, root: RootRecord, seq: int, pred: tuple,
                                   pred_label: int, pred_root, records: list) -> None:

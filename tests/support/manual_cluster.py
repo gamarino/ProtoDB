@@ -309,6 +309,39 @@ class Harness:
         known, root, label = self.recover(name, responders)
         return root, label
 
+    def own(self, name="a"):
+        """``name`` becomes the owner of a term and commits a root with everyone under its own
+        permission (D50); returns that root.  The ownership thread is real; the clock is moved
+        past every startup grace first."""
+        r0 = self.bootstrap(name)
+        self.clock.t += 2 * GRACE
+        node, net, others = self.nodes[name], self.net, set(self.names) - {name}
+
+        def pump():
+            net.deliver(src=name, dst=others, kinds=("request", "release"))
+            net.deliver(src=None, dst={name}, kinds=("grant", "reject"))
+        permission = self._run(lambda: node.permit(timeout=5), pump)
+        root = rec(r0.epoch + 1)
+        self.replicate(name, permission, root, others)
+        permission.outcome, permission.committed = "committed", (permission.term, root)
+        node.finish(permission)
+        net.deliver(src=name, dst=others, kinds=("done",))
+        return root
+
+    def permit_from(self, name, owner="a"):
+        """``name`` gets a permission from ``owner`` (its request and the permit delivered);
+        returns ``(permission, copy of the permit message)``."""
+        node, net, copies = self.nodes[name], self.net, []
+
+        def pump():
+            net.deliver(src=name, dst={owner}, kinds=("permit_req",))
+            for m in net.take(owner, {name}, ("permit",)):
+                copies.append(m)
+                net.handlers[name](m[2])
+        permission = self._run(lambda: node.permit(timeout=5), pump)
+        assert not isinstance(permission, Exception), permission
+        return permission, copies[0]
+
     def bootstrap(self, name="a"):
         """``name`` commits a first root with every node (each logs it); return it."""
         others = set(self.names) - {name}

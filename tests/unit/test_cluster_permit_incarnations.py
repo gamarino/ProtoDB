@@ -38,36 +38,12 @@ def h():
 
 
 def _owner_permit(h, name):
-    """``name`` gets a permission from the owner ``a`` (its request and the permit delivered);
-    returns ``(permission, copy of the permit message)``."""
-    node, net, copies = h.nodes[name], h.net, []
-
-    def pump():
-        net.deliver(src=name, dst={"a"}, kinds=("permit_req",))
-        for m in net.take("a", {name}, ("permit",)):
-            copies.append(m)
-            net.handlers[name](m[2])
-    permission = h._run(lambda: node.permit(timeout=5), pump)
-    assert not isinstance(permission, Exception), permission
-    return permission, copies[0]
+    return h.permit_from(name, "a")
 
 
 def _setup(h):
     """``a`` owns a term and commits R1 with everyone; returns ``(a, r1)``."""
-    r0 = h.bootstrap("a")
-    h.clock.t += 2 * GRACE
-    a, net = h.nodes["a"], h.net
-
-    def pump():
-        net.deliver(src="a", dst={"b", "c"}, kinds=("request", "release"))
-        net.deliver(src=None, dst={"a"}, kinds=("grant", "reject"))
-    pa = h._run(lambda: a.permit(timeout=5), pump)
-    r1 = rec(r0.epoch + 1)
-    h.replicate("a", pa, r1, {"b", "c"})
-    pa.outcome, pa.committed = "committed", (pa.term, r1)
-    a.finish(pa)
-    net.deliver(src="a", dst={"b", "c"}, kinds=("done",))
-    return a, r1
+    return h.nodes["a"], h.own("a")
 
 
 def _replicate_alone_then_crash(h, name, permission, root):
