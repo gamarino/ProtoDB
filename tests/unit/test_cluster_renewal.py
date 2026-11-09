@@ -12,6 +12,7 @@ import time
 
 from proto_db.cluster.coordinator import ballot_after
 from proto_db.cluster.protocol import make_message
+from proto_db.errors import ProtoOutcomeUnknownError
 from tests.support.tiered_cluster import RUN_KW, TieredCluster, incr
 
 
@@ -27,23 +28,50 @@ def test_a_refused_higher_request_does_not_end_the_owners_term(tmp_path):
     (D50, "idle", 0.225 s here), which is not the property under test: a pause that long
     between two commits of this one thread (a garbage collection, the scheduler) ended the
     term in 1 run of the fix round 2 proof (Task 8.3n, ownerships 3 == 2 with no renewal
-    failure; reproduced by a 0.25 s pause between commits).  A trial in which two
-    consecutive commits ended more than that apart proves nothing either way and is
-    repeated with a fresh refused request; a trial with steady demand must keep the term.
-    The defect this guards against fails every trial: each renewal is refused."""
+    failure; reproduced by a 0.25 s pause between commits).  A stall inside a commit, longer
+    than what its permission had left, ends that commit unknown although a majority
+    acknowledged it (the committing thread observed the acknowledgements after its
+    permission ended: re-review 4 M2, P5), with every renewal granted: 1 run of the
+    restarted proof; reproduced by a 1 s stall in the commit's own acceptance.  A trial with
+    either (or a renewal that timed out under the same stall) proves nothing either way and is
+    repeated with a fresh refused request; a trial with steady demand, no unknown outcome and
+    no failed renewal must keep the term.
+
+    The defect this guards against is observed directly, in every trial: a granter refusing
+    a renewal of n0's term while its grant to n0 is still active (the 4c8c949 failure: the
+    refused higher request made every renewal stale).  A stall cannot produce that: a
+    renewal reaching a granter whose grant lapsed during the stall may be refused, but then
+    the grant was no longer active."""
     with TieredCluster(tmp_path, 2) as tc:
         tc.create_database("n0")
         db = tc.db("n0")
-        db.run(incr, **RUN_KW)
-        commits = 1
+        tc.commit("n0", incr)                                   # exactly once
+        commits, unknown = 1, 0
         n0, n1 = tc["n0"], tc["n1"]
         idle = n0._duration / 4
+        refused = []                    # renewals of n0 refused under an active grant to n0
+
+        def watch(node):
+            grants = node._grants
+            decide = grants.on_request
+
+            def on_request(holder, term, inc=0, *, renew=False):
+                active = grants._active and grants._holder == holder and grants._term == term \
+                    and grants._inc == inc and grants._clock() < grants._expiry
+                decision = decide(holder, term, inc, renew=renew)
+                if renew and holder == "n0" and active and not decision.granted:
+                    refused.append((node.node_id, decision.reason, term))
+                return decision
+            grants.on_request = on_request
+        for node in (n0, n1):
+            watch(node)
         give_up = time.monotonic() + TRIALS_TIMEOUT
         inconclusive = []
         rid = 10_000
         while True:
-            db.run(incr, **RUN_KW)
+            tc.commit("n0", incr)                               # exactly once: n0 owns a term
             commits += 1
+            last = time.monotonic()                             # every gap from here is measured
             own = n0._ownership
             assert own is not None, "n0 owns the term of its own commits"
             before = n0.stats()
@@ -52,21 +80,28 @@ def test_a_refused_higher_request_does_not_end_the_owners_term(tmp_path):
             rid += 1
             n0._on_request("n1", make_message("request", "n1", term=higher, rid=rid, inc=n1._inc, vs=0))
             deadline = time.monotonic() + n0._duration * 2.5      # several renewals are due
-            last, widest = time.monotonic(), 0.0
+            widest, unknowns = 0.0, []
             while time.monotonic() < deadline:
-                db.run(incr, **RUN_KW)                           # an unknown outcome would raise
-                commits += 1
+                try:
+                    db.run(incr, **RUN_KW)
+                    commits += 1
+                except ProtoOutcomeUnknownError as e:
+                    unknown += 1                                # resolved by the bound below
+                    unknowns.append(str(e))
                 now = time.monotonic()
                 widest, last = max(widest, now - last), now
             stats = n0.stats()
-            assert stats["renewal_failures"] == before["renewal_failures"], stats
+            assert not refused, f"a renewal of the owner's term was refused under an active grant: {refused}"
+            failed = stats["renewal_failures"] - before["renewal_failures"]
             kept = stats["ownerships"] == before["ownerships"] and n0._ownership is own
-            if widest <= idle:
+            if widest <= idle and not unknowns and not failed:
                 assert stats["renewals"] - before["renewals"] >= 2, stats
                 assert kept, f"the owner's term ended while in use (commits at most {widest:.3f} s apart)"
                 break
-            inconclusive.append((round(widest, 3), kept))
+            inconclusive.append((round(widest, 3), kept, failed, unknowns))
             assert time.monotonic() < give_up, f"no trial with steady demand: {inconclusive}"
         if inconclusive:
-            print(f"\ntrials repeated for a pause over {idle:g} s between commits: {inconclusive}")
-        assert tc.value("n0") == commits
+            print(f"\ntrials repeated (a pause over {idle:g} s between commits, a failed renewal or an unknown "
+                  f"outcome): "
+                  f"{inconclusive}")
+        assert commits <= tc.value("n0") <= commits + unknown, (tc.value("n0"), commits, unknown)

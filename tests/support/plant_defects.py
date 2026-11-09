@@ -149,7 +149,7 @@ def blind_snapshot_of'''),),
          "            if renew and term >= self._highest and self._active and self._holder == holder and self._term == term \\\n"
          "                    and self._inc == inc:     # PLANT: a refused higher request blocks every renewal"),),
         ("tests/unit/test_cluster_renewal.py::test_a_refused_higher_request_does_not_end_the_owners_term",),
-        ("renewal_failures\"] == before", "the owner's term ended while in use", "may or may not take effect"),
+        "a renewal of the owner's term was refused under an active grant",
         "product: the renewal is decided after the stale-term rule (the 4c8c949 failure)"),
     "hint_forgotten": Plant((
         ("proto_db/cluster/coordinator.py",
