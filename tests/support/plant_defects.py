@@ -159,6 +159,14 @@ def blind_snapshot_of'''),),
         ("tests/unit/test_cluster_permit_deferral.py::test_a_refusal_of_an_older_terms_request_keeps_the_owner_learnt_since",),
         "made n1 forget that n0 owns T2",
         "product: a refusal of an older term's request clears the owner learnt for a newer term"),
+    "no_fallback": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                        if now >= fallback_at:\n                            if waiter is None:",
+         "                        if False and now >= fallback_at:     # PLANT: no fallback query\n"
+         "                            if waiter is None:"),),
+        ("tests/concurrency/test_cluster_pipelined_permits.py::test_p2_a_closed_gate_after_a_store_is_a_truthful_conflict[False]",),
+        "without its fallback query",
+        "product: the gate never sends its fallback query (R94)"),
     "nokeep": Plant((
         ("proto_db/transactions.py",
          "                    keep = True         # this thread retries its own commit under the permission",

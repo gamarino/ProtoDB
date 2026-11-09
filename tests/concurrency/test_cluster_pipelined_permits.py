@@ -436,6 +436,20 @@ def test_p2_a_closed_gate_after_a_store_is_a_truthful_conflict(tmp_path, monkeyp
                 results[node] = "unknown"
             except ProtoConflictError:
                 results[node] = "conflict"
+        # The gate's waits, observed (fix round 2): R94 sends the fallback query only after the
+        # gate waited request_timeout, and the gate closes when the permission ends; with less
+        # than request_timeout left at the gate (measured 0.149-0.248 s alone, less on a loaded
+        # machine) no fallback is due.
+        gate_waits = []
+        await_gate = b._await_gate
+
+        def timed_gate(lease, base, tier):
+            started, left = time.monotonic(), lease.remaining()
+            try:
+                return await_gate(lease, base, tier)
+            finally:
+                gate_waits.append((round(left, 3), round(time.monotonic() - started, 3)))
+        b._await_gate = timed_gate
         proposed = a.stats()["proposals"]
         ta = threading.Thread(target=run, args=("n0",))
         ta.start()
@@ -448,7 +462,9 @@ def test_p2_a_closed_gate_after_a_store_is_a_truthful_conflict(tmp_path, monkeyp
         _await(lambda: b.stats()["gate_closures"] >= 1 or not tb.is_alive(), timeout=10, what="B's gate closing", tc=tc)
         blocked.clear()
         tb.join(60)
-        assert b.stats()["gate_fallbacks"] >= 1
+        due = any(took >= b._request_timeout for _, took in gate_waits)
+        assert b.stats()["gate_fallbacks"] >= 1 or not due, \
+            f"a gate waited past request_timeout without its fallback query: {gate_waits}"
         # An owner change: a fresh phase 1 decides what the term left behind.
         _no_owner(tc, timeout=10)
         tc.commit("n2", _setter("n2"))
