@@ -20,6 +20,7 @@ included) still accepted under the older-label exemption, the gate's fallback qu
 lost ``done``, a failing predecessor, and the R86 safety bounds under random fault schedules
 (``PROTODB_PIPELINE_RUNS`` schedules per size, default 6; 50 for the task's acceptance runs).
 """
+import logging
 import os
 import random
 import threading
@@ -569,10 +570,18 @@ def test_p5_a_proposal_base_is_never_re_proposed(tmp_path, monkeypatch, planted)
 
 # -- the gate's fallback after a lost done (I4) and a failing predecessor ------------------------
 
-def test_a_lost_done_to_the_successor_is_answered_by_the_fallback_query(tmp_path):
+def test_a_lost_done_to_the_successor_is_answered_by_the_fallback_query(tmp_path, caplog):
     """Only the ``done`` from k's holder to k+1's holder is dropped: the gate opens through
-    the plain query/answer fallback (ruling R94) within about ``request_timeout``, the term is
-    not abandoned, and both commits are acknowledged."""
+    the plain query/answer fallback (ruling R94) within about ``request_timeout``, the
+    fallback abandons no term, and both commits are acknowledged.
+
+    One abandonment is not the fallback's: B proposed before its gate, and when the gate
+    opens with less than ``send_reserve`` left B sends nothing (R121) and ends its permission
+    without a root, which abandons the term by rule O5 (a permission that proposed ended
+    ``none``).  B's retry commits under the next term.  Task 8.3n fix round 3: 4 of 160 runs
+    with the GIL ended so (one traced: B's permission had 63 ms left of a 75 ms reserve), so
+    the check allows that abandonment, at most once per reserve refusal of B, and no other."""
+    caplog.set_level(logging.INFO, logger="proto_db.cluster.coordinator")
     with _cluster(tmp_path) as tc:
         tc.commit("n0", incr)
         _confirmed(tc)
@@ -608,7 +617,10 @@ def test_a_lost_done_to_the_successor_is_answered_by_the_fallback_query(tmp_path
         tb.join(30)
         assert results == {"n0": "acked", "n1": "acked"}, results
         assert b.stats()["gate_fallbacks"] >= 1 and b.stats()["gate_closures"] == 0
-        assert sum(tc[n].stats()["terms_abandoned"] for n in tc.ids) == abandoned
+        refused = b.stats()["sends_refused_reserve"]
+        o5 = sum(1 for r in caplog.records if "of n1 ended without a root with a proposal" in r.getMessage())
+        assert o5 <= refused, (o5, refused)
+        assert sum(tc[n].stats()["terms_abandoned"] for n in tc.ids) == abandoned + o5, caplog.text[-3000:]
         _await(lambda: all(_read_keys(tc, n, ("n0", "n1")) == {"n0": 1, "n1": 1} for n in tc.ids),
                what="every member reading both commits")
 
