@@ -1226,10 +1226,12 @@ def _lease_base(coordinator, tier, lease) -> Optional[tuple]:
     the lease's term is not above the base's label (the term floor has been raised: acquire
     again).  ``replicated`` is False for the persisted root (no replication carries it).
 
-    The base is the lease's root when it is certain, else the result of a recovery round.
-    When no node of the answering majority knows any root (a cluster started on empty local
-    tiers, or one that lost a majority of its disks), the cluster refounds from the
-    persisted root with a term above any root a lost node accepted (D46).
+    The base is the lease's root when it is certain, else the higher, in
+    :func:`~proto_db.cluster.rootlog.compare_roots` order, of the lease's root (its phase-1
+    value, :func:`_phase_1_floor`) and the result of a recovery round.  When neither knows
+    any root (a cluster started on empty local tiers, or one that lost a majority of its
+    disks), the cluster refounds from the persisted root with a term above any root a lost
+    node accepted (D46).
 
     Hard guard: the base never orders below the committed root this node knows.  Every
     committed root was accepted by a majority, which every recovery and every granting
@@ -1250,6 +1252,10 @@ def _lease_base(coordinator, tier, lease) -> Optional[tuple]:
         current, label = lease.root, lease.root_term
     else:
         known, current, label = coordinator.recover_root()
+        if _phase_1_floor(lease) and (not known or compare_roots(lease.root_term, lease.root, label, current) > 0):
+            # Re-review 2 of 8.3n, C1: the recovery answers promised nothing and may predate
+            # a root accepted afterwards; the phase-1 root may not (see the docstring).
+            known, current, label = True, lease.root, lease.root_term
         if not known:
             persisted = tier.read_persisted()
             label, current = persisted if persisted is not None else (0, None)
@@ -1282,6 +1288,40 @@ def _lease_base(coordinator, tier, lease) -> Optional[tuple]:
     if label > lease.term or (label == lease.term and not permission):
         return None                 # acquire learnt the label: the next term is above it
     return current, label, replicated
+
+
+def _phase_1_floor(lease) -> bool:
+    """True when ``lease.root`` (labelled ``lease.root_term``) is a known root that bounds an
+    uncertain lease's base from below (re-review 2 of 8.3n, C1; D46 amendment).
+
+    ``lease.root`` is the phase-1 value: the highest root, in
+    :func:`~proto_db.cluster.rootlog.compare_roots` order, that the granting majority Q_g
+    reported (:meth:`~proto_db.cluster.lease.LeaseAttempt.best_root`).  A permission carries
+    the owner's: its own lease's phase-1 value, or a root the owner later knew committed,
+    which is above it.  The base of the first root of term T must extend every root chosen
+    (accepted by a majority) in a term below T, because the ballot rule alone lets every voter
+    accept that first root over whatever older root it holds (``_may_accept``).
+
+    Why the phase-1 value is a sufficient floor, under arbitrary delay, loss, duplication,
+    reordering and timer-rate faults (R82): let C be chosen in term T_c < T, accepted by a
+    majority Q_c.  Q_c and Q_g share a member m.  m promised T before it replied to the
+    grant, and an acceptor refuses every root of a term below its promise; so m accepted C
+    before it replied, and reported a root that orders at or above C (an acceptor's accepted
+    root only moves up).  Hence ``lease.root`` orders at or above C.  By induction over terms
+    (every earlier first root obeyed this rule) and the chain rule within a term (D55, V2'),
+    any root that orders at or above C extends C, so a base at or above ``lease.root``
+    extends every chosen root below T.  A recovery result that orders higher is safe to adopt
+    for the same reason: it is a root that some voter accepted, and it orders above C.
+
+    Why the recovery result alone is not: the recovery query carries ballot 0 and promises
+    nothing, so a voter that answered it may accept an older term's root afterwards -- the
+    old holder counts that acceptance while its own timer still shows its lease valid, which
+    a timer-rate fault allows.  No timing premise ("every earlier lease ended") is used here.
+
+    False when the lease knows no root (no granter knew one): there is no floor, and the
+    recovery round or the persisted root decides (D46).  Planted test ``c1_no_floor``
+    breaks this seam."""
+    return lease.root is not None or bool(lease.root_term)
 
 
 def _guard_error(label, current, committed_label, committed) -> ProtoCorruptionError:
@@ -1559,9 +1599,12 @@ class ObjectSpace:
         space = self._current_space(_SpaceContext(self._storage))
         if (space is None or not space.databases.has(name)) and self._coordinator is not None:
             # This node's committed root may lag a commit another node just made (its release
-            # is on the way): ask a majority before reporting the database missing.
+            # is on the way): ask every live voter before reporting the database missing.  A
+            # round ended at a majority could miss the creator, the only node that may know the
+            # create committed (re-review 2 of 8.3n, M6); a down voter costs request_timeout.
+            # Best effort, never a barrier (D46 amendment on sync()).
             try:
-                self._coordinator.recover_root()
+                self._coordinator.recover_root(every=True)
             except ProtoConflictError as e:
                 logger.info("Recovery before reporting database %r missing failed: %s", name, e)
             space = self._current_space(_SpaceContext(self._storage))

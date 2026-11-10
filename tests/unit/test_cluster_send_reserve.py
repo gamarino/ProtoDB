@@ -152,3 +152,39 @@ def test_a_permission_issued_at_the_d4_threshold_is_usable_whatever_the_request_
         h.net.drop(kinds=ALL)
     finally:
         h.close()
+
+
+def test_a_reserve_refusal_after_the_gate_leaves_no_suspicion_and_no_replication_failure(h):
+    """Re-review 2 of 8.3n, M1: a gated round (a permit on a proposal, D55 H5) re-checks the
+    reserve after its gate opened.  A refusal there sends nothing a voter may accept, exactly
+    as the entry check does, so it must not count a ``replication_failure`` nor make this
+    node's next grant replies uncertain (``_suspect_term``), which would push the next owners
+    onto the recovery path for nothing."""
+    from proto_db.cluster.lease import Permission
+    b = h.nodes["b"]
+    r1 = h.own("a")
+    term = h.nodes["a"]._ownership.term
+    proposal = rec(r1.epoch + 1)                    # not known committed at b: the gate is closed
+    pb = Permission(term=term, seq=2, owner="a", acquired_at=h.clock.t, valid_until=h.clock.t + 3.0,
+                    root=proposal, root_certain=False, clock=h.clock, root_term=term, after=(1, "a"))
+    reserve = b._send_reserve
+
+    def gate_opens_late(lease, pred, tier):
+        h.clock.t = pb.valid_until - reserve / 2    # the gate's wait used the permission up
+        return True
+    b._await_gate = gate_opens_late
+    before = b.stats()
+    with b._lock:
+        b._permit = pb                              # held here, as permit() would leave it
+        suspect = b._suspect_term
+    out, sent = _replicate(h, "b", pb, rec(proposal.epoch + 1))
+    assert isinstance(out, ProtoConflictError) and "send_reserve" in str(out), out
+    assert sent == [] and not pb.sent_acceptable
+    after = b.stats()
+    assert after["sends_refused_reserve"] == before.get("sends_refused_reserve", 0) + 1
+    assert after["replication_failures"] == before["replication_failures"], \
+        "a reserve refusal that sent nothing counted a replication failure"
+    with b._lock:
+        assert b._suspect_term == suspect, "a reserve refusal that sent nothing made b's grants uncertain"
+        b._permit = None
+    h.net.drop(kinds=ALL)

@@ -1,0 +1,20 @@
+// Pipelined permissions (D55): what overlaps and what still waits.
+// Render: dot -Tsvg pipeline.dot -o pipeline.svg
+digraph pipeline {
+  graph [rankdir=LR, fontname="Helvetica", fontsize=11, nodesep=0.3, ranksep=0.4];
+  node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#555555"];
+  edge  [fontname="Helvetica", fontsize=9, color="#555555"];
+
+  subgraph cluster_k {
+    label="holder k"; color="#bbbbbb"; style="rounded";
+    kb [label="build root k"]; kd [label="data stage\n(own sync, f replicas)"]; kr [label="root stage\n(voters accept k)"]; kc [label="k committed", fillcolor="#dff0d8"];
+    kb -> kd -> kr -> kc;
+  }
+  subgraph cluster_k1 {
+    label="holder k+1"; color="#bbbbbb"; style="rounded";
+    pb [label="build on proposed k\n(records from the warm cache)"]; pd [label="data stage\n(store messages: never acceptable)"]; gate [label="gate: this node knows k committed\n(done, release, answer or query)\nand holds it as accepted", shape=diamond, fillcolor="#fff4cc"]; pr [label="root stage\n(voters accept k+1 only\nby extending k)"];
+    pb -> pd -> gate -> pr;
+  }
+  kb -> pb [label="propose(k): owner issues\npermit k+1 'after k'"];
+  kc -> gate [style=dashed];
+}

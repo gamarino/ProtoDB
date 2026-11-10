@@ -8,8 +8,8 @@ release ended every waiter's back-off at once, and a lost attempt broadcasts a r
 cancel).  ``_acquire`` already honours the refusing granters' ``busy_remaining`` and spreads
 woken waiters; ``permit()`` did neither.
 
-Now, as in ``_acquire``, a lost attempt waits its jittered exponential back-off, extended to the
-granters' ``busy_remaining``.  A cancel (a lost attempt's release) can end only that
+Now a lost attempt waits its jittered exponential back-off, extended to the granters'
+``busy_remaining`` (``_back_off``, shared with ``_acquire`` since re-review 2, M2).  A cancel (a lost attempt's release) can end only that
 extension, never the back-off itself; a winner's release, a ``done`` or a newly learnt owner
 ends the whole wait (they are progress: a granter is free, or an owner can serve).  A woken
 waiter that was not named for the turn adds a small random spread.
@@ -18,6 +18,8 @@ Real coordinators over a :class:`~tests.support.manual_cluster.ManualNet` with o
 """
 import threading
 import time
+
+import pytest
 
 from proto_db.cluster.protocol import make_message
 from proto_db.errors import ProtoTimeoutError
@@ -33,7 +35,10 @@ def _cancel(node):
                         certain=False, held=False, next=None, more=True)
 
 
-def test_cancels_do_not_end_the_back_off_of_a_refused_permit_request():
+@pytest.mark.parametrize("how", ["permit", "acquire"])
+def test_cancels_do_not_end_the_back_off_of_a_refused_permit_request(how):
+    """``how``: ``permit()``, or a direct ``acquire()`` (re-review 2, M2: ``_acquire`` let any
+    release end its whole back-off; both now share ``_back_off``)."""
     h = Harness("abc")
     try:
         a, b, c = h.nodes["a"], h.nodes["b"], h.nodes["c"]
@@ -43,7 +48,7 @@ def test_cancels_do_not_end_the_back_off_of_a_refused_permit_request():
 
         def ask():
             try:
-                out["p"] = b.permit(timeout=WINDOW + 0.3)
+                out["p"] = getattr(b, how)(timeout=WINDOW + 0.3)
             except ProtoTimeoutError as e:
                 out["e"] = e
         asker = threading.Thread(target=ask)

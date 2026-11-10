@@ -1,0 +1,18 @@
+// The three caches keyed by pointer, from the storage up (D53, D56, R75, R76).
+// Render: dot -Tsvg cache-layers.dot -o cache-layers.svg
+digraph layers {
+  graph [rankdir=BT, fontname="Helvetica", fontsize=11, nodesep=0.3, ranksep=0.35];
+  node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#555555", width=4.6];
+  edge  [fontname="Helvetica", fontsize=9, color="#555555"];
+
+  store [label="Storage: append-only segments\n(a pointer names one content forever)", fillcolor="#eeeeee"];
+  rec   [label="Record cache: bytes by pointer\nper storage instance; bounded in bytes (cache_bytes)"];
+  atom  [label="Decoded-atom cache: objects by pointer\nper space, shared by every transaction and thread;\nbounded in loaded atoms (atom_cache_entries, default 50,000)", fillcolor="#cfe3f5"];
+  query [label="Query result cache: results by plan key\n(plan structure + the pointers it read); per space;\nbounded in bytes (query_cache_bytes, default 64 MiB); opt-in", fillcolor="#dff0d8"];
+  app   [label="Transactions, snapshots, pagers", fillcolor="#eeeeee"];
+
+  store -> rec   [label="miss: read and check CRC"];
+  rec -> atom    [label="miss: decode"];
+  atom -> query  [label="rows held as (pointer, class)"];
+  query -> app;
+}

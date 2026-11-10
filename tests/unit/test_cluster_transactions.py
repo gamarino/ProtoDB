@@ -536,9 +536,11 @@ def test_a_recovery_round_ends_once_a_majority_of_witnesses_answered(tmp_path):
     and a 1 s lease (belief 0.333 s) with a 0.25 s ``request_timeout`` had at most 83 ms left
     for the send -- under the ``send_reserve`` (R121) every commit was refused, no commit made
     the term's root certain, and the next commit recovered again: no commit after the kill.
-    A majority of witnesses settles the round (D46: every committed root was accepted by a
-    majority, which intersects any answering majority), so the round ends when it has one.
-    Here n2's answers never reach n0: before the fix the round lasted the full second."""
+    The round ends at a majority of witnesses.  Its answers promise nothing (ballot 0), so it
+    may miss a root accepted after they were given; a commit's base is therefore floored at
+    the lease's phase-1 root (re-review 2 of 8.3n, C1).  Here n2's answers never reach n0:
+    before the fix the round lasted the full second.  The result is checked too (re-review 2,
+    M7): the root every member committed and accepted."""
     from tests.support.tiered_cluster import TieredCluster, incr, RUN_KW as TRUN_KW
     with TieredCluster(tmp_path, lease_duration=4.0, request_timeout=1.0) as tc:
         tc.create_database("n0")
@@ -549,10 +551,16 @@ def test_a_recovery_round_ends_once_a_majority_of_witnesses_answered(tmp_path):
             if not (to == "n0" and msg["type"] == "answer"):
                 _send(to, msg)
         tc["n2"].transport.send = silent_to_n0
+        committed = tc["n0"].committed_root()[:3]
+        assert committed[0] and committed[1] is not None
+        deadline = time.monotonic() + 10            # the release reaches n1 and n2 (setup only)
+        while not all(tc[n].accepted_root()[:3] == committed for n in ("n0", "n1", "n2")):
+            assert time.monotonic() < deadline, [tc[n].accepted_root() for n in ("n0", "n1", "n2")]
+            time.sleep(0.005)
         started = time.monotonic()
         known, root, label = tc["n0"].recover_root()
         elapsed = time.monotonic() - started
-        assert known and root is not None
+        assert (known, root, label) == committed, ((known, root, label), committed)
         assert elapsed < 0.5, f"the round took {elapsed:.3f} s with a majority answering at once"
         with pytest.raises(ProtoConflictError, match="witnesses needed answered the recovery query"):
             tc["n1"].transport.send = lambda to, msg: None     # n1 silent too: no majority
