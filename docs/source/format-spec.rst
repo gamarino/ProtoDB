@@ -552,12 +552,29 @@ reader whose database does not know ``key`` cannot build the value; ProtoBase re
 subclass of ``str``, ``int``, ``float``, ``Decimal``, ``bytes``, ``bytearray``, ``date``,
 ``time``, ``datetime``, ``timedelta`` or ``UUID``) is stored as the plain value of its base
 type: its data read with the base type's own methods, never with the subclass's conversions
-(``__str__``, ``__float__``, ...). ``Color.RED`` of ``class Color(str, Enum): RED = "red"`` is
-stored, ordered, hashed and tokenized as the string ``"red"``, and is read back as ``"red"``.
-ProtoBase converts it when the value enters a structure (``canonical``), so the order key, the
-hash, the exact token and the bytes always come from one value. A dict whose keys become one
-base value (two subclass keys a Python dict tells apart) is refused (``ProtoValidationError``).
-An application that needs the class back stores it explicitly (an atom, or the value's name).
+or accessors (``__str__``, ``__float__``, ``__buffer__``, a ``year`` or ``days`` property, ...;
+ProtoBase reads a date or time type's stored fields through the base type's pickling state).
+``Color.RED`` of ``class Color(str, Enum): RED = "red"`` is stored, ordered, hashed and
+tokenized as the string ``"red"``, and is read back as ``"red"``. ProtoBase converts it when the
+value enters a structure (``canonical``), and also converts a lookup's argument (``has``,
+``get_at``, ``count_of``) and a raw dict given to the encoder, so the order key, the hash, the
+exact token and the bytes always come from one value. A dict whose keys become one base value
+(two subclass keys a Python dict tells apart) is refused (``ProtoValidationError``).
+
+**Everything beyond the base value is dropped.** The rule drops the class *and* any state the
+subclass adds: extra attributes (a ``str`` subclass with a ``__dict__``), extra fields (the
+nanoseconds of a ``datetime`` subclass such as pandas' ``Timestamp``). It covers containers too: a
+tuple subclass (a ``namedtuple``) is stored as a tuple, a list subclass as a list, and a dict
+subclass (``OrderedDict``, ``defaultdict``) as a map; each is read back as the plain container.
+An application that needs the class or the state back stores it explicitly (an atom, or the
+value's name).
+
+**Host-language subclasses.** The rule concerns a host-language class that derives from a
+class the implementation maps to a format kind without being mapped to one itself. A class that
+a format kind names is that kind, not a subclass: in Smalltalk ``Symbol`` derives from
+``String`` but is the reserved ``@sym`` kind (see the reserved tags below). Until ``@sym`` is implemented,
+an implementation stores such a value as the base kind's value under this rule (a ``Symbol`` as
+its string, losing the class) or refuses it; it MUST NOT write a tag of its own.
 
 **One spelling per value.** Every canonical value has exactly one encoding, and readers refuse
 the other spellings of the text forms (``@int``, ``@dec``, ``@td``), so decoding and
@@ -622,7 +639,7 @@ zone, so whether two zone datetimes are one key would depend on the tz database;
 fixed-offset form is a valid key.)
 
 A writer refuses such a map (``ProtoValidationError``) and a reader refuses it
-(``ProtoCorruptionError``): a map is never collapsed. Distinct NaN payloads, and bools in a map
+(``ProtoCorruptionError``), except the format-3 key forms below: a map is never collapsed. Distinct NaN payloads, and bools in a map
 without the numbers 0 and 1, are valid keys.
 
 **Format-3 key forms.** Format 3 had no map-key rule, and Python could write two kinds of keys
@@ -631,12 +648,27 @@ form, alone or inside a tuple) and NaN keys with one encoding (a Python dict hol
 as two keys). A reader MUST accept both: a key whose wire form holds a ``["zone", key]`` datetime
 may be a zone datetime, and NaN keys with one encoding are kept as distinct keys, in the order
 read; every other rule applies unchanged (an ``["instant", key]`` key is still refused, since only
-format 4 writes that form). A writer MUST NOT write either form: writing such a map again is
+format 4 writes that form).
+
+A format-3 zone-datetime key conflicts with another key by the rule Python's dict applied when
+format 3 wrote it (PEP 495), resolved with the reader's tz database:
+
+- when its wall clock occurs exactly once in its zone (the offset does not depend on ``fold``),
+  it is identified by its instant: it conflicts with every aware datetime key of that instant,
+  fixed-offset or zone;
+- when its wall clock is ambiguous or skipped in its zone (the offset depends on ``fold``), it
+  is identified by its zone and its wall-clock fields without ``fold``: it conflicts only with
+  a format-3 key of the same zone and wall clock (whatever its ``fold``).
+
+A reader refuses a map whose keys conflict under this rule (``ProtoCorruptionError``); format 3
+never wrote one. A writer MUST NOT write either form: writing such a map again is
 refused with ``ProtoValidationError`` naming the key, never normalized or shortened silently.
 An application migrates such a map explicitly before it changes the object that holds it,
 typically by converting each zone-datetime key to UTC (``key.astimezone(timezone.utc)``, a
 valid key of the same instant) and by giving each NaN key a value of its own or dropping it.
-Atoms that are never changed keep their format-3 maps as written.
+The conversion can itself make two keys conflict: an ambiguous zone key and an existing key of
+the same instant (which format 3 held as two keys) become one UTC key, and the application
+chooses which value to keep. Atoms that are never changed keep their format-3 maps as written.
 
 Reserved tags
     ``@sym`` is reserved for symbols (the maintainer's runtime decision of 2026-11-08, option
@@ -1411,9 +1443,26 @@ Every change since format 1 and how a reader of this revision treats data writte
        collection at its first change, a full rebuild (an ivf_flat retraining, an hnsw graph
        construction) inside the user's first write transaction on it; ``validate()`` reports
        it stale, never corrupt. A format-3 ``@map`` with a zone-datetime key or NaN keys of one
-       encoding is read as written and refused when written again (`Map keys`_). A built-in
-       subclass (a ``str`` ``Enum``) that format 3 wrote through its ``__str__`` or ``__float__``
-       is read as the base value those bytes hold. A non-canonical text form is refused;
+       encoding is read as written and refused when written again (`Map keys`_). **Values of
+       built-in subclasses were misfiled by format 3**: it wrote them through the subclass's
+       own conversion (``str()``, ``float()``, ``bytes()``, ``str()`` of a ``Decimal``) but
+       ordered and hashed them by their base value. The idioms that trigger it are a
+       ``(str, Enum)`` member on every Python version (``str(Color.RED)`` is ``"Color.RED"`` on
+       3.11 to 3.14, checked on 3.11 and 3.14) and any subclass of ``str``, ``float``,
+       ``bytes`` or ``Decimal`` that overrides that conversion. The value reads back as the
+       written text (``"Color.RED"``), stored where ``"red"`` belongs. Symptom: a Dictionary,
+       HashDictionary, Set, CountedSet or RepeatedKeysDictionary holding it, or an index over
+       it, cannot find it (``has`` is false, ``remove`` does nothing), and in a key-ordered
+       Dictionary the out-of-order key also hides **other** keys (with ``dog``, ``zebra`` and
+       ``Color.RED``, ``has("dog")`` is false); later writes go into the misordered tree.
+       Detection: ``collection.validate()`` raises ``ProtoMisfiledError`` (a
+       ``ProtoCorruptionError``) naming the misfiled key, for keyed trees out of order, hash
+       buckets holding another hash's element and index groups holding another key's
+       element. Repair: ``tx.set_root_object(name, collection.rebuilt())``, which refiles the
+       entries as they read now and rebuilds every index; it refuses (``ProtoValidationError``)
+       when two entries become one key with two different values, so it never drops a value.
+       A collection held by another atom is repaired by storing the rebuilt collection in
+       that atom. A non-canonical text form is refused;
        ProtoBase never wrote one. A format-3 reader refuses format-4 data
        (``ProtoNotSupportedError``)
 
@@ -1454,6 +1503,9 @@ None of these breaks a round trip between conforming implementations.
 - **The ``numpy`` parameter** of an exact vector index is a Python knob persisted in the format
   (``params``): it changes no answer, only how ProtoBase computes it. Another implementation
   preserves it and may ignore it.
+- **Format-3 collections misfiled by built-in subclasses** stay misfiled until rebuilt: see
+  the format history (detection with ``validate()``, repair with ``rebuilt()``). Nothing
+  repairs them automatically: a reader cannot tell which value an application meant.
 - **Cost of exact tokens.** A token is a msgpack packing of the value. Measured on the
   reference platform (free-threaded CPython 3.14, whose msgpack runs its pure-Python fallback:
   ``msgpack.packb(1)`` alone takes about 4.5 µs), a token costs 5 to 6 µs for a scalar or a

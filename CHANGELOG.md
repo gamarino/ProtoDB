@@ -68,6 +68,12 @@ The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every de
   first change, inside that write transaction (an ivf_flat index retrains, an hnsw graph is rebuilt). A
   format-3 map keyed by a zone datetime or by repeated NaNs is read as written but refused when written again
   until the application converts those keys.
+- Format-3 data misfiled by built-in subclasses: format 3 wrote a `(str, Enum)` member (on every Python
+  version) or a subclass overriding `__str__`, `__float__` or `__bytes__` through that conversion
+  (`"Color.RED"`) but filed it by its base value (`"red"`). Collections holding such values cannot find them,
+  and a key-ordered Dictionary also loses other keys. `collection.validate()` now detects it
+  (`ProtoMisfiledError`, a `ProtoCorruptionError`) and `tx.set_root_object(name, collection.rebuilt())`
+  repairs it (entries refiled, indexes rebuilt; one key with two different values is refused, never dropped).
 
 ### Deprecated
 - The 0.1 exception names `ProtoBaseException`, `ProtoValidationException`, `ProtoUserException`,
