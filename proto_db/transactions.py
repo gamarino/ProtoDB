@@ -126,7 +126,7 @@ from .storage.base import check_lock_timeout
 from .storage.cache import BoundedCache
 from .query.cache import QUERY_CACHE_BYTES, QueryCache
 from .query.pager import check_resumed, decode_ref, encode_ref, pager_arguments, portable_pager
-from .storage.format import FORMAT_VERSION, RootRecord
+from .storage.format import WRITE_FORMAT_VERSION, RootRecord
 from .cluster.coordinator import REFOUND_TERM_STEP
 from .cluster.lease import Permission
 from .cluster.rootlog import compare_roots
@@ -741,7 +741,7 @@ def _standalone_round(storage, lock_timeout, batch: list) -> None:
                 entry.finish(result=False)
                 continue
             ptr = built_ptr
-            current = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, expected + 1)
+            current = RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, expected + 1)
             built.append(entry)
         if built:
             storage.flush()
@@ -1159,7 +1159,7 @@ def _permit_round(coordinator, tier, permission, entries: list, group: _Group, *
             if ptr is None:
                 entry.finish(result=False)
                 continue
-            current = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, stamp.epoch)
+            current = RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, stamp.epoch)
             built.append((entry, stamp))
         if not built and getattr(permission, "after", None) is not None and permission.sent is None:
             # A pipelined round that sends nothing (every commit conflicted, or none had
@@ -1351,7 +1351,7 @@ def _commit_base(coordinator, tier, lease, label: int, base: RootRecord) -> Root
     space = _load_space(context, base)
     stamp = _ClusterStamp(lease.term, base.epoch + 1)
     ptr = context.save(_new_space_root(space.databases, context, stamp, space))
-    record = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, stamp.epoch)
+    record = RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, stamp.epoch)
     coordinator.replicate(lease, record, base=(label, base, records, ranges) if where == "records" else None,
                           tier=tier)
     return record
@@ -1951,6 +1951,10 @@ class Transaction:
         being written is never merged: a concurrent change to it is a conflict.
         """
         _check_name(name)
+        if name.startswith("__"):
+            # Reserved for additive extensions of the format (the runtime registry's
+            # __currentModules and __currentSymbols, Task 10.P A1): never written by applications.
+            raise ProtoValidationError(f"Root names starting with '__' are reserved for the format, not {name!r}")
         if not isinstance(replace, bool):
             raise ProtoValidationError("replace must be a bool")
         value = canonical(value)

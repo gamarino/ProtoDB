@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from proto_db.core import atom as atom_module
-from proto_db.core.atom import BUILTIN_ATOM_MODULES, Atom
+from proto_db.core.atom import OpaqueAtom, BUILTIN_ATOM_MODULES, Atom
 from proto_db.errors import ProtoCorruptionError
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -41,8 +41,11 @@ def test_every_builtin_atom_type_is_in_the_table():
             importlib.import_module(f"{name}.{info.name}")
     for name in BUILTIN_MODULES:
         importlib.import_module(name)
+    # OpaqueAtom and its per-name stand-ins (D59) are never registered and never persisted under a
+    # name of their own: no table entry.
     builtin = [c for c in _all_subclasses(Atom)
-               if c.__module__.startswith(BUILTIN_PACKAGES) or c.__module__ in BUILTIN_MODULES]
+               if (c.__module__.startswith(BUILTIN_PACKAGES) or c.__module__ in BUILTIN_MODULES)
+               and not issubclass(c, OpaqueAtom)]
     assert builtin, "no built-in atom class found"
     for cls in builtin:
         assert BUILTIN_ATOM_MODULES.get(cls.__type_name__) == cls.__module__, \

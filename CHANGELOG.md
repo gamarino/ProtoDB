@@ -11,7 +11,7 @@ ProtoDB 2.0 is a complete rebuild of the 0.1 code base under the design principl
 `docs/design-principles.md`: everything stored is immutable, a transaction is an explicit object, and
 every safety argument holds under arbitrary delay and loss. There are no 0.1 data or API to preserve.
 The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every decision is in
-`docs/decisions.md` (D1-D57).
+`docs/decisions.md` (D1-D59).
 
 ### Added
 - **One value model** with a total order across types (`1 == 1.0 == Decimal(1)`, `True != 1`), used by
@@ -68,6 +68,25 @@ The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every de
   first change, inside that write transaction (an ivf_flat index retrains, an hnsw graph is rebuilt). A
   format-3 map keyed by a zone datetime or by repeated NaNs is read as written but refused when written again
   until the application converts those keys.
+- Polyglot freeze (D59, Task 10.P): a record of a type this process has no class for (another language's
+  type) loads as an `OpaqueAtom` that keeps its fields readable and is never rewritten, instead of raising
+  `ProtoCorruptionError`; root names starting with `__` are reserved for the format (`ProtoValidationError`);
+  the attribute-name errors explain the accessor rule. `python -m proto_db.tools.verify <dir>` decodes and
+  validates a whole file-storage space and dumps it in the conformance notation. The format specification
+  gains "Format stability" (the freeze point, the additive `@sym` and registry), "Atoms of unknown types",
+  the accessor rule and "A minimal external writer"; `tests/conformance/vectors.sha256` pins the vectors.
+  After the pre-tag review: a reference to an opaque atom may name its type differently from the record's
+  `t` (an alias only the owner knows) and keeps the name it was referenced by; writers write the lowest
+  sufficient format version (`WRITE_FORMAT_VERSION`, separate from the highest read, `FORMAT_VERSION`); the
+  verifier also reports non-canonical encodings and exits 2 only for an unreadable root; a field named like a
+  metaclass attribute (`mro`) is readable; a `date` or `timedelta` subclass is stored from its base fields,
+  never its `__reduce__`.
+- Format-3 data misfiled by built-in subclasses: format 3 wrote a `(str, Enum)` member (on every Python
+  version) or a subclass overriding `__str__`, `__float__` or `__bytes__` through that conversion
+  (`"Color.RED"`) but filed it by its base value (`"red"`). Collections holding such values cannot find them,
+  and a key-ordered Dictionary also loses other keys. `collection.validate()` now detects it
+  (`ProtoMisfiledError`, a `ProtoCorruptionError`) and `tx.set_root_object(name, collection.rebuilt())`
+  repairs it (entries refiled, indexes rebuilt; one key with two different values is refused, never dropped).
 
 ### Deprecated
 - The 0.1 exception names `ProtoBaseException`, `ProtoValidationException`, `ProtoUserException`,
@@ -87,8 +106,9 @@ indexes lost on the first write; queries that silently returned empty or partial
 `except` handlers hiding errors; two writers appending to one segment.
 
 ### Known limitations
-- No `proto_db.tools.inspect` command-line tool (the spec's section 6 named one); the formats are specified in
-  `docs/source/format-spec.rst` and the operations tutorial shows how to read a space without it.
+- No `proto_db.tools.inspect` browser (the spec's section 6 named one); the formats are specified in
+  `docs/source/format-spec.rst`, `python -m proto_db.tools.verify` checks and dumps a space, and the operations
+  tutorial shows both.
 - No online-backup call; see the operations tutorial for what a copy of an open space contains.
 - Cluster fairness for eight or more contending writer processes, and for hot-key read-modify-write
   transactions, is not guaranteed (open defect D-LIVE-2).

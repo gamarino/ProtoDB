@@ -349,12 +349,12 @@ def test_a_released_segment_of_an_older_format_rebuilt_from_the_header_still_shi
     from proto_db.storage import format as fmt
     store = FakeObjectStore()
     path = str(tmp_path / "n0")
-    monkeypatch.setattr(fmt, "FORMAT_VERSION", 2)          # an earlier release wrote this segment
+    monkeypatch.setattr(fmt, "WRITE_FORMAT_VERSION", 2)          # an earlier release wrote this segment
     st = _open(path, store)
     a = st.push_blob(b"A" * 50)
     st.ship(force=True)
     st.close()
-    monkeypatch.setattr(fmt, "FORMAT_VERSION", 3)
+    monkeypatch.setattr(fmt, "WRITE_FORMAT_VERSION", 3)
     segment = a.segment
     os.remove(os.path.join(path, segment.hex + ".seg"))     # released
     remote_before, _ = store.get(st.segment_key(segment))

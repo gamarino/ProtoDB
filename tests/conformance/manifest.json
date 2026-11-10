@@ -9825,8 +9825,8 @@
   "root": {
    "version": 3,
    "segment": "5eed0000000040008000000000003004",
-   "offset": 10719,
-   "epoch": 2
+   "offset": 20868,
+   "epoch": 3
   },
   "records": [
    {
@@ -14434,6 +14434,4179 @@
     ],
     "canonical": true,
     "rewritable": true
+   },
+   {
+    "offset": 10802,
+    "kind": 1,
+    "size": 89,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000305a",
+    "state": [
+     [
+      "key",
+      {
+       "str": "apple"
+      }
+     ],
+     [
+      "value",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 10891,
+    "kind": 1,
+    "size": 115,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000305b",
+    "state": [
+     [
+      "key",
+      {
+       "str": "dog"
+      }
+     ],
+     [
+      "value",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 10802,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "2"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 11006,
+    "kind": 1,
+    "size": 99,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000305c",
+    "state": [
+     [
+      "key",
+      {
+       "str": "LegacyColor.RED"
+      }
+     ],
+     [
+      "value",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 11105,
+    "kind": 1,
+    "size": 117,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000305d",
+    "state": [
+     [
+      "key",
+      {
+       "str": "zebra"
+      }
+     ],
+     [
+      "value",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 11006,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "2"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 11222,
+    "kind": 1,
+    "size": 144,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000305e",
+    "state": [
+     [
+      "key",
+      {
+       "str": "pear"
+      }
+     ],
+     [
+      "value",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 10891,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 11105,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "3"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "5"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 11366,
+    "kind": 1,
+    "size": 50,
+    "tag": 3,
+    "type": "proto_db.collections.IndexSet",
+    "oid": "5eed000000004000800000000000305f",
+    "state": [
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 11416,
+    "kind": 1,
+    "size": 122,
+    "tag": 6,
+    "type": "proto_db.collections.Dictionary",
+    "oid": "5eed0000000040008000000000003054",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 11222,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "5"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 11366,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 11538,
+    "kind": 1,
+    "size": 111,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000003060",
+    "state": [
+     [
+      "key",
+      {
+       "int": "-8473837870459180175"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "str": "pear"
+          },
+          {
+           "int": "1"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 11649,
+    "kind": 1,
+    "size": 110,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000003061",
+    "state": [
+     [
+      "key",
+      {
+       "int": "-1846296114097458249"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "str": "dog"
+          },
+          {
+           "int": "1"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 11759,
+    "kind": 1,
+    "size": 178,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000003062",
+    "state": [
+     [
+      "key",
+      {
+       "int": "-4738763468085218075"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "str": "LegacyColor.RED"
+          },
+          {
+           "int": "2"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 11538,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 11649,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "3"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 11937,
+    "kind": 1,
+    "size": 112,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000003063",
+    "state": [
+     [
+      "key",
+      {
+       "int": "6729903512707629259"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "str": "apple"
+          },
+          {
+           "int": "1"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 12049,
+    "kind": 1,
+    "size": 168,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000003064",
+    "state": [
+     [
+      "key",
+      {
+       "int": "-1651008149659713024"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "str": "zebra"
+          },
+          {
+           "int": "1"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 11759,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 11937,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "3"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "5"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 12217,
+    "kind": 1,
+    "size": 50,
+    "tag": 3,
+    "type": "proto_db.collections.IndexSet",
+    "oid": "5eed0000000040008000000000003065",
+    "state": [
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 12267,
+    "kind": 1,
+    "size": 122,
+    "tag": 8,
+    "type": "proto_db.collections.HashDictionary",
+    "oid": "5eed0000000040008000000000003055",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 12049,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "5"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 12217,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 12389,
+    "kind": 1,
+    "size": 103,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000003066",
+    "state": [
+     [
+      "key",
+      {
+       "int": "-8473837870459180175"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "str": "pear"
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 12492,
+    "kind": 1,
+    "size": 102,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000003067",
+    "state": [
+     [
+      "key",
+      {
+       "int": "-1846296114097458249"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "str": "dog"
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 12594,
+    "kind": 1,
+    "size": 170,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000003068",
+    "state": [
+     [
+      "key",
+      {
+       "int": "-4738763468085218075"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "str": "LegacyColor.RED"
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 12389,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 12492,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "3"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 12764,
+    "kind": 1,
+    "size": 104,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000003069",
+    "state": [
+     [
+      "key",
+      {
+       "int": "6729903512707629259"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "str": "apple"
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 12868,
+    "kind": 1,
+    "size": 160,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000306a",
+    "state": [
+     [
+      "key",
+      {
+       "int": "-1651008149659713024"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "str": "zebra"
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 12594,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 12764,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "3"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "5"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 13028,
+    "kind": 1,
+    "size": 50,
+    "tag": 3,
+    "type": "proto_db.collections.IndexSet",
+    "oid": "5eed000000004000800000000000306b",
+    "state": [
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 13078,
+    "kind": 1,
+    "size": 122,
+    "tag": 10,
+    "type": "proto_db.collections.Set",
+    "oid": "5eed0000000040008000000000003056",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 12868,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "5"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 13028,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 13200,
+    "kind": 1,
+    "size": 111,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000306c",
+    "state": [
+     [
+      "key",
+      {
+       "int": "-8473837870459180175"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "str": "pear"
+          },
+          {
+           "int": "1"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 13311,
+    "kind": 1,
+    "size": 110,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000306d",
+    "state": [
+     [
+      "key",
+      {
+       "int": "-1846296114097458249"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "str": "dog"
+          },
+          {
+           "int": "1"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 13421,
+    "kind": 1,
+    "size": 178,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000306e",
+    "state": [
+     [
+      "key",
+      {
+       "int": "-4738763468085218075"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "str": "LegacyColor.RED"
+          },
+          {
+           "int": "2"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 13200,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 13311,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "3"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 13599,
+    "kind": 1,
+    "size": 112,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000306f",
+    "state": [
+     [
+      "key",
+      {
+       "int": "6729903512707629259"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "str": "apple"
+          },
+          {
+           "int": "1"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 13711,
+    "kind": 1,
+    "size": 168,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000003070",
+    "state": [
+     [
+      "key",
+      {
+       "int": "-1651008149659713024"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "str": "zebra"
+          },
+          {
+           "int": "1"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 13421,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 13599,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "3"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "5"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 13879,
+    "kind": 1,
+    "size": 50,
+    "tag": 3,
+    "type": "proto_db.collections.IndexSet",
+    "oid": "5eed0000000040008000000000003071",
+    "state": [
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 13929,
+    "kind": 1,
+    "size": 135,
+    "tag": 11,
+    "type": "proto_db.collections.CountedSet",
+    "oid": "5eed0000000040008000000000003057",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 13711,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "5"
+      }
+     ],
+     [
+      "total_count",
+      {
+       "int": "6"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 13879,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 14064,
+    "kind": 1,
+    "size": 107,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000003072",
+    "state": [
+     [
+      "key",
+      {
+       "int": "-8614683757924813876"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "int": "1"
+          },
+          {
+           "int": "1"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 14171,
+    "kind": 1,
+    "size": 50,
+    "tag": 3,
+    "type": "proto_db.collections.IndexSet",
+    "oid": "5eed0000000040008000000000003073",
+    "state": [
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 14221,
+    "kind": 1,
+    "size": 135,
+    "tag": 11,
+    "type": "proto_db.collections.CountedSet",
+    "oid": "5eed0000000040008000000000003074",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 14064,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "total_count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 14171,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 14356,
+    "kind": 1,
+    "size": 107,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000003075",
+    "state": [
+     [
+      "key",
+      {
+       "int": "-8614683757924813876"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "int": "1"
+          },
+          {
+           "int": "1"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 14463,
+    "kind": 1,
+    "size": 50,
+    "tag": 3,
+    "type": "proto_db.collections.IndexSet",
+    "oid": "5eed0000000040008000000000003076",
+    "state": [
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 14513,
+    "kind": 1,
+    "size": 135,
+    "tag": 11,
+    "type": "proto_db.collections.CountedSet",
+    "oid": "5eed0000000040008000000000003077",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 14356,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "total_count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 14463,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 14648,
+    "kind": 1,
+    "size": 107,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000003078",
+    "state": [
+     [
+      "key",
+      {
+       "int": "-8614683757924813876"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "int": "1"
+          },
+          {
+           "int": "1"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 14755,
+    "kind": 1,
+    "size": 50,
+    "tag": 3,
+    "type": "proto_db.collections.IndexSet",
+    "oid": "5eed0000000040008000000000003079",
+    "state": [
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 14805,
+    "kind": 1,
+    "size": 135,
+    "tag": 11,
+    "type": "proto_db.collections.CountedSet",
+    "oid": "5eed000000004000800000000000307a",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 14648,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "total_count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 14755,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 14940,
+    "kind": 1,
+    "size": 117,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000307b",
+    "state": [
+     [
+      "key",
+      {
+       "str": "apple"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 14805,
+        "type": "proto_db.collections.CountedSet"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 15057,
+    "kind": 1,
+    "size": 143,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000307c",
+    "state": [
+     [
+      "key",
+      {
+       "str": "dog"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 14513,
+        "type": "proto_db.collections.CountedSet"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 14940,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "2"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 15200,
+    "kind": 1,
+    "size": 107,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000307d",
+    "state": [
+     [
+      "key",
+      {
+       "int": "-8614683757924813876"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "int": "1"
+          },
+          {
+           "int": "1"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 15307,
+    "kind": 1,
+    "size": 50,
+    "tag": 3,
+    "type": "proto_db.collections.IndexSet",
+    "oid": "5eed000000004000800000000000307e",
+    "state": [
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 15357,
+    "kind": 1,
+    "size": 135,
+    "tag": 11,
+    "type": "proto_db.collections.CountedSet",
+    "oid": "5eed000000004000800000000000307f",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 15200,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "total_count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 15307,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 15492,
+    "kind": 1,
+    "size": 107,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000003080",
+    "state": [
+     [
+      "key",
+      {
+       "int": "7215739864586554809"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "int": "2"
+          },
+          {
+           "int": "1"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 15599,
+    "kind": 1,
+    "size": 50,
+    "tag": 3,
+    "type": "proto_db.collections.IndexSet",
+    "oid": "5eed0000000040008000000000003081",
+    "state": [
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 15649,
+    "kind": 1,
+    "size": 135,
+    "tag": 11,
+    "type": "proto_db.collections.CountedSet",
+    "oid": "5eed0000000040008000000000003082",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 15492,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "total_count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 15599,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 15784,
+    "kind": 1,
+    "size": 127,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000003083",
+    "state": [
+     [
+      "key",
+      {
+       "str": "LegacyColor.RED"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 15649,
+        "type": "proto_db.collections.CountedSet"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 15911,
+    "kind": 1,
+    "size": 145,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000003084",
+    "state": [
+     [
+      "key",
+      {
+       "str": "zebra"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 15357,
+        "type": "proto_db.collections.CountedSet"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 15784,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "2"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 16056,
+    "kind": 1,
+    "size": 172,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000003085",
+    "state": [
+     [
+      "key",
+      {
+       "str": "pear"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 14221,
+        "type": "proto_db.collections.CountedSet"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 15057,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 15911,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "3"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "5"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 16228,
+    "kind": 1,
+    "size": 50,
+    "tag": 3,
+    "type": "proto_db.collections.IndexSet",
+    "oid": "5eed0000000040008000000000003086",
+    "state": [
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 16278,
+    "kind": 1,
+    "size": 135,
+    "tag": 7,
+    "type": "proto_db.collections.RepeatedKeysDictionary",
+    "oid": "5eed0000000040008000000000003058",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 16056,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "5"
+      }
+     ],
+     [
+      "total_count",
+      {
+       "int": "5"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 16228,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 16413,
+    "kind": 1,
+    "size": 84,
+    "tag": 1,
+    "type": "proto_db.avl.PosNode",
+    "oid": "5eed0000000040008000000000003087",
+    "state": [
+     [
+      "value",
+      {
+       "str": "apple"
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 16497,
+    "kind": 1,
+    "size": 110,
+    "tag": 1,
+    "type": "proto_db.avl.PosNode",
+    "oid": "5eed0000000040008000000000003088",
+    "state": [
+     [
+      "value",
+      {
+       "str": "dog"
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 16413,
+        "type": "proto_db.avl.PosNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "2"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 16607,
+    "kind": 1,
+    "size": 94,
+    "tag": 1,
+    "type": "proto_db.avl.PosNode",
+    "oid": "5eed0000000040008000000000003089",
+    "state": [
+     [
+      "value",
+      {
+       "str": "LegacyColor.RED"
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 16701,
+    "kind": 1,
+    "size": 112,
+    "tag": 1,
+    "type": "proto_db.avl.PosNode",
+    "oid": "5eed000000004000800000000000308a",
+    "state": [
+     [
+      "value",
+      {
+       "str": "zebra"
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 16607,
+        "type": "proto_db.avl.PosNode"
+       }
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "2"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 16813,
+    "kind": 1,
+    "size": 139,
+    "tag": 1,
+    "type": "proto_db.avl.PosNode",
+    "oid": "5eed000000004000800000000000308b",
+    "state": [
+     [
+      "value",
+      {
+       "str": "pear"
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 16497,
+        "type": "proto_db.avl.PosNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 16701,
+        "type": "proto_db.avl.PosNode"
+       }
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "3"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "5"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 16952,
+    "kind": 1,
+    "size": 130,
+    "tag": 21,
+    "type": "proto_db.avl.CountedKeyNode",
+    "oid": "5eed000000004000800000000000308c",
+    "state": [
+     [
+      "key",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "int": "0"
+          },
+          {
+           "str": "pear"
+          }
+         ]
+        },
+        {
+         "bytes": "a470656172"
+        }
+       ]
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "str": "pear"
+        },
+        {
+         "int": "1"
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "weight",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 17082,
+    "kind": 1,
+    "size": 127,
+    "tag": 21,
+    "type": "proto_db.avl.CountedKeyNode",
+    "oid": "5eed000000004000800000000000308d",
+    "state": [
+     [
+      "key",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "int": "0"
+          },
+          {
+           "str": "dog"
+          }
+         ]
+        },
+        {
+         "bytes": "a3646f67"
+        }
+       ]
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "str": "dog"
+        },
+        {
+         "int": "1"
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "weight",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 17209,
+    "kind": 1,
+    "size": 133,
+    "tag": 21,
+    "type": "proto_db.avl.CountedKeyNode",
+    "oid": "5eed000000004000800000000000308e",
+    "state": [
+     [
+      "key",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "int": "0"
+          },
+          {
+           "str": "apple"
+          }
+         ]
+        },
+        {
+         "bytes": "a56170706c65"
+        }
+       ]
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "str": "apple"
+        },
+        {
+         "int": "1"
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "weight",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 17342,
+    "kind": 1,
+    "size": 133,
+    "tag": 21,
+    "type": "proto_db.avl.CountedKeyNode",
+    "oid": "5eed000000004000800000000000308f",
+    "state": [
+     [
+      "key",
+      {
+       "str": "apple"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "ref": {
+          "segment": "5eed0000000040008000000000003004",
+          "offset": 17209,
+          "type": "proto_db.avl.CountedKeyNode"
+         }
+        },
+        {
+         "int": "1"
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "weight",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 17475,
+    "kind": 1,
+    "size": 159,
+    "tag": 21,
+    "type": "proto_db.avl.CountedKeyNode",
+    "oid": "5eed0000000040008000000000003090",
+    "state": [
+     [
+      "key",
+      {
+       "str": "dog"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "ref": {
+          "segment": "5eed0000000040008000000000003004",
+          "offset": 17082,
+          "type": "proto_db.avl.CountedKeyNode"
+         }
+        },
+        {
+         "int": "1"
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 17342,
+        "type": "proto_db.avl.CountedKeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "weight",
+      {
+       "int": "2"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 17634,
+    "kind": 1,
+    "size": 133,
+    "tag": 21,
+    "type": "proto_db.avl.CountedKeyNode",
+    "oid": "5eed0000000040008000000000003091",
+    "state": [
+     [
+      "key",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "int": "0"
+          },
+          {
+           "str": "zebra"
+          }
+         ]
+        },
+        {
+         "bytes": "a57a65627261"
+        }
+       ]
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "str": "zebra"
+        },
+        {
+         "int": "1"
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "weight",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 17767,
+    "kind": 1,
+    "size": 163,
+    "tag": 21,
+    "type": "proto_db.avl.CountedKeyNode",
+    "oid": "5eed0000000040008000000000003092",
+    "state": [
+     [
+      "key",
+      {
+       "tuple": [
+        {
+         "tuple": [
+          {
+           "int": "0"
+          },
+          {
+           "str": "LegacyColor.RED"
+          }
+         ]
+        },
+        {
+         "bytes": "af4c6567616379436f6c6f722e524544"
+        }
+       ]
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "str": "LegacyColor.RED"
+        },
+        {
+         "int": "1"
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "weight",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 17930,
+    "kind": 1,
+    "size": 143,
+    "tag": 21,
+    "type": "proto_db.avl.CountedKeyNode",
+    "oid": "5eed0000000040008000000000003093",
+    "state": [
+     [
+      "key",
+      {
+       "str": "LegacyColor.RED"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "ref": {
+          "segment": "5eed0000000040008000000000003004",
+          "offset": 17767,
+          "type": "proto_db.avl.CountedKeyNode"
+         }
+        },
+        {
+         "int": "1"
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "weight",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 18073,
+    "kind": 1,
+    "size": 161,
+    "tag": 21,
+    "type": "proto_db.avl.CountedKeyNode",
+    "oid": "5eed0000000040008000000000003094",
+    "state": [
+     [
+      "key",
+      {
+       "str": "zebra"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "ref": {
+          "segment": "5eed0000000040008000000000003004",
+          "offset": 17634,
+          "type": "proto_db.avl.CountedKeyNode"
+         }
+        },
+        {
+         "int": "1"
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 17930,
+        "type": "proto_db.avl.CountedKeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "weight",
+      {
+       "int": "2"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 18234,
+    "kind": 1,
+    "size": 188,
+    "tag": 21,
+    "type": "proto_db.avl.CountedKeyNode",
+    "oid": "5eed0000000040008000000000003095",
+    "state": [
+     [
+      "key",
+      {
+       "str": "pear"
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "ref": {
+          "segment": "5eed0000000040008000000000003004",
+          "offset": 16952,
+          "type": "proto_db.avl.CountedKeyNode"
+         }
+        },
+        {
+         "int": "1"
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 17475,
+        "type": "proto_db.avl.CountedKeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 18073,
+        "type": "proto_db.avl.CountedKeyNode"
+       }
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "3"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "5"
+      }
+     ],
+     [
+      "weight",
+      {
+       "int": "5"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 18422,
+    "kind": 1,
+    "size": 154,
+    "tag": 14,
+    "type": "proto_db.indexing.EqualityIndex",
+    "oid": "5eed0000000040008000000000003096",
+    "state": [
+     [
+      "name",
+      {
+       "str": "e"
+      }
+     ],
+     [
+      "key_spec",
+      {
+       "tuple": [
+        {
+         "str": "element"
+        },
+        {
+         "nil": null
+        }
+       ]
+      }
+     ],
+     [
+      "groups",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 18234,
+        "type": "proto_db.avl.CountedKeyNode"
+       }
+      }
+     ],
+     [
+      "side",
+      {
+       "tuple": [
+        {
+         "nil": null
+        },
+        {
+         "int": "0"
+        }
+       ]
+      }
+     ],
+     [
+      "total_count",
+      {
+       "int": "5"
+      }
+     ],
+     [
+      "member_tokens",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 18576,
+    "kind": 1,
+    "size": 113,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000003097",
+    "state": [
+     [
+      "key",
+      {
+       "str": "e"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 18422,
+        "type": "proto_db.indexing.EqualityIndex"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 18689,
+    "kind": 1,
+    "size": 78,
+    "tag": 3,
+    "type": "proto_db.collections.IndexSet",
+    "oid": "5eed0000000040008000000000003098",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 18576,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 18767,
+    "kind": 1,
+    "size": 122,
+    "tag": 5,
+    "type": "proto_db.collections.List",
+    "oid": "5eed0000000040008000000000003059",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 16813,
+        "type": "proto_db.avl.PosNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "5"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 18689,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 18889,
+    "kind": 1,
+    "size": 148,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000309a",
+    "state": [
+     [
+      "key",
+      {
+       "str": "invoices"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 9066,
+        "type": "proto_db.collections.List"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 9427,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "2"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 19037,
+    "kind": 1,
+    "size": 132,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000309b",
+    "state": [
+     [
+      "key",
+      {
+       "str": "misfiled_counted_set"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 13929,
+        "type": "proto_db.collections.CountedSet"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 19169,
+    "kind": 1,
+    "size": 159,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000309c",
+    "state": [
+     [
+      "key",
+      {
+       "str": "misfiled_dictionary"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 11416,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 19037,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "2"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 19328,
+    "kind": 1,
+    "size": 172,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000309d",
+    "state": [
+     [
+      "key",
+      {
+       "str": "maps"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 9188,
+        "type": "proto_db.core.dbobject.DBObject"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 18889,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 19169,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "3"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "5"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 19500,
+    "kind": 1,
+    "size": 125,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000309e",
+    "state": [
+     [
+      "key",
+      {
+       "str": "misfiled_list"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 18767,
+        "type": "proto_db.collections.List"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 19625,
+    "kind": 1,
+    "size": 124,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000309f",
+    "state": [
+     [
+      "key",
+      {
+       "str": "misfiled_set"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 13078,
+        "type": "proto_db.collections.Set"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 19749,
+    "kind": 1,
+    "size": 190,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed00000000400080000000000030a0",
+    "state": [
+     [
+      "key",
+      {
+       "str": "misfiled_repeated_keys"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 16278,
+        "type": "proto_db.collections.RepeatedKeysDictionary"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 19500,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 19625,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "3"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 19939,
+    "kind": 1,
+    "size": 175,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed00000000400080000000000030a1",
+    "state": [
+     [
+      "key",
+      {
+       "str": "numbers"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 6781,
+        "type": "proto_db.collections.List"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 19749,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 9863,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "3"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "5"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 20114,
+    "kind": 1,
+    "size": 192,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed00000000400080000000000030a2",
+    "state": [
+     [
+      "key",
+      {
+       "str": "misfiled_hash_dictionary"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 12267,
+        "type": "proto_db.collections.HashDictionary"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 19328,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "right",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 19939,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "4"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "11"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 20306,
+    "kind": 1,
+    "size": 120,
+    "tag": 6,
+    "type": "proto_db.collections.Dictionary",
+    "oid": "5eed00000000400080000000000030a3",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 20114,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "11"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 26,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 20426,
+    "kind": 1,
+    "size": 206,
+    "tag": 18,
+    "type": "proto_db.transactions.DatabaseRoot",
+    "oid": "5eed0000000040008000000000003099",
+    "state": [
+     [
+      "objects",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 20306,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ],
+     [
+      "mutables",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 218,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ],
+     [
+      "version",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "committed_at",
+      {
+       "datetime": [
+        2026,
+        11,
+        10,
+        12,
+        0,
+        3,
+        0,
+        0,
+        [
+         "fixed",
+         0,
+         "UTC"
+        ]
+       ]
+      }
+     ],
+     [
+      "previous",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 10277,
+        "type": "proto_db.transactions.DatabaseRoot"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 20632,
+    "kind": 1,
+    "size": 114,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed00000000400080000000000030a4",
+    "state": [
+     [
+      "key",
+      {
+       "str": "db"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 20426,
+        "type": "proto_db.transactions.DatabaseRoot"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 20746,
+    "kind": 1,
+    "size": 122,
+    "tag": 6,
+    "type": "proto_db.collections.Dictionary",
+    "oid": "5eed00000000400080000000000030a5",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 20632,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 601,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 20868,
+    "kind": 1,
+    "size": 83,
+    "tag": 17,
+    "type": "proto_db.transactions.SpaceRoot",
+    "oid": "5eed00000000400080000000000030a6",
+    "state": [
+     [
+      "databases",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000003004",
+        "offset": 20746,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
    }
   ],
   "contents": {
@@ -14601,6 +18774,294 @@
      }
     ],
     [
+     "misfiled_counted_set",
+     {
+      "collection": "proto_db.collections.CountedSet",
+      "items": [
+       [
+        {
+         "str": "pear"
+        },
+        {
+         "int": "1"
+        }
+       ],
+       [
+        {
+         "str": "LegacyColor.RED"
+        },
+        {
+         "int": "2"
+        }
+       ],
+       [
+        {
+         "str": "dog"
+        },
+        {
+         "int": "1"
+        }
+       ],
+       [
+        {
+         "str": "zebra"
+        },
+        {
+         "int": "1"
+        }
+       ],
+       [
+        {
+         "str": "apple"
+        },
+        {
+         "int": "1"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     "misfiled_dictionary",
+     {
+      "collection": "proto_db.collections.Dictionary",
+      "items": [
+       [
+        {
+         "str": "apple"
+        },
+        {
+         "int": "1"
+        }
+       ],
+       [
+        {
+         "str": "dog"
+        },
+        {
+         "int": "1"
+        }
+       ],
+       [
+        {
+         "str": "pear"
+        },
+        {
+         "int": "1"
+        }
+       ],
+       [
+        {
+         "str": "LegacyColor.RED"
+        },
+        {
+         "int": "2"
+        }
+       ],
+       [
+        {
+         "str": "zebra"
+        },
+        {
+         "int": "1"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     "misfiled_hash_dictionary",
+     {
+      "collection": "proto_db.collections.HashDictionary",
+      "items": [
+       [
+        {
+         "str": "pear"
+        },
+        {
+         "int": "1"
+        }
+       ],
+       [
+        {
+         "str": "LegacyColor.RED"
+        },
+        {
+         "int": "2"
+        }
+       ],
+       [
+        {
+         "str": "dog"
+        },
+        {
+         "int": "1"
+        }
+       ],
+       [
+        {
+         "str": "zebra"
+        },
+        {
+         "int": "1"
+        }
+       ],
+       [
+        {
+         "str": "apple"
+        },
+        {
+         "int": "1"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     "misfiled_list",
+     {
+      "collection": "proto_db.collections.List",
+      "elements": [
+       {
+        "str": "apple"
+       },
+       {
+        "str": "dog"
+       },
+       {
+        "str": "pear"
+       },
+       {
+        "str": "zebra"
+       },
+       {
+        "str": "LegacyColor.RED"
+       }
+      ]
+     }
+    ],
+    [
+     "misfiled_repeated_keys",
+     {
+      "collection": "proto_db.collections.RepeatedKeysDictionary",
+      "items": [
+       [
+        {
+         "str": "apple"
+        },
+        {
+         "collection": "proto_db.collections.CountedSet",
+         "items": [
+          [
+           {
+            "int": "1"
+           },
+           {
+            "int": "1"
+           }
+          ]
+         ]
+        }
+       ],
+       [
+        {
+         "str": "dog"
+        },
+        {
+         "collection": "proto_db.collections.CountedSet",
+         "items": [
+          [
+           {
+            "int": "1"
+           },
+           {
+            "int": "1"
+           }
+          ]
+         ]
+        }
+       ],
+       [
+        {
+         "str": "pear"
+        },
+        {
+         "collection": "proto_db.collections.CountedSet",
+         "items": [
+          [
+           {
+            "int": "1"
+           },
+           {
+            "int": "1"
+           }
+          ]
+         ]
+        }
+       ],
+       [
+        {
+         "str": "LegacyColor.RED"
+        },
+        {
+         "collection": "proto_db.collections.CountedSet",
+         "items": [
+          [
+           {
+            "int": "2"
+           },
+           {
+            "int": "1"
+           }
+          ]
+         ]
+        }
+       ],
+       [
+        {
+         "str": "zebra"
+        },
+        {
+         "collection": "proto_db.collections.CountedSet",
+         "items": [
+          [
+           {
+            "int": "1"
+           },
+           {
+            "int": "1"
+           }
+          ]
+         ]
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     "misfiled_set",
+     {
+      "collection": "proto_db.collections.Set",
+      "elements": [
+       {
+        "str": "pear"
+       },
+       {
+        "str": "LegacyColor.RED"
+       },
+       {
+        "str": "dog"
+       },
+       {
+        "str": "zebra"
+       },
+       {
+        "str": "apple"
+       }
+      ]
+     }
+    ],
+    [
      "numbers",
      {
       "collection": "proto_db.collections.List",
@@ -14761,15 +19222,14 @@
      }
     ]
    ],
-   "mutables": [
-    [
-     "counter",
-     {
-      "nil": null
-     }
-    ]
-   ],
+   "mutables": [],
    "indexes": {
+    "misfiled_list": {
+     "e": {
+      "type": "proto_db.indexing.EqualityIndex",
+      "member_tokens": true
+     }
+    },
     "numbers": {
      "e": {
       "type": "proto_db.indexing.EqualityIndex",
@@ -14786,7 +19246,1265 @@
    "origin": {
     "nil": null
    }
+  },
+  "misfiled": {
+   "roots": [
+    "misfiled_counted_set",
+    "misfiled_dictionary",
+    "misfiled_hash_dictionary",
+    "misfiled_list",
+    "misfiled_repeated_keys",
+    "misfiled_set"
+   ],
+   "keys": [
+    "apple",
+    "dog",
+    "pear",
+    "zebra",
+    "LegacyColor.RED"
+   ],
+   "note": "format 3 wrote LegacyColor.RED (a (str, Enum)) as 'LegacyColor.RED' but filed it as 'red': validate() raises ProtoMisfiledError, rebuilt() repairs"
   }
+ },
+ "polyglot_database": {
+  "dir": "polyglot",
+  "segment": "5eed0000000040008000000000004004.seg",
+  "format": 4,
+  "root": {
+   "version": 4,
+   "segment": "5eed0000000040008000000000004004",
+   "offset": 3176,
+   "epoch": 3
+  },
+  "records": [
+   {
+    "offset": 26,
+    "kind": 1,
+    "size": 50,
+    "tag": 3,
+    "type": "proto_db.collections.IndexSet",
+    "oid": "5eed0000000040008000000000004003",
+    "state": [
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 76,
+    "kind": 1,
+    "size": 92,
+    "tag": 6,
+    "type": "proto_db.collections.Dictionary",
+    "oid": "5eed0000000040008000000000004005",
+    "state": [
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 26,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "0"
+      }
+     ],
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 168,
+    "kind": 1,
+    "size": 50,
+    "tag": 3,
+    "type": "proto_db.collections.IndexSet",
+    "oid": "5eed0000000040008000000000004006",
+    "state": [
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 218,
+    "kind": 1,
+    "size": 93,
+    "tag": 6,
+    "type": "proto_db.collections.Dictionary",
+    "oid": "5eed0000000040008000000000004007",
+    "state": [
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 168,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "0"
+      }
+     ],
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 311,
+    "kind": 1,
+    "size": 201,
+    "tag": 18,
+    "type": "proto_db.transactions.DatabaseRoot",
+    "oid": "5eed0000000040008000000000004002",
+    "state": [
+     [
+      "objects",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 76,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ],
+     [
+      "mutables",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 218,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ],
+     [
+      "version",
+      {
+       "int": "0"
+      }
+     ],
+     [
+      "committed_at",
+      {
+       "datetime": [
+        2026,
+        11,
+        10,
+        12,
+        0,
+        1,
+        0,
+        0,
+        [
+         "fixed",
+         0,
+         "UTC"
+        ]
+       ]
+      }
+     ],
+     [
+      "origin",
+      {
+       "bytes": "5eed0000000040008000000000004001"
+      }
+     ],
+     [
+      "previous",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 512,
+    "kind": 1,
+    "size": 114,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000004008",
+    "state": [
+     [
+      "key",
+      {
+       "str": "db"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 311,
+        "type": "proto_db.transactions.DatabaseRoot"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 626,
+    "kind": 1,
+    "size": 50,
+    "tag": 3,
+    "type": "proto_db.collections.IndexSet",
+    "oid": "5eed0000000040008000000000004009",
+    "state": [
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 676,
+    "kind": 1,
+    "size": 122,
+    "tag": 6,
+    "type": "proto_db.collections.Dictionary",
+    "oid": "5eed000000004000800000000000400a",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 512,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 626,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 798,
+    "kind": 1,
+    "size": 83,
+    "tag": 17,
+    "type": "proto_db.transactions.SpaceRoot",
+    "oid": "5eed000000004000800000000000400b",
+    "state": [
+     [
+      "databases",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 676,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 881,
+    "kind": 1,
+    "size": 54,
+    "tag": 19,
+    "type": "proto_db.core.dbobject.DBObject",
+    "oid": "5eed000000004000800000000000400c",
+    "state": [
+     [
+      "name",
+      {
+       "str": "ACME"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 935,
+    "kind": 1,
+    "size": 56,
+    "tag": 19,
+    "type": "proto_db.core.dbobject.DBObject",
+    "oid": "5eed000000004000800000000000400d",
+    "state": [
+     [
+      "name",
+      {
+       "str": "holder"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 991,
+    "kind": 1,
+    "size": 118,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000400f",
+    "state": [
+     [
+      "key",
+      {
+       "str": "holder"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 935,
+        "type": "proto_db.core.dbobject.DBObject"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 1109,
+    "kind": 1,
+    "size": 148,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000004010",
+    "state": [
+     [
+      "key",
+      {
+       "str": "customer"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 881,
+        "type": "proto_db.core.dbobject.DBObject"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 991,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "2"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 1257,
+    "kind": 1,
+    "size": 120,
+    "tag": 6,
+    "type": "proto_db.collections.Dictionary",
+    "oid": "5eed0000000040008000000000004011",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 1109,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 26,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 1377,
+    "kind": 1,
+    "size": 231,
+    "tag": 18,
+    "type": "proto_db.transactions.DatabaseRoot",
+    "oid": "5eed000000004000800000000000400e",
+    "state": [
+     [
+      "objects",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 1257,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ],
+     [
+      "mutables",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 218,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ],
+     [
+      "version",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "committed_at",
+      {
+       "datetime": [
+        2026,
+        11,
+        10,
+        12,
+        0,
+        2,
+        0,
+        0,
+        [
+         "fixed",
+         0,
+         "UTC"
+        ]
+       ]
+      }
+     ],
+     [
+      "origin",
+      {
+       "bytes": "5eed0000000040008000000000004001"
+      }
+     ],
+     [
+      "previous",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 311,
+        "type": "proto_db.transactions.DatabaseRoot"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 1608,
+    "kind": 1,
+    "size": 114,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000004012",
+    "state": [
+     [
+      "key",
+      {
+       "str": "db"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 1377,
+        "type": "proto_db.transactions.DatabaseRoot"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 1722,
+    "kind": 1,
+    "size": 122,
+    "tag": 6,
+    "type": "proto_db.collections.Dictionary",
+    "oid": "5eed0000000040008000000000004013",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 1608,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 626,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 1844,
+    "kind": 1,
+    "size": 83,
+    "tag": 17,
+    "type": "proto_db.transactions.SpaceRoot",
+    "oid": "5eed0000000040008000000000004014",
+    "state": [
+     [
+      "databases",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 1722,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 1927,
+    "kind": 1,
+    "size": 156,
+    "tag": "polyglot.st.Order",
+    "type": "polyglot.st.Order",
+    "oid": "00000000000000000000000000005eed",
+    "state": [
+     [
+      "number",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "lines",
+      {
+       "list": [
+        {
+         "str": "a"
+        },
+        {
+         "str": "b"
+        }
+       ]
+      }
+     ],
+     [
+      "total",
+      {
+       "decimal": "12.50"
+      }
+     ],
+     [
+      "customer",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 881,
+        "type": "proto_db.core.dbobject.DBObject"
+       }
+      }
+     ],
+     [
+      "placed",
+      {
+       "date": [
+        2026,
+        12,
+        3
+       ]
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 2083,
+    "kind": 1,
+    "size": 74,
+    "tag": "polyglot.st.SalesOrder",
+    "type": "polyglot.st.SalesOrder",
+    "oid": "00000000000000000000000000005eef",
+    "state": [
+     [
+      "number",
+      {
+       "int": "6"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 2157,
+    "kind": 1,
+    "size": 166,
+    "tag": 19,
+    "type": "proto_db.core.dbobject.DBObject",
+    "oid": "5eed0000000040008000000000004015",
+    "state": [
+     [
+      "name",
+      {
+       "str": "holder"
+      }
+     ],
+     [
+      "order",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 1927,
+        "type": "polyglot.st.Order"
+       }
+      }
+     ],
+     [
+      "older_order",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 2083,
+        "type": "polyglot.st.Order"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 2323,
+    "kind": 1,
+    "size": 118,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000004017",
+    "state": [
+     [
+      "key",
+      {
+       "str": "holder"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 2157,
+        "type": "proto_db.core.dbobject.DBObject"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 2441,
+    "kind": 1,
+    "size": 148,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000004018",
+    "state": [
+     [
+      "key",
+      {
+       "str": "customer"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 881,
+        "type": "proto_db.core.dbobject.DBObject"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 2323,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "2"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 2589,
+    "kind": 1,
+    "size": 120,
+    "tag": 6,
+    "type": "proto_db.collections.Dictionary",
+    "oid": "5eed0000000040008000000000004019",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 2441,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 26,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 2709,
+    "kind": 1,
+    "size": 231,
+    "tag": 18,
+    "type": "proto_db.transactions.DatabaseRoot",
+    "oid": "5eed0000000040008000000000004016",
+    "state": [
+     [
+      "objects",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 2589,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ],
+     [
+      "mutables",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 218,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ],
+     [
+      "version",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "committed_at",
+      {
+       "datetime": [
+        2026,
+        11,
+        10,
+        12,
+        0,
+        3,
+        0,
+        0,
+        [
+         "fixed",
+         0,
+         "UTC"
+        ]
+       ]
+      }
+     ],
+     [
+      "origin",
+      {
+       "bytes": "5eed0000000040008000000000004001"
+      }
+     ],
+     [
+      "previous",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 1377,
+        "type": "proto_db.transactions.DatabaseRoot"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 2940,
+    "kind": 1,
+    "size": 114,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000401a",
+    "state": [
+     [
+      "key",
+      {
+       "str": "db"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 2709,
+        "type": "proto_db.transactions.DatabaseRoot"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 3054,
+    "kind": 1,
+    "size": 122,
+    "tag": 6,
+    "type": "proto_db.collections.Dictionary",
+    "oid": "5eed000000004000800000000000401b",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 2940,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 626,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 3176,
+    "kind": 1,
+    "size": 83,
+    "tag": 17,
+    "type": "proto_db.transactions.SpaceRoot",
+    "oid": "5eed000000004000800000000000401c",
+    "state": [
+     [
+      "databases",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 3054,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   }
+  ],
+  "contents": {
+   "roots": [
+    [
+     "customer",
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "name",
+        {
+         "str": "ACME"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     "holder",
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "name",
+        {
+         "str": "holder"
+        }
+       ],
+       [
+        "older_order",
+        {
+         "opaque": "polyglot.st.Order",
+         "attrs": [
+          [
+           "number",
+           {
+            "int": "6"
+           }
+          ]
+         ]
+        }
+       ],
+       [
+        "order",
+        {
+         "opaque": "polyglot.st.Order",
+         "attrs": [
+          [
+           "customer",
+           {
+            "object": "proto_db.core.dbobject.DBObject",
+            "attrs": [
+             [
+              "name",
+              {
+               "str": "ACME"
+              }
+             ]
+            ]
+           }
+          ],
+          [
+           "lines",
+           {
+            "list": [
+             {
+              "str": "a"
+             },
+             {
+              "str": "b"
+             }
+            ]
+           }
+          ],
+          [
+           "number",
+           {
+            "int": "7"
+           }
+          ],
+          [
+           "placed",
+           {
+            "date": [
+             2026,
+             12,
+             3
+            ]
+           }
+          ],
+          [
+           "total",
+           {
+            "decimal": "12.50"
+           }
+          ]
+         ]
+        }
+       ]
+      ]
+     }
+    ]
+   ],
+   "mutables": [],
+   "indexes": {},
+   "origin": {
+    "bytes": "5eed0000000040008000000000004001"
+   }
+  },
+  "opaque_type": "polyglot.st.Order",
+  "opaque_alias": "polyglot.st.SalesOrder"
  },
  "cluster": {
   "segment": {

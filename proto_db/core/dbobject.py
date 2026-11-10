@@ -20,15 +20,25 @@ from __future__ import annotations
 
 from ..errors import ProtoUserError, ProtoValidationError
 from ..values import MutableObject, canonical
-from .atom import _ABSENT, RESERVED_NAMES, Atom, PersistenceContext, _check_context
+from .atom import _ABSENT, RESERVED_NAMES, Atom, PersistenceContext, _check_context, class_defines
 
 __all__ = ["DBObject", "MutableObject"]
 
 
 def _check_name(cls, name) -> None:
     if (not isinstance(name, str) or not name or name.startswith("_") or name in RESERVED_NAMES
-            or hasattr(cls, name)):
+            or class_defines(cls, name)):
+        if isinstance(name, str) and class_defines(cls, name):
+            raise ProtoValidationError(
+                f"Invalid attribute name {name!r} for {cls.__name__}: {_SHADOW_RULE}")
         raise ProtoValidationError(f"Invalid attribute name {name!r} for {cls.__name__}")
+
+
+#: Why a persisted field may not share its name with anything of its Python class (Task 10.P A4).
+_SHADOW_RULE = ("the class defines an attribute of that name (a method, a property or a class "
+                "attribute). In Python the stored field is its own accessor, read as a plain attribute, "
+                "and a class attribute of the same name would hide it, so a property written as an "
+                "accessor is refused too")
 
 
 class DBObject(Atom):

@@ -15,14 +15,16 @@ ProtoBase's own encoders (`generate.py`) and is checked byte for byte against th
 | `vectors/invalid/*.bin` | Inputs a reader must refuse, at every layer (value, map key, atom envelope and state, record, segment, root, log, acceptor log, cluster message) |
 | `vectors/framing/` | Segment headers (formats 4, 3 and 2), an ATOM and a BLOB record, root records (file, formats 3 and 2, cloud, tiered) |
 | `vectors/database/` | A complete format-4 file-storage space: `space.root` and one segment, written through the public API (trained ivf_flat and hnsw vector indexes included) |
-| `vectors/legacy/` | A format-3 space: a DatabaseRoot without `origin`, a key-group index (tokens of every kind) and a vector index written with format-3 member tokens and plain KeyNode trees, zone datetimes in the wall-clock form, maps with format-3 key forms (zone datetimes, NaNs twice), an application record and reference spelled by an alias |
+| `vectors/legacy/` | A format-3 space: a DatabaseRoot without `origin`, a key-group index (tokens of every kind) and a vector index written with format-3 member tokens and plain KeyNode trees, zone datetimes in the wall-clock form, maps with format-3 key forms (zone datetimes, NaNs twice), collections that format 3 misfiled by writing a `(str, Enum)` member through `str()`, an application record and reference spelled by an alias |
+| `vectors/polyglot/` | A format-4 space holding a record of `polyglot.st.Order`, a type no Python class implements (an opaque atom, D59), which references a ProtoBase record and is referenced from a root, plus an older record of that type written as `polyglot.st.SalesOrder` (its previous name) and referenced under the declared name |
+| `vectors.sha256` | The SHA-256 of every vector file and of `manifest.json`, sorted by path; `format-spec.rst` states this file's own digest |
 | `vectors/cluster/<uuid>.seg` | The segment of one cluster commit: a `SpaceRoot` with its lease term, epoch and predecessor |
 | `vectors/cluster/roots.log` | An acceptor log holding every entry kind (1 to 6), each listed field by field |
 | `vectors/cluster/roots-torn.log` | The same log with a torn tail (its last frame cut) |
 | `vectors/cluster/ranges.log`, `segments.log` | The other two framed logs of a cluster node |
 | `vectors/cluster/messages/*.frame` | One wire frame (4-byte big-endian length, then msgpack) of every message type |
 | `generate.py` | The script that wrote all of the above |
-| `typed.py` | The notation, in Python (build a value from its description, describe a value) |
+| `typed.py` | The notation, in Python (build a value from its description); describing values and databases is `proto_db/tools/notation.py`, which `python -m proto_db.tools.verify` prints |
 | `model.py` | The application type of the vectors, `conformance.Invoice` |
 
 ## The notation
@@ -40,6 +42,12 @@ Every description is a JSON object with one key.
 `{"list": [...]}`, `{"tuple": [...]}`, `{"map": [[key, value], ...]}` (in order),
 `{"missing": true}`, `{"mutable": "name"}`,
 `{"ref": {"segment": "<32 hex>", "offset": n, "type": "type name"}}`.
+
+**Stored objects** (database contents): `{"object": type, "attrs": [[name, ...], ...]}` (a
+record, attributes sorted by name), `{"opaque": type, "attrs": [...]}` (a record of a type the
+reader has no class for), `{"collection": type, "elements": [...]}` (List, Set) or
+`{"collection": type, "items": [[key or element, value or count], ...]}` (the dictionaries,
+CountedSet), in the collection's iteration order.
 
 **Raw msgpack data** (atom record envelopes, root records, cluster messages):
 the same scalars, plus `{"array": [...]}` and `{"mpmap": [[key, value], ...]}` for msgpack
@@ -85,6 +93,9 @@ A reader passes when, for every entry of `manifest.json`:
    (stale, not corrupt), and after a change of a collection its index must have been rebuilt
    with format-4 tokens. Records whose `rewritable` is false hold a format-3 map key form:
    they decode to the listed state, and encoding that state again is refused.
+   `misfiled` lists the roots format 3 misfiled (a `(str, Enum)` member written as
+   `"LegacyColor.RED"` but filed as `"red"`): your integrity check must report them, and a
+   rebuild of each must hold every key listed.
 8. `cluster`: the segment as in step 7; each log decodes to the listed entries (`roots_log`
    gives every entry's size and `fields`, from which your encoder must rebuild the entry's
    bytes -- `records` items are `[segment, offset, size]` of records in the cluster segment --,
@@ -92,8 +103,13 @@ A reader passes when, for every entry of `manifest.json`:
    `roots_log_torn` is read with its torn tail dropped (`valid_end`, `entries`); each message
    frame decodes to the described message and re-encodes to the same bytes.
 
+9. `polyglot_database`: as `database`; the record of `opaque_type` must be read without a class
+   for it, its fields readable, and kept byte for byte when the record that references it is
+   changed and committed again.
+
 For the cross-implementation round trip (R83a), also run the reverse: write a database with
-your implementation, open it with ProtoBase (`ObjectSpace(FileStorage(path))`), and compare.
+your implementation, open it with ProtoBase (`ObjectSpace(FileStorage(path))`), and compare; `python -m proto_db.tools.verify <path>`
+does the ProtoBase side in one command (exit 0, and the content dumped in this notation).
 
 ## Regenerating
 
@@ -105,4 +121,5 @@ Only when the format changes on purpose: the test checks the committed files and
 regenerates them. The generator makes oids, segment UUIDs, the database origin and commit
 times deterministic, so a regeneration with an unchanged format rewrites identical bytes and
 `git diff` shows exactly what a format change changed. Update `format-spec.rst` in the same
-commit.
+commit, including the pinned digest of `vectors.sha256` in its "Format stability" section
+(`sha256sum tests/conformance/vectors.sha256`).

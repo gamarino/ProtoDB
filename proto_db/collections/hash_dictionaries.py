@@ -28,7 +28,7 @@ from ..core.atom import PersistenceContext
 from ..errors import ProtoValidationError
 from ..values import canonical, hash_key, order_key
 from . import avl
-from .base import ConcurrentOptimized, IndexedCollection, same_value
+from .base import ConcurrentOptimized, IndexedCollection, repair_pairs, same_value
 from .dictionaries import sorted_unique_pairs
 
 __all__ = ["HashDictionary"]
@@ -85,13 +85,13 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
         return h, bucket, -1
 
     def get_at(self, key, default=None):
-        """Return the value stored under ``key`` or ``default`` when absent."""
-        _, bucket, position = self._find(key)
+        """Return the value stored under ``key`` (canonicalized, as stored keys are) or ``default`` when absent."""
+        _, bucket, position = self._find(canonical(key))
         return default if position < 0 else bucket[position][1]
 
     def has(self, key) -> bool:
-        """True iff ``key`` is present."""
-        return self._find(key)[2] >= 0
+        """True iff ``key`` (canonicalized) is present."""
+        return self._find(canonical(key))[2] >= 0
 
     __contains__ = has
 
@@ -99,6 +99,17 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
         """``(key, value)`` pairs in bucket-hash order."""
         for _, bucket in avl.key_iter(self.root):
             yield from bucket
+
+    def _check_placement(self) -> None:
+        for h, bucket in avl.key_iter(self.root):
+            for key, _ in bucket:
+                if self._bucket_hash(key) != h:
+                    self._misfiled(f"the key {key!r} is in the bucket of another hash")
+        avl.check_invariants(self.root)
+
+    def _refiled(self) -> "HashDictionary":
+        new = type(self).from_items(repair_pairs(self.items()), context=self.context)
+        return self._with(root=new.root, count=new.count)
 
     def keys(self) -> Iterator:
         """Keys in bucket-hash order."""

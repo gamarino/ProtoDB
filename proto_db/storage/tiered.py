@@ -205,7 +205,7 @@ from .cloud import (ObjectNotFoundError, OutcomeUnknownError, PreconditionFailed
                     TransientObjectStoreError)
 from .crc import PrefixCrc
 from .file import DURABILITY_MODES, FileStorage
-from .format import (FORMAT_VERSION, RECORD_HEADER_SIZE, RECORD_MAGIC, SEGMENT_HEADER_SIZE, RecordKind,
+from .format import (WRITE_FORMAT_VERSION, RECORD_HEADER_SIZE, RECORD_MAGIC, SEGMENT_HEADER_SIZE, RecordKind,
                      RootRecord, decode_root, decode_segment_header, encode_record, encode_segment_header,
                      read_record, record_header)
 from .logfile import encode_frame, log_contents, open_log, prepare_replacement, read_fd, write_all
@@ -920,7 +920,7 @@ class TieredStorage(SharedStorage):
                 raise ProtoCorruptionError(f"{RANGES_LOG} in {self._path} holds an entry of inconsistent length")
             ranges = [(uuid.UUID(bytes=seg), start, stop) for seg, start, stop in
                       _RANGE.iter_unpack(payload[_RANGES_HEAD.size:])]
-            root = RootRecord(FORMAT_VERSION, uuid.UUID(bytes=root_seg), root_off, epoch)
+            root = RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(bytes=root_seg), root_off, epoch)
             self._ranges[(root.segment, root_off)] = (root_key(label, root), ranges)
 
     @staticmethod
@@ -1517,7 +1517,7 @@ class TieredStorage(SharedStorage):
         if previous is None or previous.cluster_epoch is None:
             return None
         ptr = previous.atom_pointer
-        return previous.cluster_term or 0, RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset,
+        return previous.cluster_term or 0, RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset,
                                                       previous.cluster_epoch)
 
     def shipped(self, records: list, root: Optional[RootRecord] = None, label: int = 0) -> None:
