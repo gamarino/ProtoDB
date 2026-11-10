@@ -27,6 +27,7 @@ class RecordingStorage:
         self.log = log if log is not None else []
         self.read_roots = 0
         self.failed_cas = 0
+        self.failed_cas_by = []        # the thread names of the failed conditional writes
         self.publishes = 0
         self.publishers = []
         self.pause_publish = None      # (entered Event, resume Event) for the next publish
@@ -66,6 +67,7 @@ class RecordingStorage:
             return self._inner.publish_root(ptr, expected_epoch)
         except ProtoConflictError:
             self.failed_cas += 1
+            self.failed_cas_by.append(threading.current_thread().name)
             raise
 
 
@@ -162,7 +164,14 @@ def test_transactions_read_the_committed_root_not_the_storage():
         assert _value(spaces[1]) == 10
         # One read to learn the first root (the space was empty); never one per commit.
         assert reads <= 4, reads
-        assert sum(s.failed_cas for s in storages) == 0
+        # No commit writes the storage root: only the persisters do, after the commit point
+        # (D46).  Two persisters may race on one publish -- n0's for its root while n1's
+        # publishes the next one -- and the loser reads the root again (``PlainTier.persist``);
+        # that is the compare-and-swap doing its job, not a commit's conflict (Task 8.3n fix
+        # round 3: one such lost race in 80 runs under load).
+        assert all(name.startswith("proto-persister-") for s in storages for name in s.publishers)
+        assert not [name for s in storages for name in s.failed_cas_by
+                    if not name.startswith("proto-persister-")]
 
 
 def test_the_commit_point_is_the_majority_acknowledgement():
@@ -365,12 +374,23 @@ def test_sync_promises_local_persistence_and_a_commit_on_the_reader_sees_every_a
     with TieredCluster(tmp_path) as tc:
         tc.create_database("n0")
         tc.db("n0").run(incr, **TRUN_KW)
+        # n2 learns the commit first, then every member syncs: n2's sync below the outage must
+        # find what n2 knows already persisted.  (Task 8.3n fix round 3: the syncs ran first,
+        # and under load n2 learnt epoch 2 only after its own sync returned at epoch 1, so the
+        # sync under the outage waited for a persisted root it could no longer read.)
+        assert tc.eventually("n2", 1)
         for n in tc.ids:
             tc.spaces[n].sync(timeout=10)
-        assert tc.eventually("n2", 1)
-        # n0's commit made it the term's owner, so n0's second commit needs no permit from n2
-        # and nothing n2 drops changes its shape (review M2: stated, not assumed).
-        assert tc["n0"].owner == "n0" and tc["n2"].owner == "n0"
+        # n2 owns no term, so n0's second commit needs no permit from n2 and nothing n2 drops
+        # changes its shape (review M2: stated, not assumed).  n0's term may have ended
+        # meanwhile (no demand): its next commit then asks for a new term, and the request
+        # carries nothing n2 does not know.  n2 may own a term only through its own first
+        # snapshot's confirmation; a term without demand ends within its lease, so wait for it
+        # (Task 8.3n fix round 3: under load n2's confirmation took the term, run 12).
+        deadline = time.monotonic() + 10
+        while tc["n2"]._ownership is not None:
+            assert time.monotonic() < deadline, "n2's term never ended"
+            time.sleep(0.01)
         reader = tc["n2"]
         route = reader._route
         reader._route = lambda msg: None if msg["type"] in _UNPROMPTED else route(msg)
