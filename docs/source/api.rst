@@ -1,7 +1,10 @@
 API reference
 =============
 
-The top-level package re-exports the public names (decision D47):
+The public API is the set of names re-exported by the top-level package ``proto_db`` (decision D47): every
+name in ``proto_db.__all__`` is resolved lazily, on first access, from the subpackage that defines it, so
+``import proto_db`` imports no submodule, no optional dependency and starts no thread. The sections below
+document each defining module; the narrative is in :doc:`concepts`.
 
 .. automodule:: proto_db
 
@@ -111,6 +114,18 @@ proto_db.query.linq
 -------------------
 
 .. automodule:: proto_db.query.linq
+   :members:
+
+proto_db.query.cache
+--------------------
+
+.. automodule:: proto_db.query.cache
+   :members:
+
+proto_db.query.pager
+--------------------
+
+.. automodule:: proto_db.query.pager
    :members:
 
 proto_db.storage.base

@@ -1,24 +1,104 @@
 # Changelog
 
-## Unreleased
+All notable changes to ProtoDB are documented in this file.
 
-### Deprecated (2.0.0.dev0)
-- The 0.1 exception names `ProtoBaseException`, `ProtoValidationException`, `ProtoUserException`, `ProtoCorruptionException`, `ProtoNotSupportedException`, `ProtoNotAuthorizedException`, `ProtoUnexpectedException` and `ProtoLockingException`: aliases of the `Proto*Error` classes, removed in 2.1 (D12).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-### Removed (2.0.0.dev0)
-- The 0.1 implementation (`common`, `db_access`, the 0.1 storages, collections, queries, LINQ, vectors, `parallel`, `fsm`, `arrow_bridge`, `hybrid_executor`, `exceptions`) and its test suite `proto_db/tests/`; `proto_db` now exports the 2.0 API (docs/decisions.md D47, D48; dropped tests: docs/legacy/dropped-tests.md).
+## [2.0.0] - unreleased
+
+ProtoDB 2.0 is a complete rebuild of the 0.1 code base under the design principles of
+`docs/design-principles.md`: everything stored is immutable, a transaction is an explicit object, and
+every safety argument holds under arbitrary delay and loss. There are no 0.1 data or API to preserve.
+The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every decision is in
+`docs/decisions.md` (D1-D57).
 
 ### Added
+- **One value model** with a total order across types (`1 == 1.0 == Decimal(1)`, `True != 1`), used by
+  collections, indexes and queries identically (D2, D3); frozen `list` and `dict` values (D25).
+- **Atoms** with stable identity (`oid`), lazy thread-safe loading and msgpack serialisation (D10, D18, D21).
+- **Collections**, all persistent AVL trees and all indexable: `List`, `Dictionary` (key-ordered),
+  `HashDictionary`, `RepeatedKeysDictionary`, `Set`, `CountedSet`, and `DBObject` records (D8, D20-D27).
+- **Index framework**: `Index` base class with a documented hook contract, `KeySpec` (paths, the element,
+  registered extractors), `EqualityIndex`, `RangeIndex` and `VectorIndex` (exact, IVF-Flat, optional HNSW),
+  every mutator of every collection keeping its indexes current, and a reusable index contract
+  (`tests/contracts/index_contract.py`) for new kinds (D22, D29, D30, D39).
+- **Query layer**: expression terms, physical plans, one cost-based planner that never drops a predicate, a
+  LINQ front end (`from_collection`, `F`, `Agg`), explicit `PythonFilter` nodes, `explain()`, a query result
+  cache keyed by pointers, and `Pager`s with portable tokens over snapshots (D28, D36-D38, D56).
+- **Transactions**: snapshot isolation with read-set validation (absent roots included), `Database.run` with
+  bounded exponential back-off and jitter, per-key and per-element merge of unread collection roots,
+  `MutableObject` cells, group commit, `Database.history()` and read-only `Snapshot`s of any past version,
+  `ProtoOutcomeUnknownError` for commits whose outcome cannot be proved (D9, D11, D32-D35, D52).
+- **Storage v2**: `MemoryStorage`; `FileStorage` with append-only CRC-checked segments, atomic root
+  publication and `fsync` per commit by default (`durability="flush"` and `"none"` are explicit opt-outs);
+  `CloudStorage` over S3 or Google Cloud Storage with data strictly before root and a conditional root write;
+  `TieredStorage` (D4, D6, D19, D43, D46, D51).
+- **Cluster**: several writer processes through a peer coordinator (majority lease, write permissions, commit
+  by majority acknowledgement, bounded replication, learners, fencing), with the object store written after
+  the commit point (D44-D46, D50, D54, D55). `ObjectSpace.sync()` is a durability barrier; a barrier commit is
+  the linearizable read path.
+- **Decoded-atom cache** shared by the transactions and threads of a space, by pointer, bounded on loaded
+  atoms, with counters (`ObjectSpace.atom_cache_stats()`) that expose a thrashing working set (D53).
+- **Runtime services**: `parallel_scan` and `parallel_filter` (real speedup on free-threaded CPython),
+  `FSM`; **interop**: `to_arrow`, `to_parquet`, `scan_parquet` (D40-D42).
+- **Free-threading**: tested on CPython 3.14t with the GIL disabled and with the GIL.
+- **Performance suite** (`python -m benchmarks`): self-verifying benchmarks, with results by workload
+  profile in `docs/source/performance.rst` (D49).
+- **Documentation**: a rewritten Sphinx site (concepts, design pages, ten executable tutorials, API
+  reference) and a test that runs every tutorial code block (`tests/docs/test_tutorials.py`).
+- A single exception hierarchy rooted at `ProtoDBError` (D12), and a static check that forbids swallowed
+  exceptions and test-aware code in `proto_db/` (D16).
+
+### Changed
+- The public API is the set of names in `proto_db.__all__`, resolved lazily: `import proto_db` imports no
+  submodule or optional dependency and starts no thread (D47).
+- Dictionaries are key-ordered AVL trees (O(log n)), not a binary search over a positional list (D8).
+- A conflict raises `ProtoConflictError` and the caller retries; merging applies only to roots the transaction
+  did not read and only by replaying recorded operations, never by inferring intent from value types (D9, D33).
+- Strings are stored inline; the global `Literal` catalog is gone (D7).
+- Python floor 3.11; CI targets 3.11-3.14 and 3.14t. `six` and `wrapt` are no longer dependencies (D14).
+- The package is split into subpackages: `core`, `storage`, `collections`, `indexing`, `query`, `cluster`,
+  `runtime`, `interop` (D15; the spec's `indexes` became `indexing`).
+
+### Deprecated
+- The 0.1 exception names `ProtoBaseException`, `ProtoValidationException`, `ProtoUserException`,
+  `ProtoCorruptionException`, `ProtoNotSupportedException`, `ProtoNotAuthorizedException`,
+  `ProtoUnexpectedException` and `ProtoLockingException`: aliases of the `Proto*Error` classes, removed in 2.1
+  (D12).
+
+### Removed
+- The 0.1 implementation (`common`, `db_access`, the 0.1 storages, collections, queries, LINQ, vectors,
+  `parallel`, `fsm`, `arrow_bridge`, `hybrid_executor`, `exceptions`) and its test suite `proto_db/tests/`
+  (D47, D48; dropped tests: `docs/legacy/dropped-tests.md`). UDP voting is gone from the cloud storages (D5).
+
+### Fixed
+Defects of the 0.1 code base found by the 2026-11-01 review, none of which survives the rebuild: integer
+values merged as `+1` and special cases for keys named `counter` and `k`; commits that were not durable;
+indexes lost on the first write; queries that silently returned empty or partial results; about 280 broad
+`except` handlers hiding errors; two writers appending to one segment.
+
+### Known limitations
+- No `proto_db.tools.inspect` command-line tool (the spec's section 6 named one); the formats are specified in
+  `docs/source/format-spec.rst` and the operations tutorial shows how to read a space without it.
+- No online-backup call; see the operations tutorial for what a copy of an open space contains.
+- Cluster fairness for eight or more contending writer processes, and for hot-key read-modify-write
+  transactions, is not guaranteed (open defect D-LIVE-2).
+- A read-only linearizable read (`read_barrier`) is proposed in the D46 amendment but not implemented; the
+  barrier commit is the supported path.
+- A version chain of more than about 150 unsaved versions built in one transaction exceeds Python's default
+  recursion limit when saved.
+
+## Before 2.0
+
+Entries from the 0.1 line, kept as written. They describe code that 2.0 removed.
+
+### Added (0.1 line, unreleased)
 - Optional parallel scanning module (proto_db.parallel) with adaptive chunking and a simple work-stealing scheduler.
 - Metrics hooks for per-worker and global stats (chunk latencies, steals, queue depths).
 - parallel_scan helper for easy opt-in usage without altering existing query code.
 - Documentation: user guide (Parallel Scans), API reference, and ADR.
 - Unit tests for adaptive chunking, work-stealing behavior, cancellation, and fallback correctness.
-
-All notable changes to ProtoDB will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 - Attribute access style: migrated docs/tests/examples to prefer dot notation; clarified DBObject semantics and dynamic getattr in README.

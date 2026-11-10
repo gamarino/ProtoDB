@@ -11,10 +11,13 @@ commits serializable transactions per root, all in-process, without a separate s
 
 ### Status
 
-`2.0.0.dev0`: the 2.0 rebuild (design: `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`,
-decisions: `docs/decisions.md`). The 0.1 implementation has been removed; the API below is the 2.0
-API. The performance suite and the rewritten documentation site are still to come, so APIs may
-change before 2.0.0 is released.
+`2.0.0.dev0`: the 2.0 rebuild, unreleased (design: `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`,
+decisions: `docs/decisions.md`). The 0.1 implementation has been removed; the API below is the 2.0 API.
+Everything this page lists is implemented and covered by the test suite, which runs on CPython 3.14t
+(free-threaded) and with the GIL. The cluster is new: it is documented, tested and measured in this
+repository and has no production history. Open defects are listed where they apply (see the cluster item
+under Features). The performance suite has run (results by workload in `docs/source/performance.rst`);
+the API may still change before 2.0.0 is released.
 
 ### A note on names
 
@@ -201,16 +204,26 @@ space.close()
 
 Runnable, self-checking scripts live in `examples/` (see `examples/README.md`): getting started,
 file storage, indexed queries with `explain()`, LINQ queries, transactions under concurrency, and
-vector search. Each one runs in the test suite.
+vector search. Each one runs in the test suite, as do the Python snippets of this README and every code
+block of the tutorials.
 
 ## Documentation
 
-- Design specification: `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`
-- Decision log: `docs/decisions.md`
-- API: the docstrings of the `proto_db` package; its module docstring lists the public names, each of which is documented.
+The Sphinx site is under `docs/source` (build it with `python -m sphinx -W -b html docs/source docs/build/html`):
 
-The Sphinx site under `docs/source` is being rewritten for 2.0; the 0.1 pages are kept for
-reference in `docs/legacy/`.
+- **Tutorials**, each executed by the test suite: getting started, modelling data, indexing and querying,
+  concurrency and retries, vector search, writing a custom index, operations (durability, inspection,
+  backup), an ERP example ("as of" queries, an audit with no audit table, stable paginated reports), a CAD
+  example (reusing decoded objects across transactions) and a cluster tutorial (local against linearizable
+  reads).
+- **Design**: concepts, architecture, the concurrency and isolation model, the index framework, the query
+  planner, durability and recovery, objects across transactions, the storage format.
+- **Reference**: the API (generated from the docstrings of the `proto_db` package, whose module docstring
+  lists the public names) and the performance results by workload profile.
+- Design specification: `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; decision log:
+  `docs/decisions.md`; principles: `docs/design-principles.md`.
+
+The 0.1 pages are kept for reference in `docs/legacy/`.
 
 ## Testing
 
