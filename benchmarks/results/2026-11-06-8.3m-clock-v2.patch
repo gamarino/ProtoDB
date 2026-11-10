@@ -1,0 +1,261 @@
+diff -ruN -x __pycache__ base-0121a87/proto_db/collections/avl.py clock/proto_db/collections/avl.py
+--- a/proto_db/collections/avl.py	2026-11-06 16:36:18.000000000 -0300
++++ b/proto_db/collections/avl.py	2026-11-06 17:03:51.753824923 -0300
+@@ -54,7 +54,7 @@
+ 
+ from collections.abc import Iterable, Iterator
+ 
+-from ..core.atom import Atom, PersistenceContext
++from ..core.atom import Atom, PersistenceContext, _Generation
+ from ..errors import ProtoCorruptionError, ProtoUserError, ProtoValidationError
+ from ..values import order_key
+ 
+@@ -214,7 +214,12 @@
+         self._init_shape(left, right)
+ 
+     def _order_key(self):
+-        """Return ``order_key(self.key)``, computing and caching it on first use (stubs)."""
++        """Return ``order_key(self.key)``, computing and caching it on first use (stubs).  Every
++        keyed walk calls it on each node it passes, so it also sets the node's reference bit for
++        the cache's second-chance eviction (Task 8.3m fix round 1, R105 M1)."""
++        token = self._loaded
++        if type(token) is _Generation and not token.ref:
++            token.ref = True        # written once per pass: hot nodes are read, not written
+         try:
+             okey = object.__getattribute__(self, "_okey")     # never materializes the dict (8.3m)
+         except AttributeError:
+@@ -363,6 +368,9 @@
+     _check_index(index, _count(root) - 1, "Index")
+     node = root
+     while True:
++        token = node._loaded
++        if type(token) is _Generation and not token.ref:
++            token.ref = True            # the second-chance bit (see KeyNode._order_key)
+         lc = _count(node.left)
+         if index < lc:
+             node = node.left
+@@ -510,7 +518,12 @@
+         elif k > nk:
+             node = node.right
+         else:
+-            return unboxed(node.value)
++            value = unboxed(node.value)
++            if isinstance(value, Atom):
++                token = value._loaded
++                if type(token) is _Generation and not token.ref:
++                    token.ref = True    # the record read: its second-chance bit too
++            return value
+     return default
+ 
+ 
+diff -ruN -x __pycache__ base-0121a87/proto_db/core/atom.py clock/proto_db/core/atom.py
+--- a/proto_db/core/atom.py	2026-11-06 16:36:18.000000000 -0300
++++ b/proto_db/core/atom.py	2026-11-06 17:03:51.756824839 -0300
+@@ -312,12 +312,15 @@
+ class _Generation:
+     """A load generation token: the truthy value of ``_loaded`` for one loaded state of an atom
+     that may be unloaded (a fresh object per load, so a reader can tell two generations apart).
+-    ``names``: the keys that load installed, which an unload deletes."""
++    ``names``: the keys that load installed, which an unload deletes.  ``ref``: the reference
++    bit of the cache's second-chance eviction, set without a lock by the reads that walk through
++    the atom (:func:`_referenced`) and cleared when the eviction spares it."""
+ 
+-    __slots__ = ("names",)
++    __slots__ = ("names", "ref")
+ 
+     def __init__(self, names: tuple = ()):
+         self.names = names
++        self.ref = False
+ 
+     def __repr__(self):
+         return "<loaded>"
+@@ -351,6 +354,24 @@
+ _UNLOADED = _Unloaded()
+ 
+ 
++def _referenced(atom) -> None:
++    """Set the reference bit of a loaded cache atom (a lock-free store into its generation token,
++    never into the atom: its layout is unchanged).  Any other atom is left alone."""
++    token = atom._loaded
++    if type(token) is _Generation and not token.ref:
++        token.ref = True            # written only when clear: no shared store on hot atoms
++
++
++def _second_chance(atom) -> bool:
++    """The cache's eviction question: whether ``atom`` was read since it was last considered (its
++    bit is cleared as it is spared)."""
++    token = atom._loaded
++    if type(token) is _Generation and token.ref:
++        token.ref = False
++        return True
++    return False
++
++
+ def _is_cache_produced(atom) -> bool:
+     """Whether the loaded ``atom`` may be unloaded: produced by a decoded-atom cache (its
+     ``_loaded`` is a generation token) and saved (Task 8.3m, review I4)."""
+diff -ruN -x __pycache__ base-0121a87/proto_db/storage/cache.py clock/proto_db/storage/cache.py
+--- a/proto_db/storage/cache.py	2026-11-06 16:36:18.000000000 -0300
++++ b/proto_db/storage/cache.py	2026-11-06 17:03:59.303613863 -0300
+@@ -35,6 +35,8 @@
+         self._size = 0
+         self.hits = 0
+         self.misses = 0
++        self.evictions = 0
++        self.admissions = 0
+ 
+     @property
+     def max_bytes(self) -> int:
+@@ -53,10 +55,12 @@
+ 
+     def stats(self) -> dict:
+         """A consistent snapshot of the counters: ``hits``, ``misses``, ``entries``, ``bytes``
+-        (total size of the cached values) and ``capacity`` (``max_bytes``)."""
++        (total size of the cached values), ``capacity`` (``max_bytes``), ``admissions`` (values
++        :meth:`put_evicting` stored) and ``evictions`` (values dropped for room)."""
+         with self._lock:
+             return {"hits": self.hits, "misses": self.misses, "entries": len(self._items),
+-                    "bytes": self._size, "capacity": self._max}
++                    "bytes": self._size, "capacity": self._max, "admissions": self.admissions,
++                    "evictions": self.evictions}
+ 
+     def get(self, key: Hashable) -> Optional[Any]:
+         """Return the value cached under ``key`` (marking it recently used) or ``None``."""
+@@ -90,6 +94,7 @@
+             while self._size > self._max:
+                 _, (_, evicted) = self._items.popitem(last=False)
+                 self._size -= evicted
++                self.evictions += 1
+ 
+     def touch(self, key: Hashable) -> None:
+         """Mark ``key`` recently used if present, without counting a hit or a miss."""
+@@ -97,9 +102,13 @@
+             if key in self._items:
+                 self._items.move_to_end(key)
+ 
+-    def put_evicting(self, key: Hashable, value: Any) -> list:
++    def put_evicting(self, key: Hashable, value: Any, second_chance: Optional[Callable[[Any], bool]] = None) -> list:
+         """:meth:`put`, returning the values it dropped: the one ``key`` held before, when it is
+-        another object, and those evicted for room (callers release them outside the lock)."""
++        another object, and those evicted for room (callers release them outside the lock).
++
++        ``second_chance(value)``, if given, is asked about each eviction candidate in LRU order;
++        a candidate it answers True for is moved to the most recent end instead (CLOCK-style; the
++        callable clears its own reference bit, so one pass over the entries ends the search)."""
+         size = self._sizeof(value)
+         dropped = []
+         with self._lock:
+@@ -112,10 +121,19 @@
+                 return dropped
+             self._items[key] = (value, size)
+             self._size += size
++            self.admissions += 1
++            spared = 0
++            limit = len(self._items)
+             while self._size > self._max:
+-                _, (evicted, evicted_size) = self._items.popitem(last=False)
+-                self._size -= evicted_size
+-                dropped.append(evicted)
++                k, entry = self._items.popitem(last=False)
++                if second_chance is not None and spared < limit and entry[0] is not value \
++                        and second_chance(entry[0]):
++                    self._items[k] = entry          # referenced since its last pass: keep it
++                    spared += 1
++                    continue
++                self._size -= entry[1]
++                self.evictions += 1
++                dropped.append(entry[0])
+         return dropped
+ 
+     def drain(self) -> list:
+diff -ruN -x __pycache__ base-0121a87/proto_db/transactions.py clock/proto_db/transactions.py
+--- a/proto_db/transactions.py	2026-11-06 16:36:18.000000000 -0300
++++ b/proto_db/transactions.py	2026-11-06 17:03:59.305613808 -0300
+@@ -117,7 +117,7 @@
+ from .collections.hash_dictionaries import HashDictionary
+ from .collections.lists import List
+ from .collections.sets import CountedSet, Set
+-from .core.atom import _UNLOADED, Atom, AtomPointer, PersistenceContext
++from .core.atom import _UNLOADED, Atom, AtomPointer, PersistenceContext, _referenced, _second_chance
+ from .core.dbobject import DBObject, MutableObject
+ from .errors import (ProtoClosedError, ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoOutcomeUnknownError,
+                      ProtoReferenceError, ProtoTimeoutError, ProtoUnexpectedError, ProtoUserError,
+@@ -434,6 +434,7 @@
+         self.hits = 0
+         self.misses = 0
+         self.unloads = 0
++        self.saved = 0
+ 
+     def save(self, atom: Atom) -> AtomPointer:
+         """Persist ``atom`` (children first) and return its pointer."""
+@@ -451,7 +452,7 @@
+             else:
+                 self.misses += 1
+         if hit:
+-            self._cache.touch(ptr)
++            _referenced(atom)               # lock-free: the eviction gives it a second chance
+             return atom
+         stub = Atom._stub(self, ptr, type_name)
+         if atom is not None:
+@@ -473,7 +474,7 @@
+         if self._closed or not atom._cache_produced():
+             return
+         unloaded = 0
+-        for victim in self._cache.put_evicting(atom.atom_pointer, atom):
++        for victim in self._cache.put_evicting(atom.atom_pointer, atom, _second_chance):
+             if victim._unload():
+                 unloaded += 1
+         if self._closed:
+@@ -509,6 +510,7 @@
+             if self._closed:
+                 return
+             self._ident[ptr] = weakref.KeyedRef(twin, self._forget, ptr)
++            self.saved += 1
+         self._admit(twin)
+ 
+     def _unload_all(self) -> int:
+@@ -530,11 +532,15 @@
+ 
+     def stats(self) -> dict:
+         """``hits`` and ``misses`` of :meth:`load`, ``entries`` (loaded atoms resident) and
+-        ``capacity``, ``unloads`` and ``identity_map`` (objects served and still alive)."""
++        ``capacity``, ``loads`` (atoms loaded from the storage and admitted), ``saved`` (decoded
++        twins of saved atoms admitted), ``unloads`` and ``identity_map`` (objects served and still
++        alive).  ``unloads`` per ``loads`` over an interval is the thrash signal (D53 "Sizing")."""
+         stats = self._cache.stats()
+         with self._lock:
++            saved = self.saved
+             return {"hits": self.hits, "misses": self.misses, "entries": stats["entries"],
+-                    "capacity": stats["capacity"], "unloads": self.unloads, "identity_map": len(self._ident)}
++                    "capacity": stats["capacity"], "loads": max(0, stats["admissions"] - saved),
++                    "saved": saved, "unloads": self.unloads, "identity_map": len(self._ident)}
+ 
+ 
+ def _forget_dead(ident: dict, ref) -> None:
+@@ -1353,8 +1359,11 @@
+             -- about ``2 * log2(n)`` per point read in a collection of ``n`` entries, plus every
+             record a query returns; a larger working set costs reloads, never memory.  Each
+             resident atom costs its decoded state plus about 0.4 KB of bookkeeping (measured
+-            on CPython 3.14t, Task 8.3m).  ``0`` disables it (each transaction decodes what it
+-            reads).
++            on CPython 3.14t, Task 8.3m).  To tell whether it fits, compare two
++            :meth:`atom_cache_stats` snapshots taken around a stretch of reads: ``unloads``
++            divided by ``loads`` near 0 means the working set fits; near 1 means it does not
++            and reads are reloading (D53 "Sizing").  ``0`` disables it (each transaction decodes
++            what it reads).
+         query_cache_bytes: capacity, in estimated bytes, of the space's query result cache
+             (:attr:`query_cache`, D56), shared by its transactions and threads and keyed by
+             the pointers of what each query reads, so it is never stale.  ``0`` stores
+@@ -1408,8 +1417,10 @@
+ 
+     def atom_cache_stats(self) -> Optional[dict]:
+         """Counters of the shared decoded-atom cache (``hits``, ``misses``, ``entries``: loaded
+-        atoms resident, ``capacity``, ``unloads``: atoms returned to stubs, ``identity_map``:
+-        objects served and still alive), or ``None`` when it is disabled."""
++        atoms resident, ``capacity``, ``loads``: atoms loaded from the storage, ``saved``: decoded
++        twins of saved atoms, ``unloads``: atoms returned to stubs, ``identity_map``: objects
++        served and still alive), or ``None`` when it is disabled.  ``unloads`` per ``loads``
++        between two snapshots is the thrash signal (see ``atom_cache_entries``)."""
+         return None if self._atoms is None else self._atoms.stats()
+ 
+     @property

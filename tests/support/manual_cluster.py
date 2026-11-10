@@ -1,0 +1,364 @@
+"""Deterministic clusters for schedule tests: every message is held until the test delivers or
+drops it, and all nodes share one fake clock advanced by hand (Task 8.3d, D46).
+
+``Harness(names)`` starts one real :class:`~proto_db.cluster.coordinator.ClusterCoordinator`
+per name, each with a :class:`~tests.support.cluster.MemoryTier`: an acceptor log kept per
+node in a ``MemoryStorage`` "disk", so ``restart(name)`` keeps it (a crash with the disk
+intact) and ``restart(name, wipe=True)`` loses it.  Roots are fake records (no records ride
+with them); commits go through the real replicate path.
+
+* ``attempt(name, granters, informed=())``: ``name``'s ``acquire``; its requests reach
+  ``granters`` (whose replies come back) and ``informed`` (whose replies are lost);
+* ``replicate(name, lease, root, to, expire=False)``: the commit point, replicated to ``to``
+  only; ``expire`` advances the clock past the lease when no majority can answer;
+* ``release(name, lease, to)``; ``recover(name, responders)``: a recovery round answered
+  by ``responders``; ``base(name, lease, responders)``: the base a commit under ``lease``
+  would build on (the lease root when certain, else the recovered root).
+
+``Harness(names, records=True)`` gives every node a :class:`RecordTier` instead: each fake
+root then has a record that lives on the disks of the nodes that accepted it through a
+replication (``holds(name, root)``), served to peers by page requests, and a rejoin must
+copy it before the node acts as an acceptor (D46, ruling R50).
+"""
+import itertools
+import threading
+import time
+import uuid
+import weakref
+
+from proto_db.cluster.coordinator import ClusterCoordinator
+from proto_db.errors import ProtoDBError
+from proto_db.storage.format import FORMAT_VERSION, RootRecord
+from proto_db.storage.memory import MemoryStorage
+from tests.support.cluster import MemoryTier
+
+D = 10.0
+MARGIN = D * 2 / 3          # the drift margin of every harness node (the minimum, ruling R78b)
+GRACE = D + MARGIN          # the shortest startup grace a restarted node may use (ruling R51)
+_ids = itertools.count(1)
+
+
+_held = weakref.WeakKeyDictionary()       # disk (MemoryStorage) -> {(segment, offset)} of records it holds
+
+
+class RecordTier(MemoryTier):
+    """A :class:`MemoryTier` whose roots have records kept on the node's disk (see the module
+    docstring).  A root's record is one fake record at the root's pointer; the harness
+    registers it on the disks of the nodes that accepted the root by replication
+    (:meth:`Harness.replicate`), never on a node that only learnt the root otherwise."""
+
+    local_records = True
+
+    def __init__(self, storage, node_id):
+        super().__init__(storage, node_id)
+        self.disk = storage
+        self._fetcher = None
+
+    @property
+    def held(self) -> set:
+        """The ``(segment, offset)`` of the records on this node's disk."""
+        return _held.setdefault(self.disk, set())
+
+    def set_fetcher(self, fetcher) -> None:
+        self._fetcher = fetcher
+
+    def local_record(self, ptr):
+        return b"record" if (ptr.segment, ptr.offset) in self.held else None
+
+    def commit_ranges(self, root):
+        if root is None or (root.segment, root.offset) not in self.held:
+            return None
+        return [(root.segment, root.offset, root.offset + 1)]
+
+    def commit_records(self, ranges):
+        from proto_db.core.atom import AtomPointer
+        out = []
+        for segment, start, _ in ranges:
+            data = self.local_record(AtomPointer(segment, start))
+            if data is None and self._fetcher is not None:
+                data = self._fetcher(AtomPointer(segment, start))
+            if data is None:
+                return None
+            out.append([segment.bytes, start, data])
+        return out
+
+    def store_commit(self, records, root, label, ranges) -> None:
+        for raw, offset, _ in records:
+            self.held.add((uuid.UUID(bytes=raw), offset))
+
+    def remember_commit(self, records, root, label) -> None:
+        pass
+
+    def parent_root(self, record):
+        return None
+
+    def ensure_remote(self, needs, *, upload_copies=False):
+        return False                # no object store
+
+
+def rec(epoch: int) -> RootRecord:
+    """A fake root record at ``epoch`` with a pointer of its own."""
+    return RootRecord(FORMAT_VERSION, uuid.UUID(int=next(_ids)), 64, epoch)
+
+
+class FakeClock:
+    """A clock advanced by hand."""
+
+    def __init__(self):
+        self.t = 1000.0
+
+    def __call__(self):
+        return self.t
+
+
+class ManualNet:
+    """Holds every message until the test delivers (synchronously) or drops it."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.pending = []
+        self.handlers = {}
+
+    def transport(self):
+        net = self
+
+        class Manual:
+            def start(self, node_id, peers, handler):
+                net.handlers[node_id] = handler
+                self.node = node_id
+
+            def send(self, node_id, message):
+                with net.lock:
+                    net.pending.append((self.node, node_id, message))
+
+            def stop(self):
+                pass
+
+        return Manual()
+
+    def take(self, src, dst, kinds):
+        with self.lock:
+            hit = [m for m in self.pending if (src is None or m[0] == src) and (dst is None or m[1] in dst)
+                   and m[2]["type"] in kinds]
+            self.pending = [m for m in self.pending if m not in hit]
+        return hit
+
+    def deliver(self, src=None, dst=None, kinds=("request", "grant", "reject", "release")):
+        for _, to, msg in self.take(src, dst, kinds):
+            self.handlers[to](msg)
+            self.handlers[to].__self__.wait_idle(5.0)    # queued messages are handled by a worker
+
+    def drop(self, src=None, dst=None, kinds=("request", "grant", "reject", "release")):
+        self.take(src, dst, kinds)
+
+
+class Harness:
+    """Real coordinators over a :class:`ManualNet` and a :class:`FakeClock` (module docstring)."""
+
+    def __init__(self, names="abc", *, records=False, **coordinator_kw):
+        self.coordinator_kw = coordinator_kw        # overrides of the coordinators' settings
+        self.names = list(names)
+        self.tier_class = RecordTier if records else MemoryTier
+        self.net = ManualNet()
+        self.clock = FakeClock()
+        self.peers = [(n, "h", 0) for n in self.names]
+        self.disks = {n: MemoryStorage() for n in self.names}
+        self.nodes = {n: self._node(n, 0.0) for n in self.names}
+        self.retired = []
+        for n in self.names:                # empty acceptor logs: every node rejoins first
+            self.rejoin(n)
+
+    def _node(self, name, grace):
+        kw = dict(dict(lease_duration=D, drift_margin=MARGIN, request_timeout=0.5, startup_grace=grace,
+                       clock=self.clock, seed=1, persist_interval=60.0, persist_lag=60.0,
+                       voters=self.names),     # every member votes (these cases predate D54)
+                  **self.coordinator_kw)
+        node = ClusterCoordinator(name, self.peers, transport=self.net.transport(), **kw)
+        node.start()
+        node.attach(self.tier_class(self.disks[name], name))
+        return node
+
+    def restart(self, name, *, wipe=False, responders=None):
+        """Restart ``name`` with the shortest safe startup grace (:data:`GRACE`, one lease plus
+        the drift margin); ``wipe`` loses its disk, and the
+        node then rejoins with the answers of ``responders`` (default: every other node; an
+        empty set leaves it rejoining).  Before that rejoin the clock is advanced by
+        :data:`GRACE`, so every lease running at the wipe has ended and the restarted node
+        grants again; the rejoin itself no longer needs it (a ballot round, ruling R78a).  A
+        test that needs the wiped node during such a lease passes ``responders=()`` and calls
+        :meth:`rejoin` itself."""
+        old = self.nodes[name]
+        tier = old.tier
+        old.stop()
+        if tier is not None:
+            # A process restart ends the old process, whose OS locks die with it; in one process
+            # the old tier is closed before the new one opens the same disk (ruling R59).
+            tier.close()
+        self.retired.append(old)
+        if wipe:
+            self.disks[name] = MemoryStorage()
+        self.nodes[name] = self._node(name, GRACE)
+        if wipe and (responders is None or responders):
+            self.clock.t += GRACE
+            self.rejoin(name, responders)
+        return self.nodes[name]
+
+    def rejoin(self, name, responders=None, timeout=5.0, *, servers=None):
+        """Deliver ``name``'s rejoin queries to ``responders`` (default: every other node) and
+        their answers, and its record requests to ``servers`` (default: the responders) and
+        their replies, until it has rejoined; return True, or False after ``timeout``."""
+        responders = set(self.names) - {name} if responders is None else set(responders)
+        servers = responders if servers is None else set(servers)
+        node = self.nodes[name]
+        deadline = time.monotonic() + timeout
+        while node.stats()["rejoining"]:
+            if time.monotonic() > deadline:
+                return False
+            self.net.deliver(src=name, dst=responders, kinds=("query",))
+            self.net.deliver(src=name, dst=servers, kinds=("commit_query", "fetch"))
+            self.net.drop(src=name, kinds=("query", "commit_query", "fetch"))
+            self.net.deliver(src=None, dst={name}, kinds=("answer", "commit_info", "fetched"))
+            time.sleep(0.001)
+        return True
+
+    def holds(self, name, root) -> bool:
+        """True when ``name``'s disk holds the record of ``root`` (``Harness(records=True)``)."""
+        return (root.segment, root.offset) in self.nodes[name].tier.held
+
+    def close(self):
+        for node in list(self.nodes.values()) + self.retired:
+            node.stop()
+
+    def _run(self, fn, pump):
+        """Run ``fn`` in a thread, calling ``pump()`` until it returns; return its result or
+        the ProtoDB error it raised."""
+        out = {}
+
+        def run():
+            try:
+                out["value"] = fn()
+            except ProtoDBError as e:
+                out["error"] = e
+
+        t = threading.Thread(target=run)
+        t.start()
+        while t.is_alive():
+            pump()
+            time.sleep(0.001)
+        t.join()
+        pump()
+        return out.get("value", out.get("error"))
+
+    def attempt(self, name, granters, *, informed=(), timeout=5.0, deliver_cancels=True):
+        """Run ``name``'s acquire (see the module docstring); return the lease or the error."""
+        granters, informed = set(granters), set(informed)
+        others = set(self.names) - {name}
+        kinds = ("request", "release") if deliver_cancels else ("request",)
+
+        def pump():
+            self.net.deliver(src=name, dst=granters | informed, kinds=kinds)
+            self.net.drop(src=name, dst=others - granters - informed, kinds=kinds)
+            for peer in informed:
+                self.net.drop(src=peer, dst={name}, kinds=("grant", "reject"))
+            self.net.deliver(src=None, dst={name}, kinds=("grant", "reject"))
+
+        return self._run(lambda: self.nodes[name].acquire(timeout=timeout), pump)
+
+    def replicate(self, name, lease, root, to, *, expire=False):
+        """Replicate ``root`` under ``lease`` to ``to`` only; return the seconds or the error."""
+        to = set(to)
+        others = set(self.names) - {name}
+        state = {"sent": False, "before": self.nodes[name].stats()["replications"]}
+
+        def pump():
+            self.net.deliver(src=name, dst=to, kinds=("records", "replicate"))
+            self.net.drop(src=name, dst=others - to, kinds=("records", "replicate"))
+            self.net.deliver(src=None, dst={name}, kinds=("ack",))
+            # Expire only once this replication passed its validity check (counted after it).
+            if expire and not state["sent"] and self.nodes[name].stats()["replications"] > state["before"]:
+                state["sent"] = True
+                self.clock.t = max(self.clock.t, lease.valid_until + 0.001)
+
+        result = self._run(lambda: self.nodes[name].replicate(lease, root), pump)
+        if self.tier_class is RecordTier:
+            # The records ride with the replication: every node that accepted the root stores them.
+            for node in [name] + sorted(to):
+                if self.nodes[node].accepted_root()[1] == root:
+                    self.nodes[node].tier.held.add((root.segment, root.offset))
+        return result
+
+    def release(self, name, lease, to=()):
+        self.nodes[name].release(lease)
+        self.net.deliver(src=name, dst=set(to), kinds=("release",))
+        self.net.drop(src=name, kinds=("release",))
+
+    def recover(self, name, responders):
+        """A recovery round of ``name`` answered by ``responders``; ``(known, root, label)``."""
+        responders = set(responders)
+
+        def pump():
+            self.net.deliver(src=name, dst=responders, kinds=("query",))
+            self.net.drop(src=name, kinds=("query",))
+            self.net.deliver(src=None, dst={name}, kinds=("answer",))
+
+        return self._run(lambda: self.nodes[name].recover_root(), pump)
+
+    def base(self, name, lease, responders):
+        """``(root, label)`` a commit under ``lease`` builds on, from the product's own
+        :func:`~proto_db.transactions._lease_base`: the lease's root when certain, else the
+        higher of it (the phase-1 root) and the root a recovery round answered by
+        ``responders`` returns (re-review 2 of 8.3n, C1).  Raises ``AssertionError`` when the
+        lease is superseded or the commit guard refuses."""
+        from proto_db.transactions import _lease_base
+        node, responders = self.nodes[name], set(responders)
+
+        def pump():
+            self.net.deliver(src=name, dst=responders, kinds=("query",))
+            self.net.drop(src=name, kinds=("query",))
+            self.net.deliver(src=None, dst={name}, kinds=("answer",))
+
+        out = self._run(lambda: _lease_base(node, node.tier, lease), pump)
+        assert isinstance(out, tuple), f"no base under {lease}: {out!r}"
+        return out[0], out[1]
+
+    def own(self, name="a"):
+        """``name`` becomes the owner of a term and commits a root with everyone under its own
+        permission (D50); returns that root.  The ownership thread is real; the clock is moved
+        past every startup grace first."""
+        r0 = self.bootstrap(name)
+        self.clock.t += 2 * GRACE
+        node, net, others = self.nodes[name], self.net, set(self.names) - {name}
+
+        def pump():
+            net.deliver(src=name, dst=others, kinds=("request", "release"))
+            net.deliver(src=None, dst={name}, kinds=("grant", "reject"))
+        permission = self._run(lambda: node.permit(timeout=5), pump)
+        root = rec(r0.epoch + 1)
+        self.replicate(name, permission, root, others)
+        permission.outcome, permission.committed = "committed", (permission.term, root)
+        node.finish(permission)
+        net.deliver(src=name, dst=others, kinds=("done",))
+        return root
+
+    def permit_from(self, name, owner="a"):
+        """``name`` gets a permission from ``owner`` (its request and the permit delivered);
+        returns ``(permission, copy of the permit message)``."""
+        node, net, copies = self.nodes[name], self.net, []
+
+        def pump():
+            net.deliver(src=name, dst={owner}, kinds=("permit_req",))
+            for m in net.take(owner, {name}, ("permit",)):
+                copies.append(m)
+                net.handlers[name](m[2])
+        permission = self._run(lambda: node.permit(timeout=5), pump)
+        assert not isinstance(permission, Exception), permission
+        return permission, copies[0]
+
+    def bootstrap(self, name="a"):
+        """``name`` commits a first root with every node (each logs it); return it."""
+        others = set(self.names) - {name}
+        lease = self.attempt(name, others)
+        root = rec(1)
+        assert self.replicate(name, lease, root, others) is not None
+        self.release(name, lease, to=others)
+        return root

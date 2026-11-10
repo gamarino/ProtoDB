@@ -1,66 +1,113 @@
-ProtoDB Fundamental Concepts
-============================
+Concepts
+========
 
-This guide explains the core mental model behind ProtoDB so you can use it correctly and efficiently. We use simple analogies and highlight critical behaviors to avoid surprises.
+ProtoDB is an embedded, transactional, object-oriented database for Python. It is built on one idea,
+stated as the first design principle: **everything stored is immutable**. A modification creates a new
+version that shares what did not change with the old one, and becomes visible only when a new root is
+published. The rest of the design follows from that, and this page introduces the six concepts you need:
+values, atoms, collections, transactions, indexes and queries. The :doc:`design principles
+<design-principles>` are the rules every decision answers to; the :doc:`tutorials <tutorials/index>` use
+every concept on running code.
 
-1. The Core Idea: The World is Made of Immutable Atoms
-------------------------------------------------------
+Values
+------
 
-In ProtoDB, everything is an Atom: a self-contained, immutable piece of data.
+A value is anything ProtoDB can store: ``None``, ``bool``, ``int``, ``float``, ``Decimal``, ``str``,
+``bytes``, ``date``, ``time``, ``datetime`` (naive or aware), ``timedelta``, ``UUID``, ``tuple``, ``list``,
+``dict``, atoms, and handles on mutable cells (:class:`~proto_db.values.MutableObject`). Anything else is
+refused where you build it (``ProtoValidationError``), not when you commit. A stored ``list`` or ``dict``
+becomes a frozen copy that raises when mutated, because other versions share it.
 
-- Think of an Atom like a Git commit — once written, it never changes.
-- “Modifying” an object does not mutate it in place. Instead, a new Atom is created with the new content, and references are updated to point to it.
-- Immutability makes concurrency safer and enables copy-on-write semantics.
+All values are ordered by one **total order across types**, the same one used by collections (key order),
+indexes and queries (decision D2):
 
-2. Stable Identity: The AtomPointer
------------------------------------
+* the ranks, lowest first, are the absent-key marker ``MISSING``, ``None``, ``bool``, number, ``str``,
+  ``bytes``, ``date``, ``time``, ``datetime`` (naive and aware are separate ranks), ``timedelta``, ``UUID``,
+  ``tuple``, atoms and, last, ``MutableObject`` handles;
+* ``int``, ``float`` and ``Decimal`` share one rank and compare exactly, without converting to ``float``:
+  ``1 == 1.0 == Decimal(1)`` and ``10**16 + 1 != 10**16``;
+* ``bool`` has its own rank: ``True`` is not the number 1;
+* ``NaN`` is accepted as a stored value but refused as a key, because it breaks a total order.
 
-Python’s ``id()`` is process-local and not stable across time or machines. ProtoDB needs a durable identity to support hashing, equality, and indexing that remain consistent across sessions.
+Because there is a single comparator, an index and a full scan can never disagree about which of two values
+is smaller or whether they are equal. That is the foundation of the invariant on the :doc:`query planner
+<query-planner>` page.
 
-- AtomPointer is the stable identity for an Atom: ``(transaction_id, offset)``.
-- It acts like a birth certificate. When an Atom is persisted, it gets an AtomPointer.
-- Stable identity underpins Atom’s ``hash()`` and equality (``==``) semantics.
+Atoms
+-----
 
-3. The Atom.hash() Contract and its Critical Side-Effect
---------------------------------------------------------
+An **atom** is a persistent immutable object: something with a stable identity (an ``oid``) that is saved
+once and addressed by an ``AtomPointer`` (a segment and an offset). A pointer names one content forever; a
+changed object has a different pointer. Collections, index structures, records (``DBObject``) and the
+database roots are all atoms.
 
-- The stable hash of an Atom is derived from its AtomPointer.
-- To obtain an AtomPointer, an Atom must be persisted (saved to storage).
-- Therefore, calling ``hash(my_new_atom)`` will trigger a write to storage so the Atom gains an AtomPointer.
+Atoms are saved children first, exactly once, when a transaction commits, and they are loaded lazily: an atom
+read back by pointer is a stub until you first touch an attribute, and the loading is thread-safe. A decoded
+atom is shared, by pointer, by every transaction of the space (:doc:`objects-across-transactions`).
 
-Why this is necessary:
+Equality of atoms is identity by ``oid``, never ``id()`` or a storage pointer. Two versions of a record with
+the same content are different atoms; ``content_equals`` compares content when you want that.
 
-- Stable identity is essential for data structures, deduplication, and secondary indexes.
+Collections
+-----------
 
-Why it can be problematic:
+The collections are persistent trees whose every update returns a new collection sharing its unchanged
+subtrees (path copying):
 
-- Hashing a temporary Atom you don’t intend to persist will cause unnecessary writes and WAL growth. If that Atom never becomes reachable from a root, it still consumed I/O during the transaction.
+========================== =================================================================================
+``List``                   positional AVL tree; ``get_at``, ``set_at``, ``insert_at``, ``remove_at``,
+                           ``append_first`` / ``append_last``, ``extend``, ``slice``
+``Dictionary``             AVL tree ordered by the key's order; ``get_at``, ``set_at``, ``remove_at``, ``has``,
+                           ``keys``, ``values``, ``items``
+``HashDictionary``         AVL tree keyed by a process-stable hash of any canonical key, with collision buckets
+``Set``                    members keyed by hash; ``add``, ``remove``, ``has``, ``union``, ``intersection``
+``CountedSet``             a multiset with ``count_of`` and ``total_count``
+``RepeatedKeysDictionary`` a multimap: several records under one key
+========================== =================================================================================
 
-4. The Solution: Ephemeral vs. Persistent State in Collections
---------------------------------------------------------------
+Every collection is an ``IndexedCollection``: it can carry indexes, none by default. There is no
+non-indexable collection, so a query can always consult whatever indexes the collection has.
 
-ProtoDB collections (notably ``Set`` and ``CountedSet``) embrace a dual-state model to avoid the ``hash()`` pitfall:
+Transactions
+------------
 
-- ``_new_objects``: a staging area (draft space) for newly added elements during a transaction. Lives only in memory.
-- ``content``: the persisted elements that are part of the committed object graph.
+An ``ObjectSpace`` owns a storage. A ``Database`` is a named set of roots inside it. A ``Transaction`` is an
+explicit object: a snapshot of one database plus pending writes. It is not bound to a thread, several can be
+open in one thread, and one can be handed from thread to thread. A commit validates what *that* transaction
+read and wrote and nothing else, and it either publishes a new database version or raises.
 
-Only when a collection is part of the final committed graph do staged objects get promoted from ``_new_objects`` into ``content``. This allows you to:
+Every committed version stays readable forever. ``Database.history()`` lists them and ``snapshot_at`` opens
+one. The rules of conflict detection, merging and retry are the :doc:`concurrency model <concurrency-model>`.
 
-- Use Sets for intermediate results without writing anything if you do not persist the Set.
-- Avoid accidental persistence from hashing new Atoms while doing temporary calculations.
+Indexes
+-------
 
-5. Transactions: Your Isolated Sandbox
---------------------------------------
+An index is a persistent structure inside a collection that answers "which elements have this key?" without
+reading every element. ProtoDB has three kinds: equality, range and vector. New kinds are added by
+subclassing ``Index``. Every mutator of every collection updates its indexes in the same step as the
+structure, so no code path returns a collection with a stale index (:doc:`indexing-framework`).
 
-A transaction is your safe, isolated workspace.
+Queries
+-------
 
-Lifecycle:
+A query is built with the LINQ front end (``from_collection(...).where(...)``) or directly with expression
+terms, and turned into a physical plan by one planner shared by every front end. The planner picks the
+cheapest access path among the collection's indexes, keeps every condition it did not use as a residual
+filter, and never drops a condition. ``explain()`` shows exactly the plan that runs (:doc:`query-planner`).
 
-1. ``tr = db.new_transaction()``
-2. Perform operations (create objects, update roots, query)
-3. ``tr.commit()`` applies your changes atomically (or ``tr.abort()`` discards them)
+How the concepts fit
+--------------------
 
-Notes:
+.. code-block:: text
 
-- Transactions are snapshot-based (copy-on-write). Your changes are invisible to others until commit.
-- Only objects reachable from updated roots (and modified mutables) are persisted. Unreachable objects created during the transaction are discarded at commit time.
+   ObjectSpace --- storage (memory | files | cloud | cluster)
+      |
+      +-- Database "shop" --- versions 0, 1, 2 ... (each an atom pointing at the one before)
+             |
+             +-- roots: "orders" -> Dictionary --- indexes: by_status, by_amount
+             |          "config" -> DBObject
+             +-- mutable cells: "customer:acme" -> DBObject
+
+A commit saves the new atoms (the changed leaf-to-root paths of every collection and index it touched),
+makes them durable, and then publishes a new root that points at the new database version. Readers that
+started before still hold the old root, which still describes a complete database.

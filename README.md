@@ -3,13 +3,21 @@
 [![PyPI version](https://img.shields.io/pypi/v/proto_db.svg)](https://pypi.org/project/proto_db/)
 [![Python Version](https://img.shields.io/pypi/pyversions/proto_db.svg)](https://pypi.org/project/proto_db/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Project Status](https://img.shields.io/badge/status-0.1%20alpha-orange.svg)](#status)
+[![Project Status](https://img.shields.io/badge/status-2.0.0.dev0-orange.svg)](#status)
 
-> Status: 0.1 alpha (2025-09-16). Early preview — APIs may change before the first stable release. See CHANGELOG.md for details.
+ProtoDB is an embedded, transactional, object-oriented database for Python. It stores immutable,
+persistent collections with secondary indexes, runs queries through an index-aware planner, and
+commits serializable transactions per root, all in-process, without a separate server.
 
-ProtoDB is an embedded, transactional, object‑oriented database for Python. It provides immutable collections, secondary indexes, and a simple, index‑aware query planner — all running in‑process without a separate server.
+### Status
 
-This README reflects the current state of the codebase (2025‑09‑19). For deeper docs, see the Sphinx site under docs/ (Concepts and Cookbook included).
+`2.0.0.dev0`: the 2.0 rebuild, unreleased (design: `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`,
+decisions: `docs/decisions.md`). The 0.1 implementation has been removed; the API below is the 2.0 API.
+Everything this page lists is implemented and covered by the test suite, which runs on CPython 3.14t
+(free-threaded) and with the GIL. The cluster is new: it is documented, tested and measured in this
+repository and has no production history. Open defects are listed where they apply (see the cluster item
+under Features). The performance suite has run (results by workload in `docs/source/performance.rst`);
+the API may still change before 2.0.0 is released.
 
 ### A note on names
 
@@ -23,251 +31,215 @@ One project, two spellings, and they are not interchangeable:
 The package keeps its underscore spelling because renaming it would break every
 importer; everything else says ProtoDB. Earlier documentation called the project
 *ProtoBase*, and some checkouts still live in a directory by that name — it is the
-same project. The one place the old spelling survives on purpose is
-`ProtoBaseException`, the base of the exception hierarchy, which is public API.
+same project. The old spelling survives in `ProtoBaseException`, a deprecated alias of
+`ProtoDBError` (the base of the exception hierarchy) that is removed in 2.1.
 
-## Why ProtoDB?
+## Design principles
 
-- Lightweight, in‑process engine: no external server to deploy or operate.
-- Transactional object model: copy‑on‑write with safe concurrent commits and rebase.
-- Pythonic collections: List, Dictionary, Set, CountedSet.
-- Secondary indexes with an optimizer that can use them transparently.
-- Clear docs and a growing test suite (including concurrency and property‑based tests).
+ProtoDB is built from a small set of principles. Every design decision cites them, and
+a change that contradicts one is treated as conceptual debt, resolved before it is built.
+If you read only one thing before the code, read
+[docs/design-principles.md](docs/design-principles.md).
 
-## Key Features (Implemented)
+1. **Everything is immutable.** A pointer names one content forever. History is never lost,
+   caches keyed by pointer never go stale, and snapshots are stable.
+2. **A transaction is an explicit object.** It is not bound to a thread, and its commit
+   concerns only its own reads and writes.
+3. **Each node owns its work.** Commits are built where they happen, local contention is
+   resolved first, and replication is bounded.
+4. **Contention is resolved among the processes, never by the storage.** The storage only
+   fences, and the object store is written after the commit.
+5. **Safety never depends on time.** Timers drive liveness only, and delays can cause only
+   conservative failures.
+6. **Known techniques, honestly measured.** Established mechanisms are adopted and cited, and
+   every performance claim carries its measurement.
+7. **Correct before fast.**
 
-- Transactions and persistence over multiple storage backends:
-  - MemoryStorage (in‑memory)
-  - StandaloneFileStorage (file‑based with WAL)
-- Immutable secondary indexes on collections that support indexing
-- Query system:
-  - WherePlan with Expression/Term DSL
-  - IndexedQueryPlan with basic index‑aware optimization
-  - AndMerge and GroupByPlan utilities for composition and aggregation
-  - explain() to inspect plans
-- Collections: Dictionary, RepeatedKeysDictionary, List (AVL), Set, CountedSet
-- Ephemeral vs. persistent behavior in Set/CountedSet to avoid unintended writes when hashing Atoms
-- LINQ‑like query API (proto_db.linq) with lazy pipelines, grouping/ordering, and explain(); integrates with collection indexes when applicable
-- Parallel hybrid executor with work‑stealing (HybridExecutor) to overlap I/O and CPU tasks across pipelines and storage operations
-- Vector similarity search components: exact index and optional HNSW ANN via hnswlib (install with `pip install "proto_db[vectors]"`)
+## Features
+
+- **Transactions**: snapshot isolation, read sets checked at commit (a conflict raises
+  `ProtoConflictError`; `Database.run` retries), per-key merges of collections written without being
+  read, named mutable cells (`MutableObject`), a version history per database.
+- **Values**: one value model with a total order across types (`1 == 1.0 == Decimal(1)`, `True != 1`),
+  used identically by collections, indexes and queries.
+- **Collections**: `List`, `Dictionary` (key-ordered), `HashDictionary`, `RepeatedKeysDictionary`,
+  `Set`, `CountedSet` and `DBObject` records, all immutable and persistent (every change returns a new
+  version; unchanged parts are shared).
+- **Indexes on every collection**: `EqualityIndex`, `RangeIndex`, `VectorIndex` (exact, IVF-Flat, or
+  HNSW when `hnswlib` is installed), and an `Index` base class for custom indexes. Indexes are
+  persisted with the collection and maintained by every mutator.
+- **Queries**: a LINQ front end (`from_collection`, `F`) and expression terms over physical plans; the
+  planner picks indexes by cost, never drops a predicate, and `explain()` shows the plan that runs.
+  Python lambdas are allowed and appear as an explicit `PythonFilter` node.
+- **Storage**: `MemoryStorage`; `FileStorage` (append-only segments, CRC-checked records, `fsync` per
+  commit by default); `CloudStorage` over S3 or Google Cloud Storage; `TieredStorage` and a cluster
+  coordinator for several writer processes. The cluster is new, with no production history, and its
+  guarantees assume that the storage devices honour `fsync`:
+  - *Power loss with the disks intact* (D50, Task 8.3f): a node accepts a root with ONE synced
+    acceptor-log entry that also holds the root's records, in every durability mode, so an acknowledged
+    commit survives power loss of any set of nodes.
+  - *Lease and ballots* (D46, Task 8.3e): every node syncs its acceptor log before replying, in every
+    durability mode, so across process crashes and power losses no term is granted twice, provided at
+    most one acceptor log is lost at a time (R48).
+  - *Loss of disks* (D54, Task 8.3g): replication is bounded. Three voters (configurable) order roots, the
+    other members are learners, and a commit's records are synced on the committer plus `f` data replicas
+    (one, with three voters), not on every member; the others keep them only in a bounded cache and fetch on
+    demand what they miss. Losing `f + 1` voters stops writes while learners keep serving reads; losing every
+    durable copy of a commit's records (`f + 1` disks) before the persister uploads them to the object store
+    loses that data, as no re-replication runs.
+  - *Fairness*: two to four contending writer processes take the lease in turn; at eight, and for hot-key
+    read-modify-write transactions, fairness is not yet guaranteed (open defect D-LIVE-2).
+  - *Reads*: a local read is a committed snapshot that may lag; a linearizable read is a barrier commit,
+    which adds a permanent version per read (see the cluster tutorial).
+- **Free-threading**: tested on CPython 3.14t (GIL disabled) and with the GIL; `parallel_scan` and
+  `parallel_filter` scale on free-threaded builds.
+- **Interop**: export to Apache Arrow and Parquet (`to_arrow`, `to_parquet`).
 
 ## Installation
 
-Requirements: Python 3.11+
-
-From PyPI:
+Requirements: Python 3.11+.
 
 ```bash
 pip install proto_db
 ```
 
-Optional extras (declared in pyproject.toml):
+Optional extras:
 
-- Parquet/Arrow integration (future/optional):
-  ```bash
-  pip install "proto_db[parquet]"
-  ```
-- Vector helpers (experimental placeholder):
-  ```bash
-  pip install "proto_db[vectors]"
-  ```
-- Development tooling (tests, docs, build):
-  ```bash
-  pip install "proto_db[dev]"
-  ```
+| Extra | Installs | Needed for |
+|---|---|---|
+| `vectors` | numpy | `VectorIndex` |
+| `hnsw` | numpy, hnswlib | the HNSW vector backend (note: hnswlib re-enables the GIL on 3.14t) |
+| `parquet` | pyarrow | `to_arrow`, `to_parquet`, `scan_parquet` |
+| `s3` / `gcs` | boto3 / google-cloud-storage | `CloudStorage` with `S3ObjectStore` / `GCSObjectStore` |
+| `dev` | pytest, hypothesis, sphinx, build, twine, ... | development |
 
-These extras are optional; core features do not require third‑party packages.
+`import proto_db` imports none of them and starts no thread; each optional package is imported when
+the feature that needs it is first used.
 
-## Quickstart
-
-Create a database, store a collection as a root, and read it back:
+## Quick start
 
 ```python
-from proto_db.db_access import ObjectSpace
-from proto_db.memory_storage import MemoryStorage
+from proto_db import MemoryStorage, ObjectSpace
 
-# Create an in‑memory ObjectSpace and a database
 space = ObjectSpace(MemoryStorage())
-db = space.new_database("ExampleDB")
+db = space.new_database("example")
 
-# Write
+# A transaction commits when the block ends without an exception.
+with db.new_transaction() as tr:
+    numbers = tr.new_list().append_last(1).append_last(2).append_last(3)
+    tr.set_root_object("numbers", numbers)
+    tr.set_root_object("ada", tr.new_object(name="Ada Lovelace", born=1815))
+
 tr = db.new_transaction()
-nums = tr.new_list().append_last(1).append_last(2).append_last(3)
-tr.set_root_object("numbers", nums)
-tr.commit()
-
-# Read
-tr2 = db.new_transaction()
-loaded = tr2.get_root_object("numbers")
-print(list(loaded.as_iterable()))  # [1, 2, 3]
-tr2.commit()
+print(list(tr.get_root_object("numbers")))   # [1, 2, 3]
+print(tr.get_root_object("ada").name)        # Ada Lovelace
+tr.abort()
 space.close()
 ```
 
-### Indexing and Querying
+Use `FileStorage("/path/to/space")` instead of `MemoryStorage()` to persist the space;
+`durability="fsync"` (the default), `"flush"` or `"none"` selects what a returned commit survives.
 
-Add an index to a list and run a filter that the optimizer can use:
+## Indexes and queries
 
 ```python
-from proto_db.db_access import ObjectSpace
-from proto_db.memory_storage import MemoryStorage
-from proto_db.queries import WherePlan, Expression
+from proto_db import EqualityIndex, F, MemoryStorage, ObjectSpace, RangeIndex, from_collection
 
-# Minimal setup (separate from the previous snippet)
 space = ObjectSpace(MemoryStorage())
-db = space.new_database("ExampleDB")
+db = space.new_database("people")
+with db.new_transaction() as tr:
+    people = tr.new_dictionary() \
+        .add_index(EqualityIndex("by_city", "city")) \
+        .add_index(RangeIndex("by_age", "age"))
+    for key, city, age in [("ann", "Paris", 25), ("bob", "Rome", 40), ("cid", "Paris", 33)]:
+        people = people.set_at(key, tr.new_object(name=key, city=city, age=age))
+    tr.set_root_object("people", people)
 
 tr = db.new_transaction()
-people = tr.new_list()
-people = people.append_last({"id": 1, "city": "NY"})
-people = people.append_last({"id": 2, "city": "SF"})
-
-people = people.add_index("city")  # enable secondary index
-
-plan = WherePlan(
-    based_on=people.as_query_plan(),
-    filter=Expression(field="city", op="==", value="NY"),
-    transaction=tr,
-)
-print(plan.explain())  # should indicate an IndexedSearchPlan
-results = list(plan.execute())
+people = tr.get_root_object("people")
+query = from_collection(people).where((F.city == "Paris") & (F.age > 30))
+print(query.explain()["plan"])            # IndexLookup or IndexRange, chosen by cost
+print([p.name for p in query.to_list()])  # ['cid']
+tr.abort()
+space.close()
 ```
 
-See also the runnable example at examples/collection_indexing_example.py.
-
-### LINQ-like Queries (Phase 1)
-
-ProtoDB includes a lazy, composable LINQ-like API that works over Python iterables as well as ProtoDB collections. It can optimize when the source is an indexed collection.
-
-Example:
+The LINQ front end works over plain iterables too:
 
 ```python
-from proto_db.linq import from_collection, F
+from proto_db import Agg, F, from_collection
 
-# Over a plain Python list
-people = [
-    {"name": "Alice", "age": 30},
-    {"name": "Bob", "age": 22},
-    {"name": "Carol", "age": 27},
-]
-
-q = (
-    from_collection(people)
-    .where(F.age >= 25)
-    .order_by(F.age.desc())
-    .select({"name": F.name, "age": F.age})
-    .take(2)
-)
-print(list(q))  # [{'name': 'Alice', 'age': 30}, {'name': 'Carol', 'age': 27}]
+orders = [{"customer": 1, "total": 10.0}, {"customer": 2, "total": 7.5}, {"customer": 1, "total": 2.5}]
+totals = (from_collection(orders)
+          .group_by(F.customer, {"customer": Agg.key(), "spent": Agg.sum(F.total)})
+          .order_by(F.spent, descending=True))
+print(totals.to_list())  # [{'customer': 1, 'spent': 12.5}, {'customer': 2, 'spent': 7.5}]
 ```
 
-See docs for using the same API over ProtoDB collections and how indexes are used automatically when available.
-
-### Vector similarity (ANN)
-
-ProtoDB provides a small vector search module with an exact index and an optional HNSW ANN index based on hnswlib. Install extras with:
-
-```bash
-pip install "proto_db[vectors]"
-```
-
-Minimal usage:
+## Concurrency
 
 ```python
-from proto_db.vector_index import HNSWVectorIndex, ExactVectorIndex
+import threading
+from proto_db import MemoryStorage, ObjectSpace
 
-# Build an index (HNSW requires hnswlib + numpy; falls back to exact when unavailable)
-idx = HNSWVectorIndex(metric="cosine", M=16, efConstruction=200, efSearch=64)
-idx.build(vectors=[[0.1, 0.2], [0.0, 0.9], [0.4, 0.4]], ids=["a", "b", "c"])  # toy example
+space = ObjectSpace(MemoryStorage())
+db = space.new_database("counters")
+with db.new_transaction() as tr:
+    tr.set_root_object("hits", 0)
 
-# k-NN query
-neighbors = idx.search(query=[0.1, 0.25], k=2)
-print(neighbors)  # [(id, score), ...]
+def increment(tr):
+    tr.set_root_object("hits", tr.get_root_object("hits") + 1)
+
+# A read-modify-write that loses the race raises ProtoConflictError; run() retries it.
+threads = [threading.Thread(target=lambda: [db.run(increment, retries=100) for _ in range(50)])
+           for _ in range(4)]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
+
+tr = db.new_transaction()
+print(tr.get_root_object("hits"))  # 200
+tr.abort()
+space.close()
 ```
-
-See examples/vector_ann_benchmark.py and docs/performance.md for benchmarks and configuration tips.
-
-## Documentation
-
-Sphinx documentation lives under docs/ and includes:
-
-- Concepts guide: docs/source/concepts.(md|rst)
-- Cookbook recipes: docs/source/cookbook.(md|rst)
-- LINQ-like API: docs/source/api/linq.rst
-- Vector API: docs/source/api/vectors.rst
-- Performance notes: docs/performance.md
-- API reference (autodoc) and additional guides listed in docs/source/index.rst
-
-Build locally:
-
-```bash
-cd docs && make html
-```
-
-Open docs/_build/html/index.html in your browser.
-
-## Testing
-
-Run the full test suite:
-
-```bash
-python -m unittest discover proto_db/tests
-```
-
-Run a specific test module:
-
-```bash
-python -m unittest proto_db.tests.test_db_access_with_standalone_file_storage
-```
-
-The suite includes concurrency stress tests, property‑based tests (Hypothesis, optional), and integration round‑trip tests.
 
 ## Examples
 
-- examples/collection_indexing_example.py — show indexing and query speedup on a simple dataset.
+Runnable, self-checking scripts live in `examples/` (see `examples/README.md`): getting started,
+file storage, indexed queries with `explain()`, LINQ queries, transactions under concurrency, and
+vector search. Each one runs in the test suite, as do the Python snippets of this README and every code
+block of the tutorials.
 
-## Compatibility
+## Documentation
 
-- CPython 3.11+ supported.
-- Core features have no mandatory third‑party dependencies.
+The Sphinx site is under `docs/source` (build it with `python -m sphinx -W -b html docs/source docs/build/html`):
 
-## Attribute Access Style
+- **Tutorials**, each executed by the test suite: getting started, modelling data, indexing and querying,
+  concurrency and retries, vector search, writing a custom index, operations (durability, inspection,
+  backup), an ERP example ("as of" queries, an audit with no audit table, stable paginated reports), a CAD
+  example (reusing decoded objects across transactions) and a cluster tutorial (local against linearizable
+  reads).
+- **Design**: concepts, architecture, the concurrency and isolation model, the index framework, the query
+  planner, durability and recovery, objects across transactions, the storage format.
+- **Reference**: the API (generated from the docstrings of the `proto_db` package, whose module docstring
+  lists the public names) and the performance results by workload profile.
+- Design specification: `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; decision log:
+  `docs/decisions.md`; principles: `docs/design-principles.md`.
 
-- Prefer direct attribute access with dot notation: obj.field
-- For dynamic attribute names or explicit fallbacks, use getattr(obj, name, default)
-- For DBObject instances:
-  - Access attributes with dot notation (obj.field) — missing attributes return None when accessed
-  - To test if an attribute is defined without triggering errors, use obj.has_defined_attr("field")
-  - For dynamic names, use getattr(obj, name, None) to receive None when missing
-- Do not change or replace domain collection APIs such as get_at/set_at/remove_at, insert_at, add, has, build, etc.
-- Keep dictionary-style key access (obj["key"]) for mappings; do not replace with dot notation.
+The 0.1 pages are kept for reference in `docs/legacy/`.
+
+## Testing
+
+```bash
+pip install -e ".[dev]"
+python -m pytest            # runs tests/ (pytest's testpaths)
+```
+
+The suite has unit, contract, property-based (Hypothesis), integration, crash (fault injection
+and SIGKILL), concurrency and static-check layers. The primary target is the free-threaded build:
+`python3.14t -m pytest`, and once more with `-X gil=1`.
 
 ## License
 
 MIT License. See LICENSE for details.
-
-
-## Root locking and atomic root updates
-
-ProtoDB coordinates concurrent root updates via a storage‑provided context manager. Use this pattern when
-performing low‑level operations that update the space root directly (regular transactions manage this internally):
-
-```python
-from proto_db.file_block_provider import FileBlockProvider
-from proto_db.standalone_file_storage import StandaloneFileStorage
-
-storage = StandaloneFileStorage(FileBlockProvider('/path/to/db'))
-with storage.root_context_manager():
-    ptr = storage.read_current_root()  # optional read under lock
-    # compute new_ptr ...
-    storage.set_current_root(new_ptr)
-```
-
-Notes:
-- StandaloneFileStorage delegates locking to FileBlockProvider which uses an OS‑level lock and atomic replace (tmp+fsync+rename+fsync dir).
-- ClusterFileStorage first obtains a distributed majority (including self for single‑node clusters) and then also
-  acquires the provider’s local lock for filesystem exclusion.
-- Under heavy contention, operations may raise ProtoLockingException; callers can retry. You can bound executor waits via
-  environment variables STORAGE_PUSH_TIMEOUT_SEC and STORAGE_LOAD_TIMEOUT_SEC.
-
-See docs/root_locking.rst (or the generated HTML docs under docs/build/html) for details and examples.

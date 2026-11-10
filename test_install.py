@@ -29,34 +29,23 @@ def main():
 
         # Create a test script
         test_script = """
+import threading
+
 import proto_db
-from proto_db.memory_storage import MemoryStorage
-from proto_db.db_access import ObjectSpace, Database
+from proto_db import MemoryStorage, ObjectSpace
 
-# Create a storage provider
-storage = MemoryStorage()
+assert threading.active_count() == 1, "importing proto_db must not start threads"
+space = ObjectSpace(MemoryStorage())
+database = space.new_database('TestDatabase')
+with database.new_transaction() as transaction:
+    transaction.set_root_object('test_key', 'test_value')
 
-# Create an object space with the storage provider
-object_space = ObjectSpace(storage=storage)
-
-# Create a new database
-database = object_space.new_database('TestDatabase')
-
-# Create a new transaction
 transaction = database.new_transaction()
-
-# Set a root object
-transaction.set_root_object('test_key', 'test_value')
-
-# Commit the transaction
-transaction.commit()
-
-# Create a new transaction to retrieve the value
-transaction2 = database.new_transaction()
-value = transaction2.get_root_object('test_key')
-print(f"Retrieved value: {value}")
-
-# Test successful if we get here without errors
+value = transaction.get_root_object('test_key')
+transaction.abort()
+space.close()
+assert value == 'test_value', value
+print(f"proto_db {proto_db.__version__}: retrieved value: {value}")
 print("Installation test successful!")
 """
         with open(os.path.join(temp_dir, "test_script.py"), "w") as f:

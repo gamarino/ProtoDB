@@ -12,16 +12,16 @@ sys.path.insert(0, os.path.abspath('../..'))
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'ProtoDB'
-copyright = '2025, ProtoDB Team'
-author = 'ProtoDB Team'
+copyright = '2026, Gustavo Marino'
+author = 'Gustavo Marino'
 # Try to read version from pyproject.toml; fallback to semantic string
 try:
     import tomllib  # Python 3.11+
     with open(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../pyproject.toml')), 'rb') as _f:
         _data = tomllib.load(_f)
-        release = _data.get('project', {}).get('version', '0.1.0')
+        release = _data.get('project', {}).get('version', '2.0.0')
 except Exception:
-    release = '0.1.0'
+    release = '2.0.0'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -60,7 +60,7 @@ try:
 except Exception:  # pragma: no cover
     html_theme = 'alabaster'
 
-html_static_path = ['_static']
+html_static_path = []
 
 # -- Extension configuration -------------------------------------------------
 # Make autodoc robust when optional deps are missing
@@ -68,7 +68,8 @@ html_static_path = ['_static']
 autodoc_mock_imports = [
     'pyarrow', 'pyarrow.parquet', 'pyarrow.dataset',
     'numpy', 'sklearn', 'sklearn.neighbors',
-    'boto3', 'botocore', 'botocore.client'
+    'boto3', 'botocore', 'botocore.client',
+    'google', 'google.cloud', 'google.cloud.storage', 'hnswlib',
 ]
 
 autodoc_member_order = 'bysource'
@@ -87,3 +88,20 @@ napoleon_use_rtype = True
 napoleon_preprocess_types = False
 napoleon_type_aliases = None
 napoleon_attr_annotations = True
+
+
+# -- Docstring hygiene -------------------------------------------------------------------------
+# Two module docstrings in proto_db (the cluster coordinator's protocol notes and the Arrow bridge's
+# mapping table) are plain text, not reStructuredText: parsed as RST they raise errors.  They are shown
+# as literal blocks, whole, instead.  This hook is temporary: ruling R128 fixes those two docstrings
+# and then removes it.
+_LITERAL_MODULE_DOCSTRINGS = {"proto_db.cluster.coordinator", "proto_db.interop.arrow"}
+
+
+def _literal_module_docstring(app, what, name, obj, options, lines):
+    if what == "module" and name in _LITERAL_MODULE_DOCSTRINGS:
+        lines[:] = ["::", ""] + ["   " + line for line in lines]
+
+
+def setup(app):
+    app.connect("autodoc-process-docstring", _literal_module_docstring)

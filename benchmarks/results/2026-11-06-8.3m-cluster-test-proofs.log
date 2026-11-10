@@ -1,0 +1,248 @@
+# Cluster test proofs, Task 8.3m fix round 2 (ruling R114 N1, N3). DEV12, CPython 3.14.6t, each run under systemd-run MemoryMax=4G MemorySwapMax=0.
+# Tests: test_cluster_persistence.py (steady state, sequential 30 x 1 and concurrent 10 x 3) and test_cluster_permit_fairness.py (hot key).
+# 'm' = critical-section cache misses after warmed bases, 'f' = record fetches after warmed bases.
+#
+# 1. Bound measurement for the concurrent schedule (before the bounds were set; 20 runs per GIL mode):
+#    gil0 misses: 0 0 0 1 1 1 1 1 1 1 2 2 2 2 2 2 3 4 4 5 
+#    gil1 misses: 2 4 4 4 5 6 6 7 7 7 7 8 9 9 9 10 10 10 10 11 
+#    planted (warming observed, nothing stored), 3 runs per mode: 66-98 misses, 177-207 fetches; bounds set to 24 each.
+#
+# 2. Unplanted proof, 40 runs per GIL mode at 236a228 + the tests of this commit (an earlier attempt was stopped after 5 runs:
+#    run 1 with the GIL on failed in setup, two warm-up commits ended unknown and the warm-up had no tokens; fixed, then rerun):
+start 2026-11-06T21:56:32-03:00 SwapFree:         106912 kB HEAD 236a228 + working-tree tests
+run 1 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 1 m 1 f (1 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [74, 72] ratio 0.97|HOT KEY 3 members x 2 threads, 2 s: commits [49, 49, 46] ratio 0.94| 4 passed, 13 deselected in 6.50s
+run 1 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 9 m 9 f (9 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [55, 53] ratio 0.96|HOT KEY 3 members x 2 threads, 2 s: commits [32, 28, 30] ratio 0.88| 4 passed, 13 deselected in 7.38s
+run 2 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 3 m 3 f (3 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [70, 72] ratio 0.97|HOT KEY 3 members x 2 threads, 2 s: commits [42, 41, 41] ratio 0.98| 4 passed, 13 deselected in 6.48s
+run 2 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 8 m 8 f (8 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [54, 55] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [35, 34, 33] ratio 0.94| 4 passed, 13 deselected in 7.19s
+run 3 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [67, 69] ratio 0.97|HOT KEY 3 members x 2 threads, 2 s: commits [37, 36, 34] ratio 0.92| 4 passed, 13 deselected in 6.41s
+run 3 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 11 m 11 f (11 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [57, 57] ratio 1.00|HOT KEY 3 members x 2 threads, 2 s: commits [28, 30, 32] ratio 0.88| 4 passed, 13 deselected in 7.25s
+run 4 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 1 m 1 f (1 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [66, 69] ratio 0.96|HOT KEY 3 members x 2 threads, 2 s: commits [43, 43, 43] ratio 1.00| 4 passed, 13 deselected in 6.65s
+run 4 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 4 m 4 f (4 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [58, 54] ratio 0.93|HOT KEY 3 members x 2 threads, 2 s: commits [30, 30, 29] ratio 0.97| 4 passed, 13 deselected in 7.21s
+run 5 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 1 m 1 f (1 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [72, 74] ratio 0.97|HOT KEY 3 members x 2 threads, 2 s: commits [41, 40, 39] ratio 0.95| 4 passed, 13 deselected in 6.46s
+run 5 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 7 m 7 f (7 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [58, 55] ratio 0.95|HOT KEY 3 members x 2 threads, 2 s: commits [30, 33, 32] ratio 0.91| 4 passed, 13 deselected in 7.19s
+run 6 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 1 m 1 f (1 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [70, 71] ratio 0.99|HOT KEY 3 members x 2 threads, 2 s: commits [47, 45, 45] ratio 0.96| 4 passed, 13 deselected in 7.00s
+run 6 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 12 m 12 f (12 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [54, 57] ratio 0.95|HOT KEY 3 members x 2 threads, 2 s: commits [27, 26, 27] ratio 0.96| 4 passed, 13 deselected in 7.19s
+run 7 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 2 m 2 f (2 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [72, 71] ratio 0.99|HOT KEY 3 members x 2 threads, 2 s: commits [35, 36, 34] ratio 0.94| 4 passed, 13 deselected in 6.77s
+run 7 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 4 m 4 f (4 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [56, 55] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [32, 32, 32] ratio 1.00| 4 passed, 13 deselected in 7.36s
+run 8 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 2 m 2 f (2 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [72, 72] ratio 1.00|HOT KEY 3 members x 2 threads, 2 s: commits [40, 43, 40] ratio 0.93| 4 passed, 13 deselected in 6.48s
+run 8 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 6 m 6 f (6 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [56, 57] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [34, 36, 34] ratio 0.94| 4 passed, 13 deselected in 7.17s
+run 9 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [73, 75] ratio 0.97|HOT KEY 3 members x 2 threads, 2 s: commits [43, 43, 41] ratio 0.95| 4 passed, 13 deselected in 6.62s
+run 9 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 5 m 5 f (5 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [57, 58] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [35, 35, 33] ratio 0.94| 4 passed, 13 deselected in 7.13s
+run 10 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 1 m 1 f (1 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [74, 73] ratio 0.99|HOT KEY 3 members x 2 threads, 2 s: commits [46, 49, 48] ratio 0.94| 4 passed, 13 deselected in 6.34s
+run 10 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 9 m 9 f (9 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [56, 55] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [31, 30, 32] ratio 0.94| 4 passed, 13 deselected in 7.27s
+run 11 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 1 m 1 f (1 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [37, 35] ratio 0.95|HOT KEY 3 members x 2 threads, 2 s: commits [46, 45, 45] ratio 0.98| 4 passed, 13 deselected in 7.51s
+run 11 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 10 m 10 f (10 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [56, 53] ratio 0.95|HOT KEY 3 members x 2 threads, 2 s: commits [32, 32, 34] ratio 0.94| 4 passed, 13 deselected in 7.26s
+run 12 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 1 m 1 f (1 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [72, 72] ratio 1.00|HOT KEY 3 members x 2 threads, 2 s: commits [41, 40, 40] ratio 0.98| 4 passed, 13 deselected in 6.51s
+run 12 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 5 m 5 f (5 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [56, 55] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [33, 31, 31] ratio 0.94| 4 passed, 13 deselected in 7.33s
+run 13 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 4 m 4 f (4 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [70, 70] ratio 1.00|HOT KEY 3 members x 2 threads, 2 s: commits [44, 45, 44] ratio 0.98| 4 passed, 13 deselected in 6.56s
+run 13 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 5 m 5 f (5 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [44, 43] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [31, 31, 31] ratio 1.00| 4 passed, 13 deselected in 7.25s
+run 14 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [69, 69] ratio 1.00|HOT KEY 3 members x 2 threads, 2 s: commits [39, 38, 38] ratio 0.97| 4 passed, 13 deselected in 6.40s
+run 14 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 8 m 8 f (8 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [55, 56] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [29, 29, 28] ratio 0.97| 4 passed, 13 deselected in 7.18s
+run 15 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 4 m 4 f (4 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [63, 65] ratio 0.97|HOT KEY 3 members x 2 threads, 2 s: commits [38, 38, 37] ratio 0.97| 4 passed, 13 deselected in 6.76s
+run 15 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 6 m 6 f (6 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [54, 53] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [35, 34, 34] ratio 0.97| 4 passed, 13 deselected in 7.78s
+run 16 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 1 m 1 f (1 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [74, 70] ratio 0.95|HOT KEY 3 members x 2 threads, 2 s: commits [39, 39, 39] ratio 1.00| 4 passed, 13 deselected in 6.53s
+run 16 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 3 m 3 f (3 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [57, 55] ratio 0.96|HOT KEY 3 members x 2 threads, 2 s: commits [35, 36, 34] ratio 0.94| 4 passed, 13 deselected in 7.17s
+run 17 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 1 m 1 f (1 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [64, 63] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [40, 41, 40] ratio 0.98| 4 passed, 13 deselected in 6.47s
+run 17 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 5 m 5 f (5 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [56, 55] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [31, 30, 29] ratio 0.94| 4 passed, 13 deselected in 7.18s
+run 18 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 2 m 2 f (2 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [72, 72] ratio 1.00|HOT KEY 3 members x 2 threads, 2 s: commits [47, 46, 45] ratio 0.96| 4 passed, 13 deselected in 6.52s
+run 18 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 7 m 7 f (7 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [56, 59] ratio 0.95|HOT KEY 3 members x 2 threads, 2 s: commits [31, 31, 32] ratio 0.97| 4 passed, 13 deselected in 7.21s
+run 19 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 1 m 1 f (1 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [73, 73] ratio 1.00|HOT KEY 3 members x 2 threads, 2 s: commits [47, 47, 48] ratio 0.98| 4 passed, 13 deselected in 6.34s
+run 19 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 6 m 6 f (6 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [51, 52] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [32, 32, 32] ratio 1.00| 4 passed, 13 deselected in 7.31s
+run 20 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [72, 74] ratio 0.97|HOT KEY 3 members x 2 threads, 2 s: commits [45, 46, 46] ratio 0.98| 4 passed, 13 deselected in 6.39s
+run 20 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 7 m 7 f (7 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [49, 48] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [31, 31, 33] ratio 0.94| 4 passed, 13 deselected in 7.26s
+run 21 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 4 m 4 f (4 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [64, 63] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [47, 46, 44] ratio 0.94| 4 passed, 13 deselected in 6.41s
+run 21 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 8 m 8 f (8 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [57, 54] ratio 0.95|HOT KEY 3 members x 2 threads, 2 s: commits [31, 31, 33] ratio 0.94| 4 passed, 13 deselected in 7.56s
+run 22 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 4 m 4 f (4 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [70, 72] ratio 0.97|HOT KEY 3 members x 2 threads, 2 s: commits [28, 27, 27] ratio 0.96| 4 passed, 13 deselected in 6.50s
+run 22 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 12 m 12 f (12 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [56, 56] ratio 1.00|HOT KEY 3 members x 2 threads, 2 s: commits [33, 33, 34] ratio 0.97| 4 passed, 13 deselected in 7.28s
+run 23 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 1 m 1 f (1 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [72, 72] ratio 1.00|HOT KEY 3 members x 2 threads, 2 s: commits [44, 43, 43] ratio 0.98| 4 passed, 13 deselected in 6.48s
+run 23 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 7 m 7 f (7 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [56, 52] ratio 0.93|HOT KEY 3 members x 2 threads, 2 s: commits [25, 24, 25] ratio 0.96| 4 passed, 13 deselected in 7.35s
+run 24 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 2 m 2 f (2 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [35, 36] ratio 0.97|HOT KEY 3 members x 2 threads, 2 s: commits [46, 44, 44] ratio 0.96| 4 passed, 13 deselected in 7.06s
+run 24 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 3 m 3 f (3 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [42, 39] ratio 0.93|HOT KEY 3 members x 2 threads, 2 s: commits [14, 17, 11] ratio 0.65| 4 passed, 13 deselected in 7.46s
+run 25 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 2 m 2 f (2 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [65, 69] ratio 0.94|HOT KEY 3 members x 2 threads, 2 s: commits [45, 45, 45] ratio 1.00| 4 passed, 13 deselected in 6.83s
+run 25 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 3 m 3 f (3 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [55, 56] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [29, 29, 30] ratio 0.97| 4 passed, 13 deselected in 7.40s
+run 26 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 1 m 1 f (1 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [68, 69] ratio 0.99|HOT KEY 3 members x 2 threads, 2 s: commits [49, 47, 47] ratio 0.96| 4 passed, 13 deselected in 6.47s
+run 26 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 10 m 10 f (10 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [43, 43] ratio 1.00|HOT KEY 3 members x 2 threads, 2 s: commits [26, 21, 20] ratio 0.77| 4 passed, 13 deselected in 7.30s
+run 27 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [68, 68] ratio 1.00|HOT KEY 3 members x 2 threads, 2 s: commits [40, 39, 40] ratio 0.97| 4 passed, 13 deselected in 6.62s
+run 27 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 7 m 7 f (7 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [47, 48] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [31, 31, 32] ratio 0.97| 4 passed, 13 deselected in 7.37s
+run 28 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 1 m 1 f (1 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [71, 74] ratio 0.96|HOT KEY 3 members x 2 threads, 2 s: commits [47, 46, 46] ratio 0.98| 4 passed, 13 deselected in 6.38s
+run 28 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 4 m 4 f (4 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [56, 55] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [31, 32, 33] ratio 0.94| 4 passed, 13 deselected in 7.14s
+run 29 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 1 m 1 f (1 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [72, 70] ratio 0.97|HOT KEY 3 members x 2 threads, 2 s: commits [36, 35, 36] ratio 0.97| 4 passed, 13 deselected in 6.75s
+run 29 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 8 m 8 f (8 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [55, 57] ratio 0.96|HOT KEY 3 members x 2 threads, 2 s: commits [32, 33, 33] ratio 0.97| 4 passed, 13 deselected in 7.28s
+run 30 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [73, 72] ratio 0.99|HOT KEY 3 members x 2 threads, 2 s: commits [48, 47, 47] ratio 0.98| 4 passed, 13 deselected in 6.65s
+run 30 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 6 m 6 f (6 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [55, 57] ratio 0.96|HOT KEY 3 members x 2 threads, 2 s: commits [34, 34, 35] ratio 0.97| 4 passed, 13 deselected in 7.25s
+run 31 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 1 m 1 f (1 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [65, 65] ratio 1.00|HOT KEY 3 members x 2 threads, 2 s: commits [45, 45, 45] ratio 1.00| 4 passed, 13 deselected in 6.41s
+run 31 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 13 m 13 f (13 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [54, 55] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [28, 28, 29] ratio 0.97| 4 passed, 13 deselected in 7.22s
+run 32 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 1 m 1 f (1 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [69, 72] ratio 0.96|HOT KEY 3 members x 2 threads, 2 s: commits [41, 38, 39] ratio 0.93| 4 passed, 13 deselected in 6.56s
+run 32 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 5 m 5 f (5 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [55, 55] ratio 1.00|HOT KEY 3 members x 2 threads, 2 s: commits [25, 26, 28] ratio 0.89| 4 passed, 13 deselected in 8.51s
+run 33 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 3 m 3 f (3 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [69, 67] ratio 0.97|HOT KEY 3 members x 2 threads, 2 s: commits [48, 47, 47] ratio 0.98| 4 passed, 13 deselected in 6.51s
+run 33 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 6 m 6 f (6 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [55, 56] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [29, 28, 29] ratio 0.97| 4 passed, 13 deselected in 7.23s
+run 34 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [74, 70] ratio 0.95|HOT KEY 3 members x 2 threads, 2 s: commits [46, 45, 44] ratio 0.96| 4 passed, 13 deselected in 6.48s
+run 34 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 9 m 9 f (9 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [54, 54] ratio 1.00|HOT KEY 3 members x 2 threads, 2 s: commits [17, 18, 17] ratio 0.94| 4 passed, 13 deselected in 7.41s
+run 35 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 2 m 2 f (2 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [58, 58] ratio 1.00|HOT KEY 3 members x 2 threads, 2 s: commits [46, 47, 45] ratio 0.96| 4 passed, 13 deselected in 6.44s
+run 35 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 6 m 6 f (6 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [55, 58] ratio 0.95|HOT KEY 3 members x 2 threads, 2 s: commits [31, 32, 30] ratio 0.94| 4 passed, 13 deselected in 7.51s
+run 36 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [72, 71] ratio 0.99|HOT KEY 3 members x 2 threads, 2 s: commits [46, 43, 45] ratio 0.93| 4 passed, 13 deselected in 6.49s
+run 36 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 7 m 7 f (7 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [55, 53] ratio 0.96|HOT KEY 3 members x 2 threads, 2 s: commits [28, 27, 31] ratio 0.87| 4 passed, 13 deselected in 7.23s
+run 37 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [71, 73] ratio 0.97|HOT KEY 3 members x 2 threads, 2 s: commits [46, 45, 45] ratio 0.98| 4 passed, 13 deselected in 6.47s
+run 37 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 11 m 11 f (11 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [53, 54] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [28, 28, 29] ratio 0.97| 4 passed, 13 deselected in 7.32s
+run 38 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 2 m 2 f (2 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [65, 66] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [41, 39, 40] ratio 0.95| 4 passed, 13 deselected in 6.48s
+run 38 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 4 m 4 f (4 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [48, 53] ratio 0.91|HOT KEY 3 members x 2 threads, 2 s: commits [27, 30, 29] ratio 0.90| 4 passed, 13 deselected in 7.65s
+run 39 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 1 m 1 f (1 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [60, 64] ratio 0.94|HOT KEY 3 members x 2 threads, 2 s: commits [4, 3, 3] ratio 0.75| 4 passed, 13 deselected in 7.12s
+run 39 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 6 m 6 f (6 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [40, 39] ratio 0.97|HOT KEY 3 members x 2 threads, 2 s: commits [29, 27, 28] ratio 0.93| 4 passed, 13 deselected in 10.33s
+run 40 gil0 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 1 m 1 f (1 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [72, 72] ratio 1.00|HOT KEY 3 members x 2 threads, 2 s: commits [44, 44, 44] ratio 1.00| 4 passed, 13 deselected in 6.35s
+run 40 gil1 rc=0 | 30 x 1 commits (30 acked, 0 unknown): 0 m 0 f (0 misses in all)|10 x 3 commits (30 acked, 0 unknown): 4 m 4 f (4 misses in all)|HOT KEY 2 members x 2 threads, 2 s: commits [55, 54] ratio 0.98|HOT KEY 3 members x 2 threads, 2 s: commits [31, 34, 31] ratio 0.91| 4 passed, 13 deselected in 7.39s
+end 2026-11-06T22:06:45-03:00 SwapFree:           2248 kB
+DONE
+#
+# 3. Plants (script below), on a copy of the final tests:
+planted steady-pair
+== steady-pair gil0 run 1
+E       AssertionError: acknowledged commits lost: {'n0': ['n2-17'], 'n1': ['n2-17'], 'n2': ['n2-17']}
+E       AssertionError: acknowledged commits lost: {'n0': ['n2-17'], 'n1': ['n2-17'], 'n2': ['n2-17']}
+2 failed, 12 deselected in 22.09s
+== steady-pair gil0 run 2
+E       AssertionError: acknowledged commits lost: {'n0': ['n2-17'], 'n1': ['n2-17'], 'n2': ['n2-17']}
+E       AssertionError: acknowledged commits lost: {'n0': ['n2-17'], 'n1': ['n2-17'], 'n2': ['n2-17']}
+2 failed, 12 deselected in 21.64s
+== steady-pair gil0 run 3
+E       AssertionError: acknowledged commits lost: {'n0': ['n2-17'], 'n1': ['n2-17'], 'n2': ['n2-17']}
+E       AssertionError: acknowledged commits lost: {'n0': ['n2-17'], 'n1': ['n2-17'], 'n2': ['n2-17']}
+2 failed, 12 deselected in 21.70s
+== steady-pair gil1 run 1
+E       AssertionError: acknowledged commits lost: {'n0': ['n2-17'], 'n1': ['n2-17'], 'n2': ['n2-17']}
+E       AssertionError: acknowledged commits lost: {'n0': ['n2-17'], 'n1': ['n2-17'], 'n2': ['n2-17']}
+2 failed, 12 deselected in 22.29s
+== steady-pair gil1 run 2
+E       AssertionError: acknowledged commits lost: {'n0': ['n2-17'], 'n1': ['n2-17'], 'n2': ['n2-17']}
+E       AssertionError: acknowledged commits lost: {'n0': ['n2-17'], 'n1': ['n2-17'], 'n2': ['n2-17']}
+2 failed, 12 deselected in 22.30s
+== steady-pair gil1 run 3
+E       AssertionError: acknowledged commits lost: {'n0': ['n2-17'], 'n1': ['n2-17'], 'n2': ['n2-17']}
+E       AssertionError: acknowledged commits lost: {'n0': ['n2-17'], 'n1': ['n2-17'], 'n2': ['n2-17']}
+2 failed, 12 deselected in 22.17s
+planted warming
+== warming gil0 run 1
+E       AssertionError: {'record_fetches': 74, 'record_fetches_permitted': 0, 'records_warmed': 0}
+E       assert 74 <= 3
+E       AssertionError: {'misses': 79, 'steady_fetches': 212, 'fetched': {'record_fetches': 239, 'record_fetches_permitted': 77, 'records_warmed': 0}, 'committer_calls': []}
+E       assert 79 <= 24
+2 failed, 12 deselected in 1.92s
+== warming gil0 run 2
+E       AssertionError: {'record_fetches': 78, 'record_fetches_permitted': 0, 'records_warmed': 0}
+E       assert 78 <= 3
+E       AssertionError: {'misses': 91, 'steady_fetches': 233, 'fetched': {'record_fetches': 254, 'record_fetches_permitted': 89, 'records_warmed': 0}, 'committer_calls': []}
+E       assert 91 <= 24
+2 failed, 12 deselected in 1.90s
+== warming gil0 run 3
+E       AssertionError: {'record_fetches': 69, 'record_fetches_permitted': 0, 'records_warmed': 0}
+E       assert 69 <= 3
+E       AssertionError: {'misses': 96, 'steady_fetches': 239, 'fetched': {'record_fetches': 265, 'record_fetches_permitted': 93, 'records_warmed': 0}, 'committer_calls': []}
+E       assert 96 <= 24
+2 failed, 12 deselected in 1.81s
+== warming gil1 run 1
+E       AssertionError: {'record_fetches': 85, 'record_fetches_permitted': 0, 'records_warmed': 0}
+E       assert 85 <= 3
+E       AssertionError: {'misses': 83, 'steady_fetches': 217, 'fetched': {'record_fetches': 236, 'record_fetches_permitted': 79, 'records_warmed': 0}, 'committer_calls': ['get']}
+E       assert 83 <= 24
+2 failed, 12 deselected in 2.58s
+== warming gil1 run 2
+E       AssertionError: {'record_fetches': 97, 'record_fetches_permitted': 0, 'records_warmed': 0}
+E       assert 97 <= 3
+E       AssertionError: {'misses': 109, 'steady_fetches': 247, 'fetched': {'record_fetches': 272, 'record_fetches_permitted': 104, 'records_warmed': 0}, 'committer_calls': []}
+E       assert 109 <= 24
+2 failed, 12 deselected in 2.60s
+== warming gil1 run 3
+E       AssertionError: {'record_fetches': 87, 'record_fetches_permitted': 0, 'records_warmed': 0}
+E       assert 87 <= 3
+E       AssertionError: {'misses': 120, 'steady_fetches': 213, 'fetched': {'record_fetches': 243, 'record_fetches_permitted': 106, 'records_warmed': 0}, 'committer_calls': ['get']}
+E       assert 120 <= 24
+2 failed, 12 deselected in 2.64s
+#    fair-pair (first version: the planted lost commit rewrote the value it read and kept conflicting until the deadline in
+#    the 3-member case, so 5 of 12 case runs passed); final version, the lost commit is an empty acknowledged transaction:
+planted fair-pair
+== fair-pair gil0 run 1
+E       AssertionError: acknowledged commits lost: {'n0': ['n0.0-117'], 'n1': ['n0.0-117']}
+E       AssertionError: acknowledged commits lost: {'n0': ['n0.0-62'], 'n1': ['n0.0-62'], 'n2': ['n0.0-62']}
+2 failed, 1 deselected in 25.14s
+== fair-pair gil0 run 2
+E       AssertionError: acknowledged commits lost: {'n0': ['n0.0-114'], 'n1': ['n0.0-114']}
+E       AssertionError: acknowledged commits lost: {'n0': ['n0.0-87'], 'n1': ['n0.0-87'], 'n2': ['n0.0-87']}
+2 failed, 1 deselected in 25.04s
+== fair-pair gil0 run 3
+E       AssertionError: acknowledged commits lost: {'n0': ['n0.0-48'], 'n1': ['n0.0-48']}
+E       AssertionError: acknowledged commits lost: {'n0': ['n0.0-87'], 'n1': ['n0.0-87'], 'n2': ['n0.0-87']}
+2 failed, 1 deselected in 25.05s
+== fair-pair gil0 run 4
+E       AssertionError: acknowledged commits lost: {'n0': ['n0.0-113'], 'n1': ['n0.0-113']}
+E       AssertionError: acknowledged commits lost: {'n0': ['n0.0-83'], 'n1': ['n0.0-83'], 'n2': ['n0.0-83']}
+2 failed, 1 deselected in 25.06s
+== fair-pair gil1 run 1
+E       AssertionError: acknowledged commits lost: {'n0': ['n0.0-51'], 'n1': ['n0.0-51']}
+E       AssertionError: acknowledged commits lost: {'n0': ['n0.0-285'], 'n1': ['n0.0-285'], 'n2': ['n0.0-285']}
+2 failed, 1 deselected in 25.16s
+== fair-pair gil1 run 2
+E       AssertionError: acknowledged commits lost: {'n0': ['n0.0-58'], 'n1': ['n0.0-58']}
+E       AssertionError: acknowledged commits lost: {'n0': ['n0.0-57'], 'n1': ['n0.0-57'], 'n2': ['n0.0-57']}
+2 failed, 1 deselected in 25.15s
+== fair-pair gil1 run 3
+E       AssertionError: acknowledged commits lost: {'n0': ['n0.0-112'], 'n1': ['n0.0-112']}
+E       AssertionError: acknowledged commits lost: {'n0': ['n0.0-60'], 'n1': ['n0.0-60'], 'n2': ['n0.0-60']}
+2 failed, 1 deselected in 25.14s
+== fair-pair gil1 run 4
+E       AssertionError: acknowledged commits lost: {'n0': ['n0.0-168'], 'n1': ['n0.0-168']}
+E       AssertionError: acknowledged commits lost: {'n0': ['n0.0-175'], 'n1': ['n0.0-175'], 'n2': ['n0.0-175']}
+2 failed, 1 deselected in 25.15s
+#
+# Plant script:
+#  """Apply one of the round-2 plants to the test copy in plant-r2/tests (from tests.clean)."""
+#  import shutil, sys
+#  P = "/home/gamarino/Documentos/proyectos/scratch-8.3m/plant-r2"
+#  which = sys.argv[1]
+#  shutil.rmtree(f"{P}/tests"); shutil.copytree(f"{P}/tests.clean", f"{P}/tests")
+#  def edit(rel, a, b):
+#      p = f"{P}/tests/{rel}"; s = open(p).read(); assert s.count(a) == 1, (which, a[:40]); open(p, "w").write(s.replace(a, b))
+#  if which == "steady-pair":
+#      edit("unit/test_cluster_persistence.py", '''                def bump(tr):
+#                      pushed[_node].clear()               # this attempt's records only
+#                      incr(tr)
+#                      write_token(tr, token)
+#                  go.wait()
+#                  try:
+#                      tc.db(_node).run(bump, **RUN_KW)
+#                      tokens.acked(token)''', '''                idx = int(token.rsplit("-", 1)[1])
+#  
+#                  def bump(tr):
+#                      pushed[_node].clear()               # this attempt's records only
+#                      if idx == 17:   # PLANT: a LOST acknowledged commit (writes what it read)
+#                          tr.set_root_object("n", tr.get_root_object("n"))
+#                          return
+#                      incr(tr)
+#                      write_token(tr, token)
+#                  go.wait()
+#                  try:
+#                      tc.db(_node).run(bump, **RUN_KW)
+#                      if idx == 16:   # PLANT: applied, but reported unknown
+#                          raise ProtoOutcomeUnknownError("planted")
+#                      tokens.acked(token)''')
+#  elif which == "warming":
+#      edit("unit/test_cluster_persistence.py", "                got = _real(records)\n",
+#           "                got = 0  # PLANT: warming observed but never stored\n")
+#  elif which == "fair-pair":
+#      edit("concurrency/test_cluster_permit_fairness.py", '''                        token = tokens.new(f"{node}.{index}")
+#                          tr.set_root_object("n", (tr.get_root_object("n") or 0) + 1)
+#                          write_token(tr, token)
+#                      tr.commit()
+#  ''', '''                        token = tokens.new(f"{node}.{index}")
+#                          planted = node == cluster.ids[0] and index == 0 and j in (5, 6)
+#                          if planted and j == 6:
+#                              # PLANT: a LOST acknowledged commit: acknowledged, nothing of it applied
+#                              # (an empty transaction, so it cannot conflict and is always acknowledged)
+#                              pass
+#                          else:
+#                              tr.set_root_object("n", (tr.get_root_object("n") or 0) + 1)
+#                              write_token(tr, token)
+#                      tr.commit()
+#                      if not blind and planted and j == 5:
+#                          # PLANT: commit j=5 took effect but reports an unknown outcome (P5)
+#                          raise ProtoOutcomeUnknownError("planted: applied, outcome unknown")
+#  ''')
+#  print("planted", which)

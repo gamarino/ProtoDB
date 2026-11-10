@@ -37,7 +37,7 @@ PY
 
 # Optional: smoke test extras (if you have deps available)
 # Parquet/Arrow
-# pip install "dist/*.whl[parquet]" && python -c "import proto_db.arrow_bridge as ab; print('arrow ok')"
+# pip install "dist/*.whl[parquet]" && python -c "import pyarrow, proto_db; proto_db.to_arrow([{'a': 1}]); print('arrow ok')"
 # Vectors
 # pip install "dist/*.whl[vectors]" && python -c "import numpy as np; print('vectors ok')"
 

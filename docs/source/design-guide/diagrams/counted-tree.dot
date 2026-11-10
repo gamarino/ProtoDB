@@ -1,0 +1,14 @@
+// Rank access (D56): a CountedKeyNode keeps the sum of the occurrence counts of its subtree.
+// Illustrative: the groups tree of the ERP stage index at import (334 / 333 / 333 rows).
+// Render: dot -Tsvg counted-tree.dot -o counted-tree.svg
+digraph counted {
+  graph [fontname="Helvetica", fontsize=11, nodesep=0.3, ranksep=0.4];
+  node  [fontname="Helvetica", fontsize=10, shape=record, style="rounded,filled", fillcolor="#ffffff", color="#555555"];
+  edge  [fontname="Helvetica", fontsize=9, color="#555555"];
+
+  p  [label="{group 'proposal' | 333 rows | weight 1000}", fillcolor="#cfe3f5"];
+  l  [label="{group 'lead' | 334 rows | weight 334}"];
+  q  [label="{group 'qualified' | 333 rows | weight 333}"];
+  p -> l [label="left: ranks 0-333"];
+  p -> q [label="right: ranks 667-999"];
+}

@@ -1,103 +1,65 @@
 #!/usr/bin/env python3
+"""Getting started with ProtoDB: a space, a database, transactions and persistent collections.
+
+Run from the repository root::
+
+    python examples/simple_example.py
+
+The script checks every value it reads back and exits with an error if one is wrong.
 """
-Simple ProtoDB Example
-
-This example demonstrates the basic functionality of ProtoDB, a transactional,
-object-oriented database system implemented in Python.
-
-It shows how to:
-1. Create an in-memory database
-2. Perform basic operations within transactions
-3. Store and retrieve data
-4. Use ProtoDB's data structures
-"""
-
 import os
 import sys
 
-# Add the parent directory to the path to import proto_db
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from proto_db import ObjectSpace, DBObject
-from proto_db.memory_storage import MemoryStorage
+from proto_db import MemoryStorage, ObjectSpace  # noqa: E402
 
 
-class User(DBObject):
-    """
-    A class representing a User
-    """
+def main() -> None:
+    """Write a few roots, read them back in a later transaction and show the version history."""
+    space = ObjectSpace(MemoryStorage())
+    try:
+        db = space.new_database("example")
 
+        # A transaction is a context manager: it commits on success and aborts on an exception.
+        with db.new_transaction() as tr:
+            numbers = tr.new_list().append_last(1).append_last(2).append_last(3)
+            ada = tr.new_object(name="Ada Lovelace", born=1815)
+            people = tr.new_dictionary().set_at("ada", ada)
+            tr.set_root_object("numbers", numbers)
+            tr.set_root_object("people", people)
 
-def main():
-    """Run a simple demonstration of ProtoDB."""
-    print("ProtoDB Simple Example")
-    print("=======================")
+        # Collections are immutable: every change returns a new version, the old one is untouched.
+        with db.new_transaction() as tr:
+            numbers = tr.get_root_object("numbers")
+            longer = numbers.append_last(4)
+            assert list(numbers) == [1, 2, 3] and list(longer) == [1, 2, 3, 4]
+            tr.set_root_object("numbers", longer)
 
-    # Create an in-memory storage
-    print("\nCreating in-memory storage...")
-    storage = MemoryStorage()
+            people = tr.get_root_object("people")
+            ada = people.get_at("ada")
+            # DBObjects are immutable records too: with_() returns a new version.
+            people = people.set_at("ada", ada.with_(field="mathematics"))
+            people = people.set_at("alan", tr.new_object(name="Alan Turing", born=1912, field="computing"))
+            tr.set_root_object("people", people)
 
-    # Create an object space with the storage
-    print("Creating object space...")
-    object_space = ObjectSpace(storage=storage)
+        tr = db.new_transaction()
+        numbers = list(tr.get_root_object("numbers"))
+        people = tr.get_root_object("people")
+        names = sorted(p.name for p in people.values())
+        print("numbers:", numbers)
+        print("people:", names)
+        print("ada works in", people.get_at("ada").field)
+        tr.abort()
+        assert numbers == [1, 2, 3, 4]
+        assert names == ["Ada Lovelace", "Alan Turing"]
 
-    # Create a new database
-    print("Creating database...")
-    database = object_space.new_database('SimpleDB')
-
-    # Create a new transaction
-    print("\nCreating transaction...")
-    tr = database.new_transaction()
-
-    # Create and store a dictionary
-    print("Creating a list of users")
-    users = tr.new_list()
-
-    user1 = User(
-        name='John Doe',
-        email='john@example.com',
-        role='admin'
-    )
-    users = users.append_last(user1)
-
-    user2 = User(
-        name='Jane Doe',
-        email='jane@example.com',
-        role='user'
-    )
-    users = users.append_last(user2)
-
-    user3 = User(
-        name='Dan Doe',
-        email='dan@example.com',
-        role='user',
-        friends=tr.new_list().append_last(user2).append_last(user1)
-    )
-    users = users.append_last(user3)
-
-    # DBObjects are inmutable. You can create a new one with changed attribute
-    user4 = user3.set_at('email', 'dan4@example_com')
-    users = users.append_last(user4)
-
-    tr.set_root_object('users', users)
-    tr.commit()
-
-    tr = database.new_transaction()
-    read_users = tr.get_root_object('users')
-
-    for u in read_users.as_iterable():
-        print(f'Name: {u.name}')
-        print(f'Email: {u.email}')
-        print(f'Role: {u.role}')
-        friends = getattr(u, 'friends', None)
-        if friends:
-            for f in friends.as_iterable():
-                print(f'Friend: {f.name}')
-        print('--' * 20)
-
-    tr.commit()
-
-    print("\nExample completed successfully!")
+        versions = [entry.version for entry in db.history()]
+        print("versions, newest first:", versions)
+        assert versions == [2, 1, 0]
+    finally:
+        space.close()
+    print("simple_example: OK")
 
 
 if __name__ == "__main__":

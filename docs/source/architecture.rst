@@ -1,297 +1,115 @@
 Architecture
-===========
-
-ProtoBase is designed with a layered architecture that provides flexibility, extensibility, and robustness. This document explains the key architectural components and how they interact.
-
-Core Components
---------------
-
-Atom
-~~~~
-
-The ``Atom`` class is the fundamental building block of ProtoBase. All database objects are derived from this class. An Atom represents a piece of data that can be stored in the database. It has the following key characteristics:
-
-- It has a unique identifier
-- It can be serialized and deserialized
-- It can be stored in and retrieved from the storage layer
-
-AtomPointer
-~~~~~~~~~~~
-
-An ``AtomPointer`` is a reference to a stored Atom. It contains:
-
-- A transaction ID (the WAL ID where the Atom is stored)
-- An offset (the position within the WAL)
-
-This allows ProtoBase to efficiently locate and retrieve Atoms from storage.
-
-SharedStorage
-~~~~~~~~~~~~
-
-The ``SharedStorage`` interface defines the contract for storage implementations. It provides methods for:
-
-- Reading and writing Atoms
-- Managing transactions
-- Handling the root object
-
-ObjectSpace
-~~~~~~~~~~
-
-An ``ObjectSpace`` is a container for multiple databases. It:
-
-- Manages the lifecycle of databases
-- Provides access to databases by name
-- Ensures proper isolation between databases
-
-Database
-~~~~~~~
-
-A ``Database`` is a container for a single database. It:
-
-- Manages the lifecycle of transactions
-- Provides access to the root object
-- Ensures proper isolation between transactions
-
-Transaction
-~~~~~~~~~~
-
-A ``Transaction`` is a context for database operations. It:
-
-- Provides methods for reading and writing objects
-- Ensures atomicity of operations
-- Manages the commit process
-
-Storage Layer
-------------
-
-The storage layer is responsible for persisting Atoms to disk or memory. ProtoBase provides several storage implementations:
-
-MemoryStorage
-~~~~~~~~~~~~
-
-``MemoryStorage`` is an in-memory storage implementation. It:
-
-- Stores Atoms in memory
-- Does not persist data across process restarts
-- Is useful for testing and development
-
-StandaloneFileStorage
-~~~~~~~~~~~~~~~~~~~
-
-``StandaloneFileStorage`` is a file-based storage implementation. It:
-
-- Stores Atoms in files on disk
-- Uses Write-Ahead Logging (WAL) for durability
-- Provides persistence across process restarts
-
-ClusterFileStorage
-~~~~~~~~~~~~~~~~
-
-``ClusterFileStorage`` extends ``StandaloneFileStorage`` to provide distributed storage capabilities. It:
-
-- Supports multiple nodes in a cluster
-- Uses a vote-based locking mechanism for coordination
-- Ensures consistency across nodes
-- Allows for horizontal scaling
-
-CloudFileStorage
-~~~~~~~~~~~~~~
-
-``CloudFileStorage`` extends ``ClusterFileStorage`` to add support for cloud storage. It:
-
-- Stores data in cloud object storage (Amazon S3 or Google Cloud Storage)
-- Provides local caching for performance
-- Supports background uploading of data
-- Is suitable for cloud-native applications
-
-Data Structures
---------------
-
-ProtoBase provides several data structures built on top of Atoms:
-
-Dictionary
-~~~~~~~~~
-
-A ``Dictionary`` is a key-value mapping with string keys. It:
-
-- Supports adding, removing, and updating key-value pairs
-- Provides efficient lookup by key
-- Can store any type of value
-
-List
-~~~~
-
-A ``List`` is an ordered collection of items. It:
-
-- Supports adding, removing, and updating items
-- Provides efficient access by index
-- Can store any type of value
-
-Set
-~~~
-
-A ``Set`` is an unordered collection of unique items. It:
-
-- Supports adding and removing items
-- Provides efficient membership testing
-- Ensures uniqueness of items
-
-HashDictionary
-~~~~~~~~~~~~~
-
-A ``HashDictionary`` is a dictionary with hash-based lookups. It:
-
-- Supports non-string keys
-- Provides efficient lookup by key
-- Can store any type of value
-
-Query System
------------
-
-The query system allows for complex data manipulation:
-
-QueryPlan
-~~~~~~~~
-
-``QueryPlan`` is the base class for all query plans. It:
-
-- Defines the interface for query execution
-- Provides methods for chaining query operations
-- Supports lazy evaluation
-
-FromPlan
-~~~~~~~
-
-``FromPlan`` is the starting point for queries. It:
-
-- Takes a collection as input
-- Provides an iterator over the collection
-- Can be used as the basis for other query plans
-
-WherePlan
-~~~~~~~~
-
-``WherePlan`` filters records based on a condition. It:
-
-- Takes a filter function and a base plan
-- Returns only records that satisfy the condition
-- Can be chained with other query plans
-
-JoinPlan
-~~~~~~~
-
-``JoinPlan`` joins multiple data sources. It:
-
-- Takes two plans and a join condition
-- Returns records that satisfy the join condition
-- Supports inner, left, right, and full joins
-
-GroupByPlan
-~~~~~~~~~~
-
-``GroupByPlan`` groups records by a key. It:
-
-- Takes a key function and a base plan
-- Returns groups of records with the same key
-- Can be used for aggregation
-
-OrderByPlan
-~~~~~~~~~~
-
-``OrderByPlan`` sorts records. It:
-
-- Takes a key function and a base plan
-- Returns records sorted by the key
-- Supports ascending and descending order
-
-SelectPlan
-~~~~~~~~~
-
-``SelectPlan`` projects specific fields. It:
-
-- Takes a projection function and a base plan
-- Returns transformed records
-- Can be used to extract specific fields
-
-LimitPlan and OffsetPlan
-~~~~~~~~~~~~~~~~~~~~~~~
-
-``LimitPlan`` and ``OffsetPlan`` provide pagination. They:
-
-- Take a limit/offset and a base plan
-- Return a subset of records
-- Can be combined for pagination
-
-Interaction Flow
---------------
-
-The typical flow of operations in ProtoBase is as follows:
-
-1. Create a storage instance (e.g., ``MemoryStorage``, ``StandaloneFileStorage``)
-2. Create an ``ObjectSpace`` with the storage
-3. Get a ``Database`` from the object space
-4. Create a ``Transaction`` from the database
-5. Perform operations within the transaction (create, read, update, delete)
-6. Commit the transaction
-
-During this process:
-
-- The transaction creates and modifies Atoms
-- The storage layer persists the Atoms
-- The query system can be used to retrieve and manipulate data
-
-This architecture provides a flexible and powerful foundation for building database applications.
-
-
-
-Atom-level Cache Layer
-----------------------
-
-ProtoBase integrates an optional, in-memory cache layer keyed by ``AtomPointer`` to accelerate reads across
-transactions:
-
-- ``AtomBytesCache`` stores the raw payload bytes (post WAL headers) as memoryviews.
-- ``AtomObjectCache`` stores fully deserialized atom objects (e.g., Python dicts).
-- Keys: ``(transaction_id, offset)`` for bytes; ``(transaction_id, offset, schema_epoch)`` for objects.
-- Replacement: 2Q (probation + protected LRU) to reduce scan pollution, with limits by bytes and entries.
-- Concurrency: single-flight ensures at most one deserialize per key.
-- Observability: hit/miss, evictions, and latency buckets exposed via ``AtomCacheBundle``.
-
-The read path first checks the object cache, then the bytes cache, and finally falls back to reading from the
-underlying block provider if needed. Caches leverage the immutability of atoms, so they require no invalidation on
-writes; bump ``schema_epoch`` to isolate entries across decoder changes.
-
-
-Near In‑Memory Execution
-------------------------
-
-ProtoBase executes reads and writes within a transaction over an in‑memory object graph using copy‑on‑write. The main
-application thread does not wait for I/O on the hot path; persistence is delegated to a background executor. Commit
-synchronizes with the Write‑Ahead Log (WAL) to ensure durability without blocking routine operations on disk latency.
-
-Write‑Through Caching
+============
+
+This page maps the code: which package owns which responsibility, what a commit does as it crosses them,
+and how threads are used. The decisions behind each layer are in ``docs/decisions.md`` (cited as D-numbers),
+and the principles they answer to in :doc:`design-principles`.
+
+Packages
+--------
+
+.. code-block:: text
+
+   proto_db/
+     __init__.py        the public API: one lazily resolved export table (D47)
+     errors.py          the exception hierarchy rooted at ProtoDBError (D12)
+     values.py          the value model: canonical types, total order, equality, hash (D2, D3)
+     transactions.py    ObjectSpace, Database, Transaction, Snapshot, the commit protocol (D32-D35, D52)
+     core/              atom.py (Atom, AtomPointer, oid, lazy loading), codec.py (atom <-> msgpack),
+                        dbobject.py (DBObject, MutableObject)
+     storage/           base.py (SharedStorage contract), format.py (records and roots on disk),
+                        memory.py, file.py (FileStorage), cloud.py (CloudStorage, S3 and GCS),
+                        tiered.py (TieredStorage: a cluster node's local tier plus the object store),
+                        cache.py, crc.py, logfile.py, ownerlock.py
+     collections/       base.py (IndexedCollection, ConcurrentOptimized), avl.py (the persistent trees),
+                        lists.py, dictionaries.py, hash_dictionaries.py, sets.py
+     indexing/          base.py (Index), keyspec.py, keyed.py (the key-group machinery),
+                        equality.py, range.py, vector.py and vector_backends.py
+     query/             terms.py, expressions.py, plans.py, planner.py, linq.py,
+                        cache.py (query result cache), pager.py (stable pagination)
+     cluster/           coordinator.py (lease, permissions, commit by majority), lease.py, protocol.py,
+                        rootlog.py (acceptor log), persister.py, transport.py
+     runtime/           parallel.py (parallel scans), fsm.py (finite state machines)
+     interop/           arrow.py (Arrow and Parquet export)
+
+Two names differ from the first draft of the design (spec section 3). ``indexing`` replaced ``indexes``,
+because the 0.1 module ``indexes.py`` collided with it (ruling R16). ``parallel`` and ``fsm`` live under
+``runtime``, and the Arrow bridge under ``interop`` (R33, D48). Dependencies point downward: collections know
+nothing of transactions, indexes know nothing of storage, and the query layer sees collections only
+through their indexes.
+
+The layers
+----------
+
+Values and atoms
+   Everything stored is a canonical value or an atom. ``codec.py`` turns an atom's persisted state (its
+   public attributes) into a msgpack-ready dictionary with an explicit tag for every canonical type, and
+   nested atoms into references. Atom classes register under a stable ``__type_name__``, so third-party
+   classes such as custom indexes cannot collide.
+
+Collections and indexes
+   Collections are persistent AVL trees (``avl.py``): positional for ``List``, keyed by the value order for
+   the others. An update copies the path from the changed node to the root and shares everything else.
+   A collection owns an ``IndexSet`` and every mutator updates the structure and the indexes in the same
+   step. Indexes use the same trees (a keyed tree of key groups), so an index version is also a path copy.
+
+Query
+   A ``Term`` is ``(path, operator, value)``; expressions combine terms. One planner turns an expression, an
+   ordering and a window into a tree of physical plan nodes (scans, index lookups, filters, sorts, unions,
+   limits), using what each index reports it can answer and at what estimated cost.
+
+Transactions
+   ``ObjectSpace`` owns a storage, the space-wide decoded-atom cache (D53) and the query result cache (D56).
+   A ``Transaction`` reads the storage root once, records what it reads, and builds new atoms on
+   ``tr``. Committing saves them, validates the read set, builds the new database version and publishes.
+
+Storage
+   A ``SharedStorage`` appends immutable records (``push_atom``, ``push_blob``), reads them back by pointer,
+   makes them durable (``flush``) and publishes a root by compare-and-swap on an epoch (``publish_root``).
+   ``MemoryStorage`` keeps everything in process; ``FileStorage`` writes append-only CRC-checked segments and
+   replaces a root file atomically; ``CloudStorage`` writes segment objects first and then the root with a
+   conditional write; ``TieredStorage`` is the cluster node's storage. The record and root formats are in
+   :doc:`format-spec`.
+
+Cluster
+   A ``ClusterCoordinator`` lets several processes write one space. The peers agree on commit order among
+   themselves (a lease, write permissions, a majority acknowledgement), and the object store is written
+   afterwards. See :doc:`coordinator-protocol`.
+
+What a commit crosses
 ---------------------
 
-After a new atom is persisted, ProtoBase immediately publishes it to two caches keyed by AtomPointer:
+.. code-block:: text
 
-- AtomObjectCache: deserialized objects (Python dicts for core atoms) keyed by (tx_uuid, offset, schema_epoch).
-- AtomBytesCache: raw payload bytes keyed by (tx_uuid, offset).
+   tr.commit()
+     1. no writes?  nothing is saved or published; done
+     2. save the written values, children first, to the storage (unpublished records are harmless:
+        the storage is append-only)
+     3. take the root lock (a thread lock plus an OS file lock; a cluster: the write permission)
+     4. read the current root; check the read set against it  ->  ProtoConflictError, nothing published
+     5. merge the unread mergeable roots onto their current values; build the new DatabaseRoot
+        and SpaceRoot atoms
+     6. flush the storage (data durable), then publish the root by compare-and-swap on the epoch
+     7. mark the written values' op logs consumed; release the lock (nothing here can fail the commit)
 
-This write‑through behavior eliminates "read‑your‑own‑writes" penalties and keeps the hottest data resident in RAM.
-See :doc:`api/atom_cache` for API details and configuration options.
+Step 6 is the commit point. Data is always durable before the root that refers to it, so a crash at any
+point leaves either the old root or the new one, never a root with missing data (:doc:`durability`).
 
-Index‑Aware Optimizer
----------------------
+Threads and import
+------------------
 
-The optimizer rewrites filters to leverage available secondary indexes:
+``import proto_db`` imports no submodule, no optional third-party package (numpy, pyarrow, boto3,
+google-cloud-storage, hnswlib) and starts no thread: public names resolve on first access (D47). Threads
+exist only where a feature needs them: the parallel scan pool, a finite state machine's worker, and a cluster
+node's transport, persister and timers. Free-threaded CPython (3.14t) is a supported target: immutable
+structures need no locks, and every piece of shared mutable state (the write buffer, the segment writer, the
+caches, the lazy-load publication, the transaction bookkeeping and the space's root reference) is guarded by a
+lock whose contract is documented on the class that owns it. ``hnswlib`` re-enables the GIL when imported, so
+it is optional and imported only when its backend is used (D13).
 
-- Single‑term predicates on indexed fields become direct index probes via ``IndexedSearchPlan`` or range scans via
-  ``IndexedRangeSearchPlan``.
-- AND predicates compile into ``AndMerge``: each sub‑term produces a set of stable references; sets are intersected
-  from smallest to largest; only the final candidate set is materialized, then residual filters are applied.
-- OR predicates compile into ``OrMerge`` when all sub‑terms are indexable; results are unioned with de‑duplication by
-  stable reference.
+Where to read next
+------------------
 
-Range traversal operates directly over the AVL‑backed index structure: a lower‑bound binary search followed by an
-in‑order sequential walk until the upper bound is exceeded. Keys are compared natively (no string coercion), and
-inclusivity/exclusivity on bounds is respected.
+* :doc:`concurrency-model` for isolation, conflicts and merges.
+* :doc:`indexing-framework` and :doc:`query-planner` for the two extension points of the data path.
+* :doc:`durability` for what each step above guarantees.

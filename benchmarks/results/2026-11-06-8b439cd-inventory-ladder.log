@@ -1,0 +1,9 @@
+== inventory 1000000 gil=0 2026-11-06T04:17:47-03:00 stray: none; free: 1005G; mem: 22 GiB available; cap 20G
+exit 0 2026-11-06T04:23:49-03:00 maxrss: 	Maximum resident set size (kbytes): 2636944
+== inventory 1000000 gil=1 2026-11-06T04:23:49-03:00 stray: none; free: 1005G; mem: 22 GiB available; cap 20G
+exit 0 2026-11-06T04:29:58-03:00 maxrss: 	Maximum resident set size (kbytes): 2590016
+== inventory 10000000 gil=0 2026-11-06T04:30:27-03:00 stray: none; free: 1005G; mem: 22 GiB available; cap 20G
+2026-11-06T05:05:18-03:00 STOP: available 7949 MB < 8000 MB (earlyoom fires at 10 % = 6.2 GB); pid 1213729 rss_kb  elapsed ; workdir 2,4G apparent
+2026-11-06T05:05:26-03:00 STOP (manual, the guard matched the wrong pid): pid 1046542 rss_kb 14864268 elapsed       34:58 avail_mb 7724
+exit 143 2026-11-06T05:05:28-03:00 maxrss: 	Maximum resident set size (kbytes): 14865368
+note 2026-11-06: the stopped step's database, reopened read-only, holds sites/equipment/cards/ports/links = [1496, 14960, 149600, 4189193, 1566159] = 5,921,408 objects committed (1,496 of 2,769 sites); the reopening process's peak RSS was 32 MB
