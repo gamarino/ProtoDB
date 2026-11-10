@@ -239,11 +239,14 @@ def test_a_term_ends_by_idle_or_by_expiry_only_while_its_renewals_succeed():
             assert a._ownership is own, f"the term ended while in use (renewal {i + 1})"
         assert a.stats()["renewal_failures"] == before["renewal_failures"]
         # 2. No demand: the term ends by idle, released and never abandoned.
-        idle_from = time.monotonic()
         # The ownership is cleared first, then the lease released (outside the lock).
         wait_for(lambda: a._ownership is None and own.lease.released_at is not None, "the idle end of the term",
                  timeout=D)
-        assert time.monotonic() - idle_from >= D / 4 * 0.9 - 0.05
+        ended = time.monotonic()
+        # Idle runs from the last request (``last_demand``, the monotonic clock), not from the
+        # end of the renewal loop above (re-review 2 of 8.3n, M4): measured from there, with no
+        # tolerance needed (the same clock, read after the decision).
+        assert ended - own.last_demand >= D / 4, (ended - own.last_demand, D / 4)
         assert own.ended and not own.abandoned and own.lease.is_valid() is False
         stats = a.stats()
         assert stats["terms_abandoned"] == 0 and stats["renewal_failures"] == before["renewal_failures"]

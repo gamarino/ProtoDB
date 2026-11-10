@@ -22,7 +22,6 @@ refuses writes on every backend, the in-memory one included.
   closed under its ``apply`` treats the refusal as "tier gone": it refuses the replication
   (never acknowledges it), stays healthy, and does not count the records as stored.
 """
-import os
 import threading
 import time
 import uuid
@@ -31,88 +30,27 @@ import pytest
 
 from proto_db.cluster import coordinator as coordinator_module
 from proto_db.cluster.rootlog import memory_log_for, root_key
-from proto_db.errors import ProtoDBError, ProtoLockingError, ProtoOutcomeUnknownError, ProtoValidationError
+from proto_db.errors import ProtoLockingError, ProtoOutcomeUnknownError, ProtoValidationError
 from proto_db.storage.memory import MemoryStorage
 from tests.support.cluster import MemoryTier
-from tests.support.manual_cluster import GRACE, Harness, rec
+from tests.support.acceptor_writes import (DirStorage, file_backed, harness, logged,  # noqa: F401
+                                           replicate_in_background, start_commit)
+from tests.support.manual_cluster import GRACE, rec
 
 pytestmark = [pytest.mark.timeout(120)]
-
-
-class DirStorage(MemoryStorage):
-    """A ``MemoryStorage`` with a directory: its ``PlainTier`` keeps a real ``RootsLog`` file."""
-
-    def __init__(self, path):
-        super().__init__()
-        self.path = str(path)
-        self.durability = "fsync"
-
-
-@pytest.fixture
-def harness():
-    made = []
-
-    def make(names="abc", **kw):
-        h = Harness(names, **kw)
-        made.append(h)
-        return h
-
-    yield make
-    for h in made:
-        h.close()
-
-
-def _file_backed(h, name, path):
-    """Give ``name`` a file-backed acceptor log (a fresh one, rejoined at the first start)."""
-    old = h.nodes[name]
-    old.stop()
-    h.retired.append(old)
-    os.makedirs(path)
-    h.disks[name] = DirStorage(path)
-    h.nodes[name] = h._node(name, 0.0)
-    assert h.rejoin(name)
 
 
 def _setup(h, kind, tmp_path):
     """r0 committed everywhere; c restarted with the safe grace (a reattach of a non-empty log
     needs it); a holds a lease granted by c.  Returns ``(r0, lease_a)``."""
     if kind == "file":
-        _file_backed(h, "c", tmp_path / "c")
+        file_backed(h, "c", tmp_path / "c")
     r0 = h.bootstrap("a")
     h.restart("c")
     h.clock.t += 3 * GRACE
     lease_a = h.attempt("a", {"c"})
     assert not isinstance(lease_a, Exception), lease_a
     return r0, lease_a
-
-
-def _replicate_in_background(node, lease, root):
-    out = {}
-
-    def run():
-        try:
-            out["r"] = node.replicate(lease, root)
-        except ProtoDBError as e:   # the outcome under test
-            out["r"] = e
-
-    t = threading.Thread(target=run, daemon=True)
-    t.start()
-    return t, out
-
-
-def _start_commit(h, lease, root):
-    """a replicates ``root``; its copy to b is dropped, its copy to c is handed to c's worker."""
-    t, out = _replicate_in_background(h.nodes["a"], lease, root)
-    deadline = time.monotonic() + 10.0
-    handed = False
-    while not handed:
-        assert time.monotonic() < deadline, "a never sent its replication"
-        h.net.drop(src="a", dst={"b"}, kinds=("records", "replicate"))
-        for _, to, msg in h.net.take("a", {"c"}, ("records", "replicate")):
-            h.net.handlers[to](msg)
-            handed = handed or msg["type"] == "replicate"
-        time.sleep(0.001)
-    return t, out
 
 
 def _pause_log_write(tier, worker):
@@ -173,11 +111,6 @@ def _acks(h):
     return [m["ok"] for _, _, m in h.net.take("c", {"a"}, ("ack",))]
 
 
-def _logged(tier):
-    accepted = tier.load_roots().accepted
-    return None if accepted is None else accepted[1]
-
-
 def _moved_disk(old_tier, name):
     """A copy of ``old_tier``'s (detached) in-memory acceptor log, as another storage object."""
     disk = MemoryStorage()
@@ -208,7 +141,7 @@ def test_n1_an_acceptance_being_logged_finishes_before_the_space_closes(harness,
     t1 = c.tier
     in_window, gate = _pause_log_write(t1, "proto-cluster-worker-c")
     R = rec(2)
-    t, out = _start_commit(h, lease_a, R)
+    t, out = start_commit(h, lease_a, R)
 
     def reopen():
         c.detach(t1)
@@ -233,7 +166,7 @@ def test_n1_an_acceptance_being_logged_finishes_before_the_space_closes(harness,
     t.join(10.0)
     assert isinstance(out.get("r"), float), out          # R committed with a + c
     assert c.tier is not t1
-    assert _logged(c.tier) == R, "acknowledged, but not in the attached log"
+    assert logged(c.tier) == R, "acknowledged, but not in the attached log"
     assert c.accepted_root()[1] == R, "c's memory forgot a root it acknowledged"
     h.net.drop(src="a", kinds=("release",))               # a crashes before its release
     a.stop()
@@ -259,7 +192,7 @@ def test_n1_an_acceptance_decided_after_a_reattach_is_refused(harness, tmp_path,
     t1 = c.tier
     in_window, gate = _pause_before_decision(monkeypatch, "proto-cluster-worker-c")
     R = rec(2)
-    t, out = _start_commit(h, lease_a, R)
+    t, out = start_commit(h, lease_a, R)
     try:
         assert in_window.wait(10), "c's worker never reached its decision"
         c.detach(t1)
@@ -269,7 +202,7 @@ def test_n1_an_acceptance_decided_after_a_reattach_is_refused(harness, tmp_path,
         gate.set()
     assert c.wait_idle(5.0)
     assert _acks(h) == [False], "a replication decided on a detached tier was acknowledged"
-    assert _logged(c.tier) == r0
+    assert logged(c.tier) == r0
     assert c.accepted_root()[1] == r0, "c's memory is ahead of its log"
     with c._lock:
         assert root_key(lease_a.term, R) not in c._stored, "a stale worker refilled the stored records"
@@ -289,7 +222,7 @@ def test_n1_a_decision_after_a_move_to_another_disk_writes_nothing_on_the_old_on
     c = h.nodes["c"]
     t1 = c.tier
     in_window, gate = _pause_before_decision(monkeypatch, "proto-cluster-worker-c")
-    t, out = _start_commit(h, lease_a, rec(2))
+    t, out = start_commit(h, lease_a, rec(2))
     try:
         assert in_window.wait(10)
         c.detach(t1)
@@ -299,8 +232,8 @@ def test_n1_a_decision_after_a_move_to_another_disk_writes_nothing_on_the_old_on
         gate.set()
     assert c.wait_idle(5.0)
     assert _acks(h) == [False]
-    assert _logged(t1) == r0, "the worker wrote on a detached log"
-    assert _logged(c.tier) == r0 and c.accepted_root()[1] == r0
+    assert logged(t1) == r0, "the worker wrote on a detached log"
+    assert logged(c.tier) == r0 and c.accepted_root()[1] == r0
     t1.close()
     h.nodes["a"].stop()
     t.join(10.0)
@@ -318,7 +251,7 @@ def test_n1_a_move_to_another_disk_waits_for_the_acceptance_being_logged(harness
     t1 = c.tier
     in_window, gate = _pause_log_write(t1, "proto-cluster-worker-c")
     R = rec(2)
-    t, out = _start_commit(h, lease_a, R)
+    t, out = start_commit(h, lease_a, R)
 
     def move():
         c.detach(t1)
@@ -338,7 +271,7 @@ def test_n1_a_move_to_another_disk_waits_for_the_acceptance_being_logged(harness
     assert c.wait_idle(5.0)
     acks = _acks(h)
     assert acks == [True]
-    assert _logged(c.tier) == R, "acknowledged, but not in the attached log"
+    assert logged(c.tier) == R, "acknowledged, but not in the attached log"
     assert c.accepted_root()[1] == R
     t1.close()
     h.nodes["a"].stop()
@@ -402,7 +335,7 @@ def test_n1_a_holder_moved_to_another_disk_mid_commit_does_not_accept_on_the_old
 
     a._broadcast = paused
     R = rec(2)
-    t, out = _replicate_in_background(a, lease_a, R)
+    t, out = replicate_in_background(a, lease_a, R)
     try:
         assert sent.wait(10)
         a.detach(t1)
@@ -416,8 +349,8 @@ def test_n1_a_holder_moved_to_another_disk_mid_commit_does_not_accept_on_the_old
         h.clock.t = max(h.clock.t, lease_a.valid_until + 0.001)    # nobody else answers
         t.join(0.01)
     assert isinstance(out.get("r"), ProtoOutcomeUnknownError), out
-    assert _logged(t1) == r0, "the holder wrote on a detached log"
-    assert _logged(a.tier) == r0 and a.accepted_root()[1] == r0
+    assert logged(t1) == r0, "the holder wrote on a detached log"
+    assert logged(a.tier) == r0 and a.accepted_root()[1] == r0
     t1.close()
 
 
@@ -436,11 +369,11 @@ def test_a_closed_acceptor_log_handle_refuses_writes_on_every_backend(tmp_path, 
         with pytest.raises(ProtoLockingError):
             MemoryTier(disk, "n")
     else:
-        assert _logged(two) == r1
+        assert logged(two) == r1
     one.close()
     if two is None:
         two = MemoryTier(disk, "n")
-        assert _logged(two) == r1
+        assert logged(two) == r1
     one.close()                                            # idempotent
     with pytest.raises(ProtoValidationError):
         one.log_root("accepted", 2, r2)
@@ -520,7 +453,7 @@ def test_a1_a_worker_whose_tier_closed_under_its_apply_refuses_and_stays_healthy
 
     t1.apply = paused
     R = rec(2)
-    t, out = _start_commit(h, lease_a, R)
+    t, out = start_commit(h, lease_a, R)
     try:
         assert in_window.wait(10), "c's worker never stored the records"
         c.detach(t1)
@@ -532,7 +465,7 @@ def test_a1_a_worker_whose_tier_closed_under_its_apply_refuses_and_stays_healthy
     assert _acks(h) == [False], "a replication whose records the closed tier refused was not refused"
     assert t1.applied == [], "the closed tier stored records"
     assert c.healthy and not c.stats()["fenced"]
-    assert _logged(c.tier) == r0 and c.accepted_root()[1] == r0
+    assert logged(c.tier) == r0 and c.accepted_root()[1] == r0
     with c._lock:
         assert root_key(lease_a.term, R) not in c._stored
     a.stop()
