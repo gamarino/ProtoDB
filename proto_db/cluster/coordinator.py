@@ -4142,8 +4142,17 @@ class ClusterCoordinator:
         """
         with self._lock:
             suspected = self._suspect_term      # what the answers below can settle
-        waiter = self._ask("query", {"ballot": 0, "vs": self._fingerprint},
-                           lambda w: len(w.answers) >= len(self._other_voters), self._request_timeout,
+
+        def settled(w) -> bool:
+            # Evaluated with the lock held.  The round ends once a majority of witnesses
+            # answered (D46): waiting for every voter made each round last request_timeout
+            # while one was down, inside the commit's lease (Task 8.3n fix round 3).
+            if len(w.answers) >= len(self._other_voters):
+                return True
+            ok = sum(1 for p in w.answers if w.states.get(p) == "ok")
+            return ok + int(self._witness_state() == "ok") >= self._majority
+
+        waiter = self._ask("query", {"ballot": 0, "vs": self._fingerprint}, settled, self._request_timeout,
                            targets=self._other_voters)
         with self._lock:
             answers = {p: a for p, a in waiter.answers.items() if waiter.states.get(p) == "ok"}

@@ -215,6 +215,14 @@ def blind_snapshot_of'''),),
          "test_a_permission_issued_at_the_d4_threshold_is_usable_whatever_the_request_timeout",),
         "a replication needs (send_reserve); nothing was replicated",
         "product: the reserve defaults to request_timeout even above belief / 4 (fix round 3 proof)"),
+    "recovery_waits_all": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "            return ok + int(self._witness_state() == \"ok\") >= self._majority\n",
+         "            return False     # PLANT: the recovery round waits for every voter\n"),),
+        ("tests/unit/test_cluster_transactions.py::"
+         "test_a_recovery_round_ends_once_a_majority_of_witnesses_answered",),
+        "with a majority answering at once",
+        "product: a recovery round waits for every voter, request_timeout while one is down (fix round 3 proof)"),
     "no_reserve": Plant((
         ("proto_db/cluster/coordinator.py",
          "        if left < self._send_reserve:\n",
