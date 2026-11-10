@@ -198,12 +198,13 @@ def blind_snapshot_of'''),),
         "product: silence about an older term's request clears the owner learnt for a newer term (N4)"),
     "cancel_wakes": Plant((
         ("proto_db/cluster/coordinator.py",
-         "                    self._cond.wait_for(progress, timeout=max(0.0, backoff_end - time.monotonic()))\n",
-         "                    self._cond.wait_for(lambda: progress() or self._wakeups != seen[0],  # PLANT\n"
-         "                                        timeout=max(0.0, backoff_end - time.monotonic()))\n"),),
+         "            self._cond.wait_for(progress, timeout=max(0.0, backoff_end - time.monotonic()))\n",
+         "            self._cond.wait_for(lambda: progress() or self._wakeups != seen[0],  # PLANT\n"
+         "                                timeout=max(0.0, backoff_end - time.monotonic()))\n"),),
+        # Both parameters (permit() and acquire(), re-review 2 M2) share _back_off.
         ("tests/unit/test_cluster_permit_backoff.py::test_cancels_do_not_end_the_back_off_of_a_refused_permit_request",),
         "cancels ended the back-off",
-        "product: every cancel ends a refused permit request's back-off (N7)"),
+        "product: every cancel ends a lost attempt's back-off, permit() and acquire() (N7, M2)"),
     "reserve_uncapped": Plant((
         ("proto_db/cluster/coordinator.py",
          "        self._send_reserve = min(self._request_timeout, quarter) if send_reserve is None else _number(",
@@ -223,6 +224,31 @@ def blind_snapshot_of'''),),
          "test_a_recovery_round_ends_once_a_majority_of_witnesses_answered",),
         "with a majority answering at once",
         "product: a recovery round waits for every voter, request_timeout while one is down (fix round 3 proof)"),
+    "c1_no_floor": Plant((
+        ("proto_db/transactions.py",
+         "    return lease.root is not None or bool(lease.root_term)\n",
+         "    return False     # PLANT: the recovery result alone is the base (re-review 2, C1)\n"),),
+        ("tests/unit/test_cluster_recovery_base.py::test_c1_a_recovery_ended_at_a_majority_never_drops_the_phase_1_root",
+         "tests/unit/test_cluster_recovery_base.py::"
+         "test_c1_an_uncertain_permission_base_never_orders_below_its_issued_root"),
+        "the base ordered below the",
+        "product: an uncertain lease's base ignores its phase-1 root, an acknowledged root is lost (C1)"),
+    "recovery_every_ignored": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "            if every:\n                return False\n",
+         "            pass     # PLANT: every=True ends at a majority too\n"),),
+        ("tests/unit/test_cluster_recovery_base.py::"
+         "test_m6_a_recovery_with_every_waits_for_the_holder_that_knows_the_commit",),
+        "the round ended without a's answer",
+        "product: open_database's recovery ends at a majority and misses the creator (re-review 2, M6)"),
+    "reserve_refusal_suspects": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "            failure, ok, acks = e, False, len(waiter.acks)\n            if acceptable[0]:\n",
+         "            failure, ok, acks = e, False, len(waiter.acks)\n            if True:     # PLANT (M1)\n"),),
+        ("tests/unit/test_cluster_send_reserve.py::"
+         "test_a_reserve_refusal_after_the_gate_leaves_no_suspicion_and_no_replication_failure",),
+        "a reserve refusal that sent nothing",
+        "product: a gated reserve refusal counts a replication failure and suspects its term (re-review 2, M1)"),
     "no_reserve": Plant((
         ("proto_db/cluster/coordinator.py",
          "        if left < self._send_reserve:\n",

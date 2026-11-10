@@ -19,9 +19,9 @@ Write permissions (D50)
     therefore ends a permission only through the incarnation it was issued to: a ``permit``
     names the requester's incarnation, any other incarnation drops it unanswered, and a
     ``done`` of another incarnation is an unknown outcome (8.3f review, C1).  An outcome the
-    owner cannot know makes it abandon its term; the next owner's recovery round decides the
-    root, as after any D46 lease.  The acquiring and lease rules below are the D45/D46
-    mechanics an owner uses to obtain and renew its term.
+    owner cannot know makes it abandon its term; the next owner's phase 1, raised by its
+    recovery round, decides the root, as after any D46 lease.  The acquiring and lease rules
+    below are the D45/D46 mechanics an owner uses to obtain and renew its term.
 
 Pipelined permissions (Task 8.3k, D55; rulings R91, R93, R94)
     A holder whose round had no conflict proposes its root to the owner (``propose``) and runs
@@ -233,7 +233,10 @@ Certainty
     outcome it could not know (one that ended by expiry, by its holder's restart, or a
     release marked uncertain); such a suspicion is cleared when the node learns a root
     labelled with that term or later.  An uncertain lease runs a recovery round
-    (:meth:`ClusterCoordinator.recover_root`): the roots of a majority of peers.
+    (:meth:`ClusterCoordinator.recover_root`): the roots of a majority of peers.  Its base
+    never orders below the lease's own root, the phase-1 value its granters reported after
+    promising the term: the recovery answers promise nothing and can miss a root accepted
+    after they were given (re-review 2 of 8.3n, C1).
 Peer services
     ``query``/``answer`` (recovery, joining peers), ``fetch``/``fetched`` (peer page
     requests for records not yet in the object store) and ``commit_query``/``commit_info``
@@ -2022,8 +2025,8 @@ class ClusterCoordinator:
                 # its term decided is unknown here until a root of that term or later arrives.
                 self._suspect_term = max(self._suspect_term, msg["term"])
         # Any release -- a winner's or a lost attempt's cancel -- may free the peer that
-        # refused us, so it ends a waiting requester's back-off.  ``permit()`` (N7) lets a
-        # cancel end only the busy extension of its back-off; a winner's release ends it all.
+        # refused us, so it wakes a waiting requester: a cancel ends only the busy extension
+        # of its back-off, a winner's release ends it all (:meth:`_back_off`; N7, M2).
         self._wakeups += 1
         if msg["held"]:
             self._progress += 1
@@ -2753,27 +2756,50 @@ class ClusterCoordinator:
                 raise ProtoTimeoutError(
                     f"Node {self._node} could not obtain the cluster write lease from a majority "
                     f"({self._majority} of {self.cluster_size}) within {timeout} s")
-            low, high = self._backoff
-            delay = min(high, low * (2 ** min(failures, 30))) * (0.5 + self._rng.random() / 2)
-            delay = min(max(delay, wait), remaining)
+            # ``seen`` dates from before the request: what arrived since then counts.
+            self._back_off(failures, wait, remaining, seen)
             failures += 1
-            with self._cond:
-                self._check_running()
-                # ``seen`` dates from before the request: a release that arrived since then
-                # (even before the refusals) ends the wait at once.
-                self._cond.wait_for(lambda: self._wakeups != seen or self._state != "running", timeout=delay)
-                self._check_running()
-                woken = self._wakeups != seen
-                # The member whose turn a release named asks at once; the others spread out
-                # (and defer to it, :meth:`_await_turn`).
-                spread = woken and not self._my_turn
-            if spread:
-                time.sleep(self._rng.random() * _WAKE_SPREAD)
+
+    def _wake_marks(self) -> tuple:
+        """``(wakeups, progress, owner hint)`` now (lock held): what :meth:`_back_off` compares
+        against to tell what arrived since."""
+        return self._wakeups, self._progress, self._owner_hint
+
+    def _back_off(self, failures: int, busy: float, remaining: float, seen: tuple) -> None:
+        """The wait after a lost lease attempt, shared by :meth:`_acquire` and :meth:`permit`
+        (re-review 1 of 8.3n, N7; re-review 2, M2): the jittered exponential delay, extended
+        to the refusing granters' ``busy`` remaining, never past ``remaining``.  ``seen`` is
+        :meth:`_wake_marks` from before the attempt.  Progress -- a winner's release, a done,
+        a newly learnt owner -- ends the whole wait.  Any other release (a lost attempt's
+        cancel) may have freed a granter, so it ends the busy extension, never the back-off
+        itself: every lost attempt broadcasts a cancel, and when each one ended every waiter's
+        back-off, members retried every 2-4 ms while no majority could grant.  A woken member
+        that the release did not name for the turn adds a small random spread (and defers to
+        the named one, :meth:`_await_turn`)."""
+        low, high = self._backoff
+        delay = min(high, low * (2 ** min(failures, 30))) * (0.5 + self._rng.random() / 2)
+        now = time.monotonic()
+        backoff_end = now + min(delay, remaining)
+        busy_end = now + min(max(delay, busy), remaining)
+        with self._cond:
+            self._check_running()
+
+            def progress():
+                return self._progress != seen[1] or self._owner_hint != seen[2] or self._state != "running"
+            self._cond.wait_for(progress, timeout=max(0.0, backoff_end - time.monotonic()))
+            if not progress():
+                self._cond.wait_for(lambda: progress() or self._wakeups != seen[0],
+                                    timeout=max(0.0, busy_end - time.monotonic()))
+            self._check_running()
+            woken = progress() or self._wakeups != seen[0]
+            spread = woken and not self._my_turn
+        if spread:
+            time.sleep(self._rng.random() * _WAKE_SPREAD)
 
     def _open_attempt(self) -> tuple:
         """Open an attempt with this node's own vote decided; return ``(attempt, request,
-        wakeups seen, tier whose log must record our own promise or None)``.  Our own vote reads
-        the accepted root and raises the promise in memory, so it is decided under
+        wake marks seen (:meth:`_wake_marks`), tier whose log must record our own promise or
+        None)``.  Our own vote reads the accepted root and raises the promise in memory, so it is decided under
         ``_log_lock``, atomically with acceptances (ruling R55); its promise is written by
         :meth:`_promise` after the broadcast."""
         promise = None
@@ -2808,7 +2834,7 @@ class ClusterCoordinator:
                     attempt.on_reject(self._node, decision.reason, decision.highest, decision.remaining)
             request = make_message("request", self._node, term=term, rid=attempt.rid, inc=self._inc,
                                    vs=self._fingerprint)
-            seen = self._wakeups
+            seen = self._wake_marks()
         return attempt, request, seen, promise
 
     def _close_attempt(self, attempt: LeaseAttempt) -> tuple:
@@ -2926,7 +2952,7 @@ class ClusterCoordinator:
                     return permission
                 with self._lock:
                     # Dated from before the attempt (as in _acquire): what arrives meanwhile counts.
-                    seen = (self._wakeups, self._progress, self._owner_hint)
+                    seen = self._wake_marks()
                 owned, busy = self._become_owner(deadline)
                 if owned:
                     continue
@@ -2934,36 +2960,8 @@ class ClusterCoordinator:
                 if remaining <= 0:
                     raise ProtoTimeoutError(
                         f"Node {self._node} could not obtain a write permission within {timeout} s")
-                # The back-off between lost attempts (re-review 1, N7; aligned with _acquire):
-                # the jittered exponential delay, extended to the refusing granters'
-                # ``busy_remaining``.  Progress -- a winner's release, a done, a newly learnt
-                # owner -- ends the whole wait.  Any other release (a lost attempt's cancel)
-                # may have freed a granter, so it ends the busy extension, never the back-off
-                # itself: every lost attempt broadcasts a cancel, and when each one ended every
-                # waiter's back-off, members retried every 2-4 ms while no majority could grant.
-                low, high = self._backoff
-                delay = min(high, low * (2 ** min(failures, 30))) * (0.5 + self._rng.random() / 2)
+                self._back_off(failures, busy, remaining, seen)
                 failures += 1
-                now = time.monotonic()
-                backoff_end = now + min(delay, remaining)
-                busy_end = now + min(max(delay, busy), remaining)
-                with self._cond:
-                    self._check_running()
-
-                    def progress():
-                        return (self._progress != seen[1] or self._owner_hint != seen[2]
-                                or self._state != "running")
-                    self._cond.wait_for(progress, timeout=max(0.0, backoff_end - time.monotonic()))
-                    if not progress():
-                        self._cond.wait_for(lambda: progress() or self._wakeups != seen[0],
-                                            timeout=max(0.0, busy_end - time.monotonic()))
-                    self._check_running()
-                    woken = progress() or self._wakeups != seen[0]
-                    # The member a release named for the turn asks at once; the others spread
-                    # out (and defer to it, _await_turn).
-                    spread = woken and not self._my_turn
-                if spread:
-                    time.sleep(self._rng.random() * _WAKE_SPREAD)
         finally:
             with self._lock:
                 self._acquirers -= 1
@@ -3833,7 +3831,10 @@ class ClusterCoordinator:
                     self._learn_locator(label, root, copies, ranges)
                     if self._suspect_term and self._suspect_term <= label:
                         self._suspect_term = 0
-                else:
+                elif acceptable[0]:
+                    # As in the handler below (M1): a gated data stage that ended before
+                    # anything acceptable left (``copies is None``) leaves no outcome this node
+                    # cannot know.
                     self._stats["replication_failures"] += 1
                     self._suspect_term = max(self._suspect_term, label)
         except ProtoCorruptionError:
@@ -3848,9 +3849,14 @@ class ClusterCoordinator:
             # failure now (the space closing under the commit, a log write) leaves the outcome
             # unknown -- never a validation error, which would claim nothing took effect.
             failure, ok, acks = e, False, len(waiter.acks)
-            with self._lock:
-                self._stats["replication_failures"] += 1
-                self._suspect_term = max(self._suspect_term, label)
+            if acceptable[0]:
+                # Only when something a voter may accept left this node (re-review 2 of 8.3n,
+                # M1): a refusal before that (the reserve or the gate of a gated round) leaves
+                # nothing whose outcome this node cannot know, so its next grant replies stay
+                # certain.
+                with self._lock:
+                    self._stats["replication_failures"] += 1
+                    self._suspect_term = max(self._suspect_term, label)
         finally:
             with self._lock:
                 self._waiters.pop(rid, None)
@@ -4123,13 +4129,21 @@ class ClusterCoordinator:
             with self._lock:
                 self._waiters.pop(rid, None)
 
-    def recover_root(self) -> tuple:
+    def recover_root(self, every: bool = False) -> tuple:
         """Recovery round: ask every peer for its roots and wait for a majority (this node included).
 
         Returns ``(known, root, label)``: the highest accepted root among the answers and
-        this node's.  Every committed root was acknowledged by a majority, which intersects
-        the answering majority, so the result is the newest committed root or a root built on
-        it.  Committed roots learnt are adopted and the suspicion is cleared; the accepted
+        this node's.  The query carries ballot 0 and promises nothing: an answering voter may
+        accept a root of an older term after it answered, so the result orders at or above
+        every root a majority accepted *before* the intersecting member answered, and may miss
+        one accepted after (re-review 2 of 8.3n, C1).  A commit's base therefore never comes
+        from this result alone: :func:`proto_db.transactions._lease_base` floors it at the
+        lease's phase-1 root, whose granters promised the term before they replied.  With
+        ``every``, the round waits for every other voter (bounded by ``request_timeout``)
+        instead of ending at a majority: a best-effort read that wants the committed roots
+        every live voter knows, such as a just-acknowledged commit whose release is still on
+        its way (``ObjectSpace.open_database``, re-review 2, M6).
+        Committed roots learnt are adopted and the suspicion is cleared; the accepted
         roots of others are not (a root is accepted here only with its records).  Only
         witnesses count: members whose acceptor log is loaded and not rejoining (this node
         too: when it is not one, a majority of other witnesses is needed).
@@ -4149,6 +4163,8 @@ class ClusterCoordinator:
             # while one was down, inside the commit's lease (Task 8.3n fix round 3).
             if len(w.answers) >= len(self._other_voters):
                 return True
+            if every:
+                return False
             ok = sum(1 for p in w.answers if w.states.get(p) == "ok")
             return ok + int(self._witness_state() == "ok") >= self._majority
 

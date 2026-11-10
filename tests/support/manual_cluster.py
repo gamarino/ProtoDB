@@ -304,12 +304,22 @@ class Harness:
         return self._run(lambda: self.nodes[name].recover_root(), pump)
 
     def base(self, name, lease, responders):
-        """``(root, label)`` a commit under ``lease`` builds on: the lease's root when certain,
-        else the root a recovery round answered by ``responders`` returns."""
-        if lease.root_certain:
-            return lease.root, lease.root_term
-        known, root, label = self.recover(name, responders)
-        return root, label
+        """``(root, label)`` a commit under ``lease`` builds on, from the product's own
+        :func:`~proto_db.transactions._lease_base`: the lease's root when certain, else the
+        higher of it (the phase-1 root) and the root a recovery round answered by
+        ``responders`` returns (re-review 2 of 8.3n, C1).  Raises ``AssertionError`` when the
+        lease is superseded or the commit guard refuses."""
+        from proto_db.transactions import _lease_base
+        node, responders = self.nodes[name], set(responders)
+
+        def pump():
+            self.net.deliver(src=name, dst=responders, kinds=("query",))
+            self.net.drop(src=name, kinds=("query",))
+            self.net.deliver(src=None, dst={name}, kinds=("answer",))
+
+        out = self._run(lambda: _lease_base(node, node.tier, lease), pump)
+        assert isinstance(out, tuple), f"no base under {lease}: {out!r}"
+        return out[0], out[1]
 
     def own(self, name="a"):
         """``name`` becomes the owner of a term and commits a root with everyone under its own

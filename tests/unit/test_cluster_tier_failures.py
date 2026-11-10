@@ -26,8 +26,7 @@ from proto_db.storage.format import RecordKind, encode_record
 from tests.support.cluster import MemoryTier
 from tests.support.fake_object_store import FakeObjectStore
 from tests.support.manual_cluster import GRACE, rec
-from tests.unit.test_cluster_acceptor_writes import (_file_backed, _logged, _start_commit,  # noqa: F401
-                                                     harness)
+from tests.support.acceptor_writes import file_backed, harness, logged, start_commit  # noqa: F401
 
 pytestmark = [pytest.mark.timeout(120)]
 
@@ -66,7 +65,7 @@ def _fail_next_write(monkeypatch, log):
 def _file_cluster(h, tmp_path):
     """c on a file-backed acceptor log, r0 committed by a with every node, c restarted with the
     safe grace; returns ``(r0, c)``."""
-    _file_backed(h, "c", tmp_path / "c")
+    file_backed(h, "c", tmp_path / "c")
     r0 = h.bootstrap("a")
     h.restart("c")
     h.clock.t += 3 * GRACE
@@ -116,7 +115,7 @@ def test_a_failed_acceptance_write_is_refused_and_fails_the_tier(harness, tmp_pa
     acks = [m["ok"] for _, m in sent if m["type"] == "ack"]
     assert acks == [False], acks
     assert c.stats()["accepted"] == accepted
-    assert c.accepted_root()[1] == r0 and _logged(c.tier) == r0
+    assert c.accepted_root()[1] == r0 and logged(c.tier) == r0
     monkeypatch.undo()
     h.release("a", lease_a, to={"c"})
     h.clock.t += 3 * GRACE
@@ -125,11 +124,11 @@ def test_a_failed_acceptance_write_is_refused_and_fails_the_tier(harness, tmp_pa
     del sent[:]
     result = h.replicate("a", lease_a, rec(3), {"c"}, expire=True)    # refused without writing
     assert [m["ok"] for _, m in sent if m["type"] == "ack"] == [False]
-    assert _logged(c.tier) == r0
+    assert logged(c.tier) == r0
     h.release("a", lease_a, to=())
     _assert_failed_acceptor(h, c)
     _reopen(h, c)
-    assert _logged(c.tier) == r0 and c.accepted_root()[1] == r0
+    assert logged(c.tier) == r0 and c.accepted_root()[1] == r0
 
 
 def test_a_failed_promise_write_withholds_the_grant_and_fails_the_tier(harness, tmp_path, monkeypatch):
@@ -165,7 +164,7 @@ def test_a_failed_committed_root_write_fails_the_tier(harness, tmp_path, monkeyp
     monkeypatch.undo()
     _assert_failed_acceptor(h, c)
     _reopen(h, c)
-    assert _logged(c.tier) == R
+    assert logged(c.tier) == R
 
 
 # -- the A1 refusal path on a real TieredStorage ------------------------------------------------
@@ -226,7 +225,7 @@ def test_a1_a_detach_waits_for_an_acceptance_in_flight_on_a_tiered_storage(harne
     paused = _PausedLock(t1._ranges_lock, "proto-cluster-worker-c")
     t1._ranges_lock = paused
     R = rec(2)
-    t, out = _start_commit(h, lease_a, R)
+    t, out = start_commit(h, lease_a, R)
     detached = threading.Event()
 
     def detach():
@@ -339,7 +338,7 @@ def test_r2_an_acceptor_reopened_after_a_torn_append_keeps_what_it_acknowledges_
     h.replicate("a", lease_a, R3, {"c"})
     acks = [m["ok"] for _, m in sent if m["type"] == "ack"]
     assert acks == [True], acks
-    assert _logged(c.tier) == R3, "c acknowledged R3 but its own log does not return it"
+    assert logged(c.tier) == R3, "c acknowledged R3 but its own log does not return it"
     h.release("a", lease_a, to=())
     tier = c.tier
     c.detach(tier)
