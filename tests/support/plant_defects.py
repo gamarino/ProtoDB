@@ -233,6 +233,22 @@ def blind_snapshot_of'''),),
          "test_c1_an_uncertain_permission_base_never_orders_below_its_issued_root"),
         "the base ordered below the",
         "product: an uncertain lease's base ignores its phase-1 root, an acknowledged root is lost (C1)"),
+    "unreachable_base_none": Plant((
+        ("proto_db/transactions.py",
+         "                permission.outcome = \"unknown\"\n                raise\n",
+         "                raise     # PLANT: the permission ends none, O5 reissues the base (re-review 3, I1)\n"),),
+        ("tests/unit/test_cluster_recovery_base.py::"
+         "test_i1_a_floor_base_whose_records_are_unreachable_abandons_the_term",),
+        "O5 reissues it and the term stalls",
+        "product: a base with unreachable records ends the permission none, the term stalls (re-review 3, I1)"),
+    "gated_data_stage_suspects": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                elif acceptable[0]:\n",
+         "                else:     # PLANT (re-review 3, m1)\n"),),
+        ("tests/unit/test_cluster_send_reserve.py::"
+         "test_a_gated_data_stage_that_stored_nothing_leaves_no_suspicion_and_no_replication_failure",),
+        "a data stage that sent nothing acceptable",
+        "product: a gated data stage that stored nothing counts a replication failure and suspects its term (m1)"),
     "recovery_every_ignored": Plant((
         ("proto_db/cluster/coordinator.py",
          "            if every:\n                return False\n",
