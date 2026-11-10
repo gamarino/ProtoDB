@@ -51,7 +51,7 @@ from itertools import islice
 from ..collections import avl
 from ..collections.avl import CountedKeyNode
 from ..core.atom import PersistenceContext
-from ..errors import ProtoCorruptionError, ProtoValidationError
+from ..errors import ProtoCorruptionError, ProtoMisfiledError, ProtoValidationError
 from ..query.plans import Estimate, IndexPlan
 from ..query.terms import (BETWEEN, BETWEEN_EXCL_BOTH, BETWEEN_EXCL_HIGH, BETWEEN_EXCL_LOW, EQ, GE, GT, IN,
                            IS_NONE, LE, LT, NE, NOT_NONE, Term, is_orderable)
@@ -581,6 +581,13 @@ class KeyGroupIndex(Index):
         raise ProtoCorruptionError(f"Index {self.name!r} ({type(self).__name__} on "
                                    f"{self.key_spec.describe()}) is corrupt: {detail}")
 
+    def _misfiled(self, detail: str):
+        raise ProtoMisfiledError(
+            f"Index {self.name!r} ({type(self).__name__} on {self.key_spec.describe()}) holds a misfiled "
+            f"entry: {detail}. Format 3 wrote built-in subclasses (a (str, Enum) member) through their own "
+            f"conversion but filed them by their base value (D58); the collection must be rebuilt: "
+            f"replace it with collection.rebuilt()")
+
     def _check_group(self, group, slot: tuple, stored: Counter) -> int:
         if not isinstance(group, tuple) or len(group) != 2:
             self._corrupt(f"malformed group {group!r}")
@@ -599,7 +606,7 @@ class KeyGroupIndex(Index):
             if type(n) is not int or n < 1:
                 self._corrupt(f"element {element!r} has the count {n!r}")
             if self._slot(self.key_spec.extract(element)) != slot:
-                self._corrupt(f"element {element!r} is filed under {slot!r}, not under its own key")
+                self._misfiled(f"element {element!r} is filed under {slot!r}, not under its own key")
             stored[(slot, element_identity(element), exact_token(element))] += n
             seen += n
         if total != seen:
@@ -619,6 +626,14 @@ class KeyGroupIndex(Index):
         That determines every answer, so the default plan-vs-scan comparison
         (O(keys x n)) is not repeated.
         """
+        previous = None
+        for key, _ in avl.key_iter(self.groups):
+            okey = order_key(key) if is_orderable(key) else None
+            if okey is not None and previous is not None and not previous[0] < okey:
+                self._misfiled(f"the key {key!r} is stored after {previous[1]!r}, which its key order places "
+                               f"after it")
+            if okey is not None:
+                previous = (okey, key)
         avl.check_invariants(self.groups)
         stored: Counter = Counter()
         total = 0

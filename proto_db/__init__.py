@@ -71,7 +71,7 @@ _EXPORTS = {
     "hash_key": "values", "FrozenList": "values", "FrozenDict": "values",
     # errors (D12); the *Exception names are the 0.1 spellings: deprecated aliases, removed in 2.1
     "ProtoDBError": "errors", "ProtoValidationError": "errors", "ProtoUserError": "errors",
-    "ProtoCorruptionError": "errors", "ProtoNotSupportedError": "errors", "ProtoNotAuthorizedError": "errors",
+    "ProtoCorruptionError": "errors", "ProtoMisfiledError": "errors", "ProtoNotSupportedError": "errors", "ProtoNotAuthorizedError": "errors",
     "ProtoUnexpectedError": "errors", "ProtoOutcomeUnknownError": "errors", "ProtoBacklogFullError": "errors",
     "ProtoLockingError": "errors", "ProtoConflictError": "errors", "ProtoTimeoutError": "errors",
     "ProtoReferenceError": "errors", "ProtoStalePagerError": "errors", "ProtoClosedError": "errors",
@@ -111,6 +111,7 @@ if TYPE_CHECKING:  # pragma: no cover - static analysers only; never executed
     from .core.dbobject import DBObject, MutableObject
     from .errors import (ProtoBacklogFullError, ProtoBaseException, ProtoConflictError, ProtoCorruptionError,
                          ProtoCorruptionException, ProtoDBError, ProtoLockingError, ProtoLockingException,
+                         ProtoMisfiledError,
                          ProtoNotAuthorizedError, ProtoNotAuthorizedException, ProtoNotSupportedError,
                          ProtoNotSupportedException, ProtoOutcomeUnknownError, ProtoReferenceError,
                          ProtoClosedError, ProtoStalePagerError, ProtoTimeoutError,

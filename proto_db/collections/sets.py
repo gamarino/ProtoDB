@@ -140,10 +140,18 @@ class _HashBuckets(ConcurrentOptimized, IndexedCollection):
         return avl.key_from_sorted((h, tuple(buckets[h])) for h in sorted(buckets))
 
     def has(self, element) -> bool:
-        """True iff ``element`` is a member."""
-        return self._find(element)[2] >= 0
+        """True iff ``element`` (canonicalized, as stored elements are) is a member."""
+        return self._find(canonical(element))[2] >= 0
 
     __contains__ = has
+
+    def _check_placement(self) -> None:
+        for h, bucket in avl.key_iter(self.root):
+            for entry in bucket:
+                element = self._entry_element(entry)
+                if self._bucket_hash(element) != h:
+                    self._misfiled(f"the element {element!r} is in the bucket of another hash")
+        avl.check_invariants(self.root)
 
     def elements(self) -> Iterator:
         """Distinct members in bucket-hash order."""
@@ -186,6 +194,11 @@ class Set(_HashBuckets):
         if not unique:
             return empty
         return empty._with(root=cls._tree_from_entries(empty, unique.values()), count=len(unique))
+
+    def _refiled(self) -> "Set":
+        # Members that become one element are one member of a set.
+        new = type(self).from_iterable(self.elements(), context=self.context)
+        return self._with(root=new.root, count=new.count)
 
     # -- mutators -----------------------------------------------------------------------
 
@@ -293,14 +306,19 @@ class CountedSet(_HashBuckets):
     # -- reading ------------------------------------------------------------------------
 
     def count_of(self, element) -> int:
-        """Number of occurrences of ``element`` (0 when absent)."""
-        _, bucket, position = self._find(element)
+        """Number of occurrences of ``element`` (canonicalized; 0 when absent)."""
+        _, bucket, position = self._find(canonical(element))
         return 0 if position < 0 else bucket[position][1]
 
     def items(self) -> Iterator[tuple]:
         """``(element, count)`` pairs in bucket-hash order."""
         for _, bucket in avl.key_iter(self.root):
             yield from bucket
+
+    def _refiled(self) -> "CountedSet":
+        # Members that become one element add up their counts.
+        new = type(self).from_iterable((e for e, n in self.items() for _ in range(n)), context=self.context)
+        return self._with(root=new.root, count=new.count, total_count=new.total_count)
 
     # -- mutators -----------------------------------------------------------------------
 

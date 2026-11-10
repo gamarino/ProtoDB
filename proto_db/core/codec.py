@@ -57,7 +57,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..errors import ProtoCorruptionError, ProtoValidationError
 from ..values import _EXACT_SCALARS as _ENCODED_AS_IS
-from ..values import MISSING, FrozenDict, FrozenList, TokenAtoms, check_map_keys, plain_scalar
+from ..values import MISSING, FrozenDict, FrozenList, TokenAtoms, canonical, check_map_keys, plain_scalar
 from .atom import Atom, AtomPointer, type_name_of, type_tag
 from .dbobject import MutableObject
 
@@ -189,7 +189,11 @@ def _encode_other(value, save_child: Callable[[Atom], AtomPointer]):
     if isinstance(value, tuple):
         return {"@tup": [encode_value(v, save_child) for v in value]}
     if isinstance(value, dict):
-        if not all(type(k) in _PLAIN_KEY_TYPES for k in value):
+        if type(value) is not FrozenDict:
+            # A raw dict: its keys are converted (built-in subclasses to their base values) and
+            # checked by canonical(), so two keys that become one base value are refused.
+            value = canonical(value)
+        elif not all(type(k) in _PLAIN_KEY_TYPES for k in value):
             check_map_keys(value)
         return {"@map": [[encode_value(k, save_child), encode_value(v, save_child)]
                          for k, v in value.items()]}

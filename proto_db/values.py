@@ -231,9 +231,16 @@ _EXACT_SCALARS = frozenset({type(None), bool, int, float, Decimal, str, bytes, d
 def plain_scalar(value):
     """The value of the built-in scalar type that ``value`` (an instance of a subclass of one) holds,
     read with the base type's own methods, never the subclass's overrides: the class of a
-    built-in subclass is not persisted (D58, re-review C-1).  ``Color.RED`` of
-    ``class Color(str, Enum)`` gives ``"red"``; an ``IntEnum`` member gives its int.  ``None``
-    when ``value`` is not an instance of a built-in scalar type."""
+    built-in subclass, and every state it adds, is not persisted (D58, re-reviews C-1 and
+    Minor 1).  ``Color.RED`` of ``class Color(str, Enum)`` gives ``"red"``; an ``IntEnum`` member
+    gives its int.  ``None`` when ``value`` is not an instance of a built-in scalar type.
+
+    The base data is read through the base type's C-level methods: ``str.__str__``,
+    ``int.__index__``, ``float.__float__``, the ``Decimal`` copy constructor (the coefficient and
+    exponent, not ``str()``), ``bytes.__bytes__`` and a ``bytearray`` slice (not the buffer
+    protocol, which a subclass may override), the base ``__reduce_ex__(4)`` of the date and time types
+    (their stored fields, not the ``year``/``days``/... attributes a subclass may redefine) and
+    the ``int`` slot of ``UUID``."""
     if isinstance(value, bool):
         return bool(int.__index__(value))
     if isinstance(value, int):
@@ -243,26 +250,22 @@ def plain_scalar(value):
     if isinstance(value, float):
         return float.__float__(value)
     if isinstance(value, Decimal):
-        return Decimal(value)                   # copies the coefficient and exponent, not str()
-    if isinstance(value, (bytes, bytearray)):
-        return bytes(memoryview(value))
-    if isinstance(value, datetime):
-        return datetime(*(datetime.__getattribute__(value, a) for a in _DT_FIELDS),
-                        tzinfo=datetime.__getattribute__(value, "tzinfo"),
-                        fold=datetime.__getattribute__(value, "fold"))
-    if isinstance(value, date):
-        return date(*(date.__getattribute__(value, a) for a in ("year", "month", "day")))
-    if isinstance(value, time):
-        return time(*(time.__getattribute__(value, a) for a in _DT_FIELDS[3:]),
-                    tzinfo=time.__getattribute__(value, "tzinfo"), fold=time.__getattribute__(value, "fold"))
-    if isinstance(value, timedelta):
-        return timedelta(*(timedelta.__getattribute__(value, a) for a in ("days", "seconds", "microseconds")))
+        return Decimal(value)
+    if isinstance(value, bytes):
+        return bytes.__bytes__(value)
+    if isinstance(value, bytearray):
+        return bytes(bytearray.__getitem__(value, slice(None)))
+    for base in _DATE_TIME_TYPES:                 # datetime before date: it is a subclass of date
+        if isinstance(value, base):
+            return base(*base.__reduce_ex__(value, 4)[1])   # protocol 4 keeps fold
     if isinstance(value, uuid.UUID):
-        return uuid.UUID(int=object.__getattribute__(value, "int"))
+        return uuid.UUID(int=_UUID_INT.__get__(value))
     return None
 
 
-_DT_FIELDS = ("year", "month", "day", "hour", "minute", "second", "microsecond")
+_DATE_TIME_TYPES = (datetime, date, time, timedelta)
+#: The slot that holds a UUID's 128-bit integer (``uuid.UUID`` declares ``__slots__``).
+_UUID_INT = uuid.UUID.__dict__["int"]
 
 
 def canonical(value):
@@ -563,8 +566,9 @@ def map_key_ids(value, *, reading: bool = False, zone_form: bool = False) -> fro
 
     A reader (``reading``) accepts the two key forms format 3 could write (re-review I-2): NaN
     keys that conflict (a Python dict holds two NaN objects as two keys) and, when the key's wire
-    form holds a format-3 ``["zone", key]`` datetime (``zone_form``), an IANA-zone datetime.  Each
-    such key is its own identity: it conflicts with nothing.  A writer refuses both.
+    form holds a format-3 ``["zone", key]`` datetime (``zone_form``), an IANA-zone datetime.  A NaN
+    key is then its own identity (it conflicts with nothing); a zone key is identified by
+    :func:`_format3_zone_key_id`.  A writer refuses both.
     """
     if isinstance(value, (list, dict)):
         raise ProtoValidationError(f"A {type(value).__name__} cannot be a map key")
@@ -576,7 +580,7 @@ def map_key_ids(value, *, reading: bool = False, zone_form: bool = False) -> fro
         return frozenset({("nan", object() if reading else exact_token(value))})
     if _zone_datetime(value):
         if reading and zone_form:
-            return frozenset({("format-3 zone", object())})
+            return frozenset({_format3_zone_key_id(value)})
         raise ProtoValidationError(
             "A datetime in an IANA time zone cannot be a map key: use its UTC or fixed-offset form")
     if isinstance(value, tuple):
@@ -586,6 +590,19 @@ def map_key_ids(value, *, reading: bool = False, zone_form: bool = False) -> fro
             combos = [c + (i,) for c in combos for i in ids]
         return frozenset(("tuple", c) for c in combos)
     return frozenset({order_key(value)})
+
+
+def _format3_zone_key_id(value):
+    """The map-key identity of a format-3 zone-datetime key (re-review 2, Minor 5), the rule
+    Python's dict applied when format 3 wrote it (PEP 495): a wall clock that occurs once in its
+    zone is identified by its instant, so it conflicts with every aware key of that instant; a
+    wall clock that is ambiguous or skipped in its zone (its offset depends on ``fold``) is
+    identified by its zone and its wall-clock fields without ``fold``, so it conflicts only with
+    a format-3 key of the same zone and wall clock."""
+    if value.replace(fold=0).utcoffset() == value.replace(fold=1).utcoffset():
+        return order_key(value)
+    return ("format-3 zone wall clock", value.tzinfo.key, value.year, value.month, value.day, value.hour,
+            value.minute, value.second, value.microsecond)
 
 
 def check_map_keys(keys, zone_forms=None) -> None:
