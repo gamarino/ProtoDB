@@ -580,9 +580,18 @@ def test_a_lost_done_to_the_successor_is_answered_by_the_fallback_query(tmp_path
     without a root, which abandons the term by rule O5 (a permission that proposed ended
     ``none``).  B's retry commits under the next term.  Task 8.3n fix round 3: 4 of 160 runs
     with the GIL ended so (one traced: B's permission had 63 ms left of a 75 ms reserve), so
-    the check allows that abandonment, at most once per reserve refusal of B, and no other."""
+    the check allows that abandonment, at most once per reserve refusal of B, and no other.
+
+    The lease is 1.8 s (belief 0.6 s), not the file's 0.9 s.  The scenario needs B's
+    permission to outlast its data stage, the fallback's ``request_timeout`` and the query's
+    round, with ``send_reserve`` left.  At 0.9 s (belief 0.3 s) B entered its gate with
+    118-247 ms (measured), the fallback was due 100 ms later and the reserve needs 75 ms: at
+    most 72 ms of slack, which CPU starvation consumed (Task 8.3n fix round 3: 5 failures in
+    80 targeted runs while another session's builds and tests loaded the machine to 20+; 3 of
+    80 gate closures with 8 busy loops beside the test, the fallback's answer arriving after
+    the permission ended).  Timing affects liveness only (P5); the assertions are unchanged."""
     caplog.set_level(logging.INFO, logger="proto_db.cluster.coordinator")
-    with _cluster(tmp_path) as tc:
+    with _cluster(tmp_path, lease_duration=1.8) as tc:
         tc.commit("n0", incr)
         _confirmed(tc)
         tc.store.set_outage(True)       # no persister teaches B committed roots from the store
@@ -616,7 +625,7 @@ def test_a_lost_done_to_the_successor_is_answered_by_the_fallback_query(tmp_path
         ta.join(30)
         tb.join(30)
         assert results == {"n0": "acked", "n1": "acked"}, results
-        assert b.stats()["gate_fallbacks"] >= 1 and b.stats()["gate_closures"] == 0
+        assert b.stats()["gate_fallbacks"] >= 1 and b.stats()["gate_closures"] == 0, (b.stats(), caplog.text[-3000:])
         refused = b.stats()["sends_refused_reserve"]
         o5 = sum(1 for r in caplog.records if "of n1 ended without a root with a proposal" in r.getMessage())
         assert o5 <= refused, (o5, refused)
