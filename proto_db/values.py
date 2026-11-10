@@ -255,15 +255,22 @@ def plain_scalar(value):
         return bytes.__bytes__(value)
     if isinstance(value, bytearray):
         return bytes(bytearray.__getitem__(value, slice(None)))
-    for base in _DATE_TIME_TYPES:                 # datetime before date: it is a subclass of date
-        if isinstance(value, base):
-            return base(*base.__reduce_ex__(value, 4)[1])   # protocol 4 keeps fold
+    if isinstance(value, (datetime, time)):
+        base = datetime if isinstance(value, datetime) else time
+        return base(*base.__reduce_ex__(value, 4)[1])       # their own C __reduce_ex__; keeps fold
+    if isinstance(value, date):
+        # date and timedelta have no __reduce_ex__ of their own (object's calls the subclass's
+        # __reduce__): read their C field descriptors (pre-tag review m4).
+        return date(*(field.__get__(value) for field in _DATE_FIELDS))
+    if isinstance(value, timedelta):
+        return timedelta(*(field.__get__(value) for field in _TIMEDELTA_FIELDS))
     if isinstance(value, uuid.UUID):
         return uuid.UUID(int=_UUID_INT.__get__(value))
     return None
 
 
-_DATE_TIME_TYPES = (datetime, date, time, timedelta)
+_DATE_FIELDS = tuple(date.__dict__[n] for n in ("year", "month", "day"))
+_TIMEDELTA_FIELDS = tuple(timedelta.__dict__[n] for n in ("days", "seconds", "microseconds"))
 #: The slot that holds a UUID's 128-bit integer (``uuid.UUID`` declares ``__slots__``).
 _UUID_INT = uuid.UUID.__dict__["int"]
 

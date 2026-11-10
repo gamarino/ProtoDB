@@ -158,3 +158,74 @@ def test_root_names_starting_with_two_underscores_are_reserved(tmp_path, name):
             tr.set_root_object("_one_underscore", 1)            # not reserved
     finally:
         space.close()
+
+
+# -- pre-tag review: I-1 (references by another name), m1 (metaclass names) ----------------------
+
+def _holder_with_ref(storage, target_ptr, ref_name):
+    """A DBObject record whose field ``o`` is a @ref to ``target_ptr`` spelled ``ref_name``."""
+    state = {"name": "h", "o": {"@ref": [target_ptr.segment.bytes, target_ptr.offset, ref_name]}}
+    return storage.push_atom({"t": "proto_db.core.dbobject.DBObject", "oid": uuid.uuid4().bytes, "s": state})
+
+
+def test_a_reference_spelled_by_another_unknown_name_reaches_the_record():
+    # protoBaseST renamed SalesOrder to Order (an alias this process cannot know): the reference
+    # says Order (the declared name), the old record says SalesOrder. Both unknown here: one type.
+    storage = MemoryStorage()
+    target = storage.push_atom({"t": "polyglot.st.SalesOrder", "oid": uuid.uuid4().bytes, "s": {"n": 1}})
+    holder = DirectContext(storage).load(_holder_with_ref(storage, target, ORDER), "proto_db.core.dbobject.DBObject")
+    assert holder.o.n == 1
+    assert type(holder.o).__type_name__ == ORDER
+
+
+def test_a_reference_to_an_opaque_atom_is_rewritten_with_the_name_it_was_referenced_by():
+    # The owner wrote the declared name; copying the reference keeps it, read or not.
+    storage = MemoryStorage()
+    target = storage.push_atom({"t": "polyglot.st.SalesOrder", "oid": uuid.uuid4().bytes, "s": {"n": 1}})
+    for read in (False, True):
+        stub = DirectContext(storage).load(target, ORDER)
+        if read:
+            assert stub.n == 1
+        encoded = codec.encode_state({"o": stub}, lambda a: a.atom_pointer)
+        assert encoded["o"]["@ref"][2] == ORDER
+
+
+def test_an_unknown_reference_name_to_a_record_of_a_known_type_is_corruption():
+    storage = MemoryStorage()
+    target = storage.push_atom({"t": "proto_db.core.dbobject.DBObject", "oid": uuid.uuid4().bytes, "s": {"n": 1}})
+    holder = DirectContext(storage).load(_holder_with_ref(storage, target, ORDER), "proto_db.core.dbobject.DBObject")
+    with pytest.raises(ProtoCorruptionError, match="expected"):
+        holder.o.n
+
+
+@pytest.mark.parametrize("field", ["mro", "register"])
+def test_a_field_named_like_a_metaclass_attribute_is_readable(field):
+    # Instance reads never see the metaclass: only names the class itself (its MRO) defines hide a field.
+    storage = MemoryStorage()
+    ptr = storage.push_atom({"t": "polyglot.st.Weird", "oid": uuid.uuid4().bytes, "s": {field: 1}})
+    assert getattr(DirectContext(storage).load(ptr, "polyglot.st.Weird"), field) == 1
+    assert DBObject(**{field: 2}).__getattribute__(field) == 2
+
+
+# -- pre-tag review I-3: writers write the lowest sufficient format version -----------------------
+
+def test_a_writer_that_reads_a_newer_version_still_writes_the_lowest_sufficient_one(tmp_path, monkeypatch):
+    # Simulate the revision that adds format 5: it reads 5, but data using no format-5 feature
+    # is written as version 4, so readers of this revision keep opening it.
+    import struct
+    import sys as _sys
+    from proto_db.storage import format as fmt
+    for module in list(_sys.modules.values()):
+        if getattr(module, "__name__", "").startswith("proto_db") and hasattr(module, "FORMAT_VERSION"):
+            monkeypatch.setattr(module, "FORMAT_VERSION", 5)
+    monkeypatch.setattr(fmt, "READABLE_FORMAT_VERSIONS", frozenset({2, 3, 4, 5}))
+    path = tmp_path / "db"
+    space = ObjectSpace(FileStorage(str(path)))
+    with space.new_database("d").new_transaction() as tr:
+        tr.set_root_object("x", DBObject(n=1))
+    space.close()
+    root = msgpack.unpackb((path / "space.root").read_bytes()[4:], raw=False)
+    assert root["version"] == 4
+    for segment in path.glob("*.seg"):
+        assert struct.unpack_from("<8sH", segment.read_bytes())[1] == 4
+    assert fmt.WRITE_FORMAT_VERSION == 4 and not fmt.FEATURE_VERSIONS

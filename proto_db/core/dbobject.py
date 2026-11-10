@@ -20,15 +20,15 @@ from __future__ import annotations
 
 from ..errors import ProtoUserError, ProtoValidationError
 from ..values import MutableObject, canonical
-from .atom import _ABSENT, RESERVED_NAMES, Atom, PersistenceContext, _check_context
+from .atom import _ABSENT, RESERVED_NAMES, Atom, PersistenceContext, _check_context, class_defines
 
 __all__ = ["DBObject", "MutableObject"]
 
 
 def _check_name(cls, name) -> None:
     if (not isinstance(name, str) or not name or name.startswith("_") or name in RESERVED_NAMES
-            or hasattr(cls, name)):
-        if isinstance(name, str) and hasattr(cls, name):
+            or class_defines(cls, name)):
+        if isinstance(name, str) and class_defines(cls, name):
             raise ProtoValidationError(
                 f"Invalid attribute name {name!r} for {cls.__name__}: {_SHADOW_RULE}")
         raise ProtoValidationError(f"Invalid attribute name {name!r} for {cls.__name__}")

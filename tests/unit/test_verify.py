@@ -114,3 +114,54 @@ def test_the_module_runs_from_the_command_line(tmp_path):
     expected = json.dumps(_without_ivf(MANIFEST["database"]["contents"])).replace(
         '"object": "conformance.Invoice"', '"opaque": "conformance.Invoice"')
     assert dump["databases"]["db"] == json.loads(expected)
+
+
+# -- pre-tag review: I-6 (writer-forbidden encodings), m7 (exit codes) ----------------------------
+
+def _space_with_raw_record(path, state_bytes: bytes):
+    """A space whose root ``r`` is a DBObject record whose state map is ``state_bytes`` verbatim."""
+    import uuid as _uuid
+
+    import msgpack
+    from proto_db.core.atom import type_tag
+    from proto_db.storage.format import RecordKind
+    space = ObjectSpace(FileStorage(str(path)))
+    db = space.new_database("d")
+    with db.new_transaction() as tr:
+        tr.set_root_object("h", 0)
+    with db.new_transaction() as tr:
+        head = msgpack.packb({"t": type_tag("proto_db.core.dbobject.DBObject"), "oid": _uuid.uuid4().bytes},
+                             use_bin_type=True)
+        payload = bytes([head[0] + 1]) + head[1:] + msgpack.packb("s") + state_bytes
+        ptr = space.storage.append_record(RecordKind.ATOM, payload)
+        space.storage.flush()
+        tr.set_root_object("r", tr.load(ptr, "proto_db.core.dbobject.DBObject"))
+    space.close()
+    return path
+
+
+@pytest.mark.parametrize("name, value", [
+    ("non-minimal int", b"\xcd\x00\x01"),                       # 1 as uint16
+    ("float 32", b"\xca\x3f\xc0\x00\x00"),                     # 1.5 as float 32
+    ("non-minimal str", b"\xd9\x01a"),                         # "a" as str 8
+])
+def test_encodings_writers_must_not_produce_fail_the_verifier(tmp_path, capsys, name, value):
+    path = _space_with_raw_record(tmp_path / "db", b"\x81\xa1n" + value)
+    code, dump = _run(path, tmp_path)
+    err = capsys.readouterr().err
+    assert code == 1, (name, err)
+    assert "non-canonical" in err
+    assert dump["databases"]["d"]["roots"]                      # the dump is still written
+
+
+def test_a_canonical_raw_record_verifies(tmp_path, capsys):
+    path = _space_with_raw_record(tmp_path / "db", b"\x81\xa1n\x01")
+    code, _ = _run(path, tmp_path)
+    assert code == 0, capsys.readouterr().err
+
+
+def test_a_missing_segment_is_a_failure_of_the_space_not_exit_2(tmp_path, capsys):
+    target = _copy("database", tmp_path)
+    (target / MANIFEST["database"]["segment"]).unlink()
+    code, _ = _run(target, tmp_path)
+    assert code == 1, capsys.readouterr().err

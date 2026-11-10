@@ -707,3 +707,31 @@ def test_a_repair_that_would_merge_two_values_under_one_key_is_refused():
     damaged = _misfiled_by_format_3(lambda: Dictionary().set_at("Color.RED", 1).set_at(Color.RED, 2))
     with pytest.raises(ProtoValidationError, match="Color.RED"):
         damaged.rebuilt()
+
+
+# -- pre-tag review m4: date and timedelta subclasses overriding __reduce__ ----------------------
+
+def test_date_and_timedelta_subclasses_are_read_through_the_base_fields_not_reduce():
+    import datetime as _dt
+    from proto_db.values import canonical as _canonical
+
+    class Day(_dt.date):
+        def __reduce__(self):
+            return (_dt.date, (1999, 1, 1))
+
+        @property
+        def year(self):
+            return 1
+
+    class Span(_dt.timedelta):
+        def __reduce__(self):
+            return (_dt.timedelta, (99,))
+
+        @property
+        def days(self):
+            return 0
+
+    assert _canonical(Day(2026, 12, 3)) == _dt.date(2026, 12, 3)
+    assert type(_canonical(Day(2026, 12, 3))) is _dt.date
+    assert _canonical(Span(3, 4, 5)) == _dt.timedelta(3, 4, 5)
+    assert type(_canonical(Span(3, 4, 5))) is _dt.timedelta

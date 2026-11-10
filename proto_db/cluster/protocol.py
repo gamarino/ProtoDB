@@ -135,7 +135,7 @@ from typing import Optional
 import msgpack
 
 from ..errors import ProtoCorruptionError
-from ..storage.format import FORMAT_VERSION, RootRecord
+from ..storage.format import WRITE_FORMAT_VERSION, RootRecord
 
 __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYTES", "MESSAGE_TYPES",
            "ClusterProtocolError",
@@ -372,7 +372,7 @@ def decode_labeled_root(value) -> tuple:
         return True, None, term
     if not isinstance(segment, bytes) or len(segment) != 16 or type(offset) is not int or offset < 0:
         raise ClusterProtocolError(f"Malformed root pointer {value!r}")
-    return True, RootRecord(FORMAT_VERSION, uuid.UUID(bytes=segment), offset, epoch), term
+    return True, RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(bytes=segment), offset, epoch), term
 
 
 def decode_root(value) -> tuple:

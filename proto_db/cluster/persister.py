@@ -66,7 +66,7 @@ from typing import Optional
 from ..core.atom import Atom
 from ..errors import ProtoConflictError, ProtoDBError, ProtoOutcomeUnknownError, ProtoTimeoutError, \
     ProtoUnexpectedError
-from ..storage.format import FORMAT_VERSION, RootRecord
+from ..storage.format import WRITE_FORMAT_VERSION, RootRecord
 from .rootlog import LoggedRoots, RootsLog, compare_roots, memory_log_for, root_key
 
 __all__ = ["Persister", "PlainTier"]
@@ -199,7 +199,7 @@ class PlainTier:
         if record is None:
             return None
         label, epoch, _ = cluster_fields(self.storage, record)
-        return label, RootRecord(FORMAT_VERSION, record.segment, record.offset, epoch)
+        return label, RootRecord(WRITE_FORMAT_VERSION, record.segment, record.offset, epoch)
 
     def persist(self, label: int, record: RootRecord) -> bool:
         """Publish ``record`` as the storage root by compare-and-swap on the storage epoch,
@@ -209,7 +209,7 @@ class PlainTier:
             current = self.storage.read_root()
             if current is not None:
                 current_label, current_epoch, _ = cluster_fields(self.storage, current)
-                persisted = RootRecord(FORMAT_VERSION, current.segment, current.offset, current_epoch)
+                persisted = RootRecord(WRITE_FORMAT_VERSION, current.segment, current.offset, current_epoch)
                 if compare_roots(current_label, persisted, label, record) >= 0:
                     return False
             try:
@@ -428,7 +428,7 @@ class Persister:
                 break               # written outside cluster mode: persisted before the cluster
             ptr = previous.atom_pointer
             label = previous.cluster_term or 0
-            current = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, epoch)
+            current = RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, epoch)
             # The persisted root is on this root's chain (every committed root builds on the
             # newest committed one, and a refound starts from the persisted root), so any
             # ancestor ordering at or below it is persisted with its records.

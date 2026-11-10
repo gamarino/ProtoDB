@@ -11,26 +11,37 @@ The verifier opens the space read-only (it never publishes a root), then:
    database root and every older version it links to, every collection with its tree nodes and
    indexes, every record. Each atom is decoded once (by pointer). An atom of a type this process
    has no class for is read as an opaque atom (D59) and listed under ``opaque_types``;
-3. validates every collection reached (:meth:`IndexedCollection.validate`: the structure, then
+3. checks that every record in a segment of the current write version is in its canonical
+   encoding: re-encoding the decoded record (keeping the writer's attribute order, which is
+   not normative) gives the stored bytes. A non-minimal integer, string, binary or container
+   header, a ``float 32``, a non-canonical type tag or any other form the spec forbids writers to
+   produce is a ``non-canonical`` failure. Records in older segments hold legacy forms readers
+   accept, and are not checked;
+4. validates every collection reached (:meth:`IndexedCollection.validate`: the structure, then
    every index against the elements);
-4. prints the current content of every database in the notation of the conformance manifest
+5. prints the current content of every database in the notation of the conformance manifest
    (:mod:`proto_db.tools.notation`) as JSON, to standard output or to ``--out``.
 
 Every failure is reported on standard error as ``FAILED <where>: <exception class>: <message>``;
 the verifier goes on with the next atom, so one run lists every failure it can reach.
 
-Exit status: 0 when everything decoded and validated; 1 when anything failed (the dump is still
-written, for the parts that could be read); 2 when the directory holds no readable space.
+Exit status: 0 when everything decoded, was canonical and validated; 1 when anything failed (the
+dump is still written, for the parts that could be read), a missing or damaged segment included;
+2 only when there is no readable root record (no ``space.root``, a bad CRC, an unknown version).
 """
 from __future__ import annotations
 
 import argparse
 import json
+import struct
 import sys
 from pathlib import Path
 
+import msgpack
+
 from ..collections.base import IndexedCollection
-from ..core.atom import Atom, OpaqueAtom
+from ..core import codec
+from ..core.atom import Atom, OpaqueAtom, type_name_of, type_tag
 from ..storage import format as fmt
 from ..storage.file import FileStorage
 from ..transactions import ObjectSpace, _SpaceContext
@@ -57,20 +68,61 @@ def _where(atom) -> str:
     return f"{type(atom).__type_name__} at {atom.atom_pointer}"
 
 
+class _NoRoot(Exception):
+    """The directory holds no readable root record (exit status 2)."""
+
+
+def _segment_version(directory: str, segment, cache: dict):
+    """The format version in ``segment``'s header, or ``None`` when it cannot be read."""
+    if segment not in cache:
+        try:
+            with open(Path(directory) / f"{segment.hex}.seg", "rb") as f:
+                cache[segment] = struct.unpack_from("<8sH", f.read(fmt.SEGMENT_HEADER_SIZE))[1]
+        except (OSError, struct.error):
+            cache[segment] = None
+    return cache[segment]
+
+
+def _non_canonical(storage, context, ptr) -> str:
+    """Why the record at ``ptr`` is not in its canonical encoding, or ``""``."""
+    _, payload = storage.get_record(ptr)
+    raw = msgpack.unpackb(payload, raw=False)
+    state = codec.decode_state(raw["s"], context.load)
+    again = msgpack.packb({"t": type_tag(type_name_of(raw["t"])), "oid": raw["oid"],
+                           "s": codec.encode_state(state, lambda a: a.atom_pointer)}, use_bin_type=True)
+    if again == bytes(payload):
+        return ""
+    at = next((i for i, (a, b) in enumerate(zip(again, payload)) if a != b), min(len(again), len(payload)))
+    return (f"the record is not in its canonical encoding (first difference at payload byte {at} of "
+            f"{len(payload)}; canonical {len(again)} bytes)")
+
+
 def verify(directory: str) -> tuple[dict, list[str]]:
     """Check the space in ``directory``; return ``(report, failures)`` (see the module docstring).
-    ``FileNotFoundError`` when the directory holds no ``space.root``."""
+    :class:`_NoRoot` when the directory holds no readable root record."""
     root_file = Path(directory) / "space.root"
     if not root_file.is_file():
-        raise FileNotFoundError(f"{directory} holds no space.root: not a file-storage space")
-    record = fmt.decode_root(root_file.read_bytes())
+        raise _NoRoot(f"{directory} holds no space.root: not a file-storage space")
+    try:
+        record = fmt.decode_root(root_file.read_bytes())
+    except Exception as e:                         # noqa: BLE001
+        raise _NoRoot(f"space.root: {type(e).__name__}: {e}") from e
     failures: list[str] = []
     report = {"root": {"version": record.version, "segment": record.segment.hex, "offset": record.offset,
                        "epoch": record.epoch},
               "atoms": 0, "collections": 0, "opaque_types": [], "databases": {}}
-    space = ObjectSpace(FileStorage(directory))
     try:
-        top = space._current_space(_SpaceContext(space.storage))
+        space = ObjectSpace(FileStorage(directory))
+    except Exception as e:                         # noqa: BLE001 - a segment the storage cannot open
+        failures.append(f"FAILED opening the storage: {type(e).__name__}: {e}")
+        return report, failures
+    versions: dict = {}
+    try:
+        try:
+            top = space._current_space(_SpaceContext(space.storage))
+        except Exception as e:                     # noqa: BLE001
+            failures.append(f"FAILED reading the space root: {type(e).__name__}: {e}")
+            top = None
         seen: set = set()
         opaque: set = set()
         stack = [top] if top is not None else []
@@ -86,6 +138,13 @@ def verify(directory: str) -> tuple[dict, list[str]]:
                 failures.append(f"FAILED decoding {_where(atom)}: {type(e).__name__}: {e}")
                 continue
             report["atoms"] += 1
+            if _segment_version(directory, ptr.segment, versions) == fmt.WRITE_FORMAT_VERSION:
+                try:
+                    why = _non_canonical(space.storage, _SpaceContext(space.storage), ptr)
+                except Exception as e:             # noqa: BLE001
+                    why = f"{type(e).__name__}: {e}"
+                if why:
+                    failures.append(f"FAILED non-canonical {_where(atom)}: {why}")
             if isinstance(atom, OpaqueAtom):
                 opaque.add(type(atom).__type_name__)
             if isinstance(atom, IndexedCollection):
@@ -100,7 +159,12 @@ def verify(directory: str) -> tuple[dict, list[str]]:
                 _children(value, children)
             stack.extend(reversed(children))
         report["opaque_types"] = sorted(opaque)
-        for name in space.list_databases():
+        try:
+            names = space.list_databases() if top is not None else []
+        except Exception as e:                     # noqa: BLE001 - its nodes are reported above
+            failures.append(f"FAILED listing the databases: {type(e).__name__}: {e}")
+            names = []
+        for name in names:
             try:
                 report["databases"][name] = space.open_database(name).run(notation.describe_database)
             except Exception as e:                 # noqa: BLE001
@@ -111,7 +175,15 @@ def verify(directory: str) -> tuple[dict, list[str]]:
 
 
 def _root_label(space, atom) -> str:
-    """`` (root 'name' of database 'db')`` when ``atom`` is the current version of a root."""
+    """`` (root 'name' of database 'db')`` when ``atom`` is the current version of a root (``""``
+    when that cannot be told: the label never turns a reported failure into another one)."""
+    try:
+        return _find_root_label(space, atom)
+    except Exception:                              # noqa: BLE001
+        return ""
+
+
+def _find_root_label(space, atom) -> str:
     for db_name in space.list_databases():
         tx = space.open_database(db_name).new_transaction()
         try:
@@ -133,8 +205,8 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         report, failures = verify(args.directory)
-    except Exception as e:                         # noqa: BLE001 - no readable space at all
-        print(f"FAILED opening {args.directory}: {type(e).__name__}: {e}", file=sys.stderr)
+    except _NoRoot as e:
+        print(f"FAILED opening {args.directory}: {e}", file=sys.stderr)
         return 2
     text = json.dumps(report, indent=1, ensure_ascii=False)
     if args.out:

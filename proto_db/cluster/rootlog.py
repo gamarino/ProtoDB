@@ -107,7 +107,7 @@ import weakref
 from typing import NamedTuple, Optional
 
 from ..errors import ProtoCorruptionError, ProtoUnexpectedError, ProtoValidationError, attach_secondary_errors
-from ..storage.format import FORMAT_VERSION, RootRecord
+from ..storage.format import WRITE_FORMAT_VERSION, RootRecord
 from ..storage.ownerlock import OwnerLock
 from ..storage.logfile import (FRAME_OVERHEAD, HEADER_SIZE, encode_frame, fsync_dir, log_contents, open_log,
                                prepare_replacement, read_log, write_all)
@@ -246,7 +246,7 @@ class RedoEntry(NamedTuple):
 
 
 def _record_or_none(epoch: int, segment: bytes, offset: int) -> Optional[RootRecord]:
-    return None if epoch == 0 else RootRecord(FORMAT_VERSION, uuid.UUID(bytes=segment), offset, epoch)
+    return None if epoch == 0 else RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(bytes=segment), offset, epoch)
 
 
 def encode_records_entry(label: int, root: Optional[RootRecord], seq: int, pred: Optional[tuple],
@@ -350,7 +350,7 @@ def _decode(payloads: list, path: str) -> LoggedRoots:
         code, label, epoch, segment, offset = _ENTRY.unpack(payload)
         if code not in (1, 2, 3, 4):
             raise ProtoCorruptionError(f"The root log {path} holds an entry of unknown kind {code}")
-        record = None if epoch == 0 else RootRecord(FORMAT_VERSION, uuid.UUID(bytes=segment), offset, epoch)
+        record = None if epoch == 0 else RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(bytes=segment), offset, epoch)
         best.add(code, label, record)
     return best.result()
 

@@ -254,6 +254,13 @@ def type_tag(type_name: str):
     return type_name if alias is None else alias
 
 
+def class_defines(cls: type, name: str) -> bool:
+    """Whether ``cls`` or a class of its MRO defines ``name``: what an instance attribute read
+    would find before a persisted field.  Attributes of the metaclass (``mro``, ``register``)
+    are not seen by instance reads and do not count (pre-tag review m1)."""
+    return any(name in klass.__dict__ for klass in cls.__mro__)
+
+
 def type_name_of(tag) -> str:
     """Return the type name a persisted tag stands for; ``ProtoCorruptionError`` if malformed.
 
@@ -628,12 +635,16 @@ class Atom:
             return self._follow_link(links, name)
         return self._absent_attribute(name)
 
+    def _adopt_stored_type(self, stored: str) -> bool:
+        """Overridden by :class:`OpaqueAtom`: a known class never adopts another stored type."""
+        return False
+
     def _probe(self, name: str):
         """The persisted attribute ``name`` of the loaded state, or :data:`_ABSENT` (loading the
         atom if needed; safe across an unload, like :meth:`__getattr__`).  A persisted name never
         names a class attribute (construction and :meth:`_restore` refuse it), so an instance
         read answers without materializing the dict."""
-        if hasattr(type(self), name):
+        if class_defines(type(self), name):
             return _ABSENT
         while True:
             try:
@@ -786,7 +797,7 @@ class Atom:
                     if not isinstance(payload, dict) or set(payload) != {"t", "oid", "s"}:
                         raise ProtoCorruptionError(f"Malformed atom payload at {ptr}")
                     stored = type_name_of(payload["t"])
-                    if stored != type(self).__type_name__:
+                    if stored != type(self).__type_name__ and not self._adopt_stored_type(stored):
                         raise ProtoCorruptionError(
                             f"Atom at {ptr} is a {stored!r}, expected {type(self).__type_name__!r}")
                     raw_oid = payload["oid"]
@@ -855,7 +866,7 @@ class Atom:
         for name in state:
             if name.startswith("_") or name in RESERVED_NAMES:
                 raise ProtoCorruptionError(f"Invalid persisted attribute name {name!r} for {cls.__type_name__}")
-            if hasattr(cls, name):
+            if class_defines(cls, name):
                 raise ProtoCorruptionError(
                     f"Invalid persisted attribute name {name!r} for {cls.__type_name__}: the Python class "
                     f"defines an attribute of that name, which would hide the field (in Python the field is "
@@ -912,7 +923,7 @@ class Atom:
         from . import codec
         state = self._state()
         for name in state:
-            if hasattr(cls, name):
+            if class_defines(cls, name):
                 raise ProtoValidationError(
                     f"Attribute {name!r} of {cls.__type_name__} shadows a class attribute and "
                     f"could not be loaded back lazily")
@@ -1021,6 +1032,21 @@ class OpaqueAtom(Atom):
 
     def __delattr__(self, name):
         raise ProtoNotSupportedError(f"Cannot change an opaque {type(self).__type_name__!r} atom")
+
+    def _adopt_stored_type(self, stored: str) -> bool:
+        """The record's ``t`` may differ from the name the reference spells: the owning
+        implementation writes references under the type's declared name, and an older record of
+        the type keeps the name it was written under (an alias only the owner knows).  When the
+        record's name is unknown here too, the two are names of one type this process cannot
+        tell apart: accepted, and the atom keeps the name it was referenced by, which is what
+        it is written under in references (pre-tag review I-1).  A record of a type this process
+        knows behind an unknown reference name stays corruption."""
+        try:
+            Atom._class_for(stored)
+        except ProtoCorruptionError:
+            opaque_class(stored)             # ProtoCorruptionError for a proto_db. or invalid name
+            return True
+        return False
 
     def _save(self) -> AtomPointer:
         ptr = self.atom_pointer

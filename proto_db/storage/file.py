@@ -60,7 +60,7 @@ from ..errors import (ProtoClosedError, ProtoConflictError, ProtoCorruptionError
                       ProtoValidationError)
 from .base import SharedStorage, check_lock_timeout
 from .cache import BoundedCache
-from .format import (FORMAT_VERSION, RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind,
+from .format import (WRITE_FORMAT_VERSION, RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind,
                      RootRecord, decode_root, decode_segment_header, encode_record,
                      encode_root, encode_segment_header, read_record, record_size)
 
@@ -725,7 +725,7 @@ class FileStorage(SharedStorage):
             epoch = current.epoch if current is not None else 0
             if expected_epoch is not None and expected_epoch != epoch:
                 raise ProtoConflictError(f"Root epoch is {epoch}, expected {expected_epoch}")
-            root = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, epoch + 1)
+            root = RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, epoch + 1)
             try:
                 self._write_root(root)
             except OSError as e:
