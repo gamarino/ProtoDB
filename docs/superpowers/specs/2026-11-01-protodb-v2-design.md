@@ -79,22 +79,29 @@ alternatives considered). The decisions taken in this document are D1–D16 belo
 
 ## 3. Package layout
 
+Amended in Phase 10 (rulings R16, R33, D48; the layout below is the one in the tree): `indexes/` became
+`indexing/` (the 0.1 module `indexes.py` collided with the name), `parallel.py` and `fsm.py` moved to
+`runtime/`, the Arrow bridge lives in `interop/`, and the cluster, the tiered storage and the query result
+cache and pager of Tasks 8.3-8.4 were added.
+
 ```
 proto_db/
-  __init__.py            public API re-exports
+  __init__.py            public API re-exports, resolved lazily (D47)
   errors.py              exception hierarchy (D12)
   values.py              value model: canonical types, total order key, equality (D2, D3)
+  transactions.py        ObjectSpace, Database, Transaction, Snapshot, retry helper
   core/
     atom.py              Atom, AtomPointer, oid, registry, lazy load
     codec.py             atom <-> msgpack-ready dict, type tags (D3)
     dbobject.py          DBObject (immutable record), MutableObject (D11)
   storage/
-    base.py              SharedStorage / BlockProvider contracts
+    base.py              SharedStorage contract
     format.py            record framing, segment header, root record (D4)
     memory.py            MemoryStorage
-    file.py              FileBlockProvider + FileStorage (WAL segments, recovery)
-    cloud.py             CloudStorage + clients (S3, GCS) with conditional root writes (D5)
-    cache.py             bounded, thread-safe atom caches
+    file.py              FileStorage (segments, recovery)
+    cloud.py             CloudStorage + object stores (S3, GCS) with conditional root writes (D43)
+    tiered.py            TieredStorage: a cluster node's local tier plus the object store (D46)
+    cache.py, crc.py, logfile.py, ownerlock.py
   collections/
     base.py              IndexedCollection base: index plumbing shared by every collection
     avl.py               persistent AVL node machinery (positional and keyed)
@@ -102,24 +109,36 @@ proto_db/
     dictionaries.py      Dictionary, RepeatedKeysDictionary
     hash_dictionaries.py HashDictionary
     sets.py              Set, CountedSet
-  indexes/
-    base.py              Index base class + KeySpec + hooks contract
+  indexing/
+    base.py              Index base class + hooks contract
+    keyspec.py           KeySpec, extractors
+    keyed.py             key-group machinery shared by the key indexes
     equality.py          EqualityIndex
     range.py             RangeIndex
-    vector.py            VectorIndex + backends (exact, ivf_flat, hnsw-optional)
+    vector.py            VectorIndex; vector_backends.py (exact, ivf_flat, hnsw-optional)
   query/
-    expressions.py       Expression, Term, operators
+    terms.py             Term, operators
+    expressions.py       Expression, And, Or, Not
     plans.py             physical plans
     planner.py           index selection and cost model
     linq.py              LINQ front end (builds the same plans)
-  transactions.py        ObjectSpace, Database, Transaction, retry helper
-  parallel.py            parallel scan (threads; real speedup on 3.14t)
-  fsm.py                 FSM (no test code)
-  tools/inspect.py       `python -m proto_db.tools.inspect <space>` dump to JSON
+    cache.py             query result cache keyed by pointers (D56)
+    pager.py             stable pagination over snapshots (D56)
+  cluster/
+    coordinator.py       lease, write permissions, commit by majority (D44, D45, D46, D50)
+    lease.py, protocol.py, rootlog.py (acceptor log), persister.py, transport.py
+  runtime/
+    parallel.py          parallel scan (threads; real speedup on 3.14t)
+    fsm.py               FSM (no test code)
+  interop/
+    arrow.py             Arrow and Parquet export
 benchmarks/              self-verifying performance suite (§12)
 docs/                    Sphinx: concepts, design, tutorials, API, decisions (§13)
 tests/                   moved out of the package (§11)
 ```
+
+`proto_db.tools.inspect` (§6) is not part of the 2.0 tree: the formats are specified in
+`docs/source/format-spec.rst` and the operations tutorial shows how to read a space without a tool.
 
 Module size rule: no module above ~800 lines; split by responsibility.
 
