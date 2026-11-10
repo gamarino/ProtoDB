@@ -304,6 +304,48 @@ def test_format_3_indexes_validate_before_their_first_change(tmp_path):
         space.close()
 
 
+def _holds_key(collection, key) -> bool:
+    from proto_db.collections.lists import List
+    from proto_db.collections.sets import CountedSet
+    from proto_db.query.terms import EQ, Term
+    if isinstance(collection, List):
+        return list(collection.get_index("e").plan(Term(None, EQ, key)).execute()) == [key]
+    if isinstance(collection, CountedSet):
+        return collection.count_of(key) >= 1
+    return collection.has(key)
+
+
+def test_format_3_subclass_damage_is_detected_and_repaired(tmp_path):
+    from proto_db.errors import ProtoMisfiledError
+    misfiled = MANIFEST["legacy_database"]["misfiled"]
+    work = tmp_path / "db"
+    shutil.copytree(HERE / "vectors" / MANIFEST["legacy_database"]["dir"], work)
+    space = ObjectSpace(FileStorage(str(work)))
+    try:
+        db = space.open_database("db")
+
+        def detect_and_repair(tx):
+            for root in misfiled["roots"]:
+                damaged = tx.get_root_object(root)
+                assert not all(_holds_key(damaged, k) for k in misfiled["keys"]), root
+                with pytest.raises(ProtoMisfiledError):
+                    damaged.validate()
+                tx.set_root_object(root, damaged.rebuilt())
+        db.run(detect_and_repair)
+    finally:
+        space.close()
+    space = ObjectSpace(FileStorage(str(work)))
+    try:
+        def check(tx):
+            for root in misfiled["roots"]:
+                repaired = tx.get_root_object(root)
+                repaired.validate()
+                assert all(_holds_key(repaired, k) for k in misfiled["keys"]), root
+        space.open_database("db").run(check)
+    finally:
+        space.close()
+
+
 def _check_rebuilt(collection, name):
     index = collection.get_index(name)
     assert index.has_current_tokens()

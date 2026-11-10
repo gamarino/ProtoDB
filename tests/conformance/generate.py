@@ -13,7 +13,9 @@ regenerates them.  Regenerate only when the format changes, and review the diff.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime
+import enum
 import json
 import os
 import shutil
@@ -692,6 +694,32 @@ LEGACY_ELEMENTS = [1, 2, 2, "x", 1.5, -0.0, Decimal("2.50"), (1, "a"), b"\x00",
                    datetime.date(2026, 1, 1), None, [1, 2]]
 
 
+class LegacyColor(str, enum.Enum):
+    """A ``(str, Enum)``: format 3 wrote its members through ``str()`` (``"LegacyColor.RED"``) but
+    filed them by their value (``"red"``), misfiling them (D58, re-review 2 I-A)."""
+    RED = "red"
+
+
+#: Keys of the misfiled structures; LegacyColor.RED is stored among them as "LegacyColor.RED".
+MISFILED_KEYS = ["apple", "dog", "pear", "zebra"]
+#: Roots of the legacy space that format 3 misfiled, and every key or element each must hold.
+MISFILED_ROOTS = ["misfiled_counted_set", "misfiled_dictionary", "misfiled_hash_dictionary", "misfiled_list",
+                  "misfiled_repeated_keys", "misfiled_set"]
+
+
+def _fill_misfiled(tx):
+    keys = MISFILED_KEYS
+    red = LegacyColor.RED
+    tx.set_root_object("misfiled_dictionary", Dictionary.from_items([(k, 1) for k in keys]).set_at(red, 2))
+    tx.set_root_object("misfiled_hash_dictionary", HashDictionary.from_items([(k, 1) for k in keys]).set_at(red, 2))
+    tx.set_root_object("misfiled_set", Set.from_iterable(keys).add(red))
+    tx.set_root_object("misfiled_counted_set", CountedSet.from_iterable(keys).add(red).add(red))
+    tx.set_root_object("misfiled_repeated_keys",
+                       RepeatedKeysDictionary.from_items([(k, 1) for k in keys]).add(red, 2))
+    tx.set_root_object("misfiled_list", List.from_iterable(keys).add_index(
+        EqualityIndex("e", KeySpec.element())).append_last(red))
+
+
 def _fill_legacy(tx):
     numbers = List.from_iterable(LEGACY_ELEMENTS).add_index(EqualityIndex("e", KeySpec.element()))
     tx.set_root_object("numbers", _with_format3_index(numbers, "e"))
@@ -707,6 +735,23 @@ def _fill_legacy(tx):
         zone_keys={zone: "a", (zone, 1): "b"},
         nan_keys={float("nan"): 1, float("nan"): 2},
         decimal_nan_keys={Decimal("NaN"): 1, Decimal("NaN"): 2}))
+
+
+@contextlib.contextmanager
+def _format3_subclass_encoding():
+    """Built-in subclasses handled as format 3 did: kept as they are by canonical() (so hashed
+    and ordered by their base value) and written through their own ``str()``."""
+    import proto_db.values as values_module
+    real = values_module.plain_scalar
+
+    def keep(value):
+        return value if isinstance(value, (str, int, float, Decimal, bytes)) else real(value)
+
+    def written_through_str(value):
+        return str(value) if isinstance(value, str) else real(value)
+    with mock.patch.object(values_module, "plain_scalar", keep), \
+            mock.patch.object(codec, "plain_scalar", written_through_str):
+        yield
 
 
 def gen_legacy_database(manifest):
@@ -745,13 +790,17 @@ def gen_legacy_database(manifest):
         for p in patches:
             p.start()
         try:
-            entry = _write_space("legacy", [_fill_legacy])
+            with _format3_subclass_encoding():
+                entry = _write_space("legacy", [_fill_legacy, _fill_misfiled])
         finally:
             for p in reversed(patches):
                 p.stop()
         # Read by this revision, unpatched: the records' decoded states and the contents.
         entry["records"] = _records(VECTORS / "legacy" / entry["segment"])
         entry["contents"] = _contents(VECTORS / "legacy")
+    entry["misfiled"] = {"roots": MISFILED_ROOTS, "keys": MISFILED_KEYS + ["LegacyColor.RED"],
+                         "note": "format 3 wrote LegacyColor.RED (a (str, Enum)) as 'LegacyColor.RED' but "
+                                 "filed it as 'red': validate() raises ProtoMisfiledError, rebuilt() repairs"}
     manifest["legacy_database"] = entry
 
 

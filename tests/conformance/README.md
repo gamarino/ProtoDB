@@ -15,7 +15,7 @@ ProtoBase's own encoders (`generate.py`) and is checked byte for byte against th
 | `vectors/invalid/*.bin` | Inputs a reader must refuse, at every layer (value, map key, atom envelope and state, record, segment, root, log, acceptor log, cluster message) |
 | `vectors/framing/` | Segment headers (formats 4, 3 and 2), an ATOM and a BLOB record, root records (file, formats 3 and 2, cloud, tiered) |
 | `vectors/database/` | A complete format-4 file-storage space: `space.root` and one segment, written through the public API (trained ivf_flat and hnsw vector indexes included) |
-| `vectors/legacy/` | A format-3 space: a DatabaseRoot without `origin`, a key-group index (tokens of every kind) and a vector index written with format-3 member tokens and plain KeyNode trees, zone datetimes in the wall-clock form, maps with format-3 key forms (zone datetimes, NaNs twice), an application record and reference spelled by an alias |
+| `vectors/legacy/` | A format-3 space: a DatabaseRoot without `origin`, a key-group index (tokens of every kind) and a vector index written with format-3 member tokens and plain KeyNode trees, zone datetimes in the wall-clock form, maps with format-3 key forms (zone datetimes, NaNs twice), collections that format 3 misfiled by writing a `(str, Enum)` member through `str()`, an application record and reference spelled by an alias |
 | `vectors/cluster/<uuid>.seg` | The segment of one cluster commit: a `SpaceRoot` with its lease term, epoch and predecessor |
 | `vectors/cluster/roots.log` | An acceptor log holding every entry kind (1 to 6), each listed field by field |
 | `vectors/cluster/roots-torn.log` | The same log with a torn tail (its last frame cut) |
@@ -85,6 +85,9 @@ A reader passes when, for every entry of `manifest.json`:
    (stale, not corrupt), and after a change of a collection its index must have been rebuilt
    with format-4 tokens. Records whose `rewritable` is false hold a format-3 map key form:
    they decode to the listed state, and encoding that state again is refused.
+   `misfiled` lists the roots format 3 misfiled (a `(str, Enum)` member written as
+   `"LegacyColor.RED"` but filed as `"red"`): your integrity check must report them, and a
+   rebuild of each must hold every key listed.
 8. `cluster`: the segment as in step 7; each log decodes to the listed entries (`roots_log`
    gives every entry's size and `fields`, from which your encoder must rebuild the entry's
    bytes -- `records` items are `[segment, offset, size]` of records in the cluster segment --,
