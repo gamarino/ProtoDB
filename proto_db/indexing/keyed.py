@@ -15,13 +15,18 @@ A group is the tuple ``(members, total)``: ``members`` a keyed tree mapping a
 group.  A member key is ``(equality part, exact token)``: the equality part is
 ``(0, element)`` for an orderable element (atoms by oid, values by
 ``order_key``) and ``(1, surrogate(element))`` for an unorderable one (see
-:func:`surrogate`); the exact token (:func:`exact_token`) tells apart values
-that are equal but not identical (``1``, ``1.0``, ``Decimal("1.00")``; aware
-datetimes of one instant in different zones).  Plans therefore return exactly
-the stored elements a scan returns, never an equal representative.  Equal
-members are adjacent, so a removal whose exact value is absent falls back to an
-equal member.  Elements are counted, so a List holding an element twice stores
-it with count 2.
+:func:`surrogate`); the exact token (:func:`exact_token`, the element's canonical encoding, D58) tells
+apart values that are equal but not identical (``1``, ``1.0``, ``Decimal("1.00")``;
+aware datetimes of one instant in different zones).  Plans therefore return exactly
+the stored elements a scan returns, never an equal representative.  A removal takes
+exactly the member whose member key is the removed element's; when there is none the
+index does not hold the element (``ProtoValidationError``): it never takes an equal
+member instead (D58, review C1).  Elements are counted, so a List holding an element
+twice stores it with count 2.
+
+``member_tokens`` (persisted) is :data:`MEMBER_TOKENS` on an index whose tokens are
+canonical encodings; an index written by format 3 lacks it (its tokens were Python
+text) and is rebuilt by its collection before its first change (D58).
 
 Every operation is a pure function over immutable trees (path copying), so an
 index version may be shared between threads, and plans capture only immutable
@@ -55,7 +60,11 @@ from .base import Index, element_identity
 from .keyspec import KeySpec
 
 __all__ = ["KeyGroupIndex", "surrogate", "exact_token", "EMPTY_GROUP", "member_key", "equal_members_bounds",
-           "group_add", "group_remove", "group_iter"]
+           "group_add", "group_remove", "group_iter", "MEMBER_TOKENS"]
+
+#: The member-token scheme of this revision (D58): an exact token is the canonical encoding.
+#: Persisted as ``member_tokens`` by the key-group and vector indexes; absent on format-3 indexes.
+MEMBER_TOKENS = 1
 
 #: The group of no element: ``(members, total)``.
 EMPTY_GROUP = (None, 0)
@@ -133,18 +142,14 @@ def _group_add(group: tuple, element) -> tuple:
 def _group_remove(group: tuple, element) -> tuple | None:
     """The group with one occurrence of ``element`` fewer, or None when it holds none.
 
-    An exact match (same member key) is removed first; otherwise one occurrence
-    of an equal element (same ``element_identity`` class), if any.
+    Only the member whose member key is ``element``'s is removed: never an equal member with
+    another token (D58, review C1).
     """
     members, total = group
     key = _member_key(element)
     entry = avl.key_get(members, key)
     if entry is None:
-        low, high = _equal_members_bounds(element)
-        found = next(avl.key_iter_okey_range(members, low, high), None)
-        if found is None:
-            return None
-        key, entry = found
+        return None
     members = avl.key_remove(members, key)[0] if entry[1] == 1 else avl.key_put(members, key,
                                                                                    (entry[0], entry[1] - 1))[0]
     return members, total - 1
@@ -285,6 +290,7 @@ class KeyGroupIndex(Index):
     """
 
     __type_name__ = "proto_db.indexing.keyed.KeyGroupIndex"
+    _required_fields = ("name", "key_spec", "groups", "side", "total_count")
 
     def __init__(self, name: str, key_spec: KeySpec | str, *, context: PersistenceContext | None = None):
         """Create an EMPTY index on ``key_spec`` (a ``str`` means ``KeySpec.path(key_spec)``)."""
@@ -294,6 +300,12 @@ class KeyGroupIndex(Index):
         object.__setattr__(self, "groups", None)
         object.__setattr__(self, "side", EMPTY_GROUP)
         object.__setattr__(self, "total_count", 0)
+        object.__setattr__(self, "member_tokens", MEMBER_TOKENS)
+
+    def has_current_tokens(self) -> bool:
+        """False for an index written by format 3 (Python-text member tokens): its collection
+        rebuilds it before changing it (D58)."""
+        return getattr(self, "member_tokens", None) == MEMBER_TOKENS
 
     # -- element hooks --------------------------------------------------------------------
 
@@ -567,8 +579,7 @@ class KeyGroupIndex(Index):
         for key, entry in avl.key_iter(members):
             if not isinstance(entry, tuple) or len(entry) != 2:
                 self._corrupt(f"malformed entry {entry!r}")
-            if (not isinstance(key, tuple) or len(key) != 2
-                    or order_key(key[0]) != order_key(_equality_part(entry[0]))):
+            if not isinstance(key, tuple) or len(key) != 2 or order_key(key) != order_key(_member_key(entry[0])):
                 self._corrupt(f"element {entry[0]!r} is stored under the wrong member key {key!r}")
             entries.append(entry)
         for element, n in entries:

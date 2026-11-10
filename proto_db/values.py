@@ -28,10 +28,13 @@ import uuid
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
+from msgpack import packb as _packb
+
 from .errors import ProtoUserError, ProtoValidationError
 
 __all__ = ["MISSING", "FrozenList", "FrozenDict", "canonical", "order_key", "rank_bounds", "values_equal", "hash_key",
-           "is_atom", "is_orderable", "exact_token", "MutableObject"]
+           "is_atom", "is_orderable", "exact_token", "MutableObject", "ATOM_TOKEN", "map_key_ids",
+           "check_map_keys"]
 
 
 class _Missing:
@@ -216,6 +219,10 @@ class MutableObject:
         return f"MutableObject({self._name!r})"
 
 
+#: Key types for which distinct keys of a Python dict are distinct map keys of the format (D58).
+_PLAIN_KEY_TYPES = frozenset({str, int, bytes})
+
+
 def canonical(value):
     """Validate ``value`` and return its canonical form.
 
@@ -243,6 +250,8 @@ def canonical(value):
         if type(value) is FrozenDict and all(
                 ka is kb and va is vb for (ka, va), (kb, vb) in zip(pairs, value.items())):
             return value
+        if not all(type(k) in _PLAIN_KEY_TYPES for k, _ in pairs):
+            check_map_keys(k for k, _ in pairs)   # Python's dict already told these apart
         return FrozenDict(pairs)
     if is_atom(value) or isinstance(value, MutableObject):
         return value
@@ -420,69 +429,111 @@ def hash_key(value) -> int:
     return int.from_bytes(h.digest(), "little", signed=True)
 
 
-# -- exact tokens (D30, D34) -------------------------------------------------------------------
+# -- exact tokens (D30, D34, D58) ---------------------------------------------------------------
 
-_EXACT_TAGS = {type(None): "N", bool: "b", int: "i", float: "f", Decimal: "D", str: "s", bytes: "y",
-               date: "d", time: "t", datetime: "dt", timedelta: "td", uuid.UUID: "u", tuple: "T", list: "L",
-               FrozenList: "FL", dict: "M", FrozenDict: "FM"}
-
-
-def _tz_token(value):
-    tz = value.tzinfo
-    if tz is None:
-        return None
-    offset = value.utcoffset()
-    return (None if offset is None else offset // timedelta(microseconds=1), repr(tz))
+#: The token of every atom, and the placeholder of an atom nested in a value: the msgpack bytes of
+#: ``{"@ref": nil}``, which is not the encoding of any canonical value (D58).
+ATOM_TOKEN = b"\x81\xa4@ref\xc0"
 
 
-def exact_token(value, atom_token=None) -> tuple:
-    """An orderable token that tells apart values a scan would return as different objects (D30).
+class TokenAtoms:
+    """The ``save_child`` the codec receives when it encodes a token: every atom met becomes the
+    placeholder ``{"@ref": nil}`` and is remembered, in encoding order, in :attr:`atoms`."""
 
-    ``1``, ``1.0``, ``Decimal("1")`` and ``Decimal("1.00")`` are equal keys but
-    four tokens; so are ``0.0``/``-0.0`` and aware datetimes of one instant in
-    different time zones (offset and ``repr`` of the tzinfo are kept).  Tuples,
-    lists and dicts are encoded item by item, dicts in their own order.  Atoms
-    are identified elsewhere by default, so their token is ``("a",)``;
-    ``atom_token(atom)``, when given, supplies the token of every atom, nested
-    ones included (the transaction read set passes the storage pointer).  The token
-    starts with a type tag (the qualified class name for subclasses), so values
-    of different classes never share a token.  Best effort for exotic tzinfo
-    classes whose ``repr`` is not stable: two tokens for one value only make
-    the index store two entries, never a wrong answer (removal falls back to an
-    equal entry).
+    __slots__ = ("atoms",)
+
+    def __init__(self):
+        self.atoms: list = []
+
+
+_codec = None
+
+
+def _encode_for_token(value, collector: TokenAtoms):
+    global _codec
+    if _codec is None:
+        from .core import codec as _module      # deferred: the codec imports this module
+        _codec = _module
+    return _codec.encode_value(value, collector)
+
+
+def exact_token(value, atom_token=None):
+    """What tells apart values that are equal keys but not identical (D30): a function of the
+    value's canonical encoding alone (D58, ruling R129).
+
+    The token of a value that holds no atom is its canonical encoding: the msgpack bytes of
+    :func:`proto_db.core.codec.encode_value`, as a record state holds it.  Every atom is
+    encoded as the placeholder ``{"@ref": nil}`` (:data:`ATOM_TOKEN`), so the token of an atom is
+    :data:`ATOM_TOKEN`: atoms are identified elsewhere (by oid in an index member key).  Two
+    values have one token exactly when they have one canonical encoding, however they were
+    built: ``timezone.utc`` and ``timezone(timedelta(0), "UTC")``, an ``int`` subclass and the
+    ``int``.  ``1``, ``1.0``, ``Decimal("1")``, ``Decimal("1.00")``, ``0.0``/``-0.0`` and aware
+    datetimes of one instant in different zones are equal keys with distinct tokens.
+
+    ``atom_token(atom)``, when given, identifies the atoms instead (the transaction read set
+    passes the storage pointer): an atom's token is then ``atom_token(atom)``, and a value
+    holding atoms gets ``(encoding, (atom_token(a) for each atom in encoding order))``.  That
+    form is never persisted.  Raises ``ProtoValidationError`` for a value the codec refuses.
     """
     if is_atom(value):
-        return ("a",) if atom_token is None else atom_token(value)
-    if isinstance(value, MutableObject):
-        # Class-qualified like every other value: a subclass gets its own tag.
-        return ("@mut" if type(value) is MutableObject else f"{type(value).__module__}.{type(value).__qualname__}",
-                value.name)
-    cls = type(value)
-    tag = _EXACT_TAGS.get(cls) or f"{cls.__module__}.{cls.__qualname__}"
-    if value is None:
-        return (tag,)
+        return ATOM_TOKEN if atom_token is None else atom_token(value)
+    collector = TokenAtoms()
+    data = _msgpack_packb(_encode_for_token(value, collector))
+    if atom_token is None or not collector.atoms:
+        return data
+    return data, tuple(atom_token(a) for a in collector.atoms)
+
+
+def _msgpack_packb(data) -> bytes:
+    return _packb(data, use_bin_type=True)
+
+
+# -- map keys (D58, review I5) --------------------------------------------------------------------
+
+def _zone_datetime(value) -> bool:
+    if not isinstance(value, datetime) or value.tzinfo is None:
+        return False
+    from zoneinfo import ZoneInfo
+    return isinstance(value.tzinfo, ZoneInfo)
+
+
+def map_key_ids(value) -> frozenset:
+    """The identities under which ``value`` is a key of a map; two keys of one map conflict when
+    their identities intersect (D58).  Raises ``ProtoValidationError`` for a value that cannot be a
+    map key.
+
+    A key is identified by its order key with every bool read as the number 0 or 1 (Python's
+    dict, and so the decoded map, cannot tell ``True`` from ``1``); a NaN by its canonical encoding;
+    a tuple by the combinations of its items' identities.  Lists, maps, signaling decimal NaNs
+    and datetimes in an IANA zone (whose equality in Python depends on the wall clock, which
+    depends on the time-zone database) cannot be map keys, nor tuples holding one.
+    """
+    if isinstance(value, (list, dict)):
+        raise ProtoValidationError(f"A {type(value).__name__} cannot be a map key")
     if isinstance(value, bool):
-        return (tag, int(value))
-    if isinstance(value, int):
-        return (tag, int(value))
-    if isinstance(value, float):
-        return (tag, float.hex(value))
-    if isinstance(value, Decimal):
-        return (tag, str(value))
-    if isinstance(value, (str, bytes)):
-        return (tag, value)
-    if isinstance(value, datetime):
-        return (tag, value.replace(tzinfo=None).isoformat(), value.fold, _tz_token(value))
-    if isinstance(value, date):
-        return (tag, value.toordinal())
-    if isinstance(value, time):
-        return (tag, value.replace(tzinfo=None).isoformat(), value.fold, _tz_token(value))
-    if isinstance(value, timedelta):
-        return (tag, value.days, value.seconds, value.microseconds)
-    if isinstance(value, uuid.UUID):
-        return (tag, value.int)
-    if isinstance(value, (tuple, list)):
-        return (tag, tuple(exact_token(v, atom_token) for v in value))
-    if isinstance(value, dict):
-        return (tag, tuple((exact_token(k, atom_token), exact_token(v, atom_token)) for k, v in value.items()))
-    return (tag, repr(value))
+        return frozenset({order_key(int(value))})
+    if isinstance(value, Decimal) and value.is_snan():
+        raise ProtoValidationError("A signaling decimal NaN cannot be a map key")
+    if _is_nan(value):
+        return frozenset({("nan", exact_token(value))})
+    if _zone_datetime(value):
+        raise ProtoValidationError(
+            "A datetime in an IANA time zone cannot be a map key: use its UTC or fixed-offset form")
+    if isinstance(value, tuple):
+        combos = [()]
+        for item in value:
+            ids = map_key_ids(item)
+            combos = [c + (i,) for c in combos for i in ids]
+        return frozenset(("tuple", c) for c in combos)
+    return frozenset({order_key(value)})
+
+
+def check_map_keys(keys) -> None:
+    """``ProtoValidationError`` unless every key of ``keys`` may be a map key and no two conflict
+    (:func:`map_key_ids`)."""
+    seen: set = set()
+    for key in keys:
+        ids = map_key_ids(key)
+        if not seen.isdisjoint(ids):
+            raise ProtoValidationError(f"Two keys of one map conflict as map keys (D58): {key!r}")
+        seen |= ids

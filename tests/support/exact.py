@@ -1,8 +1,9 @@
 """Strict structural equality for round-trip tests: same types, same exact values."""
 import math
 import struct
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from proto_db.values import FrozenDict, FrozenList
 
@@ -19,7 +20,9 @@ def assert_exact(a, b, path="value"):
 
     Stricter than ``==``: types must match exactly (a frozen container matches its plain
     counterpart), floats compare bit-for-bit
-    (NaN, -0.0), Decimals keep their exponent, datetimes keep fold and tzinfo,
+    (NaN, -0.0), Decimals keep their exponent, datetimes keep fold and tzinfo (a datetime in an
+    IANA zone is stored as its UTC instant, D58: it keeps the instant and the zone, and its
+    wall clock and fold are those of that instant),
     dict item order is preserved, and atoms must be the same object.
     """
     assert _kind(a) is _kind(b), f"{path}: {type(a).__name__} != {type(b).__name__}"
@@ -28,6 +31,9 @@ def assert_exact(a, b, path="value"):
             f"{path}: {a!r} != {b!r}"
     elif isinstance(a, Decimal):
         assert str(a) == str(b) and a.as_tuple() == b.as_tuple(), f"{path}: {a!r} != {b!r}"
+    elif isinstance(a, datetime) and isinstance(a.tzinfo, ZoneInfo):
+        assert _kind(b.tzinfo) is ZoneInfo and a.tzinfo.key == b.tzinfo.key, f"{path}: {a!r} != {b!r}"
+        assert a.astimezone(timezone.utc) == b.astimezone(timezone.utc), f"{path}: {a!r} != {b!r}"
     elif isinstance(a, (datetime, time)):
         assert a.replace(tzinfo=None) == b.replace(tzinfo=None), f"{path}: {a!r} != {b!r}"
         assert a.fold == b.fold, f"{path}: fold {a.fold} != {b.fold}"

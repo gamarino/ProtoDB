@@ -81,3 +81,23 @@ def test_encode_is_deterministic(v):
     a = codec.encode_state({"v": v}, _Refs(segment).save_child)
     b = codec.encode_state({"v": v}, _Refs(segment).save_child)
     assert msgpack.packb(a, use_bin_type=True) == msgpack.packb(b, use_bin_type=True)
+
+
+@settings(max_examples=300, deadline=None)
+@given(values)
+def test_decoding_gives_back_the_bytes_and_the_token(v):
+    """D58 (ruling R129): a decoded value re-encodes to the bytes it was read from, and its exact
+    token -- the canonical encoding -- is the token of the value it was written from."""
+    from proto_db.values import canonical, exact_token
+    v = canonical(v)
+    refs = _Refs()
+    pointers: dict = {}
+
+    def save_child(atom):           # one pointer per atom, as a storage gives
+        if id(atom) not in pointers:
+            pointers[id(atom)] = refs.save_child(atom)
+        return pointers[id(atom)]
+    data = msgpack.packb(codec.encode_value(v, save_child), use_bin_type=True)
+    back = codec.decode_value(msgpack.unpackb(data, raw=False), refs.load_ref)
+    assert msgpack.packb(codec.encode_value(back, save_child), use_bin_type=True) == data
+    assert exact_token(back) == exact_token(v)

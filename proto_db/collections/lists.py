@@ -120,7 +120,7 @@ class List(IndexedCollection):
         values = [canonical(v) for v in items]
         if not values:
             return self
-        indexes = self.indexes
+        indexes = self._current_indexes()
         for v in values:
             indexes = indexes.on_add(v)
         return self._with(root=avl.pos_concat(self.root, avl.pos_from_iterable(values)),

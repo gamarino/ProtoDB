@@ -175,6 +175,7 @@ class SpaceRoot(_Immutable, Atom):
     """
 
     __type_name__ = "proto_db.transactions.SpaceRoot"
+    _required_fields = ("databases",)
     _CLUSTER_FIELDS = ("cluster_term", "cluster_epoch", "cluster_previous")
     _history_links = ("cluster_previous",)
 
@@ -217,6 +218,7 @@ class DatabaseRoot(_Immutable, Atom):
     its predecessors loaded."""
 
     __type_name__ = "proto_db.transactions.DatabaseRoot"
+    _required_fields = ("objects", "mutables", "version", "committed_at", "previous")
     _history_links = ("previous",)
 
     def __init__(self, *, objects: Dictionary, mutables: Dictionary, previous: Optional["DatabaseRoot"],

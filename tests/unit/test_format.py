@@ -16,7 +16,7 @@ from proto_db.storage.format import (FORMAT_VERSION, SEGMENT_MAGIC, RecordKind, 
 
 
 def test_constants():
-    assert SEGMENT_MAGIC == b"PDB2SEG\0" and FORMAT_VERSION == 3
+    assert SEGMENT_MAGIC == b"PDB2SEG\0" and FORMAT_VERSION == 4
     assert fmt.RECORD_MAGIC == b"\xc1\xd2" and fmt.RECORD_HEADER_SIZE == 15
     assert RecordKind.ATOM == 1 and RecordKind.BLOB == 2
 
@@ -25,7 +25,7 @@ def test_segment_header_round_trip():
     seg = uuid.uuid4()
     raw = encode_segment_header(seg)
     assert raw[:8] == SEGMENT_MAGIC and len(raw) == fmt.SEGMENT_HEADER_SIZE == 26
-    assert struct.unpack("<H", raw[8:10])[0] == 3 and raw[10:] == seg.bytes
+    assert struct.unpack("<H", raw[8:10])[0] == 4 and raw[10:] == seg.bytes
     assert decode_segment_header(raw) == seg
     assert decode_segment_header(raw + b"extra") == seg
 
@@ -165,11 +165,11 @@ def test_root_with_valid_crc_but_wrong_shape_is_corruption():
 
 
 def test_format_2_segments_and_roots_are_still_read():
-    """Format 3 (D51) changed only what atoms contain; a format-2 segment header is accepted
+    """Formats 3 (D51) and 4 (D58) changed only what atoms contain; a format-2 segment header is accepted
     and a format-2 root record is read as a current one."""
     seg = uuid.uuid4()
     raw = encode_segment_header(seg)
     assert decode_segment_header(raw[:8] + struct.pack("<H", 2) + raw[10:]) == seg
     body = msgpack.packb({"version": 2, "segment": seg.bytes, "offset": 64, "epoch": 3}, use_bin_type=True)
     root = decode_root(struct.pack("<I", zlib.crc32(body)) + body)
-    assert root == RootRecord(FORMAT_VERSION, seg, 64, 3) and FORMAT_VERSION == 3
+    assert root == RootRecord(FORMAT_VERSION, seg, 64, 3) and FORMAT_VERSION == 4

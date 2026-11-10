@@ -92,12 +92,12 @@ def test_handle_is_orderable_for_the_term_model():
     assert not terms.Term("owner", terms.EQ, "x").matches(owner)
 
 
-def test_exact_token_of_a_handle_subclass_is_class_qualified():
+def test_exact_token_of_a_handle_subclass_is_its_canonical_encoding():
+    # D58 (ruling R129): a token is a function of the canonical bytes, never of the Python class.
     class Special(MutableObject):
         __slots__ = ()
 
-    assert exact_token(Special("n")) != exact_token(MutableObject("n"))
-    assert exact_token(Special("n"))[0].endswith("Special")
+    assert exact_token(Special("n")) == exact_token(MutableObject("n")) == b"\x81\xa4@mut\xa1n"
     assert Special("n") == MutableObject("n") and values_equal(Special("n"), MutableObject("n"))
 
 
