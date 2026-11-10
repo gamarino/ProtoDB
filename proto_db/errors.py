@@ -10,6 +10,7 @@ an exception re-raised by the parallel scan or the FSM (decisions D40, D41).
 VALIDATION_ERROR = 10_000
 USER_ERROR = 20_000
 CORRUPTION_ERROR = 30_000
+MISFILED_ERROR = 30_100
 NOT_SUPPORTED_ERROR = 40_000
 NOT_AUTHORIZED_ERROR = 50_000
 UNEXPECTED_ERROR = 60_000
@@ -63,6 +64,17 @@ class ProtoUserError(ProtoDBError):
 class ProtoCorruptionError(ProtoDBError):
     """Stored data failed an integrity check."""
     default_code = CORRUPTION_ERROR
+
+
+class ProtoMisfiledError(ProtoCorruptionError):
+    """A collection or index holds an entry where its own key does not place it.
+
+    The known cause is format-3 data written through a built-in subclass's own conversion (a
+    ``(str, Enum)`` member written as ``"Color.RED"`` but filed as ``"red"``; decision D58): the
+    entry, and in a sorted dictionary its neighbours, cannot be found.  ``collection.rebuilt()``
+    repairs it.
+    """
+    default_code = MISFILED_ERROR
 
 
 class ProtoNotSupportedError(ProtoDBError):

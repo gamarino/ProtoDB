@@ -75,7 +75,7 @@ from ..errors import (ProtoClosedError, ProtoConflictError, ProtoCorruptionError
                       ProtoUnexpectedError, ProtoValidationError)
 from .base import SharedStorage, check_lock_timeout
 from .cache import BoundedCache
-from .format import (FORMAT_VERSION, RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind,
+from .format import (WRITE_FORMAT_VERSION, RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind,
                      RootRecord, decode_root, decode_segment_header, encode_record,
                      encode_segment_header, read_record, record_size)
 
@@ -577,13 +577,13 @@ class CloudStorage(SharedStorage):
                         # An earlier attempt of ours may be what moved the root.
                         verdict = self._verdict(current, recent, ptr.segment, ptr.offset, expected_epoch + 1)
                         if verdict is True:
-                            return RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, expected_epoch + 1)
+                            return RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, expected_epoch + 1)
                         if verdict is None:
                             raise ProtoOutcomeUnknownError(
                                 f"The root moved to epoch {epoch} after an attempt with an unknown outcome "
                                 f"and its history no longer reaches epoch {expected_epoch + 1}")
                     raise ProtoConflictError(f"Root epoch is {epoch}, expected {expected_epoch}")
-                mine = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, epoch + 1)
+                mine = RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, epoch + 1)
                 history = ([(current.segment, current.offset, current.epoch)] + recent
                            if current is not None else [])
                 data = _encode_root_object(mine, history[:self._root_history])

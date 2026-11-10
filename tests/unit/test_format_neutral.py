@@ -498,3 +498,240 @@ def test_an_application_collection_field_is_not_required():
         _fields = List._fields + ("tag",)
     assert Tagged._required_fields == List._required_fields
     assert "tag" not in Tagged._required_fields
+
+
+# -- fix round 3 -----------------------------------------------------------------------------------
+
+# Minor 1: the base value is read with the base type's own methods, never a subclass override.
+
+class _DTYear(datetime):
+    @property
+    def year(self):
+        return 1999
+
+
+class _TDDays(timedelta):
+    @property
+    def days(self):
+        return 99
+
+
+class _BufferBytes(bytes):
+    def __buffer__(self, flags):
+        return memoryview(b"zz")
+
+
+class _UUIDInt(uuid.UUID):
+    def __int__(self):
+        return 5
+
+    @property
+    def bytes(self):
+        return b"\x05" * 16
+
+
+class _DateDay(date):
+    @property
+    def day(self):
+        return 9
+
+
+class _TimeHour(time):
+    @property
+    def hour(self):
+        return 9
+
+
+@pytest.mark.parametrize("value, base", [
+    (_DTYear(2026, 1, 2, 3), datetime(2026, 1, 2, 3)),
+    (_DTYear(2026, 11, 1, 1, 30, fold=1, tzinfo=NY), datetime(2026, 11, 1, 1, 30, fold=1, tzinfo=NY)),
+    (_TDDays(days=1, seconds=5), timedelta(days=1, seconds=5)),
+    (_BufferBytes(b"ab"), b"ab"),
+    (_UUIDInt(int=7), uuid.UUID(int=7)),
+    (_DateDay(2026, 1, 2), date(2026, 1, 2)),
+    (_TimeHour(12, 30, tzinfo=timezone.utc), time(12, 30, tzinfo=timezone.utc)),
+])
+def test_plain_scalar_ignores_overridden_accessors(value, base):
+    plain = canonical(value)
+    assert type(plain) is type(base) and plain == base
+    assert getattr(plain, "fold", 0) == getattr(base, "fold", 0)
+    assert _wire(value) == _wire(base)
+
+
+# Minor 2: hashed and keyed lookups canonicalize their argument.
+
+class _OddDecimalTuple(Decimal):
+    def as_tuple(self):
+        return Decimal("9").as_tuple()
+
+
+class _OddStrEncode(str):
+    def encode(self, *args, **kwargs):
+        return b"zzz"
+
+
+class _OddFloatRatio(float):
+    def as_integer_ratio(self):
+        return (9, 1)
+
+
+@pytest.mark.parametrize("value, base", [
+    (_OddDecimalTuple("1.5"), Decimal("1.5")), (_OddStrEncode("abc"), "abc"), (_OddFloatRatio(1.5), 1.5),
+    (Color.RED, "red"),
+])
+def test_lookups_canonicalize_their_argument(value, base):
+    from proto_db.collections.dictionaries import Dictionary, RepeatedKeysDictionary
+    from proto_db.collections.hash_dictionaries import HashDictionary
+    from proto_db.collections.sets import CountedSet, Set
+    for stored in (value, base):
+        h = HashDictionary().set_at(stored, 1)
+        assert h.has(value) and h.get_at(value) == 1 and h.has(base)
+        assert Set().add(stored).has(value)
+        assert CountedSet().add(stored).count_of(value) == 1
+        d = Dictionary().set_at(stored, 1)
+        assert d.has(value) and d.get_at(value) == 1
+        r = RepeatedKeysDictionary().add(stored, "x")
+        assert r.has(value) and r.get_at(value).count == 1
+
+
+# Minor 3: the encoder converts a raw dict's keys before checking them.
+
+def test_the_encoder_refuses_raw_dict_keys_that_become_one_base_value():
+    with pytest.raises(ProtoValidationError, match="map key"):
+        _wire({_Tagged("red"): 1, "red": 2})
+    assert _roundtrip({Color.RED: 1}) == {"red": 1}
+
+
+# Minor 5: a format-3 zone key conflicts with an aware key of its instant unless its wall clock is
+# ambiguous or skipped; two format-3 zone keys of one zone and wall clock always conflict.
+
+ZONE_UNAMBIGUOUS = {"@dt": [2026, 3, 8, 12, 0, 0, 0, 0, ["zone", "America/New_York"]]}
+UTC_OF_UNAMBIGUOUS = {"@dt": [2026, 3, 8, 16, 0, 0, 0, 0, ["fixed", 0, "UTC"]]}
+ZONE_FOLD0 = {"@dt": [2026, 11, 1, 1, 30, 0, 0, 0, ["zone", "America/New_York"]]}
+ZONE_FOLD1 = {"@dt": [2026, 11, 1, 1, 30, 0, 0, 1, ["zone", "America/New_York"]]}
+UTC_OF_FOLD1 = {"@dt": [2026, 11, 1, 6, 30, 0, 0, 0, ["fixed", 0, "UTC"]]}
+TOKYO_SAME_INSTANT = {"@dt": [2026, 3, 9, 1, 0, 0, 0, 0, ["zone", "Asia/Tokyo"]]}
+
+
+@pytest.mark.parametrize("pairs", [
+    [[ZONE_UNAMBIGUOUS, 1], [UTC_OF_UNAMBIGUOUS, 2]],
+    [[ZONE_UNAMBIGUOUS, 1], [TOKYO_SAME_INSTANT, 2]],
+    [[ZONE_FOLD0, 1], [ZONE_FOLD1, 2]],
+])
+def test_format_3_zone_keys_that_conflict_are_refused(pairs):
+    with pytest.raises(ProtoCorruptionError, match="map key"):
+        _decode({"@map": pairs})
+
+
+def test_an_ambiguous_format_3_zone_key_and_the_utc_key_of_its_instant_are_two_keys():
+    assert len(_decode({"@map": [[ZONE_FOLD1, 1], [UTC_OF_FOLD1, 2]]})) == 2
+
+
+# Re-review 2, I-A: format-3 structures that the old subclass encoding misfiled are detected and repaired.
+
+def _misfiled_by_format_3(make):
+    """``make()`` run as format 3 did: a str subclass kept as is by canonical() and written through str()."""
+    from proto_db import values as values_module
+    real = values_module.plain_scalar
+
+    def keep(value):
+        return value if isinstance(value, (str, int, float, Decimal, bytes)) else real(value)
+
+    def old_conversion(value):
+        if isinstance(value, str):
+            return str(value)
+        return real(value)
+    storage = MemoryStorage()
+    ctx = DirectContext(storage)
+    with mock.patch.object(values_module, "plain_scalar", keep), mock.patch.object(codec, "plain_scalar",
+                                                                                     old_conversion):
+        collection = make()
+        ptr = ctx.save(collection)
+    return DirectContext(storage).load(ptr, type(collection).__type_name__)
+
+
+def _structures():
+    from proto_db.collections.dictionaries import Dictionary, RepeatedKeysDictionary
+    from proto_db.collections.hash_dictionaries import HashDictionary
+    from proto_db.collections.sets import CountedSet, Set
+    keys = ["apple", "dog", "pear", "zebra"]
+    return {
+        "dictionary": (lambda: Dictionary.from_items([(k, 1) for k in keys]).set_at(Color.RED, 2),
+                       keys + ["Color.RED"]),
+        "hash_dictionary": (lambda: HashDictionary.from_items([(k, 1) for k in keys]).set_at(Color.RED, 2),
+                            keys + ["Color.RED"]),
+        "set": (lambda: Set.from_iterable(keys).add(Color.RED), keys + ["Color.RED"]),
+        "counted_set": (lambda: CountedSet.from_iterable(keys).add(Color.RED).add(Color.RED), keys + ["Color.RED"]),
+        "repeated_keys": (lambda: RepeatedKeysDictionary.from_items([(k, 1) for k in keys]).add(Color.RED, 2),
+                          keys + ["Color.RED"]),
+        "indexed_list": (lambda: List.from_iterable(keys).add_index(EqualityIndex("e", KeySpec.element()))
+                         .append_last(Color.RED), keys + ["Color.RED"]),
+    }
+
+
+def _holds(collection, key) -> bool:
+    if isinstance(collection, List):
+        return list(collection.get_index("e").plan(Term(None, EQ, key)).execute()) == [key]
+    from proto_db.collections.sets import CountedSet
+    if isinstance(collection, CountedSet):
+        return collection.count_of(key) >= 1
+    return collection.has(key)
+
+
+@pytest.mark.parametrize("name", list(_structures()))
+def test_format_3_subclass_damage_is_detected_and_repaired(name):
+    from proto_db.errors import ProtoMisfiledError
+    make, keys = _structures()[name]
+    damaged = _misfiled_by_format_3(make)
+    assert not all(_holds(damaged, k) for k in keys)                # the symptom
+    with pytest.raises(ProtoMisfiledError, match="rebuilt"):
+        damaged.validate()
+    repaired = damaged.rebuilt()
+    repaired.validate()
+    assert all(_holds(repaired, k) for k in keys)
+    assert repaired.count == damaged.count
+    from proto_db.collections.sets import CountedSet
+    if isinstance(damaged, CountedSet):
+        assert repaired.count_of("Color.RED") == 2 and repaired.total_count == damaged.total_count
+
+
+def test_a_sound_collection_validates_and_rebuilt_keeps_its_content():
+    from proto_db.collections.dictionaries import Dictionary
+    d = Dictionary.from_items([("a", 1), ("b", 2)]).add_index(EqualityIndex("v", KeySpec.element()))
+    d.validate()
+    assert list(d.rebuilt().items()) == [("a", 1), ("b", 2)]
+
+
+def test_a_repair_that_would_merge_two_values_under_one_key_is_refused():
+    from proto_db.collections.dictionaries import Dictionary
+    damaged = _misfiled_by_format_3(lambda: Dictionary().set_at("Color.RED", 1).set_at(Color.RED, 2))
+    with pytest.raises(ProtoValidationError, match="Color.RED"):
+        damaged.rebuilt()
+
+
+# -- pre-tag review m4: date and timedelta subclasses overriding __reduce__ ----------------------
+
+def test_date_and_timedelta_subclasses_are_read_through_the_base_fields_not_reduce():
+    import datetime as _dt
+    from proto_db.values import canonical as _canonical
+
+    class Day(_dt.date):
+        def __reduce__(self):
+            return (_dt.date, (1999, 1, 1))
+
+        @property
+        def year(self):
+            return 1
+
+    class Span(_dt.timedelta):
+        def __reduce__(self):
+            return (_dt.timedelta, (99,))
+
+        @property
+        def days(self):
+            return 0
+
+    assert _canonical(Day(2026, 12, 3)) == _dt.date(2026, 12, 3)
+    assert type(_canonical(Day(2026, 12, 3))) is _dt.date
+    assert _canonical(Span(3, 4, 5)) == _dt.timedelta(3, 4, 5)
+    assert type(_canonical(Span(3, 4, 5))) is _dt.timedelta

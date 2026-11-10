@@ -13,7 +13,9 @@ regenerates them.  Regenerate only when the format changes, and review the diff.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime
+import enum
 import json
 import os
 import shutil
@@ -28,6 +30,7 @@ import msgpack
 from proto_db.cluster import protocol
 from proto_db.cluster import rootlog
 from proto_db.collections import avl
+from proto_db.tools import notation
 from proto_db.collections.base import IndexedCollection
 from proto_db.collections.dictionaries import Dictionary, RepeatedKeysDictionary
 from proto_db.collections.hash_dictionaries import HashDictionary
@@ -692,6 +695,32 @@ LEGACY_ELEMENTS = [1, 2, 2, "x", 1.5, -0.0, Decimal("2.50"), (1, "a"), b"\x00",
                    datetime.date(2026, 1, 1), None, [1, 2]]
 
 
+class LegacyColor(str, enum.Enum):
+    """A ``(str, Enum)``: format 3 wrote its members through ``str()`` (``"LegacyColor.RED"``) but
+    filed them by their value (``"red"``), misfiling them (D58, re-review 2 I-A)."""
+    RED = "red"
+
+
+#: Keys of the misfiled structures; LegacyColor.RED is stored among them as "LegacyColor.RED".
+MISFILED_KEYS = ["apple", "dog", "pear", "zebra"]
+#: Roots of the legacy space that format 3 misfiled, and every key or element each must hold.
+MISFILED_ROOTS = ["misfiled_counted_set", "misfiled_dictionary", "misfiled_hash_dictionary", "misfiled_list",
+                  "misfiled_repeated_keys", "misfiled_set"]
+
+
+def _fill_misfiled(tx):
+    keys = MISFILED_KEYS
+    red = LegacyColor.RED
+    tx.set_root_object("misfiled_dictionary", Dictionary.from_items([(k, 1) for k in keys]).set_at(red, 2))
+    tx.set_root_object("misfiled_hash_dictionary", HashDictionary.from_items([(k, 1) for k in keys]).set_at(red, 2))
+    tx.set_root_object("misfiled_set", Set.from_iterable(keys).add(red))
+    tx.set_root_object("misfiled_counted_set", CountedSet.from_iterable(keys).add(red).add(red))
+    tx.set_root_object("misfiled_repeated_keys",
+                       RepeatedKeysDictionary.from_items([(k, 1) for k in keys]).add(red, 2))
+    tx.set_root_object("misfiled_list", List.from_iterable(keys).add_index(
+        EqualityIndex("e", KeySpec.element())).append_last(red))
+
+
 def _fill_legacy(tx):
     numbers = List.from_iterable(LEGACY_ELEMENTS).add_index(EqualityIndex("e", KeySpec.element()))
     tx.set_root_object("numbers", _with_format3_index(numbers, "e"))
@@ -707,6 +736,60 @@ def _fill_legacy(tx):
         zone_keys={zone: "a", (zone, 1): "b"},
         nan_keys={float("nan"): 1, float("nan"): 2},
         decimal_nan_keys={Decimal("NaN"): 1, Decimal("NaN"): 2}))
+
+
+@contextlib.contextmanager
+def _format3_subclass_encoding():
+    """Built-in subclasses handled as format 3 did: kept as they are by canonical() (so hashed
+    and ordered by their base value) and written through their own ``str()``."""
+    import proto_db.values as values_module
+    real = values_module.plain_scalar
+
+    def keep(value):
+        return value if isinstance(value, (str, int, float, Decimal, bytes)) else real(value)
+
+    def written_through_str(value):
+        return str(value) if isinstance(value, str) else real(value)
+    with mock.patch.object(values_module, "plain_scalar", keep), \
+            mock.patch.object(codec, "plain_scalar", written_through_str):
+        yield
+
+
+#: A type name no Python class implements: another implementation's record (D59).
+OPAQUE_TYPE = "polyglot.st.Order"
+#: The name ``OPAQUE_TYPE`` had before a rename in its owning implementation.
+OPAQUE_ALIAS = "polyglot.st.SalesOrder"
+
+
+def _fill_polyglot_first(tx):
+    tx.set_root_object("customer", DBObject(name="ACME"))
+    tx.set_root_object("holder", DBObject(name="holder"))
+
+
+def _fill_polyglot_second(tx):
+    """What another implementation does: write a record of its own type, referencing a record
+    this one wrote, and make a root reference it."""
+    customer = tx.get_root_object("customer")
+    state = {"number": 7, "lines": ["a", "b"], "total": Decimal("12.50"), "customer": customer,
+             "placed": datetime.date(2026, 12, 3)}
+    ptr = tx.storage.push_atom({"t": OPAQUE_TYPE, "oid": uuid.UUID(int=0x5eed).bytes,
+                                "s": codec.encode_state(state, lambda a: a.atom_pointer)})
+    # An older record of the same type, written under its previous name (an alias only the owner
+    # knows) and referenced under the declared name, as the owner writes references (D59, I-1).
+    older = tx.storage.push_atom({"t": OPAQUE_ALIAS, "oid": uuid.UUID(int=0x5eef).bytes,
+                                  "s": codec.encode_state({"number": 6}, lambda a: a.atom_pointer)})
+    tx.storage.flush()
+    tx.set_root_object("holder", tx.get_root_object("holder").with_(
+        order=tx.load(ptr, OPAQUE_TYPE), older_order=tx.load(older, OPAQUE_TYPE)))
+
+
+def gen_polyglot_database(manifest):
+    """A space holding a record of a type no Python class implements (an opaque atom)."""
+    with _Deterministic(0x4000):
+        entry = _write_space("polyglot", [_fill_polyglot_first, _fill_polyglot_second])
+    entry["opaque_type"] = OPAQUE_TYPE
+    entry["opaque_alias"] = OPAQUE_ALIAS
+    manifest["polyglot_database"] = entry
 
 
 def gen_legacy_database(manifest):
@@ -740,18 +823,22 @@ def gen_legacy_database(manifest):
                mock.patch.object(codec, "check_map_keys", any_keys),
                mock.patch.object(values_module, "check_map_keys", any_keys),
                mock.patch.object(DatabaseRoot, "__init__", no_origin)]
-    patches += [mock.patch.object(m, "FORMAT_VERSION", 3) for m in (fmt, file_module, tx_module)]
+    patches += [mock.patch.object(m, "WRITE_FORMAT_VERSION", 3) for m in (fmt, file_module, tx_module)]
     with _Deterministic(0x3000):
         for p in patches:
             p.start()
         try:
-            entry = _write_space("legacy", [_fill_legacy])
+            with _format3_subclass_encoding():
+                entry = _write_space("legacy", [_fill_legacy, _fill_misfiled])
         finally:
             for p in reversed(patches):
                 p.stop()
         # Read by this revision, unpatched: the records' decoded states and the contents.
         entry["records"] = _records(VECTORS / "legacy" / entry["segment"])
         entry["contents"] = _contents(VECTORS / "legacy")
+    entry["misfiled"] = {"roots": MISFILED_ROOTS, "keys": MISFILED_KEYS + ["LegacyColor.RED"],
+                         "note": "format 3 wrote LegacyColor.RED (a (str, Enum)) as 'LegacyColor.RED' but "
+                                 "filed it as 'red': validate() raises ProtoMisfiledError, rebuilt() repairs"}
     manifest["legacy_database"] = entry
 
 
@@ -772,37 +859,9 @@ def _contents(target: Path) -> dict:
 
 
 def describe_database(tx) -> dict:
-    """A language-neutral description of the database vector's content (also used by the test)."""
-    def obj(o):
-        if isinstance(o, DBObject):
-            return {"object": type(o).__type_name__,
-                    "attrs": [[k, obj(v)] for k, v in sorted(o._state().items())]}
-        if isinstance(o, (List, Set)):
-            return {"collection": type(o).__type_name__, "elements": [obj(e) for e in o.elements()]}
-        if isinstance(o, CountedSet):
-            return {"collection": type(o).__type_name__, "items": [[obj(e), _I(n)] for e, n in o.items()]}
-        if isinstance(o, (Dictionary, HashDictionary)):
-            return {"collection": type(o).__type_name__, "items": [[obj(k), obj(v)] for k, v in o.items()]}
-        if isinstance(o, RepeatedKeysDictionary):
-            return {"collection": type(o).__type_name__, "items": [[obj(k), obj(v)] for k, v in o.items()]}
-        if isinstance(o, tuple):
-            return {"tuple": [obj(v) for v in o]}
-        if isinstance(o, list):
-            return {"list": [obj(v) for v in o]}
-        if isinstance(o, dict):
-            return {"map": [[obj(k), obj(v)] for k, v in o.items()]}
-        return typed.describe(o)
-
-    out = {"roots": [[name, obj(tx.get_root_object(name))] for name in sorted(tx.root_names())],
-           "mutables": [["counter", obj(tx.get_mutable("counter"))]]}
-    out["indexes"] = {}
-    for name in sorted(tx.root_names()):
-        root = tx.get_root_object(name)
-        if isinstance(root, IndexedCollection) and root.index_names():
-            out["indexes"][name] = {i: {"type": type(root.get_index(i)).__type_name__,
-                                        "member_tokens": root.get_index(i).has_current_tokens()}
-                                    for i in root.index_names()}
-    out["origin"] = typed.describe(tx._db_root.origin)
+    """A language-neutral description of a vector database's content (also used by the test and
+    printed by ``python -m proto_db.tools.verify``), plus the vector index's list assignment."""
+    out = notation.describe_database(tx)
     if "ivf" in tx.root_names():
         index = tx.get_root_object("ivf").get_index("ivf")
         out["ivf"] = {"centroids": [[typed.describe(x) for x in c] for c in index.centroids],
@@ -1005,8 +1064,24 @@ def main():
     gen_framing(manifest)
     gen_database(manifest)
     gen_legacy_database(manifest)
+    gen_polyglot_database(manifest)
     gen_cluster(manifest)
     MANIFEST.write_text(json.dumps(manifest, indent=1, ensure_ascii=False) + "\n")
+    PINS.write_text(pin_lines())
+
+
+#: The pinned digests of the vectors (format-spec.rst, "Format stability"): one line
+#: ``<sha256 hex>  <path under vectors/>`` per file, sorted by path, then the manifest's line.
+PINS = Path(__file__).resolve().parent / "vectors.sha256"
+
+
+def pin_lines() -> str:
+    """The content of :data:`PINS` for the files on disk now."""
+    import hashlib
+    lines = [f"{hashlib.sha256(f.read_bytes()).hexdigest()}  {f.relative_to(VECTORS).as_posix()}"
+             for f in sorted(VECTORS.rglob("*"), key=lambda f: f.relative_to(VECTORS).as_posix()) if f.is_file()]
+    lines.append(f"{hashlib.sha256(MANIFEST.read_bytes()).hexdigest()}  ../manifest.json")
+    return "\n".join(lines) + "\n"
 
 
 if __name__ == "__main__":

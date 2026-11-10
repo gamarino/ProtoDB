@@ -10,7 +10,7 @@ from ..core.atom import AtomPointer
 from ..errors import (ProtoClosedError, ProtoConflictError, ProtoCorruptionError, ProtoLockingError,
                       ProtoTimeoutError, ProtoValidationError)
 from .base import SharedStorage, check_lock_timeout
-from .format import FORMAT_VERSION, RecordKind, RootRecord
+from .format import WRITE_FORMAT_VERSION, RecordKind, RootRecord
 
 __all__ = ["MemoryStorage"]
 
@@ -105,7 +105,7 @@ class MemoryStorage(SharedStorage):
             if expected_epoch is not None and expected_epoch != current:
                 raise ProtoConflictError(
                     f"Root epoch is {current}, expected {expected_epoch}")
-            self._root = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, current + 1)
+            self._root = RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, current + 1)
             return self._root
 
     def root_lock(self, timeout: Optional[float] = None):

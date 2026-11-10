@@ -30,7 +30,7 @@ import msgpack
 from ..core.atom import AtomPointer
 from ..errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoValidationError
 
-__all__ = ["SEGMENT_MAGIC", "FORMAT_VERSION", "READABLE_FORMAT_VERSIONS", "SEGMENT_HEADER_SIZE", "RECORD_HEADER_SIZE", "RECORD_MAGIC",
+__all__ = ["SEGMENT_MAGIC", "FORMAT_VERSION", "WRITE_FORMAT_VERSION", "FEATURE_VERSIONS", "write_version", "READABLE_FORMAT_VERSIONS", "SEGMENT_HEADER_SIZE", "RECORD_HEADER_SIZE", "RECORD_MAGIC",
            "RecordKind", "RootRecord", "encode_segment_header", "decode_segment_header", "encode_record",
            "record_header", "record_size", "read_record", "encode_root", "decode_root"]
 
@@ -42,6 +42,22 @@ SEGMENT_MAGIC = b"PDB2SEG\0"
 #: 4: exact tokens are canonical encodings and indexes persist ``member_tokens``, zone datetimes
 #: are written as their UTC instant, one spelling per value, the map-key rule (D58).
 FORMAT_VERSION = 4
+#: The version written in every segment header and root record: the lowest version sufficient
+#: for what this revision can write.  It differs from :data:`FORMAT_VERSION` (the highest
+#: version read) once a later revision adds a feature: data that does not use it keeps this
+#: version, so older readers keep opening it, and data that does is written with
+#: :func:`write_version` of its features ("Format stability" in format-spec.rst; pre-tag review I-3).
+WRITE_FORMAT_VERSION = 4
+#: The features added after the freeze, each with the format version that introduced it (none yet;
+#: ``@sym`` and the class registry will be the first, at 5).
+FEATURE_VERSIONS: dict = {}
+
+
+def write_version(features=()) -> int:
+    """The version to write for data using ``features`` (names of :data:`FEATURE_VERSIONS`)."""
+    return max([WRITE_FORMAT_VERSION] + [FEATURE_VERSIONS[f] for f in features])
+
+
 #: Versions this code reads: a format-2 segment still decodes (its references are read by the
 #: codec's format-2 branch), a format-3 one too (its zone datetimes by the codec's wall-clock
 #: branch, its indexes rebuilt at their first change); a root record of any of them is read as
@@ -86,7 +102,7 @@ class RootRecord:
 
 def encode_segment_header(segment: uuid.UUID) -> bytes:
     """Return the header bytes that start a segment file."""
-    return _SEGMENT_HEADER.pack(SEGMENT_MAGIC, FORMAT_VERSION, segment.bytes)
+    return _SEGMENT_HEADER.pack(SEGMENT_MAGIC, write_version(), segment.bytes)
 
 
 def decode_segment_header(data: bytes) -> uuid.UUID:
@@ -195,4 +211,4 @@ def decode_root(data: bytes) -> RootRecord:
         raise ProtoCorruptionError("Malformed root record")
     if version not in READABLE_FORMAT_VERSIONS:
         raise ProtoNotSupportedError(f"Unsupported root format version {version}")
-    return RootRecord(FORMAT_VERSION, uuid.UUID(bytes=raw), offset, epoch)
+    return RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(bytes=raw), offset, epoch)

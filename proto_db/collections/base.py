@@ -32,9 +32,9 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Iterator
 
 from ..core.atom import BUILTIN_TYPE_ALIASES, Atom, PersistenceContext
-from ..errors import ProtoConflictError, ProtoUserError, ProtoValidationError
+from ..errors import ProtoConflictError, ProtoMisfiledError, ProtoUserError, ProtoValidationError
 from ..query.plans import CollectionScanPlan
-from ..values import is_atom, order_key, values_equal
+from ..values import canonical, is_atom, order_key, values_equal
 from . import avl
 
 __all__ = ["IndexSet", "IndexedCollection", "ConcurrentOptimized", "net_effect", "same_value"]
@@ -71,6 +71,37 @@ class _Immutable:
             object.__delattr__(self, name)
             return
         raise ProtoUserError(f"{type(self).__name__} is immutable; cannot delete {name!r}")
+
+
+def repair_pairs(pairs: Iterable[tuple]) -> list[tuple]:
+    """``(key, value)`` pairs of a collection being repaired (:meth:`IndexedCollection.rebuilt`),
+    one per key, sorted by ``order_key(key)``.  Pairs of one key and one value (:func:`same_value`)
+    are merged; one key with two different values is ``ProtoValidationError`` naming the key."""
+    by_key: dict = {}
+    for key, value in pairs:
+        key = canonical(key)
+        okey = order_key(key)
+        previous = by_key.get(okey)
+        if previous is not None and not same_value(previous[1], value):
+            raise ProtoValidationError(
+                f"Cannot repair: the key {key!r} holds two different values ({previous[1]!r} and {value!r}); "
+                f"rebuild the collection by hand, choosing the value to keep")
+        if previous is None:
+            by_key[okey] = (key, value)
+    return [by_key[okey] for okey in sorted(by_key)]
+
+
+def check_sorted_keys(collection, root) -> None:
+    """``ProtoMisfiledError`` (through ``collection._misfiled``) unless the keys of the keyed tree
+    ``root`` are in strictly increasing ``order_key``; then the tree's own invariants."""
+    previous = None
+    for key, _ in avl.key_iter(root):
+        okey = order_key(key)
+        if previous is not None and not previous[0] < okey:
+            collection._misfiled(f"the key {key!r} is stored after {previous[1]!r}, which its key order "
+                                 f"places after it")
+        previous = (okey, key)
+    avl.check_invariants(root)
 
 
 def same_value(a, b) -> bool:
@@ -169,6 +200,13 @@ class IndexSet(_Immutable, Atom):
             name, index = pairs[i]
             pairs[i] = (name, index.empty().build(elements()))
         return self._new(avl.key_from_sorted(pairs))
+
+    def rebuilt_all(self, elements: Callable) -> "IndexSet":
+        """This set with every index rebuilt as ``index.empty().build(elements())`` (a repair, D58)."""
+        if self.root is None:
+            return self
+        return self._new(avl.key_from_sorted(
+            [(name, index.empty().build(elements())) for name, index in avl.key_iter(self.root)]))
 
     def on_add(self, element) -> "IndexSet":
         """Return the set after ``with_added(element)`` on every index."""
@@ -347,6 +385,50 @@ class IndexedCollection(_Immutable, Atom):
         for name in runtime:
             osa(new, name, changes[name] if name in changes else getattr(self, name))
         return new
+
+    # -- integrity check and repair (D58, re-review 2 I-A) ------------------------------------
+
+    def validate(self) -> None:
+        """Check this version's structure, then every index against :meth:`elements`.
+
+        Raises :class:`~proto_db.errors.ProtoMisfiledError` when an entry is filed where its own
+        key does not place it: a sorted tree whose keys are out of order, a hash bucket holding
+        an element of another hash, an index group holding an element of another key.  That is
+        the damage format 3 left when it wrote an instance of a built-in subclass through the
+        subclass's own conversion (a ``(str, Enum)`` member stored as ``"Color.RED"`` but filed
+        as ``"red"``): lookups of that entry fail, and in a sorted dictionary lookups of other
+        keys too.  :meth:`rebuilt` repairs it.  Raises ``ProtoCorruptionError`` for any other
+        damage.  Loads every node: O(n log n).
+        """
+        self._check_placement()
+        elements = list(self.elements())
+        for name in self.index_names():
+            self.get_index(name).validate(elements)
+
+    def _check_placement(self) -> None:
+        """``ProtoMisfiledError`` when an entry of the content is out of place (none for positional content)."""
+
+    def _misfiled(self, detail: str):
+        raise ProtoMisfiledError(
+            f"{type(self).__name__} holds a misfiled entry: {detail}. Format 3 wrote built-in "
+            f"subclasses (a (str, Enum) member, a subclass overriding __str__, __float__ or __bytes__) "
+            f"through their own conversion but filed them by their base value (D58); the collection "
+            f"must be rebuilt: replace it with collection.rebuilt()")
+
+    def rebuilt(self) -> "IndexedCollection":
+        """A repaired version: the content refiled from its entries as they read now, and every
+        index rebuilt from the elements (D58).  Entries that become one key are merged when
+        they are one value (a set member, a counted member's counts add up) and refused with
+        ``ProtoValidationError`` naming the key when they map one key to two different values:
+        a repair never drops a value.  The op log is not extended, so a transaction that
+        conflicts with another writer of this collection fails instead of merging.
+        """
+        new = self._refiled()
+        return new._with(indexes=new.indexes.rebuilt_all(new.elements))
+
+    def _refiled(self) -> "IndexedCollection":
+        """The content refiled (the default, positional content, needs nothing)."""
+        return self
 
     def _current_indexes(self) -> IndexSet:
         """``indexes`` ready to be changed: every index whose member keys use an older token

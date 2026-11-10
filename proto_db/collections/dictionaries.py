@@ -38,7 +38,7 @@ from ..core.atom import PersistenceContext
 from ..errors import ProtoValidationError
 from ..values import canonical, order_key
 from . import avl
-from .base import ConcurrentOptimized, IndexedCollection, same_value
+from .base import ConcurrentOptimized, IndexedCollection, check_sorted_keys, repair_pairs, same_value
 from .sets import CountedSet, counter_net_effect, counter_transform
 
 __all__ = ["Dictionary", "RepeatedKeysDictionary"]
@@ -109,12 +109,12 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
         return islice((value for _, value in avl.key_iter_from(self.root, start)), stop - start)
 
     def get_at(self, key, default=None):
-        """Return the value stored under ``key`` or ``default`` when absent."""
-        return avl.key_get(self.root, key, default)
+        """Return the value stored under ``key`` (canonicalized, as stored keys are) or ``default`` when absent."""
+        return avl.key_get(self.root, canonical(key), default)
 
     def has(self, key) -> bool:
-        """True iff ``key`` is present."""
-        return avl.key_get(self.root, key, _ABSENT) is not _ABSENT
+        """True iff ``key`` (canonicalized) is present."""
+        return avl.key_get(self.root, canonical(key), _ABSENT) is not _ABSENT
 
     __contains__ = has
 
@@ -126,6 +126,13 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
         """Keys in order."""
         for key, _ in avl.key_iter(self.root):
             yield key
+
+    def _check_placement(self) -> None:
+        check_sorted_keys(self, self.root)
+
+    def _refiled(self) -> "Dictionary":
+        pairs = repair_pairs(self.items())
+        return self._with(root=avl.key_from_sorted(pairs) if pairs else None, count=len(pairs))
 
     def values(self) -> Iterator:
         """Values in key order (same as :meth:`elements`)."""
@@ -230,12 +237,12 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
         The returned set is a value: deriving versions from it never changes
         this multimap.
         """
-        records = avl.key_get(self.root, key)
+        records = avl.key_get(self.root, _canonical_key(key))
         return records if records is not None else CountedSet(context=self.context)
 
     def has(self, key) -> bool:
-        """True iff ``key`` holds at least one record."""
-        return avl.key_get(self.root, key) is not None
+        """True iff ``key`` (canonicalized) holds at least one record."""
+        return avl.key_get(self.root, _canonical_key(key)) is not None
 
     __contains__ = has
 
@@ -247,6 +254,18 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
     def items(self) -> Iterator[tuple]:
         """``(key, CountedSet)`` pairs in key order."""
         return avl.key_iter(self.root)
+
+    def _check_placement(self) -> None:
+        check_sorted_keys(self, self.root)
+        for _, records in avl.key_iter(self.root):
+            records._check_placement()
+
+    def _refiled(self) -> "RepeatedKeysDictionary":
+        # Records of keys that become one key are merged (a multimap holds every record), and
+        # each key's records are refiled by from_items.
+        new = type(self).from_items(((key, record) for key, records in self.items()
+                                     for record, n in records.items() for _ in range(n)), context=self.context)
+        return self._with(root=new.root, count=new.count, total_count=new.total_count)
 
     # -- mutators -----------------------------------------------------------------------
 
