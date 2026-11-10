@@ -20,7 +20,7 @@ import time
 import pytest
 
 from proto_db.cluster.lease import Permission
-from proto_db.cluster.rootlog import compare_roots
+from proto_db.cluster.protocol import decode_labeled_root
 from proto_db.transactions import _lease_base
 from tests.support.manual_cluster import D, MARGIN, Harness, rec
 
@@ -112,13 +112,22 @@ def test_c1_a_recovery_ended_at_a_majority_never_drops_the_phase_1_root():
         # a builds on its base, as _permit_round / _commit_under_lease do, and commits with c, d.
         lease_a.bind_root(current, label)
         r_t = rec(current.epoch + 1)
+        preds = []
+        send = a._transport.send
+
+        def recording(to, msg):
+            if msg["type"] == "replicate":
+                preds.append(decode_labeled_root(msg["pred"]))
+            return send(to, msg)
+        a._transport.send = recording
         res = h.replicate("a", lease_a, r_t, {"c", "d"})
         assert not isinstance(res, Exception), res
         known, committed, committed_label = a.committed_root()[:3]
         assert known and committed == r_t and committed_label == lease_a.term
-        # R' was acknowledged; a's committed root is the first root of a's term, built on R'.
-        assert compare_roots(label, current, lease_e.term, r_prime) >= 0, \
-            "an acknowledged root (R') was superseded by a committed root not built on it"
+        # R' was acknowledged; a's committed root is the first root of a's term, and what it
+        # was replicated as built on (its ``pred``, which every voter checks) is R'.
+        assert preds and all(p == (True, r_prime, lease_e.term) for p in preds), \
+            f"an acknowledged root (R') was superseded by a committed root not built on it: {preds}"
     finally:
         h.close()
 
@@ -217,5 +226,84 @@ def test_m6_a_recovery_with_every_waits_for_the_holder_that_knows_the_commit():
         assert not t.is_alive()
         assert out["r"][:2] == (True, r), out["r"]
         assert c.committed_root()[1] == r, "c did not learn the commit its holder knew"
+    finally:
+        h.close()
+
+
+# -- I1 (re-review 3): a floor root whose records are unreachable ends the term -------------------
+
+def _floor_with_unreachable_records():
+    """Re-review 3, I1 (the reviewer's probe ``test_rr4_floor_records_unreachable.py``).  Five
+    voters with records on their disks.  e owns T' from b and c and replicates R' to b only;
+    its lease ends (R' unacknowledged, legal to drop).  a owns T from b and d: phase 1 reports
+    R' (uncertain).  b and e are then down: a, c and d are a live majority, and R's records
+    are on b and e only."""
+    h = Harness("abcde", records=True)
+    r1 = h.bootstrap("a")
+    h.clock.t += 2 * (D + MARGIN)
+    lease_e = h.attempt("e", {"b", "c"})
+    assert not isinstance(lease_e, Exception), lease_e
+    r_prime = rec(r1.epoch + 1)
+    h.replicate("e", lease_e, r_prime, {"b"}, expire=True)
+    assert h.nodes["b"].accepted_root()[1] == r_prime and h.holds("b", r_prime)
+    assert not any(h.holds(n, r_prime) for n in "acd")
+    h.clock.t += D + MARGIN + 1
+    lease_a = h.attempt("a", {"b", "d"})
+    assert not isinstance(lease_a, Exception), lease_a
+    assert lease_a.root == r_prime and not lease_a.root_certain
+    return h, r1, r_prime, lease_a
+
+
+def _round_with_b_and_e_down(h, name, lease, seq):
+    """One ``_permit_round`` of ``name`` under permission ``seq`` of ``lease``'s term, issued
+    on the owner's uncertain base (``own.base`` is the phase-1 root), with only a, c and d
+    alive.  Returns ``(permission, entry, bases built on)``."""
+    from proto_db.transactions import _Entry, _Group, _permit_round
+    node = h.nodes[name]
+    permission = Permission(term=lease.term, seq=seq, owner=name, acquired_at=h.clock.t,
+                            valid_until=lease.valid_until, root=lease.root, root_certain=lease.root_certain,
+                            clock=h.clock, root_term=lease.root_term)
+    group, built = _Group(), []
+
+    def build(current, stamp):
+        built.append(current)
+        return None             # nothing to publish: only the base is observed
+
+    entry = _Entry(build, node.tier, group)
+    live = {"a", "c", "d"} - {name}
+
+    def pump():
+        h.net.deliver(src=name, dst=live, kinds=("query", "commit_query", "fetch"))
+        h.net.drop(src=name, kinds=("query", "commit_query", "fetch", "records", "replicate"))
+        h.net.deliver(src=None, dst={name}, kinds=("answer", "commit_info", "fetched"))
+
+    h._run(lambda: _permit_round(node, node.tier, permission, [entry], group), pump)
+    return permission, entry, built
+
+
+def test_i1_a_floor_base_whose_records_are_unreachable_abandons_the_term():
+    """The round cannot re-commit R' (its records are on b and e only).  Before the fix its
+    permission ended ``none`` with a retryable conflict, rule O5 issued the same base again,
+    and every round of T stalled while a, c and d were alive.  Now the permission ends
+    ``unknown`` (the owner abandons T, O6; nothing was sent, so the commit still gets a
+    retryable conflict), and the next term's phase 1 on the live members builds on r1."""
+    from proto_db.errors import ProtoConflictError
+    h, r1, r_prime, lease_a = _floor_with_unreachable_records()
+    try:
+        a = h.nodes["a"]
+        permission, entry, built = _round_with_b_and_e_down(h, "a", lease_a, 1)
+        assert isinstance(entry.error, ProtoConflictError) and not built, (entry.error, built)
+        assert permission.outcome == "unknown", \
+            f"a base with unreachable records ended {permission.outcome!r}: O5 reissues it and the term stalls"
+        assert a.accepted_root()[1] == r1 and h.nodes["c"].accepted_root()[1] == r1
+        # The owner abandons T and releases it uncertain; a's next term is granted by c and d.
+        h.release("a", lease_a, to={"c", "d"})
+        h.clock.t += D + MARGIN + 1
+        lease_a2 = h.attempt("a", {"c", "d"})
+        assert not isinstance(lease_a2, Exception), lease_a2
+        assert lease_a2.term > lease_a.term and lease_a2.root == r1
+        permission2, entry2, built2 = _round_with_b_and_e_down(h, "a", lease_a2, 1)
+        assert built2 == [r1], (built2, entry2.error)
+        assert permission2.outcome != "unknown"
     finally:
         h.close()

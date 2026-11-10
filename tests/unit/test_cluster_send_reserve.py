@@ -188,3 +188,46 @@ def test_a_reserve_refusal_after_the_gate_leaves_no_suspicion_and_no_replication
         assert b._suspect_term == suspect, "a reserve refusal that sent nothing made b's grants uncertain"
         b._permit = None
     h.net.drop(kinds=ALL)
+
+
+def test_a_gated_data_stage_that_stored_nothing_leaves_no_suspicion_and_no_replication_failure(h):
+    """Re-review 3 of 8.3n, m1: the M1 guard has a second branch, in the outcome handling: a
+    gated round's data stage (``store`` messages, never acceptable, V1) that ends before
+    ``majority`` copies exist returns no copies, and nothing acceptable left the node (H7).
+    The commit gets a retryable conflict; no ``replication_failure`` is counted and the
+    node's grants stay certain.  Bounded replication is reached here by giving b's in-memory
+    tier the attributes of a tier that keeps its records locally, and the data stage is
+    replaced by one that ends without copies (the permission ran out)."""
+    import uuid
+    from proto_db.cluster.lease import Permission
+    b = h.nodes["b"]
+    r1 = h.own("a")
+    term = h.nodes["a"]._ownership.term
+    proposal = rec(r1.epoch + 1)                    # not known committed at b: the gate is closed
+    pb = Permission(term=term, seq=2, owner="a", acquired_at=h.clock.t, valid_until=h.clock.t + 3.0,
+                    root=proposal, root_certain=False, clock=h.clock, root_term=term, after=(1, "a"))
+    tier = b.tier
+    tier.local_records = True
+    tier.accept_replication = lambda *args, **kw: None
+    tier.outgoing = lambda: [[uuid.uuid4().bytes, 0, b"record"]]
+    stages = []
+
+    def no_copies(waiter, lease, parts, data_msg, preference, meanwhile):
+        stages.append(data_msg["type"])
+        return None                                 # the permission ended before any copy
+    b._place_records = no_copies
+    before = b.stats()
+    with b._lock:
+        b._permit = pb
+        suspect = b._suspect_term
+    out, sent = _replicate(h, "b", pb, rec(proposal.epoch + 1))
+    assert stages == ["store"], stages              # the gated data stage, never acceptable
+    assert isinstance(out, ProtoConflictError) and "nothing a voter may accept" in str(out), out
+    assert not pb.sent_acceptable
+    after = b.stats()
+    assert after["replication_failures"] == before["replication_failures"], \
+        "a data stage that sent nothing acceptable counted a replication failure"
+    with b._lock:
+        assert b._suspect_term == suspect, "a data stage that sent nothing acceptable made b's grants uncertain"
+        b._permit = None
+    h.net.drop(kinds=ALL)

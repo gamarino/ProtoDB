@@ -1124,7 +1124,16 @@ def _permit_round(coordinator, tier, permission, entries: list, group: _Group, *
             # base travels with its records.  Never for a proposal base (D55, H2): it is not
             # committed yet by construction, and only the gate may let a root follow it.
             sent = True
-            current = _commit_base(coordinator, tier, permission, label, current)
+            try:
+                current = _commit_base(coordinator, tier, permission, label, current)
+            except _BaseUnreachable:
+                # Re-review 3 of 8.3n, I1: abandon the term (O6), never end "none".  Rule O5
+                # would issue the same base again, and every round of the term would stall on
+                # it while a majority is alive; a fresh phase 1 on the live members settles it
+                # (argument at _BaseUnreachable).  Nothing was sent: the commits get a
+                # retryable conflict.  Planted test ``unreachable_base_none`` breaks this.
+                permission.outcome = "unknown"
+                raise
             permission.outcome, permission.committed = "committed", (permission.term, current)
             permission.bind_root(current, permission.term)
             sent = False
@@ -1307,7 +1316,10 @@ def _phase_1_floor(lease) -> bool:
     majority Q_c.  Q_c and Q_g share a member m.  m promised T before it replied to the
     grant, and an acceptor refuses every root of a term below its promise; so m accepted C
     before it replied, and reported a root that orders at or above C (an acceptor's accepted
-    root only moves up).  Hence ``lease.root`` orders at or above C.  By induction over terms
+    root only moves up; an acceptor that lost its disk, the one-disk loss of the failure
+    model, regains a root at or above it before it votes again, through its rejoin's ballot
+    round, in which ``N - majority + 1`` witnesses promise the ballot durably and then report
+    their accepted roots, R78a).  Hence ``lease.root`` orders at or above C.  By induction over terms
     (every earlier first root obeyed this rule) and the chain rule within a term (D55, V2'),
     any root that orders at or above C extends C, so a base at or above ``lease.root``
     extends every chosen root below T.  A recovery result that orders higher is safe to adopt
@@ -1335,6 +1347,31 @@ def _guard_error(label, current, committed_label, committed) -> ProtoCorruptionE
         f"continues from the highest root the cluster accepted (D46)")
 
 
+class _BaseUnreachable(ProtoConflictError):
+    """The base a round must re-commit (:func:`_commit_base`) has records on no reachable
+    member and not in the object store (re-review 3 of 8.3n, I1).  Nothing was replicated, so
+    the commits get a retryable conflict; the permission ends ``"unknown"``, which makes its
+    owner abandon the term (D50, O6) instead of issuing the same base again (O5).
+
+    Why abandoning is safe and makes progress.  Abandoning a term is always safe: it is a
+    conservative outcome (P5), and the next owner runs phase 1 again.  It makes progress
+    whenever a majority is alive and answers, without any timing premise for safety:
+
+    * If the base R was chosen (acknowledged), a majority of voters accepted it, and a voter
+      accepts a root only once a majority of members hold its records durably (D50 phase B,
+      D54: the records with the root, or the root alone after ``majority`` copies exist).
+      With at most ``f`` members down, a live member holds them, so ``commit_records`` finds
+      them unless its answers are late (a liveness matter, P5).
+    * If R was not chosen, dropping it is legal.  The next phase 1 runs on the live members:
+      each promises a ballot above R's term before it replies, so R can never be chosen
+      afterwards, and the phase-1 floor of the next term is the highest root those members
+      accepted.  A live acceptor of R either holds R's records itself, or accepted R alone
+      after ``majority`` copies existed, at least one of them on a live member; so a floor
+      that reports R again can re-commit it.
+    So the stall the floor otherwise caused (every round of one term basing on R, ending
+    ``none``, the owner renewing while demand lasts) ends after one abandoned term."""
+
+
 def _commit_base(coordinator, tier, lease, label: int, base: RootRecord) -> RootRecord:
     """Replicate a root equal to ``base`` (labelled ``label``; same databases), labelled with the
     lease term, on top of it, together with the base's records the object store lacks; return
@@ -1342,11 +1379,12 @@ def _commit_base(coordinator, tier, lease, label: int, base: RootRecord) -> Root
 
     Re-proposing the base is what makes it committed; without its records, a base whose
     records lived only on its holder's disk would be lost with that disk (ruling R50).
-    ``ProtoConflictError`` (nothing replicated) when they are on no reachable peer.
+    :class:`_BaseUnreachable` (a ``ProtoConflictError``: nothing replicated) when they are on
+    no reachable peer.
     """
     where, records, ranges = coordinator.commit_records(label, base)
     if where is None:
-        raise ProtoConflictError(f"The base root (epoch {base.epoch}) cannot be re-committed now: {records}")
+        raise _BaseUnreachable(f"The base root (epoch {base.epoch}) cannot be re-committed now: {records}")
     context = _SpaceContext(tier.storage)      # the commit's tier, captured when it began
     space = _load_space(context, base)
     stamp = _ClusterStamp(lease.term, base.epoch + 1)
