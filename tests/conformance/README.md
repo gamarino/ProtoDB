@@ -12,11 +12,13 @@ ProtoBase's own encoders (`generate.py`) and is checked byte for byte against th
 | --- | --- |
 | `manifest.json` | What every vector file means, in a language-neutral JSON notation (below) |
 | `vectors/values/*.msgpack` | One canonical value each, as an attribute value is encoded |
-| `vectors/invalid/*.bin` | Inputs a reader must refuse (a value, a record or a root record) |
-| `vectors/framing/` | Segment headers (format 3 and 2), an ATOM and a BLOB record, root records (file, format 2, cloud, tiered) |
-| `vectors/database/` | A complete file-storage space: `space.root` and one segment, written through the public API |
+| `vectors/invalid/*.bin` | Inputs a reader must refuse, at every layer (value, map key, atom envelope and state, record, segment, root, log, acceptor log, cluster message) |
+| `vectors/framing/` | Segment headers (formats 4, 3 and 2), an ATOM and a BLOB record, root records (file, formats 3 and 2, cloud, tiered) |
+| `vectors/database/` | A complete format-4 file-storage space: `space.root` and one segment, written through the public API (trained ivf_flat and hnsw vector indexes included) |
+| `vectors/legacy/` | A format-3 space: a DatabaseRoot without `origin`, an index written with format-3 member tokens and plain KeyNode trees, a zone datetime in the wall-clock form, an application record and reference spelled by an alias |
 | `vectors/cluster/<uuid>.seg` | The segment of one cluster commit: a `SpaceRoot` with its lease term, epoch and predecessor |
-| `vectors/cluster/roots.log` | An acceptor log holding every entry kind (1 to 6) |
+| `vectors/cluster/roots.log` | An acceptor log holding every entry kind (1 to 6), each listed field by field |
+| `vectors/cluster/roots-torn.log` | The same log with a torn tail (its last frame cut) |
 | `vectors/cluster/ranges.log`, `segments.log` | The other two framed logs of a cluster node |
 | `vectors/cluster/messages/*.frame` | One wire frame (4-byte big-endian length, then msgpack) of every message type |
 | `generate.py` | The script that wrote all of the above |
@@ -32,8 +34,9 @@ Every description is a JSON object with one key.
 `{"float": "0x1.8000000000000p+0"}` (C99 hexadecimal; `"nan"`, `"inf"`, `"-inf"`),
 `{"str": "..."}`, `{"bytes": "00ff"}` (hexadecimal), `{"decimal": "1.20"}`,
 `{"date": [y, m, d]}`, `{"time": [h, mi, s, us, fold, tz]}`,
-`{"datetime": [y, m, d, h, mi, s, us, fold, tz]}` with `tz` = `null`, `["zone", key]` or
-`["fixed", offset_us, name]`, `{"timedelta": [days, seconds, us]}`, `{"uuid": "<32 hex>"}`,
+`{"datetime": [y, m, d, h, mi, s, us, fold, tz]}` with `tz` = `null`,
+`["fixed", offset_us, name]`, `["instant", key]` (the fields are the UTC instant, fold 0) or
+`["zone", key]` (a time's zone; in a datetime only the format-3 wall-clock form), `{"timedelta": [days, seconds, us]}`, `{"uuid": "<32 hex>"}`,
 `{"list": [...]}`, `{"tuple": [...]}`, `{"map": [[key, value], ...]}` (in order),
 `{"missing": true}`, `{"mutable": "name"}`,
 `{"ref": {"segment": "<32 hex>", "offset": n, "type": "type name"}}`.
@@ -51,11 +54,18 @@ A reader passes when, for every entry of `manifest.json`:
 2. `values_decode_only`: legacy forms (format 2 references, a built-in type spelled by name).
    Decoding gives the described value; re-encoding gives the bytes of the `canonical` file,
    never the legacy form.
-3. `invalid`: decoding the file at its `layer` (a value, a record, a root record) is refused.
+3. `invalid`: reading the file at its `layer` is refused with the listed `error`:
+   `corruption` (ProtoCorruptionError), `not_supported` (ProtoNotSupportedError) or `protocol`
+   (a cluster receiver drops the connection). Layers: `value` (one canonical value), `atom`
+   (an atom record payload, loaded as a reference to `type`), `record`, `segment` (a segment
+   header), `root` (a root record), `log` (a framed log of `kind`), `roots_log` (an acceptor log,
+   decoded entry by entry), `message` (bytes received on a cluster connection).
 4. `order`: the values of `ascending` are in strictly ascending key order; each group of
    `equal` is one key; the `unorderable` values cannot be keys.
-5. `hashes` and `exact_tokens`: your hash function and exact tokens give these results.
-   They matter to any writer of a set, hash map or index.
+5. `hashes`, `atom_hashes`, `exact_tokens` and `atom_tokens`: your hash function and exact
+   tokens give these results (a token is given as hexadecimal bytes: it is the value's canonical
+   encoding, with every atom written as `{"@ref": nil}`). They matter to any writer of a set, hash
+   map or index.
 6. `framing`: each header, record and root decodes to the listed fields and re-encodes to the
    same bytes.
 7. `database`: walk the segment from offset 26; each record is at the listed `offset`, has the
@@ -63,11 +73,19 @@ A reader passes when, for every entry of `manifest.json`:
    order), and re-encodes to the same bytes. Then open the space as a database: following
    `space.root` -> `SpaceRoot` -> `databases["db"]` -> `DatabaseRoot`, the content you read must
    be `contents` (`roots` lists each root object with collections expanded in their iteration
-   order, `object` entries list a record's attributes sorted by name).
+   order, `object` entries list a record's attributes sorted by name; `indexes` gives each
+   index's type and whether it has format-4 member tokens; `ivf` gives the trained centroids
+   and the list number of every stored vector, which your list assignment must reproduce).
+   Records whose `canonical` is true re-encode byte for byte; the others are legacy forms
+   (`legacy`: an alias, a format-3 zone datetime) that re-encode canonically.
+   Do the same for `legacy_database`, a format-3 space; after a change of its `numbers`
+   list, its index must have been rebuilt with format-4 tokens.
 8. `cluster`: the segment as in step 7; each log decodes to the listed entries (`roots_log`
-   gives the size of every entry, the commit's root and base, and what a reader of the log
-   concludes in `loaded`); each message frame decodes to the described message and
-   re-encodes to the same bytes.
+   gives every entry's size and `fields`, from which your encoder must rebuild the entry's
+   bytes -- `records` items are `[segment, offset, size]` of records in the cluster segment --,
+   the commit's root and base, and what a reader of the log concludes in `loaded`);
+   `roots_log_torn` is read with its torn tail dropped (`valid_end`, `entries`); each message
+   frame decodes to the described message and re-encodes to the same bytes.
 
 For the cross-implementation round trip (R83a), also run the reverse: write a database with
 your implementation, open it with ProtoBase (`ObjectSpace(FileStorage(path))`), and compare.

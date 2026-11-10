@@ -17,7 +17,8 @@ import pytest
 from proto_db.cluster import protocol, rootlog
 from proto_db.core import codec
 from proto_db.core.atom import BUILTIN_TYPE_ALIASES, type_name_of
-from proto_db.errors import ProtoCorruptionError
+from proto_db.cluster.protocol import ClusterProtocolError
+from proto_db.errors import ProtoCorruptionError, ProtoNotSupportedError
 from proto_db.storage import cloud, format as fmt, logfile, tiered
 from proto_db.storage.file import FileStorage
 from proto_db.transactions import ObjectSpace
@@ -70,16 +71,41 @@ def test_legacy_value_vector_decodes_and_reencodes_canonically(vector):
     assert _reencode(value) == _bytes(vector["canonical"])
 
 
+_ERRORS = {"corruption": ProtoCorruptionError, "not_supported": ProtoNotSupportedError,
+           "protocol": ClusterProtocolError}
+
+
+def _read_layer(vector, data):
+    layer = vector["layer"]
+    if layer == "value":
+        _decode(data)
+    elif layer == "record":
+        fmt.read_record(data, 0)
+    elif layer == "root":
+        fmt.decode_root(data)
+    elif layer == "segment":
+        fmt.decode_segment_header(data)
+    elif layer == "atom":
+        from proto_db.storage.memory import MemoryStorage
+        from tests.support.persistence import DirectContext
+        storage = MemoryStorage()
+        ptr = storage.push_atom(msgpack.unpackb(data, raw=False, strict_map_key=False))
+        stub = DirectContext(storage).load(ptr, vector["type"])
+        stub._load()
+    elif layer == "log":
+        logfile.scan(data, vector["kind"].encode("ascii"), vector["file"])
+    elif layer == "roots_log":
+        rootlog._decode(logfile.scan(data, rootlog.LOG_KIND, vector["file"]).payloads, vector["file"])
+    elif layer == "message":
+        protocol.FrameDecoder().feed(data)
+    else:
+        raise AssertionError(f"unknown layer {layer!r}")
+
+
 @pytest.mark.parametrize("vector", MANIFEST["invalid"], ids=lambda v: v["id"])
 def test_invalid_vector_is_refused(vector):
-    data = _bytes(vector["file"])
-    with pytest.raises(ProtoCorruptionError):
-        if vector["layer"] == "value":
-            _decode(data)
-        elif vector["layer"] == "record":
-            fmt.read_record(data, 0)
-        else:
-            fmt.decode_root(data)
+    with pytest.raises(_ERRORS[vector["error"]]):
+        _read_layer(vector, _bytes(vector["file"]))
 
 
 # -- the value model ---------------------------------------------------------------------------
@@ -104,14 +130,29 @@ def test_hash_vector(vector):
 @pytest.mark.parametrize("vector", MANIFEST["exact_tokens"], ids=lambda v: json.dumps(v["value"])[:40])
 def test_exact_token_vector(vector):
     from proto_db.values import canonical, exact_token
-    assert typed.describe(exact_token(canonical(typed.build(vector["value"])))) == vector["token"]
+    value = canonical(typed.build(vector["value"]))
+    assert exact_token(value).hex() == vector["token"]
+    # The token is the canonical encoding: what the value's own vector file would hold.
+    assert exact_token(value) == _reencode(value)
+
+
+def test_atom_hashes_and_tokens():
+    from proto_db.core.dbobject import DBObject
+    from proto_db.values import canonical, exact_token, hash_key
+    for vector in MANIFEST["atom_hashes"]:
+        atom = DBObject(x=1)
+        object.__setattr__(atom, "oid", uuid.UUID(hex=vector["oid"]))
+        assert hash_key(atom) == int(vector["hash_key"])
+    atom = DBObject(x=1)
+    tokens = [exact_token(atom), exact_token((atom, 1)), exact_token(canonical([1, {"k": atom}]))]
+    assert [t.hex() for t in tokens] == [v["token"] for v in MANIFEST["atom_tokens"]]
 
 
 # -- framing -------------------------------------------------------------------------------
 
 def test_segment_headers():
     framing = MANIFEST["framing"]
-    for name in ("segment_header", "segment_header_v2"):
+    for name in ("segment_header", "segment_header_v3", "segment_header_v2"):
         vector = framing[name]
         data = _bytes(vector["file"])
         assert len(data) == fmt.SEGMENT_HEADER_SIZE == 26
@@ -145,9 +186,10 @@ def test_root_records():
     record = fmt.decode_root(_bytes(vector["file"]))
     assert _root_fields(record) == vector["fields"]
     assert fmt.encode_root(record) == _bytes(vector["file"])
-    legacy = framing["root_v2"]
-    record = fmt.decode_root(_bytes(legacy["file"]))
-    assert _root_fields(record) == dict(legacy["fields"], version=fmt.FORMAT_VERSION)   # read as current
+    for name in ("root_v3", "root_v2"):
+        legacy = framing[name]
+        record = fmt.decode_root(_bytes(legacy["file"]))
+        assert _root_fields(record) == dict(legacy["fields"], version=fmt.FORMAT_VERSION)   # read as current
 
     vector = framing["cloud_root"]
     record, recent = cloud._decode_root_object(_bytes(vector["file"]))
@@ -166,7 +208,8 @@ def test_root_records():
 def _check_segment(rel: str, records: list) -> None:
     data = _bytes(rel)
     segment = fmt.decode_segment_header(data)
-    assert fmt.encode_segment_header(segment) == data[:fmt.SEGMENT_HEADER_SIZE]
+    header = fmt.encode_segment_header(segment)          # the version bytes [8:10] are checked by the caller
+    assert header[:8] + header[10:] == data[:8] + data[10:fmt.SEGMENT_HEADER_SIZE]
     assert Path(rel).name == segment.hex + ".seg"
     pos = fmt.SEGMENT_HEADER_SIZE
     for entry in records:
@@ -181,15 +224,22 @@ def _check_segment(rel: str, records: list) -> None:
         state = codec.decode_state(envelope["s"], stub)
         assert [[k, typed.describe(v)] for k, v in state.items()] == entry["state"]
         again = _pack({"t": envelope["t"], "oid": envelope["oid"], "s": codec.encode_state(state, saved_pointer)})
-        assert again == payload
-        assert fmt.encode_record(kind, again) == data[pos:pos + size]
+        # Records of the current format re-encode byte for byte; a legacy record (an alias, a
+        # format-3 zone datetime) decodes to the listed state and re-encodes canonically.
+        assert (again == payload) is entry["canonical"]
+        if entry["canonical"]:
+            assert fmt.encode_record(kind, again) == data[pos:pos + size]
         pos += size
     assert pos == len(data), "the manifest lists every record of the segment"
 
 
-def test_database_segment():
-    db = MANIFEST["database"]
+@pytest.mark.parametrize("name", ["database", "legacy_database"])
+def test_database_segment(name):
+    db = MANIFEST[name]
     _check_segment(f"{db['dir']}/{db['segment']}", db["records"])
+    assert int.from_bytes(_bytes(f"{db['dir']}/{db['segment']}")[8:10], "little") == db["format"]
+    if name == "database":
+        assert all(r["canonical"] for r in db["records"])
 
 
 def test_every_persistable_builtin_type_appears():
@@ -200,16 +250,20 @@ def test_every_persistable_builtin_type_appears():
     assert "conformance.Invoice" in seen
 
 
-def test_database_root():
-    db = MANIFEST["database"]
+@pytest.mark.parametrize("name", ["database", "legacy_database"])
+def test_database_root(name):
+    db = MANIFEST[name]
     data = _bytes(f"{db['dir']}/space.root")
     record = fmt.decode_root(data)
-    assert _root_fields(record) == db["root"]
-    assert fmt.encode_root(record) == data
+    assert _root_fields(record) == dict(db["root"], version=fmt.FORMAT_VERSION)
+    assert msgpack.unpackb(data[4:])["version"] == db["root"]["version"]
+    if name == "database":
+        assert fmt.encode_root(record) == data
 
 
-def test_database_contents_through_the_public_api(tmp_path):
-    db = MANIFEST["database"]
+@pytest.mark.parametrize("name", ["database", "legacy_database"])
+def test_database_contents_through_the_public_api(tmp_path, name):
+    db = MANIFEST[name]
     work = tmp_path / "db"
     shutil.copytree(HERE / "vectors" / db["dir"], work)
     space = ObjectSpace(FileStorage(str(work)))
@@ -219,10 +273,31 @@ def test_database_contents_through_the_public_api(tmp_path):
         space.close()
 
 
+def test_a_format_3_index_is_rebuilt_at_its_first_change(tmp_path):
+    from proto_db.query.terms import EQ, Term
+    work = tmp_path / "db"
+    shutil.copytree(HERE / "vectors" / MANIFEST["legacy_database"]["dir"], work)
+    space = ObjectSpace(FileStorage(str(work)))
+    try:
+        db = space.open_database("db")
+        db.run(lambda tx: tx.set_root_object("numbers", tx.get_root_object("numbers").append_last(2)))
+
+        def check(tx):
+            numbers = tx.get_root_object("numbers")
+            index = numbers.get_index("e")
+            assert index.has_current_tokens()
+            index.validate(list(numbers.elements()))
+            assert list(index.plan(Term(None, EQ, 2)).execute()) == [2, 2, 2]
+        db.run(check)
+    finally:
+        space.close()
+
+
 # -- the cluster: segment, logs and wire messages --------------------------------------------
 
 def test_cluster_segment():
     _check_segment(MANIFEST["cluster"]["segment"]["file"], MANIFEST["cluster"]["segment"]["records"])
+    assert _bytes(MANIFEST["cluster"]["segment"]["file"])[8:10] == fmt.FORMAT_VERSION.to_bytes(2, "little")
 
 
 def _log(vector: dict, kind: bytes) -> list:
@@ -244,6 +319,8 @@ def test_roots_log():
     vector = cluster["roots_log"]
     payloads = _log(vector, rootlog.LOG_KIND)
     assert [len(p) for p in payloads] == [e["size"] for e in vector["entries"]]
+    for entry, payload in zip(vector["entries"], payloads):
+        assert _encode_entry(entry["fields"], segment_records()) == payload, entry["name"]
     loaded = rootlog._decode(payloads, vector["file"])
     expected = vector["loaded"]
     assert loaded.accepted == (expected["accepted"][0], _root(expected["accepted"][1]))
@@ -260,6 +337,39 @@ def test_roots_log():
     assert redo[0].pred == (0, _root(vector["base"])) and redo[0].ranges is None
     ranges = protocol.record_ranges(framed)
     assert redo[1].ranges == ranges and redo[2].ranges == ranges
+
+
+def segment_records() -> dict:
+    """``{(segment hex, offset): framed record}`` of the cluster vector's segment."""
+    cluster = MANIFEST["cluster"]
+    segment = _bytes(cluster["segment"]["file"])
+    seg_hex = Path(cluster["segment"]["file"]).stem
+    return {(seg_hex, r["offset"]): segment[r["offset"]:r["offset"] + r["size"]]
+            for r in cluster["segment"]["records"]}
+
+
+def _encode_entry(fields: dict, framed: dict) -> bytes:
+    """An acceptor-log entry rebuilt from its manifest fields with the entry encoders."""
+    kind, label, root = fields["kind"], fields["label"], _root(fields["root"])
+    if kind <= 4:
+        return rootlog._payload(kind, label, root)
+    pred = (fields["pred"][0], _root(fields["pred"][1]))
+    records = []
+    for seg_hex, offset, size in fields["records"]:
+        data = framed[(seg_hex, offset)]
+        assert len(data) == size
+        records.append([bytes.fromhex(seg_hex), offset, data])
+    if kind == 5:
+        return rootlog.encode_records_entry(label, root, fields["seq"], pred, records)
+    ranges = [(uuid.UUID(hex=s), a, b) for s, a, b in fields["ranges"]]
+    return rootlog.encode_replica_entry(label, root, fields["seq"], pred, records, ranges,
+                                        accepted=bool(fields["flags"] & rootlog.ACCEPTED))
+
+
+def test_roots_log_torn_tail_is_dropped():
+    vector = MANIFEST["cluster"]["roots_log_torn"]
+    result = logfile.scan(_bytes(vector["file"]), rootlog.LOG_KIND, vector["file"])
+    assert result.torn and result.valid_end == vector["valid_end"] and len(result.payloads) == vector["entries"]
 
 
 def test_ranges_and_segments_logs():

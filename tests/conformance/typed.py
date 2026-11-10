@@ -87,6 +87,8 @@ def build(desc, load_ref=None):
         return time(h, mi, s, us, tzinfo=_tz_build(tz), fold=fold)
     if kind == "datetime":
         y, mo, d, h, mi, s, us, fold, tz = body
+        if tz is not None and tz[0] == "instant":
+            return datetime(y, mo, d, h, mi, s, us, tzinfo=timezone.utc).astimezone(ZoneInfo(tz[1]))
         return datetime(y, mo, d, h, mi, s, us, tzinfo=_tz_build(tz), fold=fold)
     if kind == "timedelta":
         return timedelta(*body)
@@ -125,6 +127,10 @@ def describe(value):
         return {"bytes": value.hex()}
     if t is Decimal:
         return {"decimal": str(value)}
+    if t is datetime and isinstance(value.tzinfo, ZoneInfo):
+        u = value.astimezone(timezone.utc)
+        return {"datetime": [u.year, u.month, u.day, u.hour, u.minute, u.second, u.microsecond, 0,
+                             ["instant", value.tzinfo.key]]}
     if t is datetime:
         return {"datetime": [value.year, value.month, value.day, value.hour, value.minute, value.second,
                              value.microsecond, value.fold, _tz_describe(value.tzinfo)]}
