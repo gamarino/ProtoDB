@@ -67,9 +67,9 @@ The alternatives and their costs
 * **Caching on save, or only on read.** Caching on save removes the decode of the next build (31 decodes to
   0, above). It does not pay on a bulk build: building a 480,815-object inventory took 153.3 s with the
   decoded-atom cache disabled, 165.8 s at ``26f3b85`` with it on, and 187.5 s once residency was added
-  (Task 8.3m design, ladder probe, single runs; recorded as a parked finding in D53). Each commit's twins are
+  (D53, parked finding; the residency design's ladder, single runs). Each commit's twins are
   admitted and mostly evicted before anything reads them. Caching on save was not changed: the bulk case is
-  recorded as a parked finding (ruling R103-7), not hidden.
+  recorded as a parked finding in D53, not hidden.
 * **A per-transaction decoded cache.** Rejected in D53: the cost returns with every transaction.
 * **Results shared across processes.** Rejected in D56 (see :doc:`immutability`).
 
@@ -100,8 +100,10 @@ Its cost, stated honestly
 -------------------------
 
 * **Three settings to size**, and a request that misses all three pays all three: a storage read, a decode,
-  and an execution. The decoded-atom cache has a measured signal for sizing it (:doc:`residency`); the record
-  query cache reports its own statistics (``query_cache_stats()``).
+  and an execution. The decoded-atom cache has a measured signal for sizing it (:doc:`residency`); the query
+  cache reports its own statistics (``query_cache_stats()``). Of the storages' record caches, only
+  ``FileStorage`` reports counters (``cache_stats()``, informational); the others are sized by their byte bound
+  (``cache_bytes``) alone.
 * **The bounds do not add up to a memory bound for the process.** D53 lists what lies outside the
   decoded-atom bound: the query cache (its own byte bound); the storages' record caches (bytes); the vector
   indexes' derived structures (``DerivedCache``: matrices, IVF lists and HNSW graphs, process-wide, at most 16,

@@ -2,7 +2,9 @@ Referential integrity by construction
 =====================================
 
 *Ruling R85; decisions D34 (children-first saves) and D35 (handles); principle P1. The reference page is*
-:doc:`/objects-across-transactions`.
+:doc:`/objects-across-transactions`. *This chapter has no "alternatives and their costs" step: the one
+alternative, declared constraints, is the obvious solution, and its costs are given where it fails; no
+measurement was taken for it.*
 
 What it gives the ERP
 ---------------------

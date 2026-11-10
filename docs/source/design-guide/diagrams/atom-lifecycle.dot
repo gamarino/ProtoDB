@@ -1,18 +1,18 @@
 // The states of a shared atom under residency (Task 8.3m), held in the value of _loaded.
+// A stub the cache serves starts marked (_UNLOADED). Atoms the cache did not produce (live,
+// unsaved, transaction-private, one-off stubs) hold False / True and are never resident.
 // Render: dot -Tsvg atom-lifecycle.dot -o atom-lifecycle.svg
 digraph lifecycle {
   graph [rankdir=LR, fontname="Helvetica", fontsize=11, nodesep=0.4, ranksep=0.6];
   node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#555555"];
   edge  [fontname="Helvetica", fontsize=9, color="#555555"];
 
-  stub     [label="stub\n_loaded = False\npointer, class, context, oid"];
-  pending  [label="loading\n_loaded = _Pending(payload)\n(falsy; shared by concurrent loaders)", fillcolor="#fff4cc"];
+  unloaded [label="stub (marked)\n_loaded = _UNLOADED (falsy)\npointer, class, context, oid\nserved by the cache, or evicted"];
+  pending  [label="loading\n_loaded = _Pending(payload, marked)\n(falsy; shared by concurrent loaders)", fillcolor="#fff4cc"];
   loaded   [label="loaded, resident\n_loaded = _Generation(names)\n(truthy; a fresh token per load)", fillcolor="#cfe3f5"];
-  unloaded [label="unloaded\n_loaded = _UNLOADED\n(falsy; same object, same identity)"];
 
-  stub -> pending      [label="phase 1: fetch under the stripe"];
-  pending -> loaded    [label="phase 3: publish only if _loaded\nis still this _Pending; then admit"];
-  pending -> pending   [label="phase 3 finds another value:\nrestart (the C1 fix)"];
-  loaded -> unloaded   [label="evicted: token replaced first,\nthen the recorded names deleted"];
-  unloaded -> pending  [label="next read"];
+  unloaded -> pending  [label="phase 1: fetch under the stripe"];
+  pending -> loaded    [label="phase 3: publish only if _loaded is still\nthis _Pending; then admit (the C1 fix)"];
+  pending -> pending   [label="phase 3 finds another _Pending or _UNLOADED:\nloaded and unloaded meanwhile, fetch again"];
+  loaded -> unloaded   [label="evicted: token replaced by _UNLOADED first,\nthen the recorded names deleted (same object)"];
 }

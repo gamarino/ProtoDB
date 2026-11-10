@@ -87,7 +87,7 @@ the parts that are not data (ruling R99, from the review findings below): the to
 stable identity, and it carries a digest of the plan it paged, so a resume that plans differently raises a
 clear "stale pager" error instead of paging a different order.
 
-Measured (D56):
+Measured (D56; :doc:`comparisons` quotes about 215 us per page from the performance page, a different run):
 
 * the pager by rank: **253 us at offset 0, 241 at 10^4, 232 at 10^5, 246 at 9 x 10^5**: flat (ranges
   220-315 us);
@@ -99,13 +99,15 @@ Its cost, stated honestly
 -------------------------
 
 * **For browsing next page after next page, keyset is better**: SQLite's keyset answered 5-6x faster than
-  ProtoDB's page by rank. For the first pages, ``OFFSET`` is better.
+  ProtoDB's page by rank. For the first pages, SQLite's ``OFFSET`` is faster: 7x at offset 0, and only up to
+  roughly 10^4, where ProtoDB is already 1.4x faster.
 * **Writes to indexes pay for the weights**: ``with_added`` at 10^6 elements +6 % with the GIL off (159 to
   169 us) and +10 % with it on; ``with_removed`` +6 % / +9 %; stored index bytes +3 % (343 to 353 bytes per
   element at 10^5). At 10^5, a first pass right after ``build`` measured ``with_added`` 34-41 % slower; three
   repeated passes gave +2-4 %. The first-pass excess is not explained.
-* **A resume checks the plan**: about +8 us per resume, the price of the stale-pager check (Task 8.4b
-  report, fix round 2).
+* **A resume checks the plan**: every resume plans the query again and compares the plan's digest, the price
+  of the stale-pager check. Its cost was measured during the task but is not recorded in the repository, so it
+  is not quoted.
 * **A token is a bearer reference**, not a credential: it carries no MAC. Anyone holding it can read that
   version of the database, so it must never reach a party that may not read every version (documented on
   ``Pager.token`` and ``snapshot_at``).
@@ -114,7 +116,7 @@ Its cost, stated honestly
 Mistakes the review caught
 --------------------------
 
-The adversarial review of Task 8.4b (``task-8.4b-review.md``) found two weaknesses in the stable pager, both
+The adversarial review of Task 8.4b found two weaknesses in the stable pager, both
 about the parts of a token that are *not* data:
 
 * **I2: no integrity in the token.** The database check trusted the token's own ``db`` field, and

@@ -57,12 +57,16 @@ measurement for a step says so instead of filling the gap.
 How figures are cited
 ---------------------
 
-Every figure names the commit it was measured at and the record it comes from: an entry of
-``docs/decisions.md`` (cited by its number, for example D53), a log under ``benchmarks/results/``, or a task
-report or review. The task reports and reviews are the project's working records; they live in
-``.superpowers/sdd/2026-11-01-protodb-v2/`` and are not part of the repository, so a figure that appears only
-there is cited by the report's name (for example "Task 8.3m report"). Rulings (R-numbers) are recorded in the
-same place.
+Every figure names the commit it was measured at and a record in the repository that holds it: an entry of
+``docs/decisions.md`` (cited by its number, for example D53), a log under ``benchmarks/results/``, a test, the
+:doc:`performance` page, or an evidence note of this guide, which quotes a measurement with its commit, its
+command and its script (:doc:`design-guide/evidence/residency-design`). A figure that exists only in the
+project's working records (task reports and reviews, which are not part of the repository) is not quoted; the
+chapter says that a measurement was taken and where it would have to be repeated.
+
+Rulings (R-numbers) are the maintainer's decisions, recorded in the same working records. They are cited so that
+the history can be traced, but no argument of this guide rests on a ruling's number: where a ruling is the
+argument, the chapter states its content.
 
 Unless a chapter says otherwise, every figure was measured on one laptop: an AMD Ryzen 5 5500U (6 cores),
 CPython 3.14.6 free-threaded, with the GIL off unless "GIL on" is stated, and work directories on ZFS. The
@@ -89,6 +93,7 @@ first if you read only one.
    design-guide/modelling
    design-guide/referential-integrity
    design-guide/pager-and-rank
+   design-guide/glossary
    design-guide/coordinator
    design-guide/pipelined-permits
    design-guide/unknown-outcomes
@@ -96,3 +101,14 @@ first if you read only one.
 
 The diagrams are Graphviz sources in ``docs/source/design-guide/diagrams/`` (``*.dot``), rendered to the
 ``*.svg`` files the pages show with ``dot -Tsvg``. Edit the source and render again; never edit the SVG.
+
+Evidence notes
+--------------
+
+Measurements that the guide quotes and that no other committed record holds, with their commit, command and
+script:
+
+.. toctree::
+   :maxdepth: 1
+
+   design-guide/evidence/residency-design

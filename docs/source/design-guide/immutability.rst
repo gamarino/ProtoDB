@@ -111,18 +111,19 @@ A mistake: the pointer covers the data, not everything else
 -----------------------------------------------------------
 
 The argument "equal pointers, equal results" is only as good as the key. The adversarial review of Task 8.4b
-found two keys that were equal while the results were not (``task-8.4b-review.md``, findings C1 and I1, both
-reproduced):
+found two keys that were equal while the results were not (findings C1 and I1, both reproduced; the
+reproductions are now the regression tests ``test_aggregates_are_keyed_by_the_decimal_context`` and
+``test_index_plans_are_keyed_by_structured_arguments_not_display_strings`` in ``tests/unit/test_query_cache.py``):
 
 * **The decimal context (C1, Critical).** A ``group_by`` that sums ``Decimal`` values depends on the thread's
   decimal context (precision, rounding), which the key omitted. One thread ran a cached sum under
-  ``prec=3``; every other thread with the same key then received the rounded totals, silently:
-  ``Decimal('3.69')`` instead of ``Decimal('3.70370367')``.
+  ``prec=3``; every other thread with the same key then received the totals rounded to three digits, silently,
+  instead of the exact sums.
 * **Display strings in the key (I1).** An index plan's key used its ``explain()`` details, which render
   values as text, so ``F.tag == b"x"`` and ``F.tag == "b'x'"`` produced the same key, and the second query
   received the first query's rows.
 
-The fix (ruling R99) puts every input of the result into the key: the decimal context whenever the plan
+The fix (D56) puts every input of the result into the key: the decimal context whenever the plan
 aggregates or computes, and the plans' structured fields instead of display strings. The lesson for the
 student: **immutability makes the data side of a cache key free; everything else the result depends on must
 still be in the key.** A function registered by name (an extractor) is such an input too; its registration
@@ -139,7 +140,8 @@ Back to the ERP
 ---------------
 
 The morning's thirty pipeline reports share one set of decoded opportunities, and a repeated report on an
-unchanged root is answered from the query cache. When Bob wins a deal, his commit writes new records with new
+unchanged root is answered from the query cache, if the report opts in with ``.cached()`` (caching a query is
+never automatic; see :doc:`cache-layers`). When Bob wins a deal, his commit writes new records with new
 pointers. The next report starts from the new root, whose pointers lead to the new records; the old cached
 atoms and the old cached result are still correct for the old root, which is exactly what a report that
 started earlier must see. No code anywhere had to be told that something changed.

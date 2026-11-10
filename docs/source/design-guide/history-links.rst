@@ -26,8 +26,8 @@ own predecessor the same way. So every root a process had committed or loaded st
 everything that had been loaded through it. The decoded-atom cache had a bound on its entries; the chain of
 roots ignored it.
 
-**Measured symptom** (Task 8.3l report, probe ``chainleak.py``, 6,000 small commits on ``MemoryStorage`` with
-a 1,000-entry cache, at ``0ed9b9a``): **6,001 loaded** ``DatabaseRoot`` **objects and 121,694 loaded tree
+**Measured symptom** (D53, Task 8.3l amendment, probe ``chainleak.py``, 6,000 small commits on
+``MemoryStorage`` with a 1,000-entry cache, at ``0ed9b9a``): **6,001 loaded** ``DatabaseRoot`` **objects and 121,694 loaded tree
 nodes alive.** A 3-node in-process cluster, 1,200 commits with a 200-entry cache: 1,201 loaded ``SpaceRoot``
 and 1,201 ``DatabaseRoot`` objects. The leak was found as ruling R92: "the decoded-atom cache's entry bound
 is not a memory bound".
@@ -40,7 +40,7 @@ Why the obvious solution fails
 * **"Drop the link."** That removes the history: no "as of", no ``history()``, no audit trail. P1 requires
   history to persist; it does not require it to persist *in memory*.
 * **"Add properties on the two root classes that load the predecessor on demand."** Considered and rejected
-  (Task 8.3l report, ruling 1): a property would shadow a persisted attribute, which the loading code
+  in Task 8.3l: a property would shadow a persisted attribute, which the loading code
   forbids, and it would cover only the classes that remember to define it.
 
 The choice, and the invariant that makes it correct
@@ -65,23 +65,22 @@ Readers holding an old root, and "as of" walks of ``previous``, read correct con
 were evicted: tested alone (``tests/unit/test_history_links.py``) and with 3 writers and 4 readers, GIL on and
 off, standalone and in a 3-node cluster walking both links (``tests/concurrency/test_history_readers.py``).
 
-After the change the same probes give (Task 8.3l report): **25** loaded ``DatabaseRoot`` objects and 1,239
+After the change the same probes give (D53): **25** loaded ``DatabaseRoot`` objects and 1,239
 tree nodes after 6,000 commits; 6 ``SpaceRoot`` and 6 ``DatabaseRoot`` objects after 1,200 cluster commits.
 
 Its cost, stated honestly
 -------------------------
 
-* **On the commit path**, per call (Task 8.3l report, microbenchmark, base ``0ed9b9a`` to the final head
-  ``010d8f6``): ``DatabaseRoot._state`` 1.2 to 2.0 us, a decoded twin 12.5 to 15 us; about 4 us per commit,
-  against a 2.3 ms standalone commit. The cluster headline (3 peers x 4 threads, 100 B, 5 interleaved runs per
-  GIL mode) was equal within its spread: 274.3 against 270.9 commits/s with the GIL off, 206.0 against 215.8
-  with it on. On the standalone commit path a gap of about 2 % in the medians, with overlapping ranges, stayed
-  unexplained.
+* **On the commit path**: building a root's state and its decoded twin now resolves the links through the
+  context, a few microseconds per commit against a commit of milliseconds. The task measured this with a
+  microbenchmark and with the cluster headline, but neither the probe nor its log is in the repository, so this
+  guide quotes no figure for it. The measurement to repeat is the commit headline of :doc:`/performance` at
+  ``0ed9b9a`` against ``010d8f6``.
 * **Walking history costs reads.** Each step of ``previous`` loads a version again unless the cache still holds
   it. A long walk costs storage reads, never memory.
 * **History costs disk, forever.** Nothing is ever reclaimed from the object store. With the benchmark's
-  commit body, the store grew by 5.8 KB per commit after 600 commits and 6.9 KB per commit after 2,400 (Task
-  8.3l report, in-process 3 nodes x 2 threads). A long reader costs no disk beyond what history already costs,
+  commit body, the store grew by 5.8 KB per commit after 600 commits and 6.9 KB per commit after 2,400 (D46,
+  in-process 3 nodes x 2 threads). A long reader costs no disk beyond what history already costs,
   because nothing the store lacks is ever released locally.
 * **Metadata still grows with history** (open item, D53): a tiered node keeps about 200 B per segment the
   object store holds and about 250 B per own segment ever written. That is metadata, not loaded state, and its
@@ -100,8 +99,9 @@ build held 2.76 M loaded atoms and 2.76 GB with 50,000 entries (:doc:`residency`
 
 The history links were one instance of a general defect: *a loaded object pins what it has loaded*. Fixing the
 instance that had been noticed, and then describing the remaining bound in words, left the general defect in
-place. Task 8.3m's bound is proved differently: by a census that walks the graph from every cache entry and
-asserts that nothing loaded is reachable outside the bound. **A memory bound is a claim about reachability;
+place. Task 8.3m's bound is checked differently: by a test that walks the graph from every cache entry and
+asserts that nothing loaded is reachable outside the bound (on one single-threaded workload; see
+:doc:`residency` for what the test covers and what rests on reasoning). **A memory bound is a claim about reachability;
 check it by walking the graph.**
 
 What was tried and rejected
@@ -112,7 +112,7 @@ What was tried and rejected
   link now holds ``(pointer, class)`` and builds its persist stub directly (``010d8f6``).
 * Weak references or edge rules for *all* edges: deferred to Task 8.3m, which rejected them for the reasons in
   :doc:`residency`. The two history links kept their pointer form (ruling R103-4): residency would also cover
-  them, but removing working code would gain nothing.
+  them, but removing working code would gain nothing (the maintainer's ruling on the 8.3m design).
 
 Back to the ERP
 ---------------

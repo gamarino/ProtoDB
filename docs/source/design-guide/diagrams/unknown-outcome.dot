@@ -1,5 +1,6 @@
 // The outcomes of a cluster commit (D46, D50, D55 H7, R86).
 // Render: dot -Tsvg unknown-outcome.dot -o unknown-outcome.svg
+// TODO(C1-fix): drop the C1 note on "acknowledged" once the fix is merged.
 digraph outcome {
   graph [rankdir=LR, fontname="Helvetica", fontsize=11, nodesep=0.35, ranksep=0.55];
   node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#555555"];
@@ -7,16 +8,16 @@ digraph outcome {
 
   build   [label="building\n(nothing acceptable has left)"];
   sent    [label="sent\n(an own acceptance logged, or a\nroot-stage message left the node)", fillcolor="#fff4cc"];
-  conflict[label="ProtoConflictError\nnothing took effect: retry", fillcolor="#eeeeee"];
-  acked   [label="acknowledged\na majority accepted it\nwithin the permission", fillcolor="#dff0d8"];
+  conflict[label="ProtoConflictError\nnothing a voter could accept\nleft the node: retry", fillcolor="#eeeeee"];
+  acked   [label="acknowledged\na majority accepted it\nwithin the permission\n(never lost: the design goal,\nbroken by finding C1 until its fix)", fillcolor="#dff0d8"];
   unknown [label="ProtoOutcomeUnknownError\nmay or may not take effect;\nnever retried automatically", fillcolor="#f6d7b0"];
   yes     [label="took effect\n(token found)", fillcolor="#dff0d8"];
-  no      [label="did not take effect\n(a committed root that succeeds\nits base was read without it)", fillcolor="#eeeeee"];
+  open    [label="token not found:\nstill open (no reviewed rule\nconcludes \"did not take effect\")", fillcolor="#eeeeee"];
 
   build -> conflict [label="validation failed, permission\nlost, gate closed"];
   build -> sent;
   sent -> acked     [label="majority observed in time"];
   sent -> unknown   [label="anything else"];
   unknown -> yes    [label="read the token\nlater"];
-  unknown -> no     [label="read the token\nlater"];
+  unknown -> open   [label="read the token\nlater"];
 }

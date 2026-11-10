@@ -40,6 +40,9 @@ not do the work.
 The method
 ----------
 
+*This chapter departs from the structure of the guide: in place of "the alternatives and their costs" and "the
+choice" it presents the method that was chosen; the rejected presentations are listed at the end.*
+
 Every comparison is organised by **workload profile**, and each profile states three things (R100):
 
 1. **the conceptual reason** a system fits the work: the model, not the tuning;
@@ -61,8 +64,9 @@ A few profiles, as the method presents them
 From :doc:`/performance` (tags and commits as on that page; GIL off; figures that predate Task 8.3m):
 
 * **Deep pages** (D56). *Fit:* a ProtoDB pager seeks by rank on a snapshot that never changes. *Figures:* flat
-  about 215 us per page at any offset ([S0], ``4aab0f2``). *Where SQLite is better:* next-page browsing by
-  keyset, about 6 times faster, and the first pages by ``OFFSET``.
+  about 215 us per page at any offset ([S0], ``4aab0f2``; :doc:`pager-and-rank` quotes 232-253 us from D56,
+  a different run at another commit, which is why the two figures differ). *Where SQLite is better:* next-page
+  browsing by keyset, about 6 times faster, and the first pages by ``OFFSET``.
 * **Repeated queries** (D56). *Fit:* a result cached by the pointers it read stays valid until they change.
   *Figures:* a hit in about 3.5 ms against SQLite's 10-105 ms re-execution ([S0]). *Where SQLite is better:* a
   first, ad-hoc query, 8 times faster at 10^5 rows.

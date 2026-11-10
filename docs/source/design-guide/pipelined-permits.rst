@@ -13,7 +13,8 @@ the *cluster* can complete, because every round on every server must take its tu
 
 Pipelining lets the next server build its round while the previous one is still making its round durable.
 On the benchmark that stands in for the month-end rush (3 peers x 4 threads, 100-byte commits), the cluster
-went from 208 to 286 commits per second, with no change in what an acknowledgement means.
+went from a median of 208 to 286 commits per second, with no change in what an acknowledgement means. The
+medians hide a spread: the slowest of the five pipelined runs, 141.6 commits/s, was below the base's median.
 
 The problem
 -----------
@@ -41,7 +42,7 @@ and it was unnecessary, because **the voters already hold the evidence**. A vote
 root *k* as its accepted root, so it can check the new root against its own state, as a Raft follower checks
 ``prevLogIndex`` against its own log instead of trusting the leader's claim.
 
-**The implementation then found a second gap** (ledger, Task 8.3k, NEEDS_CONTEXT; ruling R95). The voters'
+**The implementation then found a second gap**, which the implementer stopped to report before going on. The voters'
 acceptance rule had two exemptions, for a voter with no accepted root and for a root of a newer term, and they
 were checked *before* the chain rule. When *k* was the first root of a term (the common case: the first
 permission of every term proposes), root *k+1* was accepted on the strength of the exemption alone, and safety
@@ -54,8 +55,7 @@ an acceptable message had already left the node, and then be applied twice (find
 The alternatives and their costs
 --------------------------------
 
-Most alternatives were rejected by argument; their costs were estimated, not measured, and the design says so
-(Task 8.3k design, section 13):
+Most alternatives were rejected by argument; their costs were estimated in the task's design, not measured:
 
 * **depth 2** (three permissions outstanding): deferred. At 3 members every node would be in the pipeline at
   once, a failure would cancel two successors, and the first-order gain is already taken at depth 1;
@@ -90,12 +90,22 @@ The choice, and the invariant that makes it correct
 5. If the gate never opens, nothing acceptable ever left the holder, and its commits get a **retryable**
    ``ProtoConflictError``. Any other failure is an **unknown outcome** (rule H7; see :doc:`unknown-outcomes`).
 
-**The invariant is enforced by the voters (V2', Raft's log matching applied to roots):** a voter accepts a
-same-term root only if it is the voter's accepted root (a duplicate) or *extends* it. The exemptions apply only
-to the *first* root of a term, which is recognisable because its predecessor carries an older label and its
-base came out of Paxos phase 1. So a voter accepts *k+1* only if it accepted *k*, or learnt *k* committed. No
-holder-side rule is load-bearing for safety; the gate costs liveness or an honest unknown if it is wrong, never
-an acknowledged commit.
+**Within a term, the invariant is enforced by the voters (V2', Raft's log matching applied to roots):** a
+voter accepts a same-term root only if it is the voter's accepted root (a duplicate) or *extends* it. So a voter
+accepts *k+1* only if it accepted *k*, or learnt *k* committed. Within a term, no holder-side rule is
+load-bearing for safety: the gate costs liveness or an honest unknown if it is wrong, never an acknowledged
+commit.
+
+**The first root of a term is different, and the voter cannot check it.** The exemptions apply only to a root
+whose ``pred`` carries an older label (the check ``first_of_term`` in ``proto_db/cluster/coordinator.py``), and
+such a root is accepted under the ballot rule alone. Whether its *base* is at least the value Paxos phase 1
+reported is a property of the holder's choice of base (``_lease_base``), not something the message lets the
+voter see. That holder-side rule *is* load-bearing for safety, and it is the one finding C1 found broken: in the
+schedule of :doc:`unknown-outcomes`, the last step is a first root of a newer term, built on a base below the
+phase-1 value and accepted through this very exemption. (See the :doc:`glossary` for the terms.)
+
+.. TODO(C1-fix): once the R127 fix is merged, state that the holder floors the first base of a term at the
+   phase-1 value, name the commit and the regression test, and restate "load-bearing" accordingly.
 
 Its cost, stated honestly
 -------------------------
@@ -118,8 +128,9 @@ Workload                                    GIL off                     GIL on
   pipelined.
 * **Overlap is not free on a shared machine**: the build per round rose 8.3 to 10.0 ms at 3 x 4, because three
   builders share six cores.
-* **V2' is stricter, and strictness costs liveness on bad links**: on a link with 20 % message loss, commits
-  fell by about 25 % (Task 8.3k report, parked).
+* **V2' is stricter, and strictness costs liveness on bad links**: a voter that missed root *k* refuses *k+1*
+  once and catches up (D55, "Cost"). The tests check progress at 20 % message loss; the throughput lost there
+  was measured during the task but is not recorded in the repository, so it is not quoted.
 
 A mistake that taught a rule about evidence
 -------------------------------------------
@@ -127,7 +138,8 @@ A mistake that taught a rule about evidence
 One of five GIL-on runs at 50 rows failed the benchmark's exact check of commit ids: a node's threads stopped
 after an exception, with two replication failures, one gate closure and one extra abandoned term. **The run's
 files had not been kept**, so a *missing* id (a lost acknowledged commit, unacceptable) could not be told apart
-from an *extra* one (an unknown outcome that took effect, which P5 allows). Fifty-one reruns passed.
+from an *extra* one (an unknown outcome that took effect, which P5 allows). Fifty-one reruns of the same
+shapes with the GIL on (27 and 24) passed (D55).
 
 The review then reproduced the *extra* case (acknowledgements arriving after the permission's validity: an
 unknown outcome that took effect) and excluded the *missing* case by argument from the owner and voter rules;
@@ -148,6 +160,11 @@ Back to the ERP
 At month end the three ERP servers no longer wait for each other's syncs in single file: the next server builds
 while the previous one makes its round durable, and the cluster completes about a third more commits per second
 on the benchmark that stands for the rush. Nothing about an acknowledgement changed. A sales person whose
-commit is acknowledged has it on a majority of the voters, because a voter accepted it only on top of a root it
-held itself; and one whose commit could not be sequenced gets either a retryable conflict, when nothing
-acceptable had left the server, or an honest "unknown", which the next chapter explains.
+commit is acknowledged has it on a majority of the voters, and within a term a voter accepted it only on top of
+a root it held itself. That it then stays in the history is the design's goal, and the guarantee depends on
+how the next term chooses its base: finding C1 (:doc:`unknown-outcomes`) showed that the code at this commit
+can break it in one schedule, and the fix is in progress. A sales person whose commit could not be sequenced
+gets either a retryable conflict, when nothing acceptable had left the server, or an honest "unknown", which
+the next chapter explains.
+
+.. TODO(C1-fix): when the fix is merged, say that an acknowledged commit stays in the history, with the commit.
