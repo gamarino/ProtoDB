@@ -70,7 +70,7 @@ mode and by writer count are in :doc:`../performance`.
 Looking inside a space
 ----------------------
 
-ProtoDB 2.0 does not ship an ``inspect`` command-line tool. What you can see without one:
+ProtoDB 2.0 has no ``inspect`` browser; what you can see from code, then the ``verify`` tool below:
 
 .. code-block:: python
 
@@ -137,6 +137,32 @@ The layout is a ``space.root`` file (the published root, replaced atomically), o
 ``<uuid>.seg`` segments, and a ``space.lock`` file that only carries the advisory lock. The byte-level
 specification is in :doc:`../format-spec`. Because every record carries a CRC32, ``scan_segment`` is also a
 full integrity check of a segment, which is what you want after a restore.
+
+A checksum proves the bytes are the ones written, not that the structures they encode are sound. For that,
+``python -m proto_db.tools.verify <directory>`` decodes every atom reachable from the root (every version
+of every database, every tree node and index), validates every collection and index, and prints the
+current content as JSON in the notation of the conformance vectors. It exits with 0 when everything holds,
+1 when something failed (each failure on standard error, naming the atom and the error) and 2 when the
+directory is not a space. It never writes. The same check from Python:
+
+.. code-block:: python
+
+   from proto_db.tools.verify import verify
+
+   report, failures = verify("library")
+   print("atoms:", report["atoms"], "| collections:", report["collections"], "| failures:", failures)
+   print("roots of books:", [name for name, _ in report["databases"]["books"]["roots"]])
+
+.. code-block:: text
+   :caption: Output
+
+   atoms: 28 | collections: 9 | failures: []
+   roots of books: ['books']
+
+Run it on a space another implementation wrote (protoBaseST, for one) before trusting it, and on a
+restored backup. Records of application types this process has no class for are read as opaque atoms
+and listed under ``opaque_types``; they are not failures (see :doc:`../format-spec`, "Atoms of unknown
+types").
 
 Backup and restore
 ------------------

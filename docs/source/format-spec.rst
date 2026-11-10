@@ -67,6 +67,52 @@ There are three levels of conformance:
   of this page; it is specified in :doc:`coordinator-protocol` and decisions D44 to D55.
   This page gives every byte layout that behaviour uses.
 
+Format stability
+----------------
+
+This revision is the **freeze point** of the format: the tag ``v2.0.0rc1`` marks it, and
+implementations in other languages (protoBaseST first) build against it.
+
+- From the tag on, any change to the bytes written for a value, an atom, a record, a segment or a
+  root, to the order of keys, to the hash function or to the exact tokens **raises**
+  ``FORMAT_VERSION``, and the conformance vectors are regenerated in the same commit. A change
+  that only adds readable inputs (a new reader-side tolerance) keeps the number, but adds vectors.
+  A writer of version *n* writes version *n* only; a reader of version *n* reads every version up
+  to *n* and refuses a higher one with ``ProtoNotSupportedError``, so older code refuses newer
+  data explicitly and never misreads it.
+- The vectors of this revision are pinned. ``tests/conformance/vectors.sha256`` lists the
+  SHA-256 of every file under ``tests/conformance/vectors/`` (``<hex digest>  <path>``, one line
+  per file, sorted by path in code point order, ``/`` as the separator), then the digest of
+  ``manifest.json``. The SHA-256 of that list file is
+  ``c35cbd5427809bc60a4ce0b8d31049ad07f099798e8ce03526d8da44889a5013``.
+  ``test_conformance.py`` checks that the committed files match the list and that this page
+  states the list's digest; a change to either is a format change by the rule above
+  (or a new vector, which adds lines and changes no existing one).
+
+Two extensions are decided and not implemented. Both are **additive**: data written before them
+keeps its meaning and stays readable, and no existing byte, order, hash or token changes.
+
+Symbols (``@sym``)
+    A new value kind, ``{"@sym": name}`` (option (c2) of the runtime-symbols investigation; see
+    the reserved tags under `Canonical values`_), with a new order rank after the mutable rank (rank 16) and a hash and
+    token derived from its encoding like every other kind. It lands with ``FORMAT_VERSION`` 5.
+    A reader of format 4 refuses a format-5 segment or root (``ProtoNotSupportedError``) and,
+    reading a record directly, refuses ``@sym`` as an unknown tag (``ProtoCorruptionError``).
+    The cluster ``PROTOCOL_VERSION`` rises in the same change, since cluster messages carry
+    values.
+
+The per-database class registry
+    Its persisted state is database roots whose names start with ``__``: ``__currentModules``
+    (the installed modules), ``__currentSymbols`` (string to symbol) and a catalog root of class
+    objects, whose name the registry specification fixes. Nothing in them is specific to a
+    language. **Root names starting with ``__`` are reserved for the format from this revision
+    on**: ProtoBase refuses to write one (``ProtoValidationError``), so no application data can
+    occupy them before the registry does. The registry needs symbols (``__currentSymbols``
+    holds them) and new built-in type names under ``proto_db.``, which a reader that predates
+    them refuses (`Atoms of unknown types (D59)`_); it therefore lands with ``FORMAT_VERSION`` 5 if it
+    ships with symbols, otherwise with the next number after them. A database that does not use
+    the registry is unaffected by it.
+
 
 Conventions
 -----------
@@ -317,13 +363,22 @@ MUST NOT carry one.
 
 - ``proto_db.core.dbobject.DBObject`` reserves ``with_`` and ``has_defined_attr``.
 - An application type reserves the names of the methods and properties its class defines in
-  each implementation that defines it (in ProtoBase: every attribute of the Python class).
-  ProtoBase refuses such a name when writing (``ProtoValidationError``) and when reading
-  (``ProtoCorruptionError``): a protoBaseST writer that stores ``total`` on a type whose Python
-  class has a ``total`` property writes data ProtoBase cannot open. An implementation cannot
-  know the behaviour names of the others, so an application that shares a type across
-  languages MUST keep its attribute names disjoint from the behaviour names of every
-  implementation of the type.
+  each implementation that defines it, **except accessors**. An accessor of an attribute is a
+  method named like the attribute that only returns its stored value, or only stores a new
+  value into it (``total`` and ``total:`` in Smalltalk). An accessor is not behaviour: a
+  persisted ``total`` with a Smalltalk accessor ``total`` is valid.
+- In ProtoBase a persisted attribute is read as a plain Python attribute: the field is its own
+  accessor, and any attribute of the Python class with the same name, a property written as an
+  accessor included, would hide it. ProtoBase therefore refuses a field named like any attribute
+  of its Python class, when writing (``ProtoValidationError``) and when reading
+  (``ProtoCorruptionError``), and both messages say so. A Python class for a shared type
+  defines no accessors; it reads ``order.total`` directly.
+
+An implementation cannot know the behaviour names of the others, so an application that shares
+a type across languages MUST keep its attribute names disjoint from the non-accessor behaviour
+names of every implementation of the type, and, for ProtoBase, from every attribute of the
+Python class: a protoBaseST writer that stores ``total`` on a type whose Python class has a
+method or property ``total`` writes data ProtoBase refuses to open.
 
 Type names (D57)
 ~~~~~~~~~~~~~~~~
@@ -345,6 +400,45 @@ prefix ``proto_db.``; applications SHOULD use a prefix of their own.
 A reader MUST keep accepting every name it ever accepted. Data written before D57 by
 ProtoBase may contain Python-default names of application classes (``myapp.models.Person``);
 an implementation that needs to read such data maps those names like any other.
+
+Atoms of unknown types (D59)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Each implementation registers the classes of its own modules, so a database shared by several
+languages holds records of types a given process has no class for. Such a record is valid data,
+not corruption. A record whose type name ``t`` (or the type name of a ``@ref`` to it) is valid by
+the grammar above, does not start with ``proto_db.`` and has no class in the reading process is an
+**opaque atom**.
+
+A reader:
+
+- MUST decode an opaque atom's record like any other (envelope, ``oid``, state map, every value
+  in it, references included) and MUST refuse it on the same grounds (``ProtoCorruptionError``);
+- MUST keep its type name, its ``oid``, its pointer and its decoded fields, and present the
+  fields for reading;
+- MUST raise an explicit error naming the type (ProtoBase: ``ProtoNotSupportedError``) for every
+  operation that needs the type's behaviour: a method, an attribute the record does not hold,
+  a change, a construction, or its use where a built-in type is expected (a collection, a root
+  atom);
+- MUST refuse an unknown name that starts with ``proto_db.``, or one outside the grammar, with
+  ``ProtoCorruptionError``: every built-in type of a format version is known to every reader of
+  that version.
+
+A writer:
+
+- MUST NOT write a new record for an opaque atom: not a changed version, not a copy with its
+  ``oid``, not a re-encoding of the record read. Its record stays byte for byte as the other
+  implementation wrote it;
+- MAY store references to it: a ``@ref`` with its pointer and its type name as read (an
+  application name, spelled in full), in any value it writes;
+- MAY use it as a key or an element: its order key (rank 14, its ``oid``), its hash and its exact
+  token (the atom placeholder) need no class, so it is filed exactly where the implementation
+  that owns the type files it.
+
+ProtoBase reads an opaque atom as an instance of a per-name subclass of
+``proto_db.core.atom.OpaqueAtom``; ``type(atom).__type_name__`` is its type name. A class
+registered later under that name takes over for the loads that follow. The vector space
+``polyglot`` holds one (`Conformance vectors`_).
 
 Built-in type aliases
 ~~~~~~~~~~~~~~~~~~~~~
@@ -675,8 +769,9 @@ Reserved tags
     (c2): a symbol is an immutable value identified by its name, ``{"@sym": name}``, compared,
     hashed and ordered by name). **It is not implemented by this revision**: a ProtoBase reader
     refuses ``@sym`` as an unknown tag, so an implementation MUST NOT write it until ProtoBase
-    reads it. When it is added it will be an additive change: a new tag, and a new rank after
-    the mutable rank in the order below. Tags starting with ``@`` are reserved to the format.
+    reads it. When it is added it will be an additive change marked by ``FORMAT_VERSION`` 5: a
+    new tag, and a new rank after the mutable rank in the order below (`Format stability`_).
+    Tags starting with ``@`` are reserved to the format.
 
 Format 2 references
     Format 2 wrote ``@ref`` as ``[segment as 32 hexadecimal digits, offset, type name]``.
@@ -1371,6 +1466,55 @@ The meaning of each message, and the rules that make the protocol safe, are thos
 protocol 13. The vectors hold one frame of every type.
 
 
+A minimal external writer (file storage)
+----------------------------------------
+
+A writer that implements neither the merge of concurrent writers nor the cluster protocol can
+still share a file-storage directory with ProtoBase processes. It commits by optimistic
+retry: when the published root moved since it read it, it **re-reads the root and redoes its
+commit**; it never publishes over a root it did not build on.
+
+Before taking the lock, the writer:
+
+1. writes its records into a segment it created itself (``O_CREAT | O_EXCL``, a fresh UUID4 name,
+   a format-4 header), never into another process's segment, children before the atoms that
+   refer to them;
+2. flushes and ``fsync``-s that segment, so that every record the new root references is on disk
+   before the root is.
+
+Then, to publish, it MUST, in this order:
+
+3. take the exclusive ``flock`` on ``space.lock`` (``msvcrt.locking`` of the first byte on
+   Windows), retrying until a timeout; on timeout it gives up without publishing;
+4. read ``space.root`` and check its CRC, its fields and its ``version`` (a version it does not
+   know is an error, never a reason to overwrite);
+5. compare the root's ``epoch`` with the epoch of the root its transaction started from; when they
+   differ, go to step 9;
+6. check that the SpaceRoot that root points to has no ``cluster_term`` (absent or nil): a space
+   committed under a cluster lease is written only through the cluster, so the writer stops
+   with an error;
+7. write the new root record (``epoch`` + 1, its SpaceRoot's segment and offset, ``version`` 4) to
+   ``space.root.tmp``, ``fsync`` it, rename it over ``space.root``, and ``fsync`` the directory;
+8. release the lock. The commit is durable once step 7 returned.
+
+9. On an epoch mismatch it releases the lock and redoes the commit on the root it just read:
+   it loads the new SpaceRoot and its database's current DatabaseRoot, checks that every root
+   name and mutable cell its transaction read still holds the same value (the same pointer, or
+   the same canonical bytes for a plain value), and either aborts (something it read changed)
+   or writes again: its changed root values, a new DatabaseRoot whose ``previous`` is the
+   current one and whose ``version`` is that one's plus one (``origin`` carried), a new
+   ``databases`` Dictionary built from the current one with only its own database's entry
+   replaced, and a new SpaceRoot; then it publishes from step 3 with the new epoch. Records of
+   the abandoned attempt stay in its segment, unreferenced; they are harmless.
+
+A minimal writer MUST NOT change a collection that has indexes unless it maintains every one of
+them exactly as `Indexes`_ specifies (member keys, exact tokens, ``member_tokens``); in
+particular it MUST NOT change a collection holding a format-3 index (no ``member_tokens``) unless
+it can rebuild that index kind from the elements in the same commit (an ivf_flat index retrains,
+an hnsw graph is rebuilt). A writer that cannot leaves such collections unchanged; reading
+them needs none of this. It MUST NOT write a new version of an opaque atom
+(`Atoms of unknown types (D59)`_).
+
 What is normative and what is not
 ---------------------------------
 
@@ -1378,8 +1522,10 @@ Normative: every byte layout on this page; the type names and the alias table; t
 encoding with its one spelling per value and the map-key rule; the order, hash and exact-token
 functions (for writers of keyed structures); the structure invariants of the AVL trees and
 collections; the index maintenance contract and the IVF list assignment; the field names,
-their optionality, the meaning of absence and the reserved attribute names; the root-publication protocol of a shared directory (lock, epoch,
-rename); the log reading rules (torn tail versus corruption); the cluster frame and message
+their optionality, the meaning of absence and the reserved attribute names (accessors
+excepted); the root names reserved by ``__``; what readers and writers do with opaque atoms; the
+format stability rules and the pinned vectors; the root-publication protocol of a shared
+directory (lock, epoch, rename) and the minimal writer's checks; the log reading rules (torn tail versus corruption); the cluster frame and message
 layouts, the one-way connections and the drop rule, and the values members compute (ballots,
 fingerprint).
 
@@ -1491,8 +1637,25 @@ Known gaps
 
 None of these breaks a round trip between conforming implementations.
 
-- **Symbols** (``@sym``) are decided but not implemented: an implementation cannot store them
-  yet without breaking the round trip.
+- **Symbols** (``@sym``) and the class registry are decided but not implemented: an
+  implementation cannot store symbols yet without breaking the round trip. Both are additive
+  and land with ``FORMAT_VERSION`` 5 (`Format stability`_).
+- **Format-3 zone datetimes need a tz database** (what remains of B3). Format-4 data never does
+  for its keys, hashes or tokens (an ``["instant", key]`` value holds its UTC instant), only to
+  show a wall clock. A format-3 ``["zone", key]`` value holds a wall clock, and its instant, its
+  order key, its hash and, as a map key, its conflicts with other keys (`Map keys`_) all depend
+  on the offset the reader's database gives that wall clock. A reader without a tz database,
+  or whose database lacks the zone, MUST refuse such a value with an explicit error; it MUST NOT
+  assume an offset. (ProtoBase refuses a ``@dt`` whose zone its database lacks, in either form,
+  with ``ProtoCorruptionError`` "Malformed @dt value"; for the format-4 form another reader MAY
+  instead present the instant in UTC, since nothing stored depends on the zone's rules.) A reader whose database differs from the writer's may file such a value
+  elsewhere than ProtoBase did; rebuilding the collection (``rebuilt()``) after the first read
+  refiles it as an instant. Nothing else remains: no conversion tool is planned.
+- **Format-3 indexes are rebuilt only at the first change** (what remains of B4). A format-3
+  key-group or vector index (no ``member_tokens``) answers every query, and ``validate()``
+  reports it stale, never corrupt. ProtoBase rebuilds it inside the first write transaction that
+  changes its collection; nothing rebuilds it ahead of time, and a writer that cannot rebuild
+  that index kind MUST NOT change the collection (`A minimal external writer (file storage)`_).
 - **Lone surrogates.** ``canonical`` accepts a Python string holding a lone surrogate, the hash
   function encodes it (``surrogatepass``), but msgpack cannot pack it: the save fails with
   ``UnicodeEncodeError`` instead of ``ProtoValidationError``. Strings in the format are valid
@@ -1544,6 +1707,26 @@ JSON description of what every file means, in a language-neutral notation), the 
   and an application record and reference spelled by an alias;
 - a cluster commit stamped with its lease, the three log kinds with every acceptor-log entry
   kind decoded field by field, and a torn tail versus mid-log corruption;
-- one frame of every cluster message type.
+- one frame of every cluster message type;
+- a ``polyglot`` space holding a record of the type ``polyglot.st.Order``, which no Python class
+  implements (an opaque atom referencing a ProtoBase record), referenced from a root record.
+  The test changes the referencing record and checks that the opaque record is kept byte for
+  byte and still reachable at its pointer.
+
+``tests/conformance/vectors.sha256`` pins the vector files (`Format stability`_).
+
+**The verifier.** ``python -m proto_db.tools.verify <directory> [--out FILE]`` checks a
+file-storage space written by any implementation, the reverse direction of the vectors. It
+never writes to the space. It reads the root record, decodes every atom reachable from the
+SpaceRoot (every database, every version through ``previous``, every tree node, index and
+record; each pointer once), validates every collection with its indexes
+(``IndexedCollection.validate()``), and prints the current content of every database as JSON
+in the manifest's notation (``proto_db.tools.notation``: the ``contents`` of a database vector,
+without the generator's own ``ivf`` list assignment; an opaque atom is described as
+``{"opaque": type name, "attrs": [...]}``), plus ``root``, ``atoms``, ``collections`` and
+``opaque_types``. Every failure is printed on standard error as ``FAILED <where>: <error class>:
+<message>``, and the walk goes on. Exit status: 0 when everything decoded and validated, 1
+when anything failed, 2 when the directory holds no readable space. The format-3 ``legacy``
+vector fails it on purpose, naming each misfiled collection.
 
 ``tests/conformance/README.md`` explains the notation and how another implementation uses them.
