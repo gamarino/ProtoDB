@@ -200,7 +200,15 @@ def test_an_owner_stopped_past_its_lease_loses_no_acknowledged_commit(tmp_path):
 
 def _verify(tmp_path, acked, traced):
     """Every acknowledged id recovered and persisted; every id present traced to a commit that
-    may have taken effect (no phantom, Task 8.3n); the persisted root is the recovered one."""
+    may have taken effect (no phantom, Task 8.3n); the persisted root is the recovered one or
+    a later committed root built on it.
+
+    Later, because the three restarted peers confirm their committed roots independently: a
+    confirmation whose majority committed the read root commits nothing new, and another
+    peer's confirmation may afterwards find a root accepted by a minority only -- the commit in
+    flight at the kill, built on that read root -- and commit it (D46: an unknown outcome may
+    take effect later).  Its ids are traced and never acknowledged (Task 8.3n fix round 3:
+    with recovery rounds ending at a majority, this order was seen in 6 of about 240 runs)."""
     assert len(acked) >= 60
     peers = _start(tmp_path, "verify")
     try:
@@ -221,9 +229,11 @@ def _verify(tmp_path, acked, traced):
     reader = ObjectSpace(TieredStorage(str(tmp_path / "reader"), DirObjectStore(str(tmp_path / "store"))))
     try:
         tr = reader.open_database("db").new_transaction()
-        persisted = set(tr.get_root_object("ids").elements())
+        persisted_n, persisted = tr.get_root_object("n"), set(tr.get_root_object("ids").elements())
         tr.abort()
     finally:
         reader.close()
     assert acked <= persisted
-    assert persisted == ids, (sorted(persisted ^ ids)[:10])      # nothing committed since the read
+    assert persisted_n == len(persisted)                  # applied whole, none twice
+    assert ids <= persisted, sorted(ids - persisted)[:10]   # the read root or a root built on it
+    assert persisted - ids <= traced, f"ids no commit wrote: {sorted(persisted - ids - traced)[:10]}"
