@@ -106,17 +106,21 @@ writers; with one, it is only a fencing safety net (D44).
 Cluster durability
 ------------------
 
-In a cluster the commit point is **a majority of the voters having durably accepted the root**, and the object
-store is written afterwards, asynchronously (P4). An acceptor syncs its acceptor log entry (the root and the
-commit's records, in one append) before it replies, in every durability mode, so an acknowledged commit
-survives power loss of any set of nodes that leaves a majority of the voters' disks intact. Replication is
-bounded (D54): a fixed odd set of voters (three by default) orders roots, the other members are learners, and a
-commit's records are made durable on the committer and on ``f`` further members, not on every member; other
-members keep the records only in a bounded cache and fetch what they miss. Consequences:
+In a cluster the commit point is **a majority of the voters having durably accepted the root**, and the
+object store is written afterwards, asynchronously (P4). Two failure models must be kept apart, and all of
+this assumes that the devices honour ``fsync``:
 
-* losing ``f + 1`` of the voters stops writes, and learners keep serving reads;
-* losing every durable copy of a commit's records before the persister has uploaded them to the object store
-  loses that data, as no automatic re-replication runs.
+* **Power loss, disks intact.** An acceptor syncs one acceptor-log entry (the root and the commit's records,
+  in a single append) before it replies, in every durability mode (D50). An acknowledged commit therefore
+  survives power loss of any set of nodes. The lease and ballot promises are synced the same way, so across
+  process crashes and power losses no term is granted twice, provided at most one acceptor log is lost at a
+  time (R48, D46).
+* **Disks lost.** Replication is bounded (D54): a fixed odd set of voters (three by default) orders roots, the
+  other members are learners, and a commit's records are made durable on the committer and on ``f`` further
+  members, not on every member; the rest keep them only in a bounded cache and fetch what they miss. Losing
+  ``f + 1`` of the voters stops writes while learners keep serving reads. Losing every durable copy of a
+  commit's records (``f + 1`` disks) before the persister has uploaded them to the object store loses that
+  data, because no automatic re-replication runs.
 
 ``ObjectSpace.sync()`` waits until every commit this node knows is persisted in the object store. It is a
 durability barrier, not a visibility barrier: it says nothing about commits this node has not learnt yet (see

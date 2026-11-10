@@ -147,7 +147,9 @@ The limit: the working set must fit
 
 The cache holds ``atom_cache_entries`` decoded atoms (default 50,000). If the atoms your transactions touch
 do not fit, the oldest are evicted and reloaded on the next pass, and the benefit disappears (nothing breaks;
-reads are just as slow as with no cache). The model above has about 540 atoms. Give a reader a cache of only 50:
+reads are just as slow as with no cache). The model above has about 540 atoms (the cold run loaded 540); each pass below loads 553, and this page does not
+break the 13 extra down; they are the same on every pass. Give a reader a cache
+of only 50:
 
 .. code-block:: python
 
@@ -179,10 +181,13 @@ pass, as here, where the ratio of 1.00 says the model does not fit in 50 atoms.
 How to size it
 ~~~~~~~~~~~~~~
 
-* A point read in a collection of ``n`` entries touches about ``2 * log2(n)`` atoms; a query touches those
-  plus every record it returns. Count what your *concurrent transactions together* touch repeatedly.
-* Each resident atom costs its decoded state plus about 0.4 KB of bookkeeping (measured on CPython 3.14t
-  for the residency change). 50,000 atoms is therefore tens of megabytes plus the state itself.
+* A point read walks one root-to-leaf path of an AVL tree, which has a height of at most about
+  ``1.44 * log2(n)``, and then reads the record; a query touches the paths it needs plus every record it
+  returns. Count what your *concurrent transactions together* touch repeatedly, and use the counters of this
+  page to check the count rather than the formula.
+* Each resident atom costs its decoded state plus about 0.4 KB of bookkeeping, measured on CPython 3.14t
+  (decision D53, the residency amendment of Task 8.3m). 50,000 atoms is therefore on the order of tens of
+  megabytes plus the state itself.
 * Raise ``atom_cache_entries`` until the ratio on your real workload is near 0, and stop there. A
   larger cache costs memory, never correctness.
 
@@ -194,9 +199,9 @@ When this does not help, or another system is better
 * The benefit is largest where the same data is read repeatedly through new transactions, as in the
   examples above. A workload that reads each record once gains nothing from a cache of any kind.
 * Other systems have caches too. What differs is invalidation: a cache over mutable data must learn
-  when something changed, and across nodes that costs messages or staleness. Immutable stores such as
-  Datomic's peers share the property that cached segments never go stale, so this is a consequence of
-  immutability, not something only ProtoDB has. The cluster-wide measurement, by workload, is
+  when something changed, and across nodes that costs messages or staleness. Immutable stores share the property that
+  cached data never goes stale (Datomic's peers cache immutable segments; this is general knowledge, not
+  verified here), so it is a consequence of immutability, not something only ProtoDB has. The cluster-wide measurement, by workload, is
   still to be added:
 
   .. note::

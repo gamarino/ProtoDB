@@ -61,7 +61,9 @@ that builds this page.
    none       1230 commits/s (single thread, 20 commits)
 
 The ``fsync`` rate is set by the storage device, not by ProtoDB, and the sample above is only one machine's
-answer (on it the three modes are close, which is not what a device with a slow flush gives). Concurrent committers share the device cost through *group commit*: commits that arrive together
+answer: a second run on the same machine a few minutes earlier gave 1,628, 1,765 and 1,835 commits/s for the
+three modes, because the device and the CPU were less busy, so twenty commits are too few for a benchmark
+and the point is only that you can measure your own device. Concurrent committers share the device cost through *group commit*: commits that arrive together
 are published together, so the rate per commit improves with the number of writers. The measured rates by
 mode and by writer count are in :doc:`../performance`.
 

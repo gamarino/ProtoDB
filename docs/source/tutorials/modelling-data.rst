@@ -254,8 +254,9 @@ draft?" needs no extra condition:
 
 SO-1 passed through "draft" and "confirmed", but it is neither now, and a query for either does not see it.
 Its history is reachable from the current version and costs nothing to the queries that ignore it. The
-:doc:`ERP tutorial <erp>` goes further, and the :doc:`../design-guide` explains why the cost of a query
-does not grow with the length of a version chain.
+:doc:`ERP tutorial <erp>` goes further. Why the cost of a query does not depend on the length of a version
+chain is a property of the structure, explained in the next sections: the collection and its indexes hold only
+the current version of each order, so a query never meets the superseded ones.
 
 The relational contrast
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -336,8 +337,9 @@ What this pattern does not do
 
 * A chain built entirely inside **one** transaction is saved recursively, and the default Python recursion
   limit stops it at a depth that was measured at between 150 (works) and 200 (``RecursionError``) unsaved
-  versions. Revising an order once per transaction, the normal case, is not affected, because each
-  earlier version is already saved.
+  versions. This is a current defect (a save that recurses once per link), reported for a product fix.
+  Revising an order once per transaction, the normal case, is not affected, because each earlier version
+  is already saved.
 * ``previous`` is **not** part of the database module: it is an ordinary attribute you set. Nothing checks
   that you set it, and a version that forgets it simply has no history chain.
 * The chain says *what the order was*. It does not say *when* or *who* unless you store them in the version

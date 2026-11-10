@@ -21,12 +21,12 @@ becomes a frozen copy that raises when mutated, because other versions share it.
 All values are ordered by one **total order across types**, the same one used by collections (key order),
 indexes and queries (decision D2):
 
-* the ranks are ``None < bool < number < str < bytes < date < time < datetime < timedelta < UUID < tuple <
-  atom``;
+* the ranks, lowest first, are the absent-key marker ``MISSING``, ``None``, ``bool``, number, ``str``,
+  ``bytes``, ``date``, ``time``, ``datetime`` (naive and aware are separate ranks), ``timedelta``, ``UUID``,
+  ``tuple``, atoms and, last, ``MutableObject`` handles;
 * ``int``, ``float`` and ``Decimal`` share one rank and compare exactly, without converting to ``float``:
   ``1 == 1.0 == Decimal(1)`` and ``10**16 + 1 != 10**16``;
 * ``bool`` has its own rank: ``True`` is not the number 1;
-* naive and aware ``datetime`` values sit in different ranks, because Python cannot compare them;
 * ``NaN`` is accepted as a stored value but refused as a key, because it breaks a total order.
 
 Because there is a single comparator, an index and a full scan can never disagree about which of two values

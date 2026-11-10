@@ -1,7 +1,9 @@
 Concurrency and retries
 =======================
 
-Many threads, and many processes on a shared filesystem or in a cluster, can write the same database. This
+Many threads can write the same database, and so can several processes on one host (the file lock between
+processes is only as reliable as the operating system's advisory locks; on a network file system it is only
+as reliable as that file system's, so do not rely on it there) or in a cluster. This
 tutorial shows what a transaction sees, what a conflict is, how ``Database.run`` retries, which writes
 merge instead of conflicting, and one mistake the model allows. Every code block runs in the test suite,
 and the threaded blocks run in both GIL modes.

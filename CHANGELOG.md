@@ -37,7 +37,7 @@ The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every de
 - **Cluster**: several writer processes through a peer coordinator (majority lease, write permissions, commit
   by majority acknowledgement, bounded replication, learners, fencing), with the object store written after
   the commit point (D44-D46, D50, D54, D55). `ObjectSpace.sync()` is a durability barrier; a barrier commit is
-  the linearizable read path.
+  the linearizable read path (it adds a permanent database version per read).
 - **Decoded-atom cache** shared by the transactions and threads of a space, by pointer, bounded on loaded
   atoms, with counters (`ObjectSpace.atom_cache_stats()`) that expose a thrashing working set (D53).
 - **Runtime services**: `parallel_scan` and `parallel_filter` (real speedup on free-threaded CPython),
@@ -86,8 +86,8 @@ indexes lost on the first write; queries that silently returned empty or partial
   transactions, is not guaranteed (open defect D-LIVE-2).
 - A read-only linearizable read (`read_barrier`) is proposed in the D46 amendment but not implemented; the
   barrier commit is the supported path.
-- A version chain of more than about 150 unsaved versions built in one transaction exceeds Python's default
-  recursion limit when saved.
+- Defect: saving a chain of more than about 150 unsaved versions built in one transaction (the `previous`
+  pattern) raises `RecursionError`, because a save recurses once per link. Reported for a product fix.
 
 ## Before 2.0
 

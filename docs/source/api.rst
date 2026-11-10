@@ -91,6 +91,7 @@ proto_db.query.expressions
 
 .. automodule:: proto_db.query.expressions
    :members:
+   :exclude-members: Term
 
 proto_db.query.terms
 --------------------

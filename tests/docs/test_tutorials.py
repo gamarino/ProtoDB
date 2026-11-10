@@ -14,6 +14,9 @@ How a tutorial is read:
 * any other ``text`` block is prose (a diagram, a file layout); no other language is allowed, so
   nothing can be shown without being run.
 
+Each tutorial runs once per process: the custom-index tutorial defines atom classes, which register
+process-wide under their ``__type_name__``, so running it twice in one process fails.
+
 Run ``python tests/docs/test_tutorials.py <tutorial.rst>`` to print what each block prints, and
 ``--update`` before the file names to rewrite the ``Output`` blocks with what the code printed (review
 the prose that quotes a figure afterwards).

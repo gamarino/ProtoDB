@@ -73,20 +73,24 @@ If you read only one thing before the code, read
   Python lambdas are allowed and appear as an explicit `PythonFilter` node.
 - **Storage**: `MemoryStorage`; `FileStorage` (append-only segments, CRC-checked records, `fsync` per
   commit by default); `CloudStorage` over S3 or Google Cloud Storage; `TieredStorage` and a cluster
-  coordinator for several writer processes. Every node syncs its acceptor log (lease promises,
-  accepted roots) before replying in every durability mode, so the lease never grants a term twice,
-  even across power loss. On a TieredStorage a node accepts a root with ONE synced acceptor-log
-  entry that also holds the root's records (D50, Task 8.3f), so acknowledged commits survive power
-  loss of any set of nodes in every durability mode; the mode governs only writes outside the
-  commit path. Replication is bounded (D54, Task 8.3g): three voters (configurable) order roots,
-  the other members are learners, and a commit's records are synced on the committer plus `f`
-  data replicas (one, with three voters), not on every member; the other members keep them only in
-  memory (a bounded cache, best effort) and fetch on demand what they miss.
-  Losing `f + 1` voters stops writes while learners keep serving reads; losing every copy of a
-  commit's records (`f + 1` disks) before the persister uploads them loses that data, as no
-  re-replication runs. Two to four contending writer processes take
-  the lease in turn; at eight, and for hot-key read-modify-write transactions, fairness is not
-  yet guaranteed (open defect D-LIVE-2).
+  coordinator for several writer processes. The cluster is new, with no production history, and its
+  guarantees assume that the storage devices honour `fsync`:
+  - *Power loss with the disks intact* (D50, Task 8.3f): a node accepts a root with ONE synced
+    acceptor-log entry that also holds the root's records, in every durability mode, so an acknowledged
+    commit survives power loss of any set of nodes.
+  - *Lease and ballots* (D46, Task 8.3e): every node syncs its acceptor log before replying, in every
+    durability mode, so across process crashes and power losses no term is granted twice, provided at
+    most one acceptor log is lost at a time (R48).
+  - *Loss of disks* (D54, Task 8.3g): replication is bounded. Three voters (configurable) order roots, the
+    other members are learners, and a commit's records are synced on the committer plus `f` data replicas
+    (one, with three voters), not on every member; the others keep them only in a bounded cache and fetch on
+    demand what they miss. Losing `f + 1` voters stops writes while learners keep serving reads; losing every
+    durable copy of a commit's records (`f + 1` disks) before the persister uploads them to the object store
+    loses that data, as no re-replication runs.
+  - *Fairness*: two to four contending writer processes take the lease in turn; at eight, and for hot-key
+    read-modify-write transactions, fairness is not yet guaranteed (open defect D-LIVE-2).
+  - *Reads*: a local read is a committed snapshot that may lag; a linearizable read is a barrier commit,
+    which adds a permanent version per read (see the cluster tutorial).
 - **Free-threading**: tested on CPython 3.14t (GIL disabled) and with the GIL; `parallel_scan` and
   `parallel_filter` scale on free-threaded builds.
 - **Interop**: export to Apache Arrow and Parquet (`to_arrow`, `to_parquet`).

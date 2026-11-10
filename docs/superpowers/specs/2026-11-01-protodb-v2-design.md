@@ -63,7 +63,7 @@ alternatives considered). The decisions taken in this document are D1–D16 belo
 | D1 | Full repair; the internals are rebuilt module by module under the existing concepts. |
 | D2 | One value model with a total order across types (§4). Index results and scan results use the same comparator. |
 | D3 | Canonical types: `None, bool, int, float, Decimal, str, bytes, date, time, datetime (naive or aware), timedelta, UUID, tuple, list, dict`, plus atoms. |
-| D4 | On-disk format v2: framed binary records, msgpack payloads, CRC32, per-segment header (§6). A `protodb inspect` CLI replaces "readable files". Parquet is an export format, not the store. |
+| D4 | On-disk format v2: framed binary records, msgpack payloads, CRC32, per-segment header (§6). A `protodb inspect` CLI was planned to replace "readable files"; it is NOT provided in 2.0 (see §6 and the CHANGELOG): the formats are specified in `docs/source/format-spec.rst`, and the operations tutorial reads a space with the storage API. Parquet is an export format, not the store. |
 | D5 | Cloud/cluster: data strictly before root; in a cluster, root write contention is resolved among the processes (peer write lock with fencing), never by the storage; conditional writes on the root are only a fencing safety net (amended 2026-11-01 by the maintainer, see D44). |
 | D6 | Durability: fsync per commit by default; `durability="flush"` and `"none"` are explicit opt-outs for tests/benchmarks. Group commit is a later optimisation. |
 | D7 | Strings are stored inline. The global `Literal` catalog is removed; reading a string returns `str`. |
@@ -196,7 +196,7 @@ truth for the collections (key order), the indexes and the query evaluator.
   CRC. Torn tails after the last published root are ignored (never reused). A corrupt root raises
   `ProtoCorruptionError` — it never looks like an empty database.
 - `durability`: `"fsync"` (default), `"flush"`, `"none"` (D6).
-- `proto_db.tools.inspect` dumps segments and roots to JSON for manual inspection.
+- ~~`proto_db.tools.inspect` dumps segments and roots to JSON for manual inspection.~~ **Not provided in 2.0.** Replaced by the byte-level specification (`docs/source/format-spec.rst`), `Database.history()` and `Snapshot` for versions, `Index.validate` for consistency, and the segment scan shown in the operations tutorial (`proto_db.storage.format.read_record` verifies every checksum). A command-line tool may follow in a later release.
 
 ## 7. Transactions and concurrency (D9, D11)
 
@@ -274,7 +274,7 @@ transaction (`tr.new_list()`, … including `new_set`, `new_counted_set`, `new_r
 | `estimate(term) -> Estimate(rows, cost)` | for the planner |
 | `plan(term) -> IndexPlan` | an executable plan yielding matching elements |
 | `explain() -> dict` | description for `explain()` |
-| `validate(elements) -> None` | consistency check vs a full scan (used by tests and `inspect`) |
+| `validate(elements) -> None` | consistency check vs a full scan (used by tests and consistency checks) |
 
 Elements whose key is missing (attribute absent) are recorded under a distinct MISSING marker so
 `IsNone`/`NotNone` and scans agree. Indexes are persistent atoms and serialize like any atom.
@@ -356,7 +356,7 @@ Sphinx site under `docs/` rewritten:
 - Design: architecture, storage format specification, concurrency and isolation model, index
   framework (with "writing a custom index"), query planner, durability and recovery.
 - Tutorials: getting started; modelling data; indexing and querying; concurrency and retries;
-  vector search; writing a custom index; operations (durability modes, inspect, backup).
+  vector search; writing a custom index; operations (durability modes, looking inside a space with the storage API in place of the `inspect` tool that 2.0 does not provide, backup).
 - API reference (autodoc), `docs/decisions.md`, benchmark methodology and latest results.
 - README rewritten to state only what is implemented and tested.
 - Every tutorial is executable: its code blocks run in the test suite (doctest-style).

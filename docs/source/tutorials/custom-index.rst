@@ -276,8 +276,10 @@ is exactly the mistake the list element in the first section was there to catch:
 
    the contract rejects the index that forgets the side group
 
-Registering the contract for your kind in ``tests/contracts/index_contract.py`` (see the ``REGISTRATIONS``
-section there) puts it in the project's test run.
+The contract lives in the repository's test tree (``tests/contracts/index_contract.py``), so a source
+checkout of ProtoDB is needed to use it as above. In a project of your own, put a copy of that module (or the
+checkout on ``PYTHONPATH``) beside your tests and call ``IndexContract(...).run_all()`` from a test. Inside
+ProtoDB itself, register the contract in the ``REGISTRATIONS`` section of that file.
 
 Persistence and distribution
 ----------------------------

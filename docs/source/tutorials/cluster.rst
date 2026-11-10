@@ -117,9 +117,10 @@ previous state: a consistent snapshot, slightly old.
    local reads that missed the commit acknowledged just before: 14 of 20
 
 The count is not a defect, it is the definition of a local read: it never waits and never contends with
-writers (P4), at the price of a bounded lag behind the newest commit. For most reads (a dashboard, a report,
-a page of search results) that is exactly the right trade, and the staleness is bounded by message latency,
-not by a timer.
+writers (P4), at the price of lagging behind the newest commit. No bound on the lag is promised: it is
+whatever delivery of the release message gives, and a delayed or lost message leaves the node behind until
+it learns a newer root. The snapshot is always a state that was committed, never a mixture. For many reads
+(a dashboard, a report, a page of search results) that is the right trade.
 
 ``sync()`` does **not** change that. It waits until the commits this node *already knows* are persisted in
 the object store: a durability barrier, not a visibility barrier.
@@ -175,7 +176,11 @@ protocol forbids). That is why the barrier works, and why it has two conditions:
   raise, so you know the barrier did not hold; retry it or give up.
 
 The cost is a commit: a round trip to a majority and a write of the barrier root, instead of a memory
-read. Use it where the guarantee is worth that, and keep local snapshot reads for the rest. (A read that waits
+read. It is also a **permanent** cost, because nothing is ever deleted: every barrier adds a version to
+``history()`` and the root ``_read_barrier`` to the database's root names, and since the barrier is a blind
+write of one value, concurrent barriers simply overwrite each other. A linearizable read path used at a
+high rate therefore grows the history by one version per read. Use it where the guarantee is worth that,
+and keep local snapshot reads for the rest. (A read that waits
 without writing is proposed in decision D46's amendment but not implemented in 2.0.) The
 :doc:`../coordinator-protocol` document draws the two paths as sequence diagrams.
 

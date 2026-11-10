@@ -119,7 +119,7 @@ The IVF-Flat backend
 --------------------
 
 Exact search reads every vector, so it grows linearly with the collection. ``ivf_flat`` clusters the
-vectors (deterministic k-means, stored in the index) and searches only the ``nprobe`` nearest clusters of
+vectors (k-means, stored in the index) and searches only the ``nprobe`` nearest clusters of
 ``nlist``. It trades recall for speed, and with ``nprobe == nlist`` it is exact.
 
 .. code-block:: python
@@ -147,16 +147,16 @@ vectors (deterministic k-means, stored in the index) and searches only the ``npr
    assert results[16] == 1.0 and results[1] < results[16]      # nprobe == nlist is exact
 
 .. code-block:: text
-   :caption: Sample output (the partial-probe recalls differ from run to run)
+   :caption: Sample output (the partial-probe recalls vary between runs; see the text)
 
    nlist=16 nprobe= 1: recall@10 = 0.62
    nlist=16 nprobe= 4: recall@10 = 0.88
    nlist=16 nprobe=16: recall@10 = 1.00
 
-The figures above are measured by the block (the block asserts only that ``nprobe == nlist`` is exact; the
-others differ from run to run, as the training of the clusters is not reproduced identically between
-processes), on random vectors, which have no cluster structure for the
-index to exploit. Treat them as an illustration of the trade, not as a benchmark. Pick ``nlist`` and ``nprobe`` by measuring recall on your own data, as this block
+The figures above are measured by the block, on random vectors, which have no cluster structure for the
+index to exploit. Recall at ``nprobe < nlist`` varies between runs on identical data, and the cause is under
+investigation (a product follow-up, R128); the block therefore asserts only that ``nprobe == nlist`` is
+exact. Treat the numbers as an illustration of the trade, not as a benchmark. Pick ``nlist`` and ``nprobe`` by measuring recall on your own data, as this block
 does. The vector benchmark results (latency and recall by backend and size) are in :doc:`../performance`.
 
 .. code-block:: python
@@ -170,10 +170,10 @@ Limits and choices
   latency budget; it needs no training and is never approximate.
 * ``hnsw`` is optional (``pip install "proto_db[hnsw]"``). ``hnswlib`` re-enables the GIL on free-threaded
   CPython when it is imported, so it costs the thread scalability the rest of ProtoDB has, and its graph is
-  rebuilt from the stored vectors in each process, not stored. It is the better choice for very large
-  collections at low latency, when you accept those costs.
+  rebuilt from the stored vectors in each process, not stored. This tutorial does not measure it; see
+  :doc:`../performance` for the vector results by backend before choosing it for a large collection.
 * A dedicated vector database, or a library such as FAISS, is better than ProtoDB when vector search is the
-  whole workload: they typically offer more index types, quantisation and GPU execution. ProtoDB's advantage is that
+  whole workload: (as general knowledge, not measured here) they typically offer more index types, quantisation and GPU execution. ProtoDB's advantage is that
   the vectors live in the same transactions, versions and queries as the records they describe, so a
   document and its embedding commit together and a past version answers with its past embeddings.
 * A version of the index is built by path copying like any other, so changing one vector does not rewrite
