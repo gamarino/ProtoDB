@@ -18,6 +18,7 @@ Where to start
 * Modelling an application: :doc:`tutorials/modelling-data` and the :doc:`ERP example <tutorials/erp>`.
 * Running it: :doc:`tutorials/operations`, :doc:`durability` and :doc:`performance`.
 * Why it is built this way: :doc:`design-principles`.
+* How the hard decisions were reached, mistakes included (course material): :doc:`design-guide`.
 
 .. toctree::
    :maxdepth: 2

@@ -1,0 +1,36 @@
+// Residency (Task 8.3m): why an entry bound did not bound memory, and what bounds it now.
+// Render: dot -Tsvg residency-pinning.dot -o residency-pinning.svg
+digraph pinning {
+  graph [rankdir=LR, fontname="Helvetica", fontsize=11, nodesep=0.25, ranksep=0.45, compound=true];
+  node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#555555"];
+  edge  [fontname="Helvetica", fontsize=9, color="#555555"];
+
+  subgraph cluster_after {
+    label="After (7ef1636): the LRU bounds loaded atoms; an evicted atom becomes a stub"; color="#bbbbbb"; style="rounded";
+    lru2 [label="LRU\n<= capacity loaded", shape=cylinder, fillcolor="#eeeeee"];
+    r2 [label="root\n(resident)", fillcolor="#cfe3f5"];
+    s1 [label="stub\npointer, class, oid", style="rounded,dashed,filled", fillcolor="#ffffff"];
+    n3 [label="tree node\n(resident)", fillcolor="#cfe3f5"];
+    s2 [label="stub", style="rounded,dashed,filled", fillcolor="#ffffff"];
+    lru2 -> r2;
+    lru2 -> n3;
+    r2 -> s1 [label="left"];
+    r2 -> n3 [label="right"];
+    n3 -> s2 [label="value"];
+  }
+
+  subgraph cluster_before {
+    label="Before (26f3b85): the LRU bounds entries, not loaded atoms"; color="#bbbbbb"; style="rounded";
+    lru1 [label="LRU\n50,000 entries", shape=cylinder, fillcolor="#eeeeee"];
+    r1 [label="root\n(entry)", fillcolor="#f6d7b0"];
+    n1 [label="tree node\n(evicted long ago)", fillcolor="#f6d7b0"];
+    n2 [label="tree node\n(evicted)", fillcolor="#f6d7b0"];
+    o1 [label="record\n(evicted)", fillcolor="#f6d7b0"];
+    o2 [label="record\n(evicted)", fillcolor="#f6d7b0"];
+    lru1 -> r1;
+    r1 -> n1 [label="left"];
+    r1 -> n2 [label="right"];
+    n1 -> o1 [label="value"];
+    n2 -> o2 [label="(element, count)\nin a tuple"];
+  }
+}

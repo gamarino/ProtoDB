@@ -1,0 +1,18 @@
+// History links (Task 8.3l): previous is persisted as a reference and held in memory as a pointer only.
+// Render: dot -Tsvg history-links.dot -o history-links.svg
+digraph history {
+  graph [rankdir=LR, fontname="Helvetica", fontsize=11, nodesep=0.3, ranksep=0.5];
+  node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#555555"];
+  edge  [fontname="Helvetica", fontsize=9, color="#555555"];
+
+  v3 [label="DatabaseRoot v3\n(current, loaded)", fillcolor="#cfe3f5"];
+  v2 [label="DatabaseRoot v2", style="rounded,dashed,filled"];
+  v1 [label="DatabaseRoot v1", style="rounded,dashed,filled"];
+  d3 [label="objects of v3\n(loaded)", fillcolor="#cfe3f5"];
+  cache [label="decoded-atom cache", shape=cylinder, fillcolor="#eeeeee"];
+
+  v3 -> d3 [label="objects"];
+  v3 -> v2 [label="previous: (pointer, class)\nresolved on each read", style=dashed];
+  v2 -> v1 [label="previous", style=dashed];
+  v3 -> cache [label="read of previous\nasks the context", style=dotted, arrowhead=open];
+}
