@@ -59,7 +59,8 @@ def test_a_holder_with_less_than_the_reserve_left_sends_nothing_and_gets_a_retry
     a, b = h.nodes["a"], h.nodes["b"]
     r1 = h.own("a")
     pb, _ = h.permit_from("b", "a")
-    reserve = b._request_timeout                    # the default reserve
+    reserve = b._send_reserve
+    assert reserve == b._request_timeout            # the default: request_timeout (below belief / 4)
     h.clock.t = pb.valid_until - reserve / 2        # valid, with half the reserve left
     assert pb.is_valid() and pb.remaining() < reserve
     accepted = b.accepted_root()
@@ -82,7 +83,7 @@ def test_a_holder_with_the_reserve_left_replicates_as_before(h):
     b = h.nodes["b"]
     r1 = h.own("a")
     pb, _ = h.permit_from("b", "a")
-    h.clock.t = pb.valid_until - b._request_timeout   # exactly the default reserve left
+    h.clock.t = pb.valid_until - b._send_reserve      # exactly the reserve left
     r2 = rec(r1.epoch + 1)
     sent = []
 
@@ -104,16 +105,50 @@ def test_the_reserve_is_configurable_and_must_leave_room_in_the_belief():
     from proto_db.cluster.transport import InProcessNetwork
     net = InProcessNetwork()
     try:
+        c = ClusterCoordinator("a", peers, transport=net.endpoint(), lease_duration=2.0, request_timeout=0.1)
+        assert c._send_reserve == 0.1              # request_timeout, below belief / 4 (0.167 s)
         c = ClusterCoordinator("a", peers, transport=net.endpoint(), lease_duration=0.9, request_timeout=0.1)
-        assert c._send_reserve == 0.1
+        assert c._send_reserve == pytest.approx(0.075)     # capped at belief / 4 (0.3 s / 4)
         c = ClusterCoordinator("a", peers, transport=net.endpoint(), lease_duration=0.9, request_timeout=0.1,
                                send_reserve=0.0)
         assert c._send_reserve == 0.0              # 0 restores the old rule (any validity left)
         with pytest.raises(ProtoValidationError):
             ClusterCoordinator("a", peers, transport=net.endpoint(), lease_duration=0.9, request_timeout=0.1,
-                               send_reserve=0.4)     # beyond the belief (0.9 - 0.6 = 0.3 s)
+                               send_reserve=0.1)     # beyond belief / 4: the D/4 rule issues with 0.075 s
         with pytest.raises(ProtoValidationError):
             ClusterCoordinator("a", peers, transport=net.endpoint(), lease_duration=0.9, request_timeout=0.1,
                                send_reserve=-0.1)
     finally:
         net.close()
+
+
+def test_a_permission_issued_at_the_d4_threshold_is_usable_whatever_the_request_timeout():
+    """Fix round 3 proof: with ``request_timeout`` above a quarter of the belief (a 1 s lease
+    and 0.25 s in the crash tests), a reserve of ``request_timeout`` refused permissions the
+    owner is allowed to issue (D50's D/4 rule: with at least belief / 4 left), and the
+    members of the crash tests committed nothing after one of three died.  The default
+    reserve is capped at belief / 4: a permission issued at the threshold and received at
+    once is used."""
+    h = Harness(request_timeout=3.0)                  # belief 10 / 3 s: a quarter is 0.83 s < 3 s
+    try:
+        a, b = h.nodes["a"], h.nodes["b"]
+        quarter = a._belief / 4
+        r1 = h.own("a")
+        own = a._ownership
+        h.clock.t = own.lease.valid_until - quarter - 0.01     # the owner may still issue (D/4)
+        pb, _ = h.permit_from("b", "a")
+        assert pb.remaining() >= quarter
+        sent = []
+
+        def pump():
+            for src, dst, msg in h.net.take("b", None, SENT):
+                sent.append(msg["type"])
+                h.net.handlers[dst](msg)
+                h.nodes[dst].wait_idle(5.0)
+            h.net.deliver(src=None, dst={"b"}, kinds=("ack",))
+        out = h._run(lambda: b.replicate(pb, rec(r1.epoch + 1)), pump)
+        assert not isinstance(out, Exception), out
+        assert "replicate" in sent and b.stats()["sends_refused_reserve"] == 0
+        h.net.drop(kinds=ALL)
+    finally:
+        h.close()

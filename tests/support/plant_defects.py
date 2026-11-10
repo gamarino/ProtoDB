@@ -204,6 +204,17 @@ def blind_snapshot_of'''),),
         ("tests/unit/test_cluster_permit_backoff.py::test_cancels_do_not_end_the_back_off_of_a_refused_permit_request",),
         "cancels ended the back-off",
         "product: every cancel ends a refused permit request's back-off (N7)"),
+    "reserve_uncapped": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "        self._send_reserve = min(self._request_timeout, quarter) if send_reserve is None else _number(",
+         "        self._send_reserve = self._request_timeout if send_reserve is None else _number(  # PLANT"),
+        ("proto_db/cluster/coordinator.py",
+         "        if self._send_reserve > quarter * (1 + 1e-9):",
+         "        if send_reserve is not None and self._send_reserve > quarter * (1 + 1e-9):  # PLANT"),),
+        ("tests/unit/test_cluster_send_reserve.py::"
+         "test_a_permission_issued_at_the_d4_threshold_is_usable_whatever_the_request_timeout",),
+        "a replication needs (send_reserve); nothing was replicated",
+        "product: the reserve defaults to request_timeout even above belief / 4 (fix round 3 proof)"),
     "no_reserve": Plant((
         ("proto_db/cluster/coordinator.py",
          "        if left < self._send_reserve:\n",

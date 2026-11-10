@@ -570,10 +570,15 @@ class ClusterCoordinator:
             less, nothing leaves and the commit ends with a retryable ``ProtoConflictError``
             (rule H7).  A send that cannot finish in what is left ends unknown (P5), and an
             unknown outcome abandons the owner's whole term (O6): the reserve turns that doomed
-            send into the truthful conflict it would have been.  Default ``request_timeout``,
-            the time this node already allows a majority to answer; ``0`` keeps the old rule
-            (any validity left).  Must be shorter than ``lease_duration - drift_margin``.
-            Liveness only: it never decides an acceptance or an acknowledgement.
+            send into the truthful conflict it would have been.  Default ``request_timeout`` (the
+            time this node already allows a majority to answer), capped at a quarter of the
+            belief, ``(lease_duration - drift_margin) / 4``: an owner issues a permission with as
+            little as that left (D50's D/4 rule) and renews its own lease at half the belief, so a
+            larger reserve would make permissions the owner may issue unusable by rule (measured
+            in fix round 3: with a 1 s lease and a 0.25 s ``request_timeout``, a 0.25 s reserve
+            refused about 1,090 sends in 4 s and halved the commits).  ``0`` keeps the old rule (any
+            validity left); at most a quarter of the belief.  Liveness only: it never decides an
+            acceptance or an acknowledgement.
         acquire_timeout: default seconds :meth:`acquire` tries before ``ProtoTimeoutError``.
         backoff: ``(min_seconds, max_seconds)`` of the jittered back-off between lost attempts.
         startup_grace: seconds after :meth:`start` during which this node grants nothing and
@@ -650,11 +655,14 @@ class ClusterCoordinator:
                                                                               owner_idle_release)
         if self._request_timeout >= self._duration - self._margin:
             raise ProtoValidationError("request_timeout must be shorter than lease_duration - drift_margin")
-        self._send_reserve = self._request_timeout if send_reserve is None else _number(
+        quarter = (self._duration - self._margin) / 4
+        self._send_reserve = min(self._request_timeout, quarter) if send_reserve is None else _number(
             "send_reserve", send_reserve, positive=False)
-        if self._send_reserve >= self._duration - self._margin:
-            raise ProtoValidationError("send_reserve must be shorter than lease_duration - drift_margin, "
-                                       "or no lease or permission could ever send a root")
+        if self._send_reserve > quarter * (1 + 1e-9):
+            raise ProtoValidationError(
+                f"send_reserve must be at most (lease_duration - drift_margin) / 4 ({quarter:g} s): an owner "
+                f"issues a permission with as little as that left (the D/4 rule), and a larger reserve would "
+                f"refuse it by rule")
         self._acquire_timeout = _number("acquire_timeout", acquire_timeout, positive=False)
         try:
             low, high = backoff

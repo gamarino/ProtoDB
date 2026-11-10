@@ -155,7 +155,8 @@ class ManualNet:
 class Harness:
     """Real coordinators over a :class:`ManualNet` and a :class:`FakeClock` (module docstring)."""
 
-    def __init__(self, names="abc", *, records=False):
+    def __init__(self, names="abc", *, records=False, **coordinator_kw):
+        self.coordinator_kw = coordinator_kw        # overrides of the coordinators' settings
         self.names = list(names)
         self.tier_class = RecordTier if records else MemoryTier
         self.net = ManualNet()
@@ -168,10 +169,11 @@ class Harness:
             self.rejoin(n)
 
     def _node(self, name, grace):
-        node = ClusterCoordinator(name, self.peers, transport=self.net.transport(), lease_duration=D,
-                                  drift_margin=MARGIN, request_timeout=0.5, startup_grace=grace,
-                                  clock=self.clock, seed=1, persist_interval=60.0, persist_lag=60.0,
-                                  voters=self.names)     # every member votes (these cases predate D54)
+        kw = dict(dict(lease_duration=D, drift_margin=MARGIN, request_timeout=0.5, startup_grace=grace,
+                       clock=self.clock, seed=1, persist_interval=60.0, persist_lag=60.0,
+                       voters=self.names),     # every member votes (these cases predate D54)
+                  **self.coordinator_kw)
+        node = ClusterCoordinator(name, self.peers, transport=self.net.transport(), **kw)
         node.start()
         node.attach(self.tier_class(self.disks[name], name))
         return node
