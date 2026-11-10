@@ -443,7 +443,10 @@ prefix ``proto_db.``; applications SHOULD use a prefix of their own.
 - **The name a writer puts in a reference** (a ``@ref``, the ``t`` of a record) is the type's
   canonical name: the built-in alias for a built-in type, the declared name for a type it
   implements (never an alias), and for an opaque atom the name of the reference it read it
-  through, which the owning implementation wrote and is therefore the declared name.
+  through, as the owning implementation wrote it (usually the declared name; an older name when
+  the owner wrote the reference before a rename). Readers resolve both, so copying the name read
+  is always valid. Records and references written before a rename keep the old name, which stays
+  a valid spelling: an application alias in a ``t`` or a ``@ref`` is never non-canonical.
 - **How a reader resolves a reference.** The reference's name and the record's ``t`` must name
   one type: they are equal, or one is an alias of the other by the built-in table or by the
   reader's classes. When neither name has a class in the reader, the record's ``t`` decides: the
@@ -1796,8 +1799,11 @@ SpaceRoot (every database, every version through ``previous``, every tree node, 
 record; each pointer once), checks that every record of a segment of the current write version
 is in its canonical encoding (re-encoding the decoded record, in the writer's attribute order,
 gives the stored bytes; a non-minimal integer, string, binary or container header, a ``float
-32``, an alias-less built-in type name or any other form writers MUST NOT produce is a
-``non-canonical`` failure; older segments hold legacy forms and are not checked), validates
+32``, a built-in type spelled by name instead of its alias, or any other form writers MUST NOT
+produce is a ``non-canonical`` failure; type names are compared as stored, so an application
+alias left by a supported rename is not one; older segments hold legacy forms and are not
+checked), checks that the root record's body is the canonical map ``{version, segment, offset,
+epoch}`` (minimal encodings, that key order, no other key), validates
 every collection with its indexes (``IndexedCollection.validate()``), and prints the current content of every database as JSON
 in the manifest's notation (``proto_db.tools.notation``: the ``contents`` of a database vector,
 without the generator's own ``ivf`` list assignment; an opaque atom is described as

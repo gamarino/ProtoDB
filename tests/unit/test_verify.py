@@ -165,3 +165,71 @@ def test_a_missing_segment_is_a_failure_of_the_space_not_exit_2(tmp_path, capsys
     (target / MANIFEST["database"]["segment"]).unlink()
     code, _ = _run(target, tmp_path)
     assert code == 1, capsys.readouterr().err
+
+
+# -- re-review: I-R1 (application aliases are stored spellings), n2 (root body) ------------------
+
+def test_data_written_before_a_supported_rename_verifies(tmp_path, capsys):
+    # The re-review's p4: a record of probe.Old written by an earlier process; the class is then
+    # renamed probe.New with probe.Old as an alias (D57). Its t and the reference to it keep the old
+    # name, a valid spelling: the verifier must not call it non-canonical.
+    path = tmp_path / "renamed"
+    script = (
+        "import sys\n"
+        "from proto_db.core.dbobject import DBObject\n"
+        "from proto_db.storage.file import FileStorage\n"
+        "from proto_db.transactions import ObjectSpace\n"
+        "class OldT(DBObject):\n"
+        "    __type_name__ = 'probe.Old'\n"
+        "space = ObjectSpace(FileStorage(sys.argv[1]))\n"
+        "with space.new_database('d').new_transaction() as tr:\n"
+        "    tr.set_root_object('h', DBObject(name='h', t=OldT(v=1)))\n"
+        "space.close()\n")
+    subprocess.run([sys.executable, "-c", script, str(path)], cwd=ROOT, check=True,
+                   env={**os.environ, "PYTHONPATH": str(ROOT)})
+
+    class NewT(DBObject):
+        __type_name__ = "tests.verify.RenamedNew"
+        __type_aliases__ = ("probe.Old",)
+
+    code, dump = _run(path, tmp_path)
+    assert code == 0, capsys.readouterr().err
+    assert dump["opaque_types"] == []
+    holder = dump["databases"]["d"]["roots"][0][1]
+    assert dict(holder["attrs"])["t"]["object"] == "tests.verify.RenamedNew"
+
+
+def test_an_alias_less_built_in_name_is_still_non_canonical(tmp_path, capsys):
+    import uuid as _uuid
+
+    import msgpack
+    from proto_db.storage.format import RecordKind
+    path = tmp_path / "db"
+    space = ObjectSpace(FileStorage(str(path)))
+    db = space.new_database("d")
+    with db.new_transaction() as tr:
+        payload = msgpack.packb({"t": "proto_db.core.dbobject.DBObject", "oid": _uuid.uuid4().bytes,
+                                 "s": {"n": 1}}, use_bin_type=True)
+        ptr = space.storage.append_record(RecordKind.ATOM, payload)
+        space.storage.flush()
+        tr.set_root_object("r", tr.load(ptr, "proto_db.core.dbobject.DBObject"))
+    space.close()
+    code, _ = _run(path, tmp_path)
+    assert code == 1 and "non-canonical" in capsys.readouterr().err
+
+
+def test_a_root_record_with_a_wide_integer_is_non_canonical(tmp_path, capsys):
+    import struct
+    import zlib
+    target = _copy("database", tmp_path)
+    root = target / "space.root"
+    data = root.read_bytes()
+    fields = __import__("msgpack").unpackb(data[4:], raw=False)
+    body = (b"\x84" + __import__("msgpack").packb("version") + __import__("msgpack").packb(fields["version"])
+            + __import__("msgpack").packb("segment") + __import__("msgpack").packb(fields["segment"], use_bin_type=True)
+            + __import__("msgpack").packb("offset") + __import__("msgpack").packb(fields["offset"])
+            + __import__("msgpack").packb("epoch") + b"\xce" + struct.pack(">I", fields["epoch"]))
+    root.write_bytes(struct.pack("<I", zlib.crc32(body)) + body)
+    code, _ = _run(target, tmp_path)
+    err = capsys.readouterr().err
+    assert code == 1 and "non-canonical space.root" in err

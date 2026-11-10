@@ -15,8 +15,10 @@ The verifier opens the space read-only (it never publishes a root), then:
    encoding: re-encoding the decoded record (keeping the writer's attribute order, which is
    not normative) gives the stored bytes. A non-minimal integer, string, binary or container
    header, a ``float 32``, a non-canonical type tag or any other form the spec forbids writers to
-   produce is a ``non-canonical`` failure. Records in older segments hold legacy forms readers
-   accept, and are not checked;
+   produce is a ``non-canonical`` failure. Type names are compared as stored: an application
+   alias in ``t`` or in a reference (left by a rename) is valid; a built-in type must be its
+   integer alias. The root record's body must be the canonical four-key map. Records in older
+   segments hold legacy forms readers accept, and are not checked;
 4. validates every collection reached (:meth:`IndexedCollection.validate`: the structure, then
    every index against the elements);
 5. prints the current content of every database in the notation of the conformance manifest
@@ -41,7 +43,7 @@ import msgpack
 
 from ..collections.base import IndexedCollection
 from ..core import codec
-from ..core.atom import Atom, OpaqueAtom, type_name_of, type_tag
+from ..core.atom import BUILTIN_TYPE_ALIASES, Atom, OpaqueAtom, type_name_of, type_tag
 from ..storage import format as fmt
 from ..storage.file import FileStorage
 from ..transactions import ObjectSpace, _SpaceContext
@@ -83,13 +85,51 @@ def _segment_version(directory: str, segment, cache: dict):
     return cache[segment]
 
 
+def _ref_bodies(data, out: list) -> list:
+    """The bodies of the ``@ref`` maps in the plain data ``data``, in encoding order."""
+    if type(data) is dict:
+        if len(data) == 1 and "@ref" in data and type(data["@ref"]) is list:
+            out.append(data["@ref"])
+            return out
+        for key, value in data.items():
+            _ref_bodies(key, out)
+            _ref_bodies(value, out)
+    elif type(data) is list:
+        for item in data:
+            _ref_bodies(item, out)
+    return out
+
+
+def _as_stored(stored_tag, written_tag):
+    """The type tag to expect: the stored one when it is an application name naming the same
+    type as the re-encoded tag (an alias left by a supported rename, D57), else the re-encoded
+    one.  A built-in type is canonical only as its alias (an integer)."""
+    if type(stored_tag) is str and stored_tag not in BUILTIN_TYPE_ALIASES and type(written_tag) is str:
+        try:
+            if type_name_of(stored_tag) == type_name_of(written_tag):
+                return stored_tag
+        except Exception:                          # noqa: BLE001 - malformed: compared as written
+            pass
+    return written_tag
+
+
 def _non_canonical(storage, context, ptr) -> str:
-    """Why the record at ``ptr`` is not in its canonical encoding, or ``""``."""
+    """Why the record at ``ptr`` is not in its canonical encoding, or ``""``.
+
+    Type names are compared as stored: an application alias in ``t`` or in a reference is a
+    valid spelling (a record written before a rename keeps it), not a non-canonical encoding
+    (re-review I-R1)."""
     _, payload = storage.get_record(ptr)
     raw = msgpack.unpackb(payload, raw=False)
     state = codec.decode_state(raw["s"], context.load)
-    again = msgpack.packb({"t": type_tag(type_name_of(raw["t"])), "oid": raw["oid"],
-                           "s": codec.encode_state(state, lambda a: a.atom_pointer)}, use_bin_type=True)
+    encoded = codec.encode_state(state, lambda a: a.atom_pointer)
+    stored_refs, written_refs = _ref_bodies(raw["s"], []), _ref_bodies(encoded, [])
+    if len(stored_refs) == len(written_refs):
+        for stored, written in zip(stored_refs, written_refs):
+            if len(stored) == 3 and len(written) == 3:
+                written[2] = _as_stored(stored[2], written[2])
+    again = msgpack.packb({"t": _as_stored(raw["t"], type_tag(type_name_of(raw["t"]))), "oid": raw["oid"],
+                           "s": encoded}, use_bin_type=True)
     if again == bytes(payload):
         return ""
     at = next((i for i, (a, b) in enumerate(zip(again, payload)) if a != b), min(len(again), len(payload)))
@@ -103,11 +143,18 @@ def verify(directory: str) -> tuple[dict, list[str]]:
     root_file = Path(directory) / "space.root"
     if not root_file.is_file():
         raise _NoRoot(f"{directory} holds no space.root: not a file-storage space")
+    data = root_file.read_bytes()
     try:
-        record = fmt.decode_root(root_file.read_bytes())
+        record = fmt.decode_root(data)
     except Exception as e:                         # noqa: BLE001
         raise _NoRoot(f"space.root: {type(e).__name__}: {e}") from e
     failures: list[str] = []
+    fields = msgpack.unpackb(data[4:], raw=False)
+    body = msgpack.packb({"version": fields["version"], "segment": fields["segment"], "offset": fields["offset"],
+                          "epoch": fields["epoch"]}, use_bin_type=True)
+    if body != data[4:]:
+        failures.append("FAILED non-canonical space.root: its body is not the canonical msgpack map "
+                        "{version, segment, offset, epoch} (minimal encodings, that key order, no other key)")
     report = {"root": {"version": record.version, "segment": record.segment.hex, "offset": record.offset,
                        "epoch": record.epoch},
               "atoms": 0, "collections": 0, "opaque_types": [], "databases": {}}
