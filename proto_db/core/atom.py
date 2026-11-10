@@ -498,6 +498,9 @@ class Atom:
     #: Persisted attributes linking an older version, held as pointers in memory and loaded on
     #: each read through the context (Task 8.3l, see the module docstring).
     _history_links: tuple = ()
+    #: Persisted fields every record of this exact type must hold (D58): a record without one is
+    #: ``ProtoCorruptionError`` when it is loaded.  Fields a type may omit are not listed.
+    _required_fields: tuple = ()
     #: Whether this class overrides the hooks that install a loaded state, so that each load
     #: checks they installed exactly the decoded state's keys (:func:`_restore_checked`).
     _custom_restore = False
@@ -781,6 +784,10 @@ class Atom:
             context = self.context
             payload = pending.payload
             state = codec.decode_state(payload["s"], context.load)
+            missing = [name for name in type(self)._required_fields if name not in payload["s"]]
+            if missing:
+                raise ProtoCorruptionError(f"Atom at {self.atom_pointer} "
+                                           f"({type(self).__type_name__}) lacks the required fields {missing}")
             oid = uuid.UUID(bytes=payload["oid"])
             with lock:
                 if self._loaded:

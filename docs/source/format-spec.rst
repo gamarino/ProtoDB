@@ -36,8 +36,8 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. A section 
      - Value
      - Where it is written
    * - Storage format (``FORMAT_VERSION``)
-     - 3
-     - every segment header and every root record; versions 2 and 3 are read
+     - 4
+     - every segment header and every root record; versions 2, 3 and 4 are read
    * - Framed log format (``LOG_FORMAT_VERSION``)
      - 2
      - the header of every framed log file
@@ -49,13 +49,22 @@ There are three levels of conformance:
 
 - **Reader**: decodes every structure below, refuses every invalid input the specification
   says is refused, and decodes the vectors to their manifest.
-- **Writer**: also produces structures that a reader of this revision accepts. Writers SHOULD
-  produce the canonical bytes (the vectors' bytes), so that two implementations writing the
-  same content write the same bytes; the only freedom left is the order of the attributes in
-  an atom's state map (`Atom records`_).
+- **Writer**: also produces structures that a reader of this revision accepts. A writer MUST
+  write every value in its canonical encoding (`Canonical values`_) and MUST compute order keys,
+  hashes and exact tokens as specified, since those decide where readers look things up.
+  Beyond that, writers SHOULD produce the vectors' bytes, but some choices are left to them and
+  change bytes without changing meaning:
+
+  - the order of the attributes in an atom's state map (`Atom records`_);
+  - the shape of every AVL tree, which depends on the operation history and on bulk building
+    versus incremental insertion (only the invariants of `AVL nodes`_ are normative);
+  - the order of the entries inside a hash bucket;
+  - the ValueBox threshold;
+  - when an IVF index is trained and the centroids training produces (`Vector indexes`_);
+  - which atoms are new in a version and which are shared with the previous one.
 - **Cluster member**: also speaks the cluster wire protocol and keeps the acceptor log. The
   behaviour of the coordination protocol (leases, permissions, acceptance rules) is not part
-  of this page; it is specified in the coordinator documentation and decisions D44 to D55.
+  of this page; it is specified in :doc:`coordinator-protocol` and decisions D44 to D55.
   This page gives every byte layout that behaviour uses.
 
 
@@ -86,10 +95,13 @@ holding UTF-8. Writers use the smallest encoding of every item, as msgpack-pytho
 
 The extension types (``ext``, ``fixext``, the timestamp extension) are never written, and a
 reader of this revision refuses them where a canonical value is expected. Readers MUST accept
-any valid encoding of an integer (a positive ``int 64``, say); byte equality with the vectors
-is only expected from writers. Every msgpack map key in the structures below is a string
-(readers decode with ``strict_map_key``); maps keyed by other values are canonical ``@map``
-values.
+any valid encoding of an integer (a positive ``int 64``, say) and accept a ``float 32``, read
+as the float 64 of the same value (ProtoBase does both); a writer MUST NOT write either form.
+The canonical encoding of a value, which exact tokens are made of, is always the smallest
+form. Every msgpack map key in the structures below is a string: an atom envelope or a state
+map with a key of another type (``bin``, an integer) is ``ProtoCorruptionError``, and a cluster
+message with one is dropped (``strict_map_key``). Maps keyed by other values are canonical
+``@map`` values.
 
 **Text.** Strings are sequences of Unicode scalar values encoded in UTF-8. A string holding a
 lone surrogate cannot be written (the reference implementation fails with
@@ -150,7 +162,9 @@ Tiered storage (one cluster node)
                                                    digits) of a segment, uploaded from a copy
 
     A cluster over a shared file storage keeps each node's acceptor log in
-    ``<directory>/cluster/<node_id>.roots`` (log kind ROOT), with ``<node_id>.roots.lock`` beside it.
+    ``<directory>/cluster/<name>.roots`` (log kind ROOT), with ``<name>.roots.lock`` beside it.
+    ``<name>`` is the node id itself when it matches ``[A-Za-z0-9._-]{1,64}``, and otherwise the
+    lowercase hexadecimal of the id's UTF-8 bytes.
 
 The lock files carry no data: they exist to be locked (``flock``, exclusive, non-blocking).
 Implementation-specific: the segment size limit (256 MiB by default for a file storage), when
@@ -175,7 +189,7 @@ Segment header (26 bytes)
      - magic ``PDB2SEG\0`` (``50 44 42 32 53 45 47 00``)
    * - 8
      - 2
-     - format version, ``u16``: 3 (writers); 2 or 3 accepted by readers
+     - format version, ``u16``: 4 (writers); 2, 3 or 4 accepted by readers
    * - 10
      - 16
      - the segment's UUID; it MUST equal the UUID in the file or object name
@@ -235,19 +249,23 @@ Root records
 ``space.root`` holds ``crc32 (u32) | msgpack body``, where the CRC covers the body and the
 body is the map, in this key order::
 
-    {"version": 3, "segment": <16 bytes>, "offset": <int >= 0>, "epoch": <int >= 0>}
+    {"version": 4, "segment": <16 bytes>, "offset": <int >= 0>, "epoch": <int >= 0>}
 
 ``segment`` and ``offset`` point at the record of the space's :ref:`SpaceRoot <spaceroot>` atom;
 ``epoch`` counts the publications (the compare-and-swap token). A reader checks the CRC and the
-field types (``ProtoCorruptionError`` otherwise) and accepts ``version`` 2 or 3, reading either
-as the current version (the shape did not change). Extra keys are ignored. A missing
+field types (``ProtoCorruptionError`` otherwise) and accepts ``version`` 2, 3 or 4, reading
+each as the current version (the shape did not change); another version is
+``ProtoNotSupportedError``. Extra keys are ignored by the file storage's decoder. A missing
 ``space.root`` file means the space is empty.
 
-The cloud storage's root object adds ``"recent"``: an array of ``[segment 16 bytes, offset,
-epoch]`` for up to ``root_history`` previously published roots, newest first. The tiered
-storage's persisted root object adds ``"recent": []`` and ``"term"``: the label of the lease that
-committed the root (0 when absent). Both are read by the same decoder, which ignores the extra
-keys.
+The cloud storage's root object adds ``"recent"`` after ``epoch``: an array of ``[segment 16
+bytes, offset, epoch]`` for up to ``root_history`` previously published roots, newest first.
+The tiered storage's persisted root object adds, in this order, ``"recent": []`` and
+``"term"``: the label of the lease that committed the root (0 when absent), so its keys are
+``version, segment, offset, epoch, recent, term``. Each of the two storages decodes its own
+object and validates its own extra key: a ``recent`` that is not an array of such triples is
+``ProtoCorruptionError`` in the cloud decoder, and a ``term`` that is not a non-negative integer
+is ``ProtoCorruptionError`` in the tiered decoder; other extra keys are ignored.
 
 Example (``framing/space.root`` of the vectors: segment ``0123456789abcdef0123456789abcdef``,
 offset 26, epoch 7)::
@@ -282,6 +300,30 @@ order::
 
 A payload with other keys, or whose ``t`` names another type than the one the reference was
 made with, is ``ProtoCorruptionError``.
+
+**Required fields.** Every field listed for a built-in type in `Atom types and their persisted
+fields`_ is REQUIRED unless it is marked optional. A record of a built-in type that lacks a
+required field is ``ProtoCorruptionError`` when it is loaded (ProtoBase checks it as soon as the
+record is decoded, before any field is read). A writer MUST NOT add fields to a built-in type;
+what a reader does with an unknown field of a built-in type is unspecified. Required fields bind
+the built-in types only: an application type, including an application subclass of a built-in
+collection, requires the fields of its built-in base and nothing more, so a field it adds in a
+later release may be absent from its older records (it reads as nil).
+
+**Attribute names.** A persisted attribute name is a non-empty string that does not start with
+``_`` and is not ``oid``, ``atom_pointer`` or ``context``. The names of a type are shared by
+every implementation of it, and a type's *behaviour names* are reserved: a persisted attribute
+MUST NOT carry one.
+
+- ``proto_db.core.dbobject.DBObject`` reserves ``with_`` and ``has_defined_attr``.
+- An application type reserves the names of the methods and properties its class defines in
+  each implementation that defines it (in ProtoBase: every attribute of the Python class).
+  ProtoBase refuses such a name when writing (``ProtoValidationError``) and when reading
+  (``ProtoCorruptionError``): a protoBaseST writer that stores ``total`` on a type whose Python
+  class has a ``total`` property writes data ProtoBase cannot open. An implementation cannot
+  know the behaviour names of the others, so an application that shares a type across
+  languages MUST keep its attribute names disjoint from the behaviour names of every
+  implementation of the type.
 
 Type names (D57)
 ~~~~~~~~~~~~~~~~
@@ -417,7 +459,10 @@ first column is the value's kind in the conformance manifest's value notation.
      - a separate kind from integers (see `Order, equality and hashing`_)
    * - int
      - msgpack integer when ``-2**63 <= n <= 2**64 - 1``, else ``{"@int": text}``
-     - ``text`` is the signed lowercase hexadecimal form (``format(n, "x")``: ``-1a``)
+     - ``text`` is the signed lowercase hexadecimal form: ``-`` for a negative number, then the
+       digits of ``|n|`` in ``0-9a-f`` with no leading zero, no ``0x`` and no ``+`` (``-1a``).
+       ``@int`` is only for integers outside the native range; any other text, or ``@int`` of
+       a native integer, is refused
    * - float
      - msgpack ``float 64``
      - NaN, infinities and ``-0.0`` are kept bit for bit
@@ -429,20 +474,23 @@ first column is the value's kind in the conformance manifest's value notation.
      -
    * - decimal
      - ``{"@dec": text}``
-     - the exact decimal text, sign, exponent and trailing zeros kept: ``1.20``, ``-1.5E+30``,
-       ``-0``, ``NaN``, ``sNaN``, ``-Infinity``
+     - the *to-scientific-string* of the decimal (`Decimal text`_), sign, exponent and trailing
+       zeros kept: ``1.20``, ``-1.5E+30``, ``-0``, ``1E-7``, ``NaN``, ``-NaN123``, ``sNaN``,
+       ``-Infinity``. Any other spelling (``1.0E+1``, ``1e3``, ``+1``, ``nan``) is refused
    * - date
      - ``{"@date": [year, month, day]}``
      - proleptic Gregorian, year 1 to 9999
    * - time
      - ``{"@time": [hour, minute, second, microsecond, fold, tz]}``
-     -
+     - the wall clock; ``tz`` is ``nil``, ``["fixed", ...]`` or ``["zone", key]``
    * - datetime
      - ``{"@dt": [year, month, day, hour, minute, second, microsecond, fold, tz]}``
-     - ``fold`` (0 or 1) tells the first from the second of a repeated local time (PEP 495)
+     - ``fold`` (0 or 1) tells the first from the second of a repeated local time (PEP 495);
+       for a zone datetime the fields are its UTC instant (``tz`` below)
    * - timedelta
      - ``{"@td": [days, seconds, microseconds]}``
      - normalized: ``0 <= seconds < 86400``, ``0 <= microseconds < 10**6``, days may be negative
+       (``-999999999 <= days <= 999999999``); an unnormalized body is refused
    * - uuid
      - ``{"@uuid": <16 bytes>}``
      -
@@ -454,8 +502,8 @@ first column is the value's kind in the conformance manifest's value notation.
      - a tuple is orderable when its items are; a list is not
    * - map
      - ``{"@map": [[key, value], ...]}``
-     - keys are any canonical values; insertion order is kept; a msgpack map is never used for
-       a value
+     - insertion order is kept; keys follow `Map keys`_; a msgpack map is never used for a
+       value
    * - missing
      - ``{"@missing": 0}``
      - the MISSING sentinel: an absent value, distinct from nil; the body MUST be the integer 0
@@ -468,20 +516,127 @@ first column is the value's kind in the conformance manifest's value notation.
      - a nested atom: ``segment`` its 16 segment bytes, ``offset`` an integer >= 0, ``tag`` its
        type alias or name (as ``t`` of an atom record)
 
-``tz`` is ``nil`` (a naive value), ``["zone", key]`` for an IANA time zone (``key`` such as
-``"America/Argentina/Buenos_Aires"``) or ``["fixed", offset, name]`` for a fixed offset:
-``offset`` in microseconds east of UTC (``-86400 * 10**6 < offset < 86400 * 10**6``) and
-``name`` the zone's name. A reader rebuilds a fixed offset with that name; ProtoBase writes the
-name its ``timezone`` object reports, which for an unnamed offset is ``"UTC"`` (offset 0) or
-``"UTC+05:30"`` / ``"UTC-03:00"``. Any other kind of time zone cannot be stored
-(``ProtoValidationError`` when writing).
+``tz`` is one of:
+
+``nil``
+    A naive value.
+``["fixed", offset, name]``
+    A fixed offset: ``offset`` in microseconds east of UTC (``-86400 * 10**6 < offset < 86400 *
+    10**6``) and ``name`` the zone's name. A reader rebuilds a fixed offset with that name.
+    ProtoBase writes the name its ``timezone`` object reports, which for an unnamed offset is
+    ``"UTC"`` (offset 0) or ``"UTC+05:30"`` / ``"UTC-03:00"`` (``UTC``, the sign, two-digit hours
+    and minutes, then ``:SS`` and ``.ffffff`` only when not zero). The bytes depend only on the
+    offset and the name, never on how the object was built.
+``["instant", key]`` (``@dt`` only)
+    An IANA time zone (``key`` such as ``"America/Argentina/Buenos_Aires"``). The fields of the
+    ``@dt`` are the value's **UTC instant**, and ``fold`` MUST be 0. A reader presents the
+    instant in the zone ``key`` with its own time-zone database; the instant itself, and so the
+    value's order key, hash and token, never depend on that database (decision D58). A writer
+    computes the instant at write time, with its own database, from the wall clock and
+    ``fold``. Both the instant and the wall clock in the zone lie in years 1 to 9999: a writer
+    refuses a value whose instant falls outside (``ProtoValidationError``), and a reader refuses
+    an instant whose wall clock in ``key`` falls outside (``ProtoCorruptionError``; such bytes
+    are never written for a value that exists in the zone).
+``["zone", key]``
+    In a ``@time``: an IANA zone; the fields are the wall clock (a time has no date, so no
+    offset). In a ``@dt``: the **format-3 form**, whose fields were the wall clock and
+    ``fold``; readers MUST still accept it, resolving the wall clock with their database, and
+    writers MUST NOT write it (a ``@dt`` in a zone is always written in the instant form).
+
+Any other kind of time zone cannot be stored (``ProtoValidationError`` when writing). A
+reader whose database does not know ``key`` cannot build the value; ProtoBase refuses it with
+``ProtoCorruptionError``.
+
+**The class of a built-in subclass is not persisted.** A value of a subclass of a scalar type
+(in Python: an ``Enum`` with a ``str`` or ``int`` mixin, a ``StrEnum``, an ``IntEnum``, any
+subclass of ``str``, ``int``, ``float``, ``Decimal``, ``bytes``, ``bytearray``, ``date``,
+``time``, ``datetime``, ``timedelta`` or ``UUID``) is stored as the plain value of its base
+type: its data read with the base type's own methods, never with the subclass's conversions
+(``__str__``, ``__float__``, ...). ``Color.RED`` of ``class Color(str, Enum): RED = "red"`` is
+stored, ordered, hashed and tokenized as the string ``"red"``, and is read back as ``"red"``.
+ProtoBase converts it when the value enters a structure (``canonical``), so the order key, the
+hash, the exact token and the bytes always come from one value. A dict whose keys become one
+base value (two subclass keys a Python dict tells apart) is refused (``ProtoValidationError``).
+An application that needs the class back stores it explicitly (an atom, or the value's name).
+
+**One spelling per value.** Every canonical value has exactly one encoding, and readers refuse
+the other spellings of the text forms (``@int``, ``@dec``, ``@td``), so decoding and
+re-encoding gives back the bytes read. The only accepted non-canonical encodings are msgpack's
+own (a wider integer, ``float 32``) and the format-2 and format-3 legacy forms named on this
+page, which re-encode canonically.
 
 Every tagged form is a msgpack map with **exactly one** key. A reader refuses with
-``ProtoCorruptionError``: an unknown tag; a map with zero or several keys; a body of the wrong
-shape or type (an ``@int`` body that is not hexadecimal, a ``@ref`` segment that is not 16
-bytes or a string of 32 hexadecimal digits, an alias outside the table, a ``@missing`` body
-other than 0, an empty ``@mut`` name, an unknown time zone key). The vectors include one input
-of each kind of refusal.
+``ProtoCorruptionError``:
+
+- an unknown tag (``@sym`` among them, see below) or a map with zero or several keys;
+- a body of the wrong shape or type: an ``@int`` or ``@dec`` text that is not canonical, a
+  ``@td`` that is not normalized, a date or time field out of range, an ``["instant", key]`` with
+  ``fold`` 1, a ``@ref`` segment that is not 16 bytes or a string of 32 hexadecimal digits, an
+  alias outside the table, a ``@missing`` body other than 0, an empty ``@mut`` name, an unknown
+  time zone key;
+- a ``@map`` that breaks `Map keys`_;
+- a msgpack ``ext`` value (the timestamp extension included) where a value is expected.
+
+The vectors include one input of each kind of refusal (``invalid``).
+
+Decimal text
+~~~~~~~~~~~~
+
+The ``@dec`` text is the *to-scientific-string* conversion of the General Decimal Arithmetic
+specification (Python ``str(Decimal)``). A decimal is a sign ``s`` (0 or 1), a coefficient
+``c`` (a string of decimal digits, without leading zeros unless it is ``0``) and an exponent
+``e``, or a special value. The text is ``-`` when ``s`` is 1, then:
+
+- **finite**: let ``n`` be the number of digits of ``c`` and ``a = e + n - 1`` (the adjusted
+  exponent). If ``e <= 0`` and ``a >= -6``, the plain form: when ``e = 0`` the digits of ``c``;
+  otherwise the digits with a decimal point inserted ``-e`` places from the right, padded on
+  the left with zeros so that at least one digit precedes the point (``c = 5, e = -3`` gives
+  ``0.005``). Otherwise the exponent form: the first digit of ``c``, then ``.`` and the
+  remaining digits if ``n > 1``, then ``E``, then ``+`` or ``-``, then ``|a|`` in decimal
+  (``c = 15, e = 29`` gives ``1.5E+30``; ``c = 0, e = 2`` gives ``0E+2``; ``c = 1, e = -7`` gives
+  ``1E-7``);
+- **infinity**: ``Infinity``;
+- **quiet NaN**: ``NaN`` followed by its payload digits when the payload is not zero
+  (``NaN123``); **signaling NaN**: ``sNaN`` and its payload the same way.
+
+So ``1.20`` (``c = 120, e = -2``), ``-0`` (``s = 1, c = 0, e = 0``) and ``100`` versus ``1E+2``
+are different decimals with different texts.
+
+Map keys
+~~~~~~~~
+
+The keys of one ``@map`` are pairwise distinct canonical values, and two keys MUST NOT
+**conflict**. Two keys conflict when:
+
+- their order keys (`Order keys`_) are equal once every bool is read as the number 0 (false)
+  or 1 (true): ``1``, ``1.0``, ``Decimal("1.00")`` and ``true`` conflict pairwise; so do ``0.0``
+  and ``-0.0``, two aware datetimes of one instant, and a zone time and the naive time of the
+  same wall clock;
+- both are NaNs (float or decimal) with the same encoding;
+- they are tuples of one length whose items conflict pairwise.
+
+These keys cannot be map keys at all: a list, a map, a signaling decimal NaN, a datetime in
+an IANA zone (``["instant", ...]`` or ``["zone", ...]``), and a tuple holding one of them. (A
+decoded map is a Python ``dict``, whose equality ignores ``fold`` between two datetimes of one
+zone, so whether two zone datetimes are one key would depend on the tz database; their UTC or
+fixed-offset form is a valid key.)
+
+A writer refuses such a map (``ProtoValidationError``) and a reader refuses it
+(``ProtoCorruptionError``): a map is never collapsed. Distinct NaN payloads, and bools in a map
+without the numbers 0 and 1, are valid keys.
+
+**Format-3 key forms.** Format 3 had no map-key rule, and Python could write two kinds of keys
+the rule forbids: a datetime in an IANA zone (always in the format-3 ``["zone", key]`` wall-clock
+form, alone or inside a tuple) and NaN keys with one encoding (a Python dict holds two NaN objects
+as two keys). A reader MUST accept both: a key whose wire form holds a ``["zone", key]`` datetime
+may be a zone datetime, and NaN keys with one encoding are kept as distinct keys, in the order
+read; every other rule applies unchanged (an ``["instant", key]`` key is still refused, since only
+format 4 writes that form). A writer MUST NOT write either form: writing such a map again is
+refused with ``ProtoValidationError`` naming the key, never normalized or shortened silently.
+An application migrates such a map explicitly before it changes the object that holds it,
+typically by converting each zone-datetime key to UTC (``key.astimezone(timezone.utc)``, a
+valid key of the same instant) and by giving each NaN key a value of its own or dropping it.
+Atoms that are never changed keep their format-3 maps as written.
 
 Reserved tags
     ``@sym`` is reserved for symbols (the maintainer's runtime decision of 2026-11-08, option
@@ -504,6 +659,8 @@ Example bytes (from the vectors)::
     ("x" tuple)        81 a4"@tup" 93 01 a1"x" 81 a4"@tup" 91 c3       for (1, "x", (True,))
     MISSING            81 a8"@missing" 00
     MutableObject      81 a4"@mut" a7"counter"
+    zone datetime      81 a3"@dt" 99 cd07ea 0b 01 06 1e 00 00 00 92 a7"instant" b0"America/New_York"
+                       (2026-11-01 01:30 in New York, fold 1: the instant 06:30 UTC)
     @ref, built-in     81 a4"@ref" 93 c410 <16 bytes> 1a 06            Dictionary at offset 26
     @ref, application  81 a4"@ref" 93 c410 <16 bytes> 64 b3"conformance.Invoice"
 
@@ -553,18 +710,24 @@ by payload within one rank. The ranks, in order:
      - date
      - the day
    * - 7
-     - naive time
-     - microseconds since midnight
+     - naive time, and a time in an IANA zone
+     - microseconds since midnight of the wall clock. A time has no date, so an IANA zone gives
+       it no offset: a ``["zone", key]`` time orders, compares and hashes exactly as the naive
+       time of its wall clock (as Python compares it); its zone is kept in the value and in its
+       token (D58)
    * - 8
-     - aware time
-     - microseconds since midnight minus the UTC offset in microseconds (may be negative)
+     - fixed-offset time
+     - microseconds since midnight minus the offset in microseconds (may be negative)
    * - 9
      - naive datetime
      - the date and time
    * - 10
      - aware datetime
-     - microseconds since 0001-01-01T00:00 of the local wall time, minus the UTC offset
-       resolved with ``fold``: the UTC instant
+     - the UTC instant in microseconds since 0001-01-01T00:00 (may be negative). For a fixed
+       offset: the fields' microseconds minus the offset. For ``["instant", key]``: the fields'
+       microseconds, read from the bytes, never from a tz database. For the format-3
+       ``["zone", key]`` form: the wall clock minus the offset the reader's database gives it
+       with ``fold`` (legacy data only)
    * - 11
      - timedelta
      - the signed duration
@@ -615,63 +778,44 @@ encoding ``feed(rank, payload)`` is:
      0001-01-01T00:00 for a naive datetime, the aware payloads of the table above, microseconds
      for a time or timedelta, the 128-bit value of a UUID or an atom's oid -- written as its
      two's-complement little-endian bytes of length ``bit_length(v) // 8 + 1`` (so 0 is one byte
-     ``00`` and 255 is ``ff 00``), preceded by that length as 8 bytes little-endian.
+     ``00`` and 255 is ``ff 00``), preceded by that length as 8 bytes little-endian. Here
+     ``bit_length(v)`` is the number of bits of ``|v|`` without its leading zeros (0 for 0), as
+     Python's ``int.bit_length``: so -1 is one byte ``ff``, -127 is ``81``, -128 is ``80 ff``.
+     (Smalltalk's ``highBit`` of a negative integer differs; use the bit length of the
+     absolute value.)
 
-Equal keys have equal hashes. The vectors list the hash of 30 values (``hashes``).
+All residues are non-negative: a float or decimal residue is reduced into ``0 .. P - 1``
+like an integer's, and the residue of a negative float ``-n/d`` is ``P - (n * d**(P-2) mod P)``
+(0 stays 0), as ``(-n * d**(P-2)) mod P`` with a non-negative ``mod``.
+
+Equal keys have equal hashes. The vectors list the hashes of values of every rank (``hashes``)
+and of atoms (``atom_hashes``).
 
 Exact tokens
 ~~~~~~~~~~~~
 
-Key-group and vector indexes keep, beside a value's order key, its **exact token**, which
+Key-group and vector indexes keep, beside an element's order key, its **exact token**, which
 tells apart values that are equal keys but not identical (``1``, ``1.0`` and
-``Decimal("1.00")``). An exact token is a tuple stored as a canonical value; it starts with a
-type tag:
+``Decimal("1.00")``; aware datetimes of one instant in different zones). The token is a
+function of the canonical encoding alone (decision D58):
 
-.. list-table::
-   :header-rows: 1
-   :widths: 20 80
+    The exact token of a value is the msgpack byte string of its canonical encoding
+    (`Canonical values`_: the bytes the value has inside a state map), in which every atom,
+    at any depth, is encoded as the placeholder ``{"@ref": nil}`` instead of its reference.
+    The token of an atom is therefore the 7 bytes ``81 a4 40 72 65 66 c0``.
 
-   * - Value
-     - Token
-   * - nil
-     - ``("N",)``
-   * - bool / int
-     - ``("b", 0|1)`` / ``("i", n)``
-   * - float
-     - ``("f", hex)``, the C99 hexadecimal text of the float (Python ``float.hex``: ``0x1.8000000000000p+0``)
-   * - decimal
-     - ``("D", text)``, the ``@dec`` text
-   * - str / bytes
-     - ``("s", s)`` / ``("y", b)``
-   * - date
-     - ``("d", ordinal)``
-   * - time / datetime
-     - ``("t" | "dt", iso, fold, tz)``: ``iso`` is the ISO 8601 text of the naive wall value
-       (``2026-11-10T12:00:00``, with ``.ffffff`` only when the microsecond is not 0), and
-       ``tz`` is nil for a naive value, else ``(offset in microseconds, repr)``
-   * - timedelta
-     - ``("td", days, seconds, microseconds)``
-   * - uuid
-     - ``("u", 128-bit integer)``
-   * - tuple / list / map
-     - ``("T", tokens)`` / ``("FL", tokens)`` / ``("FM", ((key token, value token), ...))``: a
-       stored list or map is the immutable kind, tagged ``FL`` and ``FM``
-   * - mutable handle
-     - ``("@mut", name)``
-   * - atom
-     - ``("a",)``
+It is stored as a msgpack ``bin`` inside the member key. Because the token is computed from the
+canonical value, which holds only data of the format (time zone objects reduced to their
+form, built-in subclasses converted to their base value as stated in `Canonical values`_), a
+value decoded from the wire and the value it was written from have one token. The placeholder
+is not the
+encoding of any canonical value, so an atom is never confused with a value; atoms themselves
+are told apart by the equality part of the member key (their oid).
 
-``repr`` is the Python representation of the time zone object, which a non-Python writer
-reproduces as text: ``datetime.timezone.utc`` for offset 0 named ``UTC``;
-``datetime.timezone(datetime.timedelta(seconds=19800))`` for an offset with its default name;
-``datetime.timezone(datetime.timedelta(days=-1, seconds=75600), 'ART')`` for a named offset
-(the timedelta normalized as Python prints it); ``zoneinfo.ZoneInfo(key='America/New_York')``
-for an IANA zone. A value of a subclass of a built-in type gets its Python
-``module.QualifiedName`` as its tag. These Python spellings are a known portability defect
-(`Known gaps`_); the cost of a mismatch is bounded: a token that differs for one value only
-makes an index keep two members for it, never a wrong answer. The vectors list 19 tokens
-(``exact_tokens``).
-
+Examples (bytes in hexadecimal): ``1`` is ``01``; ``1.0`` is ``cb 3ff0000000000000``;
+``Decimal("1.00")`` is ``81 a4 40 64 65 63 a4 31 2e 30 30``; ``(atom, 1)`` is
+``81 a4 40 74 75 70 92 81 a4 40 72 65 66 c0 01``. The vectors list the tokens of every kind of
+value (``exact_tokens``), including float and decimal edge cases, aware times and datetimes.
 
 Atom types and their persisted fields
 -------------------------------------
@@ -689,8 +833,9 @@ AVL nodes
 ``proto_db.avl.KeyNode`` (keyed trees): ``key``, ``value``, ``left``, ``right``, ``height``,
 ``count``.
 
-``proto_db.avl.CountedKeyNode``: a KeyNode whose ``value`` is a tuple ``(payload, count, ...)``
-with an integer ``count`` at index 1, plus ``weight``, the sum of ``value[1]`` over its subtree.
+``proto_db.avl.CountedKeyNode``: a KeyNode whose ``value`` is exactly a 2-item tuple (or list)
+``(payload, count)`` with an integer ``count >= 0``, plus ``weight``, the sum of ``value[1]`` over
+its subtree. Any other value is refused when the node is built (``ProtoValidationError``).
 
 Invariants a writer MUST keep: ``left`` and ``right`` are refs to nodes of the same kind as
 the parent, or nil; ``height = 1 + max(height(left), height(right))`` with nil counting 0;
@@ -699,8 +844,15 @@ keyed tree every key of ``left`` orders strictly below ``key`` and every key of 
 strictly above, by order key; in a positional tree the in-order sequence is the element order
 (``count`` gives the positions); ``weight = value[1] + weight(left) + weight(right)``.
 
-``proto_db.avl.ValueBox``: ``value``. A node value that is a string or bytes of at least 256
-characters or bytes is stored through a box (D51): the node's ``value`` is then a ref to a
+Node classes: every node of one tree has the class of its root. A node added to a non-empty
+tree takes the class of the tree's root, whatever class the operation asked for; the class an
+operation names applies only when it starts an empty tree. So a tree of plain KeyNodes
+written before format 3 stays a KeyNode tree when it grows, and the members tree of a
+VectorIndex's ``invalid`` group is a KeyNode tree when the index was bulk-built and a
+CountedKeyNode tree when it grew from empty; readers MUST accept both.
+
+``proto_db.avl.ValueBox``: ``value``. A node value that is a string of at least 256 code points
+(not UTF-8 bytes) or a byte string of at least 256 bytes is stored through a box (D51): the node's ``value`` is then a ref to a
 ValueBox whose ``value`` is the string. A reader unboxes every node value that is a ref to a
 ValueBox; boxes appear only as node values, never as keys and never elsewhere. Writers SHOULD
 box from 256 up (the threshold is a writer's choice that does not change the meaning, but it
@@ -709,11 +861,12 @@ changes the bytes).
 Collections
 ~~~~~~~~~~~
 
-Every collection persists ``count`` and ``indexes`` (a ref to an IndexSet, empty by default)
-plus the fields below.
+Every collection below persists ``count`` and ``indexes`` (a ref to an IndexSet, empty by
+default) plus the fields listed for it; all of them are required.
 
 ``proto_db.collections.IndexSet``
-    ``root``: a KeyNode tree from index name (str) to a ref to the index.
+    Not a collection: it persists only ``root``, a KeyNode tree from index name (str) to a ref
+    to the index.
 
 ``proto_db.collections.List``
     ``root``: a PosNode tree of the elements in order. ``count``: the number of elements.
@@ -752,20 +905,110 @@ only the name is persisted). An extractor is a per-process registration: an impl
 that writes or queries such an index MUST provide a function of that name that computes the
 same keys (D56: a name and its declared version are the extractor's identity).
 
-``proto_db.indexing.EqualityIndex`` and ``proto_db.indexing.RangeIndex`` (key-group indexes)
+An index is part of its collection's state: a writer that changes an indexed collection MUST
+update every index of it as below, in the same new version, or Python's index plans will miss
+or invent rows (a wrong answer, which ``validate()`` reports as corruption).
+
+Index maintenance contract
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+**What a collection feeds to its indexes.** Each collection kind feeds *elements* to its
+indexes, with a multiplicity:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Collection
+     - Elements fed to its indexes
+   * - List
+     - every element, once per occurrence (an element held twice is fed twice)
+   * - Set
+     - every element, once
+   * - CountedSet
+     - every distinct element, **once** whatever its count: it is fed when its count goes
+       from 0 to 1 and removed when it goes back to 0; changing a count above 0 changes nothing
+   * - Dictionary, HashDictionary
+     - every mapped *value*, once per key that maps to it (never the keys); replacing the value
+       of a key removes the old value and adds the new one
+   * - RepeatedKeysDictionary
+     - every distinct record under each key, once per key it is filed under
+
+**Key extraction.** The key of an element is ``key_spec`` applied to it:
+
+- ``element``: the element itself;
+- ``path``: the path is split on ``.``, and each step is applied to the previous result,
+  starting from the element; once a step gives MISSING the key is MISSING. One step named ``n``
+  applied to a value ``v``:
+
+  - ``v`` a map: the value under the **string** key ``n``, MISSING when there is none (an
+    integer key ``1`` is not found by the step ``1``);
+  - ``v`` a DBObject (or an application record): its attribute ``n`` when the record *defines*
+    it, even as nil (so an attribute set to nil gives nil), MISSING when it does not;
+  - ``v`` any other atom: its persisted attribute ``n`` (for example ``count`` of a nested
+    List), MISSING when it has none; names starting with ``_`` and ``oid``, ``atom_pointer``
+    and ``context`` give MISSING;
+  - anything else (a scalar, a list, a tuple): MISSING;
+- ``extractor``: the canonical value the registered function returns.
+
+A key is *orderable* when `Order keys`_ accepts it. Lookups (``==``, ``in``, ranges, ``?N``) use
+only the order key of the extracted key; the exact token never takes part in a lookup.
+
+**Member keys.** Every stored element is a *member* under its **member key**
+``(equality part, exact token)``. The equality part is ``(0, element)`` for an orderable element
+and ``(1, surrogate)`` for an unorderable one. The surrogate is ``("l", items)`` for a list,
+``("d", pairs)`` for a map, ``("t", items)`` for a tuple holding an unorderable value, ``("n",)``
+for a NaN and ``("v", value)`` for any other value, items encoded the same way, and the
+``pairs`` of a map are ``(surrogate of key, surrogate of value)`` sorted by the order key of the
+surrogate of the key. The exact token is `Exact tokens`_ (a ``bin``). A member's entry holds the
+element as written and its count of occurrences.
+
+**Adding** an occurrence of an element: compute its key and member key; when the member exists
+its count grows by one, otherwise a member with count 1 is created (holding the added element).
+
+**Removing** an occurrence of an element: compute its key and member key (the element as the
+collection holds it, so as it was decoded). The member with exactly that member key loses one
+occurrence, and is deleted at 0. When no member has that member key the index does not hold
+the element, which is an error (``ProtoValidationError``): a writer MUST NOT remove another
+member instead, not even an equal one. Because the element is stored as its canonical value
+and the token is that value's encoding, an element read from the database has the member key
+it was added under.
+
+``validate()`` checks exactly this contract: every member is stored under its own complete
+member key (equality part and token) and under its element's own key, counts are positive,
+totals add up, and the multiset of ``(key, element, token)`` equals that of the collection's
+elements. On a format-3 index (below) it checks the same, except that the token of a member key
+is only checked to be a tuple: such an index is stale, never corrupt.
+
+``member_tokens`` (int). A format-4 writer MUST write it, with the value 1, on every key-group
+and vector index: its tokens are canonical encodings. Its **absence** marks an index written by
+format 3, whose tokens were Python-text tuples (``("i", 1)``, ``("f", "0x1.8p+0")``,
+``("T", (...))``, ...): readers answer queries from it (lookups do not use tokens), but a
+writer MUST rebuild it from the collection's elements (``empty`` index of the same definition,
+then every element added) before changing it. ProtoBase does so at the collection's first
+change, inside that change's transaction: a full rebuild, which for an ivf_flat index includes
+a training run and for an hnsw index the graph's construction. Any **other value** is
+reserved for a later format: a reader that does not know it MUST treat the index as one it
+cannot maintain (it may answer queries from it; it MUST NOT change it, and ProtoBase rebuilds
+it like a format-3 index).
+
+Key-group indexes
+^^^^^^^^^^^^^^^^^
+
+``proto_db.indexing.EqualityIndex`` and ``proto_db.indexing.RangeIndex``
     ``groups``: a CountedKeyNode tree ordered by the extracted key, whose values are *groups*
     ``(members, total)``; ``side``: the group of the elements whose key is unorderable (a
-    tuple, ``(nil, 0)`` when empty); ``total_count``: every stored occurrence. ``members`` is a
-    CountedKeyNode tree mapping a **member key** to ``(element, count)``, and ``total`` the
-    occurrences in the group. A member key is ``(equality part, exact token)``: the equality
-    part is ``(0, element)`` for an orderable element and ``(1, surrogate)`` for an unorderable
-    one, where the surrogate is ``("l", items)`` for a list, ``("d", pairs sorted by key)`` for a
-    map, ``("t", items)`` for a tuple holding an unorderable value, ``("n",)`` for NaN and
-    ``("v", value)`` for any other value, items encoded the same way. An element absent from
-    the key path is filed under MISSING. The two classes differ only in the plans they offer.
+    tuple, ``(nil, 0)`` when empty); ``total_count``: every stored occurrence; ``member_tokens``
+    (written by format 4, absent from format-3 indexes, see above). ``members`` is a CountedKeyNode tree mapping a member key to
+    ``(element, count)``, and ``total`` the occurrences in the group. An element whose key is
+    MISSING is filed under the key MISSING. A key with no member left is removed from
+    ``groups``. The two classes differ only in the plans they offer.
 
     Indexes written before format 3's CountedKeyNode (plain KeyNode trees, no ``weight``) are
     still read and answer every query; they offer no rank access until rebuilt (D56).
+
+Vector indexes
+^^^^^^^^^^^^^^
 
 ``proto_db.indexing.VectorIndex``
     ``dim`` (int >= 1), ``metric`` (``"cosine"``, ``"l2"`` or ``"ip"``), ``backend``
@@ -773,20 +1016,55 @@ same keys (D56: a name and its declared version are the extractor's identity).
     a tuple of ``(name, value)`` pairs sorted by name: exact ``numpy``; ivf_flat ``nlist``,
     ``nprobe``, ``retrain_growth``, ``seed``, ``train_iters``; hnsw ``M``, ``ef_construction``,
     ``ef_search``, ``seed``), ``store`` (a KeyNode tree mapping ``(list number, member key)`` to
-    ``(element, count, vector)``, the vector a tuple of ``dim`` floats; the list number is the IVF
-    list, -1 while untrained, 0 for the other backends), ``invalid`` (the group of the elements
-    without a valid vector), ``total_count``, ``centroids`` (a tuple of vectors, empty unless
-    trained) and ``trained_size``. ``numpy`` and the hnsw graph are Python implementation
-    choices (the graph is rebuilt in each process and never persisted); another implementation
-    MUST preserve ``params`` as written.
+    ``(element, count, vector)``), ``invalid`` (the group of the elements without a valid
+    vector, as a key-group index's group), ``total_count``, ``centroids`` (a tuple of vectors,
+    empty unless trained), ``trained_size`` (the number of members at the last training, 0
+    when untrained) and ``member_tokens`` (written by format 4, absent from format-3 indexes,
+    see above). ``numpy`` and the hnsw graph are
+    Python implementation choices (the graph is rebuilt in each process and never persisted);
+    another implementation MUST preserve ``params`` as written.
+
+    **Vectors.** The key of an element is a valid vector when it is a tuple or list of exactly
+    ``dim`` numbers (int, float or decimal; a bool is not a number here), each converted to the
+    nearest float 64 (an int or decimal too large for a float is invalid), every one finite,
+    and the sum of their squares, computed as a correctly rounded sum, finite. The stored
+    ``vector`` is that tuple of floats. An element whose key is not a valid vector (MISSING and
+    nil included) goes to ``invalid``.
+
+    **Scores.** ``sum`` below is the correctly rounded sum of the exact products (Python
+    ``math.fsum``, Shewchuk's algorithm: independent of the order of the terms), and ``sqrt`` is
+    IEEE 754's correctly rounded square root. ``ip``: ``sum(q_i * v_i)``. ``l2``: ``-sqrt(sum((q_i -
+    v_i)**2))`` (the sum taken as +infinity when it overflows). ``cosine``: 0.0 when ``|q|`` or
+    ``|v|`` is 0.0, else ``(sum(q_i * v_i) / |q|) / |v|`` with ``|x| = sqrt(sum(x_i * x_i))``, divided
+    in that order. Each product and difference is the IEEE float 64 operation.
+
+    **List numbers.** The backends ``exact`` and ``hnsw`` put every member in list 0. An
+    ``ivf_flat`` index puts every member in list -1 while it is untrained (``centroids`` empty);
+    when it is trained, a member's list is the index ``j`` of the centroid with the highest
+    score for the member's vector, where the score is the ``cosine`` score for a cosine index
+    and the ``l2`` score for an ``l2`` or ``ip`` index, and a tie goes to the lowest ``j`` (the
+    first maximum). A writer MUST file every member under that list, and MUST recompute it
+    whenever ``centroids`` change: removal and ``validate()`` look a member up only in the list
+    its vector belongs to.
+
+    **Training** (writer's choice, not needed to read). ProtoBase trains when the index first
+    holds at least ``nlist`` members, and again when the number of members reaches
+    ``retrain_growth`` times ``trained_size``; training computes ``nlist`` centroids (k-means from
+    ``seed``, normalized for cosine), sets ``trained_size`` to the number of members and moves
+    every member to its list. Another writer MAY train at other times or compute other
+    centroids, provided ``centroids`` holds exactly ``nlist`` valid vectors of ``dim`` floats when
+    it is not empty, ``trained_size`` is not 0 exactly when ``centroids`` is not empty, and every
+    member is in its list. Python's own training may give slightly different centroids with
+    and without numpy; that changes no answer's correctness, only which list holds a member.
 
 Records
 ~~~~~~~
 
 ``proto_db.core.dbobject.DBObject``
-    An immutable record: its state map is the record's attributes, any names that are not
-    ``oid``, ``atom_pointer`` or ``context`` and do not start with ``_``. Reading an absent
-    attribute gives nil.
+    An immutable record: its state map is the record's attributes, under the attribute-name
+    rules of `Atom records`_ (``with_`` and ``has_defined_attr`` are reserved). No field is
+    required. Reading an absent attribute gives nil; an index path step tells an absent
+    attribute (MISSING) from one set to nil.
 
 Application types
     A subclass of DBObject (or of any atom) with a declared name, such as
@@ -886,7 +1164,8 @@ so that an append never lands after torn bytes.
 ``ranges.log`` (kind ``RANG``)
     One entry per accepted commit: a 44-byte head ``root segment (16) | root offset (u64) |
     label (u64) | epoch (u64) | count (u32)``, then ``count`` ranges of 32 bytes ``segment (16) |
-    start (u64) | end (u64)``: the byte ranges of the records shipped with that commit. A
+    start (u64) | end (u64)``: the byte ranges of the records shipped with that commit. When two
+    entries name the same root (segment and offset), the later one replaces the earlier. A
     compaction rewrites the file with the live entries.
 
 The acceptor log (kind ``ROOT``)
@@ -930,9 +1209,10 @@ first byte:
      - 98 + ranges + items
      - head ``kind | flags (u8) | label | epoch | segment | offset | seq | pred label | pred epoch
        | pred segment | pred offset | range count (u32) | record count (u32)``, then the ranges (32
-       bytes each, as in ``ranges.log``), then the record items as in kind 5. Flag bit 0
-       (``ACCEPTED``) marks an accepted root; without it the entry only makes the records durable
-       on a data replica. Other flag bits are ``ProtoCorruptionError``.
+       bytes each, as in ``ranges.log``, each with ``start <= end``), then the record items as in
+       kind 5. Flag bit 0 (``ACCEPTED``) marks an accepted root; without it the entry only makes
+       the records durable on a data replica. Other flag bits, and a range with ``start >
+       end``, are ``ProtoCorruptionError``.
 
 ``seq`` is the write permission the root was committed under (0 under a plain lease); ``pred``
 is the root it was built on, all zero when unknown (``pred`` label 0 and epoch 0). Kinds 1 to 4
@@ -940,7 +1220,12 @@ are exactly 41 bytes; another size, an unknown kind, a kind-5 or kind-6 entry cu
 item or with trailing bytes is ``ProtoCorruptionError``. Every promise, accepted root and
 rejoined marker is ``fsync``-ed before the message it justifies is sent, whatever the
 storage's durability mode. A reader takes the highest accepted and committed roots in the
-order ``(label, epoch, segment bytes, offset)``, and the highest promise. Kind-5 and kind-6
+order ``(label, epoch, segment bytes, offset)``, the highest promise, and ``top``, the highest
+label or term of any entry other than kind 4. Kinds 1 and 5, and kind 6 with ``ACCEPTED``,
+count as accepted roots; kind 6 without it counts as no root (only its records are redone).
+Two entries whose roots differ but share ``(label, epoch)`` are ``ProtoCorruptionError`` (the
+protocol makes that impossible, so it is reported, never broken as a tie). A log without a
+kind-4 entry is *empty*: the node must rejoin before acting as an acceptor. Kind-5 and kind-6
 records are *redone* (written at their offsets) when the storage opens; a compaction
 summarizes entries a checkpoint covered (implementation-specific timing).
 
@@ -949,15 +1234,30 @@ Cluster wire protocol
 ---------------------
 
 Nodes exchange **frames** over TCP: a 4-byte **big-endian** length, then that many bytes of
-msgpack. A frame longer than 64 MiB (``MAX_FRAME_BYTES``) is a protocol error and the receiver
-drops the connection; a node never stores a record larger than 16 MiB (``MAX_RECORD_BYTES``),
-and a replication splits its records into chunks of at most 16 MiB (``CHUNK_BYTES``). There is
-no handshake: a connection carries frames from its first byte.
+msgpack. A node never stores a record larger than 16 MiB (``MAX_RECORD_BYTES``), and a
+replication splits its records into chunks of at most 16 MiB (``CHUNK_BYTES``). There is no
+handshake: a connection carries frames from its first byte.
+
+**Connections are one-way.** Every node listens on its address and opens one outbound
+connection to each peer's listening address. A node *sends* only on its own outbound
+connections and *reads* only from connections it accepted: it never reads from a socket it
+opened and never writes to a socket it accepted. A reply therefore travels on the replier's
+own outbound connection to the asker's listening address; an implementation that answers on
+the inbound socket is never heard. A sender that cannot connect drops the message (the
+protocol tolerates loss) and retries the connection after a back-off.
+
+**Errors drop the connection.** The receiver of a connection drops the whole connection, and
+every message of it not yet delivered, when it reads a malformed frame: a length over 64 MiB
+(``MAX_FRAME_BYTES``), a body that is not one msgpack map, or **any invalid message**: a map
+without ``v``, ``type`` or ``from``, another version, an unknown type, a missing or ill-typed
+field, a map key that is not a string. The frames are decoded per read of the socket (up to 64
+KiB), and the messages already decoded from the same read as the bad frame are lost with it,
+not only the bad one. The sender sees a closed socket and reconnects on its next message.
+Extra fields are ignored.
 
 Every message is a msgpack map with ``v`` (the protocol version, 13), ``type`` and ``from``
 (the sender's node id, a string), then the fields of its type, written in the order of the
-table. A message of another version, an unknown type, a missing field or an ill-typed field is
-dropped by the receiver; extra fields are ignored.
+table.
 
 Field types:
 
@@ -1034,8 +1334,8 @@ Values a member must compute like the others:
 - ``inc`` is a random integer a node draws at each start (its incarnation); ``rid`` numbers
   requests within an incarnation.
 
-The meaning of each message, and the rules that make the protocol safe, are those of the
-coordinator documentation and of decisions D44 to D55; the field list above is complete for
+The meaning of each message, and the rules that make the protocol safe, are those of
+:doc:`coordinator-protocol` and of decisions D44 to D55; the field list above is complete for
 protocol 13. The vectors hold one frame of every type.
 
 
@@ -1043,11 +1343,13 @@ What is normative and what is not
 ---------------------------------
 
 Normative: every byte layout on this page; the type names and the alias table; the value
-encoding; the order, hash and exact-token functions (for writers of keyed structures); the
-structure invariants of the AVL trees and collections; the field names, their optionality and
-the meaning of absence; the root-publication protocol of a shared directory (lock, epoch,
+encoding with its one spelling per value and the map-key rule; the order, hash and exact-token
+functions (for writers of keyed structures); the structure invariants of the AVL trees and
+collections; the index maintenance contract and the IVF list assignment; the field names,
+their optionality, the meaning of absence and the reserved attribute names; the root-publication protocol of a shared directory (lock, epoch,
 rename); the log reading rules (torn tail versus corruption); the cluster frame and message
-layouts and the values members compute (ballots, fingerprint).
+layouts, the one-way connections and the drop rule, and the values members compute (ballots,
+fingerprint).
 
 Implementation-specific (nothing on disk depends on them, and an implementation MAY do
 otherwise): lazy loading and stubs (portable as a technique, R83a); the decoded-atom cache, the
@@ -1055,7 +1357,8 @@ record and page caches, residency and unloading; the query result cache and quer
 per-version operation logs of collections (never persisted) and the merge of concurrent
 writers; group commit; durability modes (``fsync``, ``flush``, ``none``) other than the acceptor
 log's unconditional sync; segment size, sealing, shipping and checkpoint timing; the
-``ValueBox`` threshold (it changes bytes, not meaning); pager tokens (a client-side msgpack
+``ValueBox`` threshold, tree shapes, bucket order and IVF training (they change bytes, not
+meaning); pager tokens (a client-side msgpack
 token, never stored in the database); the ``numpy`` parameter of exact vector indexes and the
 hnsw graph.
 
@@ -1097,6 +1400,22 @@ Every change since format 1 and how a reader of this revision treats data writte
    * - Type names (D57)
      - New classes declare language-neutral names; Python-default names are no longer written
      - Every old name still reads (legacy registration, ``__type_aliases__``); no format bump
+   * - Format 3 to 4 (D58, ruling R129)
+     - Exact tokens are canonical encodings (a ``bin``) instead of Python-text tuples, and
+       key-group and vector indexes persist ``member_tokens``; a datetime in an IANA zone is
+       written as its UTC instant with ``["instant", key]``; one spelling per value (canonical
+       ``@int``, ``@dec``, ``@td``); the map-key rule; required fields checked at load
+     - Format-3 segments and roots are read. A format-3 zone datetime (``["zone", key]`` in a
+       ``@dt``) is read as a wall clock with the reader's database and rewritten as an instant.
+       A format-3 index (no ``member_tokens``) answers queries and is rebuilt from its
+       collection at its first change, a full rebuild (an ivf_flat retraining, an hnsw graph
+       construction) inside the user's first write transaction on it; ``validate()`` reports
+       it stale, never corrupt. A format-3 ``@map`` with a zone-datetime key or NaN keys of one
+       encoding is read as written and refused when written again (`Map keys`_). A built-in
+       subclass (a ``str`` ``Enum``) that format 3 wrote through its ``__str__`` or ``__float__``
+       is read as the base value those bytes hold. A non-canonical text form is refused;
+       ProtoBase never wrote one. A format-3 reader refuses format-4 data
+       (``ProtoNotSupportedError``)
 
 The cluster protocol has no compatibility across versions: every node of a cluster runs the
 same protocol version (13 here; the history of versions 6 to 13 is in
@@ -1114,19 +1433,17 @@ The design document (section 6) predates several decisions; the code differs as 
 - ``@ref`` is ``[16 segment bytes, offset, alias or name]`` (format 3), not ``[segment hex,
   offset, type name]``.
 - New atom types no longer default ``__type_name__`` to ``module.ClassName`` (D57).
+- Datetimes in an IANA zone are stored as their UTC instant, not as a wall clock (D58).
 - There is no ``proto_db.tools.inspect`` module in this revision.
 
 
 Known gaps
 ----------
 
-Found while writing this specification; none is fixed here.
+None of these breaks a round trip between conforming implementations.
 
 - **Symbols** (``@sym``) are decided but not implemented: an implementation cannot store them
   yet without breaking the round trip.
-- **Exact tokens** carry Python spellings (``repr`` of a time zone, the qualified name of a value
-  of a subclass of a built-in type). A non-Python writer must reproduce them to share index
-  members with ProtoBase; a mismatch costs a duplicate index member, not a wrong answer.
 - **Lone surrogates.** ``canonical`` accepts a Python string holding a lone surrogate, the hash
   function encodes it (``surrogatepass``), but msgpack cannot pack it: the save fails with
   ``UnicodeEncodeError`` instead of ``ProtoValidationError``. Strings in the format are valid
@@ -1134,7 +1451,21 @@ Found while writing this specification; none is fixed here.
 - **Extractor and vector backends** are per-process functions: an index on an extractor, or an
   hnsw index, is only fully usable by an implementation that provides the same function or
   backend.
-
+- **The ``numpy`` parameter** of an exact vector index is a Python knob persisted in the format
+  (``params``): it changes no answer, only how ProtoBase computes it. Another implementation
+  preserves it and may ignore it.
+- **Cost of exact tokens.** A token is a msgpack packing of the value. Measured on the
+  reference platform (free-threaded CPython 3.14, whose msgpack runs its pure-Python fallback:
+  ``msgpack.packb(1)`` alone takes about 4.5 µs), a token costs 5 to 6 µs for a scalar or a
+  small tuple, against 0.5 to 3 µs for the format-3 Python-text tuples. In an indexed write
+  workload (40 commits of 200 appends and 20 removals each on two lists with three indexes,
+  FileStorage), tokens took 0.34 % of commit time, so no fast path was added (the bytes would be
+  identical; with msgpack's C extension the cost falls with ``packb``'s).
+- **Zone datetimes after a tz-database change.** A stored zone datetime keeps its instant; the
+  wall clock a reader shows is computed with the reader's database, so a future appointment
+  written as "09:00 in São Paulo" shows another wall clock if that zone's rules change before
+  it. This is the price of keys that never depend on a tz database (D58); applications that
+  need the wall clock as written store it as a naive datetime plus the zone name.
 
 Conformance vectors
 -------------------
@@ -1142,9 +1473,25 @@ Conformance vectors
 ``tests/conformance/`` holds the vectors (``vectors/``), their manifest (``manifest.json``, a
 JSON description of what every file means, in a language-neutral notation), the generator
 (``generate.py``) and the test that checks the committed files byte for byte
-(``test_conformance.py``). They cover every value kind, the refused inputs, the order, hash and
-exact-token functions, record, segment and root framing (current and format 2), a complete
-database written through the public API (every persistable built-in type and one application
-type, three versions of one database, a mutable cell), a cluster commit stamped with its lease, the three log
-kinds with every acceptor-log entry kind, and one frame of every cluster message type.
+(``test_conformance.py``). They cover:
+
+- every value kind, the legacy forms readers accept (format-2 references, a built-in type by
+  name, a format-3 zone datetime, a type alias, format-3 maps with zone-datetime and repeated
+  NaN keys, which a writer refuses to write again) and one input of every kind of refusal (value,
+  map key, atom, record, root, segment and log layers, invalid cluster messages);
+- the order, hash and exact-token functions, including float and decimal edge cases, aware
+  times and datetimes, the atom hash and nested atoms;
+- record, segment and root framing (current, format 3 and format 2);
+- a complete format-4 database written through the public API: every persistable built-in
+  type and one application type, three versions of one database, a mutable cell, trained
+  ivf_flat (with its list assignment) and hnsw vector indexes;
+- a format-3 database: a DatabaseRoot without ``origin``, a key-group index (over ints,
+  strs, floats, decimals, tuples, bytes, dates, datetimes, nil and a list) and a vector index
+  written with the format-3 member tokens in plain KeyNode trees (valid before, rebuilt at
+  their first change), zone datetimes in the wall-clock form, maps with format-3 key forms,
+  and an application record and reference spelled by an alias;
+- a cluster commit stamped with its lease, the three log kinds with every acceptor-log entry
+  kind decoded field by field, and a torn tail versus mid-log corruption;
+- one frame of every cluster message type.
+
 ``tests/conformance/README.md`` explains the notation and how another implementation uses them.

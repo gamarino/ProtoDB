@@ -110,6 +110,7 @@ class ValueBox(Atom):
     #: A build keeps a box by reference and never reads it: caching it on save would only
     #: retain its large value (Task 8.3i).
     _cache_on_save = False
+    _required_fields = ("value",)
 
     def __init__(self, value, *, context: PersistenceContext | None = None):
         super().__init__(context=context)
@@ -153,6 +154,7 @@ class _Node(Atom):
     #: large bytes, say) is cached decoded, so its path copies share that value instead of each
     #: later load decoding another copy of it (review 8.3i I1).
     _cache_large_on_save = True
+    _required_fields = ("left", "right", "height", "count")
 
     def _init_shape(self, left, right) -> None:
         osa = object.__setattr__
@@ -186,6 +188,7 @@ class PosNode(_Node):
     """
 
     __type_name__ = "proto_db.avl.PosNode"
+    _required_fields = ("value", "left", "right", "height", "count")
 
     def __init__(self, value, left: "PosNode | None" = None, right: "PosNode | None" = None, *,
                  context: PersistenceContext | None = None):
@@ -204,6 +207,7 @@ class KeyNode(_Node):
     """
 
     __type_name__ = "proto_db.avl.KeyNode"
+    _required_fields = ("key", "value", "left", "right", "height", "count")
 
     def __init__(self, key, value, left: "KeyNode | None" = None, right: "KeyNode | None" = None, *,
                  context: PersistenceContext | None = None, _okey=None):
@@ -256,6 +260,7 @@ class CountedKeyNode(KeyNode):
     """
 
     __type_name__ = "proto_db.avl.CountedKeyNode"
+    _required_fields = ("key", "value", "left", "right", "height", "count", "weight")
 
     def __init__(self, key, value, left: "CountedKeyNode | None" = None,
                  right: "CountedKeyNode | None" = None, *, context: PersistenceContext | None = None, _okey=None):

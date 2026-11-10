@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
 
-from ..core.atom import Atom, PersistenceContext
+from ..core.atom import BUILTIN_TYPE_ALIASES, Atom, PersistenceContext
 from ..errors import ProtoConflictError, ProtoUserError, ProtoValidationError
 from ..query.plans import CollectionScanPlan
 from ..values import is_atom, order_key, values_equal
@@ -42,6 +42,11 @@ __all__ = ["IndexSet", "IndexedCollection", "ConcurrentOptimized", "net_effect",
 #: Op-log kinds reserved for index-definition changes; collection ops must not start with "@".
 _INDEX_ADD = "@index_add"
 _INDEX_REMOVE = "@index_remove"
+
+
+def _current(index) -> bool:
+    check = getattr(index, "has_current_tokens", None)
+    return check is None or check()
 
 
 def _index_name(index) -> str:
@@ -99,6 +104,7 @@ class IndexSet(_Immutable, Atom):
     """
 
     __type_name__ = "proto_db.collections.IndexSet"
+    _required_fields = ("root",)
 
     def __init__(self, *, root: avl.KeyNode | None = None, context: PersistenceContext | None = None):
         """Create an index set; ``root`` (internal) is the keyed tree, empty by default."""
@@ -150,6 +156,20 @@ class IndexSet(_Immutable, Atom):
             pairs.append((name, updated))
         return self._new(avl.key_from_sorted(pairs))
 
+    def rebuilt_stale(self, elements: Callable) -> "IndexSet":
+        """This set with every index whose ``has_current_tokens()`` is False rebuilt as
+        ``index.empty().build(elements())`` (D58); the set itself when there is none."""
+        if self.root is None:
+            return self
+        pairs = list(avl.key_iter(self.root))
+        stale = [i for i, (_, index) in enumerate(pairs) if not _current(index)]
+        if not stale:
+            return self
+        for i in stale:
+            name, index = pairs[i]
+            pairs[i] = (name, index.empty().build(elements()))
+        return self._new(avl.key_from_sorted(pairs))
+
     def on_add(self, element) -> "IndexSet":
         """Return the set after ``with_added(element)`` on every index."""
         return self._map(lambda index: index.with_added(element))
@@ -184,6 +204,11 @@ class IndexedCollection(_Immutable, Atom):
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
+        if cls.__dict__.get("__type_name__") in BUILTIN_TYPE_ALIASES:
+            # Required fields bind built-in classes only: an application subclass inherits its
+            # built-in base's, so a field it adds in a later release may be absent from its
+            # older records (re-review Minor 4).
+            cls._required_fields = tuple(cls._fields)
         missing = {"count", "indexes"} - set(cls._fields)
         if missing:
             raise ProtoUserError(f"{cls.__name__}._fields must include {sorted(missing)}")
@@ -323,24 +348,30 @@ class IndexedCollection(_Immutable, Atom):
             osa(new, name, changes[name] if name in changes else getattr(self, name))
         return new
 
+    def _current_indexes(self) -> IndexSet:
+        """``indexes`` ready to be changed: every index whose member keys use an older token
+        scheme (``has_current_tokens()`` False: written by format 3) rebuilt from this version's
+        elements first (D58).  Usually the IndexSet itself."""
+        return self.indexes.rebuilt_stale(self.elements)
+
     def _after_add(self, element) -> IndexSet:
         """The IndexSet after adding ``element`` to the content."""
-        return self.indexes.on_add(element)
+        return self._current_indexes().on_add(element)
 
     def _after_remove(self, element) -> IndexSet:
         """The IndexSet after removing ``element`` from the content."""
-        return self.indexes.on_remove(element)
+        return self._current_indexes().on_remove(element)
 
     def _after_removes(self, elements: Iterable) -> IndexSet:
         """The IndexSet after removing each of ``elements`` from the content, in order."""
-        indexes = self.indexes
+        indexes = self._current_indexes()
         for element in elements:
             indexes = indexes.on_remove(element)
         return indexes
 
     def _after_replace(self, old, new) -> IndexSet:
         """The IndexSet after replacing element ``old`` by ``new``."""
-        return self.indexes.on_replace(old, new)
+        return self._current_indexes().on_replace(old, new)
 
     def _index_log(self, op: tuple) -> dict:
         """Extra ``_with`` changes recording an index-definition change (none unless ConcurrentOptimized)."""

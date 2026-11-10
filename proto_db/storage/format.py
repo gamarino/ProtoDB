@@ -39,10 +39,14 @@ SEGMENT_MAGIC = b"PDB2SEG\0"
 #: 2: self-validating record headers (D46 fix round 13).
 #: 3: compact atom references (the segment as 16 bytes, built-in types as small integers) and
 #: large node values in atoms of their own (D51).  The root record's shape is unchanged.
-FORMAT_VERSION = 3
+#: 4: exact tokens are canonical encodings and indexes persist ``member_tokens``, zone datetimes
+#: are written as their UTC instant, one spelling per value, the map-key rule (D58).
+FORMAT_VERSION = 4
 #: Versions this code reads: a format-2 segment still decodes (its references are read by the
-#: codec's format-2 branch); a root record of either version is read as the current version.
-READABLE_FORMAT_VERSIONS = frozenset({2, 3})
+#: codec's format-2 branch), a format-3 one too (its zone datetimes by the codec's wall-clock
+#: branch, its indexes rebuilt at their first change); a root record of any of them is read as
+#: the current version.
+READABLE_FORMAT_VERSIONS = frozenset({2, 3, 4})
 _SEGMENT_HEADER = struct.Struct("<8sH16s")
 #: First two bytes of every record header.  ``0xC1`` is the one byte msgpack never emits as a
 #: type byte, so the magic is rare in msgpack payloads (it only marks candidates: the header

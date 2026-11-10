@@ -27,9 +27,18 @@ Wire form of a value:
   ``@mut``     the cell name of a ``MutableObject`` handle (a non-empty str, D35)
   ===========  ==================================================================
 
-  ``tz`` is ``None`` (naive), ``["zone", key]`` for a ``zoneinfo.ZoneInfo`` or
-  ``["fixed", offset_microseconds, name]`` for a ``datetime.timezone``.  Other
+  ``tz`` is ``None`` (naive), ``["fixed", offset_microseconds, name]`` for a
+  ``datetime.timezone``, and for a ``zoneinfo.ZoneInfo``: ``["zone", key]`` in a ``@time``
+  (the wall clock; a time has no offset) and ``["instant", key]`` in a ``@dt``, whose fields
+  are then the UTC instant with fold 0 (D58: the instant is fixed at write time, so its order
+  and hash never depend on the reader's time-zone database).  ``["zone", key]`` in a ``@dt``
+  (format 3: the wall clock, resolved with the reader's database) is still read.  Other
   ``tzinfo`` implementations are rejected with ``ProtoValidationError``.
+
+Every text form has one spelling (D58): ``@int`` and ``@dec`` bodies must be the exact text
+the encoder writes, ``@td`` must be normalized, and the keys of a ``@map`` must not conflict
+(:func:`proto_db.values.map_key_ids`); otherwise decoding raises ``ProtoCorruptionError``, so a
+decoded value re-encodes to the bytes it was read from.
 
 Decoding returns ``FrozenList``/``FrozenDict`` for arrays and ``@map`` (D25); encoding accepts
 both frozen and plain containers.
@@ -47,12 +56,14 @@ from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..errors import ProtoCorruptionError, ProtoValidationError
-from ..values import MISSING, FrozenDict, FrozenList
+from ..values import _EXACT_SCALARS as _ENCODED_AS_IS
+from ..values import MISSING, FrozenDict, FrozenList, TokenAtoms, check_map_keys, plain_scalar
 from .atom import Atom, AtomPointer, type_name_of, type_tag
 from .dbobject import MutableObject
 
 __all__ = ["encode_state", "decode_state", "encode_value", "decode_value", "redecode_value"]
 
+_PLAIN_KEY_TYPES = frozenset({str, int, bytes})
 _INT_MIN = -2**63
 _INT_MAX = 2**64 - 1
 _MICROSECOND = timedelta(microseconds=1)
@@ -143,7 +154,14 @@ def _saved_pointer(atom: Atom) -> AtomPointer:
     return ptr
 
 
+#: What an atom encodes to inside an exact token (D58): not the encoding of any canonical value.
+_TOKEN_REF = {"@ref": None}
+
+
 def _encode_ref(value, save_child):
+    if type(save_child) is TokenAtoms:
+        save_child.atoms.append(value)
+        return _TOKEN_REF
     ptr = save_child(value)
     if not isinstance(ptr, AtomPointer):
         raise ProtoValidationError(f"save_child returned {type(ptr).__name__}, expected AtomPointer")
@@ -154,25 +172,32 @@ def _encode_other(value, save_child: Callable[[Atom], AtomPointer]):
     """The full isinstance chain of :func:`encode_value`."""
     if value is None or value is True or value is False:
         return value
-    if isinstance(value, str):
-        return str(value)
-    if isinstance(value, int):
-        value = int(value)
+    if type(value) not in _ENCODED_AS_IS:
+        # A subclass of a scalar type is written as its base value, read with the base type's
+        # methods (canonical() does the same): never through the subclass's __str__ or __float__.
+        plain = plain_scalar(value)
+        if plain is not None:
+            value = plain
+    if type(value) is str:
+        return value
+    if type(value) is int:
         return value if _INT_MIN <= value <= _INT_MAX else {"@int": format(value, "x")}
-    if isinstance(value, float):
-        return float(value)
-    if isinstance(value, (bytes, bytearray)):
-        return bytes(value)
+    if type(value) is float or type(value) is bytes or type(value) is bool:
+        return value
     if isinstance(value, list):
         return [encode_value(v, save_child) for v in value]
     if isinstance(value, tuple):
         return {"@tup": [encode_value(v, save_child) for v in value]}
     if isinstance(value, dict):
+        if not all(type(k) in _PLAIN_KEY_TYPES for k in value):
+            check_map_keys(value)
         return {"@map": [[encode_value(k, save_child), encode_value(v, save_child)]
                          for k, v in value.items()]}
     if isinstance(value, Decimal):
         return {"@dec": str(value)}
     if isinstance(value, datetime):
+        if isinstance(value.tzinfo, ZoneInfo):
+            return {"@dt": _instant_fields(value)}
         return {"@dt": [value.year, value.month, value.day, value.hour, value.minute,
                         value.second, value.microsecond, value.fold, _encode_tz(value.tzinfo)]}
     if isinstance(value, date):
@@ -191,6 +216,19 @@ def _encode_other(value, save_child: Callable[[Atom], AtomPointer]):
     if isinstance(value, Atom):
         return _encode_ref(value, save_child)
     raise ProtoValidationError(f"Unsupported value type: {type(value).__name__}")
+
+
+def _instant_fields(value: datetime) -> list:
+    """``@dt`` fields of a datetime in an IANA zone: its UTC instant, fold 0, ``["instant", key]``."""
+    key = value.tzinfo.key
+    if key is None:
+        raise ProtoValidationError("A ZoneInfo without a key cannot be stored")
+    try:
+        utc = value.astimezone(timezone.utc)
+    except (OverflowError, ValueError) as e:
+        raise ProtoValidationError(f"{value!r} has no UTC instant between years 1 and 9999") from e
+    return [utc.year, utc.month, utc.day, utc.hour, utc.minute, utc.second, utc.microsecond, 0,
+            ["instant", key]]
 
 
 def _encode_tz(tz):
@@ -259,7 +297,7 @@ def _fields(body, n, types):
 def _decode_tz(tz):
     if tz is None:
         return None
-    if type(tz) is list and len(tz) == 2 and tz[0] == "zone" and type(tz[1]) is str:
+    if type(tz) is list and len(tz) == 2 and tz[0] == "zone" and type(tz[1]) is str:  # wall clock
         return ZoneInfo(tz[1])
     if type(tz) is list and len(tz) == 3 and tz[0] == "fixed" and type(tz[1]) is int \
             and type(tz[2]) is str:
@@ -271,13 +309,19 @@ def _decode_tz(tz):
 def _dec_int(body, _):
     if type(body) is not str:
         raise TypeError("expected str")
-    return int(body, 16)
+    value = int(body, 16)
+    if format(value, "x") != body or _INT_MIN <= value <= _INT_MAX:
+        raise ValueError("not the canonical @int text of an integer outside the native range")
+    return value
 
 
 def _dec_decimal(body, _):
     if type(body) is not str:
         raise TypeError("expected str")
-    return Decimal(body)
+    value = Decimal(body)
+    if str(value) != body:
+        raise ValueError("not the canonical @dec text (the to-scientific-string form)")
+    return value
 
 
 def _dec_date(body, _):
@@ -291,11 +335,18 @@ def _dec_time(body, _):
 
 def _dec_datetime(body, _):
     y, mo, d, h, mi, s, us, fold, tz = _fields(body, 9, (int,) * 8 + (None,))
+    if type(tz) is list and len(tz) == 2 and tz[0] == "instant" and type(tz[1]) is str:
+        if fold != 0:
+            raise ValueError("an instant has fold 0")
+        return datetime(y, mo, d, h, mi, s, us, tzinfo=timezone.utc).astimezone(ZoneInfo(tz[1]))
     return datetime(y, mo, d, h, mi, s, us, tzinfo=_decode_tz(tz), fold=fold)
 
 
 def _dec_timedelta(body, _):
-    return timedelta(*_fields(body, 3, (int, int, int)))
+    days, seconds, micros = _fields(body, 3, (int, int, int))
+    if not (0 <= seconds < 86400 and 0 <= micros < 1_000_000):
+        raise ValueError("a timedelta is normalized: 0 <= seconds < 86400, 0 <= microseconds < 10**6")
+    return timedelta(days, seconds, micros)
 
 
 def _dec_uuid(body, _):
@@ -313,11 +364,33 @@ def _dec_tuple(body, load_ref):
 def _dec_map(body, load_ref):
     if type(body) is not list:
         raise TypeError("expected an array")
-    out = {}
+    pairs = []
+    raw_keys = []
     for pair in body:
         k, v = _fields(pair, 2, (None, None))
-        out[decode_value(k, load_ref)] = decode_value(v, load_ref)
-    return FrozenDict(out)
+        raw_keys.append(k)
+        pairs.append((decode_value(k, load_ref), decode_value(v, load_ref)))
+    if not all(type(k) is str for k, _ in pairs):
+        try:
+            check_map_keys((k for k, _ in pairs), [_holds_zone_form(k) for k in raw_keys])
+        except ProtoValidationError as e:
+            raise ProtoCorruptionError(f"Malformed @map: {e}") from e
+    out = FrozenDict(pairs)
+    if len(out) != len(pairs):
+        raise ProtoCorruptionError("Malformed @map: a map key appears twice")
+    return out
+
+
+def _holds_zone_form(raw) -> bool:
+    """Whether the wire form of a map key holds a format-3 ``["zone", key]`` datetime (re-review I-2)."""
+    if type(raw) is not dict or len(raw) != 1:
+        return False
+    (tag, body), = raw.items()
+    if tag == "@dt":
+        return type(body) is list and len(body) == 9 and type(body[8]) is list and body[8][:1] == ["zone"]
+    if tag == "@tup":
+        return type(body) is list and any(_holds_zone_form(item) for item in body)
+    return False
 
 
 def _dec_missing(body, _):

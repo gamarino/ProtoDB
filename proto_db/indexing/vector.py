@@ -52,7 +52,7 @@ from ..query.plans import Estimate, IndexPlan
 from ..query.terms import NEAR, NearQuery, Term
 from ..values import exact_token, order_key
 from .base import Index, element_identity
-from .keyed import EMPTY_GROUP, equal_members_bounds, group_add, group_remove, member_key
+from .keyed import EMPTY_GROUP, MEMBER_TOKENS, group_add, group_remove, member_key, member_key_matches
 from .keyspec import KeySpec
 from .vector_backends import (METRICS, backend_for, canonical_vector, iter_entries,
                               normalize_params, rank_entries, store_key_okey)
@@ -128,6 +128,8 @@ class VectorIndex(Index):
     __type_name__ = "proto_db.indexing.VectorIndex"
     _definition = Index._definition + ("dim", "metric", "backend", "params")
     _plan_cacheable = True
+    _required_fields = ("name", "key_spec", "dim", "metric", "backend", "params", "store", "invalid",
+                        "total_count", "centroids", "trained_size")
 
     def __init__(self, name: str, key_spec: KeySpec | str, dim: int, metric: str = "cosine",
                  backend: str = "exact", *, context: PersistenceContext | None = None, **params):
@@ -146,6 +148,12 @@ class VectorIndex(Index):
         osa(self, "total_count", 0)
         osa(self, "centroids", ())
         osa(self, "trained_size", 0)
+        osa(self, "member_tokens", MEMBER_TOKENS)
+
+    def has_current_tokens(self) -> bool:
+        """False for an index written by format 3 (Python-text member tokens): its collection
+        rebuilds it before changing it (D58)."""
+        return getattr(self, "member_tokens", None) == MEMBER_TOKENS
 
     def empty(self) -> "VectorIndex":
         """An empty index with this definition (parameters included)."""
@@ -183,7 +191,8 @@ class VectorIndex(Index):
     def with_removed(self, element) -> "VectorIndex":
         """The index after one occurrence of ``element`` fewer; ``ProtoValidationError`` if it holds none.
 
-        An exact member is removed first, else an equal one (as in :mod:`.keyed`).
+        Only the member whose store key is ``(list of its vector, its member key)`` is removed,
+        never an equal member (D58, as in :mod:`.keyed`).
         """
         vector = self._vector(element)
         if vector is None:
@@ -195,12 +204,7 @@ class VectorIndex(Index):
         key = (list_no, member_key(element))
         entry = avl.key_get(self.store, key)
         if entry is None:
-            low, high = equal_members_bounds(element)
-            found = next(avl.key_iter_okey_range(self.store, store_key_okey(list_no, low),
-                                                 store_key_okey(list_no, high)), None)
-            if found is None:
-                self._not_held(element)
-            key, entry = found
+            self._not_held(element)
         store = (avl.key_remove(self.store, key)[0] if entry[1] == 1
                  else avl.key_put(self.store, key, (entry[0], entry[1] - 1, entry[2]))[0])
         return self._with(store=store, total_count=self.total_count - 1)
@@ -338,6 +342,7 @@ class VectorIndex(Index):
 
     def _check_store(self, stored: Counter) -> int:
         avl.check_invariants(self.store)
+        current = self.has_current_tokens()
         impl = self._impl()
         seen = 0
         for key, entry in avl.key_iter(self.store):
@@ -348,7 +353,7 @@ class VectorIndex(Index):
             element, n, vector = entry
             if type(n) is not int or n < 1:
                 self._corrupt(f"element {element!r} has the count {n!r}")
-            if order_key(key[1]) != order_key(member_key(element)):
+            if not member_key_matches(key[1], element, current):
                 self._corrupt(f"element {element!r} is stored under the wrong member key {key[1]!r}")
             actual = self._vector(element)
             if actual is None or actual != vector:
@@ -366,6 +371,7 @@ class VectorIndex(Index):
             self._corrupt(f"malformed invalid group {group!r}")
         members, total = group
         avl.check_invariants(members)
+        current = self.has_current_tokens()
         seen = 0
         for key, entry in avl.key_iter(members):
             if not isinstance(entry, tuple) or len(entry) != 2:
@@ -373,7 +379,7 @@ class VectorIndex(Index):
             element, n = entry
             if type(n) is not int or n < 1:
                 self._corrupt(f"element {element!r} has the count {n!r}")
-            if order_key(key) != order_key(member_key(element)):
+            if not member_key_matches(key, element, current):
                 self._corrupt(f"element {element!r} is kept under the wrong member key {key!r}")
             if self._vector(element) is not None:
                 self._corrupt(f"element {element!r} has a valid vector but is kept as invalid")
@@ -390,7 +396,9 @@ class VectorIndex(Index):
         is under its own member key and list with its own vector and a positive
         count, that invalid keys are kept aside, that the totals add up, and that
         the stored multiset of (valid or not, element, exact token) equals that
-        of ``elements``.  That determines every answer of the exact backends.
+        of ``elements``.  That determines every answer of the exact backends.  On
+        an index written by format 3 the member keys' tokens are not compared
+        (as in :meth:`KeyGroupIndex.validate`).
         """
         self._check_centroids()
         stored: Counter = Counter()

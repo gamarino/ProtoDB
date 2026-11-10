@@ -18,7 +18,7 @@ import pytest
 
 from proto_db.collections import avl
 from proto_db.core.dbobject import DBObject
-from proto_db.errors import ProtoCorruptionError, ProtoNotSupportedError
+from proto_db.errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoValidationError
 from proto_db.indexing import KeySpec, element_identity
 from proto_db.indexing.range import RangeIndex
 from proto_db.query.terms import (BETWEEN, BETWEEN_EXCL_BOTH, BETWEEN_EXCL_HIGH, BETWEEN_EXCL_LOW, EQ, GE, GT,
@@ -223,9 +223,10 @@ def test_plans_return_the_stored_values_not_an_equal_representative():
     index = RangeIndex("v", KeySpec.element()).build(elements)
     after = index.with_removed(1.0)
     assert exact(after.plan(Term(None, EQ, 1)).execute()) == exact([1, Decimal("1.00")])
-    # Removing a value equal to a stored one but not stored itself removes an equal occurrence.
-    fallback = index.with_removed(Decimal("1.0"))
-    assert sum(1 for _ in fallback.plan(Term(None, EQ, 1)).execute()) == 2
+    # Removing a value equal to a stored one but not stored itself is refused: an index never
+    # removes an equal member in its place (D58, review C1).
+    with pytest.raises(ProtoValidationError, match="does not hold"):
+        index.with_removed(Decimal("1.0"))
 
 
 def _fold(index, elements):

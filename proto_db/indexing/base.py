@@ -267,6 +267,12 @@ class Index(Atom, metaclass=ABCMeta):
         """Return the index after replacing one occurrence of ``old`` by ``new`` (default: remove + add)."""
         return self.with_removed(old).with_added(new)
 
+    def has_current_tokens(self) -> bool:
+        """Whether this index may be changed in place.  An index whose stored member keys were
+        written under an older token scheme returns False, and its collection rebuilds it from
+        its elements before its next change (D58).  Default True."""
+        return True
+
     def empty(self) -> "Index":
         """An empty index with the same definition: ``type(self)(**definition, context=...)``."""
         definition = {name: getattr(self, name) for name in self._definition}
