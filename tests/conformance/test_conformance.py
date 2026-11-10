@@ -246,12 +246,12 @@ def _check_segment(rel: str, records: list) -> None:
     assert pos == len(data), "the manifest lists every record of the segment"
 
 
-@pytest.mark.parametrize("name", ["database", "legacy_database"])
+@pytest.mark.parametrize("name", ["database", "legacy_database", "polyglot_database"])
 def test_database_segment(name):
     db = MANIFEST[name]
     _check_segment(f"{db['dir']}/{db['segment']}", db["records"])
     assert int.from_bytes(_bytes(f"{db['dir']}/{db['segment']}")[8:10], "little") == db["format"]
-    if name == "database":
+    if name != "legacy_database":
         assert all(r["canonical"] for r in db["records"])
     else:
         assert not all(r["rewritable"] for r in db["records"])      # the format-3 maps are there
@@ -265,18 +265,18 @@ def test_every_persistable_builtin_type_appears():
     assert "conformance.Invoice" in seen
 
 
-@pytest.mark.parametrize("name", ["database", "legacy_database"])
+@pytest.mark.parametrize("name", ["database", "legacy_database", "polyglot_database"])
 def test_database_root(name):
     db = MANIFEST[name]
     data = _bytes(f"{db['dir']}/space.root")
     record = fmt.decode_root(data)
     assert _root_fields(record) == dict(db["root"], version=fmt.FORMAT_VERSION)
     assert msgpack.unpackb(data[4:])["version"] == db["root"]["version"]
-    if name == "database":
+    if name != "legacy_database":
         assert fmt.encode_root(record) == data
 
 
-@pytest.mark.parametrize("name", ["database", "legacy_database"])
+@pytest.mark.parametrize("name", ["database", "legacy_database", "polyglot_database"])
 def test_database_contents_through_the_public_api(tmp_path, name):
     db = MANIFEST[name]
     work = tmp_path / "db"
@@ -286,6 +286,34 @@ def test_database_contents_through_the_public_api(tmp_path, name):
         assert space.open_database("db").run(describe_database) == db["contents"]
     finally:
         space.close()
+
+
+def test_an_opaque_atom_is_kept_as_written_when_what_references_it_changes(tmp_path):
+    vector = MANIFEST["polyglot_database"]
+    work = tmp_path / "db"
+    shutil.copytree(HERE / "vectors" / vector["dir"], work)
+    record = next(r for r in vector["records"] if r.get("type") == vector["opaque_type"])
+    segment = _bytes(f"{vector['dir']}/{vector['segment']}")
+    written = segment[record["offset"]:record["offset"] + record["size"]]
+    space = ObjectSpace(FileStorage(str(work)))
+    try:
+        db = space.open_database("db")
+
+        def change_holder(tx):
+            holder = tx.get_root_object("holder")
+            assert type(holder.order).__type_name__ == vector["opaque_type"]
+            tx.set_root_object("holder", holder.with_(name="changed"))
+        db.run(change_holder)
+
+        def check(tx):
+            order = tx.get_root_object("holder").order
+            assert (order.atom_pointer.segment.hex, order.atom_pointer.offset) == \
+                (Path(vector["segment"]).stem, record["offset"])
+            assert order.number == 7 and order.customer.name == "ACME"
+        db.run(check)
+    finally:
+        space.close()
+    assert (work / vector["segment"]).read_bytes()[record["offset"]:record["offset"] + record["size"]] == written
 
 
 def test_format_3_indexes_validate_before_their_first_change(tmp_path):
@@ -478,3 +506,18 @@ def test_cluster_message(vector):
 
 def test_every_message_type_has_a_vector():
     assert {v["type"] for v in MANIFEST["cluster"]["messages"]} == set(protocol.MESSAGE_TYPES)
+
+
+# -- pinned vectors (format-spec.rst, "Format stability"; Task 10.P A6) ---------------------------
+
+def test_the_committed_vectors_match_their_pinned_digests():
+    from tests.conformance.generate import PINS, pin_lines
+    assert pin_lines() == PINS.read_text(), "a vector changed: regenerate, and update the spec's pinned digest"
+
+
+def test_the_spec_pins_the_digest_of_the_vector_manifest():
+    import hashlib
+    from tests.conformance.generate import PINS
+    digest = hashlib.sha256(PINS.read_bytes()).hexdigest()
+    spec = (HERE.parents[1] / "docs" / "source" / "format-spec.rst").read_text()
+    assert f"``{digest}``" in spec, "the stability section must state the SHA-256 of vectors.sha256"

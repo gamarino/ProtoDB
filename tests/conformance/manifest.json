@@ -19222,14 +19222,7 @@
      }
     ]
    ],
-   "mutables": [
-    [
-     "counter",
-     {
-      "nil": null
-     }
-    ]
-   ],
+   "mutables": [],
    "indexes": {
     "misfiled_list": {
      "e": {
@@ -19272,6 +19265,1203 @@
    ],
    "note": "format 3 wrote LegacyColor.RED (a (str, Enum)) as 'LegacyColor.RED' but filed it as 'red': validate() raises ProtoMisfiledError, rebuilt() repairs"
   }
+ },
+ "polyglot_database": {
+  "dir": "polyglot",
+  "segment": "5eed0000000040008000000000004004.seg",
+  "format": 4,
+  "root": {
+   "version": 4,
+   "segment": "5eed0000000040008000000000004004",
+   "offset": 3044,
+   "epoch": 3
+  },
+  "records": [
+   {
+    "offset": 26,
+    "kind": 1,
+    "size": 50,
+    "tag": 3,
+    "type": "proto_db.collections.IndexSet",
+    "oid": "5eed0000000040008000000000004003",
+    "state": [
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 76,
+    "kind": 1,
+    "size": 92,
+    "tag": 6,
+    "type": "proto_db.collections.Dictionary",
+    "oid": "5eed0000000040008000000000004005",
+    "state": [
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 26,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "0"
+      }
+     ],
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 168,
+    "kind": 1,
+    "size": 50,
+    "tag": 3,
+    "type": "proto_db.collections.IndexSet",
+    "oid": "5eed0000000040008000000000004006",
+    "state": [
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 218,
+    "kind": 1,
+    "size": 93,
+    "tag": 6,
+    "type": "proto_db.collections.Dictionary",
+    "oid": "5eed0000000040008000000000004007",
+    "state": [
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 168,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "0"
+      }
+     ],
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 311,
+    "kind": 1,
+    "size": 201,
+    "tag": 18,
+    "type": "proto_db.transactions.DatabaseRoot",
+    "oid": "5eed0000000040008000000000004002",
+    "state": [
+     [
+      "objects",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 76,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ],
+     [
+      "mutables",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 218,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ],
+     [
+      "version",
+      {
+       "int": "0"
+      }
+     ],
+     [
+      "committed_at",
+      {
+       "datetime": [
+        2026,
+        11,
+        10,
+        12,
+        0,
+        1,
+        0,
+        0,
+        [
+         "fixed",
+         0,
+         "UTC"
+        ]
+       ]
+      }
+     ],
+     [
+      "origin",
+      {
+       "bytes": "5eed0000000040008000000000004001"
+      }
+     ],
+     [
+      "previous",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 512,
+    "kind": 1,
+    "size": 114,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000004008",
+    "state": [
+     [
+      "key",
+      {
+       "str": "db"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 311,
+        "type": "proto_db.transactions.DatabaseRoot"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 626,
+    "kind": 1,
+    "size": 50,
+    "tag": 3,
+    "type": "proto_db.collections.IndexSet",
+    "oid": "5eed0000000040008000000000004009",
+    "state": [
+     [
+      "root",
+      {
+       "nil": null
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 676,
+    "kind": 1,
+    "size": 122,
+    "tag": 6,
+    "type": "proto_db.collections.Dictionary",
+    "oid": "5eed000000004000800000000000400a",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 512,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 626,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 798,
+    "kind": 1,
+    "size": 83,
+    "tag": 17,
+    "type": "proto_db.transactions.SpaceRoot",
+    "oid": "5eed000000004000800000000000400b",
+    "state": [
+     [
+      "databases",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 676,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 881,
+    "kind": 1,
+    "size": 54,
+    "tag": 19,
+    "type": "proto_db.core.dbobject.DBObject",
+    "oid": "5eed000000004000800000000000400c",
+    "state": [
+     [
+      "name",
+      {
+       "str": "ACME"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 935,
+    "kind": 1,
+    "size": 56,
+    "tag": 19,
+    "type": "proto_db.core.dbobject.DBObject",
+    "oid": "5eed000000004000800000000000400d",
+    "state": [
+     [
+      "name",
+      {
+       "str": "holder"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 991,
+    "kind": 1,
+    "size": 118,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000400f",
+    "state": [
+     [
+      "key",
+      {
+       "str": "holder"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 935,
+        "type": "proto_db.core.dbobject.DBObject"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 1109,
+    "kind": 1,
+    "size": 148,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000004010",
+    "state": [
+     [
+      "key",
+      {
+       "str": "customer"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 881,
+        "type": "proto_db.core.dbobject.DBObject"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 991,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "2"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 1257,
+    "kind": 1,
+    "size": 120,
+    "tag": 6,
+    "type": "proto_db.collections.Dictionary",
+    "oid": "5eed0000000040008000000000004011",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 1109,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 26,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 1377,
+    "kind": 1,
+    "size": 231,
+    "tag": 18,
+    "type": "proto_db.transactions.DatabaseRoot",
+    "oid": "5eed000000004000800000000000400e",
+    "state": [
+     [
+      "objects",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 1257,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ],
+     [
+      "mutables",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 218,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ],
+     [
+      "version",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "committed_at",
+      {
+       "datetime": [
+        2026,
+        11,
+        10,
+        12,
+        0,
+        2,
+        0,
+        0,
+        [
+         "fixed",
+         0,
+         "UTC"
+        ]
+       ]
+      }
+     ],
+     [
+      "origin",
+      {
+       "bytes": "5eed0000000040008000000000004001"
+      }
+     ],
+     [
+      "previous",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 311,
+        "type": "proto_db.transactions.DatabaseRoot"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 1608,
+    "kind": 1,
+    "size": 114,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000004012",
+    "state": [
+     [
+      "key",
+      {
+       "str": "db"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 1377,
+        "type": "proto_db.transactions.DatabaseRoot"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 1722,
+    "kind": 1,
+    "size": 122,
+    "tag": 6,
+    "type": "proto_db.collections.Dictionary",
+    "oid": "5eed0000000040008000000000004013",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 1608,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 626,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 1844,
+    "kind": 1,
+    "size": 83,
+    "tag": 17,
+    "type": "proto_db.transactions.SpaceRoot",
+    "oid": "5eed0000000040008000000000004014",
+    "state": [
+     [
+      "databases",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 1722,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 1927,
+    "kind": 1,
+    "size": 156,
+    "tag": "polyglot.st.Order",
+    "type": "polyglot.st.Order",
+    "oid": "00000000000000000000000000005eed",
+    "state": [
+     [
+      "number",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "lines",
+      {
+       "list": [
+        {
+         "str": "a"
+        },
+        {
+         "str": "b"
+        }
+       ]
+      }
+     ],
+     [
+      "total",
+      {
+       "decimal": "12.50"
+      }
+     ],
+     [
+      "customer",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 881,
+        "type": "proto_db.core.dbobject.DBObject"
+       }
+      }
+     ],
+     [
+      "placed",
+      {
+       "date": [
+        2026,
+        12,
+        3
+       ]
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 2083,
+    "kind": 1,
+    "size": 108,
+    "tag": 19,
+    "type": "proto_db.core.dbobject.DBObject",
+    "oid": "5eed0000000040008000000000004015",
+    "state": [
+     [
+      "name",
+      {
+       "str": "holder"
+      }
+     ],
+     [
+      "order",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 1927,
+        "type": "polyglot.st.Order"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 2191,
+    "kind": 1,
+    "size": 118,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000004017",
+    "state": [
+     [
+      "key",
+      {
+       "str": "holder"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 2083,
+        "type": "proto_db.core.dbobject.DBObject"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 2309,
+    "kind": 1,
+    "size": 148,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000004018",
+    "state": [
+     [
+      "key",
+      {
+       "str": "customer"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 881,
+        "type": "proto_db.core.dbobject.DBObject"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 2191,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "2"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 2457,
+    "kind": 1,
+    "size": 120,
+    "tag": 6,
+    "type": "proto_db.collections.Dictionary",
+    "oid": "5eed0000000040008000000000004019",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 2309,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 26,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 2577,
+    "kind": 1,
+    "size": 231,
+    "tag": 18,
+    "type": "proto_db.transactions.DatabaseRoot",
+    "oid": "5eed0000000040008000000000004016",
+    "state": [
+     [
+      "objects",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 2457,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ],
+     [
+      "mutables",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 218,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ],
+     [
+      "version",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "committed_at",
+      {
+       "datetime": [
+        2026,
+        11,
+        10,
+        12,
+        0,
+        3,
+        0,
+        0,
+        [
+         "fixed",
+         0,
+         "UTC"
+        ]
+       ]
+      }
+     ],
+     [
+      "origin",
+      {
+       "bytes": "5eed0000000040008000000000004001"
+      }
+     ],
+     [
+      "previous",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 1377,
+        "type": "proto_db.transactions.DatabaseRoot"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 2808,
+    "kind": 1,
+    "size": 114,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed000000004000800000000000401a",
+    "state": [
+     [
+      "key",
+      {
+       "str": "db"
+      }
+     ],
+     [
+      "value",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 2577,
+        "type": "proto_db.transactions.DatabaseRoot"
+       }
+      }
+     ],
+     [
+      "left",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 2922,
+    "kind": 1,
+    "size": 122,
+    "tag": 6,
+    "type": "proto_db.collections.Dictionary",
+    "oid": "5eed000000004000800000000000401b",
+    "state": [
+     [
+      "root",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 2808,
+        "type": "proto_db.avl.KeyNode"
+       }
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "indexes",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 626,
+        "type": "proto_db.collections.IndexSet"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 3044,
+    "kind": 1,
+    "size": 83,
+    "tag": 17,
+    "type": "proto_db.transactions.SpaceRoot",
+    "oid": "5eed000000004000800000000000401c",
+    "state": [
+     [
+      "databases",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 2922,
+        "type": "proto_db.collections.Dictionary"
+       }
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   }
+  ],
+  "contents": {
+   "roots": [
+    [
+     "customer",
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "name",
+        {
+         "str": "ACME"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     "holder",
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "name",
+        {
+         "str": "holder"
+        }
+       ],
+       [
+        "order",
+        {
+         "opaque": "polyglot.st.Order",
+         "attrs": [
+          [
+           "customer",
+           {
+            "object": "proto_db.core.dbobject.DBObject",
+            "attrs": [
+             [
+              "name",
+              {
+               "str": "ACME"
+              }
+             ]
+            ]
+           }
+          ],
+          [
+           "lines",
+           {
+            "list": [
+             {
+              "str": "a"
+             },
+             {
+              "str": "b"
+             }
+            ]
+           }
+          ],
+          [
+           "number",
+           {
+            "int": "7"
+           }
+          ],
+          [
+           "placed",
+           {
+            "date": [
+             2026,
+             12,
+             3
+            ]
+           }
+          ],
+          [
+           "total",
+           {
+            "decimal": "12.50"
+           }
+          ]
+         ]
+        }
+       ]
+      ]
+     }
+    ]
+   ],
+   "mutables": [],
+   "indexes": {},
+   "origin": {
+    "bytes": "5eed0000000040008000000000004001"
+   }
+  },
+  "opaque_type": "polyglot.st.Order"
  },
  "cluster": {
   "segment": {

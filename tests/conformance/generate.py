@@ -30,6 +30,7 @@ import msgpack
 from proto_db.cluster import protocol
 from proto_db.cluster import rootlog
 from proto_db.collections import avl
+from proto_db.tools import notation
 from proto_db.collections.base import IndexedCollection
 from proto_db.collections.dictionaries import Dictionary, RepeatedKeysDictionary
 from proto_db.collections.hash_dictionaries import HashDictionary
@@ -754,6 +755,35 @@ def _format3_subclass_encoding():
         yield
 
 
+#: A type name no Python class implements: another implementation's record (D59).
+OPAQUE_TYPE = "polyglot.st.Order"
+
+
+def _fill_polyglot_first(tx):
+    tx.set_root_object("customer", DBObject(name="ACME"))
+    tx.set_root_object("holder", DBObject(name="holder"))
+
+
+def _fill_polyglot_second(tx):
+    """What another implementation does: write a record of its own type, referencing a record
+    this one wrote, and make a root reference it."""
+    customer = tx.get_root_object("customer")
+    state = {"number": 7, "lines": ["a", "b"], "total": Decimal("12.50"), "customer": customer,
+             "placed": datetime.date(2026, 12, 3)}
+    ptr = tx.storage.push_atom({"t": OPAQUE_TYPE, "oid": uuid.UUID(int=0x5eed).bytes,
+                                "s": codec.encode_state(state, lambda a: a.atom_pointer)})
+    tx.storage.flush()
+    tx.set_root_object("holder", tx.get_root_object("holder").with_(order=tx.load(ptr, OPAQUE_TYPE)))
+
+
+def gen_polyglot_database(manifest):
+    """A space holding a record of a type no Python class implements (an opaque atom)."""
+    with _Deterministic(0x4000):
+        entry = _write_space("polyglot", [_fill_polyglot_first, _fill_polyglot_second])
+    entry["opaque_type"] = OPAQUE_TYPE
+    manifest["polyglot_database"] = entry
+
+
 def gen_legacy_database(manifest):
     """A format-3 space: format-3 segment and root, a DatabaseRoot without ``origin``, a
     key-group and a vector index without ``member_tokens`` (plain KeyNode trees, format-3
@@ -821,37 +851,9 @@ def _contents(target: Path) -> dict:
 
 
 def describe_database(tx) -> dict:
-    """A language-neutral description of the database vector's content (also used by the test)."""
-    def obj(o):
-        if isinstance(o, DBObject):
-            return {"object": type(o).__type_name__,
-                    "attrs": [[k, obj(v)] for k, v in sorted(o._state().items())]}
-        if isinstance(o, (List, Set)):
-            return {"collection": type(o).__type_name__, "elements": [obj(e) for e in o.elements()]}
-        if isinstance(o, CountedSet):
-            return {"collection": type(o).__type_name__, "items": [[obj(e), _I(n)] for e, n in o.items()]}
-        if isinstance(o, (Dictionary, HashDictionary)):
-            return {"collection": type(o).__type_name__, "items": [[obj(k), obj(v)] for k, v in o.items()]}
-        if isinstance(o, RepeatedKeysDictionary):
-            return {"collection": type(o).__type_name__, "items": [[obj(k), obj(v)] for k, v in o.items()]}
-        if isinstance(o, tuple):
-            return {"tuple": [obj(v) for v in o]}
-        if isinstance(o, list):
-            return {"list": [obj(v) for v in o]}
-        if isinstance(o, dict):
-            return {"map": [[obj(k), obj(v)] for k, v in o.items()]}
-        return typed.describe(o)
-
-    out = {"roots": [[name, obj(tx.get_root_object(name))] for name in sorted(tx.root_names())],
-           "mutables": [["counter", obj(tx.get_mutable("counter"))]]}
-    out["indexes"] = {}
-    for name in sorted(tx.root_names()):
-        root = tx.get_root_object(name)
-        if isinstance(root, IndexedCollection) and root.index_names():
-            out["indexes"][name] = {i: {"type": type(root.get_index(i)).__type_name__,
-                                        "member_tokens": root.get_index(i).has_current_tokens()}
-                                    for i in root.index_names()}
-    out["origin"] = typed.describe(tx._db_root.origin)
+    """A language-neutral description of a vector database's content (also used by the test and
+    printed by ``python -m proto_db.tools.verify``), plus the vector index's list assignment."""
+    out = notation.describe_database(tx)
     if "ivf" in tx.root_names():
         index = tx.get_root_object("ivf").get_index("ivf")
         out["ivf"] = {"centroids": [[typed.describe(x) for x in c] for c in index.centroids],
@@ -1054,8 +1056,24 @@ def main():
     gen_framing(manifest)
     gen_database(manifest)
     gen_legacy_database(manifest)
+    gen_polyglot_database(manifest)
     gen_cluster(manifest)
     MANIFEST.write_text(json.dumps(manifest, indent=1, ensure_ascii=False) + "\n")
+    PINS.write_text(pin_lines())
+
+
+#: The pinned digests of the vectors (format-spec.rst, "Format stability"): one line
+#: ``<sha256 hex>  <path under vectors/>`` per file, sorted by path, then the manifest's line.
+PINS = Path(__file__).resolve().parent / "vectors.sha256"
+
+
+def pin_lines() -> str:
+    """The content of :data:`PINS` for the files on disk now."""
+    import hashlib
+    lines = [f"{hashlib.sha256(f.read_bytes()).hexdigest()}  {f.relative_to(VECTORS).as_posix()}"
+             for f in sorted(VECTORS.rglob("*"), key=lambda f: f.relative_to(VECTORS).as_posix()) if f.is_file()]
+    lines.append(f"{hashlib.sha256(MANIFEST.read_bytes()).hexdigest()}  ../manifest.json")
+    return "\n".join(lines) + "\n"
 
 
 if __name__ == "__main__":
