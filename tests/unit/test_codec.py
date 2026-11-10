@@ -19,6 +19,8 @@ from tests.support.exact import assert_exact
 class CodecLeaf(Atom):
     """Plain atom used as a nested reference."""
 
+    __type_name__ = "tests.codec.CodecLeaf"
+
     def __init__(self, label):
         super().__init__()
         self.label = label

@@ -19,6 +19,8 @@ _LOCK_TYPES = (type(threading.Lock()), type(threading.RLock()))
 class Plain(Atom):
     """Atom with one persisted attribute."""
 
+    __type_name__ = "tests.atom_cost.Plain"
+
     def __init__(self, value, *, context=None):
         super().__init__(context=context)
         self.value = value

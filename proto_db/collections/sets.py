@@ -95,6 +95,7 @@ class _HashBuckets(ConcurrentOptimized, IndexedCollection):
     Subclasses define ``_entry_element(entry)`` (the element an entry holds).
     """
 
+    __type_name__ = "proto_db.collections.sets._HashBuckets"
     _fields = ("root", "count", "indexes")
 
     def __init__(self, *, context: PersistenceContext | None = None):

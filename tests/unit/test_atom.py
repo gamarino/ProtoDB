@@ -15,6 +15,8 @@ from tests.support.persistence import DirectContext
 class Leaf(Atom):
     """Atom with one persisted attribute."""
 
+    __type_name__ = "tests.atom.Leaf"
+
     def __init__(self, value, *, context=None):
         super().__init__(context=context)
         self.value = value
@@ -22,6 +24,8 @@ class Leaf(Atom):
 
 class Node(Atom):
     """Atom with children."""
+
+    __type_name__ = "tests.atom.Node"
 
     def __init__(self, left, right, *, context=None):
         super().__init__(context=context)
@@ -61,7 +65,7 @@ def test_atom_pointer_validates(seg, off):
 # --- registry ------------------------------------------------------------------
 
 def test_default_type_name_and_registry():
-    assert Leaf.__type_name__ == f"{__name__}.Leaf"
+    assert Leaf.__type_name__ == "tests.atom.Leaf"
     assert Renamed.__type_name__ == "tests.custom.Renamed"
     assert Atom._class_for(Leaf.__type_name__) is Leaf
 
@@ -371,6 +375,8 @@ def test_dbobject_with_on_subclass_keeps_class():
 class Person(DBObject):
     """DBObject subclass used to check with_ keeps the class."""
 
+    __type_name__ = "tests.atom.Person"
+
 
 @pytest.mark.parametrize("name", ["oid", "context", "atom_pointer", "_private"])
 def test_dbobject_rejects_reserved_field_names(name):
@@ -408,6 +414,8 @@ def test_dbobject_persist_and_lazy_reload():
 class Account(DBObject):
     """DBObject subclass with a read-only property and a method."""
 
+    __type_name__ = "tests.atom.Account"
+
     @property
     def label(self):
         return f"#{self.number}"
@@ -444,6 +452,8 @@ def test_load_of_shadowing_name_raises_corruption(name):
 
 class Shadowed(Atom):
     """Plain atom whose persisted attribute shadows a class-level default."""
+
+    __type_name__ = "tests.atom.Shadowed"
 
     height = 0
 

@@ -14,6 +14,8 @@ from tests.support.exact import assert_exact
 class PropLeaf(Atom):
     """Atom used as a nested reference in generated values."""
 
+    __type_name__ = "tests.codec_roundtrip.PropLeaf"
+
 
 LEAVES = [PropLeaf() for _ in range(4)]
 

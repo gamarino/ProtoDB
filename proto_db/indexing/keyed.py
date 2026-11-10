@@ -284,6 +284,8 @@ class KeyGroupIndex(Index):
     (:meth:`supports`) and whether it offers ordered iteration.
     """
 
+    __type_name__ = "proto_db.indexing.keyed.KeyGroupIndex"
+
     def __init__(self, name: str, key_spec: KeySpec | str, *, context: PersistenceContext | None = None):
         """Create an EMPTY index on ``key_spec`` (a ``str`` means ``KeySpec.path(key_spec)``)."""
         if isinstance(key_spec, str):

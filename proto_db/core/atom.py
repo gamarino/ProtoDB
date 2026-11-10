@@ -97,10 +97,24 @@ Type tags (format version 3, D51)
     :data:`BUILTIN_TYPE_ALIASES` (:func:`type_tag`); any other type as its name.  Readers
     accept both forms (:func:`type_name_of`), so format-2 data, which always wrote names,
     still loads.
+
+Type names (ruling R83, D57)
+    A persisted type name is language-neutral: a dotted name of ASCII identifiers with at
+    least two parts (:data:`TYPE_NAME_PATTERN`, for example ``"acme.sales.Order"``), chosen
+    by the class author and declared as ``__type_name__`` in the class's own body; another
+    implementation of the format (protoBaseST) maps it to its own class.  A class that does not
+    declare one gets its Python ``module.QualifiedName`` only as a *legacy read name*: data
+    written under it before D57 still loads, but saving an instance raises
+    ``ProtoValidationError``, so no new data depends on a Python module path.  A class lists
+    the names it was persisted under before (a rename, or the legacy default it had) in
+    ``__type_aliases__`` (its own body, not inherited): each alias loads as the class and
+    :func:`type_name_of` maps it to the declared name, so one stored atom has one identity
+    whichever name a reference spells.  The format is unchanged: names were always strings.
 """
 from __future__ import annotations
 
 import importlib
+import re
 import threading
 import uuid
 from dataclasses import dataclass
@@ -109,7 +123,7 @@ from typing import Any, Optional, Protocol, runtime_checkable
 from ..errors import ProtoCorruptionError, ProtoUserError, ProtoValidationError
 
 __all__ = ["AtomPointer", "PersistenceContext", "Atom", "register_atom_class", "RESERVED_NAMES",
-           "BUILTIN_TYPE_ALIASES", "type_tag", "type_name_of"]
+           "BUILTIN_TYPE_ALIASES", "TYPE_NAME_PATTERN", "type_tag", "type_name_of"]
 
 #: Public attribute names managed by :class:`Atom` itself; never part of the persisted state.
 RESERVED_NAMES = frozenset({"oid", "atom_pointer", "context"})
@@ -170,6 +184,11 @@ def _lock_for(atom) -> "threading.RLock":
 
 _registry: dict[str, type] = {}
 _registry_lock = threading.Lock()
+#: Alias -> the declared name of the class it names (``__type_aliases__``, D57).
+_alias_target: dict[str, str] = {}
+
+#: Grammar of a declared atom type name (D57): two or more ASCII identifiers joined by dots.
+TYPE_NAME_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\Z")
 
 #: Module defining each built-in 2.0 atom type, imported on a registry miss so that
 #: stored atoms load in a process that never imported their module.  Kept complete
@@ -236,30 +255,48 @@ def type_tag(type_name: str):
 
 
 def type_name_of(tag) -> str:
-    """Return the type name a persisted tag stands for; ``ProtoCorruptionError`` if malformed."""
+    """Return the type name a persisted tag stands for; ``ProtoCorruptionError`` if malformed.
+
+    An alias (``__type_aliases__``, D57) gives the declared name of its class."""
     if type(tag) is str:
-        return tag
+        return _alias_target.get(tag, tag)
     if type(tag) is int and 0 <= tag < len(BUILTIN_TYPE_ALIASES):
         return BUILTIN_TYPE_ALIASES[tag]
     raise ProtoCorruptionError(f"Malformed atom type tag {tag!r}")
 
 
 def register_atom_class(cls: type) -> type:
-    """Register ``cls`` under ``cls.__type_name__``; return ``cls``.
+    """Register ``cls`` under ``cls.__type_name__`` and its ``__type_aliases__``; return ``cls``.
 
     Called automatically for every :class:`Atom` subclass.  Registering the same
-    class again is a no-op; a different class with an already registered name
-    raises ``ProtoUserError``.
+    class again is a no-op; a different class with an already registered name or
+    alias raises ``ProtoUserError``.
     """
     name = cls.__dict__.get("__type_name__")
     if not isinstance(name, str) or not name:
         raise ProtoValidationError(f"{cls!r} has no valid __type_name__")
+    aliases = _declared_aliases(cls, name)
     with _registry_lock:
-        current = _registry.get(name)
-        if current is not None and current is not cls:
-            raise ProtoUserError(f"Atom type name {name!r} is already registered by {current!r}")
-        _registry[name] = cls
+        for key in (name,) + aliases:
+            current = _registry.get(key)
+            if current is not None and current is not cls:
+                raise ProtoUserError(f"Atom type name {key!r} is already registered by {current!r}")
+        for key in (name,) + aliases:
+            _registry[key] = cls
+        for alias in aliases:
+            _alias_target[alias] = name
     return cls
+
+
+def _declared_aliases(cls: type, name: str) -> tuple:
+    """The ``__type_aliases__`` of ``cls``'s own body, validated (D57)."""
+    aliases = cls.__dict__.get("__type_aliases__", ())
+    if not isinstance(aliases, (tuple, list)) or not all(isinstance(a, str) and a for a in aliases):
+        raise ProtoUserError(f"{cls.__qualname__}.__type_aliases__ must be a tuple of non-empty str, "
+                             f"not {aliases!r}")
+    if name in aliases or len(set(aliases)) != len(aliases):
+        raise ProtoUserError(f"{cls.__qualname__}.__type_aliases__ repeats a name: {aliases!r}")
+    return tuple(aliases)
 
 
 #: Context types whose instances passed the :class:`PersistenceContext` check and whose ``save``
@@ -441,11 +478,17 @@ class Atom:
 
     Subclasses call ``super().__init__(context=...)`` and store their persisted
     state as public instance attributes.  Each subclass is registered under
-    ``__type_name__`` (default ``"module.QualifiedName"``); set it explicitly to
-    keep a stable name across refactors.
+    ``__type_name__``, a language-neutral dotted name declared in its own body
+    (:data:`TYPE_NAME_PATTERN`, D57), and under the old names it lists in
+    ``__type_aliases__``.  A subclass that declares no name is registered under its
+    Python ``"module.QualifiedName"`` for reading data written before D57 only:
+    saving its instances raises ``ProtoValidationError``.
     """
 
     __type_name__ = "proto_db.core.atom.Atom"
+    #: Whether ``__type_name__`` was declared in the class's own body (D57): only such a class
+    #: is saved.  The base class itself is never persisted.
+    _type_name_declared = False
     #: Whether a context that caches decoded atoms keeps this type's atoms when they are saved
     #: (Task 8.3i); a type a build only references, never reads, opts out.
     _cache_on_save = True
@@ -462,8 +505,16 @@ class Atom:
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         cls._custom_restore = cls._restore is not Atom._restore or cls._set_link is not Atom._set_link
-        if "__type_name__" not in cls.__dict__:
-            cls.__type_name__ = f"{cls.__module__}.{cls.__qualname__}"
+        declared = "__type_name__" in cls.__dict__
+        if declared:
+            name = cls.__dict__["__type_name__"]
+            if not isinstance(name, str) or not TYPE_NAME_PATTERN.match(name):
+                raise ProtoUserError(
+                    f"{cls.__qualname__}.__type_name__ must be a dotted name of ASCII identifiers with at "
+                    f"least two parts, such as 'acme.sales.Order', not {name!r} (D57)")
+        else:
+            cls.__type_name__ = f"{cls.__module__}.{cls.__qualname__}"     # legacy read name only
+        cls._type_name_declared = declared
         register_atom_class(cls)
 
     def __init__(self, *, context: PersistenceContext | None = None):
@@ -826,9 +877,15 @@ class Atom:
         context = self.context
         if context is None:
             raise ProtoUserError(f"Cannot save {self!r}: it has no persistence context")
+        cls = type(self)
+        if not cls._type_name_declared:
+            raise ProtoValidationError(
+                f"Cannot save an instance of {cls.__qualname__}: the class declares no __type_name__.  "
+                f"Declare a stable, language-neutral name in its body, such as 'acme.sales.Order' (D57); "
+                f"to keep reading data written under its old default name, also declare "
+                f"__type_aliases__ = ({cls.__type_name__!r},)")
         from . import codec
         state = self._state()
-        cls = type(self)
         for name in state:
             if hasattr(cls, name):
                 raise ProtoValidationError(
