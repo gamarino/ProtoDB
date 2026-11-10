@@ -37,6 +37,11 @@ Operations, each verified against the model in every repetition:
   storage instance (ProtoDB) or a new connection (SQLite) against the same requests repeated.
   The OS page cache and the ZFS ARC are not dropped (that needs root): "cold" means empty
   in-process caches.
+
+Memory (Task 9c CARRY): the process's peak RSS (``getrusage``, both systems in one process) after
+the build and at the end, and the decoded-atom cache counters.  ``atom_cache_entries`` (a
+parameter, default: the ``ObjectSpace`` default) sizes the ProtoDB cache, e.g.
+``--param inventory.atom_cache_entries=3000000`` for a cache that holds the 10^6 working set.
 """
 import os
 import random
@@ -166,10 +171,12 @@ class ProtoInventory:
 
     ROOTS = ("sites", "equipment", "cards", "ports", "links")
 
-    def __init__(self, path: str):
+    def __init__(self, path: str, atom_cache_entries=None):
         from proto_db import FileStorage, ObjectSpace
         self.location = path
-        self.space = ObjectSpace(FileStorage(path, durability="fsync"))
+        self.atom_cache_entries = atom_cache_entries
+        kw = {} if atom_cache_entries is None else {"atom_cache_entries": atom_cache_entries}
+        self.space = ObjectSpace(FileStorage(path, durability="fsync"), **kw)
 
     def create(self):
         from proto_db import EqualityIndex
@@ -405,6 +412,12 @@ def _settled_du(path: str, timeout: float = 30.0) -> int:
     return last
 
 
+def _peak_rss_kb() -> int:
+    """This process's peak resident set size so far, in kB (``getrusage``; Linux reports kB)."""
+    import resource
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+
+
 def _du(path: str) -> int:
     """Bytes allocated on disk under ``path`` (what ``du`` reports: compression included)."""
     total = 0
@@ -435,7 +448,8 @@ def inventory(ctx, p):
     result = BenchResult({"sites": sites, "objects": objects, "fan_out": "10 equipment/site, 10 cards/equipment, "
                           "8-48 ports/card, links on about half the ports", "durability": "ProtoDB fsync, SQLite FULL",
                           "model_count_s": round(time.perf_counter() - t0, 2)}, None, None)
-    proto = ProtoInventory(os.path.join(base, "protodb"))
+    proto = ProtoInventory(os.path.join(base, "protodb"), p.get("atom_cache_entries"))
+    result.work["atom_cache_entries"] = p.get("atom_cache_entries") or "default"
     sql = SqlInventory(os.path.join(base, "inventory.sqlite"))
     try:
         # -- build: one transaction per site, both systems, interleaved per site
@@ -454,6 +468,8 @@ def inventory(ctx, p):
         result.add_timing("sqlite3 build (one transaction per site)", [st], per=objects)
         result.metrics["build commits/s"] = {"protodb": round(sites / pt, 2), "sqlite3": round(sites / st, 2)}
         result.metrics["build objects/s"] = {"protodb": round(objects / pt), "sqlite3": round(objects / st)}
+        result.metrics["after build: peak RSS kB (both systems, one process)"] = _peak_rss_kb()
+        result.metrics["after build: atom cache"] = proto.space.atom_cache_stats()
         sql.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         sizes = {"protodb": (_settled_du(proto.location), _apparent(proto.location)),
                  "sqlite3": (_settled_du(sql.location), _apparent(sql.location))}
@@ -503,7 +519,7 @@ def inventory(ctx, p):
                     ("path trace", "path", starts[0], want_paths[0])]
         for label, method, arg, want in cold_ops:
             def proto_cold(_, method=method, arg=arg):
-                fresh = ProtoInventory(proto.location)
+                fresh = ProtoInventory(proto.location, proto.atom_cache_entries)
                 fresh.open()
                 try:
                     return getattr(fresh, method)(arg)
@@ -552,6 +568,8 @@ def inventory(ctx, p):
                      f"{audit}")
         sizes_after = {"protodb": _settled_du(proto.location), "sqlite3": _settled_du(sql.location)}
         result.metrics["on-disk bytes after the bulk changes (allocated)"] = sizes_after
+        result.metrics["end: peak RSS kB (both systems, one process)"] = _peak_rss_kb()
+        result.metrics["end: atom cache"] = proto.space.atom_cache_stats()
         tr = proto.db.new_transaction()
         final = tuple(tr.get_root_object(r).count for r in ProtoInventory.ROOTS)
         tr.abort()

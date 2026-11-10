@@ -475,7 +475,7 @@ def read_figures(results) -> dict:
     total = bad = reporting = 0
     window = max(r["seconds"] for r in results)
     for r in results:
-        node_lat = []
+        node_lat, node_versions = [], []
         for x in r.get("reads", []):
             reporting += 1
             total += x["reads"]
@@ -484,8 +484,11 @@ def read_figures(results) -> dict:
             steady.extend(x["latencies_us"][x["steady_from"]:])
             if x["versions"]:
                 versions.append(x["versions"])
+                node_versions.append(x["versions"])
         every.extend(node_lat)
         by_node.append({"reads": len(node_lat),
+                        "versions": ([min(v[0] for v in node_versions), max(v[1] for v in node_versions)]
+                                     if node_versions else None),
                         "p50_us": percentile(node_lat, 50) if node_lat else None,
                         "p99_us": percentile(node_lat, 99) if node_lat else None,
                         "max_us": max(node_lat) if node_lat else None})

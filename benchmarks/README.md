@@ -49,10 +49,28 @@ work tree records no commit.
 
 Interleaved sessions (`python -m benchmarks.session --reps 5 --rqlite PATH --json OUT`) run the
 cluster headline cells (3 peers x 4 threads at 100 B, 50 ids per commit, 5 peers; rqlite with the
-same work) and the mixed read/write cells once per repetition each, alternating `-X gil=0` and
+same work), the mixed read/write cells and the cluster cache cells (`--only headline mixed cache`
+selects groups) once per repetition each, alternating `-X gil=0` and
 `-X gil=1` for every cell, and refuse to start while an `rqlited` or another benchmark process is
 running (the check is recorded in the JSON). A session's per-cell medians and ranges cover its
 verified runs only; failed runs are counted (`failed`) and listed (`failed_runs`), never averaged in.
+
+Workloads added by the Task 9c CARRY:
+
+- `cluster_cache` (ruling R110): 3 TCP peers (`benchmarks/cache_peer.py`), writers on node A
+  updating a catalog, readers on B and C, each read in a new transaction: point reads with the
+  decoded-atom cache at its default size, below the working set and off; a query on a collection
+  the writers never touch, with the query result cache on and off; rqlite with the same shape at
+  each read consistency level. Atom decodes per read are counted in each reader process
+  (`benchmarks/decode_counter.py`); every read, the final catalog and the advance of every reader
+  node's versions are verified.
+- `history_depth` (ProtoDB only, not a comparison): versioned entities built with the `previous`
+  pattern at depths 1/10/100/1000 versions per entity, the same number of current entities each
+  time; a current-state indexed query, warm and with no atom cache, with its latency and its atom
+  decodes per query.
+- `inventory` takes `--param inventory.atom_cache_entries=N` and records the peak RSS and the
+  atom-cache counters after the build and at the end; `mixed_read_write` asserts that every
+  ProtoDB node's readers saw the versions advance while writers committed.
 
 Every suite run also records the stray-process check (`check.stray_processes`, `checked_at`,
 `workdir_free_bytes`) in its results JSON and warns when the list is not empty.
@@ -109,7 +127,8 @@ with the results).
   (`benchmarks/fsync_probe.py`); `cluster_tcp` reports syncs per commit. To cross-check with
   strace, wrap the peers:
   `PROTODB_BENCH_PEER_WRAPPER="strace -f -qq -c -e trace=fsync,fdatasync -o /path/{node}.txt"`.
-- Memory figures (RSS) are deliberately not reported.
+- Memory figures (RSS) are reported only where memory is what is measured: the inventory scale
+  ladder (peak RSS of the building process).
 
 ## rqlite
 

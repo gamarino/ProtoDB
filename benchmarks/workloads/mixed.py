@@ -23,7 +23,9 @@ that wait, ``level=none`` reads on a follower that had not applied the catalog y
 row in the first run of Task 9c (1-5 reads per run), as rqlite documents for that level.
 
 Cells, each run separately: writers only, readers only, writers and readers together.  Every
-read is checked against the catalog's value; every write is verified as in the write workloads
+read is checked against the catalog's value; on every ProtoDB node, the database versions its
+readers saw must advance while writers commit (Task 9c CARRY: ``versions_seen`` asserted, not only
+recorded); every write is verified as in the write workloads
 (ProtoDB: the persisted state holds exactly the acknowledged ids and values; rqlite: a strong
 ``COUNT(*), SUM(length(v))`` equals the acknowledged inserts).
 
@@ -69,10 +71,17 @@ def protodb_cell(ctx, writers: int, readers: int, seconds: float, catalog: int) 
            "replication_failures_by_peer": r["replication_failures_by_peer"], "healthy_by_peer": r["healthy_by_peer"]}
     if readers:
         rd = r["reads"]
+        # Task 9c CARRY: the database versions each node's readers saw.  Under writers they must
+        # advance on every node (the snapshots follow the commits); a readers-only cell records them.
+        node_versions = [n["versions"] for n in rd["by_node"]]
+        versions_ok = all(v is not None and (v[1] > v[0] or not writers) for v in node_versions)
+        out["versions_ok"] = versions_ok
+        out["ok"] = out["ok"] and versions_ok
         out.update({"reads": rd["reads"], "bad_reads": rd["bad"], "read_rate": rd["reads_per_s"],
                     "read_p50_us": rd["p50_us"], "read_p99_us": rd["p99_us"], "read_max_us": rd["max_us"],
                     "read_steady_p50_us": rd["steady_p50_us"], "read_steady_p99_us": rd["steady_p99_us"],
-                    "read_by_node": rd["by_node"], "versions_seen": rd["versions_seen"]})
+                    "read_by_node": rd["by_node"], "versions_seen": rd["versions_seen"],
+                    "versions_seen_by_node": node_versions})
     return out
 
 
@@ -270,7 +279,8 @@ def mixed_read_write(ctx, p):
         ok = all(r["ok"] for r in rs)
         result.check(f"{label}: every read right, writes exactly the acknowledged ones", ok,
                      "; ".join(json.dumps({k: r.get(k) for k in ("ok", "bad_reads", "write_check", "ids_missing", "ids_extra",
-                                                               "thread_errors")}) for r in rs))
+                                                               "thread_errors", "versions_seen_by_node")})
+                               for r in rs))
         checksum[label], expected[label] = ok, True
         if cell[1]:
             result.add_rate(f"{label}: commits/s", [r["commit_rate"] for r in rs], "commits/s")

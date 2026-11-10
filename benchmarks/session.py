@@ -15,7 +15,9 @@ Groups (``--only``):
 * ``headline``: 3 TCP peers x 4 threads, one 100-byte value per commit; the same with 50 ids per
   commit; 5 peers x 4 threads at 100 B (``run_tcp_cluster``, ``fsync``); rqlite (3 nodes) with
   one 100-byte row per request and with 50 rows plus one 100-byte row per request;
-* ``mixed``: the cells of :mod:`benchmarks.workloads.mixed` (R97).
+* ``mixed``: the cells of :mod:`benchmarks.workloads.mixed` (R97);
+* ``cache``: the cells of :mod:`benchmarks.workloads.cluster_cache` (R110: reads across
+  transactions in a cluster under concurrent writes, caches on and off, rqlite at each level).
 
 Before the session the driver records the stray-process check (no ``rqlited`` and no other
 benchmark process may be running) and refuses to start when it fails; it records the free
@@ -65,12 +67,20 @@ def mixed_cells(with_rqlite: bool) -> list:
     return [("mixed", {"cell": list(c)}) for c in cells([1, 4], RQLITE_LEVELS, with_rqlite)]
 
 
+def cache_cells(with_rqlite: bool) -> list:
+    from benchmarks.workloads.cluster_cache import RQLITE_LEVELS, cells
+    return [("cache", {"cell": list(c)}) for c in cells(RQLITE_LEVELS, with_rqlite)]
+
+
 def label_of(kind: str, args: dict) -> str:
     """A cell's label."""
     if kind == "protodb":
         return f"protodb {args['peers']} peers x {args['threads']} threads, {args['batch']} id(s) + 100 B per commit"
     if kind == "rqlite":
         return f"rqlite 3 nodes x 4 clients, {args['batch']} row(s) + 100 B per request"
+    if kind == "cache":
+        from benchmarks.workloads.cluster_cache import cell_label as cache_label
+        return "cache: " + cache_label(*args["cell"])
     from benchmarks.workloads.mixed import cell_label
     return "mixed: " + cell_label(*args["cell"])
 
@@ -143,13 +153,18 @@ def _mixed(ctx, a, seconds):
     return run_cell(ctx, tuple(a["cell"]), seconds, 10_000)
 
 
+def _cache(ctx, a, seconds):
+    from benchmarks.workloads.cluster_cache import SHAPE, run_cell
+    return run_cell(ctx, tuple(a["cell"]), seconds, dict(SHAPE))
+
+
 def run_child(kind: str, args: dict, seconds: float, workdir: str, rqlite) -> dict:
     """Run one cell in this interpreter and return its record (never raises)."""
     import traceback
     ctx = _Ctx(workdir, rqlite)
     started = time.perf_counter()
     try:
-        record = {"protodb": _protodb, "rqlite": _rqlite, "mixed": _mixed}[kind](ctx, args, seconds)
+        record = {"protodb": _protodb, "rqlite": _rqlite, "mixed": _mixed, "cache": _cache}[kind](ctx, args, seconds)
     except Exception:            # recorded as a failed cell; the session continues
         record = {"ok": False, "error": traceback.format_exc()[-3000:]}
     finally:
@@ -166,7 +181,8 @@ def _summary(records: list) -> dict:
     is counted and its errors kept, never averaged in (a run whose writer threads died understates
     its rate by construction).  A cell with no verified run has no figures."""
     keys = ("rate", "row_rate", "commit_rate", "read_rate", "read_p50_us", "read_p99_us", "read_steady_p99_us",
-            "syncs_per_commit")
+            "syncs_per_commit", "decodes_per_read", "atom_loads_per_read", "decodes_per_new_version",
+            "atoms_saved_per_commit_on_A", "query_hit_rate", "thrash_signal")
     failed = [r for r in records if not r.get("ok")]
     out = {"runs": len(records), "verified": len(records) - len(failed), "failed": len(failed)}
     if failed:
@@ -194,7 +210,7 @@ def main(argv=None) -> int:
     p.add_argument("--json")
     p.add_argument("--workdir", default=os.path.join(REPO, "benchmarks", ".work"))
     p.add_argument("--rqlite", default=os.environ.get("PROTODB_BENCH_RQLITED"))
-    p.add_argument("--only", nargs="+", default=["headline", "mixed"], choices=["headline", "mixed"])
+    p.add_argument("--only", nargs="+", default=["headline", "mixed", "cache"], choices=["headline", "mixed", "cache"])
     p.add_argument("--modes", default="0,1", help="GIL modes to alternate (default 0,1)")
     p.add_argument("--cell", help=argparse.SUPPRESS)
     p.add_argument("--cell-out", help=argparse.SUPPRESS)
@@ -220,6 +236,8 @@ def main(argv=None) -> int:
         plan += headline_cells(with_rqlite)
     if "mixed" in a.only:
         plan += mixed_cells(with_rqlite)
+    if "cache" in a.only:
+        plan += cache_cells(with_rqlite)
     modes = [int(x) for x in a.modes.split(",")]
     envs = {}
     for mode in modes:
@@ -252,7 +270,8 @@ def main(argv=None) -> int:
                             "label": label_of(kind, args)})
                 records.append(rec)
                 shown = {k: (round(v, 1) if isinstance(v, float) else v) for k, v in rec.items()
-                         if k in ("ok", "rate", "commit_rate", "read_rate", "read_p50_us", "read_p99_us")}
+                         if k in ("ok", "rate", "commit_rate", "read_rate", "read_p50_us", "read_p99_us",
+                                  "decodes_per_read", "query_hit_rate")}
                 print(f"rep {rep} {rec['mode']} {rec['label']}: {shown}", flush=True)
     summary = {}
     for rec in records:

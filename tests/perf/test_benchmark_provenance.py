@@ -8,7 +8,9 @@
 * every results file records the stray-process check, and a session cell's figures are medians
   over its verified runs only (Task 9c review M9, I2);
 * the inventory model is consistent: links are an involution between two different sites,
-  every link id is its lower port, and a path never revisits a port.
+  every link id is its lower port, and a path never revisits a port;
+* the cluster cache profile (R110) checks catalog values of any generation and nothing else, and
+  the decode counter counts every atom a read decodes (Task 9c CARRY).
 """
 import json
 import os
@@ -138,3 +140,41 @@ def test_inventory_paths_never_revisit_a_port():
         assert len(path) == len(set(path)) <= 1 + 2 * MAX_HOPS
         for a, b in zip(path[::2], path[1::2]):
             assert m.partner(a) == b
+
+
+def test_cache_profile_values_are_checked_for_any_generation_only():
+    from benchmarks.cache_peer import catalog_value, category_ids, value_ok
+    for key in (0, 7, 19_999):
+        for gen in (0, 1, 12345):
+            assert value_ok(key, catalog_value(key, gen))
+    assert not value_ok(7, catalog_value(8, 3))                     # another key's value
+    assert not value_ok(7, catalog_value(7, 3).replace(":3:", ":4:"))   # a generation with a wrong checksum
+    assert not value_ok(7, None)
+    assert category_ids(10, 4, 1) == [1, 5, 9]
+
+
+def test_decode_counter_counts_every_decode_of_an_uncached_read():
+    from benchmarks import decode_counter
+    from proto_db import MemoryStorage, ObjectSpace
+    decode_counter.install()
+    storage = MemoryStorage()
+    space = ObjectSpace(storage)
+    db = space.new_database("d")
+    db.run(lambda tr: tr.set_root_object("m", tr.new_dictionary().set_at(1, "a").set_at(2, "b")))
+    cold = ObjectSpace(storage, atom_cache_entries=0)
+    try:
+        before = decode_counter.count()
+        with cold.open_database("d").new_transaction() as tr:
+            assert tr.get_root_object("m").get_at(2) == "b"
+        assert decode_counter.count() > before
+    finally:
+        cold.close()
+
+
+def test_the_session_runs_the_cache_profile_cells():
+    from benchmarks import session
+    plan = session.cache_cells(with_rqlite=True)
+    labels = [session.label_of(k, a) for k, a in plan]
+    assert len(plan) == 5 + 8 and len(set(labels)) == len(labels)
+    assert "cache: protodb, point reads, atom cache off" in labels
+    assert "cache: rqlite, query reads, level=strong" in labels
