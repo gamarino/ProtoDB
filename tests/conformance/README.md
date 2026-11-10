@@ -16,7 +16,7 @@ ProtoBase's own encoders (`generate.py`) and is checked byte for byte against th
 | `vectors/framing/` | Segment headers (formats 4, 3 and 2), an ATOM and a BLOB record, root records (file, formats 3 and 2, cloud, tiered) |
 | `vectors/database/` | A complete format-4 file-storage space: `space.root` and one segment, written through the public API (trained ivf_flat and hnsw vector indexes included) |
 | `vectors/legacy/` | A format-3 space: a DatabaseRoot without `origin`, a key-group index (tokens of every kind) and a vector index written with format-3 member tokens and plain KeyNode trees, zone datetimes in the wall-clock form, maps with format-3 key forms (zone datetimes, NaNs twice), collections that format 3 misfiled by writing a `(str, Enum)` member through `str()`, an application record and reference spelled by an alias |
-| `vectors/polyglot/` | A format-4 space holding a record of `polyglot.st.Order`, a type no Python class implements (an opaque atom, D59), which references a ProtoBase record and is referenced from a root |
+| `vectors/polyglot/` | A format-4 space holding a record of `polyglot.st.Order`, a type no Python class implements (an opaque atom, D59), which references a ProtoBase record and is referenced from a root, plus an older record of that type written as `polyglot.st.SalesOrder` (its previous name) and referenced under the declared name |
 | `vectors.sha256` | The SHA-256 of every vector file and of `manifest.json`, sorted by path; `format-spec.rst` states this file's own digest |
 | `vectors/cluster/<uuid>.seg` | The segment of one cluster commit: a `SpaceRoot` with its lease term, epoch and predecessor |
 | `vectors/cluster/roots.log` | An acceptor log holding every entry kind (1 to 6), each listed field by field |

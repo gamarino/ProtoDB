@@ -757,6 +757,8 @@ def _format3_subclass_encoding():
 
 #: A type name no Python class implements: another implementation's record (D59).
 OPAQUE_TYPE = "polyglot.st.Order"
+#: The name ``OPAQUE_TYPE`` had before a rename in its owning implementation.
+OPAQUE_ALIAS = "polyglot.st.SalesOrder"
 
 
 def _fill_polyglot_first(tx):
@@ -772,8 +774,13 @@ def _fill_polyglot_second(tx):
              "placed": datetime.date(2026, 12, 3)}
     ptr = tx.storage.push_atom({"t": OPAQUE_TYPE, "oid": uuid.UUID(int=0x5eed).bytes,
                                 "s": codec.encode_state(state, lambda a: a.atom_pointer)})
+    # An older record of the same type, written under its previous name (an alias only the owner
+    # knows) and referenced under the declared name, as the owner writes references (D59, I-1).
+    older = tx.storage.push_atom({"t": OPAQUE_ALIAS, "oid": uuid.UUID(int=0x5eef).bytes,
+                                  "s": codec.encode_state({"number": 6}, lambda a: a.atom_pointer)})
     tx.storage.flush()
-    tx.set_root_object("holder", tx.get_root_object("holder").with_(order=tx.load(ptr, OPAQUE_TYPE)))
+    tx.set_root_object("holder", tx.get_root_object("holder").with_(
+        order=tx.load(ptr, OPAQUE_TYPE), older_order=tx.load(older, OPAQUE_TYPE)))
 
 
 def gen_polyglot_database(manifest):
@@ -781,6 +788,7 @@ def gen_polyglot_database(manifest):
     with _Deterministic(0x4000):
         entry = _write_space("polyglot", [_fill_polyglot_first, _fill_polyglot_second])
     entry["opaque_type"] = OPAQUE_TYPE
+    entry["opaque_alias"] = OPAQUE_ALIAS
     manifest["polyglot_database"] = entry
 
 
@@ -815,7 +823,7 @@ def gen_legacy_database(manifest):
                mock.patch.object(codec, "check_map_keys", any_keys),
                mock.patch.object(values_module, "check_map_keys", any_keys),
                mock.patch.object(DatabaseRoot, "__init__", no_origin)]
-    patches += [mock.patch.object(m, "FORMAT_VERSION", 3) for m in (fmt, file_module, tx_module)]
+    patches += [mock.patch.object(m, "WRITE_FORMAT_VERSION", 3) for m in (fmt, file_module, tx_module)]
     with _Deterministic(0x3000):
         for p in patches:
             p.start()

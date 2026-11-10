@@ -310,6 +310,8 @@ def test_an_opaque_atom_is_kept_as_written_when_what_references_it_changes(tmp_p
             assert (order.atom_pointer.segment.hex, order.atom_pointer.offset) == \
                 (Path(vector["segment"]).stem, record["offset"])
             assert order.number == 7 and order.customer.name == "ACME"
+            older = tx.get_root_object("holder").older_order       # record t is the old name
+            assert older.number == 6 and type(older).__type_name__ == vector["opaque_type"]
         db.run(check)
     finally:
         space.close()

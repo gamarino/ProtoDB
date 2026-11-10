@@ -19273,7 +19273,7 @@
   "root": {
    "version": 4,
    "segment": "5eed0000000040008000000000004004",
-   "offset": 3044,
+   "offset": 3176,
    "epoch": 3
   },
   "records": [
@@ -20009,7 +20009,25 @@
    {
     "offset": 2083,
     "kind": 1,
-    "size": 108,
+    "size": 74,
+    "tag": "polyglot.st.SalesOrder",
+    "type": "polyglot.st.SalesOrder",
+    "oid": "00000000000000000000000000005eef",
+    "state": [
+     [
+      "number",
+      {
+       "int": "6"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 2157,
+    "kind": 1,
+    "size": 166,
     "tag": 19,
     "type": "proto_db.core.dbobject.DBObject",
     "oid": "5eed0000000040008000000000004015",
@@ -20029,13 +20047,23 @@
         "type": "polyglot.st.Order"
        }
       }
+     ],
+     [
+      "older_order",
+      {
+       "ref": {
+        "segment": "5eed0000000040008000000000004004",
+        "offset": 2083,
+        "type": "polyglot.st.Order"
+       }
+      }
      ]
     ],
     "canonical": true,
     "rewritable": true
    },
    {
-    "offset": 2191,
+    "offset": 2323,
     "kind": 1,
     "size": 118,
     "tag": 0,
@@ -20053,7 +20081,7 @@
       {
        "ref": {
         "segment": "5eed0000000040008000000000004004",
-        "offset": 2083,
+        "offset": 2157,
         "type": "proto_db.core.dbobject.DBObject"
        }
       }
@@ -20087,7 +20115,7 @@
     "rewritable": true
    },
    {
-    "offset": 2309,
+    "offset": 2441,
     "kind": 1,
     "size": 148,
     "tag": 0,
@@ -20121,7 +20149,7 @@
       {
        "ref": {
         "segment": "5eed0000000040008000000000004004",
-        "offset": 2191,
+        "offset": 2323,
         "type": "proto_db.avl.KeyNode"
        }
       }
@@ -20143,7 +20171,7 @@
     "rewritable": true
    },
    {
-    "offset": 2457,
+    "offset": 2589,
     "kind": 1,
     "size": 120,
     "tag": 6,
@@ -20155,7 +20183,7 @@
       {
        "ref": {
         "segment": "5eed0000000040008000000000004004",
-        "offset": 2309,
+        "offset": 2441,
         "type": "proto_db.avl.KeyNode"
        }
       }
@@ -20181,7 +20209,7 @@
     "rewritable": true
    },
    {
-    "offset": 2577,
+    "offset": 2709,
     "kind": 1,
     "size": 231,
     "tag": 18,
@@ -20193,7 +20221,7 @@
       {
        "ref": {
         "segment": "5eed0000000040008000000000004004",
-        "offset": 2457,
+        "offset": 2589,
         "type": "proto_db.collections.Dictionary"
        }
       }
@@ -20255,7 +20283,7 @@
     "rewritable": true
    },
    {
-    "offset": 2808,
+    "offset": 2940,
     "kind": 1,
     "size": 114,
     "tag": 0,
@@ -20273,7 +20301,7 @@
       {
        "ref": {
         "segment": "5eed0000000040008000000000004004",
-        "offset": 2577,
+        "offset": 2709,
         "type": "proto_db.transactions.DatabaseRoot"
        }
       }
@@ -20307,7 +20335,7 @@
     "rewritable": true
    },
    {
-    "offset": 2922,
+    "offset": 3054,
     "kind": 1,
     "size": 122,
     "tag": 6,
@@ -20319,7 +20347,7 @@
       {
        "ref": {
         "segment": "5eed0000000040008000000000004004",
-        "offset": 2808,
+        "offset": 2940,
         "type": "proto_db.avl.KeyNode"
        }
       }
@@ -20345,7 +20373,7 @@
     "rewritable": true
    },
    {
-    "offset": 3044,
+    "offset": 3176,
     "kind": 1,
     "size": 83,
     "tag": 17,
@@ -20357,7 +20385,7 @@
       {
        "ref": {
         "segment": "5eed0000000040008000000000004004",
-        "offset": 2922,
+        "offset": 3054,
         "type": "proto_db.collections.Dictionary"
        }
       }
@@ -20392,6 +20420,20 @@
         "name",
         {
          "str": "holder"
+        }
+       ],
+       [
+        "older_order",
+        {
+         "opaque": "polyglot.st.Order",
+         "attrs": [
+          [
+           "number",
+           {
+            "int": "6"
+           }
+          ]
+         ]
         }
        ],
        [
@@ -20461,7 +20503,8 @@
     "bytes": "5eed0000000040008000000000004001"
    }
   },
-  "opaque_type": "polyglot.st.Order"
+  "opaque_type": "polyglot.st.Order",
+  "opaque_alias": "polyglot.st.SalesOrder"
  },
  "cluster": {
   "segment": {
