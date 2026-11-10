@@ -41,7 +41,8 @@ from proto_db.indexing.keyspec import KeySpec
 from proto_db.storage import cloud, format as fmt, logfile, tiered
 from proto_db.storage.file import FileStorage
 from proto_db.transactions import ObjectSpace, SpaceRoot, _ClusterStamp
-from proto_db.values import MISSING, MutableObject
+from proto_db.errors import ProtoValidationError
+from proto_db.values import MISSING, FrozenDict, FrozenList, MutableObject, is_atom
 from tests.conformance import typed
 from tests.conformance.model import Invoice
 from tests.support.persistence import DirectContext
@@ -229,10 +230,26 @@ def gen_values(manifest):
         ("float-32", b"\xca" + bytes.fromhex("3fc00000"), "float-1.5", "a float 32: read, written as float 64"),
         ("int-wide", b"\xd3" + bytes(8), "int-zero", "an integer in a wider encoding than needed"),
     ]
+    zone_key = {"@dt": [2026, 3, 8, 12, 0, 0, 0, 0, ["zone", "America/New_York"]]}
+    manifest["values_read_not_rewritten"] = [
+        {"id": vid, "file": _write(f"values/{vid}.msgpack", data), "value": typed.describe(_decode_for_manifest(data)),
+         "note": note}
+        for vid, data, note in [
+            ("map-zone-key-format3", _pack({"@map": [[zone_key, "a"], [{"@tup": [zone_key, 1]}, "b"]]}),
+             "format 3: a datetime in an IANA zone as a map key (alone and in a tuple)"),
+            ("map-nan-keys-format3", _pack({"@map": [[float("nan"), 1], [float("nan"), 2]]}),
+             "format 3: two NaN keys with one encoding, kept as two keys"),
+            ("map-decimal-nan-keys-format3", _pack({"@map": [[{"@dec": "NaN"}, 1], [{"@dec": "NaN"}, 2]]}),
+             "format 3: two decimal NaN keys with one encoding, kept as two keys"),
+        ]]
     manifest["values_decode_only"] = [
         {"id": vid, "file": _write(f"values/{vid}.msgpack", data), "canonical": f"values/{canon}.msgpack",
          "value": next(d for i, d, _ in VALUES if i == canon), "note": note}
         for vid, data, canon, note in legacy]
+
+
+def _decode_for_manifest(data: bytes):
+    return codec.decode_value(msgpack.unpackb(data, raw=False, strict_map_key=False), lambda p, t: None)
 
 
 def gen_invalid(manifest):
@@ -259,6 +276,9 @@ def gen_invalid(manifest):
          "a time zone key the reader does not know"),
         ("value-instant-fold", "value", _pack({"@dt": dt + [1, ["instant", "America/New_York"]]}),
          "an instant has fold 0"),
+        ("value-instant-wall-out-of-range", "value",
+         _pack({"@dt": [9999, 12, 31, 23, 0, 0, 0, 0, ["instant", "Asia/Tokyo"]]}),
+         "an instant whose wall clock in its zone is after year 9999"),
         ("value-time-instant", "value", _pack({"@time": [12, 0, 0, 0, 0, ["instant", "America/New_York"]]}),
          "the instant form is for @dt only"),
         ("value-ref-short-segment", "value", _pack({"@ref": [seg[:15], 0, 6]}), "@ref segment of 15 bytes"),
@@ -275,8 +295,6 @@ def gen_invalid(manifest):
             [{"@dt": [2025, 12, 31, 21, 0, 0, 0, 0, ["fixed", -10800000000, "UTC-03:00"]]}, 2]]}),
          "two aware datetimes of one instant conflict"),
         ("map-key-duplicate", "value", _pack({"@map": [["k", 1], ["k", 2]]}), "one key twice"),
-        ("map-key-nan-twice", "value", _pack({"@map": [[float("nan"), 1], [float("nan"), 2]]}),
-         "two NaNs with one encoding conflict"),
         ("map-key-list", "value", _pack({"@map": [[[1], 1]]}), "a list cannot be a map key"),
         ("map-key-snan", "value", _pack({"@map": [[{"@dec": "sNaN"}, 1]]}), "a signaling NaN cannot be a map key"),
         ("map-key-zone-datetime", "value", _pack({"@map": [[{"@dt": dt + [0, ["instant", "America/New_York"]]}, 1]]}),
@@ -542,10 +560,13 @@ def _records(path: Path) -> list:
         if kind == fmt.RecordKind.ATOM:
             p = msgpack.unpackb(payload, raw=False)
             state = codec.decode_state(p["s"], stub)
-            again = _pack({"t": p["t"], "oid": p["oid"], "s": codec.encode_state(state, saved_pointer)})
+            try:
+                again = _pack({"t": p["t"], "oid": p["oid"], "s": codec.encode_state(state, saved_pointer)})
+            except ProtoValidationError:          # a format-3 map key form: read, never written again
+                again = None
             entry.update({"tag": p["t"], "type": type_name_of(p["t"]), "oid": p["oid"].hex(),
                           "state": [[k, typed.describe(v)] for k, v in state.items()],
-                          "canonical": again == payload})
+                          "canonical": again == payload, "rewritable": again is not None})
         out.append(entry)
         pos += size
     return out
@@ -585,38 +606,115 @@ def _write_space(directory: str, fills: list) -> dict:
 
 # -- a database as format 3 wrote it ------------------------------------------------------------
 
+_FORMAT3_TAGS = {type(None): "N", bool: "b", int: "i", float: "f", Decimal: "D", str: "s", bytes: "y",
+                 datetime.date: "d", datetime.time: "t", datetime.datetime: "dt", datetime.timedelta: "td",
+                 uuid.UUID: "u", tuple: "T", list: "L", FrozenList: "FL", dict: "M", FrozenDict: "FM"}
+
+
+def _format3_tz(value):
+    tz = value.tzinfo
+    if tz is None:
+        return None
+    offset = value.utcoffset()
+    return (None if offset is None else offset // datetime.timedelta(microseconds=1), repr(tz))
+
+
 def _format3_token(value) -> tuple:
-    """The exact token format 3 wrote for an int or a str (Python text, D30; replaced by D58)."""
-    return ("i", value) if type(value) is int else ("s", value)
+    """The exact token format 3 wrote (D30, replaced by D58): this is the code of 313d085's
+    ``exact_token``, kept here so the legacy vector holds the tokens format 3 really wrote."""
+    if is_atom(value):
+        return ("a",)
+    cls = type(value)
+    tag = _FORMAT3_TAGS.get(cls) or f"{cls.__module__}.{cls.__qualname__}"
+    if value is None:
+        return (tag,)
+    if isinstance(value, (bool, int)):
+        return (tag, int(value))
+    if isinstance(value, float):
+        return (tag, float.hex(value))
+    if isinstance(value, Decimal):
+        return (tag, str(value))
+    if isinstance(value, (str, bytes)):
+        return (tag, value)
+    if isinstance(value, datetime.datetime):
+        return (tag, value.replace(tzinfo=None).isoformat(), value.fold, _format3_tz(value))
+    if isinstance(value, datetime.date):
+        return (tag, value.toordinal())
+    if isinstance(value, datetime.time):
+        return (tag, value.replace(tzinfo=None).isoformat(), value.fold, _format3_tz(value))
+    if isinstance(value, datetime.timedelta):
+        return (tag, value.days, value.seconds, value.microseconds)
+    if isinstance(value, uuid.UUID):
+        return (tag, value.int)
+    if isinstance(value, (tuple, list)):
+        return (tag, tuple(_format3_token(v) for v in value))
+    if isinstance(value, dict):
+        return (tag, tuple((_format3_token(k), _format3_token(v)) for k, v in value.items()))
+    return (tag, repr(value))
+
+
+def _format3_members(members):
+    old = None
+    for (eq, _token), entry in avl.key_iter(members):
+        old = avl.key_put(old, (eq, _format3_token(entry[0])), entry)[0]
+    return old
 
 
 def _format3_index(index):
-    """``index`` (a key-group index over ints and strs) as format 3 before D56 wrote it: plain
-    KeyNode trees, Python-text member tokens, no ``member_tokens`` field."""
-    groups = None
-    for key, (members, total) in avl.key_iter(index.groups):
-        old = None
-        for (eq, _token), (element, n) in avl.key_iter(members):
-            old = avl.key_put(old, (eq, _format3_token(element)), (element, n))[0]
-        groups = avl.key_put(groups, key, (old, total))[0]
-    legacy = index._with(groups=groups)
+    """``index`` as format 3 before D56 wrote it: plain KeyNode trees, format-3 member tokens,
+    no ``member_tokens`` field.  A key-group index or a vector index."""
+    if isinstance(index, VectorIndex):
+        store = None
+        for (list_no, (eq, _token)), entry in avl.key_iter(index.store):
+            store = avl.key_put(store, (list_no, (eq, _format3_token(entry[0]))), entry)[0]
+        members, total = index.invalid
+        legacy = index._with(store=store, invalid=(_format3_members(members), total))
+    else:
+        groups = None
+        for key, (members, total) in avl.key_iter(index.groups):
+            groups = avl.key_put(groups, key, (_format3_members(members), total))[0]
+        side_members, side_total = index.side
+        legacy = index._with(groups=groups, side=(_format3_members(side_members), side_total))
     object.__delattr__(legacy, "member_tokens")
     return legacy
 
 
+def _with_format3_index(collection, name):
+    return collection._with(indexes=collection.indexes.without(name).with_index(
+        _format3_index(collection.get_index(name))))
+
+
+#: The elements of the legacy list: every kind of member token format 3 wrote, a zone datetime
+#: (written in the wall-clock form) among them.
+LEGACY_ELEMENTS = [1, 2, 2, "x", 1.5, -0.0, Decimal("2.50"), (1, "a"), b"\x00",
+                   datetime.datetime(2026, 11, 1, 1, 30, fold=1, tzinfo=ZoneInfo("America/New_York")),
+                   datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone(datetime.timedelta(hours=-3))),
+                   datetime.date(2026, 1, 1), None, [1, 2]]
+
+
 def _fill_legacy(tx):
-    numbers = List.from_iterable([1, 2, 2, "x"]).add_index(EqualityIndex("e", KeySpec.element()))
-    numbers = numbers._with(indexes=numbers.indexes.without("e").with_index(_format3_index(numbers.get_index("e"))))
-    tx.set_root_object("numbers", numbers)
+    numbers = List.from_iterable(LEGACY_ELEMENTS).add_index(EqualityIndex("e", KeySpec.element()))
+    tx.set_root_object("numbers", _with_format3_index(numbers, "e"))
+    vectors = List().add_index(VectorIndex("near", "emb", dim=2, metric="l2"))
+    for emb in ((1.0, 0.0), (0.0, 1.0), (1, 2, 3)):                     # the last one is invalid
+        vectors = vectors.append_last(DBObject(emb=emb))
+    tx.set_root_object("vectors", _with_format3_index(vectors, "near"))
     tx.set_root_object("invoice", Invoice(
         number=Decimal("7"), issued=datetime.datetime(2026, 11, 1, 1, 30, fold=1, tzinfo=ZoneInfo("America/New_York"))))
     tx.set_root_object("invoices", List().append_last(Invoice(number=Decimal("8"))))
+    zone = datetime.datetime(2026, 3, 8, 12, tzinfo=ZoneInfo("America/New_York"))
+    tx.set_root_object("maps", DBObject(
+        zone_keys={zone: "a", (zone, 1): "b"},
+        nan_keys={float("nan"): 1, float("nan"): 2},
+        decimal_nan_keys={Decimal("NaN"): 1, Decimal("NaN"): 2}))
 
 
 def gen_legacy_database(manifest):
-    """A format-3 space: format-3 segment and root, a DatabaseRoot without ``origin``, an index
-    without ``member_tokens`` (plain KeyNode trees, Python-text tokens), a zone datetime in the
-    wall-clock form, and an application record and reference spelled by an alias."""
+    """A format-3 space: format-3 segment and root, a DatabaseRoot without ``origin``, a
+    key-group and a vector index without ``member_tokens`` (plain KeyNode trees, format-3
+    tokens of every kind), zone datetimes in the wall-clock form, maps with the key forms format
+    3 allowed (zone datetimes, NaNs twice), and an application record and reference spelled by
+    an alias."""
     from proto_db.core import atom as atom_module
     from proto_db.storage import file as file_module
     import proto_db.transactions as tx_module
@@ -633,8 +731,14 @@ def gen_legacy_database(manifest):
 
     def no_origin(self, *args, origin=None, **kwargs):
         real_init(self, *args, origin=None, **kwargs)
+    import proto_db.values as values_module
+
+    def any_keys(keys, zone_forms=None):
+        """Format 3 had no map-key rule: Python's dict decided."""
     patches = [mock.patch.object(atom_module, "type_tag", alias_tag), mock.patch.object(codec, "type_tag", alias_tag),
                mock.patch.object(codec, "_instant_fields", wall_clock),
+               mock.patch.object(codec, "check_map_keys", any_keys),
+               mock.patch.object(values_module, "check_map_keys", any_keys),
                mock.patch.object(DatabaseRoot, "__init__", no_origin)]
     patches += [mock.patch.object(m, "FORMAT_VERSION", 3) for m in (fmt, file_module, tx_module)]
     with _Deterministic(0x3000):

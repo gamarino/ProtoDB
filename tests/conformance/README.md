@@ -15,7 +15,7 @@ ProtoBase's own encoders (`generate.py`) and is checked byte for byte against th
 | `vectors/invalid/*.bin` | Inputs a reader must refuse, at every layer (value, map key, atom envelope and state, record, segment, root, log, acceptor log, cluster message) |
 | `vectors/framing/` | Segment headers (formats 4, 3 and 2), an ATOM and a BLOB record, root records (file, formats 3 and 2, cloud, tiered) |
 | `vectors/database/` | A complete format-4 file-storage space: `space.root` and one segment, written through the public API (trained ivf_flat and hnsw vector indexes included) |
-| `vectors/legacy/` | A format-3 space: a DatabaseRoot without `origin`, an index written with format-3 member tokens and plain KeyNode trees, a zone datetime in the wall-clock form, an application record and reference spelled by an alias |
+| `vectors/legacy/` | A format-3 space: a DatabaseRoot without `origin`, a key-group index (tokens of every kind) and a vector index written with format-3 member tokens and plain KeyNode trees, zone datetimes in the wall-clock form, maps with format-3 key forms (zone datetimes, NaNs twice), an application record and reference spelled by an alias |
 | `vectors/cluster/<uuid>.seg` | The segment of one cluster commit: a `SpaceRoot` with its lease term, epoch and predecessor |
 | `vectors/cluster/roots.log` | An acceptor log holding every entry kind (1 to 6), each listed field by field |
 | `vectors/cluster/roots-torn.log` | The same log with a torn tail (its last frame cut) |
@@ -51,9 +51,12 @@ A reader passes when, for every entry of `manifest.json`:
 
 1. `values`: decoding the file gives the described value; encoding that value gives the
    file's bytes again (a writer's check).
-2. `values_decode_only`: legacy forms (format 2 references, a built-in type spelled by name).
+2. `values_decode_only`: legacy forms (format 2 references, a built-in type spelled by name,
+   an alias, a format-3 zone datetime, msgpack's wider encodings).
    Decoding gives the described value; re-encoding gives the bytes of the `canonical` file,
-   never the legacy form.
+   never the legacy form. `values_read_not_rewritten`: format-3 maps whose keys the map-key
+   rule forbids (a zone datetime, NaNs with one encoding); decoding gives the described value,
+   and encoding it again is refused (ProtoValidationError).
 3. `invalid`: reading the file at its `layer` is refused with the listed `error`:
    `corruption` (ProtoCorruptionError), `not_supported` (ProtoNotSupportedError) or `protocol`
    (a cluster receiver drops the connection). Layers: `value` (one canonical value), `atom`
@@ -78,8 +81,10 @@ A reader passes when, for every entry of `manifest.json`:
    and the list number of every stored vector, which your list assignment must reproduce).
    Records whose `canonical` is true re-encode byte for byte; the others are legacy forms
    (`legacy`: an alias, a format-3 zone datetime) that re-encode canonically.
-   Do the same for `legacy_database`, a format-3 space; after a change of its `numbers`
-   list, its index must have been rebuilt with format-4 tokens.
+   Do the same for `legacy_database`, a format-3 space: its indexes validate before any change
+   (stale, not corrupt), and after a change of a collection its index must have been rebuilt
+   with format-4 tokens. Records whose `rewritable` is false hold a format-3 map key form:
+   they decode to the listed state, and encoding that state again is refused.
 8. `cluster`: the segment as in step 7; each log decodes to the listed entries (`roots_log`
    gives every entry's size and `fields`, from which your encoder must rebuild the entry's
    bytes -- `records` items are `[segment, offset, size]` of records in the cluster segment --,

@@ -18,7 +18,7 @@ from proto_db.cluster import protocol, rootlog
 from proto_db.core import codec
 from proto_db.core.atom import BUILTIN_TYPE_ALIASES, type_name_of
 from proto_db.cluster.protocol import ClusterProtocolError
-from proto_db.errors import ProtoCorruptionError, ProtoNotSupportedError
+from proto_db.errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoValidationError
 from proto_db.storage import cloud, format as fmt, logfile, tiered
 from proto_db.storage.file import FileStorage
 from proto_db.transactions import ObjectSpace
@@ -69,6 +69,14 @@ def test_legacy_value_vector_decodes_and_reencodes_canonically(vector):
     value = _decode(_bytes(vector["file"]))
     assert typed.describe(value) == vector["value"]
     assert _reencode(value) == _bytes(vector["canonical"])
+
+
+@pytest.mark.parametrize("vector", MANIFEST["values_read_not_rewritten"], ids=lambda v: v["id"])
+def test_format_3_map_keys_are_read_but_not_written_again(vector):
+    value = _decode(_bytes(vector["file"]))
+    assert typed.describe(value) == vector["value"]
+    with pytest.raises(ProtoValidationError, match="map key"):
+        _reencode(value)
 
 
 _ERRORS = {"corruption": ProtoCorruptionError, "not_supported": ProtoNotSupportedError,
@@ -223,12 +231,17 @@ def _check_segment(rel: str, records: list) -> None:
         assert envelope["oid"].hex() == entry["oid"]
         state = codec.decode_state(envelope["s"], stub)
         assert [[k, typed.describe(v)] for k, v in state.items()] == entry["state"]
-        again = _pack({"t": envelope["t"], "oid": envelope["oid"], "s": codec.encode_state(state, saved_pointer)})
-        # Records of the current format re-encode byte for byte; a legacy record (an alias, a
-        # format-3 zone datetime) decodes to the listed state and re-encodes canonically.
-        assert (again == payload) is entry["canonical"]
-        if entry["canonical"]:
-            assert fmt.encode_record(kind, again) == data[pos:pos + size]
+        if entry["rewritable"]:
+            again = _pack({"t": envelope["t"], "oid": envelope["oid"],
+                           "s": codec.encode_state(state, saved_pointer)})
+            # Records of the current format re-encode byte for byte; a legacy record (an alias, a
+            # format-3 zone datetime or token) decodes to the listed state and re-encodes canonically.
+            assert (again == payload) is entry["canonical"]
+            if entry["canonical"]:
+                assert fmt.encode_record(kind, again) == data[pos:pos + size]
+        else:                                     # a format-3 map key form: read, refused at write
+            with pytest.raises(ProtoValidationError, match="map key"):
+                codec.encode_state(state, saved_pointer)
         pos += size
     assert pos == len(data), "the manifest lists every record of the segment"
 
@@ -240,6 +253,8 @@ def test_database_segment(name):
     assert int.from_bytes(_bytes(f"{db['dir']}/{db['segment']}")[8:10], "little") == db["format"]
     if name == "database":
         assert all(r["canonical"] for r in db["records"])
+    else:
+        assert not all(r["rewritable"] for r in db["records"])      # the format-3 maps are there
 
 
 def test_every_persistable_builtin_type_appears():
@@ -273,6 +288,28 @@ def test_database_contents_through_the_public_api(tmp_path, name):
         space.close()
 
 
+def test_format_3_indexes_validate_before_their_first_change(tmp_path):
+    work = tmp_path / "db"
+    shutil.copytree(HERE / "vectors" / MANIFEST["legacy_database"]["dir"], work)
+    space = ObjectSpace(FileStorage(str(work)))
+    try:
+        def check(tx):
+            for root, name in (("numbers", "e"), ("vectors", "near")):
+                collection = tx.get_root_object(root)
+                index = collection.get_index(name)
+                assert not index.has_current_tokens()
+                index.validate(list(collection.elements()))      # stale, never corrupt
+        space.open_database("db").run(check)
+    finally:
+        space.close()
+
+
+def _check_rebuilt(collection, name):
+    index = collection.get_index(name)
+    assert index.has_current_tokens()
+    index.validate(list(collection.elements()))
+
+
 def test_a_format_3_index_is_rebuilt_at_its_first_change(tmp_path):
     from proto_db.query.terms import EQ, Term
     work = tmp_path / "db"
@@ -288,7 +325,10 @@ def test_a_format_3_index_is_rebuilt_at_its_first_change(tmp_path):
             assert index.has_current_tokens()
             index.validate(list(numbers.elements()))
             assert list(index.plan(Term(None, EQ, 2)).execute()) == [2, 2, 2]
+            vectors = tx.get_root_object("vectors")
+            tx.set_root_object("vectors", vectors.remove_at(0))
         db.run(check)
+        db.run(lambda tx: _check_rebuilt(tx.get_root_object("vectors"), "near"))
     finally:
         space.close()
 
