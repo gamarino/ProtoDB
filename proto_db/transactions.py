@@ -1951,6 +1951,10 @@ class Transaction:
         being written is never merged: a concurrent change to it is a conflict.
         """
         _check_name(name)
+        if name.startswith("__"):
+            # Reserved for additive extensions of the format (the runtime registry's
+            # __currentModules and __currentSymbols, Task 10.P A1): never written by applications.
+            raise ProtoValidationError(f"Root names starting with '__' are reserved for the format, not {name!r}")
         if not isinstance(replace, bool):
             raise ProtoValidationError("replace must be a bool")
         value = canonical(value)

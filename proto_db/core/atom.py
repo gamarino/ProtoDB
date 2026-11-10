@@ -120,7 +120,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Optional, Protocol, runtime_checkable
 
-from ..errors import ProtoCorruptionError, ProtoUserError, ProtoValidationError
+from ..errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoUserError, ProtoValidationError
 
 __all__ = ["AtomPointer", "PersistenceContext", "Atom", "register_atom_class", "RESERVED_NAMES",
            "BUILTIN_TYPE_ALIASES", "TYPE_NAME_PATTERN", "type_tag", "type_name_of"]
@@ -508,6 +508,9 @@ class Atom:
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         cls._custom_restore = cls._restore is not Atom._restore or cls._set_link is not Atom._set_link
+        if cls.__dict__.get("_opaque_stand_in"):
+            cls._type_name_declared = True      # an OpaqueAtom stand-in: never registered (D59)
+            return
         declared = "__type_name__" in cls.__dict__
         if declared:
             name = cls.__dict__["__type_name__"]
@@ -552,10 +555,20 @@ class Atom:
     def _stub(cls, context: PersistenceContext, ptr: AtomPointer, type_name: str) -> "Atom":
         """Return an unloaded atom of class ``type_name`` stored at ``ptr``.
 
-        The class is resolved through the registry; it must be ``cls`` or a subclass.
+        The class is resolved through the registry; it must be ``cls`` or a subclass.  A type
+        name this process has no class for, written by another implementation, gives an
+        :class:`OpaqueAtom` (D59) when it is a valid name outside the reserved ``proto_db.``
+        namespace; using it as a ``cls`` other than :class:`Atom` is ``ProtoNotSupportedError``.
         """
-        target = Atom._class_for(type_name)
+        try:
+            target = Atom._class_for(type_name)
+        except ProtoCorruptionError:
+            target = opaque_class(type_name)
         if not issubclass(target, cls):
+            if issubclass(target, OpaqueAtom):
+                raise ProtoNotSupportedError(
+                    f"The atom at {ptr} is of type {type_name!r}, which has no class registered in this "
+                    f"process: it cannot be used as a {cls.__type_name__}")
             raise ProtoCorruptionError(f"Atom type {type_name!r} is not a {cls.__type_name__}")
         stub = object.__new__(target)
         osa = object.__setattr__
@@ -840,8 +853,13 @@ class Atom:
         identity of ``self``."""
         cls = type(self)
         for name in state:
-            if name.startswith("_") or name in RESERVED_NAMES or hasattr(cls, name):
+            if name.startswith("_") or name in RESERVED_NAMES:
                 raise ProtoCorruptionError(f"Invalid persisted attribute name {name!r} for {cls.__type_name__}")
+            if hasattr(cls, name):
+                raise ProtoCorruptionError(
+                    f"Invalid persisted attribute name {name!r} for {cls.__type_name__}: the Python class "
+                    f"defines an attribute of that name, which would hide the field (in Python the field is "
+                    f"its own accessor, so even a property written as an accessor is refused; Task 10.P A4)")
         osa = object.__setattr__
         links = cls._history_links
         for name, value in state.items():
@@ -962,3 +980,74 @@ class Atom:
                 oid = None
             return f"<{type(self).__type_name__} oid={oid}>"
         return f"<{type(self).__type_name__} stub at {self.atom_pointer}>"
+
+
+# -- opaque atoms: types written by another implementation (D59, Task 10.P A3) ----------------
+
+class OpaqueAtom(Atom):
+    """An atom of a type this process has no class for: a record written by another
+    implementation sharing the database (each language registers its own classes).
+
+    Its fields are read as attributes, its type name is ``type(atom).__type_name__`` and its
+    oid is ``atom.oid``; it is never written again, so its record stays byte for byte as it was
+    read, and references to it keep its pointer and type name.  Anything that needs the type's
+    behaviour (a method, a field it does not hold, a change, a construction) raises
+    ``ProtoNotSupportedError`` naming the type.  Instances are always loaded stubs of a
+    per-name subclass (:func:`opaque_class`), never registered: a class registered later under
+    the same name takes over for loads that follow.
+    """
+
+    __type_name__ = "proto_db.core.atom.OpaqueAtom"
+    #: Never registered, nor its per-name subclasses: no record is ever of this type.
+    _opaque_stand_in = True
+
+    def __init__(self, *args, **kwargs):
+        raise ProtoNotSupportedError(
+            f"{type(self).__type_name__!r} has no class registered in this process: an opaque atom "
+            f"is only read from storage, never constructed")
+
+    def _absent_attribute(self, name: str):
+        raise ProtoNotSupportedError(
+            f"{name!r} is not a field of this {type(self).__type_name__!r} atom, and that type has no class "
+            f"registered in this process: its behaviour is not available here")
+
+    def __setattr__(self, name, value):
+        if name.startswith("_") or name in RESERVED_NAMES:
+            object.__setattr__(self, name, value)
+            return
+        raise ProtoNotSupportedError(
+            f"Cannot change {name!r} of an opaque {type(self).__type_name__!r} atom: the type has no class "
+            f"registered in this process, so a new version of it cannot be written here")
+
+    def __delattr__(self, name):
+        raise ProtoNotSupportedError(f"Cannot change an opaque {type(self).__type_name__!r} atom")
+
+    def _save(self) -> AtomPointer:
+        ptr = self.atom_pointer
+        if ptr is None:
+            raise ProtoNotSupportedError(f"An opaque {type(self).__type_name__!r} atom has no record to keep")
+        return ptr
+
+    def __repr__(self):
+        return f"<OpaqueAtom {type(self).__type_name__} at {self.atom_pointer}>"
+
+
+_opaque_classes: dict = {}
+
+
+def opaque_class(type_name: str) -> type:
+    """The :class:`OpaqueAtom` subclass standing in for ``type_name`` (one per name, cached).
+    ``ProtoCorruptionError`` when ``type_name`` cannot be another implementation's type: a name
+    outside :data:`TYPE_NAME_PATTERN`, or in the reserved ``proto_db.`` namespace (every
+    built-in type is known to every reader)."""
+    if not isinstance(type_name, str) or not TYPE_NAME_PATTERN.match(type_name) \
+            or type_name.startswith("proto_db."):
+        raise ProtoCorruptionError(f"Unknown atom type {type_name!r}")
+    with _registry_lock:
+        cls = _opaque_classes.get(type_name)
+    if cls is None:
+        made = type(f"Opaque[{type_name}]", (OpaqueAtom,),
+                    {"__type_name__": type_name, "_opaque_stand_in": True, "__module__": __name__})
+        with _registry_lock:
+            cls = _opaque_classes.setdefault(type_name, made)
+    return cls

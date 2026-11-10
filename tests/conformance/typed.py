@@ -23,12 +23,12 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from proto_db.core.atom import Atom, AtomPointer
+from proto_db.core.atom import AtomPointer
+from proto_db.tools import notation
 from proto_db.values import MISSING, FrozenDict, FrozenList, MutableObject
 
 __all__ = ["build", "describe", "describe_raw", "RefTarget"]
 
-_MICROSECOND = timedelta(microseconds=1)
 
 
 class RefTarget:
@@ -52,14 +52,6 @@ def _tz_build(tz):
         return ZoneInfo(tz[1])
     result = timezone(timedelta(microseconds=tz[1]))
     return result if result.tzname(None) == tz[2] else timezone(result.utcoffset(None), tz[2])
-
-
-def _tz_describe(tz):
-    if tz is None:
-        return None
-    if isinstance(tz, ZoneInfo):
-        return ["zone", tz.key]
-    return ["fixed", tz.utcoffset(None) // _MICROSECOND, tz.tzname(None)]
 
 
 def build(desc, load_ref=None):
@@ -111,55 +103,12 @@ def build(desc, load_ref=None):
 
 
 def describe(value):
-    """The value description of a decoded canonical value (types are matched exactly)."""
-    t = type(value)
-    if value is None:
-        return {"nil": None}
-    if t is bool:
-        return {"bool": value}
-    if t is int:
-        return {"int": str(value)}
-    if t is float:
-        return {"float": float.hex(value) if value == value and abs(value) != float("inf") else repr(value)}
-    if t is str:
-        return {"str": value}
-    if t is bytes:
-        return {"bytes": value.hex()}
-    if t is Decimal:
-        return {"decimal": str(value)}
-    if t is datetime and isinstance(value.tzinfo, ZoneInfo):
-        u = value.astimezone(timezone.utc)
-        return {"datetime": [u.year, u.month, u.day, u.hour, u.minute, u.second, u.microsecond, 0,
-                             ["instant", value.tzinfo.key]]}
-    if t is datetime:
-        return {"datetime": [value.year, value.month, value.day, value.hour, value.minute, value.second,
-                             value.microsecond, value.fold, _tz_describe(value.tzinfo)]}
-    if t is date:
-        return {"date": [value.year, value.month, value.day]}
-    if t is time:
-        return {"time": [value.hour, value.minute, value.second, value.microsecond, value.fold,
-                         _tz_describe(value.tzinfo)]}
-    if t is timedelta:
-        return {"timedelta": [value.days, value.seconds, value.microseconds]}
-    if t is uuid.UUID:
-        return {"uuid": value.hex}
-    if t is FrozenList or t is list:
-        return {"list": [describe(v) for v in value]}
-    if t is tuple:
-        return {"tuple": [describe(v) for v in value]}
-    if t is FrozenDict or t is dict:
-        return {"map": [[describe(k), describe(v)] for k, v in value.items()]}
-    if value is MISSING:
-        return {"missing": True}
-    if t is MutableObject:
-        return {"mutable": value.name}
-    if t is RefTarget:
+    """The value description of a decoded canonical value (types are matched exactly):
+    :func:`proto_db.tools.notation.describe`, plus the :class:`RefTarget` of :func:`build`."""
+    if type(value) is RefTarget:
         return {"ref": {"segment": value.pointer.segment.hex, "offset": value.pointer.offset,
                         "type": value.type_name}}
-    if isinstance(value, Atom):
-        ptr = value.atom_pointer
-        return {"ref": {"segment": ptr.segment.hex, "offset": ptr.offset, "type": t.__type_name__}}
-    raise TypeError(f"no description for {t.__name__}")
+    return notation.describe(value)
 
 
 def describe_raw(data):
