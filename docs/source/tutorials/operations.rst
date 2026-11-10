@@ -140,10 +140,11 @@ full integrity check of a segment, which is what you want after a restore.
 
 A checksum proves the bytes are the ones written, not that the structures they encode are sound. For that,
 ``python -m proto_db.tools.verify <directory>`` decodes every atom reachable from the root (every version
-of every database, every tree node and index), validates every collection and index, and prints the
-current content as JSON in the notation of the conformance vectors. It exits with 0 when everything holds,
-1 when something failed (each failure on standard error, naming the atom and the error) and 2 when the
-directory is not a space. It never writes. The same check from Python:
+of every database, every tree node and index), checks that each record is in the one canonical encoding
+writers must produce, validates every collection and index, and prints the current content as JSON in
+the notation of the conformance vectors. It exits with 0 when everything holds, 1 when something failed
+(each failure on standard error, naming the atom and the error; a missing or damaged segment included)
+and 2 when there is no readable root record. It never writes. The same check from Python:
 
 .. code-block:: python
 
@@ -162,7 +163,9 @@ directory is not a space. It never writes. The same check from Python:
 Run it on a space another implementation wrote (protoBaseST, for one) before trusting it, and on a
 restored backup. Records of application types this process has no class for are read as opaque atoms
 and listed under ``opaque_types``; they are not failures (see :doc:`../format-spec`, "Atoms of unknown
-types").
+types"). The same happens to your own types when the process never imported the module that defines
+them: the records read, but as opaque atoms (``isinstance(x, Invoice)`` is false). An unexpected name
+under ``opaque_types`` usually means a missing import.
 
 Backup and restore
 ------------------

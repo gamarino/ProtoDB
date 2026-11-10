@@ -75,6 +75,12 @@ The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every de
   validates a whole file-storage space and dumps it in the conformance notation. The format specification
   gains "Format stability" (the freeze point, the additive `@sym` and registry), "Atoms of unknown types",
   the accessor rule and "A minimal external writer"; `tests/conformance/vectors.sha256` pins the vectors.
+  After the pre-tag review: a reference to an opaque atom may name its type differently from the record's
+  `t` (an alias only the owner knows) and keeps the name it was referenced by; writers write the lowest
+  sufficient format version (`WRITE_FORMAT_VERSION`, separate from the highest read, `FORMAT_VERSION`); the
+  verifier also reports non-canonical encodings and exits 2 only for an unreadable root; a field named like a
+  metaclass attribute (`mro`) is readable; a `date` or `timedelta` subclass is stored from its base fields,
+  never its `__reduce__`.
 - Format-3 data misfiled by built-in subclasses: format 3 wrote a `(str, Enum)` member (on every Python
   version) or a subclass overriding `__str__`, `__float__` or `__bytes__` through that conversion
   (`"Color.RED"`) but filed it by its base value (`"red"`). Collections holding such values cannot find them,
