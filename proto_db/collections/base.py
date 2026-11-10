@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
 
-from ..core.atom import Atom, PersistenceContext
+from ..core.atom import BUILTIN_TYPE_ALIASES, Atom, PersistenceContext
 from ..errors import ProtoConflictError, ProtoUserError, ProtoValidationError
 from ..query.plans import CollectionScanPlan
 from ..values import is_atom, order_key, values_equal
@@ -204,7 +204,11 @@ class IndexedCollection(_Immutable, Atom):
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        cls._required_fields = tuple(cls._fields)
+        if cls.__dict__.get("__type_name__") in BUILTIN_TYPE_ALIASES:
+            # Required fields bind built-in classes only: an application subclass inherits its
+            # built-in base's, so a field it adds in a later release may be absent from its
+            # older records (re-review Minor 4).
+            cls._required_fields = tuple(cls._fields)
         missing = {"count", "indexes"} - set(cls._fields)
         if missing:
             raise ProtoUserError(f"{cls.__name__}._fields must include {sorted(missing)}")

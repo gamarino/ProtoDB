@@ -218,7 +218,7 @@ def test_a_zone_time_orders_and_hashes_as_its_wall_clock():
     [[{"@dt": [2026, 1, 1, 0, 0, 0, 0, 0, ["fixed", 0, "UTC"]]}, 1],
      [{"@dt": [2025, 12, 31, 21, 0, 0, 0, 0, ["fixed", -10800000000, "UTC-03:00"]]}, 2]],
     [["k", 1], ["k", 2]],
-    [[float("nan"), 1], [float("nan"), 2]],
+    [[{"@dt": [2026, 1, 1, 0, 0, 0, 0, 0, ["instant", "America/New_York"]]}, 1]],
 ])
 def test_a_map_whose_keys_conflict_is_refused_never_collapsed(pairs):
     with pytest.raises(ProtoCorruptionError, match="map key"):
@@ -317,3 +317,184 @@ def test_an_index_with_format_3_tokens_is_rebuilt_at_its_first_change():
     assert index.has_current_tokens()
     index.validate(list(new.elements()))
     assert list(index.plan(Term(None, EQ, 2)).execute()) == [2]
+
+
+# -- built-in subclasses: the class is not persisted, the base value is (re-review C-1) ------------
+
+from enum import Enum, IntEnum, StrEnum   # noqa: E402
+
+
+class Color(str, Enum):
+    RED = "red"
+
+
+class Shade(StrEnum):
+    DARK = "dark"
+
+
+class Level(IntEnum):
+    HIGH = 3
+
+
+class _LoudStr(str):
+    def __str__(self):
+        return "LOUD"
+
+
+class _OddFloat(float):
+    def __float__(self):
+        return 7.0
+
+    def __repr__(self):
+        return "odd"
+
+
+class _OddDecimal(Decimal):
+    def __str__(self):
+        return "7"
+
+
+class _OddBytes(bytes):
+    def __bytes__(self):
+        return b"odd"
+
+
+class _OddInt(int):
+    def __int__(self):
+        return 7
+
+    def __index__(self):
+        return 7
+
+
+@pytest.mark.parametrize("value, base", [
+    (Color.RED, "red"), (Shade.DARK, "dark"), (Level.HIGH, 3), (_LoudStr("quiet"), "quiet"),
+    (_OddFloat(1.5), 1.5), (_OddDecimal("1.50"), Decimal("1.50")), (_OddBytes(b"ab"), b"ab"), (_OddInt(5), 5),
+])
+def test_canonical_gives_the_plain_base_value_of_a_builtin_subclass(value, base):
+    plain = canonical(value)
+    assert type(plain) is type(base) and plain == base and str(plain) == str(base)
+    # The bytes, the order key, the hash and the token all see the base value, before and after a reload.
+    assert _wire(value) == _wire(base) == _wire(plain)
+    assert order_key(plain) == order_key(_roundtrip(value)) == order_key(base)
+    assert hash_key(plain) == hash_key(_roundtrip(value)) == hash_key(base)
+    assert exact_token(value) == exact_token(base)
+
+
+def test_subclasses_inside_containers_are_converted_too():
+    assert type(canonical((Color.RED, 1))[0]) is str
+    assert type(canonical([Level.HIGH])[0]) is int
+    assert {type(k) for k in canonical({Color.RED: 1})} == {str}
+
+
+class _Tagged(str):
+    """A str subclass a Python dict tells apart from its base value."""
+
+    def __eq__(self, other):
+        return type(other) is _Tagged and str.__eq__(self, other)
+
+    def __hash__(self):
+        return hash(("tagged", str(self)))
+
+
+def test_a_dict_whose_subclass_keys_collapse_to_one_base_value_is_refused():
+    with pytest.raises(ProtoValidationError, match="map key"):
+        canonical({_Tagged("red"): 1, "red": 2})
+
+
+def test_a_str_enum_survives_a_reopen_in_every_keyed_structure(tmp_path):
+    path = str(tmp_path / "db")
+    space = ObjectSpace(FileStorage(path))
+    db = space.new_database("d")
+    with db.new_transaction() as tr:
+        tr.set_root_object("h", tr.new_hash_dictionary().set_at(Color.RED, 1))
+        tr.set_root_object("s", tr.new_set().add(Color.RED))
+        tr.set_root_object("d", tr.new_dictionary().set_at("k", Color.RED))
+        tr.set_root_object("l", tr.new_list().add_index(EqualityIndex("e", KeySpec.element()))
+                           .append_last(Color.RED))
+    space.close()
+    space = ObjectSpace(FileStorage(path))
+    try:
+        tr = space.open_database("d").new_transaction()
+        h, s, d, lst = (tr.get_root_object(n) for n in "hsdl")
+        assert h.has(Color.RED) and h.has("red") and not h.has("Color.RED")
+        assert s.has(Color.RED) and s.has("red")
+        assert d.get_at("k") == "red" and type(d.get_at("k")) is str
+        assert list(lst.get_index("e").plan(Term(None, EQ, Color.RED)).execute()) == ["red"]
+        lst.get_index("e").validate(list(lst.elements()))
+        assert lst.remove_at(0).count == 0
+    finally:
+        space.close()
+
+
+# -- format-3 indexes and maps are valid data (re-review I-1, I-2) --------------------------------
+
+def test_validate_accepts_an_index_with_format_3_tokens():
+    lst = List.from_iterable([1, 2, 2]).add_index(EqualityIndex("e", KeySpec.element()))
+    legacy = _legacy(lst.get_index("e"))
+    legacy.validate([1, 2, 2])
+    with pytest.raises(ProtoCorruptionError):
+        legacy.validate([1, 2])               # everything but the token is still checked
+
+
+def _legacy_vector(index):
+    """A vector index as a format-3 writer left it (old token form, no ``member_tokens``)."""
+    from proto_db.collections import avl
+    store = None
+    for (list_no, (eq, _tok)), entry in avl.key_iter(index.store):
+        store = avl.key_put(store, (list_no, (eq, ("T", ()))), entry)[0]
+    legacy = index._with(store=store)
+    object.__delattr__(legacy, "member_tokens")
+    return legacy
+
+
+def test_validate_accepts_a_vector_index_with_format_3_tokens():
+    elements = [DBObject(emb=(1.0, 0.0)), DBObject(emb=(0.0, 1.0))]
+    index = VectorIndex("v", "emb", dim=2).empty().build(elements)
+    legacy = _legacy_vector(index)
+    assert not legacy.has_current_tokens()
+    legacy.validate(elements)
+    with pytest.raises(ProtoCorruptionError):
+        legacy.validate(elements[:1])
+
+
+ZONE_KEY = {"@dt": [2026, 11, 1, 1, 30, 0, 0, 1, ["zone", "America/New_York"]]}
+
+
+@pytest.mark.parametrize("pairs, size", [
+    ([[ZONE_KEY, 1]], 1),
+    ([[{"@tup": [ZONE_KEY, 1]}, 1]], 1),
+    ([[float("nan"), 1], [float("nan"), 2]], 2),
+    ([[{"@dec": "NaN"}, 1], [{"@dec": "NaN"}, 2]], 2),
+    ([[{"@tup": [float("nan")]}, 1], [{"@tup": [float("nan")]}, 2]], 2),
+])
+def test_format_3_map_keys_are_read_and_kept(pairs, size):
+    value = _decode({"@map": pairs})
+    assert len(value) == size
+
+
+@pytest.mark.parametrize("pairs", [
+    [[ZONE_KEY, 1]],
+    [[float("nan"), 1], [float("nan"), 2]],
+])
+def test_a_map_with_format_3_keys_is_refused_when_written_again(pairs):
+    value = _decode({"@map": pairs})
+    with pytest.raises(ProtoValidationError, match="map key"):
+        _wire(value)
+
+
+# -- instants whose wall clock leaves the datetime range (re-review Minor 2) ----------------------
+
+def test_an_instant_whose_wall_clock_leaves_years_1_to_9999_is_corrupt():
+    with pytest.raises(ProtoCorruptionError):
+        _decode({"@dt": [9999, 12, 31, 23, 0, 0, 0, 0, ["instant", "Asia/Tokyo"]]})
+
+
+# -- required fields bind built-in classes only (re-review Minor 4) -------------------------------
+
+def test_an_application_collection_field_is_not_required():
+    class Tagged(List):
+        __type_name__ = "tests.format_neutral.Tagged"
+        _fields = List._fields + ("tag",)
+    assert Tagged._required_fields == List._required_fields
+    assert "tag" not in Tagged._required_fields

@@ -223,20 +223,68 @@ class MutableObject:
 _PLAIN_KEY_TYPES = frozenset({str, int, bytes})
 
 
+#: Scalar types stored as they are; an instance of a subclass is stored as its base value.
+_EXACT_SCALARS = frozenset({type(None), bool, int, float, Decimal, str, bytes, date, time, datetime, timedelta,
+                            uuid.UUID})
+
+
+def plain_scalar(value):
+    """The value of the built-in scalar type that ``value`` (an instance of a subclass of one) holds,
+    read with the base type's own methods, never the subclass's overrides: the class of a
+    built-in subclass is not persisted (D58, re-review C-1).  ``Color.RED`` of
+    ``class Color(str, Enum)`` gives ``"red"``; an ``IntEnum`` member gives its int.  ``None``
+    when ``value`` is not an instance of a built-in scalar type."""
+    if isinstance(value, bool):
+        return bool(int.__index__(value))
+    if isinstance(value, int):
+        return int.__index__(value)
+    if isinstance(value, str):
+        return str.__str__(value)
+    if isinstance(value, float):
+        return float.__float__(value)
+    if isinstance(value, Decimal):
+        return Decimal(value)                   # copies the coefficient and exponent, not str()
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(memoryview(value))
+    if isinstance(value, datetime):
+        return datetime(*(datetime.__getattribute__(value, a) for a in _DT_FIELDS),
+                        tzinfo=datetime.__getattribute__(value, "tzinfo"),
+                        fold=datetime.__getattribute__(value, "fold"))
+    if isinstance(value, date):
+        return date(*(date.__getattribute__(value, a) for a in ("year", "month", "day")))
+    if isinstance(value, time):
+        return time(*(time.__getattribute__(value, a) for a in _DT_FIELDS[3:]),
+                    tzinfo=time.__getattribute__(value, "tzinfo"), fold=time.__getattribute__(value, "fold"))
+    if isinstance(value, timedelta):
+        return timedelta(*(timedelta.__getattribute__(value, a) for a in ("days", "seconds", "microseconds")))
+    if isinstance(value, uuid.UUID):
+        return uuid.UUID(int=object.__getattribute__(value, "int"))
+    return None
+
+
+_DT_FIELDS = ("year", "month", "day", "hour", "minute", "second", "microsecond")
+
+
 def canonical(value):
     """Validate ``value`` and return its canonical form.
 
     Supported: MISSING, None, bool, int, float (NaN allowed as a stored value),
     Decimal, str, bytes (``bytearray`` is converted), date, time, datetime,
     timedelta, UUID, atoms, ``MutableObject`` handles, tuples, and lists/dicts of supported values
-    (processed recursively).  Lists and dicts become :class:`FrozenList` and
-    :class:`FrozenDict`; already-canonical input is returned as the same object.  Raises ``ProtoValidationError`` otherwise.
+    (processed recursively).  An instance of a subclass of a scalar type (an ``Enum`` with a
+    ``str`` or ``int`` mixin, a ``StrEnum``, an ``IntEnum``, any subclass of ``str``, ``int``,
+    ``float``, ``Decimal``, ``bytes`` or of the date and time types) becomes its plain base value
+    (:func:`plain_scalar`): the class of a built-in subclass is not persisted, so the bytes
+    written, the order key and the hash all come from one value.  Lists and dicts become
+    :class:`FrozenList` and :class:`FrozenDict`; already-canonical input is returned as the same
+    object.  Raises ``ProtoValidationError`` otherwise.
     """
-    if value is None or value is MISSING or isinstance(
-            value, (bool, int, float, Decimal, str, bytes, date, time, timedelta, uuid.UUID)):
+    cls = type(value)
+    if cls in _EXACT_SCALARS or value is MISSING:
         return value
-    if isinstance(value, bytearray):
-        return bytes(value)
+    plain = plain_scalar(value)
+    if plain is not None:
+        return plain
     if isinstance(value, tuple):
         items = tuple(canonical(v) for v in value)
         return value if type(value) is tuple and all(a is b for a, b in zip(items, value)) else items
@@ -252,7 +300,11 @@ def canonical(value):
             return value
         if not all(type(k) in _PLAIN_KEY_TYPES for k, _ in pairs):
             check_map_keys(k for k, _ in pairs)   # Python's dict already told these apart
-        return FrozenDict(pairs)
+        out = FrozenDict(pairs)
+        if len(out) != len(pairs):                # subclass keys that are one base value
+            raise ProtoValidationError("Two keys of one map conflict as map keys (D58): "
+                                       "they hold one base value")
+        return out
     if is_atom(value) or isinstance(value, MutableObject):
         return value
     raise ProtoValidationError(f"Unsupported value type: {type(value).__name__}")
@@ -464,10 +516,11 @@ def exact_token(value, atom_token=None):
     The token of a value that holds no atom is its canonical encoding: the msgpack bytes of
     :func:`proto_db.core.codec.encode_value`, as a record state holds it.  Every atom is
     encoded as the placeholder ``{"@ref": nil}`` (:data:`ATOM_TOKEN`), so the token of an atom is
-    :data:`ATOM_TOKEN`: atoms are identified elsewhere (by oid in an index member key).  Two
-    values have one token exactly when they have one canonical encoding, however they were
-    built: ``timezone.utc`` and ``timezone(timedelta(0), "UTC")``, an ``int`` subclass and the
-    ``int``.  ``1``, ``1.0``, ``Decimal("1")``, ``Decimal("1.00")``, ``0.0``/``-0.0`` and aware
+    :data:`ATOM_TOKEN`: atoms are identified elsewhere (by oid in an index member key).  The
+    encoding reads only data of the format, so values built differently share a token when they
+    hold the same data: ``timezone.utc`` and ``timezone(timedelta(0), "UTC")``; a built-in
+    subclass and its base value (``Color.RED`` of a ``str`` Enum and ``"red"``: the subclass is
+    converted with the base type's methods, never its own ``__str__``).  ``1``, ``1.0``, ``Decimal("1")``, ``Decimal("1.00")``, ``0.0``/``-0.0`` and aware
     datetimes of one instant in different zones are equal keys with distinct tokens.
 
     ``atom_token(atom)``, when given, identifies the atoms instead (the transaction read set
@@ -497,7 +550,7 @@ def _zone_datetime(value) -> bool:
     return isinstance(value.tzinfo, ZoneInfo)
 
 
-def map_key_ids(value) -> frozenset:
+def map_key_ids(value, *, reading: bool = False, zone_form: bool = False) -> frozenset:
     """The identities under which ``value`` is a key of a map; two keys of one map conflict when
     their identities intersect (D58).  Raises ``ProtoValidationError`` for a value that cannot be a
     map key.
@@ -507,6 +560,11 @@ def map_key_ids(value) -> frozenset:
     a tuple by the combinations of its items' identities.  Lists, maps, signaling decimal NaNs
     and datetimes in an IANA zone (whose equality in Python depends on the wall clock, which
     depends on the time-zone database) cannot be map keys, nor tuples holding one.
+
+    A reader (``reading``) accepts the two key forms format 3 could write (re-review I-2): NaN
+    keys that conflict (a Python dict holds two NaN objects as two keys) and, when the key's wire
+    form holds a format-3 ``["zone", key]`` datetime (``zone_form``), an IANA-zone datetime.  Each
+    such key is its own identity: it conflicts with nothing.  A writer refuses both.
     """
     if isinstance(value, (list, dict)):
         raise ProtoValidationError(f"A {type(value).__name__} cannot be a map key")
@@ -515,25 +573,31 @@ def map_key_ids(value) -> frozenset:
     if isinstance(value, Decimal) and value.is_snan():
         raise ProtoValidationError("A signaling decimal NaN cannot be a map key")
     if _is_nan(value):
-        return frozenset({("nan", exact_token(value))})
+        return frozenset({("nan", object() if reading else exact_token(value))})
     if _zone_datetime(value):
+        if reading and zone_form:
+            return frozenset({("format-3 zone", object())})
         raise ProtoValidationError(
             "A datetime in an IANA time zone cannot be a map key: use its UTC or fixed-offset form")
     if isinstance(value, tuple):
         combos = [()]
         for item in value:
-            ids = map_key_ids(item)
+            ids = map_key_ids(item, reading=reading, zone_form=zone_form)
             combos = [c + (i,) for c in combos for i in ids]
         return frozenset(("tuple", c) for c in combos)
     return frozenset({order_key(value)})
 
 
-def check_map_keys(keys) -> None:
+def check_map_keys(keys, zone_forms=None) -> None:
     """``ProtoValidationError`` unless every key of ``keys`` may be a map key and no two conflict
-    (:func:`map_key_ids`)."""
+    (:func:`map_key_ids`).  A reader passes ``zone_forms``, one flag per key (true when the key's
+    wire form holds a format-3 zone datetime), and so accepts the format-3 key forms; a writer
+    passes nothing."""
     seen: set = set()
+    reading = zone_forms is not None
+    flags = iter(zone_forms) if reading else None
     for key in keys:
-        ids = map_key_ids(key)
+        ids = map_key_ids(key, reading=reading, zone_form=reading and next(flags))
         if not seen.isdisjoint(ids):
             raise ProtoValidationError(f"Two keys of one map conflict as map keys (D58): {key!r}")
         seen |= ids

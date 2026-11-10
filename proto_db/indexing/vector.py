@@ -52,7 +52,7 @@ from ..query.plans import Estimate, IndexPlan
 from ..query.terms import NEAR, NearQuery, Term
 from ..values import exact_token, order_key
 from .base import Index, element_identity
-from .keyed import EMPTY_GROUP, MEMBER_TOKENS, group_add, group_remove, member_key
+from .keyed import EMPTY_GROUP, MEMBER_TOKENS, group_add, group_remove, member_key, member_key_matches
 from .keyspec import KeySpec
 from .vector_backends import (METRICS, backend_for, canonical_vector, iter_entries,
                               normalize_params, rank_entries, store_key_okey)
@@ -342,6 +342,7 @@ class VectorIndex(Index):
 
     def _check_store(self, stored: Counter) -> int:
         avl.check_invariants(self.store)
+        current = self.has_current_tokens()
         impl = self._impl()
         seen = 0
         for key, entry in avl.key_iter(self.store):
@@ -352,7 +353,7 @@ class VectorIndex(Index):
             element, n, vector = entry
             if type(n) is not int or n < 1:
                 self._corrupt(f"element {element!r} has the count {n!r}")
-            if order_key(key[1]) != order_key(member_key(element)):
+            if not member_key_matches(key[1], element, current):
                 self._corrupt(f"element {element!r} is stored under the wrong member key {key[1]!r}")
             actual = self._vector(element)
             if actual is None or actual != vector:
@@ -370,6 +371,7 @@ class VectorIndex(Index):
             self._corrupt(f"malformed invalid group {group!r}")
         members, total = group
         avl.check_invariants(members)
+        current = self.has_current_tokens()
         seen = 0
         for key, entry in avl.key_iter(members):
             if not isinstance(entry, tuple) or len(entry) != 2:
@@ -377,7 +379,7 @@ class VectorIndex(Index):
             element, n = entry
             if type(n) is not int or n < 1:
                 self._corrupt(f"element {element!r} has the count {n!r}")
-            if order_key(key) != order_key(member_key(element)):
+            if not member_key_matches(key, element, current):
                 self._corrupt(f"element {element!r} is kept under the wrong member key {key!r}")
             if self._vector(element) is not None:
                 self._corrupt(f"element {element!r} has a valid vector but is kept as invalid")
@@ -394,7 +396,9 @@ class VectorIndex(Index):
         is under its own member key and list with its own vector and a positive
         count, that invalid keys are kept aside, that the totals add up, and that
         the stored multiset of (valid or not, element, exact token) equals that
-        of ``elements``.  That determines every answer of the exact backends.
+        of ``elements``.  That determines every answer of the exact backends.  On
+        an index written by format 3 the member keys' tokens are not compared
+        (as in :meth:`KeyGroupIndex.validate`).
         """
         self._check_centroids()
         stored: Counter = Counter()

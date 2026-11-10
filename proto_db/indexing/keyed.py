@@ -128,6 +128,18 @@ member_key = _member_key
 equal_members_bounds = _equal_members_bounds
 
 
+def member_key_matches(key, element, current: bool) -> bool:
+    """Whether ``key`` is the member key of ``element``.  On an index with current tokens
+    (``current``) the whole key is compared; on one written by format 3, everything but the token,
+    which format 3 computed differently and which is only checked to be a tuple (re-review I-1):
+    such an index is valid, if stale, data."""
+    if not isinstance(key, tuple) or len(key) != 2:
+        return False
+    if current:
+        return order_key(key) == order_key(_member_key(element))
+    return isinstance(key[1], tuple) and order_key(key[0]) == order_key(_equality_part(element))
+
+
 # -- groups ---------------------------------------------------------------------------------
 
 def _group_add(group: tuple, element) -> tuple:
@@ -572,6 +584,7 @@ class KeyGroupIndex(Index):
     def _check_group(self, group, slot: tuple, stored: Counter) -> int:
         if not isinstance(group, tuple) or len(group) != 2:
             self._corrupt(f"malformed group {group!r}")
+        current = self.has_current_tokens()
         members, total = group
         avl.check_invariants(members)
         seen = 0
@@ -579,7 +592,7 @@ class KeyGroupIndex(Index):
         for key, entry in avl.key_iter(members):
             if not isinstance(entry, tuple) or len(entry) != 2:
                 self._corrupt(f"malformed entry {entry!r}")
-            if not isinstance(key, tuple) or len(key) != 2 or order_key(key) != order_key(_member_key(entry[0])):
+            if not member_key_matches(key, entry[0], current):
                 self._corrupt(f"element {entry[0]!r} is stored under the wrong member key {key!r}")
             entries.append(entry)
         for element, n in entries:
@@ -597,10 +610,12 @@ class KeyGroupIndex(Index):
         """Structural check against ``elements`` (``ProtoCorruptionError`` on any mismatch).
 
         Checks the AVL invariants of every tree, that each stored element is
-        filed under its own key with a positive count, that group and index
-        totals add up, and that the stored multiset of ``(key, element, exact
-        token)`` equals that of ``elements`` (no leftovers, no missing or
+        filed under its own key and member key with a positive count, that group
+        and index totals add up, and that the stored multiset of ``(key, element,
+        exact token)`` equals that of ``elements`` (no leftovers, no missing or
         miscounted entries, no equal-but-different value in place of the real one).
+        On an index written by format 3 (:meth:`has_current_tokens` false) the
+        member keys' tokens are not compared: such an index is stale, not corrupt.
         That determines every answer, so the default plan-vs-scan comparison
         (O(keys x n)) is not repeated.
         """

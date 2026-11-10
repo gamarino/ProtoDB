@@ -56,7 +56,8 @@ from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..errors import ProtoCorruptionError, ProtoValidationError
-from ..values import MISSING, FrozenDict, FrozenList, TokenAtoms, check_map_keys
+from ..values import _EXACT_SCALARS as _ENCODED_AS_IS
+from ..values import MISSING, FrozenDict, FrozenList, TokenAtoms, check_map_keys, plain_scalar
 from .atom import Atom, AtomPointer, type_name_of, type_tag
 from .dbobject import MutableObject
 
@@ -171,15 +172,18 @@ def _encode_other(value, save_child: Callable[[Atom], AtomPointer]):
     """The full isinstance chain of :func:`encode_value`."""
     if value is None or value is True or value is False:
         return value
-    if isinstance(value, str):
-        return str(value)
-    if isinstance(value, int):
-        value = int(value)
+    if type(value) not in _ENCODED_AS_IS:
+        # A subclass of a scalar type is written as its base value, read with the base type's
+        # methods (canonical() does the same): never through the subclass's __str__ or __float__.
+        plain = plain_scalar(value)
+        if plain is not None:
+            value = plain
+    if type(value) is str:
+        return value
+    if type(value) is int:
         return value if _INT_MIN <= value <= _INT_MAX else {"@int": format(value, "x")}
-    if isinstance(value, float):
-        return float(value)
-    if isinstance(value, (bytes, bytearray)):
-        return bytes(value)
+    if type(value) is float or type(value) is bytes or type(value) is bool:
+        return value
     if isinstance(value, list):
         return [encode_value(v, save_child) for v in value]
     if isinstance(value, tuple):
@@ -361,18 +365,32 @@ def _dec_map(body, load_ref):
     if type(body) is not list:
         raise TypeError("expected an array")
     pairs = []
+    raw_keys = []
     for pair in body:
         k, v = _fields(pair, 2, (None, None))
+        raw_keys.append(k)
         pairs.append((decode_value(k, load_ref), decode_value(v, load_ref)))
     if not all(type(k) is str for k, _ in pairs):
         try:
-            check_map_keys(k for k, _ in pairs)
+            check_map_keys((k for k, _ in pairs), [_holds_zone_form(k) for k in raw_keys])
         except ProtoValidationError as e:
             raise ProtoCorruptionError(f"Malformed @map: {e}") from e
     out = FrozenDict(pairs)
     if len(out) != len(pairs):
         raise ProtoCorruptionError("Malformed @map: a map key appears twice")
     return out
+
+
+def _holds_zone_form(raw) -> bool:
+    """Whether the wire form of a map key holds a format-3 ``["zone", key]`` datetime (re-review I-2)."""
+    if type(raw) is not dict or len(raw) != 1:
+        return False
+    (tag, body), = raw.items()
+    if tag == "@dt":
+        return type(body) is list and len(body) == 9 and type(body[8]) is list and body[8][:1] == ["zone"]
+    if tag == "@tup":
+        return type(body) is list and any(_holds_zone_form(item) for item in body)
+    return False
 
 
 def _dec_missing(body, _):
