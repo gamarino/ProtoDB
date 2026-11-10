@@ -305,7 +305,10 @@ made with, is ``ProtoCorruptionError``.
 fields`_ is REQUIRED unless it is marked optional. A record of a built-in type that lacks a
 required field is ``ProtoCorruptionError`` when it is loaded (ProtoBase checks it as soon as the
 record is decoded, before any field is read). A writer MUST NOT add fields to a built-in type;
-what a reader does with an unknown field of a built-in type is unspecified.
+what a reader does with an unknown field of a built-in type is unspecified. Required fields bind
+the built-in types only: an application type, including an application subclass of a built-in
+collection, requires the fields of its built-in base and nothing more, so a field it adds in a
+later release may be absent from its older records (it reads as nil).
 
 **Attribute names.** A persisted attribute name is a non-empty string that does not start with
 ``_`` and is not ``oid``, ``atom_pointer`` or ``context``. The names of a type are shared by
@@ -530,7 +533,10 @@ first column is the value's kind in the conformance manifest's value notation.
     instant in the zone ``key`` with its own time-zone database; the instant itself, and so the
     value's order key, hash and token, never depend on that database (decision D58). A writer
     computes the instant at write time, with its own database, from the wall clock and
-    ``fold``; a value whose instant falls outside years 1 to 9999 cannot be written.
+    ``fold``. Both the instant and the wall clock in the zone lie in years 1 to 9999: a writer
+    refuses a value whose instant falls outside (``ProtoValidationError``), and a reader refuses
+    an instant whose wall clock in ``key`` falls outside (``ProtoCorruptionError``; such bytes
+    are never written for a value that exists in the zone).
 ``["zone", key]``
     In a ``@time``: an IANA zone; the fields are the wall clock (a time has no date, so no
     offset). In a ``@dt``: the **format-3 form**, whose fields were the wall clock and
@@ -540,6 +546,18 @@ first column is the value's kind in the conformance manifest's value notation.
 Any other kind of time zone cannot be stored (``ProtoValidationError`` when writing). A
 reader whose database does not know ``key`` cannot build the value; ProtoBase refuses it with
 ``ProtoCorruptionError``.
+
+**The class of a built-in subclass is not persisted.** A value of a subclass of a scalar type
+(in Python: an ``Enum`` with a ``str`` or ``int`` mixin, a ``StrEnum``, an ``IntEnum``, any
+subclass of ``str``, ``int``, ``float``, ``Decimal``, ``bytes``, ``bytearray``, ``date``,
+``time``, ``datetime``, ``timedelta`` or ``UUID``) is stored as the plain value of its base
+type: its data read with the base type's own methods, never with the subclass's conversions
+(``__str__``, ``__float__``, ...). ``Color.RED`` of ``class Color(str, Enum): RED = "red"`` is
+stored, ordered, hashed and tokenized as the string ``"red"``, and is read back as ``"red"``.
+ProtoBase converts it when the value enters a structure (``canonical``), so the order key, the
+hash, the exact token and the bytes always come from one value. A dict whose keys become one
+base value (two subclass keys a Python dict tells apart) is refused (``ProtoValidationError``).
+An application that needs the class back stores it explicitly (an atom, or the value's name).
 
 **One spelling per value.** Every canonical value has exactly one encoding, and readers refuse
 the other spellings of the text forms (``@int``, ``@dec``, ``@td``), so decoding and
@@ -606,6 +624,19 @@ fixed-offset form is a valid key.)
 A writer refuses such a map (``ProtoValidationError``) and a reader refuses it
 (``ProtoCorruptionError``): a map is never collapsed. Distinct NaN payloads, and bools in a map
 without the numbers 0 and 1, are valid keys.
+
+**Format-3 key forms.** Format 3 had no map-key rule, and Python could write two kinds of keys
+the rule forbids: a datetime in an IANA zone (always in the format-3 ``["zone", key]`` wall-clock
+form, alone or inside a tuple) and NaN keys with one encoding (a Python dict holds two NaN objects
+as two keys). A reader MUST accept both: a key whose wire form holds a ``["zone", key]`` datetime
+may be a zone datetime, and NaN keys with one encoding are kept as distinct keys, in the order
+read; every other rule applies unchanged (an ``["instant", key]`` key is still refused, since only
+format 4 writes that form). A writer MUST NOT write either form: writing such a map again is
+refused with ``ProtoValidationError`` naming the key, never normalized or shortened silently.
+An application migrates such a map explicitly before it changes the object that holds it,
+typically by converting each zone-datetime key to UTC (``key.astimezone(timezone.utc)``, a
+valid key of the same instant) and by giving each NaN key a value of its own or dropping it.
+Atoms that are never changed keep their format-3 maps as written.
 
 Reserved tags
     ``@sym`` is reserved for symbols (the maintainer's runtime decision of 2026-11-08, option
@@ -773,9 +804,11 @@ function of the canonical encoding alone (decision D58):
     at any depth, is encoded as the placeholder ``{"@ref": nil}`` instead of its reference.
     The token of an atom is therefore the 7 bytes ``81 a4 40 72 65 66 c0``.
 
-It is stored as a msgpack ``bin`` inside the member key. Two values have one token exactly when
-they have one canonical encoding: a value decoded from the wire and the object it was written
-from always share it, whatever their time zone objects or classes. The placeholder is not the
+It is stored as a msgpack ``bin`` inside the member key. Because the token is computed from the
+canonical value, which holds only data of the format (time zone objects reduced to their
+form, built-in subclasses converted to their base value as stated in `Canonical values`_), a
+value decoded from the wire and the value it was written from have one token. The placeholder
+is not the
 encoding of any canonical value, so an atom is never confused with a value; atoms themselves
 are told apart by the equality part of the member key (their oid).
 
@@ -937,20 +970,27 @@ its count grows by one, otherwise a member with count 1 is created (holding the 
 collection holds it, so as it was decoded). The member with exactly that member key loses one
 occurrence, and is deleted at 0. When no member has that member key the index does not hold
 the element, which is an error (``ProtoValidationError``): a writer MUST NOT remove another
-member instead, not even an equal one. Because tokens are canonical encodings, a value read
-from the database always finds the member it was written under.
+member instead, not even an equal one. Because the element is stored as its canonical value
+and the token is that value's encoding, an element read from the database has the member key
+it was added under.
 
 ``validate()`` checks exactly this contract: every member is stored under its own complete
 member key (equality part and token) and under its element's own key, counts are positive,
 totals add up, and the multiset of ``(key, element, token)`` equals that of the collection's
-elements.
+elements. On a format-3 index (below) it checks the same, except that the token of a member key
+is only checked to be a tuple: such an index is stale, never corrupt.
 
-``member_tokens`` (int) is 1 on every key-group and vector index written by format 4: its
-tokens are canonical encodings. An index without it was written by format 3, whose tokens were
-Python text (``("i", 1)``, ``("f", "0x1.0p+0")``, ...): readers answer queries from it (lookups do
-not use tokens), but a writer MUST rebuild it from the collection's elements (``empty`` index
-of the same definition, then every element added) before changing it. ProtoBase does so at the
-collection's first change.
+``member_tokens`` (int). A format-4 writer MUST write it, with the value 1, on every key-group
+and vector index: its tokens are canonical encodings. Its **absence** marks an index written by
+format 3, whose tokens were Python-text tuples (``("i", 1)``, ``("f", "0x1.8p+0")``,
+``("T", (...))``, ...): readers answer queries from it (lookups do not use tokens), but a
+writer MUST rebuild it from the collection's elements (``empty`` index of the same definition,
+then every element added) before changing it. ProtoBase does so at the collection's first
+change, inside that change's transaction: a full rebuild, which for an ivf_flat index includes
+a training run and for an hnsw index the graph's construction. Any **other value** is
+reserved for a later format: a reader that does not know it MUST treat the index as one it
+cannot maintain (it may answer queries from it; it MUST NOT change it, and ProtoBase rebuilds
+it like a format-3 index).
 
 Key-group indexes
 ^^^^^^^^^^^^^^^^^
@@ -959,7 +999,7 @@ Key-group indexes
     ``groups``: a CountedKeyNode tree ordered by the extracted key, whose values are *groups*
     ``(members, total)``; ``side``: the group of the elements whose key is unorderable (a
     tuple, ``(nil, 0)`` when empty); ``total_count``: every stored occurrence; ``member_tokens``
-    (optional, see above). ``members`` is a CountedKeyNode tree mapping a member key to
+    (written by format 4, absent from format-3 indexes, see above). ``members`` is a CountedKeyNode tree mapping a member key to
     ``(element, count)``, and ``total`` the occurrences in the group. An element whose key is
     MISSING is filed under the key MISSING. A key with no member left is removed from
     ``groups``. The two classes differ only in the plans they offer.
@@ -979,7 +1019,8 @@ Vector indexes
     ``(element, count, vector)``), ``invalid`` (the group of the elements without a valid
     vector, as a key-group index's group), ``total_count``, ``centroids`` (a tuple of vectors,
     empty unless trained), ``trained_size`` (the number of members at the last training, 0
-    when untrained) and ``member_tokens`` (optional, see above). ``numpy`` and the hnsw graph are
+    when untrained) and ``member_tokens`` (written by format 4, absent from format-3 indexes,
+    see above). ``numpy`` and the hnsw graph are
     Python implementation choices (the graph is rebuilt in each process and never persisted);
     another implementation MUST preserve ``params`` as written.
 
@@ -1367,9 +1408,14 @@ Every change since format 1 and how a reader of this revision treats data writte
      - Format-3 segments and roots are read. A format-3 zone datetime (``["zone", key]`` in a
        ``@dt``) is read as a wall clock with the reader's database and rewritten as an instant.
        A format-3 index (no ``member_tokens``) answers queries and is rebuilt from its
-       collection at its first change. Format-3 data that breaks the new rules (a ``@map`` with
-       conflicting keys, a non-canonical text) is refused; ProtoBase never wrote such data. A
-       format-3 reader refuses format-4 data (``ProtoNotSupportedError``)
+       collection at its first change, a full rebuild (an ivf_flat retraining, an hnsw graph
+       construction) inside the user's first write transaction on it; ``validate()`` reports
+       it stale, never corrupt. A format-3 ``@map`` with a zone-datetime key or NaN keys of one
+       encoding is read as written and refused when written again (`Map keys`_). A built-in
+       subclass (a ``str`` ``Enum``) that format 3 wrote through its ``__str__`` or ``__float__``
+       is read as the base value those bytes hold. A non-canonical text form is refused;
+       ProtoBase never wrote one. A format-3 reader refuses format-4 data
+       (``ProtoNotSupportedError``)
 
 The cluster protocol has no compatibility across versions: every node of a cluster runs the
 same protocol version (13 here; the history of versions 6 to 13 is in
@@ -1408,6 +1454,13 @@ None of these breaks a round trip between conforming implementations.
 - **The ``numpy`` parameter** of an exact vector index is a Python knob persisted in the format
   (``params``): it changes no answer, only how ProtoBase computes it. Another implementation
   preserves it and may ignore it.
+- **Cost of exact tokens.** A token is a msgpack packing of the value. Measured on the
+  reference platform (free-threaded CPython 3.14, whose msgpack runs its pure-Python fallback:
+  ``msgpack.packb(1)`` alone takes about 4.5 µs), a token costs 5 to 6 µs for a scalar or a
+  small tuple, against 0.5 to 3 µs for the format-3 Python-text tuples. In an indexed write
+  workload (40 commits of 200 appends and 20 removals each on two lists with three indexes,
+  FileStorage), tokens took 0.34 % of commit time, so no fast path was added (the bytes would be
+  identical; with msgpack's C extension the cost falls with ``packb``'s).
 - **Zone datetimes after a tz-database change.** A stored zone datetime keeps its instant; the
   wall clock a reader shows is computed with the reader's database, so a future appointment
   written as "09:00 in São Paulo" shows another wall clock if that zone's rules change before
@@ -1423,7 +1476,8 @@ JSON description of what every file means, in a language-neutral notation), the 
 (``test_conformance.py``). They cover:
 
 - every value kind, the legacy forms readers accept (format-2 references, a built-in type by
-  name, a format-3 zone datetime, a type alias) and one input of every kind of refusal (value,
+  name, a format-3 zone datetime, a type alias, format-3 maps with zone-datetime and repeated
+  NaN keys, which a writer refuses to write again) and one input of every kind of refusal (value,
   map key, atom, record, root, segment and log layers, invalid cluster messages);
 - the order, hash and exact-token functions, including float and decimal edge cases, aware
   times and datetimes, the atom hash and nested atoms;
@@ -1431,9 +1485,11 @@ JSON description of what every file means, in a language-neutral notation), the 
 - a complete format-4 database written through the public API: every persistable built-in
   type and one application type, three versions of one database, a mutable cell, trained
   ivf_flat (with its list assignment) and hnsw vector indexes;
-- a format-3 database: a DatabaseRoot without ``origin``, an index written with format-3
-  member tokens in plain KeyNode trees (rebuilt at its first change), a zone datetime in the
-  wall-clock form, and an application record and reference spelled by an alias;
+- a format-3 database: a DatabaseRoot without ``origin``, a key-group index (over ints,
+  strs, floats, decimals, tuples, bytes, dates, datetimes, nil and a list) and a vector index
+  written with the format-3 member tokens in plain KeyNode trees (valid before, rebuilt at
+  their first change), zone datetimes in the wall-clock form, maps with format-3 key forms,
+  and an application record and reference spelled by an alias;
 - a cluster commit stamped with its lease, the three log kinds with every acceptor-log entry
   kind decoded field by field, and a torn tail versus mid-log corruption;
 - one frame of every cluster message type.

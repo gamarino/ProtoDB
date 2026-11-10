@@ -61,6 +61,14 @@ The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every de
 - The package is split into subpackages: `core`, `storage`, `collections`, `indexing`, `query`, `cluster`,
   `runtime`, `interop` (D15; the spec's `indexes` became `indexing`).
 
+- Storage format 4 (D58): exact tokens are canonical encodings, datetimes in an IANA zone are stored as their
+  UTC instant, map keys follow an explicit conflict rule, and the class of a built-in subclass is not persisted
+  (a `str` or `int` `Enum` is stored and read back as its value). Formats 2 and 3 are still read. Migration
+  cost: a key-group or vector index written by format 3 is rebuilt from its collection at the collection's
+  first change, inside that write transaction (an ivf_flat index retrains, an hnsw graph is rebuilt). A
+  format-3 map keyed by a zone datetime or by repeated NaNs is read as written but refused when written again
+  until the application converts those keys.
+
 ### Deprecated
 - The 0.1 exception names `ProtoBaseException`, `ProtoValidationException`, `ProtoUserException`,
   `ProtoCorruptionException`, `ProtoNotSupportedException`, `ProtoNotAuthorizedException`,
