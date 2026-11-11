@@ -1,13 +1,13 @@
 # Changelog
 
-All notable changes to ProtoDB are documented in this file.
+All notable changes to `proto_db` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [2.0.0] - unreleased
 
-ProtoDB 2.0 is a complete rebuild of the 0.1 code base under the design principles of
+`proto_db` 2.0 is a complete rebuild of the 0.1 code base under the design principles of
 `docs/design-principles.md`: everything stored is immutable, a transaction is an explicit object, and
 every safety argument holds under arbitrary delay and loss. There are no 0.1 data or API to preserve.
 The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every decision is in
@@ -108,7 +108,7 @@ The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every de
 - Saving a chain of unsaved versions built in one transaction (the `previous` pattern) no longer raises
   `RecursionError` past about 150 links; 10,000 versions save in one commit, and the verifier describes them
   (R128).
-- Nested values: ProtoBase no longer writes values it cannot read back (B12, D60). The codec, `canonical()`,
+- Nested values: `proto_db` no longer writes values it cannot read back (B12, D60). The codec, `canonical()`,
   the map-key, order-key, hash and equality helpers and the verifier walked values by recursion, so a value
   past about 330 nested lists could be written but raised a bare `RecursionError` when read in a fresh
   process (`verify` exited 1), and the limit moved with the Python stack in use. They now go on with an
@@ -116,7 +116,7 @@ The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every de
   containers per value (format spec, "Value nesting depth"): a writer refuses a deeper value with
   `ProtoValidationError` naming the field, a reader refuses deeper data with `ProtoCorruptionError`, at the
   same count. No format version change (no conforming writer could produce deeper data); the encoded bytes
-  are unchanged. ProtoBase now requires msgpack 1.2.0 or later, the first release whose packer nests the 1024
+  are unchanged. `proto_db` now requires msgpack 1.2.0 or later, the first release whose packer nests the 1024
   containers a record at the limit needs, and refuses to import with an older one. The limit binds collection
   and index nodes too: a Set, CountedSet, HashDictionary or RepeatedKeysDictionary, and an index (whose member
   keys nest an unorderable element about four times deeper: 254 nested lists, 169 nested maps), refuse an

@@ -53,7 +53,7 @@ it puts the burden in the wrong place:
 * the table and its indexes grow with every revision, whether a query asks for history or not, so current
   queries pay for the history unless every index also encodes "current".
 
-The obvious *ProtoDB* mistake is the opposite one: making everything a value, or everything an entity, by
+The obvious *proto_db* mistake is the opposite one: making everything a value, or everything an entity, by
 habit. All values means that editing a user forces a new version of every record that should follow the user.
 All entities gives a near-relational model: it keeps time travel through snapshots, but loses the per-record
 history that a value chain gives for free.

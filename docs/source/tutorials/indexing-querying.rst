@@ -1,7 +1,7 @@
 Indexing and querying
 =====================
 
-An index answers "which elements have this key?" without looking at every element. In ProtoDB every
+An index answers "which elements have this key?" without looking at every element. In ``proto_db`` every
 collection can carry indexes, there are none by default, and one planner, shared by all the query front
 ends, decides whether to use them. This tutorial builds a small collection of people, adds indexes,
 watches the planner use them and checks that an index never changes an answer. Every code block runs in the
@@ -284,7 +284,7 @@ skip one, whatever is committed meanwhile. The :doc:`ERP tutorial <erp>` shows i
 When another system is the better choice
 ----------------------------------------
 
-* ProtoDB has equality, range and vector indexes. It has no full-text, spatial or composite (multi-column)
+* ``proto_db`` has equality, range and vector indexes. It has no full-text, spatial or composite (multi-column)
   index, and no SQL. A workload built on ad-hoc SQL, joins across many tables or a mature optimiser belongs
   in a relational database. A custom index (:doc:`custom-index`) can add a new kind, but it is code you
   write and prove.

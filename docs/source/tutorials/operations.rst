@@ -1,7 +1,7 @@
 Operations: durability, inspection and backup
 =============================================
 
-This tutorial is for the person who runs a ProtoDB application: what a returned commit survives, how to
+This tutorial is for the person who runs a ``proto_db`` application: what a returned commit survives, how to
 look inside a space without a special tool, how to take a backup and check it, and what the database does
 when a file is damaged. Every code block runs in the test suite.
 
@@ -60,7 +60,7 @@ that builds this page.
    flush      1049 commits/s (single thread, 20 commits)
    none       1230 commits/s (single thread, 20 commits)
 
-The ``fsync`` rate is set by the storage device, not by ProtoDB, and the sample above is only one machine's
+The ``fsync`` rate is set by the storage device, not by ``proto_db``, and the sample above is only one machine's
 answer: a second run on the same machine a few minutes earlier gave 1,628, 1,765 and 1,835 commits/s for the
 three modes, because the device and the CPU were less busy, so twenty commits are too few for a benchmark
 and the point is only that you can measure your own device. Concurrent committers share the device cost through *group commit*: commits that arrive together
@@ -70,7 +70,7 @@ mode and by writer count are in :doc:`../performance`.
 Looking inside a space
 ----------------------
 
-ProtoDB 2.0 has no ``inspect`` browser; what you can see from code, then the ``verify`` tool below:
+``proto_db`` 2.0 has no ``inspect`` browser; what you can see from code, then the ``verify`` tool below:
 
 .. code-block:: python
 
@@ -309,7 +309,7 @@ the rate, in a single session). See :doc:`cluster` and :doc:`../performance`.
 When another system is the better choice
 ----------------------------------------
 
-* ProtoDB has no online backup, no point-in-time restore tooling and no replication to a standby other than
+* ``proto_db`` has no online backup, no point-in-time restore tooling and no replication to a standby other than
   the cluster tier. A database that must offer those today (streaming replicas, ``pg_basebackup``-style
   hot backups, managed backups) is better served by PostgreSQL or a managed service.
 * ``fsync`` per commit means one commit costs one device flush. For many tiny independent writes per

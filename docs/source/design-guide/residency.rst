@@ -5,7 +5,7 @@ Residency: bounding what a process keeps decoded
 and P7.*
 
 Read :doc:`immutability` first: this chapter rests on its one fact, that the content at a storage pointer never
-changes. The chapter carries three lessons that reach beyond ProtoDB: a bound on a cache's *entries* bounds nothing
+changes. The chapter carries three lessons that reach beyond ``proto_db``: a bound on a cache's *entries* bounds nothing
 when cached objects reference each other; a rule can move from the edges of a graph to its nodes; and a
 check-then-act protocol is only as safe as its longest unlocked gap.
 
@@ -29,7 +29,7 @@ item: a node of a tiered cluster keeps a few hundred bytes of metadata per stora
 The problem
 -----------
 
-ProtoDB loads objects lazily. A reference to an object that has not been read is a **stub**: an object that
+``proto_db`` loads objects lazily. A reference to an object that has not been read is a **stub**: an object that
 knows the record's pointer, its class and its identity, and nothing else. Reading an attribute of a stub loads
 it **in place**: the stub object itself receives the decoded state, so every holder of the stub now holds the
 loaded object. That is cheap and it preserves identity, and it has a consequence that took several tasks to

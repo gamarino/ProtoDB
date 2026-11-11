@@ -1,7 +1,7 @@
 Modelling data
 ==============
 
-ProtoDB stores immutable values. Most of modelling is deciding, for each thing in your domain, whether it
+``proto_db`` stores immutable values. Most of modelling is deciding, for each thing in your domain, whether it
 should be a *value* (a fact that never changes) or an *entity* (something with an identity whose state
 changes over time). This tutorial shows the building blocks, the two choices side by side, and a versioned
 sales order built with a plain ``previous`` attribute. Every code block runs in the test suite.
@@ -102,7 +102,7 @@ Take a customer and an order. What should the order hold about the customer?
 *   The order also belongs to **the customer**, whose name may be corrected. Every order should show the
     corrected name. That is an *entity*: it has an identity and a current state.
 
-ProtoDB gives you both and leaves the choice to you. An immutable record is a value. A ``MutableObject`` is
+``proto_db`` gives you both and leaves the choice to you. An immutable record is a value. A ``MutableObject`` is
 an entity: a named cell in the database whose value changes by commit, referred to by a small handle you
 can store in any record.
 
@@ -297,7 +297,7 @@ The first query is a plausible query that returns an order as draft after it was
 view, report and index over that table must remember ``valid_to IS NULL`` (or an equivalent), including
 the ones other people write later, and the table grows with every revision whether the query asks for
 history or not. That is a modelling cost, not a defect of SQL: a mutable table has one state and the
-versions are an add-on. In ProtoDB the version chain is the model and "current" is what the collection
+versions are an add-on. In ``proto_db`` the version chain is the model and "current" is what the collection
 holds.
 
 Does a long history slow the current queries down?
@@ -308,7 +308,7 @@ orders does the same work whether each order has one version or a thousand behin
 structural, and the tutorial test checks the part that is exact (the index holds one entry per order, whatever
 the history). The timing evidence is a benchmark result, not something this page measures:
 
-The benchmark ``history_depth`` (ProtoDB measured against itself, not a comparison) does it with 1,000 orders in
+The benchmark ``history_depth`` (``proto_db`` measured against itself, not a comparison) does it with 1,000 orders in
 100 customers, each order holding 1, 10, 100 or 1,000 versions behind it through ``previous``. The query
 ``orders where customer == c`` decodes 35.78 atoms per query at every depth when the atom cache is off, and
 none when it is on; its latency does not move with the depth (about 0.2 ms warm and about 2.4 to 3.0 ms

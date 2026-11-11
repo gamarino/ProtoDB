@@ -150,7 +150,7 @@ Follow the steps in the class documentation of :class:`proto_db.indexing.base.In
 4. Override ``supports_order`` / ``ordered_plan`` if you can yield elements in key order, and
    ``supports_filtered`` / ``filtered_plan`` if your answer depends on the whole collection.
 5. Prove it: run an ``IndexContract`` for your kind (``tests/contracts/index_contract.py`` in a source
-   checkout; register it there for ProtoDB itself, or call ``run_all()`` from your own tests).
+   checkout; register it there for ``proto_db`` itself, or call ``run_all()`` from your own tests).
 
 The contract is the reusable test suite behind requirement 3 of the design. Given an index factory, a way to
 draw random elements and the terms to ask, it checks that: every supported term's plan equals the scan, plans

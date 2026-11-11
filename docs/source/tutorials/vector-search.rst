@@ -10,7 +10,7 @@ Documents with embeddings
 -------------------------
 
 The embeddings here are random vectors from a seeded generator, so the page is deterministic. In an
-application they come from an embedding model; ProtoDB stores and indexes the vectors you give it and
+application they come from an embedding model; ``proto_db`` stores and indexes the vectors you give it and
 never computes them.
 
 .. code-block:: python
@@ -90,7 +90,7 @@ Combining ``near`` with conditions
 ----------------------------------
 
 "The 3 nearest *music* documents" is not "the 3 nearest documents, then keep the music ones": the second
-can return fewer than 3. ProtoDB hands the other conditions to the index, which finds the k nearest among
+can return fewer than 3. ``proto_db`` hands the other conditions to the index, which finds the k nearest among
 the documents that satisfy them:
 
 .. code-block:: python
@@ -169,11 +169,11 @@ Limits and choices
 * ``exact`` is the default and the right choice up to the size where its scan time is acceptable for your
   latency budget; it needs no training and is never approximate.
 * ``hnsw`` is optional (``pip install "proto_db[hnsw]"``). ``hnswlib`` re-enables the GIL on free-threaded
-  CPython when it is imported, so it costs the thread scalability the rest of ProtoDB has, and its graph is
+  CPython when it is imported, so it costs the thread scalability the rest of ``proto_db`` has, and its graph is
   rebuilt from the stored vectors in each process, not stored. This tutorial does not measure it; see
   :doc:`../performance` for the vector results by backend before choosing it for a large collection.
-* A dedicated vector database, or a library such as FAISS, is better than ProtoDB when vector search is the
-  whole workload: (as general knowledge, not measured here) they typically offer more index types, quantisation and GPU execution. ProtoDB's advantage is that
+* A dedicated vector database, or a library such as FAISS, is better than ``proto_db`` when vector search is the
+  whole workload: (as general knowledge, not measured here) they typically offer more index types, quantisation and GPU execution. ``proto_db``'s advantage is that
   the vectors live in the same transactions, versions and queries as the records they describe, so a
   document and its embedding commit together and a past version answers with its past embeddings.
 * A version of the index is built by path copying like any other, so changing one vector does not rewrite

@@ -1,6 +1,6 @@
-# Un curso sobre ProtoBase: el hueco que llena
+# Un curso sobre `proto_db`: el hueco que llena
 
-**ProtoBase** (paquete `proto_db`) es una base de datos de objetos transaccional, embebida en Python, construida
+**`proto_db`** es una base de datos de objetos transaccional, embebida en Python, construida
 sobre colecciones inmutables y persistentes con compartición estructural. Cada commit publica una versión nueva
 y todas las versiones anteriores siguen legibles; varios procesos pueden escribir el mismo espacio a través de un
 clúster de pares con *lease* y *fencing*, en el que el almacenamiento nunca arbitra entre escritores. Se propone
@@ -38,7 +38,7 @@ El 15-445 tiene 25 clases en unas 15 semanas y cinco proyectos acumulativos sobr
 [Assignments](https://15445.courses.cs.cmu.edu/fall2025/assignments.html)), con calificador automático en
 Gradescope ([Project 4](https://15445.courses.cs.cmu.edu/fall2025/project4/)); BusTub tiene unas 5,2 mil estrellas
 ([BusTub](https://github.com/cmu-db/bustub)) y el canal del grupo, unos 90 mil suscriptores según rastreadores de
-terceros ([developereducators](https://developereducators.com/channel/cmudatabasegroup/)). ProtoBase tiene un
+terceros ([developereducators](https://developereducators.com/channel/cmudatabasegroup/)). `proto_db` tiene un
 mantenedor, ningún material público de curso y ningún calificador automático; los proyectos del ecosistema están
 abiertos a revisión y no listos para producción. No compite con ese curso en amplitud. Ofrece un contraste: el
 estudiante del 15-445 construye cadenas de versiones y su recolección; aquí vería que con compartición estructural

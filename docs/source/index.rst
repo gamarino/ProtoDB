@@ -1,7 +1,7 @@
-ProtoDB documentation
-=====================
+proto_db documentation
+======================
 
-ProtoDB is an embedded, transactional, object-oriented database for Python, built on immutable, persistent,
+``proto_db`` is an embedded, transactional, object-oriented database for Python, built on immutable, persistent,
 structurally shared collections. Every collection can carry equality, range and vector indexes; one planner
 serves every query front end; a commit publishes a new version and every past version stays readable; and
 several processes can write one space through a peer cluster that never lets the storage arbitrate between
@@ -14,7 +14,7 @@ result.
 Where to start
 --------------
 
-* New to ProtoDB: :doc:`tutorials/getting-started`, then :doc:`concepts`.
+* New to ``proto_db``: :doc:`tutorials/getting-started`, then :doc:`concepts`.
 * Modelling an application: :doc:`tutorials/modelling-data` and the :doc:`ERP example <tutorials/erp>`.
 * Running it: :doc:`tutorials/operations`, :doc:`durability` and :doc:`performance`.
 * Why it is built this way: :doc:`design-principles`.

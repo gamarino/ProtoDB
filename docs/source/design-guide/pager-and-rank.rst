@@ -26,7 +26,7 @@ Two problems, which the obvious solutions solve one at a time:
 
 **Measured symptoms** (D56, 10^6 unique keys, pages of 50 full rows, each request in a new transaction):
 
-* before Task 8.4b, ProtoDB's ``Limit`` read an ordered scan up to the offset: **16.5 ms at offset 10^4 and
+* before Task 8.4b, ``proto_db``'s ``Limit`` read an ordered scan up to the offset: **16.5 ms at offset 10^4 and
   12.3 s at 10^5** per request (the 10^5 figure dominated by loading index nodes and rows: the working set
   exceeded the 50,000-entry cache);
 * a pager that materializes its result first spent **1.43 s** before its first page, whatever the page;
@@ -91,16 +91,16 @@ Measured (D56; :doc:`comparisons` quotes about 215 us per page from the performa
 
 * the pager by rank: **253 us at offset 0, 241 at 10^4, 232 at 10^5, 246 at 9 x 10^5**: flat (ranges
   220-315 us);
-* against SQLite ``OFFSET``: SQLite is 7x faster at offset 0; ProtoDB is 1.4x faster at 10^4, 13x at 10^5 and
+* against SQLite ``OFFSET``: SQLite is 7x faster at offset 0; ``proto_db`` is 1.4x faster at 10^4, 13x at 10^5 and
   170x at 9 x 10^5;
-* with a range predicate (``k >= N/2``): ProtoDB 412-428 us at every offset.
+* with a range predicate (``k >= N/2``): ``proto_db`` 412-428 us at every offset.
 
 Its cost, stated honestly
 -------------------------
 
 * **For browsing next page after next page, keyset is better**: SQLite's keyset answered 5-6x faster than
-  ProtoDB's page by rank. For the first pages, SQLite's ``OFFSET`` is faster: 7x at offset 0, and only up to
-  roughly 10^4, where ProtoDB is already 1.4x faster.
+  ``proto_db``'s page by rank. For the first pages, SQLite's ``OFFSET`` is faster: 7x at offset 0, and only up to
+  roughly 10^4, where ``proto_db`` is already 1.4x faster.
 * **Writes to indexes pay for the weights**: ``with_added`` at 10^6 elements +6 % with the GIL off (159 to
   169 us) and +10 % with it on; ``with_removed`` +6 % / +9 %; stored index bytes +3 % (343 to 353 bytes per
   element at 10^5). At 10^5, a first pass right after ``build`` measured ``with_added`` 34-41 % slower; three

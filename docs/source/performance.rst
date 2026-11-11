@@ -1,7 +1,7 @@
 Performance
 ===========
 
-This page reports the ProtoDB 2.0 performance suite (spec section 12, decision D49) by
+This page reports the ``proto_db`` 2.0 performance suite (spec section 12, decision D49) by
 **workload profile** (ruling R100). For each profile it gives the conceptual reason a system
 fits the work, the figures every system measured on the same work, and a plain statement of
 where SQLite or rqlite is the better choice. There is no overall winner and no single headline
@@ -55,7 +55,7 @@ Memory                         62 GiB, 23-35 GiB available during the runs, swap
 OS / file system               Linux 7.0; every work directory on ZFS, never tmpfs
 Python                         CPython 3.14.6, free-threaded build; GIL off (default) and
                                ``-X gil=1``
-ProtoDB                        2.0.0.dev0 at ``57fd351``
+proto_db                       2.0.0.dev0 at ``57fd351``
 SQLite                         3.53.1 (bundled with the interpreter)
 rqlite                         v10.6.6, official linux-amd64 release binary (run from a
                                private directory, never installed), rqlite's defaults
@@ -107,10 +107,10 @@ Changes since the previous measurement
 Against the full suite of ``4aab0f2`` (two single-session suite runs, not interleaved; the
 SQLite, Python and rqlite figures of the two runs are level, which rules out a slower machine):
 
-- **The suite figures of ProtoDB's commit paths fell to 0.41-0.85x**, most with the GIL off:
+- **The suite figures of proto_db's commit paths fell to 0.41-0.85x**, most with the GIL off:
   single-process commits (``concurrent_commits`` 0.41-0.88x, ``commit_durability`` ``none``
   0.65x with the GIL on), cluster commits (``cluster_tcp`` 0.61-0.76x, ``rqlite_reference``'s
-  ProtoDB side 0.61-0.73x), ``cold_open`` 0.42-0.80x and ``bulk_insert`` 0.78-0.81x. The 3-peer
+  ``proto_db`` side 0.61-0.73x), ``cold_open`` 0.42-0.80x and ``bulk_insert`` 0.78-0.81x. The 3-peer
   session headline went from 285.8 commits/s (``8b439cd``) to 202.5.
 - **To separate code from context, the two workloads were rerun alone** from clean exports of
   five commits, interleaved commit by commit, 2 rounds, GIL off [BIS]. Speed against ``4aab0f2``,
@@ -169,9 +169,9 @@ Profiles at a glance
 --------------------
 
 ==========================================  ==========================================  ==========================================
-Profile                                     Where ProtoDB fits                          Where the other system is the better choice
+Profile                                     Where proto_db fits                         Where the other system is the better choice
 ==========================================  ==========================================  ==========================================
-`Reads across transactions in a cluster`_   readers on other nodes keep a valid cache   rqlite when ProtoDB's cache cannot hold
+`Reads across transactions in a cluster`_   readers on other nodes keep a valid cache   rqlite when proto_db's cache cannot hold
                                             across every commit: 0.07 decodes per       the working set (cache off: 2,112 reads/s
                                             read, 54,930 reads/s, p50 44 us             against rqlite ``none`` 5,183), and when
                                                                                         reads must be linearizable
@@ -200,7 +200,7 @@ Profile                                     Where ProtoDB fits                  
 Reads across transactions in a cluster
 --------------------------------------
 
-**Conceptual fit (D53, D56, P1; ruling R110).** A ProtoDB storage pointer names one content
+**Conceptual fit (D53, D56, P1; ruling R110).** A ``proto_db`` storage pointer names one content
 forever: records are appended, never rewritten. A node's decoded-atom cache is keyed by pointer,
 and so is its query result cache, so neither ever holds a stale entry and neither needs an
 invalidation, on that node or from any other node. When node A commits, a reader on node B
@@ -209,7 +209,7 @@ the read actually reaches (the path from the root to the changed entry). Everyth
 reaches is a cache hit, by pointer, exactly as before the commit. A query on a collection the
 commit did not touch keeps its pointers, so its cached result is still the answer.
 
-This is a consequence of immutability, not something only ProtoDB has. **Datomic's** peers rely
+This is a consequence of immutability, not something only ``proto_db`` has. **Datomic's** peers rely
 on the same property: "Datomic caches only immutable data, so all caches are valid forever"
 (https://docs.datomic.com/operation/caching.html). **XTDB** keeps "a local-disk cache and
 in-memory cache of the working set" over a remote object store
@@ -266,12 +266,12 @@ read consistency level. Medians [range] of 5 interleaved runs [SES], GIL off:
 Cell (2 readers on each of B and C)        commits/s   reads/s          read p50   read p99    decodes per   query cache
                                            on A                         (us)       (us)        read          hit rate
 =========================================  ==========  ===============  =========  ==========  ============  ===========
-ProtoDB point, atom cache on (50,000)      76.6        54,930           44         446         0.07          --
+proto_db point, atom cache on (50,000)     76.6        54,930           44         446         0.07          --
                                                        [48,830-70,990]
-ProtoDB point, atom cache small (2,000)    63.3        4,755            738        2,729       4.56          --
-ProtoDB point, atom cache off (0)          50.6        2,112            1,663      4,235       20.36         --
-ProtoDB query, query cache on (64 MiB)     77.6        5,842            588        1,869       0.25          1.0
-ProtoDB query, query cache off             73.4        5,048            723        2,018       0.26          --
+proto_db point, atom cache small (2,000)   63.3        4,755            738        2,729       4.56          --
+proto_db point, atom cache off (0)         50.6        2,112            1,663      4,235       20.36         --
+proto_db query, query cache on (64 MiB)    77.6        5,842            588        1,869       0.25          1.0
+proto_db query, query cache off            73.4        5,048            723        2,018       0.26          --
 rqlite point ``none``                      204.1       5,183            685        1,834       --            --
 rqlite point ``weak``                      205.7       3,614            958        2,832       --            --
 rqlite point ``linearizable``              230.7       452              9,425      23,930      --            --
@@ -299,17 +299,17 @@ What the numbers show:
   tree nodes) a read decodes 4.6 atoms, every load evicts another loaded atom (thrash signal 1.0,
   ``atom_cache_stats()``), and the rate falls to 4,755 reads/s, 11.5x below the default size.
   Size ``atom_cache_entries`` to the working set (D53 "Sizing").
-- **Against rqlite, which reads through HTTP:** with its cache, a ProtoDB point read is 10.6x
+- **Against rqlite, which reads through HTTP:** with its cache, a ``proto_db`` point read is 10.6x
   the rate of an rqlite ``none`` read (no freshness guarantee) and 15.6x faster at p50, and 120x
-  the rate of a ``linearizable`` one. **Without its cache, ProtoDB is slower than rqlite**
+  the rate of a ``linearizable`` one. **Without its cache, proto_db is slower than rqlite**
   ``none`` (2,112 against 5,183 reads/s): it is the immutable cache, not the embedded read
-  alone, that makes the difference. A ProtoDB read is a snapshot read, the same class as
+  alone, that makes the difference. A ``proto_db`` read is a snapshot read, the same class as
   rqlite ``none`` (`Mixed reads and writes`_ gives the caveats).
 - **The writers on A pay for the readers on B and C.** All 9 processes share 6 cores: A commits
   77 times a second with the readers running, while 4 rqlite writer clients on node 0 commit
   about 205 times. Fewer reads mean more commits (50.6 commits/s with the cache off, where reads
   are slowest, is the exception: decoding costs the reader nodes' CPU too).
-- **With the GIL on, the writers on A nearly stop**: 10.1-11.8 commits/s in every ProtoDB cell
+- **With the GIL on, the writers on A nearly stop**: 10.1-11.8 commits/s in every ``proto_db`` cell
   (rqlite: 196-215), while the readers keep their rate (point, cache on: 55,450 reads/s, p50
   23 us, 0.006 decodes per read). The readers on B and C share their process's interpreter with
   that node's replication threads, which acknowledge A's commits; our reading is that the
@@ -320,11 +320,11 @@ The suite's own runs of this workload ([S0], [S1], 3 runs per cell) agree in ord
 session.
 
 **Where rqlite is the better choice.** When reads must be linearizable, rqlite provides it by
-configuration and ProtoDB has no measured equivalent. When the readers' working set does not fit
-the memory a ProtoDB node can give its cache, its reads decode from storage and are slower than
+configuration and ``proto_db`` has no measured equivalent. When the readers' working set does not fit
+the memory a ``proto_db`` node can give its cache, its reads decode from storage and are slower than
 rqlite's. When readers and writers share interpreters with the GIL on.
 
-**Where ProtoDB fits.** Many readers on nodes other than the writer, reading a working set their
+**Where proto_db fits.** Many readers on nodes other than the writer, reading a working set their
 cache can hold: each reader's cache survives every commit without an invalidation message, and
 pays only for the new atoms its reads reach.
 
@@ -333,11 +333,11 @@ Writes in a cluster
 
 **Conceptual fit.** rqlite is a replicated SQLite on Raft: the leader orders every write, appends
 it to a log that it fsyncs, replicates it, and applies it to SQLite. Each write request is one
-Raft entry (our reading of the design; whether entries share a sync is not documented). ProtoDB
+Raft entry (our reading of the design; whether entries share a sync is not documented). ``proto_db``
 peers are embedded in the application: each node builds its own commits (path copies of
 persistent structures), asks the owner of the term for a write permission, groups the
 transactions pending on that node into one round, and replicates one self-describing append to
-its data replicas (D50, D54, D55). The ProtoDB commit has no client-server hop, but it has more
+its data replicas (D50, D54, D55). The ``proto_db`` commit has no client-server hop, but it has more
 work per commit in Python (build, merge, serialize) and a permission round between nodes.
 
 **rqlite's durability, from its documentation.** The performance guide says "the Raft
@@ -356,7 +356,7 @@ but before the data is committed to the Raft log"; they are opt-in per request a
 here (https://rqlite.io/docs/api/queued-writes/).
 
 *Our inference, not stated by the documentation:* an acknowledged rqlite write is on the synced
-Raft log of a majority, which would put it in the same durability class as ProtoDB with
+Raft log of a majority, which would put it in the same durability class as ``proto_db`` with
 ``durability="fsync"``. The documentation says the log is synced before the change is applied
 and that the response waits for a majority commit. It does not say in one place that every
 majority member has synced before the client is acknowledged.
@@ -371,36 +371,36 @@ and the cited pages do not say where the SQLite file lives. The harness passes n
 The design page's WAL mode and its periodic fsync of "the entire SQLite database to disk" imply
 an on-disk database; that is our reading.
 
-3 members, 4 client threads per member, 3 s per run; ProtoDB TCP peers with
+3 members, 4 client threads per member, 3 s per run; ``proto_db`` TCP peers with
 ``durability="fsync"``; each commit (or rqlite request) writes one 100-byte value and one id, or
 50 ids and one 100-byte value. Medians [range] of 5 interleaved runs [SES]:
 
 =====================================  =============================  =============================  ===================
-Work                                   ProtoDB commits/s              rqlite requests/s              p50 latency (ms)
-                                       GIL off (GIL on)               GIL off (GIL on)               ProtoDB / rqlite
+Work                                   proto_db commits/s             rqlite requests/s              p50 latency (ms)
+                                       GIL off (GIL on)               GIL off (GIL on)               proto_db / rqlite
 =====================================  =============================  =============================  ===================
 1 id + 100 B, 3 members                202.5 [175.3-252.3] (153.5)    568.6 [559.8-594.8] (574.9)    55.8 / 21.2
 50 ids + 100 B, 3 members              21.1 [19.0-24.5] (19.5)        515.7 [436.5-538.6] (506.9)    589 / 22.7
   rows/s                               1,057 (976)                    25,790 (25,350)
-1 id + 100 B, 5 ProtoDB peers          190.9 [186.5-236.5] (157.4)    --                             96.5 / --
+1 id + 100 B, 5 proto_db peers         190.9 [186.5-236.5] (157.4)    --                             96.5 / --
 =====================================  =============================  =============================  ===================
 
-ProtoDB syncs per commit, counted in every peer (``benchmarks/fsync_probe.py``): 1.73 at 3 peers
+``proto_db`` syncs per commit, counted in every peer (``benchmarks/fsync_probe.py``): 1.73 at 3 peers
 and 2.24 at 5 (GIL off); 6.79 for the 50-id commit [SES].
 
 Payload size, 3 members, one value per commit, measured side by side in ``rqlite_reference``
 [S0], GIL off (GIL on [S1]):
 
 ==========  ==========================  ==========================  ===============================
-payload     ProtoDB commits/s           rqlite requests/s           loopback bytes per commit
-                                                                    ProtoDB / rqlite
+payload     proto_db commits/s          rqlite requests/s           loopback bytes per commit
+                                                                    ``proto_db`` / rqlite
 ==========  ==========================  ==========================  ===============================
 100 B       182.6 (202.1)               565.4 (596.3)               13.2 KB / 1.8 KB
 10 KB       179.5 (176.9)               526.9 (573.6)               32.8 KB / 18.6 KB
 100 KB      159.5 (174.7)               328.8 (367.2)               217 KB / 172.4 KB
 ==========  ==========================  ==========================  ===============================
 
-The same file's per-request cell (one id, no value): ProtoDB 290.9 (245.2) against rqlite 588.5
+The same file's per-request cell (one id, no value): ``proto_db`` 290.9 (245.2) against rqlite 588.5
 (590.4); batched, 50 rows per commit or request, 999 (1,218) rows/s against 24,750 (26,800).
 
 Peer scaling, TCP processes, 4 threads per peer, one id per commit, ``fsync`` [S0] / [S1]:
@@ -416,12 +416,12 @@ Task 9 measured 61 commits/s (``8ad6bf3``, dirty tree).
 
 **Where rqlite is the better choice.** On every commit shape measured here rqlite commits more:
 2.8x at one row per commit, 24x in rows for 50-row commits, and 2.1x at 100 KB values, with
-less than half the latency. A 50-id ProtoDB commit spends most of its 589 ms building and
+less than half the latency. A 50-id ``proto_db`` commit spends most of its 589 ms building and
 replicating 50 path copies in Python; rqlite ships 50 SQL statements in one log entry. A
 workload of large transactions, or of many small writes from clients that are not Python
 processes, belongs on rqlite.
 
-**Where ProtoDB fits.** The writer is the application process itself, with no server to run or
+**Where proto_db fits.** The writer is the application process itself, with no server to run or
 reach. The 100 KB payload moves about 1.26x rqlite's bytes, not more. With the GIL off,
 throughput stays within 200-260 commits/s from 1 to 8 peers, although syncs per commit rise from
 0.97 to 2.55. The design reason is that only ``f + 1`` replicas sync the data (D54); that cause
@@ -430,7 +430,7 @@ was not measured here.
 Mixed reads and writes
 ----------------------
 
-**Conceptual fit (ruling R97).** A ProtoDB read never waits: it opens a transaction on the root
+**Conceptual fit (ruling R97).** A ``proto_db`` read never waits: it opens a transaction on the root
 the node last learned, an immutable value, and reads it with no lock and no message to any other
 node. rqlite offers read consistency levels, quoted here from its documentation
 (https://rqlite.io/docs/api/read-consistency/):
@@ -445,7 +445,7 @@ node. rqlite offers read consistency levels, quoted here from its documentation
   production;
 - ``auto`` is not a level: a read replica uses ``none``, any other node ``weak``.
 
-**Honest caveats.** A ProtoDB read is a *snapshot* read of the node's last known committed root.
+**Honest caveats.** A ``proto_db`` read is a *snapshot* read of the node's last known committed root.
 It is not linearizable unless something on the reading node first learns from the term owner;
 the only public way today is a barrier commit on the reading node before the read (its base is
 at or above every acknowledged commit), which costs a write round and is not measured here. It is
@@ -453,10 +453,10 @@ a barrier only if it writes at least one root and returns normally: a transactio
 nothing returns at once and learns nothing, and an unknown outcome, a conflict or a timeout is no
 barrier (see ``ObjectSpace.sync``). A read-only barrier has no API yet (Task 8.3n, ruling
 proposal on R113). ``sync()`` is a durability barrier and does not make another node's commits
-visible. Otherwise a ProtoDB read is the same class as rqlite ``none`` with the difference that
-its snapshot is always a complete committed version. A ProtoDB read whose records are not in the
+visible. Otherwise a ``proto_db`` read is the same class as rqlite ``none`` with the difference that
+its snapshot is always a complete committed version. A ``proto_db`` read whose records are not in the
 node's caches fetches them, from the local tier or, on a node that is not a data replica of them,
-from a peer (D54): that read waits for I/O. The ProtoDB readers are threads of the peer process;
+from a peer (D54): that read waits for I/O. The ``proto_db`` readers are threads of the peer process;
 the rqlite readers are Python HTTP clients in the benchmark process, so every rqlite read
 includes an HTTP round trip that an embedded read does not.
 
@@ -469,11 +469,11 @@ latencies are over every read of every node. Medians of 5 interleaved runs [SES]
 =======================================  ===============  ===============  ==============  ===========================
 Cell (threads per node)                  commits/s        reads/s          read p50 (us)   read p99 (us)
 =======================================  ===============  ===============  ==============  ===========================
-ProtoDB, 4 writers                       213.2            --               --              --
-ProtoDB, 1 reader                        --               92,030           22              160
-ProtoDB, 4 writers + 1 reader            139.9            50,190           37              347
-ProtoDB, 4 readers                       --               89,330           58              993
-ProtoDB, 4 writers + 4 readers           59.2             66,930           55              1,809
+proto_db, 4 writers                      213.2            --               --              --
+proto_db, 1 reader                       --               92,030           22              160
+proto_db, 4 writers + 1 reader           139.9            50,190           37              347
+proto_db, 4 readers                      --               89,330           58              993
+proto_db, 4 writers + 4 readers          59.2             66,930           55              1,809
 rqlite, 4 writers                        561.7            --               --              --
 rqlite ``none``, 1 reader                --               5,494            493             1,074
 rqlite ``none``, 4 writers + 1 reader    535.9            4,687            561             1,657
@@ -492,7 +492,7 @@ cell are in [SES]. With the GIL on, the rqlite readers (Python HTTP clients) rea
 fewer rows per second at ``none``, ``weak`` and ``linearizable`` [SES]; that is the client,
 not rqlite.
 
-**With the GIL on**, ProtoDB readers keep their latency, but the writers starve: they compete
+**With the GIL on**, ``proto_db`` readers keep their latency, but the writers starve: they compete
 with the readers for the interpreter. Medians of 5 verified runs [SES]: 180.9 commits/s with no
 readers; 26.0 [23.5-27.5] with 1 reader per node (reads 68,980/s, p50 24 us, p99 208 us); 17.0
 [15.2-19.5] with 4 per node (reads 62,070/s, p50 25 us, p99 440 us); readers alone 85,110/s (1
@@ -520,7 +520,7 @@ where the GIL build is required, shorten the switch interval on the nodes that s
 
 What the numbers show:
 
-- **Readers never wait on writers in ProtoDB, but they share the CPU.** Read latency moves
+- **Readers never wait on writers in proto_db, but they share the CPU.** Read latency moves
   little under writes (p50 22 -> 37 us with one reader per node). The writers lose throughput to
   the readers' CPU: -34 % with one reader per node and -72 % with four, because 12 reader
   threads plus 12 writers plus 3 nodes' protocol threads run on 6 cores. With the GIL on the
@@ -533,29 +533,29 @@ What the numbers show:
   they commit as many as without readers (593.6 and 576.0), within the cells' ranges. With four
   readers per node they lose 34 % at ``none`` (369 commits/s) and 24 % at ``weak`` (426), and
   nothing measurable at ``linearizable`` (580) and ``strong`` (550). The same steps cost
-  ProtoDB's writers 34 % and 72 % (140 and 59 commits/s).
-- Per read, an embedded ProtoDB snapshot read under writes is about 15x faster at p50 than an
+  ``proto_db``'s writers 34 % and 72 % (140 and 59 commits/s).
+- Per read, an embedded ``proto_db`` snapshot read under writes is about 15x faster at p50 than an
   rqlite ``none`` read through HTTP on this machine (37 against 561 us), and 300x faster than a
   linearizable one under load. The comparison is between an embedded read and a client-server
   read, which is the point of the profile, not a statement about rqlite's engine.
 
 **Where rqlite is the better choice.** When every read must be linearizable, rqlite provides it
-by configuration (``linearizable``), and ProtoDB has no measured equivalent here. When reads come
+by configuration (``linearizable``), and ``proto_db`` has no measured equivalent here. When reads come
 from many separate client processes that cannot embed a peer, rqlite serves them over HTTP.
 When readers and writers share one Python process with the GIL on, rqlite keeps its write rate
-and ProtoDB does not.
+and ``proto_db`` does not.
 
 Point reads
 -----------
 
-**Conceptual fit.** A ProtoDB primary-key read is a few AVL node visits in decoded Python
+**Conceptual fit.** A ``proto_db`` primary-key read is a few AVL node visits in decoded Python
 objects; a secondary-index read goes through the query layer (plan construction on every call).
 SQLite reads a C B-tree.
 
 20,000 records, per query [S0] (GIL on [S1]):
 
 =================================  ==================  =================  ==================
-Query                              ProtoDB             Python dict/list   SQLite
+Query                              proto_db            Python dict/list   SQLite
 =================================  ==================  =================  ==================
 point, primary key                 3.8 us (3.5)        0.1 us             3.7 us (3.8)
 point, secondary index             78.1 us (72.0)      0.1 us             4.7 us (4.6)
@@ -567,23 +567,23 @@ top-10 of ``city == c`` by score   754 us (655)        1.8 ms (heapq)     94.6 u
 =================================  ==================  =================  ==================
 
 **Where SQLite is the better choice:** everywhere but the primary key: 3-17x on indexed reads
-and top-k, and an unindexed scan is 42x slower in ProtoDB for a point query and 56x for a range
+and top-k, and an unindexed scan is 42x slower in ``proto_db`` for a point query and 56x for a range
 (59.5 ms against 1.06 ms).
 
 Deep pages
 ----------
 
-**Conceptual fit (D56).** A ProtoDB pager over an indexed ordered query seeks by rank (weights
+**Conceptual fit (D56).** A ``proto_db`` pager over an indexed ordered query seeks by rank (weights
 kept in the index tree), on a snapshot that never changes, so page *n* costs the same as page 0
 and a token resumes the same pages in any later transaction. SQLite's ``OFFSET`` reads and skips
 every earlier row; its keyset pagination (``WHERE k > last``) is constant but only for the next
 page.
 
-10^6 rows, pages of 50, each request a new transaction (ProtoDB) on one connection (SQLite).
+10^6 rows, pages of 50, each request a new transaction (``proto_db``) on one connection (SQLite).
 Per page [S0] (GIL on [RR]):
 
 =============  ===============  ================  =================  ==================  ===================
-offset         ProtoDB pager    ProtoDB islice    SQLite OFFSET      SQLite keyset,      SQLite keyset,
+offset         proto_db pager   proto_db islice   SQLite OFFSET      SQLite keyset,      SQLite keyset,
                (by rank)        (no rank)                            next page           chained jump
 =============  ===============  ================  =================  ==================  ===================
 0              224 us (228)     166 us            36 us (42)         38 us (50)          --
@@ -597,29 +597,29 @@ the test run; the pager 220-228 us there too): that overlap did not inflate thes
 range-predicate pager at 10^5 took 803 us against 400 us in the suite run, which is this cell's
 run-to-run variance on this machine.
 
-With a range predicate (``k >= N/2``) the ProtoDB pager costs 374-447 us at every offset; SQLite
+With a range predicate (``k >= N/2``) the ``proto_db`` pager costs 374-447 us at every offset; SQLite
 ``OFFSET`` 36 us to 3.1 ms. A pager over an index without weights (built before D56)
 materializes the whole result before its first page: 1.45 s.
 
 **Where SQLite is the better choice:** browsing next page after next page (keyset: 38-42 us,
 about 6x faster), and any page within the first few tens of thousands of rows by ``OFFSET``.
-ProtoDB is the better choice for random jumps deep into a large result (13x faster than
+``proto_db`` is the better choice for random jumps deep into a large result (13x faster than
 ``OFFSET`` at 10^5 rows, 168x at 9 x 10^5) and for pages that must stay stable while writers
 commit.
 
 Repeated queries
 ----------------
 
-**Conceptual fit (D56, P1).** A ProtoDB query result is cached by the pointers it read: a root
+**Conceptual fit (D56, P1).** A ``proto_db`` query result is cached by the pointers it read: a root
 that has not changed is the same pointer, so a repeated query is a lookup, shareable across
 transactions and threads (and, as `Reads across transactions in a cluster`_ shows, across the
 commits of other nodes). SQLite has no result cache: every request runs. The first run of an
-ad-hoc query pays the plan and, in ProtoDB, a cache miss costs more than an uncached run.
+ad-hoc query pays the plan and, in ``proto_db``, a cache miss costs more than an uncached run.
 
 [S0] (GIL on [RR]), per request:
 
 ===================================================  ===============  ===============  ================  ===============
-Query                                                ProtoDB          ProtoDB          ProtoDB           SQLite
+Query                                                proto_db         proto_db         proto_db          SQLite
                                                      no cache         cache miss       cache hit         (re-executes)
 ===================================================  ===============  ===============  ================  ===============
 range + filter, ~10^4 rows, N = 10^5                 79.6 ms (78.0)   140 ms (132)     3.99 ms (3.80)    11.8 ms (18.2)
@@ -629,16 +629,16 @@ filter on an unindexed field, ordered, N = 10^5      15.4 s (17.6)    16.2 s (18
 
 **Where SQLite is the better choice:** a first, ad-hoc query is 7x faster in SQLite at 10^5 rows
 and 380x faster on the unindexed ordered filter, and a cache miss on the range query costs
-ProtoDB 1.7-1.8x an uncached run. SQLite's own figure at 10^5 differs by 54 % between the two
+``proto_db`` 1.7-1.8x an uncached run. SQLite's own figure at 10^5 differs by 54 % between the two
 GIL modes (11.8 and 18.2 ms, both reruns), far outside the 15 % that this page treats as noise;
 the cause was not investigated, so read it as an unexplained spread, not as an effect of the
-GIL. ProtoDB is the better choice when the same query repeats on a
+GIL. ``proto_db`` is the better choice when the same query repeats on a
 root that changes less often than it is read: about 4 ms against SQLite's 12-120 ms.
 
 History and "as of"
 -------------------
 
-**Conceptual fit (P1).** Every ProtoDB commit is a new immutable root; an earlier root is read
+**Conceptual fit (P1).** Every ``proto_db`` commit is a new immutable root; an earlier root is read
 with the same code as the current one (``Database.snapshot_at``), for any query, with no schema
 work and no write cost beyond the commit itself. SQLite keeps history only if it is designed in:
 here an ``equipment_audit`` table, filled by a trigger on status updates and stamped with a
@@ -650,24 +650,24 @@ region in the version before the last bulk change, per equipment [S0] at 10^5 ob
 at 10^6:
 
 =========================  =============================  =============================
-Objects (equipment)        ProtoDB as of (us/equipment)   SQLite audit (us/equipment)
+Objects (equipment)        proto_db as of (us/equipment)  SQLite audit (us/equipment)
 =========================  =============================  =============================
 95,645 (20)                8.4 (7.7)                      1.17 (1.17)
 958,665 (140)              9.9 (9.3)                      1.39 (1.38)
 =========================  =============================  =============================
 
-The bulk change itself (one commit, the same region) costs ProtoDB 796 / 620 us per equipment
+The bulk change itself (one commit, the same region) costs ``proto_db`` 796 / 620 us per equipment
 and SQLite, trigger included, 79 / 22 us.
 
-``versions`` [S0]: a new version per update costs ProtoDB 53 / 58 / 70 us at 10^3 / 10^4 / 10^5
-entries; a Python ``dict`` copy costs 14 us / 137 us / 4.8 ms. Those ProtoDB figures are versions
+``versions`` [S0]: a new version per update costs ``proto_db`` 53 / 58 / 70 us at 10^3 / 10^4 / 10^5
+entries; a Python ``dict`` copy costs 14 us / 137 us / 4.8 ms. Those ``proto_db`` figures are versions
 in memory, not committed. A *committed* update (one transaction, ``durability="none"``) costs
 1.28 / 1.53 / 2.52 ms at the same sizes (GIL on [S1]: 1.67 / 1.97 / 1.81 ms). So an uncommitted
 version is cheaper than a ``dict`` copy from 10^4 entries on. A committed version costs more than
 a ``dict`` copy at 10^3 and 10^4 entries and about half of one at 10^5 (2.5 ms against 4.8 ms);
 unlike the copy, it is persisted, and every one stays readable.
 
-**History depth does not slow current queries** (``history_depth``, ProtoDB only, ruling R112).
+**History depth does not slow current queries** (``history_depth``, ``proto_db`` only, ruling R112).
 The documented pattern for versioned entities: each version holds its predecessor in a
 ``previous`` attribute; the current collection holds only the newest version of each entity, so
 a superseded version leaves the current collection and its indexes and stays reachable through
@@ -698,14 +698,14 @@ version in the queried collection (or in its index) would make the query pay for
 was not measured.
 
 **Where SQLite is the better choice:** a history question known in advance, served by an audit
-table: 7x faster per row here. ProtoDB is the better choice when the question is not known in
+table: 7x faster per row here. ``proto_db`` is the better choice when the question is not known in
 advance: any query, any root, any field, without triggers, and without the audit table's write
 cost on every change.
 
 Object graphs
 -------------
 
-**Conceptual fit.** An inventory is a graph. ProtoDB stores each node as an object in a
+**Conceptual fit.** An inventory is a graph. ``proto_db`` stores each node as an object in a
 dictionary per type with an equality index on the parent reference, and follows references by
 dictionary reads; SQLite joins tables and walks paths with a recursive CTE. Both use the same
 four indexes.
@@ -714,7 +714,7 @@ Telecom inventory (`Bulk load and scale`_), per request, [S0] at 10^5 objects an
 (default cache; GIL off, GIL on in brackets):
 
 =============================================  ==========================  ==========================
-Operation                                      10^5: ProtoDB / SQLite      10^6: ProtoDB / SQLite
+Operation                                      10^5: proto_db / SQLite     10^6: proto_db / SQLite
 =============================================  ==========================  ==========================
 point lookup of a port                         47.2 / 3.9 us               48.5 (63.4) / 4.7 (5.6) us
 equipment at a site (10 rows)                  134 / 7.0 us                160 (172) / 15.8 (10.9) us
@@ -725,7 +725,7 @@ path trace (up to 16 links, ~32 ports)         281 / 35 us                 519 (
 
 **Where SQLite is the better choice:** every graph operation measured here, by 1.4-19x. The
 path trace narrows from 8x at 10^5 to 1.4x at 10^6, because SQLite's recursive CTE grows from
-35 to 363 us while ProtoDB's walk grows from 281 to 519 us. ProtoDB's graph is plain Python
+35 to 363 us while ``proto_db``'s walk grows from 281 to 519 us. ``proto_db``'s graph is plain Python
 objects in the application, with no mapping layer, but it is not faster to traverse.
 
 Bulk load and scale
@@ -737,12 +737,12 @@ Fan-outs, chosen to be realistic and fixed: 10 equipment per site, 10 cards per 
 ports per card (a hash of the card id), and links on about half the ports (each joins two
 sites; a cross-connect leads to the next equipment of the site, so a path trace crosses many
 sites). Objects counts every persisted node (sites + equipment + cards + ports + links). Both
-systems build the graph in one transaction per site, ProtoDB with ``durability="fsync"``,
+systems build the graph in one transaction per site, ``proto_db`` with ``durability="fsync"``,
 SQLite in WAL with ``synchronous=FULL``. The answers are checked against a model computed from
 pure functions of the ids.
 
 ===================================  ================  ================  =====================  ====================
-Step (each a single run)             ProtoDB build     SQLite build      ProtoDB on disk        SQLite on disk
+Step (each a single run)             proto_db build    SQLite build      proto_db on disk       SQLite on disk
                                      objects/s         objects/s         bytes / object         bytes / object
                                      (commits/s)       (commits/s)       (alloc. / apparent)    (alloc. / apparent)
 ===================================  ================  ================  =====================  ====================
@@ -776,7 +776,7 @@ with the fitting cache (port lookup 48.5 against 55.1 us, ports at a site 13.5 a
 trace 519 against 434 us, single runs), and the build is 11 % slower.
 
 *History.* The 10^7 step (2,769 sites) was not run in this measurement; it is deferred to the
-final verification pass (maintainer decision). At ``1845993`` (Task 8.3m), ProtoDB alone built
+final verification pass (maintainer decision). At ``1845993`` (Task 8.3m), ``proto_db`` alone built
 9,626,985 objects in 78 min with a peak RSS of 0.27 GB, default cache, GIL off
 (``2026-11-06-1845993-residency-ladder.log``); at ``8b439cd``, before Task 8.3m, the same step
 stopped at 5.9 million objects with 14.9 GB RSS, because the cache retained every decoded node a
@@ -789,14 +789,14 @@ fix rounds (``c9f60bb``, ``236a228``, ``550dde5``) lie between the two.
 the OS page cache and the ZFS ARC are not dropped, which needs root) against the same request
 warm, at 10^6 [INV]: point lookup 2.90 ms against 48.5 us (SQLite 215 us against 4.7 us);
 equipment at a site 3.77 ms against 160 us (SQLite 231 against 16 us); path trace 47.6 ms
-against 519 us (SQLite 0.99 ms against 0.36 ms). ProtoDB's cold cost is decoding: a new
+against 519 us (SQLite 0.99 ms against 0.36 ms). ``proto_db``'s cold cost is decoding: a new
 instance decodes every node it visits.
 
 **Where SQLite is the better choice:** loading data: 141x (10^5) and 151x (10^6) faster per
 object, and 8.7x smaller on disk as allocated (13.6x in apparent size). A data set that is
 loaded in bulk and rarely changed belongs in SQLite.
 
-*Why.* A ProtoDB object is a persistent immutable atom: each one is encoded on its own and
+*Why.* A ``proto_db`` object is a persistent immutable atom: each one is encoded on its own and
 appended to a segment, and placing it in the persistent trees that index it copies the path from
 the new node to the root, because nothing is modified in place (D8, structural sharing; see
 :doc:`concepts`). The 157 against 18 allocated bytes per object and the 423 against
@@ -813,17 +813,17 @@ Single-process commits
 One small read-modify-write commit (read a counter, increment it, insert one key) per durability
 mode, one process, ``FileStorage`` against SQLite in WAL [S0] (GIL on [S1]):
 
-==================  ====================  ======================  ====================
-ProtoDB durability  commits/s             SQLite ``synchronous``  commits/s
-==================  ====================  ======================  ====================
-``fsync``           149.3 (142.5)         ``FULL``                585 (588)
-``flush``           192.4 (184.3)         ``NORMAL``              12,060 (11,580)
-``none``            683.7 (504.7)         ``OFF``                 21,210 (17,900)
-==================  ====================  ======================  ====================
+===================  ====================  ======================  ====================
+proto_db durability  commits/s             SQLite ``synchronous``  commits/s
+===================  ====================  ======================  ====================
+``fsync``            149.3 (142.5)         ``FULL``                585 (588)
+``flush``            192.4 (184.3)         ``NORMAL``              12,060 (11,580)
+``none``             683.7 (504.7)         ``OFF``                 21,210 (17,900)
+===================  ====================  ======================  ====================
 
-``fsync`` and ``FULL`` are the like-for-like pair (both survive power loss; ProtoDB's crash
+``fsync`` and ``FULL`` are the like-for-like pair (both survive power loss; ``proto_db``'s crash
 matrix checks ``fsync``). ``flush`` and ``NORMAL`` are process-crash safe, not power-loss safe
-(D19); ProtoDB ``flush`` still syncs its root file and directory, which buys no data safety.
+(D19); ``proto_db`` ``flush`` still syncs its root file and directory, which buys no data safety.
 
 Commits of one process, ``FileStorage`` ``none``, commits/s at 1 / 4 / 16 threads [S0]
 (GIL on [S1]): conflicting counter 548 / 494 / 471 (923 / 651 / 216), with 1.0 / 2.02 / 5.95
@@ -833,18 +833,18 @@ conflicting commits/s at 1 thread in two runs, and the in-suite GIL-on figures a
 GIL-off ones at 1 thread (see `Changes since the previous measurement`_).
 
 **Where SQLite is the better choice:** single-process commits at every durability level, by
-3.9x (``fsync``) to 63x (``flush``). Bulk insert of 10,000 records: ProtoDB 183 us per record
+3.9x (``fsync``) to 63x (``flush``). Bulk insert of 10,000 records: ``proto_db`` 183 us per record
 without indexes and 632 us with two, SQLite 2.8 and 4.7 us [S0]. Each index adds about 170-210 us
-to a ProtoDB update at 10^4 rows (52 / 261 / 453 / 622 us with 0 / 1 / 2 / 3 indexes).
+to a ``proto_db`` update at 10^4 rows (52 / 261 / 453 / 622 us with 0 / 1 / 2 / 3 indexes).
 
 *Why.* A commit is a new immutable root, so even one key written copies a path of tree nodes,
 serialises the new nodes as atoms and then publishes the root atomically (D19): in ``fsync``
 mode that is a sync of segment data, of the directory, of a temporary root file and of the
 directory again, where SQLite in WAL syncs one log. The gap shrinks as the durability falls
-(3.9x at ``fsync``, 63x at ``flush``, where SQLite does almost no sync work and ProtoDB still
+(3.9x at ``fsync``, 63x at ``flush``, where SQLite does almost no sync work and ``proto_db`` still
 syncs its root file and directory) because the fixed cost of a SQLite commit is then a page
 append. Every index is one more tree to path-copy, which is why each adds the 170-210 us above;
-SQLite updates the index pages in place. The ProtoDB design buys snapshots and conflict
+SQLite updates the index pages in place. The ``proto_db`` design buys snapshots and conflict
 detection by comparing roots (D9), which SQLite's single writer does not need.
 
 Parallel work
@@ -870,7 +870,7 @@ free-threaded collector's passes grow with a large live heap) is not confirmed: 
 the scan scale after the preceding workloads at reduced sizes. Read the in-suite figures of ``57fd351`` as a suite artefact, not as the
 scaling of ``ParallelPool``.
 
-*Where SQLite is the better choice, and why.* Parallel work is where ProtoDB's model pays, and
+*Where SQLite is the better choice, and why.* Parallel work is where ``proto_db``'s model pays, and
 the only loss is the one measured: reads scale because they walk immutable nodes that no writer
 changes (4.15x and 4.62x above), but with the GIL on nothing scales (0.9-1.2x); the in-suite
 ``parallel_scan`` collapse of the earlier suites is unexplained, and did not reproduce later. The cost of the model is paid elsewhere: every write
@@ -916,7 +916,7 @@ Operations
   a lost commit. These are the only two failed runs of this measurement; both workloads passed
   when rerun alone, and a single rerun cannot say how often the failure occurs.
 
-- **Where SQLite is the better choice, and why.** Opening and recovery: a ProtoDB space decodes
+- **Where SQLite is the better choice, and why.** Opening and recovery: a ``proto_db`` space decodes
   every node it visits on demand, so the cold walk costs 168 us per record against 0.69 us warm,
   where SQLite reads a page that holds many rows with one read (the same decoding cost as in
   `Bulk load and scale`_). Running a cluster: a commit across peers waits for acknowledgements
@@ -925,7 +925,7 @@ Operations
   single SQLite file does not offer (see the rqlite comparison for the server alternative).
 
 - **Server against embedded peer.** rqlite is a server: any client that speaks HTTP reaches it,
-  and its nodes can run on machines the application does not. A ProtoDB peer is a library inside
+  and its nodes can run on machines the application does not. A ``proto_db`` peer is a library inside
   a Python application: no server to deploy, no client round trip, but every writer and reader
   is that application's process.
 
