@@ -144,12 +144,16 @@ def blind_snapshot_of'''),),
         ("tests/concurrency/test_cluster_contention.py::test_forced_replication_failures_surface_and_lose_nothing",),
         "acknowledged commits lost",
         "forced replication failures (fix round 2, item 3): every member loses one acknowledged commit"),
-    "forced_old_bound": Plant((
-        ("tests/concurrency/test_cluster_contention.py",
-         '''    assert failures <= refused["unknown"] + refused["conflict"], (failures, refused)''',
-         '''    assert failures <= unknown, (failures, unknown)     # PLANT: the bound before db68f49'''),),
+    # forced_old_bound (the bound before db68f49, ``failures <= unknown``) retired in Task 11.1: since
+    # 276a256 (M1) the forced schedule's gate refusal is not a replication failure, so that bound holds
+    # there and the plant could no longer fail.  The test asserts M1's accounting instead:
+    "forced_gate_counted": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "            failure, ok, acks = e, False, len(waiter.acks)\n            if acceptable[0]:\n",
+         "            failure, ok, acks = e, False, len(waiter.acks)\n            if True:     # PLANT (M1)\n"),),
         ("tests/concurrency/test_cluster_contention.py::test_forced_replication_failures_surface_and_lose_nothing",),
-        "assert 2 <= 1", "forced replication failures: the bound before db68f49 (a retried conflict uncounted)"),
+        "counted as a failed replication (M1)",
+        "product: a closed gate that sent nothing acceptable counts a failed replication (re-review 2, M1)"),
     "renew_stale": Plant((
         ("proto_db/cluster/lease.py",
          "            if renew and self._active and self._holder == holder and self._term == term and self._inc == inc:",

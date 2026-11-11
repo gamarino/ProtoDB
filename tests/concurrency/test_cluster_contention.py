@@ -366,9 +366,15 @@ def test_forced_replication_failures_surface_and_lose_nothing(tmp_path):
       ``Database.run`` retries in a later term until it is acknowledged.
 
     Each commit adds its token blind, as in the throughput workload.  The bound holds with
-    both kinds counted (``failures <= unknown + conflict``; the old ``failures <= unknown``
-    fails here), and every token resolves alike on every member: a lost acknowledged commit
-    still fails the test in this branch (plant ``forced_lost``)."""
+    both kinds counted (``failures <= unknown + conflict``), and every token resolves alike on
+    every member: a lost acknowledged commit still fails the test in this branch (plant
+    ``forced_lost``).
+
+    Since 276a256 (re-review 2 of 8.3n, M1) a refusal before anything a voter may accept left
+    the node -- n1's closed gate here -- is not a replication failure: it leaves no outcome n1
+    cannot know.  So n1 counts none, ``failures`` equals the unknown outcome, and the old bound
+    ``failures <= unknown`` no longer fails here (Task 11.1 found plant ``forced_old_bound``
+    undetected).  The test asserts that accounting instead (plant ``forced_gate_counted``)."""
     from tests.support.cluster_load import (await_condition as _await, confirm_every_member as _confirmed,
                                             fsync_cluster as _pipelined_cluster)
     from tests.support.tiered_cluster import RUN_KW as TIERED_RUN_KW, incr
@@ -415,6 +421,8 @@ def test_forced_replication_failures_surface_and_lose_nothing(tmp_path):
         assert outcomes == {"n0": "unknown", "n1": "acked"}, outcomes
         assert b.stats()["gate_closures"] >= 1
         assert refused["unknown"] >= 1 and refused["conflict"] >= 1, refused
+        assert b.stats()["replication_failures"] == 0, \
+            "n1's closed gate, which sent nothing acceptable, counted as a failed replication (M1)"
         _assert_failures_surfaced(failures, refused, len(tokens.unknown_tokens))
         # n0's tier failed with its own sync: the space is reopened on a healthy disk (module
         # docstring of the coordinator, "Health"), then every member is read.
