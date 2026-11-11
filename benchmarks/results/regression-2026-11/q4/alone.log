@@ -1,0 +1,36 @@
+ProtoDB performance suite (full)
+python 3.14.6 free-threaded build=True gil_enabled=False cpus=12 (AMD Ryzen 5 5500U with Radeon Graphics); cpu frequency {'governor': 'powersave', 'driver': 'amd-pstate-epp', 'energy_performance_preference': 'balance_power', 'boost': '1'}
+workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/q4/work-alone (zfs); threads [1, 2, 4, 8, 16]; repeat 5 warmup 1
+source 7757fb3 clean=True (git archive export)
+stray-process check: none; free 998 GiB in /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/q4/work-alone
+
+== parallel_scan ==  ParallelPool.scan of a CPU-bound function with 1..N workers vs a sequential loop (D40).
+   work: {"items": 2000, "spin": 4000, "workers": [1, 2, 4, 8, 16]}
+   verified: checksum 4299980615064 == expected; 6/6 checks passed
+  sequential loop                              median   987.09 ms  max   992.73 ms  (493.5 us/op, max 496.4)  [n=5]
+  ParallelPool.scan, 1 worker(s)               median     1.001 s  max     1.008 s  (500.3 us/op, max 503.8)  [n=5]
+  ParallelPool.scan, 2 worker(s)               median   585.33 ms  max   596.27 ms  (292.7 us/op, max 298.1)  [n=5]
+  ParallelPool.scan, 4 worker(s)               median   312.32 ms  max   365.18 ms  (156.2 us/op, max 182.6)  [n=5]
+  ParallelPool.scan, 8 worker(s)               median   265.27 ms  max   281.06 ms  (132.6 us/op, max 140.5)  [n=5]
+  ParallelPool.scan, 16 worker(s)              median   230.71 ms  max   253.52 ms  (115.4 us/op, max 126.8)  [n=5]
+   speedup vs sequential: {'1': 0.99, '2': 1.69, '4': 3.16, '8': 3.72, '16': 4.28}
+
+== scan_state_probe ==  parallel_scan's body under the process state left by earlier workloads (R136 Q4).
+   work: {"items": 2000, "spin": 4000, "state": {"full_collection_s": 0.005, "gc_count": [5129, 9, 0], "gc_enabled": true, "gc_get_objects_s": 0.001, "gc_threshold": [2000, 10, 10], "gc_tracked_objects": 33423, "gil_enabled": false, "os_threads": 1, "rss_mb": 36.6, "thread_names": ["MainThread"], "threads_alive": 1}, "workers": [1, 8]}
+   verified: checksum 4299980615064 == expected; 10/10 checks passed
+  sequential loop                              median     1.066 s  max     1.101 s  (532.8 us/op, max 550.7)  [n=5]
+  as is: ParallelPool.scan, 1 worker(s)        median     1.091 s  max     1.093 s  (545.3 us/op, max 546.6)  [n=5]
+  as is: ParallelPool.scan, 8 worker(s)        median   247.31 ms  max   291.73 ms  (123.7 us/op, max 145.9)  [n=5]
+  gc callbacks: ParallelPool.scan, 1 worker(s) median     1.057 s  max     1.152 s  (528.5 us/op, max 575.9)  [n=5]
+  gc callbacks: ParallelPool.scan, 8 worker(s) median   269.65 ms  max   278.03 ms  (134.8 us/op, max 139.0)  [n=5]
+  gc.freeze(): ParallelPool.scan, 1 worker(s)  median     1.110 s  max     1.126 s  (555.0 us/op, max 562.8)  [n=5]
+  gc.freeze(): ParallelPool.scan, 8 worker(s)  median   270.71 ms  max   290.16 ms  (135.4 us/op, max 145.1)  [n=5]
+  gc.disable(): ParallelPool.scan, 1 worker(s) median     1.095 s  max     1.108 s  (547.3 us/op, max 553.8)  [n=5]
+  gc.disable(): ParallelPool.scan, 8 worker(s) median   283.25 ms  max   290.63 ms  (141.6 us/op, max 145.3)  [n=5]
+  as is, again: ParallelPool.scan, 1 worker(s) median     1.057 s  max     1.077 s  (528.7 us/op, max 538.4)  [n=5]
+  as is, again: ParallelPool.scan, 8 worker(s) median   276.59 ms  max   286.05 ms  (138.3 us/op, max 143.0)  [n=5]
+   state: {'threads_alive': 1, 'thread_names': ['MainThread'], 'os_threads': 1, 'rss_mb': 36.6, 'gc_tracked_objects': 33423, 'gc_get_objects_s': 0.001, 'gc_threshold': [2000, 10, 10], 'gc_count': [5129, 9, 0], 'gc_enabled': True, 'gil_enabled': False, 'full_collection_s': 0.005}
+   figures: {'as is, 1 worker(s)': {'speedup': 0.98, 'collections': None, 'collection_s_total': None, 'cpu_ticks_main': 653, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}, 'as is, 8 worker(s)': {'speedup': 4.31, 'collections': None, 'collection_s_total': None, 'cpu_ticks_main': 137, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}, 'gc callbacks, 1 worker(s)': {'speedup': 1.01, 'collections': 0, 'collection_s_total': 0, 'cpu_ticks_main': 643, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}, 'gc callbacks, 8 worker(s)': {'speedup': 3.95, 'collections': 0, 'collection_s_total': 0, 'cpu_ticks_main': 145, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}, 'gc.freeze(), 1 worker(s)': {'speedup': 0.96, 'collections': None, 'collection_s_total': None, 'cpu_ticks_main': 667, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}, 'gc.freeze(), 8 worker(s)': {'speedup': 3.94, 'collections': None, 'collection_s_total': None, 'cpu_ticks_main': 145, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}, 'gc.disable(), 1 worker(s)': {'speedup': 0.97, 'collections': None, 'collection_s_total': None, 'cpu_ticks_main': 662, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}, 'gc.disable(), 8 worker(s)': {'speedup': 3.76, 'collections': None, 'collection_s_total': None, 'cpu_ticks_main': 152, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}, 'as is, again, 1 worker(s)': {'speedup': 1.01, 'collections': None, 'collection_s_total': None, 'cpu_ticks_main': 636, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}, 'as is, again, 8 worker(s)': {'speedup': 3.85, 'collections': None, 'collection_s_total': None, 'cpu_ticks_main': 143, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}}
+
+2 workload(s) in 69.3 s: 2 verified, 0 pending, 0 failed
+results written to /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/q4/alone-gil-off.json

@@ -13,7 +13,8 @@ access under its own lock):
     ``startup_grace`` seconds, so a lease *timing* promise made before a crash is honoured.
 :class:`LeaseAttempt`
     One request of a requester: grants and rejections gathered from the peers.  It is won
-    when a majority (``floor(N/2) + 1``, the requester's own vote included) has granted,
+    when a majority of the voters (``floor(V/2) + 1`` of the ``V`` voters, the requester's own
+    vote included; learners do not vote, D54) has granted,
     lost when a majority can no longer be reached.
 :class:`Lease`
     What a winner holds: valid on the holder's clock until ``sent_at + lease_duration -
@@ -51,7 +52,8 @@ __all__ = ["majority", "FencingToken", "GrantDecision", "PeerGrants", "LeaseAtte
 
 
 def majority(cluster_size: int) -> int:
-    """Votes needed out of ``cluster_size``: ``floor(N/2) + 1``."""
+    """Votes needed out of ``cluster_size`` voters: ``floor(V/2) + 1`` (the caller passes the
+    number of voters, learners excluded; D54)."""
     return cluster_size // 2 + 1
 
 

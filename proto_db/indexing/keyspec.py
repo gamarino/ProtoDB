@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from ..core.atom import _ABSENT, RESERVED_NAMES, Atom
 from ..core.dbobject import DBObject
 from ..errors import ProtoCorruptionError, ProtoValidationError
-from ..values import MISSING, canonical
+from ..values import MISSING, canonical, check_text
 
 __all__ = ["KeySpec", "register_extractor", "unregister_extractor", "extractor_generation",
            "PATH", "ELEMENT", "EXTRACTOR"]
@@ -180,11 +180,13 @@ class KeySpec:
                 raise ProtoValidationError("KeySpec.element() takes no argument")
         elif self.kind == EXTRACTOR:
             _check_extractor_name(self.arg)
+            check_text(self.arg)
         else:
             path = self.arg
             if not isinstance(path, str) or not path or path.startswith("@"):
                 raise ProtoValidationError(f"A key path must be a non-empty str not starting with '@', "
                                            f"not {path!r}")
+            check_text(path)
             segments = tuple(path.split("."))
             if any(not s or s != s.strip() or any(c.isspace() for c in s) for s in segments):
                 raise ProtoValidationError(f"Invalid key path {path!r}: empty or blank segment")

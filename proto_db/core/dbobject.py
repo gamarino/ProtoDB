@@ -19,7 +19,7 @@ gives versions of a record a shared entity identity (D18).  The class is defined
 from __future__ import annotations
 
 from ..errors import ProtoUserError, ProtoValidationError
-from ..values import MutableObject, canonical
+from ..values import MutableObject, canonical, check_text
 from .atom import _ABSENT, RESERVED_NAMES, Atom, PersistenceContext, _check_context, class_defines
 
 __all__ = ["DBObject", "MutableObject"]
@@ -32,6 +32,7 @@ def _check_name(cls, name) -> None:
             raise ProtoValidationError(
                 f"Invalid attribute name {name!r} for {cls.__name__}: {_SHADOW_RULE}")
         raise ProtoValidationError(f"Invalid attribute name {name!r} for {cls.__name__}")
+    check_text(name)
 
 
 #: Why a persisted field may not share its name with anything of its Python class (Task 10.P A4).
@@ -75,7 +76,12 @@ class DBObject(Atom):
         values = {}
         for name, value in attributes.items():
             _check_name(type(self), name)
-            values[name] = canonical(value)
+            try:
+                values[name] = canonical(value)
+            except ProtoValidationError as e:
+                if type(e) is not ProtoValidationError:
+                    raise
+                raise ProtoValidationError(f"Field {name!r} of {type(self).__type_name__}: {e}") from e
         osa = object.__setattr__
         for name, value in values.items():
             osa(self, name, value)

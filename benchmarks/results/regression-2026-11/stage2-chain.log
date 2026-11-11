@@ -1,0 +1,988 @@
+Running as unit: r136-stage2b.scope; invocation ID: c43d4df6181049d98ab37f1f3f24493d
+waiting: 4.2 foreign busy CPUs >= 2.0
+waiting: 3.1 foreign busy CPUs >= 2.0
+discarded: 2.6 foreign CPUs during the run
+waiting: 2.0 foreign busy CPUs >= 2.0
+discarded: 2.67 foreign CPUs during the run
+waiting: 2.3 foreign busy CPUs >= 2.0
+discarded: 2.95 foreign CPUs during the run
+[    128s] r0 4aab0f2 blind  ok   359.5/s p50 31.67 ms
+[    133s] r0 4aab0f2 p100   ok   265.9/s p50 43.21 ms
+[    138s] r0 7ef1636 blind  ok   358.3/s p50 31.18 ms
+[    143s] r0 7ef1636 p100   ok   247.1/s p50 46.24 ms
+[    148s] r0 700d48f blind  ok   357.6/s p50 30.75 ms
+[    153s] r0 700d48f p100   ok   257.2/s p50 44.4 ms
+[    157s] r0 1845993 blind  ok   352.9/s p50 30.56 ms
+[    162s] r0 1845993 p100   ok   276.6/s p50 41.42 ms
+[    167s] r0 550dde5 blind  ok   365.7/s p50 30.05 ms
+[    171s] r0 550dde5 p100   ok   253.5/s p50 43.65 ms
+[    176s] r0 1b3a188 blind  ok   353.6/s p50 31.29 ms
+[    181s] r0 1b3a188 p100   ok   255.7/s p50 42.48 ms
+[    186s] r0 5120cff blind  ok   365.9/s p50 30.42 ms
+[    190s] r0 5120cff p100   ok   271.6/s p50 41.76 ms
+[    195s] r0 359f128 blind  ok   360.3/s p50 30.47 ms
+waiting: 2.2 foreign busy CPUs >= 2.0
+[    201s] r0 359f128 p100   ok   243.6/s p50 45.53 ms
+[    206s] r0 57fd351 blind  ok   346.4/s p50 32.75 ms
+waiting: 3.5 foreign busy CPUs >= 2.0
+[    213s] r0 57fd351 p100   ok   254.3/s p50 45.68 ms
+[    218s] r0 8dfd5eb blind  ok   332.5/s p50 33.39 ms
+discarded: 2.94 foreign CPUs during the run
+[    227s] r0 8dfd5eb p100   ok   267.8/s p50 41.85 ms
+[    232s] r0 ec90c25 blind  ok   366.9/s p50 30.91 ms
+[    237s] r0 ec90c25 p100   ok   262.7/s p50 43.7 ms
+[    242s] r0 0eed600 blind  ok   344.3/s p50 33.57 ms
+[    247s] r0 0eed600 p100   ok   244.4/s p50 47.31 ms
+[    252s] r0 ee1e36d blind  ok   330.9/s p50 33.7 ms
+[    256s] r0 ee1e36d p100   ok   254.0/s p50 45.62 ms
+[    262s] r0 f6112d8 blind  ok   339.3/s p50 33.51 ms
+[    266s] r0 f6112d8 p100   ok   248.3/s p50 45.98 ms
+[    271s] r0 8b0353d blind  ok   342.2/s p50 33.2 ms
+[    276s] r0 8b0353d p100   ok   239.7/s p50 46.78 ms
+[    281s] r0 c953d7e blind  ok   351.0/s p50 32.32 ms
+[    286s] r0 c953d7e p100   ok   252.7/s p50 45.18 ms
+[    290s] r1 c953d7e p100   ok   244.4/s p50 47.59 ms
+[    295s] r1 c953d7e blind  ok   336.0/s p50 33.58 ms
+[    300s] r1 8b0353d p100   ok   232.0/s p50 50.61 ms
+[    305s] r1 8b0353d blind  ok   333.4/s p50 33.62 ms
+discarded: 2.82 foreign CPUs during the run
+waiting: 4.7 foreign busy CPUs >= 2.0
+[    340s] r1 f6112d8 p100   ok   228.7/s p50 50.77 ms
+[    345s] r1 f6112d8 blind  ok   304.1/s p50 36.47 ms
+[    350s] r1 ee1e36d p100   ok   231.4/s p50 49.93 ms
+[    354s] r1 ee1e36d blind  ok   319.1/s p50 36.1 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[    360s] r1 0eed600 p100   ok   229.1/s p50 50.36 ms
+[    365s] r1 0eed600 blind  ok   320.7/s p50 34.88 ms
+[    370s] r1 ec90c25 p100   ok   243.3/s p50 47.53 ms
+[    374s] r1 ec90c25 blind  ok   323.3/s p50 35.76 ms
+waiting: 2.0 foreign busy CPUs >= 2.0
+[    380s] r1 8dfd5eb p100   ok   232.2/s p50 49.44 ms
+waiting: 2.0 foreign busy CPUs >= 2.0
+[    386s] r1 8dfd5eb blind  ok   326.2/s p50 35.3 ms
+[    391s] r1 57fd351 p100   ok   248.8/s p50 45.85 ms
+[    395s] r1 57fd351 blind  ok   332.5/s p50 34.22 ms
+waiting: 2.3 foreign busy CPUs >= 2.0
+[    401s] r1 359f128 p100   ok   250.9/s p50 44.63 ms
+[    406s] r1 359f128 blind  ok   324.0/s p50 33.81 ms
+[    411s] r1 5120cff p100   ok   252.4/s p50 45.65 ms
+[    415s] r1 5120cff blind  ok   342.4/s p50 32.98 ms
+[    420s] r1 1b3a188 p100   ok   240.9/s p50 47.74 ms
+[    425s] r1 1b3a188 blind  ok   333.3/s p50 34.16 ms
+[    430s] r1 550dde5 p100   ok   248.8/s p50 45.77 ms
+discarded: 3.01 foreign CPUs during the run
+[    439s] r1 550dde5 blind  ok   366.9/s p50 29.81 ms
+[    444s] r1 1845993 p100   ok   266.0/s p50 43.74 ms
+[    449s] r1 1845993 blind  ok   360.0/s p50 31.26 ms
+[    453s] r1 700d48f p100   ok   272.4/s p50 41.6 ms
+[    458s] r1 700d48f blind  ok   346.9/s p50 32.45 ms
+[    463s] r1 7ef1636 p100   ok   277.3/s p50 41.08 ms
+[    468s] r1 7ef1636 blind  ok   335.1/s p50 31.3 ms
+[    472s] r1 4aab0f2 p100   ok   300.4/s p50 37.91 ms
+discarded: 6.45 foreign CPUs during the run
+waiting: 6.2 foreign busy CPUs >= 2.0
+[    486s] r1 4aab0f2 blind  ok   369.0/s p50 30.51 ms
+waiting: 2.3 foreign busy CPUs >= 2.0
+[    493s] r2 4aab0f2 blind  ok   361.8/s p50 30.23 ms
+[    497s] r2 4aab0f2 p100   ok   288.0/s p50 38.17 ms
+[    502s] r2 7ef1636 blind  ok   366.3/s p50 30.25 ms
+[    507s] r2 7ef1636 p100   ok   281.2/s p50 40.61 ms
+[    512s] r2 700d48f blind  ok   355.9/s p50 30.96 ms
+[    516s] r2 700d48f p100   ok   254.7/s p50 44.03 ms
+[    521s] r2 1845993 blind  ok   369.0/s p50 29.9 ms
+[    526s] r2 1845993 p100   ok   271.6/s p50 41.52 ms
+[    531s] r2 550dde5 blind  ok   361.9/s p50 30.15 ms
+[    535s] r2 550dde5 p100   ok   269.5/s p50 41.51 ms
+discarded: 3.99 foreign CPUs during the run
+waiting: 5.1 foreign busy CPUs >= 2.0
+[    562s] r2 1b3a188 blind  ok   329.0/s p50 34.86 ms
+[    567s] r2 1b3a188 p100   ok   239.3/s p50 48.82 ms
+[    571s] r2 5120cff blind  ok   360.7/s p50 31.69 ms
+[    576s] r2 5120cff p100   ok   252.7/s p50 43.54 ms
+[    581s] r2 359f128 blind  ok   367.8/s p50 30.75 ms
+[    585s] r2 359f128 p100   ok   253.1/s p50 42.89 ms
+[    590s] r2 57fd351 blind  ok   254.0/s p50 38.57 ms
+waiting: 2.0 foreign busy CPUs >= 2.0
+[    596s] r2 57fd351 p100   ok   266.4/s p50 43.8 ms
+[    601s] r2 8dfd5eb blind  ok   371.6/s p50 30.51 ms
+waiting: 3.1 foreign busy CPUs >= 2.0
+[    607s] r2 8dfd5eb p100   ok   249.2/s p50 46.52 ms
+waiting: 2.5 foreign busy CPUs >= 2.0
+[    613s] r2 ec90c25 blind  ok   324.3/s p50 33.67 ms
+[    618s] r2 ec90c25 p100   ok   245.0/s p50 46.0 ms
+[    623s] r2 0eed600 blind  ok   312.5/s p50 36.41 ms
+waiting: 2.0 foreign busy CPUs >= 2.0
+[    631s] r2 0eed600 p100   ok   232.6/s p50 50.1 ms
+discarded: 2.57 foreign CPUs during the run
+waiting: 2.1 foreign busy CPUs >= 2.0
+[    642s] r2 ee1e36d blind  ok   316.7/s p50 36.04 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[    648s] r2 ee1e36d p100   ok   225.9/s p50 51.43 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[    653s] r2 f6112d8 blind  ok   309.2/s p50 36.82 ms
+[    658s] r2 f6112d8 p100   ok   221.1/s p50 52.79 ms
+discarded: 4.49 foreign CPUs during the run
+waiting: 6.6 foreign busy CPUs >= 2.0
+waiting: 8.9 foreign busy CPUs >= 2.0
+[    742s] r2 8b0353d blind  ok   293.8/s p50 38.14 ms
+waiting: 2.5 foreign busy CPUs >= 2.0
+[    748s] r2 8b0353d p100   ok   229.0/s p50 51.68 ms
+[    752s] r2 c953d7e blind  ok   306.5/s p50 37.92 ms
+discarded: 2.64 foreign CPUs during the run
+[    762s] r2 c953d7e p100   ok   225.7/s p50 51.24 ms
+[    767s] r3 c953d7e p100   ok   224.1/s p50 51.66 ms
+[    771s] r3 c953d7e blind  ok   314.2/s p50 36.97 ms
+[    776s] r3 8b0353d p100   ok   211.3/s p50 54.54 ms
+discarded: 2.82 foreign CPUs during the run
+waiting: 2.9 foreign busy CPUs >= 2.0
+[    790s] r3 8b0353d blind  ok   304.4/s p50 37.67 ms
+[    794s] r3 f6112d8 p100   ok   229.9/s p50 50.87 ms
+[    799s] r3 f6112d8 blind  ok   303.6/s p50 38.7 ms
+[    804s] r3 ee1e36d p100   ok   228.1/s p50 50.82 ms
+[    809s] r3 ee1e36d blind  ok   303.8/s p50 38.06 ms
+[    813s] r3 0eed600 p100   ok   232.2/s p50 50.03 ms
+[    818s] r3 0eed600 blind  ok   297.4/s p50 38.5 ms
+[    823s] r3 ec90c25 p100   ok   242.1/s p50 45.89 ms
+waiting: 4.3 foreign busy CPUs >= 2.0
+discarded: 3.53 foreign CPUs during the run
+waiting: 6.0 foreign busy CPUs >= 2.0
+[    857s] r3 ec90c25 blind  ok   318.4/s p50 35.98 ms
+[    861s] r3 8dfd5eb p100   ok   264.8/s p50 42.19 ms
+[    866s] r3 8dfd5eb blind  ok   363.6/s p50 31.3 ms
+[    871s] r3 57fd351 p100   ok   269.0/s p50 43.32 ms
+[    876s] r3 57fd351 blind  ok   364.4/s p50 30.3 ms
+[    880s] r3 359f128 p100   ok   253.8/s p50 44.24 ms
+[    885s] r3 359f128 blind  ok   359.6/s p50 31.26 ms
+[    890s] r3 5120cff p100   ok   265.3/s p50 43.42 ms
+[    894s] r3 5120cff blind  ok   347.4/s p50 31.37 ms
+[    899s] r3 1b3a188 p100   ok   252.7/s p50 45.67 ms
+[    904s] r3 1b3a188 blind  ok   350.3/s p50 32.55 ms
+[    909s] r3 550dde5 p100   ok   263.1/s p50 43.84 ms
+[    913s] r3 550dde5 blind  ok   355.0/s p50 31.56 ms
+[    918s] r3 1845993 p100   ok   271.9/s p50 42.79 ms
+[    923s] r3 1845993 blind  ok   371.1/s p50 30.16 ms
+[    927s] r3 700d48f p100   ok   252.8/s p50 45.17 ms
+waiting: 2.2 foreign busy CPUs >= 2.0
+discarded: 3.04 foreign CPUs during the run
+waiting: 8.3 foreign busy CPUs >= 2.0
+[    947s] r3 700d48f blind  ok   317.2/s p50 35.39 ms
+[    952s] r3 7ef1636 p100   ok   246.1/s p50 45.58 ms
+[    957s] r3 7ef1636 blind  ok   286.3/s p50 33.25 ms
+[    961s] r3 4aab0f2 p100   ok   142.9/s p50 64.48 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[    967s] r3 4aab0f2 blind  ok   362.5/s p50 30.44 ms
+discarded: 4.8 foreign CPUs during the run
+waiting: 8.5 foreign busy CPUs >= 2.0
+waiting: 7.1 foreign busy CPUs >= 2.0
+[   1085s] r4 4aab0f2 blind  ok   357.5/s p50 31.64 ms
+waiting: 2.7 foreign busy CPUs >= 2.0
+discarded: 2.67 foreign CPUs during the run
+waiting: 2.1 foreign busy CPUs >= 2.0
+[   1103s] r4 4aab0f2 p100   ok   258.5/s p50 44.9 ms
+waiting: 2.2 foreign busy CPUs >= 2.0
+discarded: 3.08 foreign CPUs during the run
+waiting: 3.4 foreign busy CPUs >= 2.0
+[   1121s] r4 7ef1636 blind  ok   293.1/s p50 34.99 ms
+waiting: 2.0 foreign busy CPUs >= 2.0
+[   1127s] r4 7ef1636 p100   ok   261.0/s p50 43.51 ms
+[   1132s] r4 700d48f blind  ok   329.8/s p50 34.43 ms
+[   1136s] r4 700d48f p100   ok   244.5/s p50 46.27 ms
+waiting: 2.3 foreign busy CPUs >= 2.0
+[   1142s] r4 1845993 blind  ok   334.8/s p50 34.13 ms
+[   1147s] r4 1845993 p100   ok   237.5/s p50 47.89 ms
+waiting: 2.9 foreign busy CPUs >= 2.0
+[   1182s] r4 550dde5 blind  ok   331.0/s p50 34.63 ms
+[   1186s] r4 550dde5 p100   ok   232.9/s p50 49.71 ms
+waiting: 2.9 foreign busy CPUs >= 2.0
+[   1195s] r4 1b3a188 blind  ok   338.8/s p50 33.96 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[   1204s] r4 1b3a188 p100   ok   252.2/s p50 45.9 ms
+[   1208s] r4 5120cff blind  ok   340.0/s p50 34.23 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+discarded: 3.15 foreign CPUs during the run
+waiting: 3.1 foreign busy CPUs >= 2.0
+discarded: 2.8 foreign CPUs during the run
+waiting: 3.0 foreign busy CPUs >= 2.0
+[   1277s] r4 5120cff p100   ok   236.3/s p50 48.39 ms
+discarded: 2.82 foreign CPUs during the run
+waiting: 2.7 foreign busy CPUs >= 2.0
+[   1288s] r4 359f128 blind  ok   337.0/s p50 34.45 ms
+waiting: 2.4 foreign busy CPUs >= 2.0
+[   1295s] r4 359f128 p100   ok   248.8/s p50 46.4 ms
+waiting: 3.1 foreign busy CPUs >= 2.0
+[   1301s] r4 57fd351 blind  ok   325.3/s p50 33.6 ms
+[   1306s] r4 57fd351 p100   ok   248.6/s p50 46.25 ms
+[   1310s] r4 8dfd5eb blind  ok   336.6/s p50 34.55 ms
+[   1315s] r4 8dfd5eb p100   ok   234.5/s p50 48.01 ms
+[   1320s] r4 ec90c25 blind  ok   331.4/s p50 34.27 ms
+[   1325s] r4 ec90c25 p100   ok   246.5/s p50 46.63 ms
+[   1329s] r4 0eed600 blind  ok   320.6/s p50 36.21 ms
+discarded: 5.28 foreign CPUs during the run
+waiting: 3.8 foreign busy CPUs >= 2.0
+[   1344s] r4 0eed600 p100   ok   233.5/s p50 50.02 ms
+[   1349s] r4 ee1e36d blind  ok   337.0/s p50 33.17 ms
+[   1353s] r4 ee1e36d p100   ok   249.1/s p50 45.9 ms
+[   1358s] r4 f6112d8 blind  ok   329.0/s p50 33.76 ms
+[   1363s] r4 f6112d8 p100   ok   231.4/s p50 49.92 ms
+[   1367s] r4 8b0353d blind  ok   308.3/s p50 37.07 ms
+waiting: 2.0 foreign busy CPUs >= 2.0
+[   1373s] r4 8b0353d p100   ok   215.6/s p50 54.07 ms
+[   1378s] r4 c953d7e blind  ok   308.5/s p50 37.22 ms
+discarded: 3.15 foreign CPUs during the run
+waiting: 3.9 foreign busy CPUs >= 2.0
+waiting: 3.0 foreign busy CPUs >= 2.0
+waiting: 5.0 foreign busy CPUs >= 2.0
+waiting: 4.5 foreign busy CPUs >= 2.0
+[   1613s] r4 c953d7e p100   ok   230.2/s p50 49.82 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[   1619s] r5 c953d7e p100   ok   233.6/s p50 49.92 ms
+[   1623s] r5 c953d7e blind  ok   320.3/s p50 36.61 ms
+[   1628s] r5 8b0353d p100   ok   236.8/s p50 49.36 ms
+[   1633s] r5 8b0353d blind  ok   322.5/s p50 36.7 ms
+waiting: 2.3 foreign busy CPUs >= 2.0
+[   1638s] r5 f6112d8 p100   ok   230.3/s p50 50.69 ms
+waiting: 2.2 foreign busy CPUs >= 2.0
+[   1645s] r5 f6112d8 blind  ok   315.9/s p50 36.54 ms
+[   1650s] r5 ee1e36d p100   ok   235.2/s p50 50.08 ms
+[   1655s] r5 ee1e36d blind  ok   312.9/s p50 36.98 ms
+waiting: 2.3 foreign busy CPUs >= 2.0
+[   1662s] r5 0eed600 p100   ok   234.6/s p50 49.4 ms
+[   1667s] r5 0eed600 blind  ok   316.7/s p50 36.25 ms
+discarded: 2.5 foreign CPUs during the run
+waiting: 6.3 foreign busy CPUs >= 2.0
+waiting: 4.6 foreign busy CPUs >= 2.0
+[   1748s] r5 ec90c25 p100   ok   244.5/s p50 47.76 ms
+[   1753s] r5 ec90c25 blind  ok   328.6/s p50 35.27 ms
+[   1757s] r5 8dfd5eb p100   ok   240.9/s p50 47.65 ms
+[   1762s] r5 8dfd5eb blind  ok   313.7/s p50 36.23 ms
+[   1767s] r5 57fd351 p100   ok   236.2/s p50 49.19 ms
+[   1772s] r5 57fd351 blind  ok   321.4/s p50 35.19 ms
+[   1777s] r5 359f128 p100   ok   233.8/s p50 48.0 ms
+[   1781s] r5 359f128 blind  ok   332.3/s p50 34.65 ms
+[   1786s] r5 5120cff p100   ok   238.1/s p50 49.79 ms
+[   1791s] r5 5120cff blind  ok   328.2/s p50 34.75 ms
+[   1796s] r5 1b3a188 p100   ok   239.9/s p50 48.32 ms
+[   1800s] r5 1b3a188 blind  ok   327.2/s p50 34.34 ms
+[   1805s] r5 550dde5 p100   ok   242.7/s p50 46.28 ms
+[   1810s] r5 550dde5 blind  ok   323.2/s p50 35.27 ms
+[   1814s] r5 1845993 p100   ok   244.8/s p50 47.03 ms
+[   1819s] r5 1845993 blind  ok   332.6/s p50 33.88 ms
+discarded: 3.97 foreign CPUs during the run
+waiting: 5.7 foreign busy CPUs >= 2.0
+[   1846s] r5 700d48f p100   ok   258.0/s p50 43.8 ms
+[   1850s] r5 700d48f blind  ok   359.4/s p50 30.79 ms
+waiting: 2.4 foreign busy CPUs >= 2.0
+[   1859s] r5 7ef1636 p100   ok   252.0/s p50 45.78 ms
+[   1864s] r5 7ef1636 blind  ok   350.9/s p50 32.37 ms
+[   1869s] r5 4aab0f2 p100   ok   283.0/s p50 40.03 ms
+[   1873s] r5 4aab0f2 blind  ok   356.1/s p50 31.39 ms
+[   1878s] r6 4aab0f2 blind  ok   340.6/s p50 32.5 ms
+[   1883s] r6 4aab0f2 p100   ok   292.6/s p50 39.43 ms
+waiting: 2.3 foreign busy CPUs >= 2.0
+[   1889s] r6 7ef1636 blind  ok   342.3/s p50 32.39 ms
+waiting: 4.0 foreign busy CPUs >= 2.0
+[   1895s] r6 7ef1636 p100   ok   286.8/s p50 40.64 ms
+[   1899s] r6 700d48f blind  ok   333.8/s p50 30.66 ms
+[   1904s] r6 700d48f p100   ok   245.8/s p50 47.58 ms
+waiting: 2.0 foreign busy CPUs >= 2.0
+[   1914s] r6 1845993 blind  ok   329.6/s p50 33.72 ms
+waiting: 2.4 foreign busy CPUs >= 2.0
+[   1928s] r6 1845993 p100   ok   243.0/s p50 47.12 ms
+waiting: 2.5 foreign busy CPUs >= 2.0
+[   1933s] r6 550dde5 blind  ok   335.4/s p50 34.01 ms
+waiting: 2.3 foreign busy CPUs >= 2.0
+[   1948s] r6 550dde5 p100   ok   240.8/s p50 47.96 ms
+waiting: 2.4 foreign busy CPUs >= 2.0
+[   1954s] r6 1b3a188 blind  ok   316.8/s p50 35.42 ms
+[   1959s] r6 1b3a188 p100   ok   227.8/s p50 49.56 ms
+[   1963s] r6 5120cff blind  ok   331.3/s p50 33.31 ms
+[   1968s] r6 5120cff p100   ok   250.4/s p50 45.67 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+discarded: 2.79 foreign CPUs during the run
+waiting: 3.7 foreign busy CPUs >= 2.0
+discarded: 2.55 foreign CPUs during the run
+waiting: 2.3 foreign busy CPUs >= 2.0
+[   1992s] r6 359f128 blind  ok   364.7/s p50 30.82 ms
+discarded: 2.96 foreign CPUs during the run
+waiting: 2.0 foreign busy CPUs >= 2.0
+[   2004s] r6 359f128 p100   ok   219.9/s p50 48.91 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+discarded: 2.77 foreign CPUs during the run
+waiting: 6.1 foreign busy CPUs >= 2.0
+[   2018s] r6 57fd351 blind  ok   313.5/s p50 36.26 ms
+[   2023s] r6 57fd351 p100   ok   234.9/s p50 48.45 ms
+[   2028s] r6 8dfd5eb blind  ok   327.6/s p50 34.73 ms
+[   2033s] r6 8dfd5eb p100   ok   232.5/s p50 48.31 ms
+[   2037s] r6 ec90c25 blind  ok   319.6/s p50 35.82 ms
+[   2042s] r6 ec90c25 p100   ok   239.7/s p50 47.48 ms
+[   2047s] r6 0eed600 blind  ok   308.6/s p50 37.73 ms
+[   2052s] r6 0eed600 p100   ok   215.8/s p50 54.18 ms
+[   2056s] r6 ee1e36d blind  ok   307.2/s p50 37.59 ms
+[   2061s] r6 ee1e36d p100   ok   220.2/s p50 50.91 ms
+[   2066s] r6 f6112d8 blind  ok   305.6/s p50 38.3 ms
+[   2071s] r6 f6112d8 p100   ok   229.5/s p50 51.36 ms
+[   2076s] r6 8b0353d blind  ok   294.4/s p50 38.29 ms
+waiting: 4.8 foreign busy CPUs >= 2.0
+waiting: 4.7 foreign busy CPUs >= 2.0
+discarded: 3.54 foreign CPUs during the run
+waiting: 2.1 foreign busy CPUs >= 2.0
+[   2154s] r6 8b0353d p100   ok   228.1/s p50 51.04 ms
+waiting: 2.0 foreign busy CPUs >= 2.0
+[   2188s] r6 c953d7e blind  ok   294.0/s p50 37.75 ms
+waiting: 3.0 foreign busy CPUs >= 2.0
+[   2198s] r6 c953d7e p100   ok   210.9/s p50 52.59 ms
+[   2203s] r7 c953d7e p100   ok   227.6/s p50 50.84 ms
+[   2208s] r7 c953d7e blind  ok   311.5/s p50 37.08 ms
+waiting: 2.6 foreign busy CPUs >= 2.0
+[   2213s] r7 8b0353d p100   ok   224.6/s p50 52.31 ms
+[   2218s] r7 8b0353d blind  ok   311.5/s p50 37.16 ms
+[   2223s] r7 f6112d8 p100   ok   228.6/s p50 51.17 ms
+[   2228s] r7 f6112d8 blind  ok   308.2/s p50 37.01 ms
+[   2232s] r7 ee1e36d p100   ok   220.3/s p50 52.0 ms
+[   2237s] r7 ee1e36d blind  ok   310.5/s p50 37.27 ms
+[   2242s] r7 0eed600 p100   ok   225.1/s p50 52.93 ms
+[   2247s] r7 0eed600 blind  ok   307.5/s p50 37.37 ms
+discarded: 2.84 foreign CPUs during the run
+waiting: 4.3 foreign busy CPUs >= 2.0
+[   2274s] r7 ec90c25 p100   ok   241.7/s p50 47.42 ms
+discarded: 2.58 foreign CPUs during the run
+waiting: 6.9 foreign busy CPUs >= 2.0
+[   2290s] r7 ec90c25 blind  ok   336.6/s p50 34.15 ms
+discarded: 3.8 foreign CPUs during the run
+waiting: 3.4 foreign busy CPUs >= 2.0
+waiting: 3.7 foreign busy CPUs >= 2.0
+discarded: 2.76 foreign CPUs during the run
+[   2385s] r7 8dfd5eb p100   ok   238.0/s p50 49.19 ms
+waiting: 3.0 foreign busy CPUs >= 2.0
+discarded: 2.76 foreign CPUs during the run
+waiting: 2.2 foreign busy CPUs >= 2.0
+[   2470s] r7 8dfd5eb blind  ok   330.2/s p50 34.91 ms
+waiting: 2.7 foreign busy CPUs >= 2.0
+discarded: 2.57 foreign CPUs during the run
+waiting: 3.2 foreign busy CPUs >= 2.0
+waiting: 6.9 foreign busy CPUs >= 2.0
+[   2597s] r7 57fd351 p100   ok   238.4/s p50 48.72 ms
+waiting: 2.3 foreign busy CPUs >= 2.0
+[   2603s] r7 57fd351 blind  ok   327.3/s p50 34.86 ms
+waiting: 2.2 foreign busy CPUs >= 2.0
+[   2644s] r7 359f128 p100   ok   242.4/s p50 47.24 ms
+[   2648s] r7 359f128 blind  ok   344.0/s p50 32.93 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[   2654s] r7 5120cff p100   ok   244.2/s p50 46.08 ms
+waiting: 3.3 foreign busy CPUs >= 2.0
+[   2663s] r7 5120cff blind  ok   327.0/s p50 34.46 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[   2670s] r7 1b3a188 p100   ok   131.2/s p50 76.37 ms
+waiting: 2.5 foreign busy CPUs >= 2.0
+discarded: 4.43 foreign CPUs during the run
+waiting: 4.3 foreign busy CPUs >= 2.0
+[   2686s] r7 1b3a188 blind  ok   340.8/s p50 33.38 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[   2695s] r7 550dde5 p100   ok   248.6/s p50 46.63 ms
+waiting: 4.7 foreign busy CPUs >= 2.0
+waiting: 2.6 foreign busy CPUs >= 2.0
+waiting: 3.1 foreign busy CPUs >= 2.0
+[   2821s] r7 550dde5 blind  ok   311.8/s p50 36.17 ms
+[   2826s] r7 1845993 p100   ok   249.6/s p50 46.48 ms
+discarded: 2.74 foreign CPUs during the run
+waiting: 3.7 foreign busy CPUs >= 2.0
+[   2840s] r7 1845993 blind  ok   243.0/s p50 40.96 ms
+waiting: 2.2 foreign busy CPUs >= 2.0
+[   2846s] r7 700d48f p100   ok   231.6/s p50 49.98 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[   2852s] r7 700d48f blind  ok   307.8/s p50 36.94 ms
+discarded: 2.51 foreign CPUs during the run
+waiting: 2.2 foreign busy CPUs >= 2.0
+[   2862s] r7 7ef1636 p100   ok   237.8/s p50 47.98 ms
+[   2867s] r7 7ef1636 blind  ok   329.1/s p50 33.92 ms
+[   2872s] r7 4aab0f2 p100   ok   264.9/s p50 41.34 ms
+[   2877s] r7 4aab0f2 blind  ok   345.6/s p50 32.49 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[   2882s] r8 4aab0f2 blind  ok   354.3/s p50 31.48 ms
+[   2887s] r8 4aab0f2 p100   ok   272.4/s p50 41.48 ms
+[   2892s] r8 7ef1636 blind  ok   336.5/s p50 33.32 ms
+discarded: 4.51 foreign CPUs during the run
+waiting: 5.4 foreign busy CPUs >= 2.0
+discarded: 3.86 foreign CPUs during the run
+waiting: 4.4 foreign busy CPUs >= 2.0
+waiting: 5.9 foreign busy CPUs >= 2.0
+discarded: 3.01 foreign CPUs during the run
+waiting: 5.1 foreign busy CPUs >= 2.0
+waiting: 4.7 foreign busy CPUs >= 2.0
+waiting: 2.1 foreign busy CPUs >= 2.0
+[   3148s] r8 7ef1636 p100   ok   251.7/s p50 44.79 ms
+waiting: 3.0 foreign busy CPUs >= 2.0
+[   3153s] r8 700d48f blind  ok   314.3/s p50 35.96 ms
+[   3158s] r8 700d48f p100   ok   240.7/s p50 46.92 ms
+[   3163s] r8 1845993 blind  ok   359.3/s p50 31.28 ms
+[   3167s] r8 1845993 p100   ok   255.9/s p50 43.91 ms
+[   3172s] r8 550dde5 blind  ok   353.6/s p50 33.28 ms
+[   3177s] r8 550dde5 p100   ok   267.5/s p50 43.12 ms
+[   3182s] r8 1b3a188 blind  ok   363.7/s p50 30.78 ms
+[   3186s] r8 1b3a188 p100   ok   266.4/s p50 41.19 ms
+waiting: 4.6 foreign busy CPUs >= 2.0
+[   3232s] r8 5120cff blind  ok   317.3/s p50 35.38 ms
+[   3237s] r8 5120cff p100   ok   241.2/s p50 47.55 ms
+[   3242s] r8 359f128 blind  ok   328.1/s p50 34.84 ms
+[   3246s] r8 359f128 p100   ok   242.1/s p50 46.54 ms
+waiting: 2.0 foreign busy CPUs >= 2.0
+[   3252s] r8 57fd351 blind  ok   330.7/s p50 35.18 ms
+[   3257s] r8 57fd351 p100   ok   243.1/s p50 46.89 ms
+[   3262s] r8 8dfd5eb blind  ok   329.4/s p50 34.69 ms
+[   3266s] r8 8dfd5eb p100   ok   244.8/s p50 47.46 ms
+[   3271s] r8 ec90c25 blind  ok   322.5/s p50 35.94 ms
+[   3276s] r8 ec90c25 p100   ok   241.1/s p50 46.93 ms
+waiting: 2.3 foreign busy CPUs >= 2.0
+[   3282s] r8 0eed600 blind  ok   301.6/s p50 38.79 ms
+[   3287s] r8 0eed600 p100   ok   221.1/s p50 53.78 ms
+[   3292s] r8 ee1e36d blind  ok   301.8/s p50 38.14 ms
+[   3297s] r8 ee1e36d p100   ok   218.3/s p50 53.0 ms
+[   3301s] r8 f6112d8 blind  ok   309.7/s p50 37.71 ms
+[   3306s] r8 f6112d8 p100   ok   222.7/s p50 51.43 ms
+[   3311s] r8 8b0353d blind  ok   302.4/s p50 37.25 ms
+[   3316s] r8 8b0353d p100   ok   221.1/s p50 51.57 ms
+[   3320s] r8 c953d7e blind  ok   311.6/s p50 36.65 ms
+waiting: 2.7 foreign busy CPUs >= 2.0
+discarded: 3.87 foreign CPUs during the run
+waiting: 6.1 foreign busy CPUs >= 2.0
+discarded: 2.55 foreign CPUs during the run
+waiting: 3.0 foreign busy CPUs >= 2.0
+[   3365s] r8 c953d7e p100   ok   216.6/s p50 53.92 ms
+waiting: 3.2 foreign busy CPUs >= 2.0
+[   3407s] r9 c953d7e p100   ok   238.0/s p50 47.42 ms
+discarded: 3.78 foreign CPUs during the run
+waiting: 3.1 foreign busy CPUs >= 2.0
+discarded: 3.14 foreign CPUs during the run
+[   3431s] r9 c953d7e blind  ok   337.5/s p50 33.55 ms
+[   3436s] r9 8b0353d p100   ok   249.0/s p50 45.99 ms
+[   3440s] r9 8b0353d blind  ok   350.9/s p50 32.87 ms
+[   3445s] r9 f6112d8 p100   ok   243.2/s p50 46.45 ms
+[   3450s] r9 f6112d8 blind  ok   327.0/s p50 33.51 ms
+[   3455s] r9 ee1e36d p100   ok   247.5/s p50 45.17 ms
+[   3460s] r9 ee1e36d blind  ok   303.6/s p50 36.78 ms
+[   3464s] r9 0eed600 p100   ok   229.8/s p50 51.14 ms
+[   3469s] r9 0eed600 blind  ok   299.9/s p50 38.21 ms
+waiting: 3.0 foreign busy CPUs >= 2.0
+discarded: 3.89 foreign CPUs during the run
+waiting: 3.3 foreign busy CPUs >= 2.0
+discarded: 2.53 foreign CPUs during the run
+waiting: 2.5 foreign busy CPUs >= 2.0
+[   3648s] r9 ec90c25 p100   ok   231.6/s p50 50.86 ms
+waiting: 2.6 foreign busy CPUs >= 2.0
+discarded: 3.63 foreign CPUs during the run
+waiting: 3.9 foreign busy CPUs >= 2.0
+[   3671s] r9 ec90c25 blind  ok   322.9/s p50 35.14 ms
+waiting: 2.4 foreign busy CPUs >= 2.0
+[   3677s] r9 8dfd5eb p100   ok   238.4/s p50 48.46 ms
+waiting: 2.6 foreign busy CPUs >= 2.0
+[   3692s] r9 8dfd5eb blind  ok   359.1/s p50 30.95 ms
+discarded: 4.91 foreign CPUs during the run
+waiting: 7.2 foreign busy CPUs >= 2.0
+waiting: 7.2 foreign busy CPUs >= 2.0
+waiting: 7.0 foreign busy CPUs >= 2.0
+waiting: 7.2 foreign busy CPUs >= 2.0
+[   3918s] r9 57fd351 p100   ok   224.5/s p50 50.43 ms
+[   3922s] r9 57fd351 blind  ok   306.1/s p50 36.27 ms
+waiting: 3.3 foreign busy CPUs >= 2.0
+[   3932s] r9 359f128 p100   ok   233.1/s p50 50.13 ms
+waiting: 3.5 foreign busy CPUs >= 2.0
+waiting: 4.8 foreign busy CPUs >= 2.0
+[   4015s] r9 359f128 blind  ok   331.4/s p50 33.58 ms
+[   4020s] r9 5120cff p100   ok   241.3/s p50 47.6 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[   4027s] r9 5120cff blind  ok   332.7/s p50 33.62 ms
+[   4031s] r9 1b3a188 p100   ok   236.2/s p50 48.59 ms
+discarded: 2.55 foreign CPUs during the run
+waiting: 2.6 foreign busy CPUs >= 2.0
+[   4067s] r9 1b3a188 blind  ok   332.5/s p50 33.54 ms
+[   4072s] r9 550dde5 p100   ok   236.5/s p50 47.59 ms
+waiting: 2.2 foreign busy CPUs >= 2.0
+waiting: 3.4 foreign busy CPUs >= 2.0
+waiting: 3.7 foreign busy CPUs >= 2.0
+discarded: 2.53 foreign CPUs during the run
+waiting: 2.5 foreign busy CPUs >= 2.0
+[   4256s] r9 550dde5 blind  ok   327.6/s p50 35.09 ms
+waiting: 2.3 foreign busy CPUs >= 2.0
+[   4263s] r9 1845993 p100   ok   166.8/s p50 69.08 ms
+waiting: 2.5 foreign busy CPUs >= 2.0
+[   4282s] r9 1845993 blind  ok   321.4/s p50 35.08 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[   4293s] r9 700d48f p100   ok   243.0/s p50 47.18 ms
+[   4298s] r9 700d48f blind  ok   341.1/s p50 31.99 ms
+[   4303s] r9 7ef1636 p100   ok   271.2/s p50 42.41 ms
+discarded: 2.77 foreign CPUs during the run
+[   4312s] r9 7ef1636 blind  ok   334.7/s p50 32.72 ms
+[   4317s] r9 4aab0f2 p100   ok   256.9/s p50 43.82 ms
+waiting: 5.1 foreign busy CPUs >= 2.0
+[   4323s] r9 4aab0f2 blind  ok   357.9/s p50 30.57 ms
+[   4328s] r10 4aab0f2 blind  ok   367.9/s p50 29.34 ms
+[   4332s] r10 4aab0f2 p100   ok   282.7/s p50 39.8 ms
+[   4337s] r10 7ef1636 blind  ok   334.8/s p50 33.34 ms
+waiting: 2.8 foreign busy CPUs >= 2.0
+[   4348s] r10 7ef1636 p100   ok   248.6/s p50 45.13 ms
+[   4353s] r10 700d48f blind  ok   325.8/s p50 35.41 ms
+waiting: 2.5 foreign busy CPUs >= 2.0
+discarded: 2.79 foreign CPUs during the run
+waiting: 2.0 foreign busy CPUs >= 2.0
+discarded: 2.5 foreign CPUs during the run
+waiting: 2.2 foreign busy CPUs >= 2.0
+discarded: 2.57 foreign CPUs during the run
+waiting: 6.9 foreign busy CPUs >= 2.0
+waiting: 5.7 foreign busy CPUs >= 2.0
+waiting: 5.7 foreign busy CPUs >= 2.0
+waiting: 5.8 foreign busy CPUs >= 2.0
+[   4594s] r10 700d48f p100   ok   237.9/s p50 47.68 ms
+[   4599s] r10 1845993 blind  ok   313.9/s p50 35.01 ms
+[   4604s] r10 1845993 p100   ok   242.0/s p50 46.84 ms
+[   4608s] r10 550dde5 blind  ok   308.4/s p50 36.41 ms
+waiting: 2.9 foreign busy CPUs >= 2.0
+[   4616s] r10 550dde5 p100   ok   234.8/s p50 48.95 ms
+waiting: 2.0 foreign busy CPUs >= 2.0
+[   4622s] r10 1b3a188 blind  ok   328.2/s p50 33.98 ms
+waiting: 2.4 foreign busy CPUs >= 2.0
+[   4627s] r10 1b3a188 p100   ok   246.6/s p50 46.93 ms
+[   4632s] r10 5120cff blind  ok   332.7/s p50 34.35 ms
+[   4637s] r10 5120cff p100   ok   236.1/s p50 48.7 ms
+waiting: 2.9 foreign busy CPUs >= 2.0
+discarded: 2.6 foreign CPUs during the run
+waiting: 2.6 foreign busy CPUs >= 2.0
+waiting: 5.1 foreign busy CPUs >= 2.0
+[   4713s] r10 359f128 blind  ok   317.6/s p50 34.92 ms
+waiting: 3.7 foreign busy CPUs >= 2.0
+[   4735s] r10 359f128 p100   ok   249.0/s p50 45.82 ms
+discarded: 2.84 foreign CPUs during the run
+[   4745s] r10 57fd351 blind  ok   324.7/s p50 36.1 ms
+[   4750s] r10 57fd351 p100   ok   233.8/s p50 49.54 ms
+[   4754s] r10 8dfd5eb blind  ok   330.4/s p50 35.08 ms
+waiting: 2.2 foreign busy CPUs >= 2.0
+[   4760s] r10 8dfd5eb p100   ok   238.2/s p50 48.86 ms
+[   4765s] r10 ec90c25 blind  ok   338.6/s p50 33.71 ms
+[   4770s] r10 ec90c25 p100   ok   261.8/s p50 43.54 ms
+discarded: 3.49 foreign CPUs during the run
+waiting: 4.6 foreign busy CPUs >= 2.0
+waiting: 4.5 foreign busy CPUs >= 2.0
+[   4893s] r10 0eed600 blind  ok   336.2/s p50 34.51 ms
+[   4898s] r10 0eed600 p100   ok   220.4/s p50 51.97 ms
+waiting: 2.2 foreign busy CPUs >= 2.0
+[   4960s] r10 ee1e36d blind  ok   294.6/s p50 37.07 ms
+[   4965s] r10 ee1e36d p100   ok   215.5/s p50 54.46 ms
+waiting: 3.2 foreign busy CPUs >= 2.0
+waiting: 3.6 foreign busy CPUs >= 2.0
+discarded: 3.72 foreign CPUs during the run
+waiting: 4.2 foreign busy CPUs >= 2.0
+[   5078s] r10 f6112d8 blind  ok   168.4/s p50 37.64 ms
+[   5083s] r10 f6112d8 p100   ok   232.0/s p50 45.51 ms
+[   5088s] r10 8b0353d blind  ok   341.0/s p50 34.51 ms
+waiting: 2.2 foreign busy CPUs >= 2.0
+[   5094s] r10 8b0353d p100   ok   224.2/s p50 51.19 ms
+waiting: 3.3 foreign busy CPUs >= 2.0
+discarded: 2.75 foreign CPUs during the run
+[   5105s] r10 c953d7e blind  ok   309.6/s p50 36.96 ms
+[   5110s] r10 c953d7e p100   ok   220.8/s p50 51.77 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[   5116s] r11 c953d7e p100   ok   246.2/s p50 46.78 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[   5121s] r11 c953d7e blind  ok   325.0/s p50 35.15 ms
+[   5126s] r11 8b0353d p100   ok   230.6/s p50 46.97 ms
+discarded: 2.56 foreign CPUs during the run
+[   5136s] r11 8b0353d blind  ok   313.1/s p50 35.3 ms
+[   5140s] r11 f6112d8 p100   ok   232.3/s p50 48.19 ms
+waiting: 3.7 foreign busy CPUs >= 2.0
+[   5147s] r11 f6112d8 blind  ok   298.0/s p50 39.13 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[   5156s] r11 ee1e36d p100   ok   232.5/s p50 49.87 ms
+[   5161s] r11 ee1e36d blind  ok   309.8/s p50 37.84 ms
+[   5166s] r11 0eed600 p100   ok   234.9/s p50 48.58 ms
+[   5171s] r11 0eed600 blind  ok   316.0/s p50 36.68 ms
+[   5175s] r11 ec90c25 p100   ok   237.5/s p50 48.7 ms
+[   5180s] r11 ec90c25 blind  ok   325.5/s p50 34.85 ms
+[   5185s] r11 8dfd5eb p100   ok   234.7/s p50 49.56 ms
+waiting: 2.0 foreign busy CPUs >= 2.0
+[   5190s] r11 8dfd5eb blind  ok   327.0/s p50 34.93 ms
+waiting: 2.0 foreign busy CPUs >= 2.0
+[   5196s] r11 57fd351 p100   ok   242.6/s p50 47.33 ms
+waiting: 2.2 foreign busy CPUs >= 2.0
+[   5205s] r11 57fd351 blind  ok   336.4/s p50 33.89 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[   5211s] r11 359f128 p100   ok   245.5/s p50 47.31 ms
+[   5216s] r11 359f128 blind  ok   335.4/s p50 34.49 ms
+[   5220s] r11 5120cff p100   ok   241.0/s p50 48.69 ms
+[   5225s] r11 5120cff blind  ok   335.8/s p50 34.57 ms
+[   5230s] r11 1b3a188 p100   ok   237.3/s p50 48.5 ms
+waiting: 2.5 foreign busy CPUs >= 2.0
+[   5237s] r11 1b3a188 blind  ok   314.1/s p50 34.39 ms
+waiting: 2.3 foreign busy CPUs >= 2.0
+[   5246s] r11 550dde5 p100   ok   244.5/s p50 47.91 ms
+[   5251s] r11 550dde5 blind  ok   321.0/s p50 34.49 ms
+waiting: 2.0 foreign busy CPUs >= 2.0
+[   5257s] r11 1845993 p100   ok   224.7/s p50 48.87 ms
+waiting: 3.2 foreign busy CPUs >= 2.0
+[   5263s] r11 1845993 blind  ok   332.5/s p50 33.77 ms
+[   5267s] r11 700d48f p100   ok   241.1/s p50 47.43 ms
+waiting: 2.2 foreign busy CPUs >= 2.0
+[   5298s] r11 700d48f blind  ok   330.4/s p50 34.0 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[   5304s] r11 7ef1636 p100   ok   247.0/s p50 45.83 ms
+[   5309s] r11 7ef1636 blind  ok   374.0/s p50 29.5 ms
+[   5313s] r11 4aab0f2 p100   ok   287.4/s p50 39.44 ms
+[   5318s] r11 4aab0f2 blind  ok   362.4/s p50 30.29 ms
+[   5323s] r12 4aab0f2 blind  ok   349.5/s p50 30.62 ms
+[   5328s] r12 4aab0f2 p100   ok   278.1/s p50 42.36 ms
+[   5332s] r12 7ef1636 blind  ok   368.7/s p50 29.38 ms
+[   5337s] r12 7ef1636 p100   ok   268.6/s p50 41.13 ms
+[   5342s] r12 700d48f blind  ok   338.0/s p50 34.48 ms
+[   5347s] r12 700d48f p100   ok   263.1/s p50 42.67 ms
+[   5351s] r12 1845993 blind  ok   351.0/s p50 32.1 ms
+[   5356s] r12 1845993 p100   ok   261.7/s p50 42.42 ms
+discarded: 2.84 foreign CPUs during the run
+waiting: 5.1 foreign busy CPUs >= 2.0
+[   5376s] r12 550dde5 blind  ok   336.3/s p50 33.71 ms
+[   5380s] r12 550dde5 p100   ok   266.5/s p50 41.17 ms
+[   5385s] r12 1b3a188 blind  ok   359.4/s p50 29.76 ms
+[   5390s] r12 1b3a188 p100   ok   257.6/s p50 43.16 ms
+[   5394s] r12 5120cff blind  ok   349.0/s p50 32.23 ms
+[   5399s] r12 5120cff p100   ok   258.1/s p50 43.82 ms
+[   5404s] r12 359f128 blind  ok   359.3/s p50 30.25 ms
+[   5408s] r12 359f128 p100   ok   263.3/s p50 42.59 ms
+[   5413s] r12 57fd351 blind  ok   361.2/s p50 30.62 ms
+[   5418s] r12 57fd351 p100   ok   265.0/s p50 43.47 ms
+[   5423s] r12 8dfd5eb blind  ok   354.0/s p50 30.91 ms
+[   5427s] r12 8dfd5eb p100   ok   270.8/s p50 42.13 ms
+[   5432s] r12 ec90c25 blind  ok   352.7/s p50 31.7 ms
+[   5437s] r12 ec90c25 p100   ok   270.3/s p50 41.79 ms
+[   5442s] r12 0eed600 blind  ok   344.8/s p50 32.02 ms
+[   5447s] r12 0eed600 p100   ok   247.5/s p50 46.74 ms
+[   5451s] r12 ee1e36d blind  ok   327.4/s p50 33.83 ms
+[   5456s] r12 ee1e36d p100   ok   245.2/s p50 46.43 ms
+[   5461s] r12 f6112d8 blind  ok   327.7/s p50 33.41 ms
+[   5466s] r12 f6112d8 p100   ok   248.1/s p50 45.55 ms
+[   5470s] r12 8b0353d blind  ok   337.2/s p50 32.67 ms
+[   5475s] r12 8b0353d p100   ok   257.3/s p50 44.69 ms
+[   5480s] r12 c953d7e blind  ok   333.5/s p50 35.13 ms
+[   5484s] r12 c953d7e p100   ok   232.1/s p50 48.38 ms
+[   5489s] r13 c953d7e p100   ok   252.7/s p50 45.45 ms
+[   5494s] r13 c953d7e blind  ok   342.7/s p50 33.15 ms
+[   5499s] r13 8b0353d p100   ok   222.8/s p50 46.18 ms
+[   5504s] r13 8b0353d blind  ok   342.1/s p50 32.62 ms
+[   5508s] r13 f6112d8 p100   ok   244.2/s p50 46.55 ms
+[   5513s] r13 f6112d8 blind  ok   321.1/s p50 35.46 ms
+[   5518s] r13 ee1e36d p100   ok   225.8/s p50 51.66 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[   5525s] r13 ee1e36d blind  ok   351.9/s p50 31.74 ms
+[   5529s] r13 0eed600 p100   ok   252.2/s p50 45.34 ms
+[   5534s] r13 0eed600 blind  ok   348.2/s p50 32.8 ms
+[   5539s] r13 ec90c25 p100   ok   277.9/s p50 40.96 ms
+[   5544s] r13 ec90c25 blind  ok   342.1/s p50 30.14 ms
+[   5548s] r13 8dfd5eb p100   ok   255.8/s p50 44.53 ms
+[   5553s] r13 8dfd5eb blind  ok   353.1/s p50 31.73 ms
+[   5558s] r13 57fd351 p100   ok   267.8/s p50 42.79 ms
+waiting: 2.4 foreign busy CPUs >= 2.0
+[   5563s] r13 57fd351 blind  ok   356.3/s p50 30.76 ms
+[   5568s] r13 359f128 p100   ok   263.6/s p50 42.63 ms
+[   5573s] r13 359f128 blind  ok   367.8/s p50 30.55 ms
+[   5578s] r13 5120cff p100   ok   281.8/s p50 40.22 ms
+[   5582s] r13 5120cff blind  ok   358.0/s p50 30.91 ms
+[   5587s] r13 1b3a188 p100   ok   276.1/s p50 41.0 ms
+[   5592s] r13 1b3a188 blind  ok   373.8/s p50 30.15 ms
+[   5597s] r13 550dde5 p100   ok   266.9/s p50 42.5 ms
+[   5601s] r13 550dde5 blind  ok   366.0/s p50 29.77 ms
+[   5606s] r13 1845993 p100   ok   276.3/s p50 41.9 ms
+[   5611s] r13 1845993 blind  ok   360.7/s p50 30.66 ms
+[   5616s] r13 700d48f p100   ok   273.9/s p50 41.78 ms
+[   5620s] r13 700d48f blind  ok   309.5/s p50 32.99 ms
+[   5625s] r13 7ef1636 p100   ok   276.6/s p50 41.16 ms
+[   5630s] r13 7ef1636 blind  ok   364.6/s p50 29.45 ms
+[   5634s] r13 4aab0f2 p100   ok   290.9/s p50 37.73 ms
+[   5639s] r13 4aab0f2 blind  ok   376.8/s p50 28.71 ms
+{
+ "blind": {
+  "median_rate": {
+   "4aab0f2": 358.7,
+   "7ef1636": 339.4,
+   "700d48f": 332.1,
+   "1845993": 342.9,
+   "550dde5": 335.9,
+   "1b3a188": 336.0,
+   "5120cff": 337.9,
+   "359f128": 340.5,
+   "57fd351": 329.0,
+   "8dfd5eb": 331.5,
+   "ec90c25": 327.1,
+   "0eed600": 316.3,
+   "ee1e36d": 311.7,
+   "f6112d8": 309.4,
+   "8b0353d": 317.8,
+   "c953d7e": 317.3
+  },
+  "paired_neighbours": {
+   "4aab0f2->7ef1636": {
+    "median_ratio": 0.96,
+    "n": 14,
+    "below_1": 10,
+    "min": 0.79,
+    "max": 1.055
+   },
+   "7ef1636->700d48f": {
+    "median_ratio": 0.974,
+    "n": 14,
+    "below_1": 9,
+    "min": 0.849,
+    "max": 1.125
+   },
+   "700d48f->1845993": {
+    "median_ratio": 1.011,
+    "n": 14,
+    "below_1": 6,
+    "min": 0.789,
+    "max": 1.17
+   },
+   "1845993->550dde5": {
+    "median_ratio": 0.986,
+    "n": 14,
+    "below_1": 8,
+    "min": 0.957,
+    "max": 1.283
+   },
+   "550dde5->1b3a188": {
+    "median_ratio": 1.014,
+    "n": 14,
+    "below_1": 6,
+    "min": 0.909,
+    "max": 1.093
+   },
+   "1b3a188->5120cff": {
+    "median_ratio": 1.003,
+    "n": 14,
+    "below_1": 5,
+    "min": 0.873,
+    "max": 1.096
+   },
+   "5120cff->359f128": {
+    "median_ratio": 1.016,
+    "n": 14,
+    "below_1": 6,
+    "min": 0.946,
+    "max": 1.101
+   },
+   "359f128->57fd351": {
+    "median_ratio": 0.968,
+    "n": 14,
+    "below_1": 8,
+    "min": 0.691,
+    "max": 1.026
+   },
+   "57fd351->8dfd5eb": {
+    "median_ratio": 0.997,
+    "n": 14,
+    "below_1": 8,
+    "min": 0.96,
+    "max": 1.463
+   },
+   "8dfd5eb->ec90c25": {
+    "median_ratio": 0.988,
+    "n": 14,
+    "below_1": 10,
+    "min": 0.873,
+    "max": 1.103
+   },
+   "ec90c25->0eed600": {
+    "median_ratio": 0.965,
+    "n": 14,
+    "below_1": 13,
+    "min": 0.913,
+    "max": 1.018
+   },
+   "0eed600->ee1e36d": {
+    "median_ratio": 0.998,
+    "n": 14,
+    "below_1": 7,
+    "min": 0.876,
+    "max": 1.051
+   },
+   "ee1e36d->f6112d8": {
+    "median_ratio": 0.993,
+    "n": 14,
+    "below_1": 9,
+    "min": 0.572,
+    "max": 1.077
+   },
+   "f6112d8->8b0353d": {
+    "median_ratio": 1.016,
+    "n": 14,
+    "below_1": 4,
+    "min": 0.937,
+    "max": 2.024
+   },
+   "8b0353d->c953d7e": {
+    "median_ratio": 1.001,
+    "n": 14,
+    "below_1": 6,
+    "min": 0.908,
+    "max": 1.043
+   }
+  },
+  "paired_vs_4aab0f2": {
+   "7ef1636": 0.96,
+   "700d48f": 0.931,
+   "1845993": 0.962,
+   "550dde5": 0.967,
+   "1b3a188": 0.939,
+   "5120cff": 0.948,
+   "359f128": 0.959,
+   "57fd351": 0.924,
+   "8dfd5eb": 0.939,
+   "ec90c25": 0.915,
+   "0eed600": 0.89,
+   "ee1e36d": 0.877,
+   "f6112d8": 0.881,
+   "8b0353d": 0.902,
+   "c953d7e": 0.898
+  },
+  "failed": 0
+ },
+ "p100": {
+  "median_rate": {
+   "4aab0f2": 280.4,
+   "7ef1636": 256.5,
+   "700d48f": 249.3,
+   "1845993": 252.8,
+   "550dde5": 248.7,
+   "1b3a188": 243.8,
+   "5120cff": 247.3,
+   "359f128": 247.1,
+   "57fd351": 245.9,
+   "8dfd5eb": 239.7,
+   "ec90c25": 243.9,
+   "0eed600": 232.4,
+   "ee1e36d": 229.7,
+   "f6112d8": 230.8,
+   "8b0353d": 228.6,
+   "c953d7e": 231.1
+  },
+  "paired_neighbours": {
+   "4aab0f2->7ef1636": {
+    "median_ratio": 0.94,
+    "n": 14,
+    "below_1": 11,
+    "min": 0.859,
+    "max": 1.722
+   },
+   "7ef1636->700d48f": {
+    "median_ratio": 0.975,
+    "n": 14,
+    "below_1": 11,
+    "min": 0.857,
+    "max": 1.041
+   },
+   "700d48f->1845993": {
+    "median_ratio": 1.002,
+    "n": 14,
+    "below_1": 7,
+    "min": 0.686,
+    "max": 1.077
+   },
+   "1845993->550dde5": {
+    "median_ratio": 0.991,
+    "n": 14,
+    "below_1": 10,
+    "min": 0.917,
+    "max": 1.419
+   },
+   "550dde5->1b3a188": {
+    "median_ratio": 0.979,
+    "n": 14,
+    "below_1": 10,
+    "min": 0.528,
+    "max": 1.083
+   },
+   "1b3a188->5120cff": {
+    "median_ratio": 1.021,
+    "n": 14,
+    "below_1": 4,
+    "min": 0.905,
+    "max": 1.861
+   },
+   "5120cff->359f128": {
+    "median_ratio": 0.993,
+    "n": 14,
+    "below_1": 8,
+    "min": 0.878,
+    "max": 1.054
+   },
+   "359f128->57fd351": {
+    "median_ratio": 1.005,
+    "n": 14,
+    "below_1": 6,
+    "min": 0.939,
+    "max": 1.068
+   },
+   "57fd351->8dfd5eb": {
+    "median_ratio": 0.994,
+    "n": 14,
+    "below_1": 8,
+    "min": 0.933,
+    "max": 1.062
+   },
+   "8dfd5eb->ec90c25": {
+    "median_ratio": 1.013,
+    "n": 14,
+    "below_1": 6,
+    "min": 0.914,
+    "max": 1.099
+   },
+   "ec90c25->0eed600": {
+    "median_ratio": 0.936,
+    "n": 14,
+    "below_1": 14,
+    "min": 0.842,
+    "max": 0.992
+   },
+   "0eed600->ee1e36d": {
+    "median_ratio": 0.99,
+    "n": 14,
+    "below_1": 8,
+    "min": 0.895,
+    "max": 1.077
+   },
+   "ee1e36d->f6112d8": {
+    "median_ratio": 1.004,
+    "n": 14,
+    "below_1": 7,
+    "min": 0.929,
+    "max": 1.081
+   },
+   "f6112d8->8b0353d": {
+    "median_ratio": 0.993,
+    "n": 14,
+    "below_1": 9,
+    "min": 0.913,
+    "max": 1.037
+   },
+   "8b0353d->c953d7e": {
+    "median_ratio": 1.0,
+    "n": 14,
+    "below_1": 7,
+    "min": 0.902,
+    "max": 1.134
+   }
+  },
+  "paired_vs_4aab0f2": {
+   "7ef1636": 0.94,
+   "700d48f": 0.909,
+   "1845993": 0.929,
+   "550dde5": 0.919,
+   "1b3a188": 0.896,
+   "5120cff": 0.9,
+   "359f128": 0.897,
+   "57fd351": 0.896,
+   "8dfd5eb": 0.889,
+   "ec90c25": 0.907,
+   "0eed600": 0.839,
+   "ee1e36d": 0.82,
+   "f6112d8": 0.83,
+   "8b0353d": 0.823,
+   "c953d7e": 0.846
+  },
+  "failed": 0
+ }
+}

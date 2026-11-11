@@ -65,7 +65,7 @@ certain, uncertain
    recovery round to choose its base.
 
 recovery round
-   A query to the voters for the roots they hold (``recover_root``); the highest answer becomes the base. The
+   A query to the voters for the roots they hold (``recover_root``); the highest answer raises the base, which is floored at the lease's phase-1 root. The
    query carries ballot 0: it *promises nothing*, which is the point of finding C1 in
    :doc:`unknown-outcomes`.
 

@@ -179,7 +179,7 @@ on CPython 3.14 (D53, "Unload form"):
 * unloading *in place* (clear the flag first, delete the keys, set them again on reload) keeps the fast form.
 
 Reading an attribute of a loaded atom costs **12.6 ns in place against 21.1 ns** after a ``__dict__``
-replacement, about 1.7x. Residency adopted the in-place form.
+replacement, about 1.7x (the reviewer's ranges, 12.6-13.8 against 19.4-22.0 ns, give 1.41-1.75x). Residency adopted the in-place form.
 
 Two more CPython facts surfaced while measuring the implementation (D53, fixed in ``700d48f``).
 Adding a key that a class's instances did not have when they were created materializes the instance
@@ -281,7 +281,7 @@ The 10^7 step did not fit in 20 GB before (D53); it now peaks at 0.27 GB. The ta
   cache evicts, on every pass, exactly what the next pass needs.
 * **Bookkeeping.** A resident atom costs about 0.5 KB more than a loaded atom did before (identity map, LRU
   entry, generation token): 4,093,572 KB peak for 2,790,616 loaded atoms against 2,609,192 KB for 2,756,907
-  (table above), 1.47 against 0.95 KB per loaded atom. D53 states "about 0.4 KB"; the log gives 0.52.
+  (table above), 1.47 against 0.95 KB per loaded atom. The first record of D53 said "about 0.4 KB"; the log gives 0.52, and D53 now says so.
 * **Cold requests** (a new space per request) are about 10 % slower even when everything fits: each load is
   admitted and registered (admission alone about 4.5 us per load; D53).
 * **Cluster commits.** The 3-peer x 4-thread, 100 B headline ran 9-11 % slower with the GIL off (199 against

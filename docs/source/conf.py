@@ -88,20 +88,3 @@ napoleon_use_rtype = True
 napoleon_preprocess_types = False
 napoleon_type_aliases = None
 napoleon_attr_annotations = True
-
-
-# -- Docstring hygiene -------------------------------------------------------------------------
-# Two module docstrings in proto_db (the cluster coordinator's protocol notes and the Arrow bridge's
-# mapping table) are plain text, not reStructuredText: parsed as RST they raise errors.  They are shown
-# as literal blocks, whole, instead.  This hook is temporary: ruling R128 fixes those two docstrings
-# and then removes it.
-_LITERAL_MODULE_DOCSTRINGS = {"proto_db.cluster.coordinator", "proto_db.interop.arrow"}
-
-
-def _literal_module_docstring(app, what, name, obj, options, lines):
-    if what == "module" and name in _LITERAL_MODULE_DOCSTRINGS:
-        lines[:] = ["::", ""] + ["   " + line for line in lines]
-
-
-def setup(app):
-    app.connect("autodoc-process-docstring", _literal_module_docstring)

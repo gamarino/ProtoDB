@@ -15,7 +15,7 @@ settle it, but only with one addition the tutorial does not have yet: each chang
 id into the new version of the opportunity. The application then reads the opportunity once the cluster
 answers again and looks for the id, as :doc:`/durability` prescribes for every storage. Found: the change took
 effect. Not found: the ERP keeps the outcome open and reads again later; when it may conclude "did not take
-effect" is the subject of the parked rule discussed below, which is not sound while finding C1 is open. What
+effect" is the subject of the parked rule discussed below, which has not been reviewed. What
 the application must *not* do is retry blindly: if the first attempt took effect, the retry writes a second
 "won" version, and the audit trail of opportunity 3 shows the deal won twice.
 
@@ -51,8 +51,8 @@ The alternatives and their costs
 * **Resolve the outcome inside the library, by querying the voters with the root's pointer** (ruling R96,
   parked): the pointer is a unique commit id; walk ``previous`` from the committed root; found means success,
   a successor of the base without it means a safe retry, still at the base means undecided. Not built and not
-  reviewed; it is a liveness improvement, the undecided case remains, and its "safe retry" conclusion is not
-  sound while finding C1 is open (see "What was tried and rejected").
+  reviewed; it is a liveness improvement, the undecided case remains, and its "safe retry" conclusion has not
+  been reviewed (see "What was tried and rejected").
 * **Resolve late-observed acknowledgements with a commit query** (D50 open item): a majority observed after the
   lease ended could be confirmed instead of reported unknown. Not scheduled; liveness only.
 * **Resolve by reading an application token** (adopted for the tests in ``385cd04`` and ``47aa05e``): every
@@ -71,9 +71,9 @@ The choice, and the invariant that makes it correct
 
    The outcomes of a cluster commit. Source: ``diagrams/unknown-outcome.dot``.
 
-* **acknowledged**: a majority accepted the root within the permission. The design's goal is that it is never
-  lost. At the commit this guide describes, the code does not meet that goal in every schedule: finding C1,
-  below, is a schedule (a slow clock and a delayed message) that loses an acknowledged commit;
+* **acknowledged**: a majority accepted the root within the permission. It is never lost: finding C1,
+  below, was a schedule (a slow clock and a delayed message) that lost an acknowledged commit, and
+  ``276a256`` fixed it;
 * ``ProtoConflictError``: **nothing that could be accepted left the node** (no own acceptance logged, no
   root-stage message sent, every data-stage message a non-acceptable ``store``). Retrying is safe, and
   ``Database.run`` does it;
@@ -82,11 +82,7 @@ The choice, and the invariant that makes it correct
 The invariant is the truthfulness of the two definite answers: a conflict report implies the commit cannot take
 effect, so a retry never doubles it; an acknowledgement implies a majority holds the root. Unknown is the
 complement, and it is allowed to be large, because it is honest. (That a majority holding the root keeps it in
-the history is a separate property, the one finding C1 breaks.)
-
-.. TODO(C1-fix): once the R127 fix is merged, restate "never lost" as a property of the code, with the commit
-   of the fix, and remove the qualifications marked with this TODO in coordinator.rst, pipelined-permits.rst and
-   this chapter.
+the history is a separate property, the one finding C1 broke and ``276a256`` restored.)
 
 The tests follow the same rule (ruling R86): they assert **safety bounds**, never exact counts. Every
 acknowledged id is present exactly once; every other id present ended in an unknown outcome
@@ -120,8 +116,8 @@ majority argument:
 
 The adversarial re-review showed that the argument does not hold, and reproduced an **acknowledged commit being
 lost** (finding C1, Critical, at ``9129d52``). The reviewer reproduced it deterministically with five voters,
-in a test outside the repository that forces the schedule below; it is not committed, and this section will
-name the regression test that replaces it once the fix lands.
+in a test outside the repository that forces the schedule below. That reproduction is now committed as a
+regression test, ``tests/unit/test_cluster_recovery_base.py``, described under the fix below.
 
 **Why the intersection argument fails.** Intersection proves that a member of the answering majority accepted
 every root committed *before it answered*. It says nothing about roots accepted *after* it answered, unless the
@@ -155,20 +151,24 @@ The hole predated ``1b3a188`` (it needed a late answer before); the change made 
 the false argument down as its justification. The deterministic test of ``1b3a188`` checked only how long the
 round took, never what it returned when the omitted voter held the highest root.
 
-**The fix direction** (ruling R127): never let a lease's base order below the phase-1 value. Either take the
-higher of ``lease.root`` (or ``permission.root``) and the recovery result, which is safe because a root
-accepted under a higher ballot was proposed by a holder that ran phase 1; or end the round only once every
-granter of the current lease has answered. The reproduction becomes a committed regression test, a planted variant
-without the floor must fail it, and D46's argument is restated without "after every earlier lease ended".
+**The fix** (ruling R127; ``276a256``, merged in ``359f128``): a lease's base never orders below the phase-1
+value. The base of an uncertain lease or permission is the higher, in ``compare_roots`` order, of ``lease.root``
+(or ``permission.root``) and the recovery result (``_lease_base``, ``_phase_1_floor``). That is safe because a
+member of the granting majority promised the term before it replied, so every root a majority had accepted in a
+lower term was reported to the new holder, and the floor needs no clock. The alternative, ending the round only
+once every granter has answered, was rejected: it waits ``request_timeout`` whenever a granter dies after
+granting, the no-progress loop that ``1b3a188`` removed. D46's argument is restated without "after every earlier
+lease ended" (D46 and the C1 amendment in ``docs/decisions.md``). The tests are in
+``tests/unit/test_cluster_recovery_base.py``: the reviewer's reproduction through the product's ``_lease_base``,
+for a lease and for a permission, and a check that a recovery root above the floor is still adopted. The plant
+``c1_no_floor`` fails both floor tests. See :doc:`/coordinator-protocol` for the protocol.
 
-.. TODO(C1-fix): describe the fix as merged (the floor at lease.root / permission.root, or the wait for every
-   granter), with its commit, the regression test and the plant, and the restated D46 argument. Until the fix
-   lands, this section describes the defect and the direction of the fix only.
-
-.. note::
-
-   The fix of this finding is in progress at the time of writing (ruling R127). This section will name the
-   merged fix, its commit and its tests when it lands.
+A second fix completes it (``db1a4c8``, merged in ``f6112d8``). A floor root accepted only by members that are
+now down cannot be re-committed, and before the fix the term stalled while a majority was alive. The holder now
+abandons the term when the records of its base are unreachable (``_BaseUnreachable``, a retryable conflict:
+nothing was replicated), and the next owner's phase 1 decides the root. Its test is
+``test_i1_a_floor_base_whose_records_are_unreachable_abandons_the_term``, and the plant
+``unreachable_base_none`` fails it.
 
 **The lessons.** A majority answer is evidence about the past only if it was a promise about the future. And a
 sentence of the form "by then, every earlier lease has ended" is a statement about clocks; under P5 it can
@@ -182,9 +182,8 @@ What was tried and rejected
   rejected, and not reviewed. R96's rule concludes "did not take effect" from a committed root that succeeds
   the base without containing the commit. That conclusion holds only if (1) the root read is known to be
   committed, and (2) no acknowledged or committed root is ever superseded by a root that does not descend from
-  it. Condition (2) is exactly what finding C1 breaks, so the rule is not sound at this commit.
-
-.. TODO(C1-fix): revisit the R96 conditions once the fix is merged; the rule still needs its own review.
+  it. Condition (2) was exactly what finding C1 broke; since ``276a256`` the code holds it, but the rule as a
+  whole has still not been reviewed, so it stays parked.
 
 Back to the ERP
 ---------------
@@ -194,7 +193,5 @@ of opportunity 3 (the addition this chapter asks of the tutorial), it looks for 
 the deal is won; not found, it keeps the question open and asks Ann before marking the deal again, because no
 rule to conclude "did not take effect" has been reviewed yet. A "conflict" means nothing a voter could accept
 left the server, so the ERP, or ``Database.run``, can simply retry. An acknowledgement means the deal is won on
-a majority of the voters. That it then stays won, whatever happens to Ann's server afterwards, is the design's
-goal; finding C1 showed that the code at this commit can break it in one schedule, and the fix is in progress.
-
-.. TODO(C1-fix): when the fix is merged, say that the acknowledged deal stays won and name the fix commit.
+a majority of the voters. That it then stays won, whatever happens to Ann's server afterwards, is the property
+that finding C1 broke in one schedule and ``276a256`` (merged in ``359f128``) restored.

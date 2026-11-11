@@ -254,11 +254,71 @@ def type_tag(type_name: str):
     return type_name if alias is None else alias
 
 
+def _walk_mro(cls: type, name: str) -> bool:
+    return any(name in klass.__dict__ for klass in cls.__mro__)
+
+
+#: Atom class -> the names its MRO defines that a read on the class does not find (R137a).
+_unreadable_names: dict = {}
+
+
+#: Names :func:`_unreadable` never reads on a class: on a class without its own annotations,
+#: Python 3.14 answers a read of them by storing ``__annotations_cache__`` and
+#: ``__annotate_func__`` in that class's dict, a hidden write into application classes at their first
+#: save or load (re-review of R128, N2).  Both are underscore names, never a persisted field.
+_NOT_LISTED = frozenset({"__annotations__", "__annotate__"})
+
+
+def _unreadable(cls: type) -> frozenset:
+    """The names some class of ``cls``'s MRO has in its ``__dict__`` that a read on the class does
+    not return: a descriptor raising when read on the class (or shadowed by a metaclass attribute
+    that raises).  Computed once per class; bounded by the class."""
+    names = set()
+    for klass in cls.__mro__:
+        # A copy (atomic): another thread may write into a class dict meanwhile (application code,
+        # or another thread's first class read of annotations), and a live iteration would raise
+        # "dictionary changed size during iteration".
+        for name in klass.__dict__.copy():
+            if name in _NOT_LISTED:
+                continue
+            try:
+                readable = hasattr(cls, name)
+            except Exception:       # noqa: BLE001 - another error: defined, and not readable either
+                readable = False
+            if not readable:
+                names.add(name)
+    return frozenset(names)
+
+
 def class_defines(cls: type, name: str) -> bool:
     """Whether ``cls`` or a class of its MRO defines ``name``: what an instance attribute read
     would find before a persisted field.  Attributes of the metaclass (``mro``, ``register``)
-    are not seen by instance reads and do not count (pre-tag review m1)."""
-    return any(name in klass.__dict__ for klass in cls.__mro__)
+    are not seen by instance reads and do not count (pre-tag review m1).
+
+    The rule is the MRO walk; this answers it without walking for every field of every saved and
+    loaded atom (R137a).  A name ``hasattr`` finds on the class is walked each time (a metaclass
+    attribute is found too, so the walk decides); every class attribute, however added, is found.
+    A name it does not find is defined only by a descriptor that raises ``AttributeError`` when
+    read on the class: those names are listed once per class (:func:`_unreadable`), so the cache
+    is bounded by the classes, never by the names asked about (schemaless records bring any field
+    names; review of R128, I2).  The list assumes no such descriptor is added to or removed from a
+    class after the class is in use.  The cache keeps its classes alive, as the atom type registry
+    already does for every Atom class.
+
+    Note: ``hasattr`` runs class-level code the ``__dict__`` walk never ran -- a descriptor's
+    ``__get__(None, cls)`` or a metaclass ``__getattr__`` -- on every save and load of a field of
+    that name, and listing a class runs it once for every name its MRO defines.  Harmless for
+    ordinary classes; a descriptor with side effects or a high cost on class access pays it there
+    (review of R128, m5)."""
+    try:
+        if hasattr(cls, name):
+            return _walk_mro(cls, name)
+    except Exception:
+        return _walk_mro(cls, name)     # a descriptor raising another error is still in the MRO
+    unreadable = _unreadable_names.get(cls)
+    if unreadable is None:
+        unreadable = _unreadable_names.setdefault(cls, _unreadable(cls))
+    return name in unreadable
 
 
 def type_name_of(tag) -> str:
@@ -906,7 +966,29 @@ class Atom:
 
         Children are saved while no stripe is held; only the publication of this
         atom's payload runs under its stripe (see the module lock order rule).
+
+        A child is saved by a nested call (through the context's ``save``), up to
+        :data:`SAVE_NESTING` nested saves in this thread; deeper, the save goes on with an
+        explicit stack (:func:`_save_iteratively`), so a chain of unsaved versions of any
+        length saves in one commit (R128).
         """
+        ptr = self.atom_pointer
+        if ptr is not None:
+            return ptr
+        depth = getattr(_nesting, "depth", 0)
+        if depth < 0:
+            return _defer(self)             # under _save_iteratively: it saves this atom first
+        if depth >= SAVE_NESTING:
+            return _save_iteratively(self)
+        _nesting.depth = depth + 1
+        try:
+            return self._save_own()
+        finally:
+            _nesting.depth = depth
+
+    def _save_own(self) -> AtomPointer:
+        """The body of :meth:`_save`: encode the state (saving its children through the
+        context) and publish this atom's record."""
         ptr = self.atom_pointer
         if ptr is not None:
             return ptr
@@ -928,6 +1010,8 @@ class Atom:
                     f"Attribute {name!r} of {cls.__type_name__} shadows a class attribute and "
                     f"could not be loaded back lazily")
         encoded = codec.encode_state(state, context.save)
+        if getattr(_nesting, "deferred", None):
+            return None                     # children to save first (_save_iteratively)
         with _lock_for(self):
             ptr = self.atom_pointer
             if ptr is not None:
@@ -991,6 +1075,76 @@ class Atom:
                 oid = None
             return f"<{type(self).__type_name__} oid={oid}>"
         return f"<{type(self).__type_name__} stub at {self.atom_pointer}>"
+
+
+# -- saving deep graphs (R128) -----------------------------------------------------------------
+
+#: Nested :meth:`Atom._save` calls a thread makes before the save continues with an explicit
+#: stack.  Each level costs a handful of Python frames, so this stays well inside the default
+#: recursion limit with room for the caller's own frames; an AVL tree of 10**9 elements is
+#: about 44 levels deep, so ordinary commits never reach it.
+SAVE_NESTING = 48
+
+#: ``depth``: this thread's nested saves; -1 while :func:`_save_iteratively` runs.
+_nesting = threading.local()
+
+
+#: What :func:`_defer` answers for a child deferred by :func:`_save_iteratively`: the encoding it
+#: goes into is discarded, so this pointer is never written.
+_DEFERRED = AtomPointer(uuid.UUID(int=0), 0)
+
+
+def _defer(atom: "Atom") -> AtomPointer:
+    """The save of an unsaved child under :func:`_save_iteratively`: remember it (once) for the
+    driver to save first and answer a placeholder, so the parent's encoding goes on and meets
+    every other unsaved child in the same pass."""
+    deferred = _nesting.deferred
+    if id(atom) not in _nesting.deferred_ids:
+        _nesting.deferred_ids.add(id(atom))
+        deferred.append(atom)
+    return _DEFERRED
+
+
+def _save_iteratively(root: "Atom") -> AtomPointer:
+    """Save ``root`` and every unsaved atom it reaches, children first, without recursion.
+
+    The atom on top of an explicit stack is encoded (:meth:`Atom._save_own`).  Each unsaved child
+    the encoding meets goes through the context's ``save`` -- adopted and checked exactly as a
+    nested save would -- and its :meth:`Atom._save` only records it (:func:`_defer`), so one pass
+    finds every unsaved child.  If there were any, nothing is published: the children are pushed
+    in reverse encounter order (so they are saved in the order, and with the subtrees, the
+    recursive save gives them; one already saved through an earlier sibling is skipped), and the
+    atom is encoded again once they are saved.  Each atom is thus encoded at most twice: linear
+    work at any width and depth (review of R128, I1).  A deferred child that is an atom already
+    being saved below it on the stack is a cycle of unsaved atoms (possible only with mutable
+    atoms): ``ProtoValidationError``."""
+    outer = getattr(_nesting, "depth", 0)
+    stack = [root]
+    expanded: set = set()           # atoms whose children are being saved (the path to the top)
+    _nesting.depth = -1
+    try:
+        while stack:
+            top = stack[-1]
+            if top.atom_pointer is None:
+                deferred: list = []
+                _nesting.deferred, _nesting.deferred_ids = deferred, set()
+                try:
+                    top._save_own()
+                finally:
+                    _nesting.deferred = _nesting.deferred_ids = None
+                if deferred:
+                    expanded.add(id(top))
+                    for child in deferred:
+                        if id(child) in expanded:
+                            raise ProtoValidationError(
+                                f"Cannot save {child!r}: it refers back to itself through atoms that are "
+                                f"not saved yet (a cycle of unsaved atoms)")
+                    stack.extend(reversed(deferred))
+                    continue
+            expanded.discard(id(stack.pop()))
+    finally:
+        _nesting.depth = outer
+    return root.atom_pointer
 
 
 # -- opaque atoms: types written by another implementation (D59, Task 10.P A3) ----------------

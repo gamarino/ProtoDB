@@ -1,0 +1,13 @@
+Running as unit: r136-q3.scope; invocation ID: 3ce0caf2244f4a519e791654284959a8
+rep 0 gil-on, 2 readers: 9.1 commits/s, 47552 reads/s, ok=True
+rep 0 gil-on, 0 readers: 84.6 commits/s, 0 reads/s, ok=False
+rep 0 gil-on, 2 readers, switch 0.5 ms on B/C: 36.6 commits/s, 41982 reads/s, ok=True
+rep 0 gil-off, 2 readers: 75.0 commits/s, 56342 reads/s, ok=True
+rep 1 gil-off, 2 readers: 47.7 commits/s, 43642 reads/s, ok=True
+rep 1 gil-on, 2 readers, switch 0.5 ms on B/C: 27.2 commits/s, 22638 reads/s, ok=True
+rep 1 gil-on, 0 readers: 83.6 commits/s, 0 reads/s, ok=False
+rep 1 gil-on, 2 readers: 7.5 commits/s, 60178 reads/s, ok=True
+rep 2 gil-on, 2 readers: 7.5 commits/s, 57013 reads/s, ok=True
+rep 2 gil-on, 0 readers: 61.0 commits/s, 0 reads/s, ok=False
+rep 2 gil-on, 2 readers, switch 0.5 ms on B/C: 34.1 commits/s, 41227 reads/s, ok=True
+rep 2 gil-off, 2 readers: 65.6 commits/s, 50537 reads/s, ok=True

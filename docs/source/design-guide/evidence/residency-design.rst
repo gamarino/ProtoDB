@@ -38,7 +38,7 @@ of the script that did not yet print the ``resident`` and ``stats`` keys, which 
   ``KeyNode.value`` to ``DBObject`` (69,121) and the ``left`` / ``right`` links of both node classes.
 
 **A correction.** The design record summed the same table as "386,000 edges, 120,000 (31 %) nested", and D53
-repeats the 31 %. The listed counts sum to 317,710 and 119,964, that is 38 %. The conclusion does not change:
+repeated the 31 % until the post-C1 touch-up, which corrected it there. The listed counts sum to 317,710 and 119,964, that is 38 %. The conclusion does not change:
 more than a third of the pinning edges are inside tuples, out of reach of any per-attribute rule.
 
 .. literalinclude:: scripts/census.py

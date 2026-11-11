@@ -15,13 +15,10 @@ What it gives the ERP
 
 Three application servers run the ERP, each with ProtoDB embedded, all writing the same database. A sales
 person on any server can commit; a report on any server reads its snapshot without asking anyone (readers never
-wait); and if one server dies, the design's goal is that no commit any server acknowledged is lost. (At the
-commit this guide describes, the code does not yet meet that goal in every schedule: finding C1, told in
-:doc:`unknown-outcomes`, is a schedule with a slow clock and a delayed message that loses an acknowledged
-commit. The fix is in progress.) There is no database server to run, and the object store, if one is used, is
+wait); and if one server dies, no commit any server acknowledged is lost. (Finding C1, told in
+:doc:`unknown-outcomes`, was a schedule with a slow clock and a delayed message that lost an acknowledged
+commit; it is fixed by ``276a256``, merged in ``359f128``.) There is no database server to run, and the object store, if one is used, is
 written after the commit, not during it.
-
-.. TODO(C1-fix): remove the qualification once the R127 fix is merged, and name its commit.
 
 Contention among the processes, not in the storage
 --------------------------------------------------
@@ -84,9 +81,7 @@ Back to the ERP
 
 The three ERP servers agree on the order of commits among themselves, at network latency, and the object store
 never arbitrates between them. When one dies, the others keep committing as long as a majority of the voters
-is alive. That no acknowledged commit is then lost, whatever the clocks of the survivors say, is the design's
-goal and the rule of P5; the code at this commit breaks it in the schedule of finding C1, which turns exactly on
-a slow clock, and the fix is in progress (:doc:`unknown-outcomes`). The protocol, step by step, is
+is alive. That no acknowledged commit is then lost, whatever the clocks of the survivors say, is the rule of
+P5, and the code meets it since the fix of finding C1, which turned exactly on a slow clock: a new term's base
+never orders below the phase-1 value (``276a256``, merged in ``359f128``; :doc:`unknown-outcomes`). The protocol, step by step, is
 :doc:`/coordinator-protocol`.
-
-.. TODO(C1-fix): restate as a property of the code once the fix is merged.

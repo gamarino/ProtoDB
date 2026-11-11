@@ -147,9 +147,9 @@ The limit: the working set must fit
 
 The cache holds ``atom_cache_entries`` decoded atoms (default 50,000). If the atoms your transactions touch
 do not fit, the oldest are evicted and reloaded on the next pass, and the benefit disappears (nothing breaks;
-reads are just as slow as with no cache). The model above has about 540 atoms (the cold run loaded 540); each pass below loads 553, and this page does not
-break the 13 extra down; they are the same on every pass. Give a reader a cache
-of only 50:
+reads are just as slow as with no cache). The model above has 540 atoms (the cold run loaded 540), and each pass below loads each of them once:
+an atom evicted while the walk is still inside it is not loaded again, because a walk keeps what it
+still needs from a node when it first reads it. Give a reader a cache of only 50:
 
 .. code-block:: python
 
@@ -169,9 +169,9 @@ of only 50:
 .. code-block:: text
    :caption: Output
 
-   pass 1: loads 553, evicted by those loads 503, ratio 0.91
-   pass 2: loads 553, evicted by those loads 553, ratio 1.00
-   pass 3: loads 553, evicted by those loads 553, ratio 1.00
+   pass 1: loads 540, evicted by those loads 490, ratio 0.91
+   pass 2: loads 540, evicted by those loads 540, ratio 1.00
+   pass 3: loads 540, evicted by those loads 540, ratio 1.00
 
 This is the thrash signal. ``read_unloads`` divided by ``loads`` over an interval close to 0 means the set
 fits; close to 1 means every load pushes another atom out, so every pass reloads what it needs. The first
@@ -201,15 +201,9 @@ When this does not help, or another system is better
 * Other systems have caches too. What differs is invalidation: a cache over mutable data must learn
   when something changed, and across nodes that costs messages or staleness. Immutable stores share the property that
   cached data never goes stale (Datomic's peers cache immutable segments; this is general knowledge, not
-  verified here), so it is a consequence of immutability, not something only ProtoDB has. The cluster-wide measurement, by workload, is
-  still to be added:
-
-  .. note::
-
-     TODO(9c): the R110 profile ("reads across transactions in a cluster under concurrent writes", with the
-     cache on and off, the decodes per read and the query-result hit rate) is not in ``benchmarks/results``
-     yet. Add its figures and a link to :doc:`../performance` here when the regeneration lands. Until then
-     this page makes no cluster-wide performance claim.
+  verified here), so it is a consequence of immutability, not something only ProtoDB has. The cluster-wide measurement, by workload (the ``cluster_cache`` profile: reads across transactions on two
+  nodes under concurrent writes on a third, with the cache on and off, the decodes per read and the query-result
+  hit rate), is in :doc:`../performance`; this page makes no performance claim of its own.
 * A CAD kernel with its own in-memory representation will edit geometry faster than any database. ProtoDB's
   part here is the persistent, versioned, shareable store of the model and its history, not the modelling
   operations.

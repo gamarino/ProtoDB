@@ -1,0 +1,18 @@
+4aab0f2 median us/commit 1792.75
+7ef1636 median us/commit 2073.3
+700d48f median us/commit 2238.1
+550dde5 median us/commit 2221.9
+ec90c25 median us/commit 2145.15
+0eed600 median us/commit 2535.65
+c953d7e median us/commit 2593.45
+c953d7e+class_defines_fast median us/commit 2153.05
+4aab0f2 -> 7ef1636 (1.148, '12/12 slower')
+7ef1636 -> 700d48f (1.076, '12/12 slower')
+700d48f -> 550dde5 (0.975, '5/12 slower')
+550dde5 -> ec90c25 (0.987, '3/12 slower')
+ec90c25 -> 0eed600 (1.195, '10/12 slower')
+0eed600 -> c953d7e (1.0, '6/12 slower')
+c953d7e -> c953d7e+class_defines_fast (0.851, '0/12 slower')
+ec90c25 -> c953d7e+class_defines_fast (0.986, '5/12 slower')
+4aab0f2 -> c953d7e (1.4, '12/12 slower')
+foreign machine busy (jiffies/run) median 1576.0

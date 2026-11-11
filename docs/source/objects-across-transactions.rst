@@ -107,3 +107,9 @@ documented instead of being policed with expensive checks:
   and anything built from them may refer to state no version of the database ever held.
 
 The :doc:`concurrency tutorial <tutorials/concurrency>` runs the first one.
+
+A related lifetime rule: a class registered with the atom type registry (every ``Atom`` subclass registers itself
+under its ``__type_name__``) lives for the rest of the process, because the registry holds it. A class defined
+inside a function, or by ``exec``, therefore keeps its whole namespace alive (the function's locals, the globals
+it was executed in), and a second definition under the same name is refused. Define persistent types at module
+level.

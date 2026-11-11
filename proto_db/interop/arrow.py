@@ -24,27 +24,27 @@ converted to the field's type.
 
 Value mapping (Python value after conversion -> Arrow type inferred by pyarrow):
 
-=====================================  ======================================
-ProtoDB value                          Arrow
-=====================================  ======================================
-``None``, ``MISSING``                  null
-``bool`` / ``int`` / ``float``         bool / int64 / double (int beyond int64
-                                       is an error: pass a decimal schema)
-``str`` / ``bytes``                    string / binary
-``Decimal``                            decimal128(p, s) (decimal256 when wider);
-                                       NaN/Infinity rejected
-``date`` / naive ``time``              date32 / time64[us] (aware times are
-                                       rejected: time64 has no time zone)
-naive / aware ``datetime``             timestamp[us] / timestamp[us, tz] (tz of
-                                       the column's first value; instants kept);
-                                       naive and aware mixed at one position of
-                                       a column are rejected
-``timedelta``                          duration[us]
-``UUID``                               uuid (extension type)
-``FrozenList``, ``list``, ``tuple``    list<...>
-``FrozenDict``, ``dict``, ``DBObject`` struct<...> (string keys)
-``MutableObject``, other atoms         rejected (``ProtoNotSupportedError``)
-=====================================  ======================================
+========================================  ==========================================
+ProtoDB value                             Arrow
+========================================  ==========================================
+``None``, ``MISSING``                     null
+``bool`` / ``int`` / ``float``            bool / int64 / double (int beyond int64
+                                          is an error: pass a decimal schema)
+``str`` / ``bytes``                       string / binary
+``Decimal``                               decimal128(p, s) (decimal256 when wider);
+                                          NaN/Infinity rejected
+``date`` / naive ``time``                 date32 / time64[us] (aware times are
+                                          rejected: time64 has no time zone)
+naive / aware ``datetime``                timestamp[us] / timestamp[us, tz] (tz of
+                                          the column's first value; instants kept);
+                                          naive and aware mixed at one position of
+                                          a column are rejected
+``timedelta``                             duration[us]
+``UUID``                                  uuid (extension type)
+``FrozenList``, ``list``, ``tuple``       list<...>
+``FrozenDict``, ``dict``, ``DBObject``    struct<...> (string keys)
+``MutableObject``, other atoms            rejected (``ProtoNotSupportedError``)
+========================================  ==========================================
 
 A column whose values pyarrow cannot convert to one type (e.g. ``int`` and
 ``str`` mixed), or holding values pyarrow would silently rewrite (naive and

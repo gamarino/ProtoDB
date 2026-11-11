@@ -240,6 +240,61 @@ def _find_root_label(space, atom) -> str:
     return ""
 
 
+def dump_text(value) -> str:
+    """The JSON text of ``value``: ``json.dumps(value, indent=1, ensure_ascii=False)`` for the
+    first :data:`INDENTED_LEVELS` levels of nesting; deeper content is written on one line, with
+    ``json``'s default separators.  The JSON value is the same either way: the layout only keeps
+    the text linear in the size of a deep description (a record chain nests as deep as the chain,
+    R128; one indented line per level would make it quadratic).  Written with an explicit stack,
+    since ``json``'s encoder recurses; scalars and keys are written by ``json`` itself."""
+    out: list = []
+    stack: list = []            # [iterator, closing bracket, depth, first item?, is a dict?]
+
+    def open_value(v, depth: int) -> None:
+        if isinstance(v, dict):
+            if not v:
+                out.append("{}")
+            else:
+                out.append("{")
+                stack.append([iter(v.items()), "}", depth + 1, True, True])
+        elif isinstance(v, (list, tuple)):
+            if not v:
+                out.append("[]")
+            else:
+                out.append("[")
+                stack.append([iter(v), "]", depth + 1, True, False])
+        else:
+            out.append(json.dumps(v, ensure_ascii=False))
+
+    open_value(value, 0)
+    while stack:
+        frame = stack[-1]
+        item = next(frame[0], _END)
+        depth = frame[2]
+        indented = depth <= INDENTED_LEVELS
+        if item is _END:
+            stack.pop()
+            out.append("\n" + " " * (depth - 1) + frame[1] if indented else frame[1])
+            continue
+        if indented:
+            out.append(("\n" if frame[3] else ",\n") + " " * depth)
+        elif not frame[3]:
+            out.append(", ")
+        frame[3] = False
+        if frame[4]:
+            key, item = item
+            # A key is a str, or a scalar json writes as one (dict keys of the report are str).
+            out.append(json.dumps({key: 0}, ensure_ascii=False)[1:-4] + ": ")
+        open_value(item, depth)
+    return "".join(out)
+
+
+#: Nesting levels :func:`dump_text` indents; the conformance manifest's descriptions are far
+#: shallower, so their dumps are exactly ``json.dumps(..., indent=1)``.
+INDENTED_LEVELS = 64
+_END = object()
+
+
 def main(argv=None) -> int:
     """Command-line entry point; returns the exit status."""
     parser = argparse.ArgumentParser(prog="python -m proto_db.tools.verify",
@@ -253,7 +308,7 @@ def main(argv=None) -> int:
     except _NoRoot as e:
         print(f"FAILED opening {args.directory}: {e}", file=sys.stderr)
         return 2
-    text = json.dumps(report, indent=1, ensure_ascii=False)
+    text = dump_text(report)
     if args.out:
         Path(args.out).write_text(text + "\n", encoding="utf-8")
     else:

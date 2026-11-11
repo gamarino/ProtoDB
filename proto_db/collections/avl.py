@@ -462,24 +462,31 @@ def pos_concat(left: PosNode | None, right: PosNode | None) -> PosNode | None:
     return _join2(left, right)
 
 
-def _inorder(root) -> Iterator:
-    """Yield the nodes of ``root`` in order, with an explicit stack."""
+# The walks below keep the nodes still to visit on an explicit stack, as the fields they will
+# need (key, stored value, next child), read when the node is pushed -- it is loaded then, since
+# the walk reads its child to go down.  A stacked node itself is never read again: the atoms the
+# consumer loads before the walk comes back may have evicted it, and reading it would load it a
+# second time (R128: the CAD tutorial's 13 extra loads per pass with a 50-entry cache).  A stored
+# value is unboxed only when it is yielded, so a walk that stops early loads no box past its end.
+
+def _inorder(root, keyed: bool) -> Iterator[tuple]:
+    """Yield ``(key, stored value)`` of the nodes of ``root`` in order (``key`` None for a
+    positional tree), with an explicit stack."""
     stack = []
     node = root
     while stack or node is not None:
         while node is not None:
-            stack.append(node)
+            stack.append((node.key if keyed else None, node.value, node.right))
             node = node.left
-        node = stack.pop()
-        yield node
-        node = node.right
+        key, value, node = stack.pop()
+        yield key, value
 
 
 def pos_iter(root: PosNode | None) -> Iterator:
     """Yield the elements of a positional tree in order (no recursion)."""
     _check_kind(root, PosNode)
-    for node in _inorder(root):
-        yield unboxed(node.value)
+    for _, value in _inorder(root, False):
+        yield unboxed(value)
 
 
 def _build_balanced(items: list, make) -> _Node | None:
@@ -575,8 +582,8 @@ def key_remove(root: KeyNode | None, key):
 def key_iter(root: KeyNode | None) -> Iterator[tuple]:
     """Yield ``(key, value)`` pairs in key order (no recursion)."""
     _check_kind(root, KeyNode)
-    for node in _inorder(root):
-        yield node.key, unboxed(node.value)
+    for key, value in _inorder(root, True):
+        yield key, unboxed(value)
 
 
 def key_iter_range(root: KeyNode | None, lo=UNBOUNDED, hi=UNBOUNDED,
@@ -617,17 +624,14 @@ def _iter_okey_range(root, lok, hik, lo_inc, hi_inc) -> Iterator[tuple]:
                 if nk < lok or (nk == lok and not lo_inc):
                     node = node.right  # node and its left subtree are below the range
                     continue
-            stack.append(node)
+            stack.append((node._order_key() if hik is not None else None, node.key, node.value, node.right))
             node = node.left
         if not stack:
             return
-        node = stack.pop()
-        if hik is not None:
-            nk = node._order_key()
-            if nk > hik or (nk == hik and not hi_inc):
-                return
-        yield node.key, unboxed(node.value)
-        node = node.right
+        nk, key, value, node = stack.pop()
+        if hik is not None and (nk > hik or (nk == hik and not hi_inc)):
+            return
+        yield key, unboxed(value)
 
 
 def key_iter_reversed(root: KeyNode | None) -> Iterator[tuple]:
@@ -641,11 +645,10 @@ def _iter_reversed(root) -> Iterator[tuple]:
     node = root
     while stack or node is not None:
         while node is not None:
-            stack.append(node)
+            stack.append((node.key, node.value, node.left))
             node = node.right
-        node = stack.pop()
-        yield node.key, unboxed(node.value)
-        node = node.left
+        key, value, node = stack.pop()
+        yield key, unboxed(value)
 
 
 def key_count_below(root: KeyNode | None, okey, inclusive: bool = False) -> int:
@@ -745,14 +748,15 @@ def key_iter_from_weight(root: CountedKeyNode | None, rank: int, descending: boo
 
 
 def _iter_from_weight(root, rank, descending) -> Iterator[tuple]:
-    for node, skip in _nodes_from(root, rank, descending, _weight):
-        yield node.key, unboxed(node.value), skip
+    for key, value, skip in _nodes_from(root, rank, descending, _weight, True):
+        yield key, unboxed(value), skip
 
 
-def _nodes_from(root, rank, descending, size) -> Iterator[tuple]:
-    """``(node, skip)`` from position ``rank`` on, ``size(subtree)`` giving positions per subtree
-    (``_count``: one per node; ``_weight``: the counts).  Explicit stack: the nodes still to
-    visit, i.e. the ancestors where the seek went to the near side."""
+def _nodes_from(root, rank, descending, size, keyed: bool) -> Iterator[tuple]:
+    """``(key, stored value, skip)`` of the nodes from position ``rank`` on (``key`` None for a
+    positional tree), ``size(subtree)`` giving positions per subtree (``_count``: one per node;
+    ``_weight``: the counts).  Explicit stack: the nodes still to visit, i.e. the ancestors where
+    the seek went to the near side, held as their fields (see :func:`_inorder`)."""
     first, second = ("right", "left") if descending else ("left", "right")
     stack = []
     node = root
@@ -761,23 +765,23 @@ def _nodes_from(root, rank, descending, size) -> Iterator[tuple]:
         near = getattr(node, first)
         wn = size(near)
         if rank < wn:
-            stack.append(node)
+            stack.append((node.key if keyed else None, node.value, getattr(node, second)))
             node = near
             continue
-        own = size(node) - wn - size(getattr(node, second))
+        # This node's own positions, without loading the far child (visited only at the end).
+        own = 1 if size is _count else _value_count(node.value)
         if rank < wn + own:
             skip = rank - wn
-            stack.append(node)
+            stack.append((node.key if keyed else None, node.value, getattr(node, second)))
             break
         rank -= wn + own
         node = getattr(node, second)
     while stack:
-        node = stack.pop()
-        yield node, skip
+        key, value, node = stack.pop()
+        yield key, value, skip
         skip = 0
-        node = getattr(node, second)
         while node is not None:
-            stack.append(node)
+            stack.append((node.key if keyed else None, node.value, getattr(node, second)))
             node = getattr(node, first)
 
 
@@ -786,8 +790,8 @@ def pos_iter_from(root: PosNode | None, start: int) -> Iterator:
     in O(log n + k): one seek, then an in-order walk."""
     _check_kind(root, PosNode)
     _check_index(start, _count(root), "Start")
-    for node, _ in _nodes_from(root, start, False, _count):
-        yield unboxed(node.value)
+    for _, value, _ in _nodes_from(root, start, False, _count, False):
+        yield unboxed(value)
 
 
 def key_iter_from(root: KeyNode | None, start: int) -> Iterator[tuple]:
@@ -795,8 +799,8 @@ def key_iter_from(root: KeyNode | None, start: int) -> Iterator[tuple]:
     (``0 <= start <= count``), in O(log n + k)."""
     _check_kind(root, KeyNode)
     _check_index(start, _count(root), "Start")
-    for node, _ in _nodes_from(root, start, False, _count):
-        yield node.key, unboxed(node.value)
+    for key, value, _ in _nodes_from(root, start, False, _count, True):
+        yield key, unboxed(value)
 
 
 # -- invariants ---------------------------------------------------------------------------

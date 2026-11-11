@@ -40,8 +40,8 @@ records and collections. Anything else is refused when you build the record, not
 .. code-block:: text
    :caption: Output
 
-   refused: Unsupported value type: function
-   refused: Unsupported value type: set
+   refused: Field 'callback' of proto_db.core.dbobject.DBObject: Unsupported value type: function
+   refused: Field 'tags' of proto_db.core.dbobject.DBObject: Unsupported value type: set
    A-1 ['gift', 'express']
    a stored list is frozen: ProtoValidationError
 
@@ -308,11 +308,14 @@ orders does the same work whether each order has one version or a thousand behin
 structural, and the tutorial test checks the part that is exact (the index holds one entry per order, whatever
 the history). The timing evidence is a benchmark result, not something this page measures:
 
-.. note::
-
-   TODO(9c): add the measured query cost against history depth from the 9c CARRY results
-   (``benchmarks/results``, history-depth profile) when it lands. It is ProtoDB measured against itself, not a
-   comparison. Until then no timing figure is claimed here.
+The benchmark ``history_depth`` (ProtoDB measured against itself, not a comparison) does it with 1,000 orders in
+100 customers, each order holding 1, 10, 100 or 1,000 versions behind it through ``previous``. The query
+``orders where customer == c`` decodes 35.78 atoms per query at every depth when the atom cache is off, and
+none when it is on; its latency does not move with the depth (about 0.2 ms warm and about 2.4 to 3.0 ms
+uncached, in both GIL modes), and the index holds 1,000 entries at every depth. What grows is the database,
+about 0.5 KB per version, and the time to write it. The figures are in :doc:`../performance` (``2026-11-10-57fd351-suite-gil-off.json``
+and ``-gil-on.json``, one run each); they hold for this pattern, where the superseded versions leave the
+current collection.
 
 .. code-block:: python
 

@@ -301,6 +301,11 @@ reads reload what was evicted. ``atom_cache_stats()`` tells the two cases apart:
 ``read_unloads`` divided by ``loads`` near 0 means it fits, near 1 means it thrashes. :doc:`cad` shows
 the measurement on a real structure.
 
+A cluster node on the GIL build that also serves CPU-bound readers slows the cluster's commits: the
+acknowledgement path waits for the interpreter lock, one switch interval (5 ms by default) at a time. Prefer the free-threaded
+build for such nodes; otherwise lower ``sys.setswitchinterval`` on them (0.5 ms was measured to give the writers about four times
+the rate, in a single session). See :doc:`cluster` and :doc:`../performance`.
+
 When another system is the better choice
 ----------------------------------------
 

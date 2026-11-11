@@ -1,0 +1,15 @@
+2026-11-11T03:36:20-03:00 stage1 start swap=0
+2026-11-11T03:46:53-03:00 stage1 round ~10: foreign load observed: protopy pid 463412 (another session, 132% CPU, started ~03:43); load avg 10.4. Not mine, not touched.
+2026-11-11T03:50:36-03:00 stage1 STOPPED by me at round 13: foreign heavy load (another session: protopy pid 463412 from ~03:43, then a protoPython C++ build, cc1plus x5+, load avg 18.6). Rounds >= 9 contaminated; analysis uses rounds 0-8 only (all before 03:43 per run timestamps). swap=0
+2026-11-11T03:51:13-03:00 stage2 (full chain, 16 points, 12 rounds, quiet gate <1.0 foreign CPUs, discard >=1.5) start swap=0
+2026-11-11T03:54:44-03:00 stage2 restarted with --quiet-below 2.0 --foreign-max 2.5: another session keeps 2.5-5 busy CPUs (protopy runs, C++ builds); every run records foreign_cpus_during
+2026-11-11T03:54:49-03:00 stage2 start swap=0
+2026-11-11T05:29:00-03:00 stage2 done swap=0
+2026-11-11T05:29:35-03:00 save probe start swap=0
+2026-11-11T05:40:24-03:00 save probe patches start
+2026-11-11T05:45:23-03:00 stage3 (ec90c25 / c953d7e / c953d7e-cdfast experiment, 12 rounds) start swap=0
+2026-11-11T05:55:19-03:00 stage3 ended at 7 rounds: killed by my own 590 s timeout wrapper (not a failure); 7 paired rounds used
+2026-11-11T05:56:13-03:00 Q3 gil_ack_probe (export 7757fb3 = c953d7e product code) 4 variants x 3 reps start swap=0; foreign=2.3
+2026-11-11T05:59:28-03:00 Q3 done swap=0
+2026-11-11T05:59:49-03:00 Q4 start swap=0
+2026-11-11T06:31:48-03:00 Q4 done swap=0

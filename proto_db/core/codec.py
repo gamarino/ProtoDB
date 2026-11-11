@@ -57,7 +57,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..errors import ProtoCorruptionError, ProtoValidationError
 from ..values import _EXACT_SCALARS as _ENCODED_AS_IS
-from ..values import MISSING, FrozenDict, FrozenList, TokenAtoms, canonical, check_map_keys, plain_scalar
+from ..values import MISSING, FrozenDict, FrozenList, TokenAtoms, canonical, check_map_keys, check_text, plain_scalar
 from .atom import Atom, AtomPointer, type_name_of, type_tag
 from .dbobject import MutableObject
 
@@ -82,7 +82,16 @@ def encode_state(state: dict, save_child: Callable[[Atom], AtomPointer]) -> dict
     for name, value in state.items():
         if type(name) is not str:
             raise ProtoValidationError(f"Attribute names must be str, not {type(name).__name__}")
-        out[name] = encode_value(value, save_child)
+        try:
+            out[name] = encode_value(value, save_child)
+        except ProtoValidationError as e:
+            # Name the field of a value of this state only; an error raised by the save of a
+            # nested atom is about that atom and passes unchanged (one message at any depth).
+            if type(e) is not ProtoValidationError or getattr(e, "_from_nested_save", False):
+                raise
+            raise ProtoValidationError(f"Attribute {name!r}: {e}") from e
+        if not name.isascii():
+            check_text(name)
     return out
 
 
@@ -102,7 +111,9 @@ def encode_value(value, save_child: Callable[[Atom], AtomPointer]):
     t = type(value)
     if t is int:
         return value if _INT_MIN <= value <= _INT_MAX else {"@int": format(value, "x")}
-    if t is str or t is bytes or t is float or value is None or t is bool:
+    if t is str:
+        return value if value.isascii() else check_text(value)     # no UTF-8 for surrogates (R128)
+    if t is bytes or t is float or value is None or t is bool:
         return value
     if t is tuple:
         return {"@tup": [encode_value(v, save_child) for v in value]}
@@ -162,7 +173,11 @@ def _encode_ref(value, save_child):
     if type(save_child) is TokenAtoms:
         save_child.atoms.append(value)
         return _TOKEN_REF
-    ptr = save_child(value)
+    try:
+        ptr = save_child(value)
+    except ProtoValidationError as e:
+        e._from_nested_save = True
+        raise
     if not isinstance(ptr, AtomPointer):
         raise ProtoValidationError(f"save_child returned {type(ptr).__name__}, expected AtomPointer")
     return {"@ref": [ptr.segment.bytes, ptr.offset, type_tag(type(value).__type_name__)]}
@@ -179,7 +194,7 @@ def _encode_other(value, save_child: Callable[[Atom], AtomPointer]):
         if plain is not None:
             value = plain
     if type(value) is str:
-        return value
+        return check_text(value)
     if type(value) is int:
         return value if _INT_MIN <= value <= _INT_MAX else {"@int": format(value, "x")}
     if type(value) is float or type(value) is bytes or type(value) is bool:
@@ -216,7 +231,7 @@ def _encode_other(value, save_child: Callable[[Atom], AtomPointer]):
     if value is MISSING:
         return {"@missing": 0}
     if isinstance(value, MutableObject):
-        return {"@mut": value.name}
+        return {"@mut": check_text(value.name)}
     if isinstance(value, Atom):
         return _encode_ref(value, save_child)
     raise ProtoValidationError(f"Unsupported value type: {type(value).__name__}")
