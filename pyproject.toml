@@ -27,7 +27,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-  "msgpack",
+  "msgpack>=1.2.0",
 ]
 
 [project.optional-dependencies]

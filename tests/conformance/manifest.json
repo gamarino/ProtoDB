@@ -1032,6 +1032,131 @@
    "note": "an integer in a wider encoding than needed"
   }
  ],
+ "values_depth": {
+  "max_value_depth": 1022,
+  "values": [
+   {
+    "id": "depth-max-list",
+    "file": "values/depth-max-list.msgpack",
+    "levels": [
+     [
+      "list",
+      1022
+     ]
+    ],
+    "leaf": {
+     "int": "1"
+    },
+    "containers": 1022,
+    "note": "1022 lists around 1: exactly MAX_VALUE_DEPTH containers"
+   },
+   {
+    "id": "depth-max-mixed",
+    "file": "values/depth-max-mixed.msgpack",
+    "levels": [
+     [
+      "tuple",
+      200
+     ],
+     [
+      "map",
+      100
+     ],
+     [
+      "list",
+      319
+     ]
+    ],
+    "leaf": {
+     "datetime": [
+      2026,
+      11,
+      10,
+      12,
+      30,
+      45,
+      0,
+      0,
+      [
+       "fixed",
+       0,
+       "UTC"
+      ]
+     ]
+    },
+    "containers": 1022,
+    "note": "200 tuples (2 each), 100 maps (3 each), 319 lists and an aware @dt (3): exactly MAX_VALUE_DEPTH"
+   },
+   {
+    "id": "depth-max-empty-list",
+    "file": "values/depth-max-empty-list.msgpack",
+    "levels": [
+     [
+      "list",
+      1021
+     ]
+    ],
+    "leaf": {
+     "list": []
+    },
+    "containers": 1022,
+    "note": "1021 lists around an empty list (1): an empty container counts"
+   },
+   {
+    "id": "depth-max-empty-tuple",
+    "file": "values/depth-max-empty-tuple.msgpack",
+    "levels": [
+     [
+      "list",
+      1020
+     ]
+    ],
+    "leaf": {
+     "tuple": []
+    },
+    "containers": 1022,
+    "note": "1020 lists around an empty tuple (2: {\"@tup\": []})"
+   },
+   {
+    "id": "depth-max-empty-map",
+    "file": "values/depth-max-empty-map.msgpack",
+    "levels": [
+     [
+      "list",
+      1020
+     ]
+    ],
+    "leaf": {
+     "map": []
+    },
+    "containers": 1022,
+    "note": "1020 lists around an empty map (2: {\"@map\": []})"
+   },
+   {
+    "id": "depth-max-map-key",
+    "file": "values/depth-max-map-key.msgpack",
+    "levels": [
+     [
+      "list",
+      100
+     ],
+     [
+      "keymap",
+      1
+     ],
+     [
+      "tuple",
+      459
+     ]
+    ],
+    "leaf": {
+     "decimal": "1.5"
+    },
+    "containers": 1022,
+    "note": "100 lists, a map (3) whose key holds 459 tuples around a @dec (1): the deepest path runs through the map key"
+   }
+  ]
+ },
  "invalid": [
   {
    "id": "value-unknown-tag",
@@ -1235,6 +1360,55 @@
    "error": "corruption",
    "file": "invalid/map-key-zone-datetime.bin",
    "note": "a datetime in an IANA zone cannot be a map key"
+  },
+  {
+   "id": "value-depth-over-list",
+   "layer": "value",
+   "error": "corruption",
+   "file": "invalid/value-depth-over-list.bin",
+   "note": "1023 lists around 1 (deeper than MAX_VALUE_DEPTH = 1022)"
+  },
+  {
+   "id": "value-depth-over-mixed",
+   "layer": "value",
+   "error": "corruption",
+   "file": "invalid/value-depth-over-mixed.bin",
+   "note": "200 tuples, 100 maps, 320 lists and an aware @dt: 1023 containers (deeper than MAX_VALUE_DEPTH = 1022)"
+  },
+  {
+   "id": "value-depth-over-leaf",
+   "layer": "value",
+   "error": "corruption",
+   "file": "invalid/value-depth-over-leaf.bin",
+   "note": "1020 lists around an aware @dt, whose time-zone array is container 1023 (deeper than MAX_VALUE_DEPTH = 1022)"
+  },
+  {
+   "id": "value-depth-over-empty-list",
+   "layer": "value",
+   "error": "corruption",
+   "file": "invalid/value-depth-over-empty-list.bin",
+   "note": "1022 lists around an empty list: 1023 containers (deeper than MAX_VALUE_DEPTH = 1022)"
+  },
+  {
+   "id": "value-depth-over-empty-tuple",
+   "layer": "value",
+   "error": "corruption",
+   "file": "invalid/value-depth-over-empty-tuple.bin",
+   "note": "1021 lists around an empty tuple: 1023 containers (deeper than MAX_VALUE_DEPTH = 1022)"
+  },
+  {
+   "id": "value-depth-over-empty-map",
+   "layer": "value",
+   "error": "corruption",
+   "file": "invalid/value-depth-over-empty-map.bin",
+   "note": "1021 lists around an empty map: 1023 containers (deeper than MAX_VALUE_DEPTH = 1022)"
+  },
+  {
+   "id": "value-depth-over-map-key",
+   "layer": "value",
+   "error": "corruption",
+   "file": "invalid/value-depth-over-map-key.bin",
+   "note": "101 lists, a map whose key holds 459 tuples around a @dec: 1023 containers through the key (deeper than MAX_VALUE_DEPTH = 1022)"
   },
   {
    "id": "record-header-crc",
@@ -6825,100 +6999,6 @@
             {
              "ref": {
               "segment": "5eed0000000040008000000000001004",
-              "offset": 9796,
-              "type": "proto_db.core.dbobject.DBObject"
-             }
-            }
-           ]
-          },
-          {
-           "bytes": "81a440726566c0"
-          }
-         ]
-        }
-       ]
-      }
-     ],
-     [
-      "value",
-      {
-       "tuple": [
-        {
-         "ref": {
-          "segment": "5eed0000000040008000000000001004",
-          "offset": 9796,
-          "type": "proto_db.core.dbobject.DBObject"
-         }
-        },
-        {
-         "int": "1"
-        },
-        {
-         "tuple": [
-          {
-           "float": "0x1.0000000000000p+0"
-          },
-          {
-           "float": "0x0.0p+0"
-          }
-         ]
-        }
-       ]
-      }
-     ],
-     [
-      "left",
-      {
-       "nil": null
-      }
-     ],
-     [
-      "right",
-      {
-       "nil": null
-      }
-     ],
-     [
-      "height",
-      {
-       "int": "1"
-      }
-     ],
-     [
-      "count",
-      {
-       "int": "1"
-      }
-     ]
-    ],
-    "canonical": true,
-    "rewritable": true
-   },
-   {
-    "offset": 10900,
-    "kind": 1,
-    "size": 205,
-    "tag": 0,
-    "type": "proto_db.avl.KeyNode",
-    "oid": "5eed0000000040008000000000001063",
-    "state": [
-     [
-      "key",
-      {
-       "tuple": [
-        {
-         "int": "1"
-        },
-        {
-         "tuple": [
-          {
-           "tuple": [
-            {
-             "int": "0"
-            },
-            {
-             "ref": {
-              "segment": "5eed0000000040008000000000001004",
               "offset": 9970,
               "type": "proto_db.core.dbobject.DBObject"
              }
@@ -6989,19 +7069,19 @@
     "rewritable": true
    },
    {
-    "offset": 11105,
+    "offset": 10900,
     "kind": 1,
     "size": 233,
     "tag": 0,
     "type": "proto_db.avl.KeyNode",
-    "oid": "5eed0000000040008000000000001064",
+    "oid": "5eed0000000040008000000000001063",
     "state": [
      [
       "key",
       {
        "tuple": [
         {
-         "int": "1"
+         "int": "0"
         },
         {
          "tuple": [
@@ -7065,7 +7145,7 @@
       {
        "ref": {
         "segment": "5eed0000000040008000000000001004",
-        "offset": 10900,
+        "offset": 10695,
         "type": "proto_db.avl.KeyNode"
        }
       }
@@ -7087,19 +7167,19 @@
     "rewritable": true
    },
    {
-    "offset": 11338,
+    "offset": 11133,
     "kind": 1,
-    "size": 261,
+    "size": 205,
     "tag": 0,
     "type": "proto_db.avl.KeyNode",
-    "oid": "5eed0000000040008000000000001065",
+    "oid": "5eed0000000040008000000000001064",
     "state": [
      [
       "key",
       {
        "tuple": [
         {
-         "int": "0"
+         "int": "1"
         },
         {
          "tuple": [
@@ -7155,9 +7235,103 @@
      [
       "left",
       {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 11338,
+    "kind": 1,
+    "size": 261,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000001065",
+    "state": [
+     [
+      "key",
+      {
+       "tuple": [
+        {
+         "int": "1"
+        },
+        {
+         "tuple": [
+          {
+           "tuple": [
+            {
+             "int": "0"
+            },
+            {
+             "ref": {
+              "segment": "5eed0000000040008000000000001004",
+              "offset": 9796,
+              "type": "proto_db.core.dbobject.DBObject"
+             }
+            }
+           ]
+          },
+          {
+           "bytes": "81a440726566c0"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "ref": {
+          "segment": "5eed0000000040008000000000001004",
+          "offset": 9796,
+          "type": "proto_db.core.dbobject.DBObject"
+         }
+        },
+        {
+         "int": "1"
+        },
+        {
+         "tuple": [
+          {
+           "float": "0x1.0000000000000p+0"
+          },
+          {
+           "float": "0x0.0p+0"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
        "ref": {
         "segment": "5eed0000000040008000000000001004",
-        "offset": 10695,
+        "offset": 10900,
         "type": "proto_db.avl.KeyNode"
        }
       }
@@ -7167,7 +7341,7 @@
       {
        "ref": {
         "segment": "5eed0000000040008000000000001004",
-        "offset": 11105,
+        "offset": 11133,
         "type": "proto_db.avl.KeyNode"
        }
       }
@@ -7413,20 +7587,20 @@
         {
          "tuple": [
           {
-           "float": "0x1.0000000000000p+0"
+           "float": "0x0.0p+0"
           },
           {
-           "float": "0x0.0p+0"
+           "float": "0x1.0000000000000p+0"
           }
          ]
         },
         {
          "tuple": [
           {
-           "float": "0x0.0p+0"
+           "float": "0x1.0000000000000p+0"
           },
           {
-           "float": "0x1.0000000000000p+0"
+           "float": "0x0.0p+0"
           }
          ]
         }
@@ -9753,18 +9927,18 @@
     "centroids": [
      [
       {
-       "float": "0x1.0000000000000p+0"
+       "float": "0x0.0p+0"
       },
       {
-       "float": "0x0.0p+0"
+       "float": "0x1.0000000000000p+0"
       }
      ],
      [
       {
-       "float": "0x0.0p+0"
+       "float": "0x1.0000000000000p+0"
       },
       {
-       "float": "0x1.0000000000000p+0"
+       "float": "0x0.0p+0"
       }
      ]
     ],
@@ -9774,10 +9948,10 @@
       0,
       [
        {
-        "float": "0x1.0000000000000p+0"
+        "float": "0x0.0p+0"
        },
        {
-        "float": "0x0.0p+0"
+        "float": "0x1.0000000000000p+0"
        }
       ]
      ],
@@ -9785,32 +9959,32 @@
       0,
       [
        {
-        "float": "0x1.ccccccccccccdp-1"
-       },
-       {
-        "float": "0x1.999999999999ap-4"
-       }
-      ]
-     ],
-     [
-      1,
-      [
-       {
-        "float": "0x0.0p+0"
-       },
-       {
-        "float": "0x1.0000000000000p+0"
-       }
-      ]
-     ],
-     [
-      1,
-      [
-       {
         "float": "0x1.999999999999ap-4"
        },
        {
         "float": "0x1.999999999999ap-1"
+       }
+      ]
+     ],
+     [
+      1,
+      [
+       {
+        "float": "0x1.0000000000000p+0"
+       },
+       {
+        "float": "0x0.0p+0"
+       }
+      ]
+     ],
+     [
+      1,
+      [
+       {
+        "float": "0x1.ccccccccccccdp-1"
+       },
+       {
+        "float": "0x1.999999999999ap-4"
        }
       ]
      ]

@@ -54,16 +54,17 @@ __all__ = ["main", "verify"]
 
 
 def _children(value, out: list) -> None:
-    """Append every atom held by the canonical value ``value`` (at any depth) to ``out``."""
-    if isinstance(value, Atom):
-        out.append(value)
-    elif isinstance(value, (tuple, list)):
-        for item in value:
-            _children(item, out)
-    elif isinstance(value, (dict, FrozenDict)):
-        for key, item in value.items():
-            _children(key, out)
-            _children(item, out)
+    """Append every atom held by the canonical value ``value`` (at any depth: an explicit stack)
+    to ``out``, in encoding order."""
+    pending = [value]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, Atom):
+            out.append(value)
+        elif isinstance(value, (tuple, list)):
+            pending.extend(reversed(value))
+        elif isinstance(value, (dict, FrozenDict)):
+            pending.extend(reversed([x for pair in value.items() for x in pair]))
 
 
 def _where(atom) -> str:
@@ -86,17 +87,18 @@ def _segment_version(directory: str, segment, cache: dict):
 
 
 def _ref_bodies(data, out: list) -> list:
-    """The bodies of the ``@ref`` maps in the plain data ``data``, in encoding order."""
-    if type(data) is dict:
-        if len(data) == 1 and "@ref" in data and type(data["@ref"]) is list:
-            out.append(data["@ref"])
-            return out
-        for key, value in data.items():
-            _ref_bodies(key, out)
-            _ref_bodies(value, out)
-    elif type(data) is list:
-        for item in data:
-            _ref_bodies(item, out)
+    """The bodies of the ``@ref`` maps in the plain data ``data``, in encoding order (at any depth:
+    an explicit stack)."""
+    pending = [data]
+    while pending:
+        data = pending.pop()
+        if type(data) is dict:
+            if len(data) == 1 and "@ref" in data and type(data["@ref"]) is list:
+                out.append(data["@ref"])
+                continue
+            pending.extend(reversed([x for pair in data.items() for x in pair]))
+        elif type(data) is list:
+            pending.extend(reversed(data))
     return out
 
 

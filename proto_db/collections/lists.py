@@ -24,7 +24,7 @@ from itertools import islice
 
 from ..core.atom import PersistenceContext
 from ..errors import ProtoValidationError
-from ..values import canonical
+from ..values import canonical_for
 from . import avl
 from .base import IndexedCollection
 
@@ -45,7 +45,8 @@ class List(IndexedCollection):
     @classmethod
     def from_iterable(cls, items: Iterable, context: PersistenceContext | None = None) -> "List":
         """Return a list of ``items`` (canonicalised) built as a balanced tree in O(n)."""
-        values = [canonical(v) for v in items]
+        holder = f"{cls.__name__} element"
+        values = [canonical_for(v, holder) for v in items]
         empty = cls(context=context)
         if not values:
             return empty
@@ -84,7 +85,7 @@ class List(IndexedCollection):
     def set_at(self, index: int, value) -> "List":
         """Return a list whose item at ``index`` is ``value`` (fires one replace event)."""
         position = self._position(index, self.count - 1)
-        value = canonical(value)
+        value = canonical_for(value, f"{type(self).__name__} element")
         old = avl.pos_get(self.root, position)
         return self._with(root=avl.pos_set(self.root, position, value),
                           indexes=self._after_replace(old, value))
@@ -92,7 +93,7 @@ class List(IndexedCollection):
     def insert_at(self, index: int, value) -> "List":
         """Return a list with ``value`` inserted before position ``index`` (``count`` appends)."""
         position = self._position(index, self.count)
-        value = canonical(value)
+        value = canonical_for(value, f"{type(self).__name__} element")
         return self._with(root=avl.pos_insert(self.root, position, value), count=self.count + 1,
                           indexes=self._after_add(value))
 
@@ -117,7 +118,8 @@ class List(IndexedCollection):
         ``items`` is any iterable, a ``List`` included; it is fully read before
         anything is built.  An empty ``items`` returns the receiver.
         """
-        values = [canonical(v) for v in items]
+        holder = f"{type(self).__name__} element"
+        values = [canonical_for(v, holder) for v in items]
         if not values:
             return self
         indexes = self._current_indexes()

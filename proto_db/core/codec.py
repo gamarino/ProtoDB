@@ -45,6 +45,12 @@ both frozen and plain containers.
 
 Decoding validates the structure: an unknown tag or a malformed value raises
 ``ProtoCorruptionError``.
+
+A value nests at most :data:`MAX_VALUE_DEPTH` MessagePack containers (arrays and maps, counted
+from the value; format spec, "Value nesting depth"): the encoder refuses a deeper value with
+``ProtoValidationError`` and the decoder deeper data with ``ProtoCorruptionError``, at the same
+count.  Below :data:`RECURSIVE_DEPTH` containers the walks recurse; deeper they go on with an
+explicit stack, so no depth limit comes from the Python stack in use.
 """
 from __future__ import annotations
 
@@ -57,11 +63,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..errors import ProtoCorruptionError, ProtoValidationError
 from ..values import _EXACT_SCALARS as _ENCODED_AS_IS
-from ..values import MISSING, FrozenDict, FrozenList, TokenAtoms, canonical, check_map_keys, check_text, plain_scalar
+from ..values import (MAX_VALUE_DEPTH, MISSING, FrozenDict, FrozenList, TokenAtoms, canonical, check_map_keys,
+                      check_text, plain_scalar, too_deep_error)
 from .atom import Atom, AtomPointer, type_name_of, type_tag
 from .dbobject import MutableObject
 
-__all__ = ["encode_state", "decode_state", "encode_value", "decode_value", "redecode_value"]
+__all__ = ["encode_state", "decode_state", "encode_value", "decode_value", "redecode_value", "MAX_VALUE_DEPTH",
+           "RECURSIVE_DEPTH"]
 
 _PLAIN_KEY_TYPES = frozenset({str, int, bytes})
 _INT_MIN = -2**63
@@ -103,11 +111,22 @@ _BEFORE_ATOM = (str, int, float, bytes, bytearray, list, tuple, dict, Decimal, d
                 timedelta, uuid.UUID, MutableObject)
 
 
-def encode_value(value, save_child: Callable[[Atom], AtomPointer]):
+#: MessagePack containers above which the walks of this module stop recursing and go on with an
+#: explicit stack (:func:`_encode_tree`, :func:`_decode_tree`, :func:`_redecode_tree`).  Values
+#: of ordinary shape are walked by the plain recursive code, the fastest; deeper ones by the
+#: iterative walks, at any depth up to :data:`MAX_VALUE_DEPTH`.  The recursion uses at most
+#: about two Python frames per container level, so a walk never needs more than a few dozen
+#: frames of the Python stack, whatever the depth of the value.
+RECURSIVE_DEPTH = 12
+
+
+def encode_value(value, save_child: Callable[[Atom], AtomPointer], _depth: int = 0):
     """Encode one canonical value (see the module docstring for the wire form).
 
     Values of the exact built-in types, and atoms, take fast paths that give the same result as
-    the full isinstance chain (:func:`_encode_other`), which every other value goes through."""
+    the full isinstance chain (:func:`_encode_other`), which every other value goes through.
+    ``ProtoValidationError`` for a value nested deeper than :data:`MAX_VALUE_DEPTH` MessagePack
+    containers.  ``_depth`` (internal) is the number of containers enclosing ``value``."""
     t = type(value)
     if t is int:
         return value if _INT_MIN <= value <= _INT_MAX else {"@int": format(value, "x")}
@@ -116,16 +135,115 @@ def encode_value(value, save_child: Callable[[Atom], AtomPointer]):
     if t is bytes or t is float or value is None or t is bool:
         return value
     if t is tuple:
-        return {"@tup": [encode_value(v, save_child) for v in value]}
+        if _depth >= RECURSIVE_DEPTH:
+            return _encode_tree(value, save_child, _depth)
+        _depth += 2
+        return {"@tup": [encode_value(v, save_child, _depth) for v in value]}
     if t in _ATOM_CLASSES:
         return _encode_ref(value, save_child)
     if isinstance(value, Atom) and not issubclass(t, _BEFORE_ATOM) and value is not MISSING:
         _ATOM_CLASSES.add(t)
         return _encode_ref(value, save_child)
-    return _encode_other(value, save_child)
+    return _encode_other(value, save_child, _depth)
 
 
-def redecode_value(value, load_ref: Callable[[AtomPointer, str], Atom], inline: Optional[list] = None):
+def _wire_containers(data) -> int:
+    """The MessagePack containers the wire form ``data`` of a value that is not a list, ``@tup``
+    or ``@map`` nests: 0 for a native value, 1 for a tag with a scalar body, 2 for a tag whose body
+    is an array, 3 when that array holds an array (the time zone of an aware ``@time`` or ``@dt``)."""
+    if type(data) is not dict:
+        return 0
+    for body in data.values():
+        if type(body) is not list:
+            return 1
+        return 3 if any(type(item) is list for item in body) else 2
+    return 1
+
+
+def _encode_tree(value, save_child, depth: int):
+    """:func:`encode_value` of the list, tuple or dict ``value``, enclosed by ``depth`` MessagePack
+    containers, walked with an explicit stack in the order the items are written (so
+    ``save_child`` meets the atoms in encoding order).  Each pending entry is ``(item, container
+    of its wire form, slot, containers enclosing it)``; a list adds one container, a tuple two
+    (``{"@tup": [...]}``), a map three (``{"@map": [[k, v]]}``, two when empty)."""
+    root = [None]
+    pending = [(value, root, 0, depth)]
+    while pending:
+        item, parent, slot, depth = pending.pop()
+        if isinstance(item, list):
+            items = item
+            out = [None] * len(items)
+            parent[slot] = out
+            inner = depth + 1
+        elif isinstance(item, tuple):
+            items = item
+            out = [None] * len(items)
+            parent[slot] = {"@tup": out}
+            inner = depth + 2
+        elif isinstance(item, dict):
+            item = _checked_map(item)
+            pairs = [[None, None] for _ in range(len(item))]
+            parent[slot] = {"@map": pairs}
+            inner = depth + (3 if pairs else 2)
+            if inner > MAX_VALUE_DEPTH:
+                raise too_deep_error()
+            later = []
+            for (k, v), pair in zip(item.items(), pairs):
+                later.append((k, pair, 0, inner))
+                later.append((v, pair, 1, inner))
+            pending.extend(reversed(later))
+            continue
+        else:
+            leaf = _encode_leaf(item, save_child)
+            if depth + 3 > MAX_VALUE_DEPTH and depth + _wire_containers(leaf) > MAX_VALUE_DEPTH:
+                raise too_deep_error()
+            parent[slot] = leaf
+            continue
+        if inner > MAX_VALUE_DEPTH:
+            raise too_deep_error()
+        later = []
+        for i, v in enumerate(items):
+            # A native value is its own wire form; its encoding neither fails nor saves an atom.
+            t = type(v)
+            if (t is str and v.isascii() or t is int and _INT_MIN <= v <= _INT_MAX or t is float or v is None
+                    or t is bool or t is bytes):
+                out[i] = v
+            else:
+                later.append((v, out, i, inner))
+        pending.extend(reversed(later))
+    return root[0]
+
+
+def _encode_leaf(value, save_child):
+    """:func:`encode_value` of a value that is not a list, tuple or dict."""
+    t = type(value)
+    if t is int:
+        return value if _INT_MIN <= value <= _INT_MAX else {"@int": format(value, "x")}
+    if t is str:
+        return value if value.isascii() else check_text(value)
+    if t is bytes or t is float or value is None or t is bool:
+        return value
+    if t in _ATOM_CLASSES:
+        return _encode_ref(value, save_child)
+    if isinstance(value, Atom) and not issubclass(t, _BEFORE_ATOM) and value is not MISSING:
+        _ATOM_CLASSES.add(t)
+        return _encode_ref(value, save_child)
+    return _encode_other(value, save_child, 0)
+
+
+def _checked_map(value):
+    """``value`` (a dict) as the map to encode: a raw dict's keys are converted (built-in subclasses
+    to their base values) and checked by canonical(), so two keys that become one base value are
+    refused; a ``FrozenDict``'s keys are checked unless all are of a plain key type."""
+    if type(value) is not FrozenDict:
+        return canonical(value)
+    if not all(type(k) in _PLAIN_KEY_TYPES for k in value):
+        check_map_keys(value)
+    return value
+
+
+def redecode_value(value, load_ref: Callable[[AtomPointer, str], Atom], inline: Optional[list] = None,
+                   _depth: int = 0):
     """``decode_value(encode_value(value, ...), load_ref)`` for a value whose nested atoms are all
     saved, without building the wire form (Task 8.3i: an atom just saved is cached decoded).
 
@@ -134,7 +252,9 @@ def redecode_value(value, load_ref: Callable[[AtomPointer, str], Atom], inline: 
     ``FrozenList`` and dicts as ``FrozenDict`` of redecoded items, an atom as
     ``load_ref(its pointer, its type name)``; any other value goes through the codec itself.
     ``inline``, a one-item list, accumulates the length of every ``str`` and ``bytes`` value met
-    (nested atoms excluded): what the decoded value holds inline (review 8.3i I1)."""
+    (nested atoms excluded): what the decoded value holds inline (review 8.3i I1).  ``_depth``
+    (internal) counts the containers above ``value``; past :data:`RECURSIVE_DEPTH` the walk goes
+    on with an explicit stack (:func:`_redecode_tree`)."""
     t = type(value)
     if t is str or t is bytes:
         if inline is not None:
@@ -142,20 +262,81 @@ def redecode_value(value, load_ref: Callable[[AtomPointer, str], Atom], inline: 
         return value
     if t is int or t is float or value is None or t is bool:
         return value
+    if t in _REDECODED_CONTAINERS and _depth >= RECURSIVE_DEPTH:
+        return _redecode_tree(value, load_ref, inline)
     if t is tuple:
-        return tuple([redecode_value(v, load_ref, inline) for v in value])
+        _depth += 1
+        return tuple([redecode_value(v, load_ref, inline, _depth) for v in value])
     if t in _ATOM_CLASSES:
         return load_ref(_saved_pointer(value), type(value).__type_name__)
     if t is list or t is FrozenList:
-        return FrozenList([redecode_value(v, load_ref, inline) for v in value])
+        _depth += 1
+        return FrozenList([redecode_value(v, load_ref, inline, _depth) for v in value])
     if t is dict or t is FrozenDict:
+        _depth += 1
         out = {}
         for k, v in value.items():
-            out[redecode_value(k, load_ref, inline)] = redecode_value(v, load_ref, inline)
+            out[redecode_value(k, load_ref, inline, _depth)] = redecode_value(v, load_ref, inline, _depth)
         return FrozenDict(out)
+    return _redecode_other(value, load_ref, inline)
+
+
+_REDECODED_CONTAINERS = frozenset({tuple, list, FrozenList, dict, FrozenDict})
+
+
+def _redecode_other(value, load_ref, inline):
     if inline is not None and isinstance(value, (str, bytes, bytearray)):
         inline[0] += len(value)
     return decode_value(encode_value(value, _saved_pointer), load_ref)
+
+
+def _redecode_tree(value, load_ref, inline):
+    """:func:`redecode_value` of a tuple, list or dict: containers expanded in pre-order with an
+    explicit stack, items met in the order the recursive form meets them (a dict's value before
+    its key: ``out[redecode(k)] = redecode(v)`` evaluates the value first), containers finished in
+    reverse, so each after the containers it holds."""
+    root = [None]
+    nodes = []
+    pending = [(value, root, 0)]
+    while pending:
+        item, parent, slot = pending.pop()
+        t = type(item)
+        if t in _REDECODED_CONTAINERS:
+            if t is tuple:
+                kind, items = _TUP, item
+            elif t is list or t is FrozenList:
+                kind, items = _LIST, item
+            else:
+                kind, items = _MAP, [x for k, v in item.items() for x in (v, k)]
+            results = [None] * len(items)
+            nodes.append((kind, results, parent, slot))
+            later = []
+            for i, v in enumerate(items):
+                t = type(v)
+                if t is str or t is bytes:
+                    if inline is not None:
+                        inline[0] += len(v)
+                    results[i] = v
+                elif t is int or t is float or v is None or t is bool:
+                    results[i] = v
+                else:
+                    later.append((v, results, i))
+            pending.extend(reversed(later))
+        elif t in _ATOM_CLASSES:
+            parent[slot] = load_ref(_saved_pointer(item), t.__type_name__)
+        else:
+            parent[slot] = _redecode_other(item, load_ref, inline)
+    for kind, results, parent, slot in reversed(nodes):
+        if kind == _TUP:
+            parent[slot] = tuple(results)
+        elif kind == _LIST:
+            parent[slot] = FrozenList(results)
+        else:
+            out = {}
+            for k, v in zip(results[1::2], results[0::2]):
+                out[k] = v
+            parent[slot] = FrozenDict(out)
+    return root[0]
 
 
 def _saved_pointer(atom: Atom) -> AtomPointer:
@@ -183,8 +364,9 @@ def _encode_ref(value, save_child):
     return {"@ref": [ptr.segment.bytes, ptr.offset, type_tag(type(value).__type_name__)]}
 
 
-def _encode_other(value, save_child: Callable[[Atom], AtomPointer]):
-    """The full isinstance chain of :func:`encode_value`."""
+def _encode_other(value, save_child: Callable[[Atom], AtomPointer], depth: int = 0):
+    """The full isinstance chain of :func:`encode_value`; ``depth`` is the number of MessagePack
+    containers enclosing ``value``."""
     if value is None or value is True or value is False:
         return value
     if type(value) not in _ENCODED_AS_IS:
@@ -200,17 +382,21 @@ def _encode_other(value, save_child: Callable[[Atom], AtomPointer]):
     if type(value) is float or type(value) is bytes or type(value) is bool:
         return value
     if isinstance(value, list):
-        return [encode_value(v, save_child) for v in value]
+        if depth >= RECURSIVE_DEPTH:
+            return _encode_tree(value, save_child, depth)
+        depth += 1
+        return [encode_value(v, save_child, depth) for v in value]
     if isinstance(value, tuple):
-        return {"@tup": [encode_value(v, save_child) for v in value]}
+        if depth >= RECURSIVE_DEPTH:
+            return _encode_tree(value, save_child, depth)
+        depth += 2
+        return {"@tup": [encode_value(v, save_child, depth) for v in value]}
     if isinstance(value, dict):
-        if type(value) is not FrozenDict:
-            # A raw dict: its keys are converted (built-in subclasses to their base values) and
-            # checked by canonical(), so two keys that become one base value are refused.
-            value = canonical(value)
-        elif not all(type(k) in _PLAIN_KEY_TYPES for k in value):
-            check_map_keys(value)
-        return {"@map": [[encode_value(k, save_child), encode_value(v, save_child)]
+        if depth >= RECURSIVE_DEPTH:
+            return _encode_tree(value, save_child, depth)
+        value = _checked_map(value)
+        depth += 3
+        return {"@map": [[encode_value(k, save_child, depth), encode_value(v, save_child, depth)]
                          for k, v in value.items()]}
     if isinstance(value, Decimal):
         return {"@dec": str(value)}
@@ -280,23 +466,142 @@ def decode_state(data: dict, load_ref: Callable[[AtomPointer, str], Atom]) -> di
     return out
 
 
-def decode_value(data, load_ref: Callable[[AtomPointer, str], Atom]):
-    """Decode one value produced by :func:`encode_value`."""
-    if data is None or type(data) in (bool, int, float, str, bytes):
+_NATIVE_TYPES = frozenset({bool, int, float, str, bytes})
+_LIST, _TUP, _MAP = range(3)
+_MALFORMED = (TypeError, ValueError, KeyError, IndexError, OverflowError, InvalidOperation, ZoneInfoNotFoundError)
+
+
+def decode_value(data, load_ref: Callable[[AtomPointer, str], Atom], _depth: int = 0):
+    """Decode one value produced by :func:`encode_value`.
+
+    ``ProtoCorruptionError`` for malformed data, and for data nested deeper than
+    :data:`MAX_VALUE_DEPTH` MessagePack containers.  ``_depth`` (internal) is the number of
+    containers enclosing ``data``; past :data:`RECURSIVE_DEPTH` the walk goes on with an explicit
+    stack (:func:`_decode_tree`)."""
+    if data is None or type(data) in _NATIVE_TYPES:
         return data
     if type(data) is list:
-        return FrozenList(decode_value(v, load_ref) for v in data)
+        if _depth >= RECURSIVE_DEPTH:
+            return _decode_tree(data, load_ref, _depth)
+        _depth += 1
+        return FrozenList([decode_value(v, load_ref, _depth) for v in data])
     if type(data) is not dict or len(data) != 1:
         raise ProtoCorruptionError(f"Malformed encoded value: {_preview(data)}")
     (tag, body), = data.items()
+    if tag == "@tup":
+        if _depth >= RECURSIVE_DEPTH:
+            return _decode_tree(data, load_ref, _depth)
+        if type(body) is not list:
+            raise ProtoCorruptionError(f"Malformed @tup value: {_preview(body)}")
+        _depth += 2
+        return tuple([decode_value(v, load_ref, _depth) for v in body])
+    if tag == "@map":
+        if _depth >= RECURSIVE_DEPTH:
+            return _decode_tree(data, load_ref, _depth)
+        items = _map_items(body)
+        _depth += 3
+        return _decoded_map([decode_value(v, load_ref, _depth) for v in items], items, body)
+    return _decode_leaf(tag, body, _depth, load_ref)
+
+
+def _decode_tree(data, load_ref, depth: int):
+    """:func:`decode_value` of an array, ``@tup`` or ``@map`` enclosed by ``depth`` MessagePack
+    containers, walked with an explicit stack: containers expanded in pre-order (items in their
+    order, so ``load_ref`` meets the references in encoding order), finished in reverse, so each
+    after the containers it holds."""
+    root = [None]
+    nodes = []
+    pending = [(data, root, 0, depth)]
+    while pending:
+        item, parent, slot, depth = pending.pop()
+        t = type(item)
+        if t is list:
+            kind, items, body, inner = _LIST, item, None, depth + 1
+        elif t is dict and len(item) == 1:
+            (tag, body), = item.items()
+            if tag == "@tup":
+                if type(body) is not list:
+                    raise ProtoCorruptionError(f"Malformed @tup value: {_preview(body)}")
+                kind, items, inner = _TUP, body, depth + 2
+            elif tag == "@map":
+                kind, items, inner = _MAP, _map_items(body), depth + (3 if body else 2)
+            else:
+                parent[slot] = _decode_leaf(tag, body, depth, load_ref)
+                continue
+        else:
+            raise ProtoCorruptionError(f"Malformed encoded value: {_preview(item)}")
+        if inner > MAX_VALUE_DEPTH:
+            raise _too_deep_data()
+        results = [None] * len(items)
+        nodes.append((kind, results, items, body, parent, slot))
+        later = []
+        for i, v in enumerate(items):
+            if v is None or type(v) in _NATIVE_TYPES:
+                results[i] = v
+            else:
+                later.append((v, results, i, inner))
+        pending.extend(reversed(later))
+    for kind, results, items, body, parent, slot in reversed(nodes):
+        if kind == _LIST:
+            parent[slot] = FrozenList(results)
+        elif kind == _TUP:
+            parent[slot] = tuple(results)
+        else:
+            parent[slot] = _decoded_map(results, items, body)
+    return root[0]
+
+
+def _too_deep_data() -> ProtoCorruptionError:
+    return ProtoCorruptionError(
+        f"The encoded value nests deeper than MAX_VALUE_DEPTH = {MAX_VALUE_DEPTH} MessagePack containers, "
+        f"the most the storage format allows (format spec, \"Value nesting depth\")")
+
+
+def _decode_leaf(tag, body, depth: int, load_ref):
+    """The value of the tagged wire form ``{tag: body}`` (not ``@tup`` or ``@map``), enclosed by
+    ``depth`` MessagePack containers."""
     decoder = _DECODERS.get(tag)
     if decoder is None:
         raise ProtoCorruptionError(f"Unknown codec tag {_preview(tag)}")
+    if depth + 3 > MAX_VALUE_DEPTH and depth + _wire_containers({tag: body}) > MAX_VALUE_DEPTH:
+        raise _too_deep_data()
     try:
         return decoder(body, load_ref)
-    except (TypeError, ValueError, KeyError, IndexError, OverflowError, InvalidOperation,
-            ZoneInfoNotFoundError) as e:
+    except _MALFORMED as e:
         raise ProtoCorruptionError(f"Malformed {tag} value: {_preview(body)}") from e
+
+
+def _map_items(body) -> list:
+    """The keys and values of the ``@map`` body ``body``, flattened: ``[k0, v0, k1, v1, ...]``."""
+    flat = []
+    try:
+        if type(body) is not list:
+            raise TypeError("expected an array")
+        for pair in body:
+            k, v = _fields(pair, 2, (None, None))
+            flat.append(k)
+            flat.append(v)
+    except (TypeError, ValueError) as e:
+        raise ProtoCorruptionError(f"Malformed @map value: {_preview(body)}") from e
+    return flat
+
+
+def _decoded_map(results: list, flat: list, body) -> FrozenDict:
+    """The ``FrozenDict`` of the decoded keys and values ``results`` of the ``@map`` whose raw
+    keys and values are ``flat``; ``ProtoCorruptionError`` unless its keys are valid and distinct."""
+    pairs = list(zip(results[0::2], results[1::2]))
+    try:
+        if not all(type(k) is str for k, _ in pairs):
+            try:
+                check_map_keys((k for k, _ in pairs), [_holds_zone_form(k) for k in flat[0::2]])
+            except ProtoValidationError as e:
+                raise ProtoCorruptionError(f"Malformed @map: {e}") from e
+        out = FrozenDict(pairs)
+    except _MALFORMED as e:
+        raise ProtoCorruptionError(f"Malformed @map value: {_preview(body)}") from e
+    if len(out) != len(pairs):
+        raise ProtoCorruptionError("Malformed @map: a map key appears twice")
+    return out
 
 
 def _preview(x):
@@ -374,41 +679,20 @@ def _dec_uuid(body, _):
     return uuid.UUID(bytes=body)
 
 
-def _dec_tuple(body, load_ref):
-    if type(body) is not list:
-        raise TypeError("expected an array")
-    return tuple(decode_value(v, load_ref) for v in body)
-
-
-def _dec_map(body, load_ref):
-    if type(body) is not list:
-        raise TypeError("expected an array")
-    pairs = []
-    raw_keys = []
-    for pair in body:
-        k, v = _fields(pair, 2, (None, None))
-        raw_keys.append(k)
-        pairs.append((decode_value(k, load_ref), decode_value(v, load_ref)))
-    if not all(type(k) is str for k, _ in pairs):
-        try:
-            check_map_keys((k for k, _ in pairs), [_holds_zone_form(k) for k in raw_keys])
-        except ProtoValidationError as e:
-            raise ProtoCorruptionError(f"Malformed @map: {e}") from e
-    out = FrozenDict(pairs)
-    if len(out) != len(pairs):
-        raise ProtoCorruptionError("Malformed @map: a map key appears twice")
-    return out
-
-
 def _holds_zone_form(raw) -> bool:
-    """Whether the wire form of a map key holds a format-3 ``["zone", key]`` datetime (re-review I-2)."""
-    if type(raw) is not dict or len(raw) != 1:
-        return False
-    (tag, body), = raw.items()
-    if tag == "@dt":
-        return type(body) is list and len(body) == 9 and type(body[8]) is list and body[8][:1] == ["zone"]
-    if tag == "@tup":
-        return type(body) is list and any(_holds_zone_form(item) for item in body)
+    """Whether the wire form of a map key holds a format-3 ``["zone", key]`` datetime (re-review I-2),
+    alone or in a ``@tup`` at any depth (an explicit stack)."""
+    pending = [raw]
+    while pending:
+        raw = pending.pop()
+        if type(raw) is not dict or len(raw) != 1:
+            continue
+        (tag, body), = raw.items()
+        if tag == "@dt":
+            if type(body) is list and len(body) == 9 and type(body[8]) is list and body[8][:1] == ["zone"]:
+                return True
+        elif tag == "@tup" and type(body) is list:
+            pending.extend(body)
     return False
 
 
@@ -445,7 +729,7 @@ def _dec_mutable(body, _):
 
 _DECODERS = {
     "@int": _dec_int, "@dec": _dec_decimal, "@date": _dec_date, "@time": _dec_time,
-    "@dt": _dec_datetime, "@td": _dec_timedelta, "@uuid": _dec_uuid, "@tup": _dec_tuple,
-    "@map": _dec_map, "@missing": _dec_missing, "@ref": _dec_ref,
+    "@dt": _dec_datetime, "@td": _dec_timedelta, "@uuid": _dec_uuid,
+    "@missing": _dec_missing, "@ref": _dec_ref,
     "@mut": _dec_mutable,
 }

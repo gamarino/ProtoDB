@@ -62,7 +62,8 @@ from .base import SharedStorage, check_lock_timeout
 from .cache import BoundedCache
 from .format import (WRITE_FORMAT_VERSION, RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind,
                      RootRecord, decode_root, decode_segment_header, encode_record,
-                     encode_root, encode_segment_header, read_record, record_size)
+                     encode_root, encode_segment_header, read_record, record_size,
+                     undecodable_atom)
 
 try:
     import fcntl
@@ -665,7 +666,7 @@ class FileStorage(SharedStorage):
         try:
             return msgpack.unpackb(payload, raw=False)
         except (msgpack.exceptions.UnpackException, ValueError) as e:
-            raise ProtoCorruptionError(f"Undecodable atom at {ptr}") from e
+            raise undecodable_atom(ptr, e) from e
 
     def get_blob(self, ptr: AtomPointer) -> bytes:
         """See :meth:`SharedStorage.get_blob`."""

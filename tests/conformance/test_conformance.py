@@ -79,6 +79,23 @@ def test_format_3_map_keys_are_read_but_not_written_again(vector):
         _reencode(value)
 
 
+@pytest.mark.parametrize("vector", MANIFEST["values_depth"]["values"], ids=lambda v: v["id"])
+def test_a_value_at_the_nesting_limit_round_trips_and_one_level_more_is_refused(vector):
+    from proto_db.values import MAX_VALUE_DEPTH, canonical
+    from tests.conformance.generate import nest, wire_depth
+    assert MANIFEST["values_depth"]["max_value_depth"] == MAX_VALUE_DEPTH == vector["containers"]
+    data = _bytes(vector["file"])
+    assert wire_depth(msgpack.unpackb(data, raw=False)) == MAX_VALUE_DEPTH
+    value = nest(vector["levels"], typed.build(vector["leaf"], stub))
+    assert _reencode(value) == data                       # the description fixes the bytes
+    assert _reencode(_decode(data)) == data               # read, written again: the same bytes
+    deeper = [value]
+    with pytest.raises(ProtoValidationError, match="MAX_VALUE_DEPTH"):
+        _reencode(deeper)
+    with pytest.raises(ProtoValidationError, match="MAX_VALUE_DEPTH"):
+        canonical(deeper)
+
+
 _ERRORS = {"corruption": ProtoCorruptionError, "not_supported": ProtoNotSupportedError,
            "protocol": ClusterProtocolError}
 

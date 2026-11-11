@@ -207,7 +207,7 @@ from .crc import PrefixCrc
 from .file import DURABILITY_MODES, FileStorage
 from .format import (WRITE_FORMAT_VERSION, RECORD_HEADER_SIZE, RECORD_MAGIC, SEGMENT_HEADER_SIZE, RecordKind,
                      RootRecord, decode_root, decode_segment_header, encode_record, encode_segment_header,
-                     read_record, record_header)
+                     read_record, record_header, undecodable_atom)
 from .logfile import encode_frame, log_contents, open_log, prepare_replacement, read_fd, write_all
 from .ownerlock import OwnerLock
 
@@ -1256,7 +1256,7 @@ class TieredStorage(SharedStorage):
         try:
             return msgpack.unpackb(payload, raw=False)
         except (msgpack.exceptions.UnpackException, ValueError) as e:
-            raise ProtoCorruptionError(f"Undecodable atom at {ptr}") from e
+            raise undecodable_atom(ptr, e) from e
 
     def get_blob(self, ptr: AtomPointer) -> bytes:
         """See :meth:`SharedStorage.get_blob`."""

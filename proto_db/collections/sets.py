@@ -38,7 +38,7 @@ from collections.abc import Iterable, Iterator
 
 from ..core.atom import PersistenceContext
 from ..errors import ProtoValidationError
-from ..values import canonical, hash_key, order_key
+from ..values import canonical, canonical_for, check_wrapped, hash_key, order_key
 from . import avl
 from .base import ConcurrentOptimized, IndexedCollection
 
@@ -98,6 +98,12 @@ class _HashBuckets(ConcurrentOptimized, IndexedCollection):
     __type_name__ = "proto_db.collections.sets._HashBuckets"
     _fields = ("root", "count", "indexes")
 
+    #: MessagePack containers a bucket node value adds around an element (format spec, "Value
+    #: nesting depth"): a subclass sets it from the shape of its entries.
+    ELEMENT_WRAPPING = 0
+    #: What adds them, as the error of an element nested too deep says it.
+    _WRAPPER = ""
+
     def __init__(self, *, context: PersistenceContext | None = None):
         """Create an empty collection."""
         super().__init__(context=context)
@@ -114,6 +120,14 @@ class _HashBuckets(ConcurrentOptimized, IndexedCollection):
     @staticmethod
     def _entry_element(entry):
         raise NotImplementedError
+
+    def _element(self, element):
+        """``element`` canonical, refused (``ProtoValidationError``) when its bucket would nest it
+        deeper than MAX_VALUE_DEPTH: at the call, not at commit."""
+        holder = f"{type(self).__name__} element"
+        element = canonical_for(element, holder)
+        check_wrapped(element, self.ELEMENT_WRAPPING, holder, self._WRAPPER)
+        return element
 
     def _find(self, element) -> tuple:
         """Return ``(bucket_hash, bucket, position)``; position is -1 when ``element`` is absent."""
@@ -175,6 +189,10 @@ class Set(_HashBuckets):
 
     __type_name__ = "proto_db.collections.Set"
 
+    #: A bucket is a tuple of the elements (``@tup``: 2 containers).
+    ELEMENT_WRAPPING = 2
+    _WRAPPER = "its bucket tuple"
+
     @staticmethod
     def _entry_element(entry):
         return entry
@@ -187,10 +205,10 @@ class Set(_HashBuckets):
         has an empty op log.
         """
         unique: dict = {}
-        for item in items:
-            item = canonical(item)
-            unique.setdefault(order_key(item), item)
         empty = cls(context=context)
+        for item in items:
+            item = empty._element(item)
+            unique.setdefault(order_key(item), item)
         if not unique:
             return empty
         return empty._with(root=cls._tree_from_entries(empty, unique.values()), count=len(unique))
@@ -204,7 +222,7 @@ class Set(_HashBuckets):
 
     def add(self, element) -> "Set":
         """Return a set containing ``element`` (add event unless already present)."""
-        element = canonical(element)
+        element = self._element(element)
         h, bucket, position = self._find(element)
         log = self._logged((_ADD, element))
         if position >= 0:
@@ -214,7 +232,7 @@ class Set(_HashBuckets):
 
     def remove(self, element) -> "Set":
         """Return a set without ``element``; an absent element yields a new version with the same content."""
-        element = canonical(element)
+        element = canonical_for(element, f"{type(self).__name__} element")
         h, bucket, position = self._find(element)
         log = self._logged((_REMOVE, element))
         if position < 0:
@@ -274,6 +292,10 @@ class CountedSet(_HashBuckets):
     __type_name__ = "proto_db.collections.CountedSet"
     _fields = ("root", "count", "total_count", "indexes")
 
+    #: A bucket is a tuple of ``(element, count)`` tuples (two ``@tup``: 4 containers).
+    ELEMENT_WRAPPING = 4
+    _WRAPPER = "its bucket entry (element, count) in its bucket tuple"
+
     def __init__(self, *, context: PersistenceContext | None = None):
         """Create an empty counted set."""
         super().__init__(context=context)
@@ -291,13 +313,13 @@ class CountedSet(_HashBuckets):
         """
         counts: dict = {}
         total = 0
+        empty = cls(context=context)
         for item in items:
-            item = canonical(item)
+            item = empty._element(item)
             okey = order_key(item)
             entry = counts.get(okey)
             counts[okey] = (item, 1) if entry is None else (entry[0], entry[1] + 1)
             total += 1
-        empty = cls(context=context)
         if not counts:
             return empty
         return empty._with(root=cls._tree_from_entries(empty, counts.values()), count=len(counts),
@@ -358,7 +380,7 @@ class CountedSet(_HashBuckets):
 
     def add(self, element) -> "CountedSet":
         """Return a counted set with one more occurrence of ``element`` (add event if it is new)."""
-        element = canonical(element)
+        element = self._element(element)
         return self._step(element, 0, 1, (_ADD, element))
 
     def remove(self, element) -> "CountedSet":
@@ -366,7 +388,7 @@ class CountedSet(_HashBuckets):
 
         An absent element yields a new version with the same content.
         """
-        element = canonical(element)
+        element = canonical_for(element, f"{type(self).__name__} element")
         return self._step(element, 1, 0, (_REMOVE, element))
 
     def _transform(self, element, removes: int, adds: int) -> "CountedSet":
@@ -375,7 +397,7 @@ class CountedSet(_HashBuckets):
         Logged as ``("transform", element, removes, adds)``, so a merged version
         can itself be rebased.
         """
-        element = canonical(element)
+        element = self._element(element)
         return self._step(element, removes, adds, (_TRANSFORM, element, removes, adds))
 
     def _net_ops(self, element_ops: list) -> list:

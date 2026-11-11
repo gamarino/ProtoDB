@@ -12,6 +12,7 @@ ProtoBase's own encoders (`generate.py`) and is checked byte for byte against th
 | --- | --- |
 | `manifest.json` | What every vector file means, in a language-neutral JSON notation (below) |
 | `vectors/values/*.msgpack` | One canonical value each, as an attribute value is encoded |
+| `vectors/values/depth-*.msgpack` | Values exactly `MAX_VALUE_DEPTH` (1022) MessagePack containers deep (`values_depth`) |
 | `vectors/invalid/*.bin` | Inputs a reader must refuse, at every layer (value, map key, atom envelope and state, record, segment, root, log, acceptor log, cluster message) |
 | `vectors/framing/` | Segment headers (formats 4, 3 and 2), an ATOM and a BLOB record, root records (file, formats 3 and 2, cloud, tiered) |
 | `vectors/database/` | A complete format-4 file-storage space: `space.root` and one segment, written through the public API (trained ivf_flat and hnsw vector indexes included) |
@@ -71,6 +72,9 @@ A reader passes when, for every entry of `manifest.json`:
    (an atom record payload, loaded as a reference to `type`), `record`, `segment` (a segment
    header), `root` (a root record), `log` (a framed log of `kind`), `roots_log` (an acceptor log,
    decoded entry by entry), `message` (bytes received on a cluster connection).
+   The `value-depth-over-*` inputs are one MessagePack container deeper than `MAX_VALUE_DEPTH`
+   (their bytes come from a raw msgpack packer: no conforming writer produces them); a reader
+   refuses them as `corruption`, whatever the depth its own stack would allow.
 4. `order`: the values of `ascending` are in strictly ascending key order; each group of
    `equal` is one key; the `unorderable` values cannot be keys.
 5. `hashes`, `atom_hashes`, `exact_tokens` and `atom_tokens`: your hash function and exact
@@ -106,6 +110,17 @@ A reader passes when, for every entry of `manifest.json`:
 9. `polyglot_database`: as `database`; the record of `opaque_type` must be read without a class
    for it, its fields readable, and kept byte for byte when the record that references it is
    changed and committed again.
+
+10. `values_depth`: `max_value_depth` is `MAX_VALUE_DEPTH` (1022), the deepest nesting of
+    MessagePack containers a value may have (format spec, "Value nesting depth": a list adds 1, a
+    `@tup` 2, a `@map` 3, a tag 1, 2 or 3 by the arrays in its body). Each entry describes its
+    value as `levels`, `[kind, count]` pairs from the outside in (`list`, `tuple`, `map`: a map
+    of one pair whose key is the string `"k"`, or `keymap`: a map of one pair whose key is the
+    inner value and whose value is the string `"v"`), around `leaf` (a value description, an
+    empty container included: it counts like any other); `containers` is the file's depth. Decoding the file and encoding the value give each other, and one more
+    list around the value is refused by a writer (ProtoValidationError). Readers and writers
+    accept these depths and refuse one container more; the vectors nest deeper than recursion in
+    many languages allows by default.
 
 For the cross-implementation round trip (R83a), also run the reverse: write a database with
 your implementation, open it with ProtoBase (`ObjectSpace(FileStorage(path))`), and compare; `python -m proto_db.tools.verify <path>`
