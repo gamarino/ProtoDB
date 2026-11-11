@@ -933,7 +933,29 @@ class Atom:
 
         Children are saved while no stripe is held; only the publication of this
         atom's payload runs under its stripe (see the module lock order rule).
+
+        A child is saved by a nested call (through the context's ``save``), up to
+        :data:`SAVE_NESTING` nested saves in this thread; deeper, the save goes on with an
+        explicit stack (:func:`_save_iteratively`), so a chain of unsaved versions of any
+        length saves in one commit (R128).
         """
+        ptr = self.atom_pointer
+        if ptr is not None:
+            return ptr
+        depth = getattr(_nesting, "depth", 0)
+        if depth < 0:
+            raise _SaveFirst(self)          # under _save_iteratively: it saves this atom first
+        if depth >= SAVE_NESTING:
+            return _save_iteratively(self)
+        _nesting.depth = depth + 1
+        try:
+            return self._save_own()
+        finally:
+            _nesting.depth = depth
+
+    def _save_own(self) -> AtomPointer:
+        """The body of :meth:`_save`: encode the state (saving its children through the
+        context) and publish this atom's record."""
         ptr = self.atom_pointer
         if ptr is not None:
             return ptr
@@ -1018,6 +1040,63 @@ class Atom:
                 oid = None
             return f"<{type(self).__type_name__} oid={oid}>"
         return f"<{type(self).__type_name__} stub at {self.atom_pointer}>"
+
+
+# -- saving deep graphs (R128) -----------------------------------------------------------------
+
+#: Nested :meth:`Atom._save` calls a thread makes before the save continues with an explicit
+#: stack.  Each level costs a handful of Python frames, so this stays well inside the default
+#: recursion limit with room for the caller's own frames; an AVL tree of 10**9 elements is
+#: about 44 levels deep, so ordinary commits never reach it.
+SAVE_NESTING = 48
+
+#: ``depth``: this thread's nested saves; -1 while :func:`_save_iteratively` runs.
+_nesting = threading.local()
+
+
+class _SaveFirst(BaseException):
+    """Raised by the save of an unsaved child under :func:`_save_iteratively`: save ``atom``
+    first.  A ``BaseException``, so that no context's ``except Exception`` takes it for an error
+    of the save; it never leaves :func:`_save_iteratively`."""
+
+    def __init__(self, atom: "Atom"):
+        super().__init__()
+        self.atom = atom
+
+
+def _save_iteratively(root: "Atom") -> AtomPointer:
+    """Save ``root`` and every unsaved atom it reaches, children first, without recursion.
+
+    Each atom on the stack is encoded (:meth:`Atom._save_own`); the first unsaved child its
+    encoding meets raises :class:`_SaveFirst` out of the child's :meth:`Atom._save` -- after the
+    context's ``save`` adopted and checked it, exactly as a nested save would -- and is pushed.
+    Nothing is published by an interrupted encoding, so the parent is encoded again once the
+    child is saved.  Cost: an atom with unsaved children is encoded more than once, only past
+    :data:`SAVE_NESTING`.  An atom met again while it is on the stack is a cycle of unsaved
+    atoms (possible only with mutable atoms): ``ProtoValidationError``."""
+    outer = getattr(_nesting, "depth", 0)
+    stack = [root]
+    on_stack = {id(root)}
+    _nesting.depth = -1
+    try:
+        while stack:
+            top = stack[-1]
+            if top.atom_pointer is None:
+                try:
+                    top._save_own()
+                except _SaveFirst as first:
+                    child = first.atom
+                    if id(child) in on_stack:
+                        raise ProtoValidationError(
+                            f"Cannot save {child!r}: it refers back to itself through atoms that are not "
+                            f"saved yet (a cycle of unsaved atoms)") from None
+                    stack.append(child)
+                    on_stack.add(id(child))
+                    continue
+            on_stack.discard(id(stack.pop()))
+    finally:
+        _nesting.depth = outer
+    return root.atom_pointer
 
 
 # -- opaque atoms: types written by another implementation (D59, Task 10.P A3) ----------------
