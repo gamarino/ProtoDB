@@ -85,34 +85,41 @@ def run_tutorial(path: str, report=None, update: bool = False) -> int:
     replacements = []                    # (first line index, last line index, new body lines)
     namespace = {"__name__": "__tutorial__"}
     last_output, ran = None, 0
-    for line, language, caption, source in blocks:
-        where = f"{os.path.basename(path)}:{line}"
-        if language == "python":
-            buffer = io.StringIO()
-            try:
-                with contextlib.redirect_stdout(buffer):
-                    exec(compile(source, f"{where}", "exec"), namespace)
-            except BaseException:
-                raise AssertionError(f"{where}: this block failed\n{traceback.format_exc()}\n"
-                                     f"--- output so far ---\n{buffer.getvalue()}") from None
-            last_output = buffer.getvalue()
-            ran += 1
-            if report:
-                report(line, source, last_output)
-        elif language == "text":
-            if caption == "Output":
-                assert last_output is not None, f"{where}: an Output block needs a python block before it"
-                if update and normalise(source) != normalise(last_output):
-                    replacements.append((line, len(source.splitlines()), normalise(last_output).splitlines()))
-                    continue
-                assert normalise(source) == normalise(last_output), (
-                    f"{where}: the Output block differs from what the code printed\n"
-                    f"--- shown ---\n{normalise(source)}\n--- printed ---\n{normalise(last_output)}")
+    try:
+        for line, language, caption, source in blocks:
+            where = f"{os.path.basename(path)}:{line}"
+            if language == "python":
+                buffer = io.StringIO()
+                try:
+                    with contextlib.redirect_stdout(buffer):
+                        exec(compile(source, f"{where}", "exec"), namespace)
+                except BaseException:
+                    raise AssertionError(f"{where}: this block failed\n{traceback.format_exc()}\n"
+                                         f"--- output so far ---\n{buffer.getvalue()}") from None
+                last_output = buffer.getvalue()
+                ran += 1
+                if report:
+                    report(line, source, last_output)
+            elif language == "text":
+                if caption == "Output":
+                    assert last_output is not None, f"{where}: an Output block needs a python block before it"
+                    if update and normalise(source) != normalise(last_output):
+                        replacements.append((line, len(source.splitlines()), normalise(last_output).splitlines()))
+                        continue
+                    assert normalise(source) == normalise(last_output), (
+                        f"{where}: the Output block differs from what the code printed\n"
+                        f"--- shown ---\n{normalise(source)}\n--- printed ---\n{normalise(last_output)}")
+                else:
+                    assert caption is None or caption.startswith("Sample output"), (
+                        f"{where}: a text block is prose or has the caption 'Output' / 'Sample output ...'")
             else:
-                assert caption is None or caption.startswith("Sample output"), (
-                    f"{where}: a text block is prose or has the caption 'Output' / 'Sample output ...'")
-        else:
-            raise AssertionError(f"{where}: language {language!r}: a tutorial shows only python (run) or text (prose)")
+                raise AssertionError(f"{where}: language {language!r}: a tutorial shows only python (run) or text (prose)")
+    finally:
+        # A class the tutorial defines stays registered for the life of the process (the atom type
+        # registry and the codec's class table hold it by design), and its methods hold this
+        # namespace as their globals: clearing it releases the spaces and atoms the tutorial left
+        # in it, which would otherwise stay loaded in every later test of the process.
+        namespace.clear()
     if update and replacements:
         lines = text.splitlines()
         for start, count, body in sorted(replacements, reverse=True):
