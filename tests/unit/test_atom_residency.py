@@ -17,6 +17,9 @@ path, by whoever reads it next.  Checks, most of them deterministic interleaving
 Planted mutations (strict xfail) show each guard is what makes its test pass.
 """
 import gc
+import os
+import subprocess
+import sys
 import threading
 
 import pytest
@@ -32,6 +35,9 @@ from proto_db.indexing import EqualityIndex, RangeIndex
 from proto_db.indexing.keyspec import KeySpec
 from proto_db.query.linq import F, from_collection
 from proto_db.storage.file import FileStorage
+
+
+_REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def _space(entries, tmp_path=None):
@@ -302,11 +308,33 @@ def test_key_remove_of_an_absent_key_returns_the_same_root_after_eviction():
     space.close()
 
 
+# -- instance layouts, checked in a fresh interpreter ------------------------------------------------
+# Whether CPython keeps an instance's values inline depends on its class's shared key table, which
+# belongs to the process: every instance of the class that any earlier test created or loaded has
+# shaped it.  Run after the cluster unit tests, for instance, the space roots of this module's own
+# space lose their inline values (the power-loss tests of test_cluster_acceptor_durability.py, which
+# reload cluster roots, are enough), with or without this cache.  The layout checks therefore run in
+# a fresh interpreter, in the same GIL mode, where only their own objects have shaped the tables.
+
+def _in_a_fresh_interpreter(check: str) -> None:
+    """Run the module-level function ``check`` of this module in a new interpreter."""
+    flags = ["-X", f"gil={int(sys._is_gil_enabled())}"] if hasattr(sys, "_is_gil_enabled") else []
+    code = f"from tests.unit.test_atom_residency import {check}; {check}()"
+    proc = subprocess.run([sys.executable, *flags, "-c", code], cwd=_REPO, capture_output=True, text=True,
+                          timeout=240, env=dict(os.environ, PYTHONPATH=_REPO))
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
 def test_cache_atoms_keep_the_inline_values_layout():
     """The mark lives in the value of ``_loaded``, never in an extra key: a key added after the
     class's usual ones materializes the instance dict, and every attribute read of that atom then
     takes the slower dict path (measured: query paths 15-35 % slower with a ``_cached`` key)."""
-    internal = pytest.importorskip("_testinternalcapi")
+    pytest.importorskip("_testinternalcapi")
+    _in_a_fresh_interpreter("_check_inline_values_layout")
+
+
+def _check_inline_values_layout():
+    import _testinternalcapi as internal
     space = _space(10**6)
     db = space.new_database("db")
     _build_inventory(db, commits=2, per_commit=500)
@@ -347,7 +375,12 @@ def test_the_residency_paths_never_materialize_the_instance_dict():
     """Once an object's ``__dict__`` exists, CPython 3.14 never specializes attribute reads on it
     (``LOAD_ATTR_INSTANCE_VALUE``; measured 43 against 9 ns per read).  Saving (the twin),
     admission, a lookup by pointer, eviction (unload), a reload, ``has_defined_attr``, KeySpec
-    extraction and ``_state`` must therefore read attributes, never the dict."""
+    extraction and ``_state`` must therefore read attributes, never the dict.  The tree nodes'
+    key tables belong to the process, so the check runs in a fresh interpreter (see above)."""
+    _in_a_fresh_interpreter("_check_residency_paths_never_materialize")
+
+
+def _check_residency_paths_never_materialize():
     space = _space(10**6)
     db = space.new_database("db")
 
